@@ -3,9 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
+
 from dotenv import load_dotenv
+
+BACKEND_DIR = Path(__file__).resolve().parents[4]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from app.blackboard.api.dto import CourseCatalogResultDTO
 from app.blackboard.provider.use_cases.course_catalog import (
@@ -123,8 +129,7 @@ def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
 
-    backend_dir = Path(__file__).parent
-    load_dotenv(backend_dir / ".env")
+    load_dotenv(BACKEND_DIR / ".env")
     log_session = create_log_session(console=True)
     logger = log_session.make_logger(
         layer="cli",
@@ -171,7 +176,7 @@ def main() -> int:
 
         if args.save_json:
             out_path = _save_json_report(
-                backend_dir,
+                BACKEND_DIR,
                 keyword=result.keyword,
                 field=result.field,
                 operator=result.operator,

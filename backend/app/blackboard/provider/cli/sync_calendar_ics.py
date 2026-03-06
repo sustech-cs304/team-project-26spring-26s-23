@@ -10,20 +10,19 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+BACKEND_DIR = Path(__file__).resolve().parents[4]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from app.blackboard.api.dto import CalendarEventDTO
-from app.blackboard.shared import create_log_session
-
-backend_dir = Path(__file__).parent
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
-
-from app.blackboard.provider.use_cases.calendar_ics import (  # noqa: E402
+from app.blackboard.provider.use_cases.calendar_ics import (
     refresh_calendar_ics_subscription,
 )
+from app.blackboard.shared import create_log_session
 
 ENV_FEED_KEYS = ("BLACKBOARD_CALENDAR_FEED_URL", "CALENDAR_FEED_URL")
 ENV_DB_PATH_KEY = "SUSTECH_DB_PATH"
-DEFAULT_DB_PATH = backend_dir / "data" / "sustech.db"
+DEFAULT_DB_PATH = BACKEND_DIR / "data" / "sustech.db"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -61,7 +60,7 @@ def _to_json_value(value: Any) -> Any:
 
 
 def _save_json_report(*, feed_url: str, stats: dict[str, Any], events: list[CalendarEventDTO]) -> Path:
-    report_dir = backend_dir / "data" / "reports"
+    report_dir = BACKEND_DIR / "data" / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -81,7 +80,7 @@ def _save_json_report(*, feed_url: str, stats: dict[str, Any], events: list[Cale
 
 
 def _load_env() -> None:
-    load_dotenv(backend_dir / ".env")
+    load_dotenv(BACKEND_DIR / ".env")
 
 
 def _resolve_feed_url(cli_feed_url: str | None) -> tuple[str, str]:
@@ -113,14 +112,14 @@ def _resolve_db_path(cli_db_path: str | None) -> tuple[Path, str]:
     if normalized_cli:
         db_path = Path(normalized_cli)
         if not db_path.is_absolute():
-            db_path = backend_dir / db_path
+            db_path = BACKEND_DIR / db_path
         return db_path.resolve(), "--db-path"
 
     env_db_path = str(os.getenv(ENV_DB_PATH_KEY) or "").strip()
     if env_db_path:
         db_path = Path(env_db_path)
         if not db_path.is_absolute():
-            db_path = backend_dir / db_path
+            db_path = BACKEND_DIR / db_path
         return db_path.resolve(), ENV_DB_PATH_KEY
 
     return DEFAULT_DB_PATH.resolve(), "default"
