@@ -11,6 +11,12 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "bs4>=0.0.2",
     "sqlalchemy>=2.0.0",
+    "pytest>=9.0.2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.3.0",
 ]
 
 [build-system]
@@ -23,3 +29,11 @@ packages = ["app"]
 [tool.pyright]
 include = ["app"]
 extraPaths = ["."]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+    "live: requires real Blackboard credentials and network access",
+    "e2e: end-to-end Blackboard snapshot sync verification",
+]
