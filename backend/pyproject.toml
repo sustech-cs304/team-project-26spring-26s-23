@@ -12,6 +12,9 @@ dependencies = [
     "bs4>=0.0.2",
     "sqlalchemy>=2.0.0",
     "pytest>=9.0.2",
+    "copilotkit>=0.1.78",
+    "fastapi>=0.115.14",
+    "uvicorn>=0.41.0",
 ]
 
 [project.optional-dependencies]
