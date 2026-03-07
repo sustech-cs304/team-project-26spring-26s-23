@@ -139,7 +139,7 @@ def is_valid_assignment(
     def _log_filtered(reason: str, *, payload: dict[str, Any] | None = None) -> None:
         if logger is not None:
             logger.debug(
-                "过滤作业噪音",
+                "🗑 过滤作业噪音",
                 payload={"reason": reason, **(payload or {})},
             )
 
@@ -211,7 +211,7 @@ def is_valid_resource(
     def _log_filtered(reason: str, *, payload: dict[str, Any] | None = None) -> None:
         if logger is not None:
             logger.debug(
-                "过滤资源噪音",
+                "🗑 过滤资源噪音",
                 payload={"reason": reason, **(payload or {})},
             )
 

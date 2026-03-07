@@ -43,12 +43,12 @@ def search_course_catalog_with_credentials(
 
     cas_client = CASClient(logger=logger.child("provider.use_cases.course_catalog.cas"))
     try:
-        logger.info("开始执行课程目录搜索")
+        logger.info("▶ 开始执行课程目录搜索")
         if not cas_client.login(normalized_username, normalized_password, BLACKBOARD_LOGIN_SERVICE_URL):
-            logger.error("CAS 登录失败")
+            logger.error("❌  CAS 登录失败")
             raise RuntimeError("CAS 登录失败")
 
-        logger.info("CAS 登录成功，开始调用课程目录 API")
+        logger.info("✅ CAS 登录成功，开始调用课程目录 API")
         api = BlackboardCourseCatalogAPI(cas_client.client)
         typed_results = api.search_course_catalog(
             normalized_keyword,
@@ -57,7 +57,7 @@ def search_course_catalog_with_credentials(
             limit=normalized_limit,
         )
         logger.info(
-            "课程目录搜索完成",
+            "✅ 课程目录搜索完成",
             payload={"result_count": len(typed_results)},
         )
         return CourseCatalogSearchResult(
@@ -72,5 +72,5 @@ def search_course_catalog_with_credentials(
         logger.exception("课程目录搜索异常", ex)
         raise
     finally:
-        logger.debug("关闭 CASClient")
+        logger.debug("ℹ 关闭 CASClient")
         cas_client.close()

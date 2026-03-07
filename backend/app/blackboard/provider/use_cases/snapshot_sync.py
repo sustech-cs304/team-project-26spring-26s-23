@@ -279,7 +279,7 @@ def build_blackboard_sync_payloads(
                 invalid_grade_assignment_refs += 1
                 if logger is not None:
                     logger.warning(
-                        "检测到成绩引用不存在的 assignment_id",
+                        "⚠ 检测到成绩引用不存在的 assignment_id",
                         context={"course_id": course_id},
                         payload={
                             "grade_id": grade_id or None,
@@ -387,7 +387,7 @@ def build_blackboard_sync_payloads(
 
     if logger is not None:
         logger.info(
-            "Blackboard sync payloads 构建完成",
+            "✅ Blackboard sync payloads 构建完成",
             payload={
                 "courses": len(course_payload),
                 "assignments": sum(len(rows) for rows in assignment_payloads.values()),
@@ -463,7 +463,7 @@ def sync_blackboard_payloads(
         logger=None if logger is None else logger.child("provider.use_cases.snapshot_sync.data.announcements"),
     )
     if logger is not None:
-        logger.info("Blackboard 数据落库完成", payload={"stats": stats})
+        logger.info("💾 Blackboard 数据落库完成", payload={"stats": stats})
     return stats
 
 
@@ -547,7 +547,7 @@ def fetch_blackboard_snapshot(
     )
 
     if not normalized_username or not normalized_password:
-        logger.error("缺少 CAS 用户名或密码")
+        logger.error("❌ 缺少 CAS 用户名或密码")
         raise ValueError("缺少 CAS 用户名或密码")
 
     api_logger = log_session.make_logger(
@@ -558,9 +558,9 @@ def fetch_blackboard_snapshot(
     cas_client = CASClient(logger=logger.child("provider.use_cases.snapshot_sync.cas"))
     try:
         _emit(progress, "使用 CASClient 认证")
-        logger.info("开始 Blackboard snapshot 抓取")
+        logger.info("▶ 开始 Blackboard snapshot 抓取")
         if not cas_client.login(normalized_username, normalized_password, BLACKBOARD_LOGIN_SERVICE_URL):
-            logger.error("CAS 登录失败")
+            logger.error("❌ CAS 登录失败")
             raise RuntimeError("CAS 登录失败")
 
         context = BlackboardAPIContext(client=cas_client.client, logger=api_logger)
@@ -578,13 +578,13 @@ def fetch_blackboard_snapshot(
 
         _emit(progress, "抓取 Blackboard 实时数据")
         try:
-            logger.info("开始抓取课程列表")
+            logger.info("▶ 开始抓取课程列表")
             courses = course_api.get_courses()
-            logger.info("课程列表抓取成功", payload={"course_count": len(courses)})
-            _emit(progress, f"课程列表抓取成功：{len(courses)} 门")
+            logger.info("✅ 课程列表抓取成功", payload={"course_count": len(courses)})
+            _emit(progress, f"✅ 课程列表抓取成功：{len(courses)} 门")
         except Exception as ex:
-            logger.exception("课程列表抓取失败", ex)
-            _emit(progress, f"课程列表抓取失败：{ex}")
+            logger.exception("❌ 课程列表抓取失败", ex)
+            _emit(progress, f"❌ 课程列表抓取失败：{ex}")
             _emit(progress, traceback.format_exc())
 
         for index, course in enumerate(courses, 1):
@@ -600,27 +600,27 @@ def fetch_blackboard_snapshot(
                 course_index=index,
                 total_courses=len(courses),
             )
-            _emit(progress, f"处理课程 [{index}/{len(courses)}]: {course_name} ({course_id})")
-            course_logger.info("开始抓取课程下游数据")
+            _emit(progress, f"▶ 处理课程 [{index}/{len(courses)}]: {course_name} ({course_id})")
+            course_logger.info("▶ 开始抓取课程下游数据")
 
             try:
                 assignments = assignment_api.get_course_assignments(course_id)
                 assignments_by_course[course_id] = assignments
-                course_logger.info("课程作业抓取完成", payload={"assignment_count": len(assignments)})
+                course_logger.info("✅ 课程作业抓取完成", payload={"assignment_count": len(assignments)})
                 _emit(progress, f"  作业: {len(assignments)}")
             except Exception as ex:
                 assignments_by_course[course_id] = []
-                course_logger.exception("课程作业抓取失败", ex)
+                course_logger.exception("❌ 课程作业抓取失败", ex)
                 _emit(progress, f"  作业抓取失败: {ex}")
 
             try:
                 grade_items = grade_api.get_course_grade_dtos(course_id)
                 grades_by_course[course_id] = grade_items
-                course_logger.info("课程成绩抓取完成", payload={"grade_count": len(grade_items)})
+                course_logger.info("✅ 课程成绩抓取完成", payload={"grade_count": len(grade_items)})
                 _emit(progress, f"  成绩: {len(grade_items)}")
             except Exception as ex:
                 grades_by_course[course_id] = []
-                course_logger.exception("课程成绩抓取失败", ex)
+                course_logger.exception("❌ 课程成绩抓取失败", ex)
                 _emit(progress, f"  成绩抓取失败: {ex}")
 
             if index <= normalized_resource_course_limit:
@@ -628,7 +628,7 @@ def fetch_blackboard_snapshot(
                     resources = content_api.get_course_content_dtos(course_id)
                     resources_by_course[course_id] = resources
                     course_logger.info(
-                        "课程资源抓取完成",
+                        "✅ 课程资源抓取完成",
                         payload={
                             "resource_count": len(resources),
                             "resource_course_limit": normalized_resource_course_limit,
@@ -640,10 +640,10 @@ def fetch_blackboard_snapshot(
                     course_logger.exception("课程资源抓取失败", ex)
                     _emit(progress, f"  资源抓取失败: {ex}")
             else:
-                course_logger.debug("跳过课程资源抓取", payload={"resource_course_limit": normalized_resource_course_limit})
+                course_logger.debug("🏳 跳过课程资源抓取", payload={"resource_course_limit": normalized_resource_course_limit})
 
         try:
-            logger.info("开始抓取汇总公告")
+            logger.info("▶ 开始抓取汇总公告")
             announcements = announcement_api.get_all_announcement_dtos(
                 course_loader=lambda: [
                     {"id": course.course_id, "name": course.name}
@@ -671,15 +671,15 @@ def fetch_blackboard_snapshot(
                     key=lambda item: item.publish_time_parsed.isoformat() if item.publish_time_parsed else "",
                     reverse=True,
                 )
-            logger.info("汇总公告抓取成功", payload={"announcement_count": len(announcements)})
-            _emit(progress, f"汇总公告抓取成功：{len(announcements)} 条")
+            logger.info("✅ 汇总公告抓取成功", payload={"announcement_count": len(announcements)})
+            _emit(progress, f"✅ 汇总公告抓取成功：{len(announcements)} 条")
         except Exception as ex:
             announcements = []
-            logger.exception("汇总公告抓取失败", ex)
-            _emit(progress, f"汇总公告抓取失败：{ex}")
+            logger.exception("❌ 汇总公告抓取失败", ex)
+            _emit(progress, f"❌ 汇总公告抓取失败：{ex}")
 
         logger.info(
-            "Blackboard snapshot 抓取完成",
+            "✅ Blackboard snapshot 抓取完成",
             payload={
                 "scraped_counts": {
                     "courses": len(courses),
@@ -703,7 +703,7 @@ def fetch_blackboard_snapshot(
         logger.exception("Blackboard snapshot 抓取异常", ex)
         raise
     finally:
-        logger.debug("关闭 CASClient")
+        logger.debug("ℹ 关闭 CASClient")
         cas_client.close()
 
 
@@ -734,7 +734,7 @@ def run_blackboard_snapshot_sync(
         progress=progress,
         _log_session=log_session,
     )
-    logger.info("开始构建 Blackboard sync payloads")
+    logger.info("▶ 开始构建 Blackboard sync payloads")
     payloads = build_blackboard_sync_payloads(
         snapshot.courses,
         snapshot.assignments_by_course,
@@ -745,14 +745,14 @@ def run_blackboard_snapshot_sync(
     )
 
     db_manager = DatabaseManager(db_path, reset_schema=reset_schema)
-    _emit(progress, f"同步数据库: {db_manager.db_path.resolve().as_posix()}")
-    logger.info("开始同步数据库", payload={"db_path": db_manager.db_path.resolve().as_posix()})
+    _emit(progress, f"▶ 同步数据库: {db_manager.db_path.resolve().as_posix()}")
+    logger.info("▶ 开始同步数据库", payload={"db_path": db_manager.db_path.resolve().as_posix()})
     first_sync_stats = sync_blackboard_payloads(db_manager, payloads, logger=logger)
     table_counts = db_manager.get_table_counts()
     expected_active_counts = calculate_expected_active_counts(payloads)
     integrity_ok = compare_active_counts(table_counts, expected_active_counts)
     logger.info(
-        "首次同步完成",
+        "💾 首次同步完成",
         payload={
             "first_sync_stats": first_sync_stats,
             "table_counts": table_counts,
@@ -763,9 +763,9 @@ def run_blackboard_snapshot_sync(
 
     second_sync_stats: dict[str, dict[str, int]] | None = None
     if verify_second_sync:
-        logger.info("开始执行第二次同步验证")
+        logger.info("▶ 开始执行第二次同步验证")
         second_sync_stats = sync_blackboard_payloads(db_manager, payloads, logger=logger.child("provider.use_cases.snapshot_sync.second_sync"))
-        logger.info("第二次同步验证完成", payload={"second_sync_stats": second_sync_stats})
+        logger.info("💾 第二次同步验证完成", payload={"second_sync_stats": second_sync_stats})
 
     return BlackboardSnapshotSyncReport(
         db_path=db_manager.db_path.resolve(),

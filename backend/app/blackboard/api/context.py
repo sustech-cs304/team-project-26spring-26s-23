@@ -37,7 +37,7 @@ class BlackboardAPIContext:
     def get(self, url: str, *, label: str = "GET") -> httpx.Response:
         """执行 GET 请求并记录最小调试状态。"""
         if self.logger is not None:
-            self.logger.debug("发起 Blackboard GET 请求", context={"label": label, "url": url})
+            self.logger.debug("📤 发起 Blackboard GET 请求", context={"label": label, "url": url})
         response = self.client.get(url)
         self._record_response(label, response)
         return response
@@ -46,7 +46,7 @@ class BlackboardAPIContext:
         """执行 POST 请求并记录最小调试状态。"""
         if self.logger is not None:
             self.logger.debug(
-                "发起 Blackboard POST 请求",
+                "📤 发起 Blackboard POST 请求",
                 context={"label": label, "url": url},
                 payload={"data_keys": sorted((data or {}).keys())},
             )
@@ -110,8 +110,8 @@ class BlackboardAPIContext:
                 "url": str(response.url),
             }
             if response.status_code >= 400:
-                self.logger.warning("Blackboard HTTP 响应异常", context=request_context)
+                self.logger.warning("❌ Blackboard HTTP 响应异常", context=request_context)
             else:
-                self.logger.debug("Blackboard HTTP 响应完成", context=request_context)
+                self.logger.debug("✅ Blackboard HTTP 响应完成", context=request_context)
         if self.response_logger is not None:
             self.response_logger(label, response)

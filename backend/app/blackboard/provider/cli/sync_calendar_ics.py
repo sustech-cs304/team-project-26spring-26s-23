@@ -138,7 +138,7 @@ def main() -> int:
         db_path, db_source = _resolve_db_path(args.db_path)
 
         logger.info(
-            "开始刷新 ICS 订阅 CLI",
+            "📤 开始刷新 ICS 订阅 CLI",
             payload={
                 "feed_url": feed_url,
                 "feed_source": feed_source,
@@ -155,7 +155,7 @@ def main() -> int:
         parsed_count = int(result.stats.get("parsed", 0))
 
         logger.info(
-            "ICS 刷新完成",
+            "✅ ICS 刷新完成",
             payload={
                 "parsed": parsed_count,
                 "inserted": int(result.stats.get("inserted", 0)),
@@ -174,7 +174,7 @@ def main() -> int:
                 events=result.active_events,
             )
             logger.info(
-                "已保存 ICS JSON 报告",
+                "💾 已保存 ICS JSON 报告",
                 payload={
                     "path": out_path.as_posix(),
                     "provider_logs": [event.to_dict() for event in result.logs],
@@ -184,7 +184,7 @@ def main() -> int:
 
         return 0
     except Exception as ex:
-        logger.error("ICS 同步失败", payload={"error": str(ex)})
+        logger.error("❌ ICS 同步失败", payload={"error": str(ex)})
         return 1
 
 

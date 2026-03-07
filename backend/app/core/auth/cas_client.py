@@ -42,7 +42,7 @@ class CASClient:
         if not execution:
             if self.logger is not None:
                 self.logger.error(
-                    "无法获取 execution token",
+                    "❌ 无法获取 execution token",
                     payload={"service_url": service_url},
                 )
             return False
@@ -71,9 +71,9 @@ class CASClient:
         
         if self.logger is not None:
             if success:
-                self.logger.info("CAS 登录成功", payload={"redirect_url": str(response.url)})
+                self.logger.info("✅ CAS 登录成功", payload={"redirect_url": str(response.url)})
             else:
-                self.logger.warning("CAS 登录失败", payload={"final_url": str(response.url)})
+                self.logger.warning("❌ CAS 登录失败", payload={"final_url": str(response.url)})
 
         return success
     

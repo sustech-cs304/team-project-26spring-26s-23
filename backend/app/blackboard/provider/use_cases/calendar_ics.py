@@ -102,7 +102,7 @@ def refresh_calendar_ics_subscription(
 
     try:
         logger.info(
-            "开始刷新 ICS 订阅",
+            "▶ 开始刷新 ICS 订阅",
             payload={"db_path": db_manager.db_path.resolve().as_posix(), "conditional_headers": sorted(headers.keys())},
         )
         with httpx.Client(timeout=30.0, follow_redirects=True) as client:
@@ -119,7 +119,7 @@ def refresh_calendar_ics_subscription(
             )
             total = len(db_manager.list_calendar_events(normalized_feed_url, include_deleted=False))
             logger.info(
-                "ICS 订阅未变化",
+                "ℹ ICS 订阅未变化",
                 payload={"total": total, "etag": previous.get("etag"), "last_modified": previous.get("last_modified")},
             )
             return _build_result(
@@ -142,7 +142,7 @@ def refresh_calendar_ics_subscription(
 
         response.raise_for_status()
         logger.info(
-            "ICS 文本下载成功",
+            "✅ ICS 文本下载成功",
             payload={
                 "status_code": response.status_code,
                 "etag": response.headers.get("etag"),
@@ -189,9 +189,9 @@ def refresh_calendar_ics_subscription_from_text(
         context={"feed_url": normalized_feed_url},
     )
     db_manager = DatabaseManager(db_path, reset_schema=reset_schema)
-    logger.info("开始解析 ICS 文本", payload={"text_length": len(ics_text)})
+    logger.info("▶ 开始解析 ICS 文本", payload={"text_length": len(ics_text)})
     events = _ics_parser.parse_events(ics_text)
-    logger.info("ICS 解析完成", payload={"parsed": len(events)})
+    logger.info("✅ ICS 解析完成", payload={"parsed": len(events)})
     stats = db_manager.sync_calendar_events(
         normalized_feed_url,
         _event_rows(events),
@@ -209,7 +209,7 @@ def refresh_calendar_ics_subscription_from_text(
 
     total = len(db_manager.list_calendar_events(normalized_feed_url, include_deleted=False))
     logger.info(
-        "ICS 订阅同步完成",
+        "✅ ICS 订阅同步完成",
         payload={
             "stats": dict(stats),
             "total": total,

@@ -251,7 +251,7 @@ def sync_resources(
 
         if dropped_parent_count and logger is not None:
             logger.warning(
-                "丢弃无效资源父节点引用",
+                "🗑 丢弃无效资源父节点引用",
                 context={"course_id": course_id},
                 payload={
                     "dropped_parent_count": dropped_parent_count,
@@ -312,7 +312,7 @@ def sync_grades(
         if assignment_id and assignment_id not in existing_assignment_ids:
             if logger is not None:
                 logger.warning(
-                    "成绩写库前发现不存在的 assignment_id，已降级为空关联",
+                    "⚠ 成绩写库前发现不存在的 assignment_id，已降级为空关联",
                     context={"course_id": course_id},
                     payload={
                         "grade_id": grade_id,
@@ -578,7 +578,7 @@ def sync_calendar_events(
 
     if logger is not None:
         logger.info(
-            "日历事件同步完成",
+            "✅ 日历事件同步完成",
             context={"feed_url": normalized_feed_url},
             payload={"stats": dict(stats), "incoming_count": len(normalized)},
         )

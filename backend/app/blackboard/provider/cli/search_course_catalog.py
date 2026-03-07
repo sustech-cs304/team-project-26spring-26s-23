@@ -69,9 +69,9 @@ def _strip_value_label(text: str) -> str:
 
 
 def _log_preview(logger: BlackboardLogger, results: list[CourseCatalogResultDTO], preview: int) -> None:
-    logger.info("课程目录搜索结果预览开始", payload={"preview": max(preview, 0), "total": len(results)})
+    logger.info("▶ 课程目录搜索结果预览开始", payload={"preview": max(preview, 0), "total": len(results)})
     if not results:
-        logger.info("未查询到课程目录结果")
+        logger.info("🏳 未查询到课程目录结果")
         return
 
     for idx, item in enumerate(results[: max(preview, 0)], 1):
@@ -145,14 +145,14 @@ def main() -> int:
     password = os.getenv("SUSTECH_PASSWORD")
 
     if not username or not password:
-        logger.error("缺少环境变量 SUSTECH_USERNAME / SUSTECH_PASSWORD")
-        logger.info("请在 backend/.env 中配置凭据后重试")
+        logger.error("⚠ 缺少环境变量 SUSTECH_USERNAME / SUSTECH_PASSWORD")
+        logger.info("⚠ 请在 backend/.env 中配置凭据后重试")
         return 1
 
     limit = args.limit if args.limit and args.limit > 0 else None
 
     try:
-        logger.info("开始执行课程目录搜索 CLI", payload={"limit": limit, "preview": args.preview})
+        logger.info("▶ 开始执行课程目录搜索 CLI", payload={"limit": limit, "preview": args.preview})
         result = search_course_catalog_with_credentials(
             username,
             password,
@@ -163,7 +163,7 @@ def main() -> int:
             enable_console_logging=True,
         )
         logger.info(
-            "课程目录搜索完成",
+            "✅ 课程目录搜索完成",
             payload={
                 "keyword": result.keyword,
                 "field": result.field,
@@ -184,7 +184,7 @@ def main() -> int:
                 results=result.results,
             )
             logger.info(
-                "已保存课程目录 JSON 报告",
+                "✅ 已保存课程目录 JSON 报告",
                 payload={
                     "path": out_path.as_posix(),
                     "provider_logs": [event.to_dict() for event in result.logs],
@@ -194,7 +194,7 @@ def main() -> int:
 
         return 0
     except Exception as ex:
-        logger.error("课程目录搜索失败", payload={"error": str(ex)})
+        logger.error("❌ 课程目录搜索失败", payload={"error": str(ex)})
         return 1
 
 

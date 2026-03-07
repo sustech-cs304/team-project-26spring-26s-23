@@ -24,7 +24,7 @@ def warn_unknown_fields(
     unknown = sorted(k for k in record.keys() if k not in model_fields)
     if unknown and logger is not None:
         logger.warning(
-            "存在未落库字段",
+            "⚠ 存在未落库字段",
             context={"record": context},
             payload={"unknown_fields": unknown},
         )
