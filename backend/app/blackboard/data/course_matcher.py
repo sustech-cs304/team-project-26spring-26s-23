@@ -1,4 +1,4 @@
-"""过渡期课程归属匹配 helper。"""
+"""Blackboard 数据层中的课程归属匹配 helper。"""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from app.blackboard.data.models import Course
 
 
 def resolve_course_id_by_course_name(session: Session, course_name: str) -> str | None:
-    """按旧逻辑解析公告课程名到 `course_id`。
+    """按现有公告同步回退规则，将课程名解析为 `course_id`。
 
-    该逻辑目前仍属第 3 阶段保守保留的跨层推断遗留，
-    仅从 [`DatabaseManager`](backend/app/blackboard/data/db_manager.py) 主体中隔离，
-    方便后续再迁移到更合适的 provider / matcher 层。
+    该函数是 [`backend/app/blackboard/data`](backend/app/blackboard/data) 中的
+    细粒度数据层 helper，由 [`DatabaseManager`](backend/app/blackboard/data/db_manager.py)
+    在公告记录缺少 `course_id` 时调用，负责基于已入库课程名称做精确/模糊匹配。
     """
 
     target = str(course_name or "").strip()
