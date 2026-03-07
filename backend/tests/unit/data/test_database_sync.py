@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.core.database import Announcement, Course, DatabaseManager, Resource
+from app.blackboard.data import Announcement, Course, DatabaseManager, Resource
 
 
 def _db_path(tmp_path: Path, name: str) -> Path:

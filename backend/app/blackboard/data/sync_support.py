@@ -9,7 +9,7 @@ from app.blackboard.shared.logging import BlackboardLogger
 
 from sqlalchemy.orm import Session
 
-from app.core.database.models import Announcement, Assignment, Course, Resource
+from app.blackboard.data.models import Announcement, Assignment, Course, Resource
 
 from .results import SyncStats, empty_sync_stats
 

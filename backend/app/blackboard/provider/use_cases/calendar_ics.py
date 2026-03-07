@@ -9,8 +9,8 @@ import httpx
 from app.blackboard.api.calendar_ics_parser import BlackboardCalendarICSParser
 from app.blackboard.api.dto import CalendarEventDTO
 from app.blackboard.provider.results import CalendarICSSyncResult
+from app.blackboard.data import DatabaseManager
 from app.blackboard.shared import BlackboardLogEvent, BlackboardLogSession, create_log_session
-from app.core.database import DatabaseManager
 
 
 _ics_parser = BlackboardCalendarICSParser()

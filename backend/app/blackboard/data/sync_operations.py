@@ -10,7 +10,7 @@ from app.blackboard.shared.logging import BlackboardLogger
 
 from sqlalchemy.orm import Session
 
-from app.core.database.models import (
+from app.blackboard.data.models import (
     Announcement,
     Assignment,
     CalendarEvent,

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.core.database.models import Course
+from app.blackboard.data.models import Course
 
 
 def resolve_course_id_by_course_name(session: Session, course_name: str) -> str | None:
     """按旧逻辑解析公告课程名到 `course_id`。
 
     该逻辑目前仍属第 3 阶段保守保留的跨层推断遗留，
-    仅从 [`DatabaseManager`](backend/app/core/database/db_manager.py) 主体中隔离，
+    仅从 [`DatabaseManager`](backend/app/blackboard/data/db_manager.py) 主体中隔离，
     方便后续再迁移到更合适的 provider / matcher 层。
     """
 

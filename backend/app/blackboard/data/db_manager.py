@@ -40,8 +40,9 @@ from .models import (
     Resource,
 )
 
+
 class DatabaseManager:
-    """SQLite 数据库管理器（增强版）。"""
+    """SQLite 数据库管理器"""
 
     def __init__(self, db_path: str | Path | None = None, *, reset_schema: bool = False) -> None:
         backend_dir = Path(__file__).resolve().parents[3]
