@@ -1,5 +1,6 @@
 """SUSTech CAS认证客户端"""
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -63,17 +64,38 @@ class CASClient:
             data=login_data
         )
         
-        # 4. 检查是否登录成功（通过检查是否重定向到目标服务）
-        # 如果成功，通常会重定向到目标服务域名
-        from urllib.parse import urlparse
+        # 4. 检查是否登录成功：不仅要回到目标服务域名，还要避免明显的未认证/会话失效页面
         service_domain = urlparse(service_url).netloc
-        success = service_domain in str(response.url)
-        
+        final_url = str(response.url)
+        final_path = urlparse(final_url).path or "/"
+        lowered_body = (response.text or "").lower()
+        redirect_chain = [str(item.url) for item in response.history] + [final_url]
+        has_login_form = 'name="username"' in lowered_body and 'name="password"' in lowered_body
+        has_execution = 'name="execution"' in lowered_body
+        hit_authentication_require = any("/authentication/require" in item for item in redirect_chain)
+        hit_session_invalid = "/session/invalid" in final_path
+        success = (
+            service_domain in final_url
+            and not has_login_form
+            and not has_execution
+            and not hit_authentication_require
+            and not hit_session_invalid
+        )
+
         if self.logger is not None:
+            payload = {
+                "redirect_url": final_url,
+                "redirect_chain": redirect_chain,
+                "final_path": final_path,
+                "has_login_form": has_login_form,
+                "has_execution": has_execution,
+                "hit_authentication_require": hit_authentication_require,
+                "hit_session_invalid": hit_session_invalid,
+            }
             if success:
-                self.logger.info("✅ CAS 登录成功", payload={"redirect_url": str(response.url)})
+                self.logger.info("✅ CAS 登录成功", payload=payload)
             else:
-                self.logger.warning("❌ CAS 登录失败", payload={"final_url": str(response.url)})
+                self.logger.warning("❌ CAS 登录失败", payload=payload)
 
         return success
     
