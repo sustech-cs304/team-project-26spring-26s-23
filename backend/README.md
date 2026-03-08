@@ -38,4 +38,11 @@ python -m app.blackboard.provider.cli.sync_calendar_ics --help
 
 ## 💯 Run Tests
 
-...
+run at [`backend/`](backend/README.md:32):
+
+```bash
+uv run pytest -c pyproject.toml tests/unit
+uv run pyright -p ../pyrightconfig.json
+```
+
+GitHub Actions workflow [`.github/workflows/backend-static-checks.yml`](.github/workflows/backend-static-checks.yml) uses `uv` to install dependencies and runs separated Blackboard / TIS static checks. Live integration tests remain outside CI.
