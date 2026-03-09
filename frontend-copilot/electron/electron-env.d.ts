@@ -1,5 +1,7 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 
+import type { CopilotSettingsApi } from './copilot-settings'
+
 declare namespace NodeJS {
   interface ProcessEnv {
     /**
@@ -21,7 +23,12 @@ declare namespace NodeJS {
   }
 }
 
-// Used in Renderer process, expose in `preload.ts`
-interface Window {
-  ipcRenderer: import('electron').IpcRenderer
+declare global {
+  // Used in Renderer process, expose in `preload.ts`
+  interface Window {
+    ipcRenderer: import('electron').IpcRenderer
+    copilotSettings: CopilotSettingsApi
+  }
 }
+
+export {}
