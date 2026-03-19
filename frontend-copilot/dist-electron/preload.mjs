@@ -1,5 +1,7 @@
 "use strict";
 const electron = require("electron");
+const COPILOT_SETTINGS_LOAD_CHANNEL = "copilot-settings:load";
+const COPILOT_SETTINGS_SAVE_CHANNEL = "copilot-settings:save";
 electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   on(...args) {
     const [channel, listener] = args;
@@ -20,3 +22,12 @@ electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   // You can expose other APTs you need here.
   // ...
 });
+const copilotSettingsApi = {
+  load() {
+    return electron.ipcRenderer.invoke(COPILOT_SETTINGS_LOAD_CHANNEL);
+  },
+  save(patch) {
+    return electron.ipcRenderer.invoke(COPILOT_SETTINGS_SAVE_CHANNEL, patch);
+  }
+};
+electron.contextBridge.exposeInMainWorld("copilotSettings", copilotSettingsApi);
