@@ -1,147 +1,113 @@
-import { app, BrowserWindow, ipcMain } from "electron";
-import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-const COPILOT_SETTINGS_LOAD_CHANNEL = "copilot-settings:load";
-const COPILOT_SETTINGS_SAVE_CHANNEL = "copilot-settings:save";
-function normalizeCopilotSettings(input) {
-  const record = typeof input === "object" && input !== null ? input : {};
+import { app as r, BrowserWindow as f, Menu as P, ipcMain as s } from "electron";
+import { readFile as O, mkdir as I, writeFile as N } from "node:fs/promises";
+import { fileURLToPath as y } from "node:url";
+import n from "node:path";
+const p = "copilot-settings:load", g = "copilot-settings:save";
+function l(t) {
+  const e = typeof t == "object" && t !== null ? t : {};
   return {
-    runtimeUrl: normalizeOptionalString(record.runtimeUrl),
-    agentName: normalizeOptionalString(record.agentName)
+    runtimeUrl: d(e.runtimeUrl),
+    agentName: d(e.agentName)
   };
 }
-function mergeCopilotSettings(current, patch) {
-  return normalizeCopilotSettings({
-    ...current,
-    ...patch
+function R(t, e) {
+  return l({
+    ...t,
+    ...e
   });
 }
-function getCopilotSettingsStorageState(settings) {
-  return settings.runtimeUrl === null && settings.agentName === null ? "empty" : "stored";
+function m(t) {
+  return t.runtimeUrl === null && t.agentName === null ? "empty" : "stored";
 }
-function normalizeOptionalString(value) {
-  if (typeof value !== "string") {
+function d(t) {
+  if (typeof t != "string")
     return null;
-  }
-  const normalizedValue = value.trim();
-  return normalizedValue.length > 0 ? normalizedValue : null;
+  const e = t.trim();
+  return e.length > 0 ? e : null;
 }
-const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
-process.env.APP_ROOT = path.join(__dirname$1, "..");
-const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
-const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
-const VITE_PUBLIC = process.env.VITE_PUBLIC ?? RENDERER_DIST;
-let win;
-const COPILOT_SETTINGS_FILE_NAME = "copilot-settings.json";
-function createWindow() {
-  win = new BrowserWindow({
-    icon: path.join(VITE_PUBLIC, "electron-vite.svg"),
+const S = n.dirname(y(import.meta.url));
+process.env.APP_ROOT = n.join(S, "..");
+const a = process.env.VITE_DEV_SERVER_URL, b = n.join(process.env.APP_ROOT, "dist-electron"), c = n.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = a ? n.join(process.env.APP_ROOT, "public") : c;
+const h = process.env.VITE_PUBLIC ?? c;
+let i;
+const v = "copilot-settings.json";
+function E() {
+  i = new f({
+    icon: n.join(h, "electron-vite.svg"),
+    autoHideMenuBar: !0,
     webPreferences: {
-      preload: path.join(__dirname$1, "preload.mjs")
+      preload: n.join(S, "preload.mjs")
     }
-  });
-  win.webContents.on("did-finish-load", () => {
-    win?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
-  });
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL);
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, "index.html"));
-  }
+  }), i.setMenuBarVisibility(!1), i.webContents.on("did-finish-load", () => {
+    i?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+  }), a ? i.loadURL(a) : i.loadFile(n.join(c, "index.html"));
 }
-function registerCopilotSettingsHandlers() {
-  ipcMain.removeHandler(COPILOT_SETTINGS_LOAD_CHANNEL);
-  ipcMain.removeHandler(COPILOT_SETTINGS_SAVE_CHANNEL);
-  ipcMain.handle(COPILOT_SETTINGS_LOAD_CHANNEL, async () => {
-    return loadCopilotSettings();
-  });
-  ipcMain.handle(COPILOT_SETTINGS_SAVE_CHANNEL, async (_event, patch) => {
-    return saveCopilotSettings(patch);
-  });
+function L() {
+  s.removeHandler(p), s.removeHandler(g), s.handle(p, async () => _()), s.handle(g, async (t, e) => j(e));
 }
-async function loadCopilotSettings() {
-  const settingsFilePath = getCopilotSettingsFilePath();
+async function _() {
+  const t = T();
   try {
-    const fileContent = await readFile(settingsFilePath, "utf8");
-    const settings = normalizeCopilotSettings(JSON.parse(fileContent));
+    const e = await O(t, "utf8"), o = l(JSON.parse(e));
     return {
-      ok: true,
-      settings,
-      storageState: getCopilotSettingsStorageState(settings)
+      ok: !0,
+      settings: o,
+      storageState: m(o)
     };
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      const emptySettings = createEmptyCopilotSettings();
-      return {
-        ok: true,
-        settings: emptySettings,
-        storageState: "empty"
-      };
-    }
-    return {
-      ok: false,
-      error: `Failed to load Copilot settings: ${formatUnknownError(error)}`
+  } catch (e) {
+    return V(e) ? {
+      ok: !0,
+      settings: A(),
+      storageState: "empty"
+    } : {
+      ok: !1,
+      error: `Failed to load Copilot settings: ${C(e)}`
     };
   }
 }
-async function saveCopilotSettings(patch) {
-  const currentSettingsResult = await loadCopilotSettings();
-  if (!currentSettingsResult.ok) {
-    return currentSettingsResult;
-  }
-  const settings = mergeCopilotSettings(currentSettingsResult.settings, patch);
-  const settingsFilePath = getCopilotSettingsFilePath();
+async function j(t) {
+  const e = await _();
+  if (!e.ok)
+    return e;
+  const o = R(e.settings, t), u = T();
   try {
-    await mkdir(path.dirname(settingsFilePath), { recursive: true });
-    await writeFile(settingsFilePath, `${JSON.stringify(settings, null, 2)}
-`, "utf8");
-    return {
-      ok: true,
-      settings,
-      storageState: getCopilotSettingsStorageState(settings)
+    return await I(n.dirname(u), { recursive: !0 }), await N(u, `${JSON.stringify(o, null, 2)}
+`, "utf8"), {
+      ok: !0,
+      settings: o,
+      storageState: m(o)
     };
-  } catch (error) {
+  } catch (w) {
     return {
-      ok: false,
-      error: `Failed to save Copilot settings: ${formatUnknownError(error)}`
+      ok: !1,
+      error: `Failed to save Copilot settings: ${C(w)}`
     };
   }
 }
-function getCopilotSettingsFilePath() {
-  return path.join(app.getPath("userData"), COPILOT_SETTINGS_FILE_NAME);
+function T() {
+  return n.join(r.getPath("userData"), v);
 }
-function createEmptyCopilotSettings() {
-  return normalizeCopilotSettings({});
+function A() {
+  return l({});
 }
-function isFileNotFoundError(error) {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+function V(t) {
+  return typeof t == "object" && t !== null && "code" in t && t.code === "ENOENT";
 }
-function formatUnknownError(error) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
+function C(t) {
+  return t instanceof Error ? t.message : String(t);
 }
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-    win = null;
-  }
+r.on("window-all-closed", () => {
+  process.platform !== "darwin" && (r.quit(), i = null);
 });
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+r.on("activate", () => {
+  f.getAllWindows().length === 0 && E();
 });
-app.whenReady().then(() => {
-  registerCopilotSettingsHandlers();
-  createWindow();
+r.whenReady().then(() => {
+  P.setApplicationMenu(null), L(), E();
 });
 export {
-  MAIN_DIST,
-  RENDERER_DIST,
-  VITE_DEV_SERVER_URL
+  b as MAIN_DIST,
+  c as RENDERER_DIST,
+  a as VITE_DEV_SERVER_URL
 };

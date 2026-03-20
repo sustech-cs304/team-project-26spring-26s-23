@@ -13,6 +13,7 @@
     "@copilotkit/react-core": "^1.53.0",
     "@copilotkit/react-ui": "^0.2.0",
     "@copilotkit/shared": "^1.53.0",
+    "lucide-react": "^0.577.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
