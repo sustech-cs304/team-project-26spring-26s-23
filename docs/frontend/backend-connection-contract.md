@@ -1,229 +1,174 @@
-# 后端连接契约与当前生效边界
+# 前端现在怎样连接后端
 
-## 文档目的
+## 这篇文档适合谁看
 
-本文档用于说明当前前端与后端连接时，**已经在代码中生效的最小契约**，以及哪些设置项仍只是界面占位，不能被误写为正式接口规范。
+这篇文档适合：
 
-本文重点回答以下问题：
+- 准备做前后端联调，但想先知道“当前前端到底靠什么连接后端”的人
+- 需要区分“当前代码事实”和“设置页占位”的人
+- 刚接手前端、想先弄清最小接入链路的人
 
-- 当前前端真正依赖哪些后端连接字段
-- 这些字段如何进入启动链路
-- 配置状态 `empty` / `incomplete` / `ready` / `error` 以及启动期 `loading` 分别表示什么
-- “尚未连接后端智能体”和“读取配置异常”有何区别
-- 当前前端对后端运行时的最低预期是什么
-- 设置页里哪些字段**不能**视为已生效契约
+如果你想直接查字段表或状态表，可以优先看：
 
-## 一、当前已生效的连接字段
+- [reference-current-fields.md](./reference-current-fields.md)
+- [reference-runtime-states.md](./reference-runtime-states.md)
 
-基于当前代码，前端真正会消费并影响 Copilot 启动行为的字段只有两个：
+## 这篇文档回答什么问题
 
-- [`runtimeUrl`](../../frontend-copilot/electron/copilot-settings.ts:5)
-- [`agentName`](../../frontend-copilot/electron/copilot-settings.ts:6)
+这篇文档主要回答：
 
-这两个字段同时出现在 Electron 存储定义、renderer 配置解析以及 Copilot Provider 包裹逻辑中，因此它们是当前唯一可以明确确认的“已生效连接契约”。
+- 当前前端真正会用到哪些后端连接信息
+- 这些信息是从哪里来的，什么时候被读取
+- 前端在什么情况下才算“达到最小连接条件”
+- 为什么设置页里很多字段现在不能当成已生效的后端配置
+- 联调时，哪些内容可以当当前事实，哪些不能
 
-### 结论
+## 先给结论
 
-当前前端对后端连接的已生效依赖，**仅限于**：
+- 当前前端真正已经生效、并参与启动判断的连接字段，只有 `runtimeUrl` 和 `agentName` 两个。
+- 这两个值不是从设置页大表单里直接来的，而是从 Electron 本地配置文件读取，再通过 preload 桥接给 renderer。
+- 应用启动时会先读取这两个字段，并把结果整理成 `loading`、`empty`、`incomplete`、`ready`、`error` 这些状态；只有到 `ready`，前端才会把连接信息交给 Copilot 外层能力。
+- 设置页里像“API 服务器”“模型服务”“健康检查”“重连策略”这类内容，现在大多还只是前端界面或本地交互，不能写成已生效后端契约。
+- 现阶段做联调，最稳妥的做法是只围绕 `runtimeUrl` 和 `agentName` 这两个字段讨论；更细的字段和状态请直接查附录。
 
-1. 一个可由 [`runtimeUrl`](../../frontend-copilot/electron/copilot-settings.ts:5) 指向的可访问运行时端点
-2. 一个可由 [`agentName`](../../frontend-copilot/electron/copilot-settings.ts:6) 指定的智能体名称
+## 再展开说明
 
-除这两个字段之外，前端代码没有体现出更多已经稳定生效的后端连接参数。
+### 先从“前端怎么拿到连接信息”说起
 
-## 二、配置持久化与加载链路
+当前前端读取后端连接信息的方式很简单：先从 Electron 本地配置里读，再交给 renderer 使用。
 
-当前 Copilot 配置通过 Electron 持久化到本地文件，配置文件名为 [`copilot-settings.json`](../../frontend-copilot/electron/main.ts:1)，保存位置在 Electron 的 `userData` 目录下。
+白话一点说，就是：
 
-需要注意：虽然本文不展开主进程实现细节，但根据调研结论，当前持久化链路已经明确限定在上述本地配置文件与 Electron `userData` 目录。
+1. Electron 主进程负责从本地文件读取 Copilot 配置
+2. preload 把“读取 / 保存配置”的桥接接口暴露给 renderer
+3. renderer 启动时调用这个桥接接口
+4. renderer 根据读取结果判断当前到底是“没配”“配了一半”“可以继续了”还是“读取失败”
 
-### preload 暴露的桥接接口
+当前本地配置文件名是 `copilot-settings.json`，位置在 Electron 的 `userData` 目录下。
 
-preload 向 renderer 暴露的接口位于 [`window.copilotSettings.load()`](../../frontend-copilot/electron/preload.ts:32) 与 [`window.copilotSettings.save()`](../../frontend-copilot/electron/preload.ts:35)。
+这条链路的重点不是“设置页看起来有多少字段”，而是“当前真正被启动逻辑消费的字段到底有几个”。答案目前只有两个：
 
-底层对应两个 IPC 通道：
+- `runtimeUrl`
+- `agentName`
 
-- [`copilot-settings:load`](../../frontend-copilot/electron/copilot-settings.ts:1)
-- [`copilot-settings:save`](../../frontend-copilot/electron/copilot-settings.ts:2)
+如果你只想快速查这两个字段的存储位置、读取时机和是否接到界面，请直接看 [reference-current-fields.md](./reference-current-fields.md)。
 
-renderer 侧通过 [`loadCopilotSettings()`](../../frontend-copilot/src/features/copilot/settings.ts:11) 与 [`saveCopilotSettings()`](../../frontend-copilot/src/features/copilot/settings.ts:24) 统一调用桥接 API。
+### 什么叫“达到最小连接条件”
 
-### 启动时的配置读取链路
+当前前端并不是只要打开应用就默认算“已连接后端”。
 
-应用启动后，会先通过 [`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:74) 解析配置状态，再由 [`CopilotAppRoot()`](../../frontend-copilot/src/CopilotAppRoot.tsx:10) 决定是否包裹 Copilot Provider。
+它会先检查两个关键字段：
 
-可将当前链路理解为：
+- `runtimeUrl`：可以把它理解成“前端准备把请求交给哪个运行时地址”
+- `agentName`：可以把它理解成“前端准备使用哪个智能体名字”
 
-1. preload 暴露配置读取 / 保存接口
-2. renderer 调用读取接口获取本地设置
-3. 前端将设置归一化为配置状态
-4. 只有在状态为 `ready` 时，才将连接参数传入 CopilotKit
+只有这两个字段都存在，而且不是空字符串，前端才会把状态判断为 `ready`。
 
-这说明当前的连接契约首先是“本地配置驱动”，而不是“设置页任意字段自动生效”。
+如果两个都没有，就是 `empty`；如果只填了一部分，就是 `incomplete`；如果读取配置本身出错，就是 `error`。
 
-## 三、`ready` 状态下真正传入 CopilotKit 的值
+这里最重要的一点是：
 
-当前包裹逻辑位于 [`renderAppWithCopilotProvider()`](../../frontend-copilot/src/CopilotAppRoot.tsx:43)。
+- `empty` / `incomplete` 表示“最小连接信息没配完整”
+- `error` 表示“读取链路出问题了”
 
-只有当配置状态为 `ready` 时，前端才会执行以下传参：
+这两类情况不能混为一谈。需要详细查表时，请看 [reference-runtime-states.md](./reference-runtime-states.md)。
 
-- 将 [`configState.runtimeUrl`](../../frontend-copilot/src/CopilotAppRoot.tsx:51) 传给 CopilotKit 的 [`runtimeUrl`](../../frontend-copilot/src/CopilotAppRoot.tsx:51)
-- 将 [`configState.agentName`](../../frontend-copilot/src/CopilotAppRoot.tsx:51) 传给 CopilotKit 的 [`agent`](../../frontend-copilot/src/CopilotAppRoot.tsx:51)
+### 应用启动时实际会发生什么
 
-也就是说，当前真正进入 CopilotKit 的连接参数只有这两个值。
+从启动链路看，当前前端会按下面的顺序工作：
 
-### 必须明确的事实
+1. 应用启动
+2. renderer 读取本地 Copilot 配置
+3. 前端把读取结果归一化，也就是把空白值整理干净
+4. 前端判断当前状态是 `empty`、`incomplete`、`ready` 或 `error`
+5. 只有在 `ready` 时，前端才会把 `runtimeUrl` 和 `agentName` 传给 Copilot 外层能力
 
-- 已生效字段：[`runtimeUrl`](../../frontend-copilot/src/CopilotAppRoot.tsx:51)、[`agent`](../../frontend-copilot/src/CopilotAppRoot.tsx:51) 对应的来源值
-- 未体现为已生效字段：认证令牌、请求头、自定义 schema、健康检查地址、模型服务商配置等
+这说明当前前端的后端连接逻辑，本质上是一条“本地配置驱动的最小接入链路”。
 
-因此，任何超出这两个字段的后端接口说明，都不能在当前文档中写成既成事实。
+它已经不是纯展示页面，但也还远远谈不上完整聊天闭环。
 
-## 四、配置状态语义
+### 为什么说“已经有最小接入链路”，但还不能说“聊天已经接通”
 
-当前配置状态由 [`resolveCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:35) 统一解析，状态类型定义位于 [`CopilotConfigState`](../../frontend-copilot/src/features/copilot/types.ts:48)。
+这里很容易误解。
 
-### 状态总览
+当前代码里，应用在 `ready` 状态下确实会把 `runtimeUrl` 和 `agentName` 交给 Copilot 外层能力。这是当前可以确认的代码事实。
 
-| 状态 | 含义 | 是否表示已连接后端智能体 |
-| --- | --- | --- |
-| `loading` | 启动期，正在读取配置 | 否 |
-| `empty` | 两个关键字段都缺失 | 否 |
-| `incomplete` | 已有部分配置，但关键字段未填写完整 | 否 |
-| `ready` | 两个关键字段齐备，可用于包裹 CopilotKit | 是（达到前端最小连接前提） |
-| `error` | 读取配置链路异常 | 不能按“未配置”处理 |
+但与此同时，用户看到的聊天区域仍然只是一个状态骨架面板，而不是完整聊天 UI。也就是说：
 
-### `empty` 与 `incomplete`
+- **当前事实**：启动链路会在 `ready` 时交出最小连接参数
+- **当前还不是事实**：已经有完整对话输入、消息列表、流式返回和联调后的成熟聊天体验
 
-当 [`runtimeUrl`](../../frontend-copilot/src/features/copilot/config.ts:24) 与 [`agentName`](../../frontend-copilot/src/features/copilot/config.ts:28) 缺失时，前端会把状态解析为 `empty` 或 `incomplete`。
+所以现在最准确的表述是：
 
-这两种状态的共同点是：
+- 前端已经有“最小连接入口”
+- 但还没有“完整聊天产品能力”
 
-- 都表示尚未完成连接配置
-- 都不应该包裹 CopilotKit Provider
-- 聊天区域会显示“尚未连接后端智能体”相关提示
+### 为什么设置页里的很多内容现在不能当后端配置事实
 
-对应展示逻辑位于 [`renderCopilotPanelContent()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:65)。
+当前设置页里确实已经有很多看起来像正式配置的内容，比如：
 
-### `error`
+- 模型服务商
+- 默认模型
+- 网络搜索
+- MCP 服务器
+- API 服务器
+- 健康检查轮询
+- 重连策略
 
-`error` 表示配置读取链路本身发生异常，例如 renderer 无法正常拿到 Electron 暴露的设置读取结果。
+但根据当前代码，这些内容大多仍然只是：
 
-这一状态的关键含义是：
+- 前端本地 state
+- 页面交互演示
+- 未来配置方向的界面占位
 
-- 它不等于“还没填配置”
-- 它表示读取路径可能存在故障
-- 处理优先级应高于“提醒用户去填写连接信息”
+这意味着它们现在大多不能写成：
 
-当前聊天面板已明确把“读取失败”与“未连接”区分开，见 [`CopilotChatPanel()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:91)。
+- 已经持久化
+- 已经参与启动判断
+- 已经形成前后端联调契约
+- 已经具备稳定的 HTTP 语义
 
-### `loading`
+尤其是 `API 服务器` 分区，虽然页面上已经出现“后端地址”“重连策略”“健康检查轮询”等字段，但当前仍应视为前端占位，不要写成已生效能力。
 
-`loading` 只出现在启动读取过程中，用于表示配置状态尚未确定。相关定义见 [`CopilotBootstrapState`](../../frontend-copilot/src/CopilotAppRoot.tsx:8) 与 [`CopilotPanelState`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:8)。
+### 现阶段联调时，最稳妥的理解方式
 
-它不表示连接成功，也不表示连接失败，而是前置加载阶段。
+如果现在要讨论前后端联调，最稳妥的方式是把范围收得很小。
 
-## 五、“未连接”与“读取异常”的区别
+也就是只先确认下面这些事实：
 
-这是当前联调文档中必须明确的一条边界。
+- 前端当前只明确依赖 `runtimeUrl` 和 `agentName`
+- 这两个值来自 Electron 本地配置
+- 只有在状态为 `ready` 时，它们才会进入启动链路
+- 其他设置页字段当前大多不应提前算入联调范围
 
-| 场景 | 实际含义 | 应如何理解 |
-| --- | --- | --- |
-| `empty` / `incomplete` | 用户尚未完成最小连接配置 | 属于“未连接后端智能体” |
-| `error` | 配置读取过程本身出错 | 属于“读取链路异常”，不应当被当作未配置 |
+这样做的好处是：
 
-这一区分非常重要，因为它决定了后续问题排查方向：
+- 不会把前端展示字段误当成真实接口要求
+- 不会在文档里虚构后端 HTTP 细节
+- 能把当前事实、前端占位和未来讨论明确分开
 
-- 如果是 `empty` / `incomplete`，应先检查配置是否填写完整
-- 如果是 `error`，应优先检查 Electron / preload / renderer 的设置读取链路
+## 高频事实放到哪里查
 
-## 六、当前前端对后端的最低预期
+这篇文档主要负责讲白话版现状，不把所有表格都塞在正文里。高频事实建议按下面的方式查：
 
-在不虚构接口细节的前提下，当前前端对后端仅能提出如下最低预期：
+| 你要查什么 | 去哪里看 |
+| --- | --- |
+| 当前真正生效的字段 | [reference-current-fields.md](./reference-current-fields.md) |
+| `loading` / `empty` / `incomplete` / `ready` / `error` 的区别 | [reference-runtime-states.md](./reference-runtime-states.md) |
+| 五个工作区当前是否接后端 | [reference-page-capabilities.md](./reference-page-capabilities.md) |
+| 未来可能需要讨论哪些接口主题 | [future-backend-api-draft.md](./future-backend-api-draft.md) |
 
-### 1. 运行时端点可被访问
+## 当前边界 / 不要误解的地方
 
-前端需要一个能被 [`runtimeUrl`](../../frontend-copilot/src/CopilotAppRoot.tsx:51) 指向的可访问运行时端点。
+- 当前文档不能补写固定 HTTP 路径、请求体、响应体或认证流程，因为这些内容并没有在当前前端代码里形成已生效事实。
+- `ready` 的意思是“最小连接条件齐了”，不是“完整聊天体验已经完成”。
+- 设置页里出现的很多配置项，当前仍然只是前端界面和本地交互，不等于已经参与后端连接。
+- `error` 不是“还没配”，而是“读取配置这条链路本身出了问题”。
+- [future-backend-api-draft.md](./future-backend-api-draft.md) 只能当未来讨论草案，不能反向当作当前联调依据。
 
-当前文档只能确认“前端会把该值交给 CopilotKit”，但**不能**进一步写成：
+## 继续阅读
 
-- 一定使用某个固定 HTTP 路径
-- 一定使用某种固定请求体结构
-- 一定存在某种认证头或令牌字段
-
-因为这些细节并未在当前前端代码中形成可验证契约。
-
-### 2. 智能体名称可被匹配
-
-前端需要一个与 [`agentName`](../../frontend-copilot/src/CopilotAppRoot.tsx:51) 对应的智能体名称。
-
-当前文档只能确认前端会把该值传给 CopilotKit 的 `agent` 参数，不能进一步推导：
-
-- 后端的智能体注册格式
-- 智能体枚举接口
-- 智能体元数据 schema
-- 智能体发现机制
-
-### 3. 只以最小连接字段为当前联调基础
-
-当前进行前后端联调时，最稳妥的方式应是：
-
-- 只围绕 [`runtimeUrl`](../../frontend-copilot/electron/copilot-settings.ts:5) 与 [`agentName`](../../frontend-copilot/electron/copilot-settings.ts:6) 这两个字段建立最小闭环
-- 不把设置页中其他展示项提前当作必须实现的后端契约
-
-## 七、哪些设置项目前不能视为后端契约
-
-虽然设置页中已经展示了大量字段与分区，但根据当前实现，下列内容大多仍属于前端展示 / 交互占位：
-
-- “API 服务器”分区中的地址、健康检查、自动重连相关设置
-- “模型服务”分区中的服务商、协议、端点、密钥、默认模型等字段
-- “默认模型”分区中的任务模型路由
-- “网络搜索”“全局记忆”“MCP 服务器”“文档处理”等分区中的表单项
-
-这些内容当前的准确定位应为：
-
-- 界面上已有交互形态
-- 多数仍由本地 React state 驱动
-- 尚未形成 Electron 持久化闭环
-- 尚未形成前端真实消费的后端连接契约
-
-因此，文档中**不能**把这些字段写成：
-
-- 已经被前端读取并生效
-- 已经被后端接口正式消费
-- 已经完成认证、模型切换或服务健康检查
-
-## 八、当前契约边界的推荐表述方式
-
-为了避免文档失真，建议在项目文档、接口讨论和联调说明中统一采用以下表述原则：
-
-### 可以这样写
-
-- 当前前端真正生效的连接字段只有 [`runtimeUrl`](../../frontend-copilot/electron/copilot-settings.ts:5) 与 [`agentName`](../../frontend-copilot/electron/copilot-settings.ts:6)
-- 当状态为 `ready` 时，这两个值会传给 [`CopilotKit`](../../frontend-copilot/src/CopilotAppRoot.tsx:51)
-- 当前聊天区域仍以状态说明与占位面板为主
-- 设置页中大量字段目前仍是展示性或交互性占位
-
-### 不应这样写
-
-- 前端已经支持完整 API 服务器配置契约
-- 前端已经接入模型服务商管理并正式生效
-- 前端已经定义了后端 HTTP 请求 / 响应 schema
-- 前端已经支持健康检查、认证流程或自动重连闭环
-
-## 九、小结
-
-当前前端与后端连接的最小、明确、已生效契约只有两项：
-
-- [`runtimeUrl`](../../frontend-copilot/electron/copilot-settings.ts:5)
-- [`agentName`](../../frontend-copilot/electron/copilot-settings.ts:6)
-
-它们通过 Electron 本地持久化、preload 桥接、renderer 配置解析以及 [`CopilotKit`](../../frontend-copilot/src/CopilotAppRoot.tsx:51) 条件包裹逻辑进入启动链路。
-
-与此同时，必须明确区分：
-
-- `empty` / `incomplete`：未完成连接配置
-- `error`：读取链路异常
-- `loading`：启动加载阶段
-
-除上述最小契约外，设置页中的大多数字段目前仍应视为前端占位或未来计划，不能写成已经成立的前后端接口规范。
+- 先查当前字段：[reference-current-fields.md](./reference-current-fields.md)
+- 先查运行态：[reference-runtime-states.md](./reference-runtime-states.md)
+- 看界面里哪些是占位：[ui-current-state.md](./ui-current-state.md)
+- 看已实现 / 占位 / 下一步：[roadmap-and-placeholders.md](./roadmap-and-placeholders.md)

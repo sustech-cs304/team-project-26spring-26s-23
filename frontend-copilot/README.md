@@ -1,199 +1,112 @@
-# Frontend Copilot 前端说明
+# Frontend Copilot 快速上手
 
-## 项目定位
+## 这是什么
 
-[frontend-copilot](./) 是本项目当前的桌面前端实验实现，目标是提供一个以智能体协作体验为核心的桌面界面。当前实现由 Electron 桌面壳层与 React 渲染层组成，已经具备：
+[frontend-copilot](./) 是这个仓库里当前的桌面前端实验实现。它的目标不是先把所有业务做完，而是先把“桌面应用壳 + 多工作区界面 + Copilot 最小接入链路”搭起来，方便后续继续接真实聊天、真实配置和真实后端能力。
 
-- 桌面应用启动与打包基础能力
-- 多工作区 UI 骨架
-- Copilot 连接配置的读取与保存底层链路
-- 基于配置状态的 Copilot Provider 条件包裹逻辑
+可以把它先理解成：
 
-同时需要明确：当前前端仍处于“基础框架已搭建、真实业务能力逐步接入”的阶段。部分界面已经可以交互，但许多设置项和工作区内容仍以占位实现为主，不应视为已经完成的产品能力。
+- 一个用 Electron 包起来的桌面前端
+- 一个用 React 写的工作台界面
+- 一个已经能读取本地 Copilot 配置、并据此决定是否初始化 Copilot 外层能力的前端骨架
 
-## 技术栈
+## 先看结论
 
-当前前端代码基于以下技术栈构建：
+- 这是一个 **Electron + React + TypeScript + Vite** 的桌面前端，不是单纯的网页原型。
+- 当前最明确、最能依赖的前端事实，是 **只存在两个真正生效的 Copilot 配置字段：`runtimeUrl` 和 `agentName`**。
+- 应用启动时会先读取本地配置；只有这两个字段都齐了，前端才会把它们传给 Copilot 外层能力。
+- 现在最完整的界面是工作区结构、助手切换、会话列表骨架和设置页外观；**真实聊天 UI 还没有接上**。
+- 设置页里很多字段虽然能点、能改、能切换，但大多数还只是前端本地交互，**不能当成已经生效的配置能力**。
 
-- 渲染层：React、React DOM、TypeScript、Vite
-- 桌面壳层：Electron
-- Electron / Vite 集成：通过 Vite 插件接入主进程与 preload
-- Copilot 接入：CopilotKit（当前实际使用 `@copilotkit/react-core`）
-- 图标库：`lucide-react`
+## 怎么安装
 
-## 目录结构
-
-```text
-frontend-copilot/
-├─ electron/                  # Electron 主进程与 preload 代码
-├─ public/                    # 静态资源
-├─ src/                       # Renderer 代码
-│  ├─ features/copilot/       # Copilot 相关功能与设置封装
-│  ├─ App.tsx                 # 主界面
-│  ├─ CopilotAppRoot.tsx      # 启动配置读取与 Provider 条件包裹
-│  └─ main.tsx                # Renderer 入口
-├─ electron-builder.json5     # Electron 打包配置
-├─ package.json               # 脚本与依赖声明
-└─ README.md                  # 当前文档
-```
-
-其中，Renderer 的入口链路为：
-
-`src/main.tsx` → `src/CopilotAppRoot.tsx` → `src/App.tsx`
-
-Copilot 相关实现集中在 `src/features/copilot/` 目录下。
-
-## 安装依赖
-
-在仓库根目录下执行：
+在仓库根目录执行：
 
 ```bash
 cd frontend-copilot
 npm install
 ```
 
-## 启动开发环境
+## 怎么启动开发环境
 
-### 联合开发模式
-
-执行：
+在 `frontend-copilot` 目录执行：
 
 ```bash
 npm run dev
 ```
 
-该命令会启动 Electron 与 renderer 的联合开发流程，用于本地桌面前端调试。
+这个项目使用 Electron 和 Vite 的集成开发方式。当前 `dev` 脚本会走 Vite 开发流程，并由现有插件配置带起桌面端开发链路。
 
-### 预览构建产物
+## 怎么预览构建后的前端页面
 
-执行：
+在 `frontend-copilot` 目录执行：
 
 ```bash
 npm run preview
 ```
 
-该命令用于预览 Vite 构建产物，适合单独验证 renderer 构建结果。
+这个命令更适合单独确认 renderer（也就是 React 界面层）的构建结果。
 
-## 代码检查与构建
+## 怎么构建桌面应用
 
-### Lint
-
-执行：
-
-```bash
-npm run lint
-```
-
-该命令运行 ESLint 检查当前前端代码。
-
-### 构建与打包
-
-执行：
+在 `frontend-copilot` 目录执行：
 
 ```bash
 npm run build
 ```
 
-当前构建流程包含：
+当前构建流程会顺序执行：
 
-1. 类型检查
+1. TypeScript 类型检查
 2. Vite 构建 renderer
 3. Electron 打包
 
-Electron 打包相关配置位于 `electron-builder.json5`。
+## 怎么做代码检查
 
-## 当前配置方式
+在 `frontend-copilot` 目录执行：
 
-### 已生效的配置链路
+```bash
+npm run lint
+```
 
-当前真正接入 Electron 持久化并对 Copilot 启动链路生效的字段只有两个：
+## 现在做到哪一步了
 
-- `runtimeUrl`
-- `agentName`
+### 当前已经能确认的代码事实
 
-这些配置会保存在 Electron `userData` 目录下的 `copilot-settings.json` 文件中。
+- 已经有 Electron 桌面壳，可以作为桌面应用启动和打包的基础。
+- 已经有稳定的前端启动链路：`src/main.tsx` → `src/CopilotAppRoot.tsx` → `src/App.tsx`。
+- 已经有左侧工作区导航，当前工作区包括：`assistant`、`capabilities`、`files`、`developer`、`settings`。
+- `assistant` 工作区已经有三段式骨架：助手类型列、话题列、右侧主内容区。
+- 应用启动时会先读取本地 Copilot 配置；只有 `runtimeUrl` 和 `agentName` 都完整时，才会把这两个值传给 Copilot 外层能力。
+- 这两个字段保存在 Electron `userData` 目录下的 `copilot-settings.json` 文件里。
+- 前端已经能区分 `loading`、`empty`、`incomplete`、`ready`、`error` 这些运行态，并在聊天面板里给出不同提示。
 
-Electron preload 会向 renderer 暴露以下桥接方法：
+### 当前只是前端交互、占位或骨架的部分
 
-- `window.copilotSettings.load()`
-- `window.copilotSettings.save()`
+- 右侧聊天区现在还是“状态说明面板 + 占位文案”，不是完整聊天窗口。
+- 会话列表、助手类型、能力中心、文件工作区、开发工作区，当前主要使用前端本地静态数据。
+- 设置页里大部分内容——比如模型服务、默认模型、网络搜索、全局记忆、API 服务器——目前主要由 React 本地 state 驱动。
+- 设置页虽然出现了“测试连接”“保存配置”等按钮，但当前代码并没有把这些设置正式接成可依赖的后端配置能力。
+- 当前前端里虽然存在 Copilot 设置的底层读写封装，但**现有设置界面并没有提供 `runtimeUrl` 和 `agentName` 的正式编辑入口**。
 
-Renderer 侧通过 `src/features/copilot/settings.ts` 调用上述桥接 API。
+## 不要误解的地方
 
-### 配置读取与生效时机
+- `ready` 的意思只是“前端最小配置条件齐了”，**不是**“真实聊天能力已经做完了”。
+- 设置页里看到的字段很多，**不等于**这些字段已经被保存、已经接到后端、或者已经形成接口规范。
+- 当前文档只会写代码里能确认的事实，不会补写还不存在的 HTTP 路径、请求体、响应体或认证流程。
 
-应用启动时，`src/CopilotAppRoot.tsx` 会先读取 Copilot 配置，并根据配置状态决定是否包裹 CopilotKit Provider。
+## 如果你刚接手前端，推荐这样继续看
 
-只有当配置状态为 `ready` 时，前端才会把已保存的连接信息传入 CopilotKit。当前真正参与连接的字段仍只有：
+### 先顺着读
 
-- `runtimeUrl`
-- `agentName`
+1. [../docs/frontend/README.md](../docs/frontend/README.md)：前端文档总入口，先建立阅读地图。
+2. [../docs/frontend/ui-current-state.md](../docs/frontend/ui-current-state.md)：看懂界面现在到底长什么样、哪些区域能交互。
+3. [../docs/frontend/backend-connection-contract.md](../docs/frontend/backend-connection-contract.md)：看懂前端现在到底怎样连接后端。
+4. [../docs/frontend/roadmap-and-placeholders.md](../docs/frontend/roadmap-and-placeholders.md)：看懂哪些已实现，哪些还是占位，下一步通常先补哪一块。
 
-### 状态语义
+### 需要查表时再看
 
-当前配置状态语义包括：
-
-- `empty`：尚未配置
-- `incomplete`：配置未完成
-- `ready`：配置完整，可用于包裹 Copilot Provider
-- `error`：配置读取链路发生异常
-
-此外，聊天区域在启动期还会出现 `loading` 状态，用于表示配置加载过程中。
-
-需要特别区分：
-
-- `empty` / `incomplete` 表示“未完成连接配置”
-- `error` 表示“读取配置发生异常”，并不等同于未配置
-
-## 当前实现边界
-
-### 已实现部分
-
-当前可以确认已经实现的内容包括：
-
-- Electron 桌面壳层
-- Copilot Provider 条件包裹逻辑
-- Copilot 设置的底层读取 / 保存链路
-- 工作区级别的 UI 架构
-- 设置页基础交互
-
-### 尚未完成或仍为占位的部分
-
-当前仍应视为占位、演示或计划中的内容包括：
-
-- 真实聊天 UI
-- 设置页大部分字段与 Electron 持久化的正式接通
-- 后端健康检查
-- capabilities / files / developer 工作区的真实数据能力
-- “API 服务器”“模型服务商”等多数设置项的真实业务契约
-
-尤其需要注意：虽然设置页中已经存在多个开关、下拉、输入框和服务商列表，但其中大多数仍然只是前端本地 React state 交互，并未构成已经生效的后端连接契约。
-
-## 与后端连接的当前事实
-
-当前前端对后端的“已生效依赖”非常有限，仅能确认以下最低要求：
-
-- 需要一个可被 `runtimeUrl` 指向的可访问运行时端点
-- 需要一个可与 `agentName` 对应的智能体名称
-
-在配置状态为 `ready` 时，这两个值会传给 CopilotKit 相关运行时配置。
-
-除此之外，文档不应把任何 HTTP 接口细节、请求 / 响应结构、认证流程写成既成事实，因为这些内容并未在当前前端代码中形成已生效契约。
-
-## 文档索引
-
-更细分的前端文档位于 [../docs/frontend/README.md](../docs/frontend/README.md)：
-
-- [../docs/frontend/ui-current-state.md](../docs/frontend/ui-current-state.md)：当前界面结构、工作区布局与设置页现状
-- [../docs/frontend/roadmap-and-placeholders.md](../docs/frontend/roadmap-and-placeholders.md)：当前已实现能力、占位部分与后续计划边界
-- [../docs/frontend/backend-connection-contract.md](../docs/frontend/backend-connection-contract.md)：当前后端连接契约、配置状态语义与对接边界
-
-## 适用阅读顺序
-
-建议按以下顺序阅读：
-
-1. 先阅读当前文档，了解项目定位、启动方式与实现边界
-2. 再阅读前端文档索引页，快速定位专题文档
-3. 需要了解界面现状时，阅读 UI 现状说明
-4. 需要讨论后端对接时，优先阅读后端连接契约说明
-5. 需要规划下一步开发时，参考路线图与占位说明
+- [../docs/frontend/reference-current-fields.md](../docs/frontend/reference-current-fields.md)：查当前真正生效的字段。
+- [../docs/frontend/reference-runtime-states.md](../docs/frontend/reference-runtime-states.md)：查 `loading` / `empty` / `incomplete` / `ready` / `error` 的含义。
+- [../docs/frontend/reference-page-capabilities.md](../docs/frontend/reference-page-capabilities.md)：查各工作区当前的数据来源、交互程度和接通情况。
+- [../docs/frontend/future-backend-api-draft.md](../docs/frontend/future-backend-api-draft.md)：看未来可能需要讨论的后端接口主题，但这份是草案，不是当前实现。
