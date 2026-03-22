@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.teaching_information_system.api.dto import (
@@ -111,8 +111,12 @@ class TISDatabaseManager:
                 "credit_gpa_years": TISCreditGPAYearModel,
                 "selected_courses": TISSelectedCourse,
             }.items():
-                total = len(session.execute(select(model)).scalars().all())
-                active = len(session.execute(select(model).where(model.is_deleted.is_(False))).scalars().all())
+                total = session.execute(select(func.count()).select_from(model)).scalar_one()
+                active = (
+                    session.execute(
+                        select(func.count()).select_from(model).where(model.is_deleted.is_(False))
+                    ).scalar_one()
+                )
                 result[name] = {"total": total, "active": active}
         return result
 
