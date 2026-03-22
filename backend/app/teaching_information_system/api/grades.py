@@ -398,7 +398,6 @@ def probe_grade_candidates(
 
 
 __all__ = [
-    "analyze_homepage_html",
     "build_grade_candidate_urls",
     "extract_grade_records_from_html",
     "extract_grade_records_from_json",

@@ -19,6 +19,9 @@ dependencies = [
 test = [
     "pytest>=9.0.2",
 ]
+dev = [
+    "pyright>=1.1.396",
+]
 
 [build-system]
 requires = ["hatchling"]
