@@ -41,8 +41,10 @@ let win: BrowserWindow | null
 const COPILOT_SETTINGS_FILE_NAME = 'copilot-settings.json'
 
 function createWindow() {
+  const windowIconFileName = process.platform === 'win32' ? 'candue_icon.ico' : 'candue_icon.svg'
+
   win = new BrowserWindow({
-    icon: path.join(VITE_PUBLIC, 'electron-vite.svg'),
+    icon: path.join(VITE_PUBLIC, windowIconFileName),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
