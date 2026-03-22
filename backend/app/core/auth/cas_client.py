@@ -1,5 +1,5 @@
 """SUSTech CAS认证客户端"""
-from typing import Any, Optional
+from typing import Optional
 
 import httpx
 
