@@ -6,6 +6,7 @@ import httpx
 
 from app.teaching_information_system.api.client import TISClient
 from app.teaching_information_system.api.dto import TISServiceConfig
+from app.teaching_information_system.api.fetch_helpers import _extract_response_auth_markers, _is_authenticated_tis_response
 
 
 def _html_response(url: str, *, headers: dict[str, str] | None = None) -> httpx.Response:
@@ -79,3 +80,19 @@ def test_warmup_auth_main_uses_configured_entry_url_as_referer() -> None:
 
     assert summary["authenticated"] is True
     assert request_headers["TIS-Auth-Main"]["Referer"] == config.entry_url
+
+
+
+def test_extract_response_auth_markers_uses_configured_base_url_for_root_homepage() -> None:
+    response = _html_response("https://tis.example.edu.cn/")
+
+    markers = _extract_response_auth_markers(response, base_url="https://tis.example.edu.cn")
+
+    assert markers["is_root_homepage"] is True
+
+
+
+def test_is_authenticated_tis_response_rejects_root_homepage_for_configured_base_url() -> None:
+    response = _html_response("https://tis.example.edu.cn/")
+
+    assert _is_authenticated_tis_response(response, base_url="https://tis.example.edu.cn") is False

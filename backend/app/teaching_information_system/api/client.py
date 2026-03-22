@@ -73,7 +73,7 @@ class TISClient:
         warmup_summary = self._warmup_authenticated_context()
         self.pylx = _clean_text(warmup_summary.get("derived_pylx")) or None
         verify_response = cast(httpx.Response, warmup_summary["verify_response"])
-        verify_markers = _extract_response_auth_markers(verify_response)
+        verify_markers = _extract_response_auth_markers(verify_response, base_url=self.config.base_url)
         verify_chain = _response_chain_urls(verify_response)
         authenticated = bool(warmup_summary["authenticated"])
         if self.logger is not None:
@@ -102,7 +102,7 @@ class TISClient:
 
         def _capture_step(label: str, response: httpx.Response) -> tuple[httpx.Response, Any | None]:
             payload = _safe_parse_json_response(response)
-            markers = _extract_response_auth_markers(response)
+            markers = _extract_response_auth_markers(response, base_url=self.config.base_url)
             redirect_chain = _response_chain_urls(response)
             payload_keys = sorted(str(key) for key in payload.keys())[:20] if isinstance(payload, dict) else []
             steps.append({"label": label, "status_code": int(response.status_code), "url": str(response.url), "redirect_chain": redirect_chain})
@@ -183,7 +183,7 @@ class TISClient:
         grade_modules = get_mknode_payload.get("002") if isinstance(get_mknode_payload, dict) else None
         available_grade_menu_count = len(grade_modules) if isinstance(grade_modules, list) else None
         authenticated = all(
-            _is_authenticated_tis_response(response)
+            _is_authenticated_tis_response(response, base_url=self.config.base_url)
             for response in (auth_main_response, student_index_response, user_me_response, queryxsxx_response, get_mknode_response)
         ) and all(
             int(response.status_code) < 400

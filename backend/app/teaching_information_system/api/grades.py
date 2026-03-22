@@ -281,7 +281,7 @@ def probe_grade_candidates(
         preview = _clean_text(response.text, max_length=500)
         json_debug_payload: dict[str, Any] | None = None
         redirect_chain = _response_chain_urls(response)
-        auth_markers = _extract_response_auth_markers(response)
+        auth_markers = _extract_response_auth_markers(response, base_url=tis_client.config.base_url)
 
         if is_json:
             try:

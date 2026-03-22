@@ -98,7 +98,7 @@ def fetch_selected_courses_with_credentials(
             },
         )
         page_response.raise_for_status()
-        if not _is_authenticated_tis_response(page_response):
+        if not _is_authenticated_tis_response(page_response, base_url=service_config.base_url):
             raise RuntimeError("TIS 我要选课页面返回了未认证内容")
 
         current_term_request_payload = _build_selected_courses_base_payload(pylx=resolved_pylx, selected_credit_flag="0")
@@ -115,7 +115,7 @@ def fetch_selected_courses_with_credentials(
             },
         )
         current_term_response.raise_for_status()
-        if not _is_authenticated_tis_response(current_term_response):
+        if not _is_authenticated_tis_response(current_term_response, base_url=service_config.base_url):
             raise RuntimeError("TIS 当前选课学期接口返回了未认证内容")
 
         current_term_payload = _safe_parse_json_response(current_term_response)
@@ -155,7 +155,7 @@ def fetch_selected_courses_with_credentials(
             },
         )
         api_response.raise_for_status()
-        if not _is_authenticated_tis_response(api_response):
+        if not _is_authenticated_tis_response(api_response, base_url=service_config.base_url):
             raise RuntimeError("TIS 已选课程明细接口返回了未认证内容")
 
         payload = _safe_parse_json_response(api_response)
