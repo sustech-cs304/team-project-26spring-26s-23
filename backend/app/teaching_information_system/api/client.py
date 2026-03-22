@@ -11,7 +11,6 @@ from app.core.auth.cas_client import CASClient
 
 from ..shared import TISLogger, _clean_text
 from .constants import (
-    _DEFAULT_TIS_CAS_ENTRY_PATH,
     _DEFAULT_TIS_ENTRY_PATH,
     _DEFAULT_TIS_HOME_PATH,
     _DEFAULT_TIS_QUERYXSXX_PATH,
@@ -128,7 +127,7 @@ class TISClient:
                 auth_main_url,
                 headers={
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Referer": urljoin(self.config.base_url, _DEFAULT_TIS_CAS_ENTRY_PATH),
+                    "Referer": self.config.entry_url,
                 },
                 label="TIS-Auth-Main",
             ),
