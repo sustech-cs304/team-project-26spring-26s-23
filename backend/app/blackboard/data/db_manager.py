@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from app.blackboard.shared.logging import BlackboardLogger
 
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.blackboard.data.course_matcher import resolve_course_id_by_course_name as data_resolve_course_id_by_course_name
@@ -282,7 +282,11 @@ class DatabaseManager:
                 "calendar_subscriptions": CalendarSubscription,
                 "calendar_events": CalendarEvent,
             }.items():
-                total = len(session.execute(select(model)).scalars().all())
-                active = len(session.execute(select(model).where(model.is_deleted.is_(False))).scalars().all())
+                total = session.execute(select(func.count()).select_from(model)).scalar_one()
+                active = (
+                    session.execute(
+                        select(func.count()).select_from(model).where(model.is_deleted.is_(False))
+                    ).scalar_one()
+                )
                 result[name] = {"total": total, "active": active}
         return result

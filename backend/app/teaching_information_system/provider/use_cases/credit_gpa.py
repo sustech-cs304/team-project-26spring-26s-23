@@ -86,7 +86,7 @@ def fetch_credit_gpa_with_credentials(
             },
         )
         page_response.raise_for_status()
-        if not _is_authenticated_tis_response(page_response):
+        if not _is_authenticated_tis_response(page_response, base_url=service_config.base_url):
             raise RuntimeError("TIS 学分绩查询页面返回了未认证内容")
 
         logger.info("▶ 请求 TIS 学分绩查询数据接口", payload={"api_url": api_url})
@@ -100,7 +100,7 @@ def fetch_credit_gpa_with_credentials(
             },
         )
         api_response.raise_for_status()
-        if not _is_authenticated_tis_response(api_response):
+        if not _is_authenticated_tis_response(api_response, base_url=service_config.base_url):
             raise RuntimeError("TIS 学分绩查询接口返回了未认证内容")
 
         payload = _safe_parse_json_response(api_response)

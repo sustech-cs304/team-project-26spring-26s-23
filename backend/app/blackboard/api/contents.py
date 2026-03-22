@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -18,6 +19,12 @@ from .scrape_support import (
     is_valid_resource,
     stable_resource_id,
 )
+
+
+RESOURCE_FILE_SUFFIX_RE = re.compile(
+    r"\.(pdf|doc|docx|ppt|pptx|xls|xlsx|zip|rar|7z|mp4|mp3|txt|csv|jpg|png)$"
+)
+RESOURCE_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)", re.IGNORECASE)
 
 
 class BlackboardContentAPI:
@@ -310,12 +317,7 @@ class BlackboardContentAPI:
         lower_path = parsed.path.lower()
 
         is_download_like = any(token in lower_url for token in ("/bbcswebdav/", "download", "xid=", "attachment"))
-        is_download_like = is_download_like or bool(
-            __import__("re").search(
-                r"\.(pdf|doc|docx|ppt|pptx|xls|xlsx|zip|rar|7z|mp4|mp3|txt|csv|jpg|png)$",
-                lower_path,
-            )
-        )
+        is_download_like = is_download_like or bool(RESOURCE_FILE_SUFFIX_RE.search(lower_path))
 
         if "listcontent.jsp" in lower_path and "download" not in lower_url:
             return None
@@ -333,7 +335,7 @@ class BlackboardContentAPI:
 
         size = ""
         parent_text = link.parent.get_text(" ", strip=True) if link.parent else ""
-        size_match = __import__("re").search(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)", parent_text, __import__("re").IGNORECASE)
+        size_match = RESOURCE_SIZE_RE.search(parent_text)
         if size_match:
             size = f"{size_match.group(1)} {size_match.group(2).upper()}"
 

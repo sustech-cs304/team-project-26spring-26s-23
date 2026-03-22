@@ -22,7 +22,7 @@ def _jsonable(value: Any) -> Any:
 
 
 def _clean_text(value: Any, *, max_length: int | None = None) -> str:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    text = re.sub(r"\s+", " ", "" if value is None else str(value)).strip()
     if max_length is not None and len(text) > max_length:
         return text[:max_length].rstrip()
     return text

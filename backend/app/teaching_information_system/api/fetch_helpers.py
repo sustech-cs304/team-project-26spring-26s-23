@@ -41,15 +41,20 @@ def _summarize_cookie_names(cookies: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def _extract_response_auth_markers(response: httpx.Response) -> dict[str, Any]:
+def _extract_response_auth_markers(
+    response: httpx.Response,
+    *,
+    base_url: str = _DEFAULT_TIS_BASE_URL,
+) -> dict[str, Any]:
     body = response.text or ""
     lowered = body.lower()
     final_url = str(response.url)
     parsed_url = urlparse(final_url)
+    parsed_base_url = urlparse(str(base_url or _DEFAULT_TIS_BASE_URL))
     title_match = re.search(r"<title[^>]*>(.*?)</title>", body, flags=re.IGNORECASE | re.DOTALL)
     title = _clean_text(title_match.group(1)) if title_match else ""
     is_root_homepage = (
-        parsed_url.netloc == urlparse(_DEFAULT_TIS_BASE_URL).netloc
+        parsed_url.netloc == parsed_base_url.netloc
         and parsed_url.path in ("", "/")
         and "教学管理与服务平台" in body
     )
@@ -112,11 +117,16 @@ def _extract_pylx_from_payload(payload: Any) -> str | None:
     return None
 
 
-def _is_authenticated_tis_response(response: httpx.Response) -> bool:
-    markers = _extract_response_auth_markers(response)
+def _is_authenticated_tis_response(
+    response: httpx.Response,
+    *,
+    base_url: str = _DEFAULT_TIS_BASE_URL,
+) -> bool:
+    markers = _extract_response_auth_markers(response, base_url=base_url)
     chain = _response_chain_urls(response)
     return not (
-        markers["is_cas_login"]
+        markers["is_root_homepage"]
+        or markers["is_cas_login"]
         or markers["has_login_form"]
         or any("/authentication/require" in item for item in chain)
         or any("/session/invalid" in item for item in chain)

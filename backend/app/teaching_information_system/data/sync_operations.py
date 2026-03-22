@@ -40,7 +40,6 @@ def _raw_json(value: dict[str, Any]) -> str:
 def _sync_by_key(
     session: Session,
     *,
-    owner_key: str,
     existing_stmt: Select[tuple[ModelT]],
     incoming: list[tuple[str, dict[str, Any]]],
     existing_key: Callable[[ModelT], str],
@@ -108,7 +107,6 @@ def sync_personal_grades(session: Session, owner_key: str, grade_records: list[T
 
     return _sync_by_key(
         session,
-        owner_key=normalized_owner,
         existing_stmt=select(TISPersonalGrade).where(TISPersonalGrade.owner_key == normalized_owner),
         incoming=incoming,
         existing_key=lambda row: f"{row.owner_key}|{row.course_name}|{row.course_code or ''}|{row.term or ''}",
@@ -127,7 +125,6 @@ def sync_credit_gpa(
 
     summary_stats = _sync_by_key(
         session,
-        owner_key=normalized_owner,
         existing_stmt=select(TISCreditGPASummaryModel).where(TISCreditGPASummaryModel.owner_key == normalized_owner),
         incoming=[
             (
@@ -146,7 +143,6 @@ def sync_credit_gpa(
 
     term_stats = _sync_by_key(
         session,
-        owner_key=normalized_owner,
         existing_stmt=select(TISCreditGPATermModel).where(TISCreditGPATermModel.owner_key == normalized_owner),
         incoming=[
             (
@@ -169,7 +165,6 @@ def sync_credit_gpa(
 
     year_stats = _sync_by_key(
         session,
-        owner_key=normalized_owner,
         existing_stmt=select(TISCreditGPAYearModel).where(TISCreditGPAYearModel.owner_key == normalized_owner),
         incoming=[
             (
@@ -228,7 +223,6 @@ def sync_selected_courses(
 
     return _sync_by_key(
         session,
-        owner_key=normalized_owner,
         existing_stmt=select(TISSelectedCourse).where(
             TISSelectedCourse.owner_key == normalized_owner,
             TISSelectedCourse.semester_id == normalized_semester,
