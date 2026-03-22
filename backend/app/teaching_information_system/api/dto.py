@@ -7,7 +7,12 @@ from typing import Any
 from urllib.parse import urljoin
 
 from ..shared import TISLogEvent, _jsonable
-from .constants import _DEFAULT_GRADE_PATH_CANDIDATES, _DEFAULT_TIS_BASE_URL, _DEFAULT_TIS_ENTRY_PATH
+from .constants import (
+    _DEFAULT_GRADE_PATH_CANDIDATES,
+    _DEFAULT_TIS_BASE_URL,
+    _DEFAULT_TIS_CAS_ENTRY_PATH,
+    _DEFAULT_TIS_HOME_PATH,
+)
 
 
 @dataclass(slots=True)
@@ -194,8 +199,8 @@ class TISSelectedCoursesQueryResult(TISDTO):
 @dataclass(slots=True)
 class TISServiceConfig(TISDTO):
     base_url: str = _DEFAULT_TIS_BASE_URL
-    entry_path: str = _DEFAULT_TIS_ENTRY_PATH
-    homepage_path: str = _DEFAULT_TIS_ENTRY_PATH
+    entry_path: str = _DEFAULT_TIS_CAS_ENTRY_PATH
+    homepage_path: str = _DEFAULT_TIS_HOME_PATH
     grade_path_candidates: tuple[str, ...] = _DEFAULT_GRADE_PATH_CANDIDATES
 
     @property

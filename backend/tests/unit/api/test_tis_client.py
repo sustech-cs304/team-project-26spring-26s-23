@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from app.teaching_information_system.api.client import TISClient
-from app.teaching_information_system.api.dto import TISServiceConfig
+from app.teaching_information_system.api.dto import DEFAULT_TIS_SERVICE_CONFIG, TISServiceConfig
 from app.teaching_information_system.api.fetch_helpers import _extract_response_auth_markers, _is_authenticated_tis_response
 
 
@@ -96,3 +96,9 @@ def test_is_authenticated_tis_response_rejects_root_homepage_for_configured_base
     response = _html_response("https://tis.example.edu.cn/")
 
     assert _is_authenticated_tis_response(response, base_url="https://tis.example.edu.cn") is False
+
+
+
+def test_service_config_defaults_match_cas_entry_and_student_homepage() -> None:
+    assert DEFAULT_TIS_SERVICE_CONFIG.entry_url == "https://tis.sustech.edu.cn/cas"
+    assert DEFAULT_TIS_SERVICE_CONFIG.homepage_url == "https://tis.sustech.edu.cn/student_index"
