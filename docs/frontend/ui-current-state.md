@@ -98,7 +98,7 @@
 
 ### 右列：聊天区域现在还是状态面板
 
-右侧主内容区挂的是 [CopilotChatPanel()](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:18)。
+右侧主内容区挂的是 [CopilotChatPanel()](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L18)。
 
 这里最容易被误解，所以先直接说结论：**当前不是完整聊天窗口，而是一个根据配置状态切换内容的说明面板。**
 
