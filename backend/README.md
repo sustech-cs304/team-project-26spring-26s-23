@@ -27,6 +27,15 @@ This is the backend of our project. It is built using Python.
 
 ...
 
+## 🧰 Blackboard CLI
+
+run at `backend/`:
+
+```bash
+python -m app.blackboard.provider.cli.search_course_catalog --help
+python -m app.blackboard.provider.cli.sync_calendar_ics --help
+```
+
 ## 💯 Run Tests
 
 ...
