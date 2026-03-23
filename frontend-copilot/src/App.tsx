@@ -38,6 +38,7 @@ type SettingsSection =
   | 'memory'
   | 'api'
   | 'docs'
+type ThemeMode = 'light' | 'dark'
 
 type SelectOption = {
   value: string
@@ -313,7 +314,6 @@ const proxyModeOptions: SelectOption[] = [
 
 const themeOptions: SelectOption[] = [
   { value: 'light', label: '浅色', hint: '推荐办公环境使用' },
-  { value: 'system', label: '跟随系统', hint: '与系统主题同步' },
   { value: 'dark', label: '深色', hint: '夜间使用' },
 ]
 
@@ -434,6 +434,11 @@ function App() {
     conversationsByAgent.general[0]?.id ?? '',
   )
   const [activeSection, setActiveSection] = useState<SettingsSection>('model-service')
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode
+  }, [themeMode])
 
   const activeAgent = useMemo(
     () => agentTypes.find((item) => item.id === activeAgentType) ?? agentTypes[0],
@@ -462,7 +467,7 @@ function App() {
   }
 
   return (
-    <div className="workbench-shell">
+    <div className="workbench-shell" data-theme={themeMode}>
       <aside className="workbench-rail" aria-label="主图标栏">
         {railPrimaryItems.map((item) => {
           const Icon = item.icon
@@ -653,7 +658,11 @@ function App() {
             </header>
 
             <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">
-              <SettingsPlaceholder section={activeSection} />
+              <SettingsPlaceholder
+                section={activeSection}
+                themeMode={themeMode}
+                onThemeModeChange={setThemeMode}
+              />
             </section>
           </main>
         </section>
@@ -719,7 +728,15 @@ function HubWorkspace({ view }: { view: HubWorkspaceView }) {
   )
 }
 
-function SettingsPlaceholder({ section }: { section: SettingsSection }) {
+function SettingsPlaceholder({
+  section,
+  themeMode,
+  onThemeModeChange,
+}: {
+  section: SettingsSection
+  themeMode: ThemeMode
+  onThemeModeChange: (value: ThemeMode) => void
+}) {
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
   const [providerQuery, setProviderQuery] = useState('')
@@ -730,7 +747,6 @@ function SettingsPlaceholder({ section }: { section: SettingsSection }) {
   const [assistantNotificationsEnabled, setAssistantNotificationsEnabled] = useState(false)
   const [backupEnabled, setBackupEnabled] = useState(true)
 
-  const [themeMode, setThemeMode] = useState('light')
   const [fontSize, setFontSize] = useState('medium')
   const [density, setDensity] = useState('compact')
   const [animationsEnabled, setAnimationsEnabled] = useState(true)
@@ -1142,7 +1158,7 @@ function SettingsPlaceholder({ section }: { section: SettingsSection }) {
                   description="控制整体配色模式"
                   value={themeMode}
                   options={themeOptions}
-                  onChange={setThemeMode}
+                  onChange={(value) => onThemeModeChange(value as ThemeMode)}
                 />
                 <SelectField
                   label="字号"
