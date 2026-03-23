@@ -570,7 +570,6 @@ function App() {
             <header className="panel-head">
               <p className="panel-head__eyebrow">助手</p>
               <h1 className="panel-head__title">固定智能体类型</h1>
-              <p className="panel-head__subtitle">按智能体能力域组织，不与具体会话混用。</p>
             </header>
 
             <ul className="assistant-list">
@@ -590,8 +589,6 @@ function App() {
                       </span>
                       <span className="assistant-card__body">
                         <span className="assistant-card__title">{agent.label}</span>
-                        <span className="assistant-card__meta">{agent.shortLabel}</span>
-                        <span className="assistant-card__description">{agent.description}</span>
                       </span>
                     </button>
                   </li>
@@ -604,7 +601,6 @@ function App() {
             <header className="panel-head">
               <p className="panel-head__eyebrow">话题</p>
               <h2 className="panel-head__title">{activeAgent.label}</h2>
-              <p className="panel-head__subtitle">展示当前智能体类型下的会话与主题切换。</p>
             </header>
 
             <button type="button" className="new-thread-button">
@@ -624,17 +620,7 @@ function App() {
                       onClick={() => setActiveConversationId(conversation.id)}
                     >
                       <span className="topic-card__title">{conversation.title}</span>
-                      <span className="topic-card__summary">{conversation.summary}</span>
-                      <span className="topic-card__meta">
-                        <span>{conversation.updatedAt}</span>
-                        <span className={`status-pill status-pill--${conversation.status}`}>
-                          {conversation.status === 'active'
-                            ? '进行中'
-                            : conversation.status === 'attention'
-                              ? '需关注'
-                              : '已归档'}
-                        </span>
-                      </span>
+                      <span className="topic-card__meta">{conversation.updatedAt}</span>
                     </button>
                   </li>
                 )
