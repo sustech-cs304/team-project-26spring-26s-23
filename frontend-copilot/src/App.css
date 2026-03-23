@@ -266,6 +266,11 @@ textarea {
   overflow: auto;
 }
 
+.assistant-list,
+.topic-list--detailed {
+  gap: 0.5rem;
+}
+
 .assistant-card,
 .topic-card,
 .settings-nav-item,
@@ -300,8 +305,8 @@ textarea {
 .assistant-card {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
-  gap: 0.85rem;
-  padding: 0.92rem;
+  gap: 0.72rem;
+  padding: 0.84rem 0.9rem;
   text-align: left;
 }
 
@@ -318,8 +323,7 @@ textarea {
 
 .assistant-card__body {
   display: flex;
-  flex-direction: column;
-  gap: 0.24rem;
+  align-items: center;
   min-width: 0;
 }
 
@@ -327,17 +331,6 @@ textarea {
   font-size: 0.97rem;
   font-weight: 700;
   color: var(--text-primary);
-}
-
-.assistant-card__meta {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.assistant-card__description {
-  font-size: 0.84rem;
-  line-height: 1.55;
-  color: var(--text-secondary);
 }
 
 .new-thread-button {
@@ -363,8 +356,8 @@ textarea {
 .topic-card {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.95rem;
+  gap: 0.3rem;
+  padding: 0.82rem 0.9rem;
   text-align: left;
 }
 
@@ -374,22 +367,14 @@ textarea {
   color: var(--text-primary);
 }
 
-.topic-card__summary {
-  font-size: 0.84rem;
-  line-height: 1.55;
-  color: var(--text-secondary);
-}
-
 .topic-card__meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
   font-size: 0.78rem;
   color: var(--text-muted);
 }
 
-.status-pill,
 .inline-badge {
   display: inline-flex;
   align-items: center;
@@ -402,18 +387,11 @@ textarea {
   white-space: nowrap;
 }
 
-.status-pill--active,
 .inline-badge--success {
   background: var(--success-soft);
   color: var(--success-text);
 }
 
-.status-pill--idle {
-  background: #eef2f7;
-  color: #475569;
-}
-
-.status-pill--attention,
 .inline-badge--warning {
   background: var(--warning-soft);
   color: var(--warning-text);
