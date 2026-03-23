@@ -70,7 +70,6 @@ type ConversationItem = {
 type SettingsNavItem = {
   id: SettingsSection
   label: string
-  description: string
   icon: LucideIcon
 }
 
@@ -249,16 +248,15 @@ const conversationsByAgent: Record<AgentTypeId, ConversationItem[]> = {
 }
 
 const settingsItems: SettingsNavItem[] = [
-  { id: 'model-service', label: '模型服务', description: '供应商、地址与鉴权信息', icon: ServerCog },
-  { id: 'default-model', label: '默认模型', description: '设置主模型与快捷模型', icon: Brain },
-  { id: 'general', label: '常规设置', description: '语言、代理与通知行为', icon: SlidersHorizontal },
-  { id: 'display', label: '显示设置', description: '主题、字体与缩放参数', icon: Monitor },
-  { id: 'data', label: '数据设置', description: '本地数据目录与备份策略', icon: Database },
-  { id: 'mcp', label: 'MCP 服务器', description: '外部工具与服务接入状态', icon: PlugZap },
-  { id: 'search', label: '网络搜索', description: '搜索引擎与结果压缩规则', icon: Search },
-  { id: 'memory', label: '全局记忆', description: '长期记忆与清理策略', icon: MemoryStick },
-  { id: 'api', label: 'API 服务器', description: '后端服务健康检查与重连', icon: Workflow },
-  { id: 'docs', label: '文档处理', description: '导入导出与文档格式偏好', icon: FileText },
+  { id: 'model-service', label: '模型服务', icon: ServerCog },
+  { id: 'default-model', label: '默认模型', icon: Brain },
+  { id: 'general', label: '常规设置', icon: SlidersHorizontal },
+  { id: 'display', label: '显示设置', icon: Monitor },
+  { id: 'data', label: '数据设置', icon: Database },
+  { id: 'mcp', label: 'MCP 服务器', icon: PlugZap },
+  { id: 'search', label: '网络搜索', icon: Search },
+  { id: 'api', label: 'API 服务器', icon: Workflow },
+  { id: 'docs', label: '文档处理', icon: FileText },
 ]
 
 const hubWorkspaceContent: Record<HubWorkspaceView, HubWorkspaceContent> = {
@@ -710,7 +708,6 @@ function App() {
                       <Icon size={16} className="settings-nav-item__icon" />
                       <span className="settings-nav-item__body">
                         <span className="settings-nav-item__title">{item.label}</span>
-                        <span className="settings-nav-item__subtitle">{item.description}</span>
                       </span>
                     </button>
                   </li>
@@ -724,7 +721,6 @@ function App() {
               <div>
                 <p className="workspace-main__eyebrow">当前设置页</p>
                 <h2 className="workspace-main__title">{activeSettingsItem.label}</h2>
-                <p className="workspace-main__subtitle">{activeSettingsItem.description}</p>
               </div>
               <span className="workspace-badge">设置布局</span>
             </header>
