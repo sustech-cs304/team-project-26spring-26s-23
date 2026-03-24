@@ -1,0 +1,40 @@
+name: frontend-validation
+
+on:
+  push:
+    paths:
+      - .github/workflows/frontend-validation.yml
+      - frontend-copilot/**
+  pull_request:
+    paths:
+      - .github/workflows/frontend-validation.yml
+      - frontend-copilot/**
+  workflow_dispatch:
+
+jobs:
+  frontend-validation:
+    name: Frontend validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-copilot
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-copilot/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm run test
+
+      - name: Run frontend build
+        run: npm run build:app
