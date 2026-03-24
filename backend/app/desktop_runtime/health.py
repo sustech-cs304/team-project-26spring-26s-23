@@ -13,6 +13,7 @@ DESKTOP_RUNTIME_SERVICE_NAME = "sustech-copilot-desktop-runtime"
 ENTRYPOINT_MODULE = "app.desktop_runtime.server"
 _DIAGNOSTICS_PATHS = ["/diagnostics", "/diagnostics/runtime-info"]
 _BASE_CONTRACT_PATHS = [
+    "/",
     "/health",
     "/ready",
     "/version",
@@ -58,7 +59,24 @@ def build_version_contract(config: DesktopRuntimeConfig) -> VersionContract:
 def build_diagnostics_contract(
     config: DesktopRuntimeConfig,
     manager: RuntimeLifecycleManager,
+    *,
+    chat_runtime_summary: dict[str, object] | None = None,
 ) -> DiagnosticsContract:
+    capabilities: dict[str, object] = {
+        "domain_routes_registered": False,
+        "contract_paths": _BASE_CONTRACT_PATHS,
+        "chat_runtime_registered": False,
+        "chat_protocol": None,
+        "chat_runtime_path": None,
+        "available_agents": [],
+        "default_agent": None,
+        "supported_methods": [],
+        "chat_runtime_stage": None,
+        "current_stage_supports_info_only": False,
+    }
+    if chat_runtime_summary is not None:
+        capabilities.update(chat_runtime_summary)
+
     return DiagnosticsContract(
         service=DESKTOP_RUNTIME_SERVICE_NAME,
         status=manager.status,
@@ -77,8 +95,5 @@ def build_diagnostics_contract(
             "token_configured": bool(config.local_token),
             "protected_paths": _DIAGNOSTICS_PATHS,
         },
-        capabilities={
-            "domain_routes_registered": False,
-            "contract_paths": _BASE_CONTRACT_PATHS,
-        },
+        capabilities=capabilities,
     )

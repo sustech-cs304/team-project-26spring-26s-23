@@ -28,24 +28,31 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     app = create_app(_build_config(tmp_path))
 
     with TestClient(app) as client:
+        runtime_info_response = client.post("/", json={"method": "info"})
         health_response = client.get("/health")
         ready_response = client.get("/ready")
         version_response = client.get("/version")
         build_response = client.get("/build-info")
         diagnostics_response = client.get("/diagnostics/runtime-info")
 
+    assert runtime_info_response.status_code == 200
     assert health_response.status_code == 200
     assert ready_response.status_code == 200
     assert version_response.status_code == 200
     assert build_response.status_code == 200
     assert diagnostics_response.status_code == 200
 
+    runtime_info_payload = runtime_info_response.json()
     health_payload = health_response.json()
     ready_payload = ready_response.json()
     version_payload = version_response.json()
     build_payload = build_response.json()
     diagnostics_payload = diagnostics_response.json()
 
+    assert runtime_info_payload["actions"] == []
+    assert runtime_info_payload["defaultAgent"] == "default"
+    assert runtime_info_payload["supportedMethods"] == ["info"]
+    assert runtime_info_payload["protocol"] == "single-endpoint"
     assert health_payload["status"] == "ok"
     assert health_payload["ready"] is True
     assert ready_payload["status"] == "ready"
@@ -60,6 +67,15 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["configuration"]["paths"]["database_dir"].endswith("database")
     assert diagnostics_payload["configuration"]["paths"]["state_dir"].endswith("state")
     assert diagnostics_payload["capabilities"]["domain_routes_registered"] is False
+    assert diagnostics_payload["capabilities"]["chat_runtime_registered"] is True
+    assert diagnostics_payload["capabilities"]["chat_protocol"] == "single-endpoint"
+    assert diagnostics_payload["capabilities"]["chat_runtime_path"] == "/"
+    assert diagnostics_payload["capabilities"]["available_agents"] == ["default"]
+    assert diagnostics_payload["capabilities"]["default_agent"] == "default"
+    assert diagnostics_payload["capabilities"]["supported_methods"] == ["info"]
+    assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase1-info-only"
+    assert diagnostics_payload["capabilities"]["current_stage_supports_info_only"] is True
+    assert "/" in diagnostics_payload["capabilities"]["contract_paths"]
     assert diagnostics_payload["auth"]["token_configured"] is False
     assert Path(diagnostics_payload["runtime"]["working_directory"]).exists()
 
