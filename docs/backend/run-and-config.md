@@ -2,18 +2,19 @@
 
 这篇文档回答的是最实际的问题：**现在这个后端到底怎么跑，运行会依赖哪些配置，哪些路径是今天就能用的，哪些还不适合当成正式入口。**
 
-先说结论：如果你今天只想验证“这个后端有没有真实可运行面”，优先跑 Blackboard CLI，而不是先去找某个“服务启动命令”。当前仓库里没有明确可启动的 HTTP 服务入口，最清楚的运行方式仍然是命令行和 Python 内部调用。
+先说结论：当前除了 Blackboard CLI 之外，已经补齐了一个供桌面宿主使用的最小本地 HTTP 服务入口；但它只覆盖 health / ready / version / diagnostics 等基础契约，并不等于完整业务 Web API 已成型。如果你要验证业务抓取链路，仍然优先跑 Blackboard CLI；如果你要验证后续 Electron 可托管的运行时边界，再运行 desktop runtime 入口。
 
 ## 当前最值得优先理解的运行面
 
 ### 已实现
 
-当前最明确、最适合作为日常验证入口的，是两个 Blackboard CLI：
+当前已经有两类可运行入口：
 
-- 课程目录搜索；
-- 日历 ICS 同步。
+- Blackboard 课程目录搜索 CLI；
+- Blackboard 日历 ICS 同步 CLI；
+- 桌面宿主本地 HTTP 最小入口。
 
-它们已经具备比较完整的运行要素：命令行参数、`.env` 读取、日志输出、可选 JSON 报告、与 provider use case 的连接。
+前两者更适合验证现有业务抓取 / 同步链路；第三者更适合验证 Electron 后续需要托管的 loopback HTTP 运行时边界。
 
 ### 代码里可调用，但不是正式入口
 
@@ -27,11 +28,11 @@
 
 ### 当前不要误认为已经存在的运行方式
 
-- 没有确认到可直接运行的 FastAPI 应用入口；
-- 没有确认到 `uvicorn` 启动脚本；
-- 没有确认到已经面向前端开放的 HTTP API 服务。
+- 现在已经有可直接运行的 FastAPI 应用入口，但它是**桌面宿主使用的最小 loopback 服务**，不是完整业务 API 面；
+- 仍然没有确认到已经面向前端开放的复杂业务 HTTP API 服务；
+- 也不应把 `app/blackboard/api/`、`app/teaching_information_system/api/` 直接理解为给前端调用的 HTTP 路由层。
 
-依赖表里出现 `fastapi`、`uvicorn`，只能说明相关包被加入过依赖，不能代表服务化入口已经落地。
+依赖表里出现 `fastapi`、`uvicorn`，曾经只能说明相关包被加入过依赖；而现在真正落地的，也只是最小桌面运行时入口，而不是全面服务化改造。
 
 ## 环境准备
 
@@ -73,6 +74,21 @@ Blackboard ICS CLI 会优先读这个值；代码里还兼容 `CALENDAR_FEED_URL
 - `SUSTECH_DB_PATH`
 
 这个值决定本地数据库落盘路径。若未显式提供，Blackboard ICS CLI 会退回默认路径 `backend/data/sustech.db` 对应的项目内位置。
+
+### 4. 桌面宿主本地运行时变量（阶段 1）
+
+下面这组变量通常由后续的 Electron 主进程注入，而不是要求终端用户长期手工维护：
+
+- `COPILOT_DESKTOP_RUNTIME_HOST`
+- `COPILOT_DESKTOP_RUNTIME_PORT`
+- `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN`
+- `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR`
+- `COPILOT_DESKTOP_RUNTIME_LOGS_DIR`
+- `COPILOT_DESKTOP_RUNTIME_DATABASE_DIR`
+- `COPILOT_DESKTOP_RUNTIME_APP_MODE`
+- `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT`
+
+其中 `host` 只允许 loopback 地址，例如 `127.0.0.1`、`localhost`、`::1`；`local token` 当前可以不传，但接口边界已经预留好，配置后会保护 diagnostics 端点。
 
 ## 推荐的 `.env` 准备方式
 
@@ -145,6 +161,24 @@ python -m app.blackboard.provider.cli.sync_calendar_ics --save-json
 - 可选保存 JSON 报告。
 
 如果 feed URL 没提供，它会明确报错并提示应该配置哪些环境变量。这说明它已经是一个对使用者比较友好的真实入口。
+
+### Desktop runtime 本地 HTTP 最小入口
+
+在 `backend/` 下运行：
+
+```bash
+uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
+```
+
+它会：
+
+- 构造一个仅监听 loopback 地址的 FastAPI 应用；
+- 解析 `host`、`port`、`local token`、`user data dir`、`logs dir`、`database dir`、`app mode`、`environment`；
+- 暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info`；
+- 在配置 `local token` 时，仅对 diagnostics 端点要求 `X-Local-Token` 请求头；
+- 在启动时准备运行时目录，但此阶段**不暴露复杂业务接口**。
+
+如果你只是想验证入口最小契约，优先访问 `/health`、`/ready` 与 `/version`；如果要看目录与配置摘要，再访问 diagnostics 端点。
 
 ## Python 内部可调用的运行路径
 
@@ -220,7 +254,7 @@ Blackboard 两个 CLI 都支持把结果写到 `backend/data/reports/`：
 
 ### `tests/unit/`
 
-主要是偏本地、偏离线的验证，覆盖解析、DTO、provider、data 同步等逻辑。对第一次接手者来说，这一层最适合快速确认“核心代码形状是不是还正常”。
+主要是偏本地、偏离线的验证，覆盖解析、DTO、provider、data 同步等逻辑。对第一次接手者来说，这一层最适合快速确认“核心代码形状是不是还正常”。阶段 1 新增的 `tests/unit/desktop_runtime/` 也属于这一层，用来覆盖配置解析与最小 HTTP 契约。
 
 ### `tests/integration/`
 
@@ -244,8 +278,9 @@ Blackboard 两个 CLI 都支持把结果写到 `backend/data/reports/`：
 2. 准备 `.env`；
 3. 先跑 Blackboard 课程目录搜索 CLI；
 4. 再跑 Blackboard ICS 同步 CLI；
-5. 如需理解数据层，再看 snapshot use case；
-6. 如需扩展 TIS，再进入对应 provider use case。
+5. 如果你的目标是验证桌面宿主运行时边界，再运行 `uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765`；
+6. 如需理解数据层，再看 snapshot use case；
+7. 如需扩展 TIS，再进入对应 provider use case。
 
 这个顺序的好处是，你会先建立对“已实现运行面”的真实认知，而不是直接掉进一堆目录名和未来设想里。
 
