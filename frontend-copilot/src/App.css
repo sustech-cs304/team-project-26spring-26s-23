@@ -898,9 +898,9 @@ textarea {
 
 .primary-button:disabled {
   cursor: not-allowed;
-  border-color: #c7d2e3;
-  background: #c7d2e3;
-  color: #ffffff;
+  border-color: var(--disabled-border);
+  background: var(--disabled-bg);
+  color: var(--disabled-text);
   box-shadow: none;
 }
 
