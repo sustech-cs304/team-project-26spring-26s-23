@@ -17,6 +17,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app.copilot_runtime import build_router, build_runtime_scaffold  # noqa: E402
+from app.copilot_runtime.session_store import InMemorySessionStore  # noqa: E402
 from app.desktop_runtime.config import (  # noqa: E402
     LOCAL_TOKEN_HEADER_NAME,
     DesktopRuntimeConfig,
@@ -39,13 +40,15 @@ def create_app(config: DesktopRuntimeConfig | None = None) -> FastAPI:
         load_dotenv(BACKEND_DIR / ".env")
         runtime_config = parse_runtime_config([], env=os.environ, cwd=BACKEND_DIR)
     lifecycle_manager = RuntimeLifecycleManager(runtime_config)
-    runtime_scaffold = build_runtime_scaffold()
+    session_store = InMemorySessionStore()
+    runtime_scaffold = build_runtime_scaffold(session_store_type=session_store.storage_type)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.runtime_config = runtime_config
         app.state.lifecycle_manager = lifecycle_manager
         app.state.copilot_runtime_scaffold = runtime_scaffold
+        app.state.copilot_runtime_session_store = session_store
         lifecycle_manager.startup()
         try:
             yield
@@ -61,7 +64,7 @@ def create_app(config: DesktopRuntimeConfig | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.include_router(build_router(runtime_scaffold))
+    app.include_router(build_router(runtime_scaffold, session_store))
 
     @app.get("/health")
     def get_health(request: Request) -> dict[str, object]:

@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+from app.copilot_runtime.session_store import InMemorySessionStore
+
+
+def test_get_or_create_returns_new_session_for_new_thread() -> None:
+    store = InMemorySessionStore()
+
+    session, created = store.get_or_create(
+        thread_id="thread-1",
+        agent_name="default",
+        metadata={"source": "connect"},
+    )
+
+    assert created is True
+    assert store.storage_type == "in-memory"
+    assert store.get("thread-1") is session
+    assert session.thread_id == "thread-1"
+    assert session.agent_name == "default"
+    assert session.metadata == {"source": "connect"}
+    assert session.created_at == session.updated_at
+
+
+def test_get_or_create_reuses_existing_thread_and_merges_metadata() -> None:
+    store = InMemorySessionStore()
+    first_session, first_created = store.get_or_create(
+        thread_id="thread-1",
+        agent_name="default",
+        metadata={"first": "one"},
+    )
+
+    second_session, second_created = store.get_or_create(
+        thread_id="thread-1",
+        agent_name="default",
+        metadata={"second": "two"},
+    )
+
+    assert first_created is True
+    assert second_created is False
+    assert second_session is first_session
+    assert second_session.metadata == {"first": "one", "second": "two"}
+    assert second_session.created_at <= second_session.updated_at

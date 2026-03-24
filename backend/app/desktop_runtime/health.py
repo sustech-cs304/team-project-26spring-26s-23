@@ -72,7 +72,9 @@ def build_diagnostics_contract(
         "default_agent": None,
         "supported_methods": [],
         "chat_runtime_stage": None,
+        "session_store_type": None,
         "current_stage_supports_info_only": False,
+        "current_stage_supports_connect": False,
     }
     if chat_runtime_summary is not None:
         capabilities.update(chat_runtime_summary)
