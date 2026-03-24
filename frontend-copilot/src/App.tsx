@@ -7,7 +7,6 @@ import {
   Database,
   FileText,
   FolderOpen,
-  MemoryStick,
   MessageSquare,
   Monitor,
   PlugZap,
@@ -38,6 +37,7 @@ type SettingsSection =
   | 'memory'
   | 'api'
   | 'docs'
+type ThemeMode = 'light' | 'dark'
 
 type SelectOption = {
   value: string
@@ -70,25 +70,19 @@ type ConversationItem = {
 type SettingsNavItem = {
   id: SettingsSection
   label: string
-  description: string
   icon: LucideIcon
 }
 
 type HubEntry = {
   id: string
   title: string
-  description: string
-  meta: string
 }
 
 type HubWorkspaceContent = {
   eyebrow: string
   title: string
-  subtitle: string
   panelTitle: string
-  panelSubtitle: string
   spotlightTitle: string
-  spotlightDescription: string
   highlights: string[]
   entries: HubEntry[]
 }
@@ -249,107 +243,52 @@ const conversationsByAgent: Record<AgentTypeId, ConversationItem[]> = {
 }
 
 const settingsItems: SettingsNavItem[] = [
-  { id: 'model-service', label: '模型服务', description: '供应商、地址与鉴权信息', icon: ServerCog },
-  { id: 'default-model', label: '默认模型', description: '设置主模型与快捷模型', icon: Brain },
-  { id: 'general', label: '常规设置', description: '语言、代理与通知行为', icon: SlidersHorizontal },
-  { id: 'display', label: '显示设置', description: '主题、字体与缩放参数', icon: Monitor },
-  { id: 'data', label: '数据设置', description: '本地数据目录与备份策略', icon: Database },
-  { id: 'mcp', label: 'MCP 服务器', description: '外部工具与服务接入状态', icon: PlugZap },
-  { id: 'search', label: '网络搜索', description: '搜索引擎与结果压缩规则', icon: Search },
-  { id: 'memory', label: '全局记忆', description: '长期记忆与清理策略', icon: MemoryStick },
-  { id: 'api', label: 'API 服务器', description: '后端服务健康检查与重连', icon: Workflow },
-  { id: 'docs', label: '文档处理', description: '导入导出与文档格式偏好', icon: FileText },
+  { id: 'model-service', label: '模型服务', icon: ServerCog },
+  { id: 'default-model', label: '默认模型', icon: Brain },
+  { id: 'general', label: '常规设置', icon: SlidersHorizontal },
+  { id: 'display', label: '显示设置', icon: Monitor },
+  { id: 'data', label: '数据设置', icon: Database },
+  { id: 'mcp', label: 'MCP 服务器', icon: PlugZap },
+  { id: 'search', label: '网络搜索', icon: Search },
+  { id: 'api', label: 'API 服务器', icon: Workflow },
+  { id: 'docs', label: '文档处理', icon: FileText },
 ]
 
 const hubWorkspaceContent: Record<HubWorkspaceView, HubWorkspaceContent> = {
   capabilities: {
     eyebrow: '能力中心',
     title: '已接入能力与工具栈',
-    subtitle: '集中展示当前工作区可调用的能力域与基础接入状态。',
     panelTitle: '能力分组',
-    panelSubtitle: '适合后续扩展成可检索、可开关的能力目录。',
     spotlightTitle: '工具调用与能力编排',
-    spotlightDescription: '在这里组织网页抓取、浏览器自动化、本地命令与 MCP 工具能力。',
     highlights: ['MCP 服务器接入', '网页抓取与浏览器自动化', '项目内检索与本地命令执行'],
     entries: [
-      {
-        id: 'capability-mcp',
-        title: 'MCP 扩展能力',
-        description: '统一查看 Tavily、Fetch、Puppeteer 等外部服务的可用性。',
-        meta: '适合展示工具在线状态与权限范围',
-      },
-      {
-        id: 'capability-web',
-        title: '联网搜索与抓取',
-        description: '聚合联网搜索、抓取页面、提取正文等常用浏览能力。',
-        meta: '后续可扩展配额、缓存与来源筛选',
-      },
-      {
-        id: 'capability-local',
-        title: '本地项目操作',
-        description: '关联工作区搜索、命令执行、文件修改与验证流程。',
-        meta: '适合在桌面端集中呈现可审计操作',
-      },
+      { id: 'capability-mcp', title: 'MCP 扩展能力' },
+      { id: 'capability-web', title: '联网搜索与抓取' },
+      { id: 'capability-local', title: '本地项目操作' },
     ],
   },
   files: {
     eyebrow: '文件工作区',
     title: '知识文件与资料入口',
-    subtitle: '展示课程文档、导入资料与对话上下文附件的整理视图。',
     panelTitle: '文件分区',
-    panelSubtitle: '适合承载资料列表、标签与索引入口。',
     spotlightTitle: '课程资料与上下文挂载',
-    spotlightDescription: '后续可以在这里接入文档索引、附件管理与检索增强。',
     highlights: ['课程资料库', '会话附件管理', '知识索引与标签'],
     entries: [
-      {
-        id: 'files-courseware',
-        title: '课程课件目录',
-        description: '按课程聚合讲义、实验文档与下载资料。',
-        meta: '适合扩展按学期/课程筛选',
-      },
-      {
-        id: 'files-notes',
-        title: '个人笔记区',
-        description: '集中展示复习提纲、总结文档与对话导出内容。',
-        meta: '可与长期记忆或搜索索引联动',
-      },
-      {
-        id: 'files-attachments',
-        title: '对话附件',
-        description: '按会话管理上传文件、截图与生成产物。',
-        meta: '后续可补拖拽上传与引用历史',
-      },
+      { id: 'files-courseware', title: '课程课件目录' },
+      { id: 'files-notes', title: '个人笔记区' },
+      { id: 'files-attachments', title: '对话附件' },
     ],
   },
   developer: {
     eyebrow: '开发工作台',
     title: '开发任务与联调面板',
-    subtitle: '为代码生成、验证命令与集成测试预留独立工作区。',
     panelTitle: '开发活动',
-    panelSubtitle: '适合承载任务列表、构建状态与代码上下文。',
     spotlightTitle: '代码实现与验证流程',
-    spotlightDescription: '在这里聚合构建日志、提交记录、校验入口与任务状态。',
     highlights: ['任务队列', '构建与测试反馈', '提交与发布记录'],
     entries: [
-      {
-        id: 'dev-tasks',
-        title: '实现任务看板',
-        description: '串联待办、进行中与已验证任务，便于逐步交付。',
-        meta: '适合补充状态变迁与责任人信息',
-      },
-      {
-        id: 'dev-builds',
-        title: '构建与验证',
-        description: '呈现 TypeScript 检查、Vite 构建与运行状态。',
-        meta: '可扩展失败详情与历史对比',
-      },
-      {
-        id: 'dev-history',
-        title: '变更历史',
-        description: '集中查看近期提交、分支状态与工作区差异摘要。',
-        meta: '适合补充提交粒度与发布流水线信息',
-      },
+      { id: 'dev-tasks', title: '实现任务看板' },
+      { id: 'dev-builds', title: '构建与验证' },
+      { id: 'dev-history', title: '变更历史' },
     ],
   },
 }
@@ -374,7 +313,6 @@ const proxyModeOptions: SelectOption[] = [
 
 const themeOptions: SelectOption[] = [
   { value: 'light', label: '浅色', hint: '推荐办公环境使用' },
-  { value: 'system', label: '跟随系统', hint: '与系统主题同步' },
   { value: 'dark', label: '深色', hint: '夜间使用' },
 ]
 
@@ -495,6 +433,11 @@ function App() {
     conversationsByAgent.general[0]?.id ?? '',
   )
   const [activeSection, setActiveSection] = useState<SettingsSection>('model-service')
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode
+  }, [themeMode])
 
   const activeAgent = useMemo(
     () => agentTypes.find((item) => item.id === activeAgentType) ?? agentTypes[0],
@@ -523,7 +466,7 @@ function App() {
   }
 
   return (
-    <div className="workbench-shell">
+    <div className="workbench-shell" data-theme={themeMode}>
       <aside className="workbench-rail" aria-label="主图标栏">
         {railPrimaryItems.map((item) => {
           const Icon = item.icon
@@ -572,7 +515,6 @@ function App() {
             <header className="panel-head">
               <p className="panel-head__eyebrow">助手</p>
               <h1 className="panel-head__title">固定智能体类型</h1>
-              <p className="panel-head__subtitle">按智能体能力域组织，不与具体会话混用。</p>
             </header>
 
             <ul className="assistant-list">
@@ -592,8 +534,6 @@ function App() {
                       </span>
                       <span className="assistant-card__body">
                         <span className="assistant-card__title">{agent.label}</span>
-                        <span className="assistant-card__meta">{agent.shortLabel}</span>
-                        <span className="assistant-card__description">{agent.description}</span>
                       </span>
                     </button>
                   </li>
@@ -606,7 +546,6 @@ function App() {
             <header className="panel-head">
               <p className="panel-head__eyebrow">话题</p>
               <h2 className="panel-head__title">{activeAgent.label}</h2>
-              <p className="panel-head__subtitle">展示当前智能体类型下的会话与主题切换。</p>
             </header>
 
             <button type="button" className="new-thread-button">
@@ -626,17 +565,7 @@ function App() {
                       onClick={() => setActiveConversationId(conversation.id)}
                     >
                       <span className="topic-card__title">{conversation.title}</span>
-                      <span className="topic-card__summary">{conversation.summary}</span>
-                      <span className="topic-card__meta">
-                        <span>{conversation.updatedAt}</span>
-                        <span className={`status-pill status-pill--${conversation.status}`}>
-                          {conversation.status === 'active'
-                            ? '进行中'
-                            : conversation.status === 'attention'
-                              ? '需关注'
-                              : '已归档'}
-                        </span>
-                      </span>
+                      <span className="topic-card__meta">{conversation.updatedAt}</span>
                     </button>
                   </li>
                 )
@@ -710,7 +639,6 @@ function App() {
                       <Icon size={16} className="settings-nav-item__icon" />
                       <span className="settings-nav-item__body">
                         <span className="settings-nav-item__title">{item.label}</span>
-                        <span className="settings-nav-item__subtitle">{item.description}</span>
                       </span>
                     </button>
                   </li>
@@ -724,13 +652,16 @@ function App() {
               <div>
                 <p className="workspace-main__eyebrow">当前设置页</p>
                 <h2 className="workspace-main__title">{activeSettingsItem.label}</h2>
-                <p className="workspace-main__subtitle">{activeSettingsItem.description}</p>
               </div>
               <span className="workspace-badge">设置布局</span>
             </header>
 
             <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">
-              <SettingsPlaceholder section={activeSection} />
+              <SettingsPlaceholder
+                section={activeSection}
+                themeMode={themeMode}
+                onThemeModeChange={setThemeMode}
+              />
             </section>
           </main>
         </section>
@@ -750,7 +681,6 @@ function HubWorkspace({ view }: { view: HubWorkspaceView }) {
         <header className="panel-head">
           <p className="panel-head__eyebrow">{content.eyebrow}</p>
           <h1 className="panel-head__title">{content.panelTitle}</h1>
-          <p className="panel-head__subtitle">{content.panelSubtitle}</p>
         </header>
 
         <ul className="hub-list">
@@ -758,8 +688,6 @@ function HubWorkspace({ view }: { view: HubWorkspaceView }) {
             <li key={entry.id}>
               <article className="hub-list__item">
                 <h2 className="hub-list__title">{entry.title}</h2>
-                <p className="hub-list__description">{entry.description}</p>
-                <p className="hub-list__meta">{entry.meta}</p>
               </article>
             </li>
           ))}
@@ -771,17 +699,13 @@ function HubWorkspace({ view }: { view: HubWorkspaceView }) {
           <div>
             <p className="workspace-main__eyebrow">{content.eyebrow}</p>
             <h2 className="workspace-main__title">{content.title}</h2>
-            <p className="workspace-main__subtitle">{content.subtitle}</p>
           </div>
-          <span className="workspace-badge">占位工作区</span>
         </header>
 
         <section className="workspace-main__content">
           <div className="hub-main-grid">
             <section className="hub-card hub-card--highlight">
-              <p className="hub-card__eyebrow">工作区定位</p>
               <h3 className="hub-card__title">{content.spotlightTitle}</h3>
-              <p className="hub-card__description">{content.spotlightDescription}</p>
               <div className="hub-chip-row">
                 {content.highlights.map((highlight) => (
                   <span key={highlight} className="hub-chip">
@@ -793,10 +717,7 @@ function HubWorkspace({ view }: { view: HubWorkspaceView }) {
 
             {content.entries.map((entry) => (
               <section key={entry.id} className="hub-card">
-                <p className="hub-card__eyebrow">模块占位</p>
                 <h3 className="hub-card__title">{entry.title}</h3>
-                <p className="hub-card__description">{entry.description}</p>
-                <p className="hub-card__meta">{entry.meta}</p>
               </section>
             ))}
           </div>
@@ -806,7 +727,15 @@ function HubWorkspace({ view }: { view: HubWorkspaceView }) {
   )
 }
 
-function SettingsPlaceholder({ section }: { section: SettingsSection }) {
+function SettingsPlaceholder({
+  section,
+  themeMode,
+  onThemeModeChange,
+}: {
+  section: SettingsSection
+  themeMode: ThemeMode
+  onThemeModeChange: (value: ThemeMode) => void
+}) {
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
   const [providerQuery, setProviderQuery] = useState('')
@@ -817,7 +746,6 @@ function SettingsPlaceholder({ section }: { section: SettingsSection }) {
   const [assistantNotificationsEnabled, setAssistantNotificationsEnabled] = useState(false)
   const [backupEnabled, setBackupEnabled] = useState(true)
 
-  const [themeMode, setThemeMode] = useState('light')
   const [fontSize, setFontSize] = useState('medium')
   const [density, setDensity] = useState('compact')
   const [animationsEnabled, setAnimationsEnabled] = useState(true)
@@ -1229,7 +1157,7 @@ function SettingsPlaceholder({ section }: { section: SettingsSection }) {
                   description="控制整体配色模式"
                   value={themeMode}
                   options={themeOptions}
-                  onChange={setThemeMode}
+                  onChange={(value) => onThemeModeChange(value as ThemeMode)}
                 />
                 <SelectField
                   label="字号"

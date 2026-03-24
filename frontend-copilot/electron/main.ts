@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, ipcMain } from 'electron'
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -41,8 +42,19 @@ let win: BrowserWindow | null
 const COPILOT_SETTINGS_FILE_NAME = 'copilot-settings.json'
 
 function createWindow() {
+  const generatedIconDir = path.join(VITE_PUBLIC, 'generated-icons')
+  const preferredWindowIconPath =
+    process.platform === 'win32'
+      ? path.join(generatedIconDir, 'icon.ico')
+      : path.join(generatedIconDir, 'icon.png')
+  const windowIconPath = existsSync(preferredWindowIconPath)
+    ? preferredWindowIconPath
+    : path.join(VITE_PUBLIC, 'candue_icon.png')
+
   win = new BrowserWindow({
-    icon: path.join(VITE_PUBLIC, 'electron-vite.svg'),
+    icon: windowIconPath,
+    width: 1440,
+    height: 960,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
