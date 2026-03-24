@@ -23,8 +23,8 @@
 
 | 字段名 | 当前作用 | 存储位置 | 读取时机 | 是否为进入 `ready` 的必填项 | 是否已接到界面 | 当前事实说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `runtimeUrl` | 指定前端准备交给 Copilot 外层能力的运行时地址 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动时读取；聊天面板初始化时也会再次读取 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示读取结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
-| `agentName` | 指定前端准备使用的智能体名称 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动时读取；聊天面板初始化时也会再次读取 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示读取结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
+| `runtimeUrl` | 指定前端准备交给 Copilot 外层能力的运行时地址 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动阶段由根层统一读取 settings/runtime，并通过状态注入供子组件消费 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示根层注入结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
+| `agentName` | 指定前端准备使用的智能体名称 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动阶段由根层统一读取 settings/runtime，并通过状态注入供子组件消费 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示根层注入结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
 
 ### 2. 当前存储结构里实际存在的字段范围
 
@@ -62,14 +62,15 @@
 
 虽然聊天骨架在 `ready` 状态下会把 `runtimeUrl` 和 `agentName` 展示出来，但那是“读取结果展示”，不是“设置页正式编辑入口”。
 
-### 3. 读取时机为什么写成两处
+### 3. 读取时机为什么写成根层统一读取
 
-因为当前代码里至少有两条读取路径：
+因为当前代码里，配置与运行态摘要已经收敛到根装配层统一读取：
 
-- 应用启动外层会先读取一次，用于决定是否初始化 Copilot 外层能力
-- 聊天骨架面板自身初始化时也会再读取一次，用于显示当前状态和字段值
+- 应用启动时，[`loadInitialConfigState()`](../../frontend-copilot/src/CopilotAppRoot.tsx:84) 会调用 [`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:196)，并统一读取 settings 与 runtime
+- [`CopilotAppRoot()`](../../frontend-copilot/src/CopilotAppRoot.tsx:132) 会缓存并注入这份状态，供子组件消费
+- [`CopilotChatPanel()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:22) 当前只消费注入状态与重试动作，不再自行重复读取
 
-所以当前字段事实不仅影响启动判断，也影响聊天骨架如何显示。
+所以当前字段事实既影响启动阶段的连接判断，也影响聊天骨架最终展示的状态和字段值，但读取入口已经统一到根层。
 
 ## 当前已实现 / 未实现说明
 
