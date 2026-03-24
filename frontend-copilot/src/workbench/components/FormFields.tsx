@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Ref } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 
 import type { SelectOption } from '../types'
@@ -19,6 +19,7 @@ interface TextFieldProps {
   onChange: (value: string) => void
   placeholder?: string
   type?: 'text' | 'password' | 'url'
+  inputRef?: Ref<HTMLInputElement>
 }
 
 interface TextareaFieldProps {
@@ -38,23 +39,44 @@ interface ToggleSwitchProps {
 
 export function SelectField({ label, description, value, options, onChange, placeholder }: SelectFieldProps) {
   const [open, setOpen] = useState(false)
+  const [dropdownDirection, setDropdownDirection] = useState<'up' | 'down'>('down')
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
 
   const selectedOption = options.find((option) => option.value === value)
 
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false)
       }
     }
 
-    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('pointerdown', handlePointerDown, { passive: true })
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('pointerdown', handlePointerDown)
     }
   }, [])
+
+  useEffect(() => {
+    if (!open || !triggerRef.current || !dropdownRef.current) {
+      return
+    }
+
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const dropdownHeight = dropdownRef.current.getBoundingClientRect().height
+    const spaceBelow = window.innerHeight - triggerRect.bottom
+    const spaceAbove = triggerRect.top
+    const shouldOpenUp = spaceBelow < dropdownHeight && spaceAbove > spaceBelow
+
+    setDropdownDirection(shouldOpenUp ? 'up' : 'down')
+  }, [open, options.length])
+
+  const handleToggleOpen = () => {
+    setOpen((previous) => !previous)
+  }
 
   return (
     <div ref={containerRef} className={`form-field${open ? ' form-field--open' : ''}`}>
@@ -64,11 +86,12 @@ export function SelectField({ label, description, value, options, onChange, plac
       </div>
 
       <button
+        ref={triggerRef}
         type="button"
         className={`select-trigger${open ? ' select-trigger--open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((previous) => !previous)}
+        onClick={handleToggleOpen}
       >
         <span className="select-trigger__copy">
           <span className="select-trigger__value">{selectedOption?.label ?? placeholder ?? '请选择'}</span>
@@ -77,7 +100,12 @@ export function SelectField({ label, description, value, options, onChange, plac
         <ChevronDown size={16} className="select-trigger__icon" />
       </button>
 
-      <div className={`select-dropdown${open ? ' select-dropdown--open' : ''}`} role="listbox">
+      <div
+        ref={dropdownRef}
+        className={`select-dropdown${open ? ' select-dropdown--open' : ''}${dropdownDirection === 'up' ? ' select-dropdown--top' : ''}`}
+        role="listbox"
+        aria-hidden={!open}
+      >
         {options.map((option) => {
           const active = option.value === value
 
@@ -87,6 +115,7 @@ export function SelectField({ label, description, value, options, onChange, plac
               type="button"
               role="option"
               aria-selected={active}
+              tabIndex={open ? 0 : -1}
               className={`select-option${active ? ' select-option--active' : ''}`}
               onClick={() => {
                 onChange(option.value)
@@ -113,6 +142,7 @@ export function TextField({
   onChange,
   placeholder,
   type = 'text',
+  inputRef,
 }: TextFieldProps) {
   return (
     <label className="form-field">
@@ -121,6 +151,7 @@ export function TextField({
         {description ? <span className="form-field__description">{description}</span> : null}
       </span>
       <input
+        ref={inputRef}
         className="text-input"
         type={type}
         value={value}

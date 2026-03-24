@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "generate:icons": "node ./scripts/generate-icons.mjs",
+    "prebuild": "npm run generate:icons",
     "build": "npm run build:app",
     "build:app": "tsc && vite build",
     "stage:bundled-runtime": "node ./scripts/prepare-bundled-runtime.mjs",
     "package:desktop": "electron-builder",
-    "prepackage:desktop": "npm run build:app && npm run stage:bundled-runtime",
+    "prepackage:desktop": "npm run build && npm run stage:bundled-runtime",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test": "node ./scripts/run-vitest.mjs"
@@ -33,6 +35,8 @@
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
+    "png2icons": "^2.0.1",
+    "sharp": "^0.34.5",
     "typescript": "^5.2.2",
     "vite": "^7.3.1",
     "vite-plugin-electron": "^0.28.6",

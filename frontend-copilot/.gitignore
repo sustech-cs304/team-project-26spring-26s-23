@@ -16,6 +16,7 @@ dist-electron/
 dist-ssr
 dist-electron
 *.local
+public/generated-icons/
 
 # Editor directories and files
 .vscode/*
