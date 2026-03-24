@@ -2,7 +2,6 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
-import './index.css'
 
 const rootElement = document.getElementById('root')
 
