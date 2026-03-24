@@ -1,23 +1,31 @@
-"""In-memory session storage for the minimal Copilot runtime connect scaffold."""
+"""In-memory session storage for the minimal Copilot runtime run bridge."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
+
+RuntimeMessageRole = Literal["user", "assistant"]
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeTextMessage:
+    """Minimal persisted text message stored for a thread."""
+
+    role: RuntimeMessageRole
+    content: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(slots=True)
 class RuntimeSessionRecord:
-    """Minimal per-thread session record kept in process memory.
-
-    This phase intentionally stores only lightweight metadata. Message history and
-    turn persistence are reserved for the later run phase.
-    """
+    """Minimal per-thread session record kept in process memory."""
 
     thread_id: str
     agent_name: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    messages: list[RuntimeTextMessage] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -25,6 +33,23 @@ class RuntimeSessionRecord:
         if metadata:
             self.metadata = {**self.metadata, **metadata}
         self.updated_at = datetime.now(UTC)
+
+    def append_message(self, *, role: RuntimeMessageRole, content: str) -> RuntimeTextMessage:
+        normalized_content = content.strip()
+        if normalized_content == "":
+            raise ValueError("Session message content must be a non-empty string.")
+
+        message = RuntimeTextMessage(role=role, content=normalized_content)
+        self.messages.append(message)
+        self.updated_at = message.created_at
+        return message
+
+    def append_turn(self, *, user_text: str, assistant_text: str) -> None:
+        self.append_message(role="user", content=user_text)
+        self.append_message(role="assistant", content=assistant_text)
+
+    def message_history(self) -> tuple[RuntimeTextMessage, ...]:
+        return tuple(self.messages)
 
 
 class InMemorySessionStore:
@@ -49,6 +74,7 @@ class InMemorySessionStore:
     ) -> tuple[RuntimeSessionRecord, bool]:
         existing = self._sessions.get(thread_id)
         if existing is not None:
+            existing.agent_name = agent_name
             existing.touch(metadata=metadata)
             return existing, False
 
@@ -62,3 +88,28 @@ class InMemorySessionStore:
         )
         self._sessions[thread_id] = session
         return session, True
+
+    def list_messages(self, thread_id: str) -> tuple[RuntimeTextMessage, ...]:
+        session = self.get(thread_id)
+        if session is None:
+            return ()
+        return session.message_history()
+
+    def append_turn(
+        self,
+        *,
+        thread_id: str,
+        agent_name: str,
+        user_text: str,
+        assistant_text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[RuntimeSessionRecord, bool]:
+        session, created = self.get_or_create(
+            thread_id=thread_id,
+            agent_name=agent_name,
+            metadata=metadata,
+        )
+        session.append_turn(user_text=user_text, assistant_text=assistant_text)
+        if metadata:
+            session.metadata = {**session.metadata, **metadata}
+        return session, created

@@ -10,8 +10,9 @@ from .session_store import RuntimeSessionRecord
 
 INFO_METHOD = "info"
 AGENT_CONNECT_METHOD = "agent/connect"
+AGENT_RUN_METHOD = "agent/run"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
-DEFAULT_RUNTIME_STAGE = "phase2-connect-scaffold"
+DEFAULT_RUNTIME_STAGE = "phase3-run-bridge"
 DEFAULT_TRANSPORT = {
     "root_path": "/",
     "method": "POST",
@@ -65,6 +66,33 @@ class RuntimeConnectRequest(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeRunRequest(RuntimeContract):
+    agent_name: str
+    thread_id: str
+    run_id: str
+    user_message_text: str
+    state: Any
+    messages: tuple[dict[str, Any], ...]
+    actions: tuple[dict[str, Any], ...] = ()
+    meta_events: tuple[dict[str, Any], ...] = ()
+    node_name: str | None = None
+    forwarded_props: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def build_run_input(self) -> dict[str, Any]:
+        return {
+            "threadId": self.thread_id,
+            "runId": self.run_id,
+            "state": _jsonable(self.state),
+            "messages": _jsonable(self.messages),
+            "actions": _jsonable(self.actions),
+            "metaEvents": _jsonable(self.meta_events),
+            "nodeName": self.node_name,
+            "forwardedProps": _jsonable(self.forwarded_props),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeSessionDescriptor(RuntimeContract):
     threadId: str
     agentName: str
@@ -84,6 +112,16 @@ class RuntimeConnectResult(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeRunResult(RuntimeContract):
+    ok: bool
+    threadId: str
+    runId: str
+    agentName: str
+    output: str
+    session: RuntimeSessionDescriptor
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeScaffold(RuntimeContract):
     protocol: str
     stage: str
@@ -91,6 +129,8 @@ class RuntimeScaffold(RuntimeContract):
     default_agent: str
     available_agents: tuple[RuntimeAgentDescriptor, ...]
     session_store_type: str
+    model_configured: bool
+    model_environment_keys: tuple[str, ...] = ()
     transport: dict[str, Any] = field(default_factory=dict)
 
     def build_info_response(self) -> RuntimeInfoResponse:
@@ -136,6 +176,22 @@ class RuntimeScaffold(RuntimeContract):
             session=session,
         )
 
+    def build_run_result(
+        self,
+        *,
+        request: RuntimeRunRequest,
+        assistant_text: str,
+        session: RuntimeSessionDescriptor,
+    ) -> RuntimeRunResult:
+        return RuntimeRunResult(
+            ok=True,
+            threadId=request.thread_id,
+            runId=request.run_id,
+            agentName=request.agent_name,
+            output=assistant_text,
+            session=session,
+        )
+
     def build_connect_events(
         self,
         *,
@@ -164,6 +220,45 @@ class RuntimeScaffold(RuntimeContract):
             },
         )
 
+    def build_run_events(
+        self,
+        *,
+        request: RuntimeRunRequest,
+        result: RuntimeRunResult,
+        assistant_message_id: str,
+    ) -> tuple[dict[str, Any], ...]:
+        return (
+            {
+                "type": "RUN_STARTED",
+                "threadId": request.thread_id,
+                "runId": request.run_id,
+            },
+            {
+                "type": "STATE_SNAPSHOT",
+                "snapshot": _jsonable(request.state),
+            },
+            {
+                "type": "TEXT_MESSAGE_START",
+                "messageId": assistant_message_id,
+                "role": "assistant",
+            },
+            {
+                "type": "TEXT_MESSAGE_CONTENT",
+                "messageId": assistant_message_id,
+                "delta": result.output,
+            },
+            {
+                "type": "TEXT_MESSAGE_END",
+                "messageId": assistant_message_id,
+            },
+            {
+                "type": "RUN_FINISHED",
+                "threadId": request.thread_id,
+                "runId": request.run_id,
+                "result": result.to_dict(),
+            },
+        )
+
     def diagnostics_summary(self) -> dict[str, Any]:
         return {
             "chat_runtime_registered": True,
@@ -176,21 +271,31 @@ class RuntimeScaffold(RuntimeContract):
             "session_store_type": self.session_store_type,
             "current_stage_supports_info_only": self.supported_methods == (INFO_METHOD,),
             "current_stage_supports_connect": AGENT_CONNECT_METHOD in self.supported_methods,
+            "current_stage_supports_run": AGENT_RUN_METHOD in self.supported_methods,
+            "model_configured": self.model_configured,
+            "model_environment_keys": list(self.model_environment_keys),
         }
 
 
-def build_runtime_scaffold(*, session_store_type: str = "in-memory") -> RuntimeScaffold:
+def build_runtime_scaffold(
+    *,
+    session_store_type: str = "in-memory",
+    model_configured: bool = False,
+    model_environment_keys: tuple[str, ...] = (),
+) -> RuntimeScaffold:
     default_agent = RuntimeAgentDescriptor(
         name="default",
-        description="Minimal default agent exposed by the Copilot runtime connect scaffold.",
+        description="Minimal default agent exposed by the Copilot runtime run bridge.",
     )
     return RuntimeScaffold(
         protocol=DEFAULT_RUNTIME_PROTOCOL,
         stage=DEFAULT_RUNTIME_STAGE,
-        supported_methods=(INFO_METHOD, AGENT_CONNECT_METHOD),
+        supported_methods=(INFO_METHOD, AGENT_CONNECT_METHOD, AGENT_RUN_METHOD),
         default_agent=default_agent.name,
         available_agents=(default_agent,),
         session_store_type=session_store_type,
+        model_configured=model_configured,
+        model_environment_keys=model_environment_keys,
         transport=dict(DEFAULT_TRANSPORT),
     )
 

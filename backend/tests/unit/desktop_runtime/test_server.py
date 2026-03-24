@@ -7,6 +7,9 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic_ai.models.test import TestModel
+
+from app.copilot_runtime import PydanticAIAgentExecutor
 
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
@@ -21,16 +24,17 @@ from app.desktop_runtime.server import BACKEND_DIR, create_app
 
 
 def test_create_app_returns_fastapi_instance(tmp_path: Path) -> None:
-    app = create_app(_build_config(tmp_path))
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
     assert isinstance(app, FastAPI)
 
 
 def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> None:
-    app = create_app(_build_config(tmp_path))
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
 
     with TestClient(app) as client:
         runtime_info_response = client.post("/", json={"method": "info"})
         connect_response = client.post("/", json=_build_connect_request())
+        run_response = client.post("/", json=_build_run_request())
         health_response = client.get("/health")
         ready_response = client.get("/ready")
         version_response = client.get("/version")
@@ -47,7 +51,9 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
 
     runtime_info_payload = runtime_info_response.json()
     connect_events = _parse_sse_events(connect_response.text)
+    run_events = _parse_sse_events(run_response.text)
     connect_payload = connect_events[-1]["result"]
+    run_payload = run_events[-1]["result"]
     health_payload = health_response.json()
     ready_payload = ready_response.json()
     version_payload = version_response.json()
@@ -56,10 +62,11 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
 
     assert runtime_info_payload["actions"] == []
     assert runtime_info_payload["defaultAgent"] == "default"
-    assert runtime_info_payload["supportedMethods"] == ["info", "agent/connect"]
+    assert runtime_info_payload["supportedMethods"] == ["info", "agent/connect", "agent/run"]
     assert runtime_info_payload["protocol"] == "single-endpoint"
-    assert runtime_info_payload["stage"] == "phase2-connect-scaffold"
+    assert runtime_info_payload["stage"] == "phase3-run-bridge"
     assert connect_response.headers["content-type"].startswith("text/event-stream")
+    assert run_response.headers["content-type"].startswith("text/event-stream")
     assert [event["type"] for event in connect_events] == [
         "RUN_STARTED",
         "STATE_SNAPSHOT",
@@ -72,6 +79,23 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert connect_payload["runId"] == "run-1"
     assert connect_payload["session"]["newlyCreated"] is True
     assert connect_payload["session"]["metadata"] == {"last_connect_run_id": "run-1"}
+    assert [event["type"] for event in run_events] == [
+        "RUN_STARTED",
+        "STATE_SNAPSHOT",
+        "TEXT_MESSAGE_START",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_END",
+        "RUN_FINISHED",
+    ]
+    assert run_payload["ok"] is True
+    assert run_payload["agentName"] == "default"
+    assert run_payload["threadId"] == "thread-1"
+    assert run_payload["runId"] == "run-1"
+    assert run_payload["output"] == "Hello from the desktop runtime test model."
+    assert run_payload["session"]["metadata"] == {
+        "last_connect_run_id": "run-1",
+        "last_run_id": "run-1",
+    }
     assert health_payload["status"] == "ok"
     assert health_payload["ready"] is True
     assert ready_payload["status"] == "ready"
@@ -91,11 +115,17 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["capabilities"]["chat_runtime_path"] == "/"
     assert diagnostics_payload["capabilities"]["available_agents"] == ["default"]
     assert diagnostics_payload["capabilities"]["default_agent"] == "default"
-    assert diagnostics_payload["capabilities"]["supported_methods"] == ["info", "agent/connect"]
-    assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase2-connect-scaffold"
+    assert diagnostics_payload["capabilities"]["supported_methods"] == ["info", "agent/connect", "agent/run"]
+    assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
     assert diagnostics_payload["capabilities"]["session_store_type"] == "in-memory"
     assert diagnostics_payload["capabilities"]["current_stage_supports_info_only"] is False
     assert diagnostics_payload["capabilities"]["current_stage_supports_connect"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_run"] is True
+    assert diagnostics_payload["capabilities"]["model_configured"] is True
+    assert diagnostics_payload["capabilities"]["model_environment_keys"] == [
+        "COPILOT_RUNTIME_MODEL",
+        "COPILOT_MODEL",
+    ]
     assert "/" in diagnostics_payload["capabilities"]["contract_paths"]
     assert diagnostics_payload["auth"]["token_configured"] is False
     assert Path(diagnostics_payload["runtime"]["working_directory"]).exists()
@@ -108,7 +138,7 @@ def test_create_app_without_explicit_config_reads_environment_values(
     monkeypatch.setenv(ENV_PORT, "9988")
     monkeypatch.setenv(ENV_USER_DATA_DIR, "env-user-data")
 
-    app = create_app()
+    app = create_app(agent_executor=_build_test_agent_executor())
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -121,7 +151,10 @@ def test_create_app_without_explicit_config_reads_environment_values(
 
 
 def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> None:
-    app = create_app(_build_config(tmp_path, local_token="super-secret-token"))
+    app = create_app(
+        _build_config(tmp_path, local_token="super-secret-token"),
+        agent_executor=_build_test_agent_executor(),
+    )
 
     with TestClient(app) as client:
         unauthorized = client.get("/diagnostics")
@@ -157,6 +190,28 @@ def _build_connect_request() -> dict[str, Any]:
     }
 
 
+def _build_run_request() -> dict[str, Any]:
+    return {
+        "method": "agent/run",
+        "params": {"agentId": "default"},
+        "body": {
+            "threadId": "thread-1",
+            "runId": "run-1",
+            "messages": [
+                {
+                    "id": "u1",
+                    "role": "user",
+                    "content": "hello desktop runtime",
+                }
+            ],
+            "state": {},
+            "actions": [],
+            "metaEvents": [],
+            "forwardedProps": {},
+        },
+    }
+
+
 def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for chunk in raw_text.strip().split("\n\n"):
@@ -166,6 +221,12 @@ def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
         payload = "\n".join(line[6:] for line in lines)
         events.append(json.loads(payload))
     return events
+
+
+def _build_test_agent_executor() -> PydanticAIAgentExecutor:
+    return PydanticAIAgentExecutor(
+        model=TestModel(custom_output_text="Hello from the desktop runtime test model.")
+    )
 
 
 def _build_config(tmp_path: Path, *, local_token: str | None = None) -> DesktopRuntimeConfig:

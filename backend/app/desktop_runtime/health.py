@@ -75,6 +75,9 @@ def build_diagnostics_contract(
         "session_store_type": None,
         "current_stage_supports_info_only": False,
         "current_stage_supports_connect": False,
+        "current_stage_supports_run": False,
+        "model_configured": False,
+        "model_environment_keys": [],
     }
     if chat_runtime_summary is not None:
         capabilities.update(chat_runtime_summary)

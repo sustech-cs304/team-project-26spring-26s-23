@@ -16,7 +16,12 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.copilot_runtime import build_router, build_runtime_scaffold  # noqa: E402
+from app.copilot_runtime import (  # noqa: E402
+    PydanticAIAgentExecutor,
+    RuntimeBridge,
+    build_router,
+    build_runtime_scaffold,
+)
 from app.copilot_runtime.session_store import InMemorySessionStore  # noqa: E402
 from app.desktop_runtime.config import (  # noqa: E402
     LOCAL_TOKEN_HEADER_NAME,
@@ -34,21 +39,38 @@ from app.desktop_runtime.health import (  # noqa: E402
 from app.desktop_runtime.lifecycle import RuntimeLifecycleManager  # noqa: E402
 
 
-def create_app(config: DesktopRuntimeConfig | None = None) -> FastAPI:
+def create_app(
+    config: DesktopRuntimeConfig | None = None,
+    *,
+    session_store: InMemorySessionStore | None = None,
+    agent_executor: PydanticAIAgentExecutor | None = None,
+) -> FastAPI:
     runtime_config = config
     if runtime_config is None:
         load_dotenv(BACKEND_DIR / ".env")
         runtime_config = parse_runtime_config([], env=os.environ, cwd=BACKEND_DIR)
+
     lifecycle_manager = RuntimeLifecycleManager(runtime_config)
-    session_store = InMemorySessionStore()
-    runtime_scaffold = build_runtime_scaffold(session_store_type=session_store.storage_type)
+    runtime_session_store = session_store or InMemorySessionStore()
+    runtime_agent_executor = agent_executor or PydanticAIAgentExecutor()
+    runtime_bridge = RuntimeBridge(
+        session_store=runtime_session_store,
+        agent_executor=runtime_agent_executor,
+    )
+    runtime_scaffold = build_runtime_scaffold(
+        session_store_type=runtime_session_store.storage_type,
+        model_configured=runtime_agent_executor.model_configured,
+        model_environment_keys=runtime_agent_executor.model_environment_keys,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.runtime_config = runtime_config
         app.state.lifecycle_manager = lifecycle_manager
         app.state.copilot_runtime_scaffold = runtime_scaffold
-        app.state.copilot_runtime_session_store = session_store
+        app.state.copilot_runtime_session_store = runtime_session_store
+        app.state.copilot_runtime_agent_executor = runtime_agent_executor
+        app.state.copilot_runtime_bridge = runtime_bridge
         lifecycle_manager.startup()
         try:
             yield
@@ -64,7 +86,7 @@ def create_app(config: DesktopRuntimeConfig | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.include_router(build_router(runtime_scaffold, session_store))
+    app.include_router(build_router(runtime_scaffold, runtime_session_store, runtime_bridge))
 
     @app.get("/health")
     def get_health(request: Request) -> dict[str, object]:
