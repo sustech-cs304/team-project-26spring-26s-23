@@ -1,28 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CopilotRuntimeApi, CopilotRuntimeLoadResult, CopilotRuntimeRetryResult } from '../../../electron/copilot-runtime'
+import type {
+  CopilotRuntimeApi,
+  CopilotRuntimeLoadResult,
+  CopilotRuntimeRetryResult,
+} from '../../../electron/copilot-runtime'
 import { loadCopilotRuntime, retryCopilotRuntime } from './runtime'
 
 const runtimeUnavailableError = 'window.copilotRuntime is unavailable in the renderer process.'
-const globalWindow = globalThis as typeof globalThis & { window?: Window }
-const originalWindow = globalWindow.window
-
-function restoreWindow() {
-  if (originalWindow === undefined) {
-    delete globalWindow.window
-    return
-  }
-
-  globalWindow.window = originalWindow
-}
 
 afterEach(() => {
-  restoreWindow()
+  vi.unstubAllGlobals()
 })
 
 describe('copilot runtime bridge', () => {
   it('returns a structured failure when window is unavailable', async () => {
-    delete globalWindow.window
+    vi.stubGlobal('window', undefined)
 
     await expect(loadCopilotRuntime()).resolves.toEqual({
       ok: false,
@@ -57,9 +50,9 @@ describe('copilot runtime bridge', () => {
       retry: vi.fn().mockResolvedValue(retryResult),
     }
 
-    globalWindow.window = {
+    vi.stubGlobal('window', {
       copilotRuntime: api,
-    } as Window
+    } satisfies Pick<Window, 'copilotRuntime'>)
 
     await expect(loadCopilotRuntime()).resolves.toEqual(loadResult)
     await expect(retryCopilotRuntime()).resolves.toEqual(retryResult)
