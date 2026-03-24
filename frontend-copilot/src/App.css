@@ -1004,8 +1004,8 @@ textarea {
 }
 
 .icon-button:hover {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(148, 163, 184, 0.12);
+  border-color: var(--interactive-border-soft);
+  background: var(--interactive-fill-soft);
   color: var(--text-primary);
 }
 
