@@ -108,6 +108,7 @@ type ProviderProfile = {
 type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
 
 type ModelEditorDraft = {
+  itemId: string
   displayName: string
   groupName: string
   capabilities: ModelCapability[]
@@ -500,8 +501,17 @@ function getDefaultModelCapabilities(modelId: string): ModelCapability[] {
   return Array.from(new Set(capabilities))
 }
 
+function createModelEditorItemId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return `model-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function createModelEditorDraft(modelId: string, providerName: string): ModelEditorDraft {
   return {
+    itemId: createModelEditorItemId(),
     displayName: formatModelDisplayName(modelId),
     groupName: formatModelGroupName(modelId, providerName),
     capabilities: getDefaultModelCapabilities(modelId),
@@ -514,6 +524,7 @@ function createModelEditorDraft(modelId: string, providerName: string): ModelEdi
 
 function createEmptyModelEditorState(providerName: string, index: number): ModelEditorState {
   return {
+    itemId: createModelEditorItemId(),
     index,
     modelId: '',
     displayName: '',
@@ -1082,6 +1093,7 @@ function SettingsPlaceholder({
       activeProviderModelDrafts[index] ?? createModelEditorDraft(currentModelId, activeProvider.name)
 
     setModelEditorState({
+      itemId: currentDraft.itemId,
       index,
       modelId: currentModelId,
       displayName: currentDraft.displayName,
@@ -1175,6 +1187,7 @@ function SettingsPlaceholder({
     }
 
     const nextDraft: ModelEditorDraft = {
+      itemId: modelEditorState.itemId,
       displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
       groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
       capabilities:
@@ -1364,7 +1377,7 @@ function SettingsPlaceholder({
                       const modelIdentifier = modelId || '未填写模型 ID'
 
                       return (
-                        <article key={`${activeProvider.id}-model-${index}`} className="model-list-row">
+                        <article key={modelDraft.itemId} className="model-list-row">
                           <div className="model-list-row__main">
                             <span className="model-list-row__name" title={modelDisplayName}>
                               {modelDisplayName}
@@ -1379,7 +1392,7 @@ function SettingsPlaceholder({
 
                                   return (
                                     <span
-                                      key={`${activeProvider.id}-${index}-${capability}`}
+                                      key={`${modelDraft.itemId}-${capability}`}
                                       className={`model-capability-chip model-capability-chip--${capability}`}
                                     >
                                       {option?.label ?? capability}
@@ -1949,16 +1962,16 @@ function SelectField({ label, description, value, options, onChange, placeholder
   const selectedOption = options.find((option) => option.value === value)
 
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false)
       }
     }
 
-    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('pointerdown', handlePointerDown, { passive: true })
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('pointerdown', handlePointerDown)
     }
   }, [])
 
