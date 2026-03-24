@@ -1944,6 +1944,7 @@ function SelectField({ label, description, value, options, onChange, placeholder
   const [dropdownDirection, setDropdownDirection] = useState<'down' | 'up'>('down')
   const containerRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
 
   const selectedOption = options.find((option) => option.value === value)
 
@@ -1961,22 +1962,22 @@ function SelectField({ label, description, value, options, onChange, placeholder
     }
   }, [])
 
+  useEffect(() => {
+    if (!open || !triggerRef.current || !dropdownRef.current) {
+      return
+    }
+
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const dropdownHeight = dropdownRef.current.getBoundingClientRect().height
+    const spaceBelow = window.innerHeight - triggerRect.bottom
+    const spaceAbove = triggerRect.top
+    const shouldOpenUp = spaceBelow < dropdownHeight && spaceAbove > spaceBelow
+
+    setDropdownDirection(shouldOpenUp ? 'up' : 'down')
+  }, [open, options.length])
+
   const handleToggleOpen = () => {
-    setOpen((previous) => {
-      const nextOpen = !previous
-
-      if (nextOpen && triggerRef.current) {
-        const triggerRect = triggerRef.current.getBoundingClientRect()
-        const spaceBelow = window.innerHeight - triggerRect.bottom
-        const spaceAbove = triggerRect.top
-        const estimatedDropdownHeight = Math.min(Math.max(options.length, 1) * 56 + 12, 240)
-        const shouldOpenUp = spaceBelow < estimatedDropdownHeight && spaceAbove > spaceBelow
-
-        setDropdownDirection(shouldOpenUp ? 'up' : 'down')
-      }
-
-      return nextOpen
-    })
+    setOpen((previous) => !previous)
   }
 
   return (
@@ -2002,6 +2003,7 @@ function SelectField({ label, description, value, options, onChange, placeholder
       </button>
 
       <div
+        ref={dropdownRef}
         className={`select-dropdown${open ? ' select-dropdown--open' : ''}${dropdownDirection === 'up' ? ' select-dropdown--top' : ''}`}
         role="listbox"
         aria-hidden={!open}
