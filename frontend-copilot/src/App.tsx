@@ -7,7 +7,6 @@ import {
   Database,
   FileText,
   FolderOpen,
-  MemoryStick,
   MessageSquare,
   Monitor,
   PlugZap,
