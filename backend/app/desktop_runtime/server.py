@@ -33,7 +33,10 @@ from app.desktop_runtime.lifecycle import RuntimeLifecycleManager  # noqa: E402
 
 
 def create_app(config: DesktopRuntimeConfig | None = None) -> FastAPI:
-    runtime_config = config or parse_runtime_config([])
+    runtime_config = config
+    if runtime_config is None:
+        load_dotenv(BACKEND_DIR / ".env")
+        runtime_config = parse_runtime_config([], env=os.environ, cwd=BACKEND_DIR)
     lifecycle_manager = RuntimeLifecycleManager(runtime_config)
 
     @asynccontextmanager

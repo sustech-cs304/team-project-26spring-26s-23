@@ -3,16 +3,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
+    ENV_HOST,
+    ENV_PORT,
+    ENV_USER_DATA_DIR,
     LOCAL_TOKEN_HEADER_NAME,
     DesktopRuntimeConfig,
     DesktopRuntimePaths,
 )
-from app.desktop_runtime.server import create_app
+from app.desktop_runtime.server import BACKEND_DIR, create_app
 
 
 def test_create_app_returns_fastapi_instance(tmp_path: Path) -> None:
@@ -58,6 +62,26 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["capabilities"]["domain_routes_registered"] is False
     assert diagnostics_payload["auth"]["token_configured"] is False
     assert Path(diagnostics_payload["runtime"]["working_directory"]).exists()
+
+
+def test_create_app_without_explicit_config_reads_environment_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENV_HOST, "127.0.0.1")
+    monkeypatch.setenv(ENV_PORT, "9988")
+    monkeypatch.setenv(ENV_USER_DATA_DIR, "env-user-data")
+
+    app = create_app()
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+        runtime_config = app.state.runtime_config
+
+    assert response.status_code == 200
+    assert runtime_config.host == "127.0.0.1"
+    assert runtime_config.port == 9988
+    assert runtime_config.user_data_dir == (BACKEND_DIR / "env-user-data").resolve()
+
 
 
 def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> None:
