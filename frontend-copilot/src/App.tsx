@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from 'react'
 import {
   Brain,
   Check,
@@ -9,6 +9,7 @@ import {
   FolderOpen,
   MessageSquare,
   Monitor,
+  Pencil,
   PlugZap,
   Plus,
   Search,
@@ -16,6 +17,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Workflow,
   type LucideIcon,
 } from 'lucide-react'
@@ -34,7 +36,6 @@ type SettingsSection =
   | 'data'
   | 'mcp'
   | 'search'
-  | 'memory'
   | 'api'
   | 'docs'
 type ThemeMode = 'light' | 'dark'
@@ -104,6 +105,26 @@ type ProviderProfile = {
   availableModels: string[]
 }
 
+type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
+
+type ModelEditorDraft = {
+  itemId: string
+  displayName: string
+  groupName: string
+  capabilities: ModelCapability[]
+  supportsStreaming: boolean
+  currency: string
+  inputPrice: string
+  outputPrice: string
+}
+
+type ModelEditorState = ModelEditorDraft & {
+  index: number
+  modelId: string
+  advancedOpen: boolean
+  isNew: boolean
+}
+
 type SelectFieldProps = {
   label: string
   description?: string
@@ -120,6 +141,7 @@ type TextFieldProps = {
   onChange: (value: string) => void
   placeholder?: string
   type?: 'text' | 'password' | 'url'
+  inputRef?: Ref<HTMLInputElement>
 }
 
 type TextareaFieldProps = {
@@ -305,12 +327,6 @@ const languageOptions: SelectOption[] = [
   { value: 'en-US', label: 'English', hint: '英文界面' },
 ]
 
-const proxyModeOptions: SelectOption[] = [
-  { value: 'system', label: '系统代理', hint: '跟随操作系统网络配置' },
-  { value: 'direct', label: '直连', hint: '不经过代理' },
-  { value: 'manual', label: '手动配置', hint: '指定代理地址与端口' },
-]
-
 const themeOptions: SelectOption[] = [
   { value: 'light', label: '浅色', hint: '推荐办公环境使用' },
   { value: 'dark', label: '深色', hint: '夜间使用' },
@@ -322,13 +338,8 @@ const fontSizeOptions: SelectOption[] = [
   { value: 'large', label: '大', hint: '增强可读性' },
 ]
 
-const densityOptions: SelectOption[] = [
-  { value: 'compact', label: '紧凑', hint: '更专业克制的间距' },
-  { value: 'comfortable', label: '舒适', hint: '默认显示密度' },
-]
-
 const backupCycleOptions: SelectOption[] = [
-  { value: 'every-launch', label: '每次启动', hint: '启动即备份' },
+  { value: 'every-launch', label: '启动时', hint: '应用启动时执行备份' },
   { value: 'daily', label: '每天', hint: '适合常规使用' },
   { value: 'weekly', label: '每周', hint: '减少磁盘占用' },
 ]
@@ -357,12 +368,6 @@ const compressionOptions: SelectOption[] = [
   { value: 'none', label: '不压缩', hint: '返回更多原始内容' },
 ]
 
-const memoryStrategyOptions: SelectOption[] = [
-  { value: 'session-only', label: '仅会话内', hint: '不保留长期记忆' },
-  { value: 'session-longterm', label: '会话 + 长期记忆', hint: '推荐通用模式' },
-  { value: 'project-centric', label: '项目优先', hint: '按项目沉淀上下文' },
-]
-
 const apiReconnectOptions: SelectOption[] = [
   { value: 'exponential', label: '指数退避', hint: '稳定优先' },
   { value: 'fixed', label: '固定间隔', hint: '节奏可预期' },
@@ -374,6 +379,174 @@ const docsFormatOptions: SelectOption[] = [
   { value: 'html', label: 'HTML', hint: '便于直接展示' },
   { value: 'pdf', label: 'PDF', hint: '适合归档分享' },
 ]
+
+const modelCapabilityOptions: Array<{ value: ModelCapability; label: string }> = [
+  { value: 'vision', label: '视觉' },
+  { value: 'search', label: '联网' },
+  { value: 'reasoning', label: '推理' },
+  { value: 'tools', label: '工具' },
+  { value: 'rerank', label: '重排' },
+  { value: 'embedding', label: '嵌入' },
+]
+
+const currencyOptions: SelectOption[] = [
+  { value: 'usd', label: '美元（USD）', hint: '常见海外模型计价' },
+  { value: 'cny', label: '人民币（CNY）', hint: '适合本地或代理服务' },
+  { value: 'credits', label: '积分（Credits）', hint: '用于平台积分制计费' },
+]
+
+const focusableElementSelector = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function isFocusableElementVisible(element: HTMLElement) {
+  let current: HTMLElement | null = element
+
+  while (current) {
+    const style = window.getComputedStyle(current)
+
+    if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') {
+      return false
+    }
+
+    current = current.parentElement
+  }
+
+  return true
+}
+
+function getFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableElementSelector)).filter((element) => {
+    if (element.tabIndex < 0 || element.hasAttribute('disabled') || element.getAttribute('aria-hidden') === 'true') {
+      return false
+    }
+
+    if (element instanceof HTMLInputElement && element.type === 'hidden') {
+      return false
+    }
+
+    return isFocusableElementVisible(element)
+  })
+}
+
+function titleCaseToken(value: string) {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function formatModelDisplayName(modelId: string) {
+  const normalized = modelId.trim()
+
+  if (!normalized) {
+    return '未命名模型'
+  }
+
+  const leaf = normalized.split('/').pop() ?? normalized
+
+  return titleCaseToken(leaf)
+}
+
+function formatModelGroupName(modelId: string, providerName: string) {
+  const normalized = modelId.trim()
+
+  if (!normalized) {
+    return providerName
+  }
+
+  const vendor = normalized.includes('/') ? normalized.split('/')[0] : providerName
+
+  return titleCaseToken(vendor)
+}
+
+function getDefaultModelCapabilities(modelId: string): ModelCapability[] {
+  const normalized = modelId.toLowerCase()
+  const capabilities: ModelCapability[] = []
+
+  if (/(gpt|gemini|claude|vision|vl)/.test(normalized)) {
+    capabilities.push('vision')
+  }
+
+  if (/(search|web)/.test(normalized)) {
+    capabilities.push('search')
+  }
+
+  if (/(embed)/.test(normalized)) {
+    capabilities.push('embedding')
+  }
+
+  if (/(rerank)/.test(normalized)) {
+    capabilities.push('rerank')
+  }
+
+  if (/(reason|think|claude|gpt|gemini)/.test(normalized)) {
+    capabilities.push('reasoning')
+  }
+
+  if (/(tool|agent|gpt|gemini|claude)/.test(normalized)) {
+    capabilities.push('tools')
+  }
+
+  if (capabilities.length === 0) {
+    capabilities.push('reasoning')
+  }
+
+  return Array.from(new Set(capabilities))
+}
+
+function createModelEditorItemId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return `model-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createModelEditorDraft(modelId: string, providerName: string): ModelEditorDraft {
+  return {
+    itemId: createModelEditorItemId(),
+    displayName: formatModelDisplayName(modelId),
+    groupName: formatModelGroupName(modelId, providerName),
+    capabilities: getDefaultModelCapabilities(modelId),
+    supportsStreaming: true,
+    currency: 'usd',
+    inputPrice: '0.50',
+    outputPrice: '3.00',
+  }
+}
+
+function createEmptyModelEditorState(providerName: string, index: number): ModelEditorState {
+  return {
+    itemId: createModelEditorItemId(),
+    index,
+    modelId: '',
+    displayName: '',
+    groupName: providerName,
+    capabilities: ['reasoning', 'tools'],
+    supportsStreaming: true,
+    currency: 'usd',
+    inputPrice: '0.50',
+    outputPrice: '3.00',
+    advancedOpen: false,
+    isNew: true,
+  }
+}
+
+function buildInitialModelDrafts(providers: ProviderProfile[]): Record<string, ModelEditorDraft[]> {
+  return Object.fromEntries(
+    providers.map((provider) => [
+      provider.id,
+      provider.availableModels.map((modelId) => createModelEditorDraft(modelId, provider.name)),
+    ]),
+  )
+}
 
 const initialProviderProfiles: ProviderProfile[] = [
   {
@@ -387,7 +560,7 @@ const initialProviderProfiles: ProviderProfile[] = [
     fallbackModel: 'anthropic/claude-3.7-sonnet',
     organization: 'team-project-26spring',
     region: 'Global',
-    notes: '适合统一接入多家模型，后续可按成本切换路由。',
+    notes: '统一接入多种模型服务，便于集中管理。',
     enabled: true,
     isDefault: true,
     availableModels: ['openai/gpt-4.1', 'openai/gpt-4.1-mini', 'anthropic/claude-3.7-sonnet'],
@@ -403,7 +576,7 @@ const initialProviderProfiles: ProviderProfile[] = [
     fallbackModel: 'baili-reasoner',
     organization: 'school-lab',
     region: 'CN-North',
-    notes: '面向校园网络环境的占位服务商配置。',
+    notes: '适合校园网络环境下使用。',
     enabled: true,
     isDefault: false,
     availableModels: ['baili-chat-pro', 'baili-chat-lite', 'baili-reasoner'],
@@ -419,7 +592,7 @@ const initialProviderProfiles: ProviderProfile[] = [
     fallbackModel: 'campus-summary-agent',
     organization: 'local-dev',
     region: 'Local',
-    notes: '用于未来直连自建后端或本地代理网关。',
+    notes: '用于本地或校内部署的代理服务。',
     enabled: false,
     isDefault: false,
     availableModels: ['campus-general-agent', 'campus-fast-agent', 'campus-summary-agent'],
@@ -453,11 +626,6 @@ function App() {
     () =>
       currentConversations.find((item) => item.id === activeConversationId) ?? currentConversations[0],
     [activeConversationId, currentConversations],
-  )
-
-  const activeSettingsItem = useMemo(
-    () => settingsItems.find((item) => item.id === activeSection) ?? settingsItems[0],
-    [activeSection],
   )
 
   const handleSelectAgent = (agentId: AgentTypeId) => {
@@ -621,7 +789,6 @@ function App() {
             <header className="panel-head">
               <p className="panel-head__eyebrow">设置</p>
               <h1 className="panel-head__title">全局设置目录</h1>
-              <p className="panel-head__subtitle">通过左侧主图标栏进入的独立布局，不复用助手与话题的语义。</p>
             </header>
 
             <ul className="settings-nav-list">
@@ -648,14 +815,6 @@ function App() {
           </aside>
 
           <main className="workspace-main" aria-label="设置主内容区">
-            <header className="workspace-main__header">
-              <div>
-                <p className="workspace-main__eyebrow">当前设置页</p>
-                <h2 className="workspace-main__title">{activeSettingsItem.label}</h2>
-              </div>
-              <span className="workspace-badge">设置布局</span>
-            </header>
-
             <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">
               <SettingsPlaceholder
                 section={activeSection}
@@ -741,26 +900,17 @@ function SettingsPlaceholder({
   const [providerQuery, setProviderQuery] = useState('')
 
   const [language, setLanguage] = useState('zh-CN')
-  const [proxyMode, setProxyMode] = useState('system')
-  const [spellCheckEnabled, setSpellCheckEnabled] = useState(true)
   const [assistantNotificationsEnabled, setAssistantNotificationsEnabled] = useState(false)
   const [backupEnabled, setBackupEnabled] = useState(true)
 
   const [fontSize, setFontSize] = useState('medium')
-  const [density, setDensity] = useState('compact')
-  const [animationsEnabled, setAnimationsEnabled] = useState(true)
 
-  const [dataPath, setDataPath] = useState('D:/workspace/copilot-data')
+  const [dataPath, setDataPath] = useState('')
   const [backupCycle, setBackupCycle] = useState('daily')
-  const [launchSyncEnabled, setLaunchSyncEnabled] = useState(true)
 
   const [searchEngine, setSearchEngine] = useState('google')
   const [searchResultCount, setSearchResultCount] = useState('8')
   const [compressionMode, setCompressionMode] = useState('summary')
-  const [safeSearchEnabled, setSafeSearchEnabled] = useState(true)
-
-  const [memoryStrategy, setMemoryStrategy] = useState('session-longterm')
-  const [memoryCleanupEnabled, setMemoryCleanupEnabled] = useState(true)
 
   const [mcpAutoDiscoveryEnabled, setMcpAutoDiscoveryEnabled] = useState(true)
   const [toolPermissionMode, setToolPermissionMode] = useState('manual')
@@ -774,10 +924,61 @@ function SettingsPlaceholder({
   const [outputDirectory, setOutputDirectory] = useState('D:/workspace/exports')
   const [autoFileNameEnabled, setAutoFileNameEnabled] = useState(true)
 
+  const [modelDraftsByProvider, setModelDraftsByProvider] = useState<Record<string, ModelEditorDraft[]>>(
+    () => buildInitialModelDrafts(initialProviderProfiles),
+  )
+  const [modelEditorState, setModelEditorState] = useState<ModelEditorState | null>(null)
+  const modelEditorDialogRef = useRef<HTMLElement | null>(null)
+  const modelEditorInitialFocusRef = useRef<HTMLInputElement | null>(null)
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
+  const isModelEditorOpen = modelEditorState !== null
+
   const activeProvider = useMemo(
     () => providerProfiles.find((profile) => profile.id === activeProviderId) ?? providerProfiles[0],
     [activeProviderId, providerProfiles],
   )
+
+  const activeProviderModelDrafts = useMemo(
+    () =>
+      modelDraftsByProvider[activeProviderId] ??
+      activeProvider.availableModels.map((modelId) => createModelEditorDraft(modelId, activeProvider.name)),
+    [activeProvider, activeProviderId, modelDraftsByProvider],
+  )
+
+  useEffect(() => {
+    setModelEditorState(null)
+  }, [activeProviderId])
+
+  useEffect(() => {
+    if (!isModelEditorOpen) {
+      const previousFocusedElement = previouslyFocusedElementRef.current
+      previouslyFocusedElementRef.current = null
+
+      if (previousFocusedElement?.isConnected) {
+        previousFocusedElement.focus()
+      }
+
+      return
+    }
+
+    previouslyFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+    const focusTimer = window.requestAnimationFrame(() => {
+      const dialog = modelEditorDialogRef.current
+
+      if (!dialog) {
+        return
+      }
+
+      const focusTarget = modelEditorInitialFocusRef.current ?? getFocusableElements(dialog)[0] ?? dialog
+      focusTarget.focus()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(focusTimer)
+    }
+  }, [isModelEditorOpen])
 
   const filteredProviderProfiles = useMemo(() => {
     const keyword = providerQuery.trim().toLowerCase()
@@ -795,14 +996,6 @@ function SettingsPlaceholder({
     })
   }, [providerProfiles, providerQuery])
 
-  const providerModelOptions = useMemo<SelectOption[]>(() => {
-    return activeProvider.availableModels.map((model) => ({
-      value: model,
-      label: model,
-      hint: '服务商模型预设',
-    }))
-  }, [activeProvider.availableModels])
-
   const allModelOptions = useMemo<SelectOption[]>(() => {
     const models = Array.from(new Set(providerProfiles.flatMap((profile) => profile.availableModels)))
 
@@ -817,10 +1010,6 @@ function SettingsPlaceholder({
     initialProviderProfiles[0]?.defaultModel ?? '',
   )
   const [fastAssistantModel, setFastAssistantModel] = useState(initialProviderProfiles[0]?.fastModel ?? '')
-  const [translationModel, setTranslationModel] = useState(
-    initialProviderProfiles[1]?.defaultModel ?? initialProviderProfiles[0]?.defaultModel ?? '',
-  )
-  const [fallbackEnabled, setFallbackEnabled] = useState(true)
 
   const updateActiveProvider = (patch: Partial<ProviderProfile>) => {
     setProviderProfiles((previous) =>
@@ -851,15 +1040,183 @@ function SettingsPlaceholder({
       fallbackModel: 'custom-model-fallback',
       organization: '',
       region: 'Custom',
-      notes: '新添加的占位服务商，可在右侧继续补全完整配置。',
+      notes: '',
       enabled: true,
       isDefault: false,
       availableModels: ['custom-model', 'custom-model-fast', 'custom-model-fallback'],
     }
 
     setProviderProfiles((previous) => [...previous, nextProvider])
+    setModelDraftsByProvider((previous) => ({
+      ...previous,
+      [nextProvider.id]: nextProvider.availableModels.map((modelId) =>
+        createModelEditorDraft(modelId, nextProvider.name),
+      ),
+    }))
     setProviderQuery('')
     setActiveProviderId(nextProvider.id)
+    setModelEditorState(null)
+  }
+
+  const updateActiveProviderModels = (updater: (models: string[]) => string[]) => {
+    setProviderProfiles((previous) =>
+      previous.map((profile) => {
+        if (profile.id !== activeProviderId) {
+          return profile
+        }
+
+        return {
+          ...profile,
+          availableModels: updater(profile.availableModels),
+        }
+      }),
+    )
+  }
+
+  const updateActiveProviderModelDrafts = (updater: (drafts: ModelEditorDraft[]) => ModelEditorDraft[]) => {
+    setModelDraftsByProvider((previous) => ({
+      ...previous,
+      [activeProviderId]: updater(
+        previous[activeProviderId] ??
+          activeProvider.availableModels.map((modelId) => createModelEditorDraft(modelId, activeProvider.name)),
+      ),
+    }))
+  }
+
+  const handleOpenCreateModelEditor = () => {
+    setModelEditorState(createEmptyModelEditorState(activeProvider.name, activeProvider.availableModels.length))
+  }
+
+  const handleOpenModelEditor = (index: number) => {
+    const currentModelId = activeProvider.availableModels[index] ?? ''
+    const currentDraft =
+      activeProviderModelDrafts[index] ?? createModelEditorDraft(currentModelId, activeProvider.name)
+
+    setModelEditorState({
+      itemId: currentDraft.itemId,
+      index,
+      modelId: currentModelId,
+      displayName: currentDraft.displayName,
+      groupName: currentDraft.groupName,
+      capabilities: currentDraft.capabilities,
+      supportsStreaming: currentDraft.supportsStreaming,
+      currency: currentDraft.currency,
+      inputPrice: currentDraft.inputPrice,
+      outputPrice: currentDraft.outputPrice,
+      advancedOpen: false,
+      isNew: false,
+    })
+  }
+
+  const handleCloseModelEditor = () => {
+    setModelEditorState(null)
+  }
+
+  const handleModelEditorKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      handleCloseModelEditor()
+      return
+    }
+
+    if (event.key !== 'Tab') {
+      return
+    }
+
+    const dialog = modelEditorDialogRef.current
+
+    if (!dialog) {
+      return
+    }
+
+    const focusableElements = getFocusableElements(dialog)
+
+    if (focusableElements.length === 0) {
+      event.preventDefault()
+      dialog.focus()
+      return
+    }
+
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const activeIndex = activeElement ? focusableElements.indexOf(activeElement) : -1
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    if (event.shiftKey) {
+      if (activeIndex <= 0) {
+        event.preventDefault()
+        lastElement.focus()
+      }
+
+      return
+    }
+
+    if (activeIndex === -1 || activeIndex === focusableElements.length - 1) {
+      event.preventDefault()
+      firstElement.focus()
+    }
+  }
+
+  const handleToggleModelCapability = (capability: ModelCapability) => {
+    setModelEditorState((previous) => {
+      if (!previous) {
+        return previous
+      }
+
+      const capabilities = previous.capabilities.includes(capability)
+        ? previous.capabilities.filter((item) => item !== capability)
+        : [...previous.capabilities, capability]
+
+      return {
+        ...previous,
+        capabilities,
+      }
+    })
+  }
+
+  const handleSaveModel = () => {
+    if (!modelEditorState) {
+      return
+    }
+
+    const nextModelId = modelEditorState.modelId.trim()
+
+    if (!nextModelId) {
+      return
+    }
+
+    const nextDraft: ModelEditorDraft = {
+      itemId: modelEditorState.itemId,
+      displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
+      groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
+      capabilities:
+        modelEditorState.capabilities.length > 0 ? modelEditorState.capabilities : ['reasoning'],
+      supportsStreaming: modelEditorState.supportsStreaming,
+      currency: modelEditorState.currency,
+      inputPrice: modelEditorState.inputPrice,
+      outputPrice: modelEditorState.outputPrice,
+    }
+
+    if (modelEditorState.isNew) {
+      updateActiveProviderModels((models) => [...models, nextModelId])
+      updateActiveProviderModelDrafts((drafts) => [...drafts, nextDraft])
+    } else {
+      updateActiveProviderModels((models) =>
+        models.map((model, modelIndex) => (modelIndex === modelEditorState.index ? nextModelId : model)),
+      )
+      updateActiveProviderModelDrafts((drafts) =>
+        drafts.map((draft, draftIndex) => (draftIndex === modelEditorState.index ? nextDraft : draft)),
+      )
+    }
+
+    setModelEditorState(null)
+  }
+
+  const handleRemoveModel = (index: number) => {
+    updateActiveProviderModels((models) => models.filter((_, modelIndex) => modelIndex !== index))
+    updateActiveProviderModelDrafts((drafts) => drafts.filter((_, draftIndex) => draftIndex !== index))
+    setModelEditorState(null)
   }
 
   switch (section) {
@@ -870,7 +1227,7 @@ function SettingsPlaceholder({
             <div className="settings-card__header settings-card__header--spaced">
               <div>
                 <h3 className="settings-card__title">模型服务商</h3>
-                <p className="settings-card__subtitle">左侧选择服务商，右侧编辑完整接入信息与默认模型。</p>
+                <p className="settings-card__subtitle">左侧选择服务商，右侧查看基础信息与模型列表。</p>
               </div>
               <button type="button" className="secondary-button" onClick={handleAddProvider}>
                 <Plus size={14} />
@@ -926,115 +1283,348 @@ function SettingsPlaceholder({
             </ul>
           </section>
 
-          <section className="settings-card settings-card--form">
-            <div className="settings-card__header settings-card__header--spaced">
-              <div>
-                <h3 className="settings-card__title">服务详情</h3>
-                <p className="settings-card__subtitle">面向前端展示完整配置能力，字段均可点击、切换与编辑。</p>
+          <div className="settings-detail-column">
+            <section className="settings-card settings-card--form">
+              <div className="settings-card__header">
+                <div>
+                  <h3 className="settings-card__title">服务商基础信息</h3>
+                  <p className="settings-card__subtitle">编辑当前服务商的接入信息、默认模型与备注。</p>
+                </div>
               </div>
-              <div className="toolbar-actions">
-                <button type="button" className="ghost-button">
-                  测试连接
+
+              <div className="settings-stack">
+                <div className="form-grid form-grid--two">
+                  <TextField
+                    label="服务商名称"
+                    description="显示在左侧列表中的名称"
+                    value={activeProvider.name}
+                    onChange={(value) => updateActiveProvider({ name: value })}
+                    placeholder="输入服务商名称"
+                  />
+                  <SelectField
+                    label="协议类型"
+                    description="控制请求的接口风格与参数格式"
+                    value={activeProvider.protocol}
+                    options={protocolOptions}
+                    onChange={(value) => updateActiveProvider({ protocol: value })}
+                  />
+                  <TextField
+                    label="API 地址"
+                    description="填写服务商接口地址或代理网关地址"
+                    value={activeProvider.endpoint}
+                    onChange={(value) => updateActiveProvider({ endpoint: value })}
+                    placeholder="https://api.example.com/v1"
+                    type="url"
+                  />
+                  <TextField
+                    label="默认模型 ID"
+                    description="填写该服务商默认使用的模型 ID"
+                    value={activeProvider.defaultModel}
+                    onChange={(value) => updateActiveProvider({ defaultModel: value })}
+                    placeholder="例如 openai/gpt-4.1"
+                  />
+                  <TextField
+                    label="API 密钥"
+                    description="填写对应服务商提供的访问密钥"
+                    value={activeProvider.apiKey}
+                    onChange={(value) => updateActiveProvider({ apiKey: value })}
+                    placeholder="输入访问密钥"
+                    type="password"
+                  />
+                </div>
+
+                <TextareaField
+                  label="备注与扩展配置"
+                  description="补充自定义请求头、路由说明或使用备注"
+                  value={activeProvider.notes}
+                  onChange={(value) => updateActiveProvider({ notes: value })}
+                  placeholder="输入补充说明"
+                />
+
+                <div className="toggle-grid">
+                  <ToggleSwitch
+                    label="启用当前服务商"
+                    description="关闭后保留配置，但不参与模型路由"
+                    checked={activeProvider.enabled}
+                    onChange={(checked) => updateActiveProvider({ enabled: checked })}
+                  />
+                  <ToggleSwitch
+                    label="设为默认服务商"
+                    description="置顶为全局默认模型服务入口"
+                    checked={activeProvider.isDefault}
+                    onChange={(checked) => updateActiveProvider({ isDefault: checked })}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="settings-card settings-card--form">
+              <div className="settings-card__header settings-card__header--spaced">
+                <div>
+                  <h3 className="settings-card__title">模型列表管理</h3>
+                  <p className="settings-card__subtitle">集中查看当前服务商模型，并通过图标快速编辑或删除。</p>
+                </div>
+                <span className="inline-badge">{activeProvider.availableModels.length} 个模型</span>
+              </div>
+
+              <div className="settings-stack">
+                <div className="model-list-shell">
+                  {activeProvider.availableModels.length > 0 ? (
+                    activeProvider.availableModels.map((modelId, index) => {
+                      const modelDraft =
+                        activeProviderModelDrafts[index] ?? createModelEditorDraft(modelId, activeProvider.name)
+                      const modelDisplayName = modelDraft.displayName || '未命名模型'
+                      const modelIdentifier = modelId || '未填写模型 ID'
+
+                      return (
+                        <article key={modelDraft.itemId} className="model-list-row">
+                          <div className="model-list-row__main">
+                            <span className="model-list-row__name" title={modelDisplayName}>
+                              {modelDisplayName}
+                            </span>
+                            <span className="model-list-row__id" title={modelIdentifier}>
+                              {modelIdentifier}
+                            </span>
+                            <div className="model-capability-list model-capability-list--compact" aria-label="支持特性">
+                              {modelDraft.capabilities.length > 0 ? (
+                                modelDraft.capabilities.map((capability) => {
+                                  const option = modelCapabilityOptions.find((item) => item.value === capability)
+
+                                  return (
+                                    <span
+                                      key={`${modelDraft.itemId}-${capability}`}
+                                      className={`model-capability-chip model-capability-chip--${capability}`}
+                                    >
+                                      {option?.label ?? capability}
+                                    </span>
+                                  )
+                                })
+                              ) : (
+                                <span className="model-capability-chip model-capability-chip--empty">未标记特性</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="model-list-row__actions">
+                            <button
+                              type="button"
+                              className="icon-button"
+                              title={`编辑 ${modelDisplayName}`}
+                              aria-label={`编辑模型 ${modelDisplayName}`}
+                              onClick={() => handleOpenModelEditor(index)}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-button icon-button--danger"
+                              title={`删除 ${modelDisplayName}`}
+                              aria-label={`删除模型 ${modelDisplayName}`}
+                              onClick={() => handleRemoveModel(index)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </article>
+                      )
+                    })
+                  ) : (
+                    <div className="model-list-empty">当前服务商还没有可用模型。点击下方按钮添加第一个模型。</div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="secondary-button secondary-button--subtle"
+                  onClick={handleOpenCreateModelEditor}
+                >
+                  添加模型
                 </button>
-                <button type="button" className="primary-button">
-                  保存配置
-                </button>
               </div>
-            </div>
+            </section>
 
-            <div className="settings-stack">
-              <div className="form-grid form-grid--two">
-                <TextField
-                  label="服务商名称"
-                  description="显示在左侧列表中的名称"
-                  value={activeProvider.name}
-                  onChange={(value) => updateActiveProvider({ name: value })}
-                  placeholder="输入服务商名称"
-                />
-                <SelectField
-                  label="协议类型"
-                  description="控制请求的接口风格与参数格式"
-                  value={activeProvider.protocol}
-                  options={protocolOptions}
-                  onChange={(value) => updateActiveProvider({ protocol: value })}
-                />
-                <TextField
-                  label="API 地址"
-                  description="支持自定义 Base URL 或代理网关"
-                  value={activeProvider.endpoint}
-                  onChange={(value) => updateActiveProvider({ endpoint: value })}
-                  placeholder="https://api.example.com/v1"
-                  type="url"
-                />
-                <TextField
-                  label="默认模型 ID"
-                  description="直接填写完整模型名称"
-                  value={activeProvider.defaultModel}
-                  onChange={(value) => updateActiveProvider({ defaultModel: value })}
-                  placeholder="例如 openai/gpt-4.1"
-                />
-                <TextField
-                  label="API 密钥"
-                  description="前端仅展示占位，可继续接 Electron 持久化"
-                  value={activeProvider.apiKey}
-                  onChange={(value) => updateActiveProvider({ apiKey: value })}
-                  placeholder="输入访问密钥"
-                  type="password"
-                />
-                <TextField
-                  label="组织 / 项目"
-                  description="适配带组织隔离的服务商"
-                  value={activeProvider.organization}
-                  onChange={(value) => updateActiveProvider({ organization: value })}
-                  placeholder="例如 team-project-26spring"
-                />
-                <SelectField
-                  label="快速模型"
-                  description="用于轻量任务或快速响应"
-                  value={activeProvider.fastModel}
-                  options={providerModelOptions}
-                  onChange={(value) => updateActiveProvider({ fastModel: value })}
-                />
-                <SelectField
-                  label="回退模型"
-                  description="主模型不可用时的兜底策略"
-                  value={activeProvider.fallbackModel}
-                  options={providerModelOptions}
-                  onChange={(value) => updateActiveProvider({ fallbackModel: value })}
-                />
-                <TextField
-                  label="区域 / 机房"
-                  description="用于区分本地、校园或公网服务"
-                  value={activeProvider.region}
-                  onChange={(value) => updateActiveProvider({ region: value })}
-                  placeholder="例如 CN-North / Local"
-                />
+            {modelEditorState ? (
+              <div className="model-editor-backdrop" role="presentation" onClick={handleCloseModelEditor}>
+                <section
+                  ref={modelEditorDialogRef}
+                  className="model-editor-modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={modelEditorState.isNew ? '添加模型' : '编辑模型'}
+                  tabIndex={-1}
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={handleModelEditorKeyDown}
+                >
+                  <div className="model-editor-modal__header">
+                    <div>
+                      <h3 className="settings-card__title">
+                        {modelEditorState.isNew ? '添加模型' : '编辑模型'}
+                      </h3>
+                      <p className="settings-card__subtitle">填写模型名称、特性与价格信息。</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="model-editor-modal__close"
+                      aria-label="关闭模型编辑弹层"
+                      onClick={handleCloseModelEditor}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="model-editor-modal__body">
+                    <div className="form-grid form-grid--two">
+                      <TextField
+                        label="模型 ID"
+                        description="用于请求路由与默认模型引用"
+                        value={modelEditorState.modelId}
+                        onChange={(value) =>
+                          setModelEditorState((previous) =>
+                            previous
+                              ? {
+                                  ...previous,
+                                  modelId: value,
+                                }
+                              : previous,
+                          )
+                        }
+                        placeholder="例如 google/gemini-2.5-pro"
+                        inputRef={modelEditorInitialFocusRef}
+                      />
+                      <TextField
+                        label="模型名称"
+                        description="显示在模型列表中的名称"
+                        value={modelEditorState.displayName}
+                        onChange={(value) =>
+                          setModelEditorState((previous) =>
+                            previous
+                              ? {
+                                  ...previous,
+                                  displayName: value,
+                                }
+                              : previous,
+                          )
+                        }
+                        placeholder="例如 Gemini 2.5 Pro"
+                      />
+                    </div>
+
+                    <div className="model-editor-section">
+                      <div className="model-editor-section__header">
+                        <span className="form-field__label">模型类型</span>
+                        <p className="form-field__description">选择需要展示在列表中的能力标签。</p>
+                      </div>
+
+                      <div className="model-capability-picker">
+                        {modelCapabilityOptions.map((option) => {
+                          const active = modelEditorState.capabilities.includes(option.value)
+
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`model-capability-button model-capability-button--${option.value}${active ? ' model-capability-button--active' : ''}`}
+                              onClick={() => handleToggleModelCapability(option.value)}
+                            >
+                              {option.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="model-editor-advanced">
+                      <button
+                        type="button"
+                        className="ghost-button model-editor-advanced__toggle"
+                        onClick={() =>
+                          setModelEditorState((previous) =>
+                            previous
+                              ? {
+                                  ...previous,
+                                  advancedOpen: !previous.advancedOpen,
+                                }
+                              : previous,
+                          )
+                        }
+                      >
+                        {modelEditorState.advancedOpen ? '收起更多设置' : '更多设置'}
+                      </button>
+
+                      {modelEditorState.advancedOpen ? (
+                        <div className="model-editor-section">
+                          <div className="form-grid form-grid--pricing">
+                            <SelectField
+                              label="币种"
+                              description="用于标记价格信息的计价币种"
+                              value={modelEditorState.currency}
+                              options={currencyOptions}
+                              onChange={(value) =>
+                                setModelEditorState((previous) =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        currency: value,
+                                      }
+                                    : previous,
+                                )
+                              }
+                            />
+                            <TextField
+                              label="输入价格"
+                              description="按每百万 Token 估算"
+                              value={modelEditorState.inputPrice}
+                              onChange={(value) =>
+                                setModelEditorState((previous) =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        inputPrice: value,
+                                      }
+                                    : previous,
+                                )
+                              }
+                              placeholder="0.50"
+                            />
+                            <TextField
+                              label="输出价格"
+                              description="按每百万 Token 估算"
+                              value={modelEditorState.outputPrice}
+                              onChange={(value) =>
+                                setModelEditorState((previous) =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        outputPrice: value,
+                                      }
+                                    : previous,
+                                )
+                              }
+                              placeholder="3.00"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="model-editor-modal__footer">
+                    <button type="button" className="secondary-button" onClick={handleCloseModelEditor}>
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={handleSaveModel}
+                      disabled={!modelEditorState.modelId.trim()}
+                    >
+                      保存
+                    </button>
+                  </div>
+                </section>
               </div>
-
-              <TextareaField
-                label="备注与扩展配置"
-                description="展示自定义 Header、路由说明或使用备注"
-                value={activeProvider.notes}
-                onChange={(value) => updateActiveProvider({ notes: value })}
-                placeholder="输入补充说明"
-              />
-
-              <div className="toggle-grid">
-                <ToggleSwitch
-                  label="启用当前服务商"
-                  description="关闭后保留配置，但不参与模型路由"
-                  checked={activeProvider.enabled}
-                  onChange={(checked) => updateActiveProvider({ enabled: checked })}
-                />
-                <ToggleSwitch
-                  label="设为默认服务商"
-                  description="置顶为全局默认模型服务入口"
-                  checked={activeProvider.isDefault}
-                  onChange={(checked) => updateActiveProvider({ isDefault: checked })}
-                />
-              </div>
-            </div>
-          </section>
+            ) : null}
+          </div>
         </div>
       )
 
@@ -1045,7 +1635,7 @@ function SettingsPlaceholder({
             <div className="settings-card__header">
               <div>
                 <h3 className="settings-card__title">默认模型路由</h3>
-                <p className="settings-card__subtitle">通过下拉选择不同任务的首选模型，保留点击展开与选择反馈。</p>
+                <p className="settings-card__subtitle">为常用任务选择默认模型。</p>
               </div>
             </div>
 
@@ -1065,21 +1655,7 @@ function SettingsPlaceholder({
                   options={allModelOptions}
                   onChange={setFastAssistantModel}
                 />
-                <SelectField
-                  label="翻译与改写模型"
-                  description="面向压缩、润色与翻译场景"
-                  value={translationModel}
-                  options={allModelOptions}
-                  onChange={setTranslationModel}
-                />
               </div>
-
-              <ToggleSwitch
-                label="允许自动回退模型"
-                description="当主模型不可达时自动切换到备用模型"
-                checked={fallbackEnabled}
-                onChange={setFallbackEnabled}
-              />
             </div>
           </section>
         </div>
@@ -1092,35 +1668,22 @@ function SettingsPlaceholder({
             <div className="settings-card__header">
               <div>
                 <h3 className="settings-card__title">常规设置</h3>
-                <p className="settings-card__subtitle">使用真实可交互的开关与下拉框，模拟后续可持久化的设置体验。</p>
+                <p className="settings-card__subtitle">管理界面语言、消息提醒与自动备份。</p>
               </div>
             </div>
 
             <div className="settings-stack">
-              <div className="form-grid form-grid--two">
+              <div className="form-grid">
                 <SelectField
                   label="界面语言"
-                  description="控制 UI 文案语言"
+                  description="控制界面文案语言"
                   value={language}
                   options={languageOptions}
                   onChange={setLanguage}
                 />
-                <SelectField
-                  label="代理模式"
-                  description="控制联网请求的网络出口策略"
-                  value={proxyMode}
-                  options={proxyModeOptions}
-                  onChange={setProxyMode}
-                />
               </div>
 
               <div className="toggle-grid">
-                <ToggleSwitch
-                  label="拼写检查"
-                  description="输入时即时提示拼写错误"
-                  checked={spellCheckEnabled}
-                  onChange={setSpellCheckEnabled}
-                />
                 <ToggleSwitch
                   label="助手消息通知"
                   description="任务完成或需要关注时显示提醒"
@@ -1146,7 +1709,7 @@ function SettingsPlaceholder({
             <div className="settings-card__header">
               <div>
                 <h3 className="settings-card__title">显示设置</h3>
-                <p className="settings-card__subtitle">默认切换到浅色风格，同时保留主题、字号与动画等显示选项。</p>
+                <p className="settings-card__subtitle">调整主题与阅读字号。</p>
               </div>
             </div>
 
@@ -1166,21 +1729,7 @@ function SettingsPlaceholder({
                   options={fontSizeOptions}
                   onChange={setFontSize}
                 />
-                <SelectField
-                  label="界面密度"
-                  description="紧凑或舒适的布局间距"
-                  value={density}
-                  options={densityOptions}
-                  onChange={setDensity}
-                />
               </div>
-
-              <ToggleSwitch
-                label="启用微动画"
-                description="为开关、按钮与下拉选择保留轻量反馈动画"
-                checked={animationsEnabled}
-                onChange={setAnimationsEnabled}
-              />
             </div>
           </section>
         </div>
@@ -1193,7 +1742,7 @@ function SettingsPlaceholder({
             <div className="settings-card__header">
               <div>
                 <h3 className="settings-card__title">数据设置</h3>
-                <p className="settings-card__subtitle">用于展示本地存储目录、备份周期与启动同步策略。</p>
+                <p className="settings-card__subtitle">设置数据目录与自动备份频率。</p>
               </div>
             </div>
 
@@ -1201,14 +1750,14 @@ function SettingsPlaceholder({
               <div className="form-grid form-grid--two">
                 <TextField
                   label="数据目录"
-                  description="保存会话缓存、索引与设置文件"
+                  description="默认无需更改；留空时使用应用默认位置"
                   value={dataPath}
                   onChange={setDataPath}
-                  placeholder="输入本地目录"
+                  placeholder="默认无需更改"
                 />
                 <SelectField
                   label="备份周期"
-                  description="控制自动备份的执行频率"
+                  description="选择自动备份的执行频率"
                   value={backupCycle}
                   options={backupCycleOptions}
                   onChange={setBackupCycle}
@@ -1221,12 +1770,6 @@ function SettingsPlaceholder({
                   description="到期后自动生成新的备份快照"
                   checked={backupEnabled}
                   onChange={setBackupEnabled}
-                />
-                <ToggleSwitch
-                  label="启动时同步"
-                  description="应用启动后自动刷新本地缓存与索引"
-                  checked={launchSyncEnabled}
-                  onChange={setLaunchSyncEnabled}
                 />
               </div>
             </div>
@@ -1282,7 +1825,7 @@ function SettingsPlaceholder({
             <div className="settings-card__header">
               <div>
                 <h3 className="settings-card__title">搜索服务商</h3>
-                <p className="settings-card__subtitle">使用下拉选择默认搜索引擎与结果规模。</p>
+                <p className="settings-card__subtitle">选择默认搜索引擎与返回结果数量。</p>
               </div>
             </div>
 
@@ -1308,7 +1851,7 @@ function SettingsPlaceholder({
             <div className="settings-card__header">
               <div>
                 <h3 className="settings-card__title">网络搜索配置</h3>
-                <p className="settings-card__subtitle">控制内容压缩方式与安全搜索策略。</p>
+                <p className="settings-card__subtitle">控制搜索结果进入上下文前的压缩方式。</p>
               </div>
             </div>
 
@@ -1319,42 +1862,6 @@ function SettingsPlaceholder({
                 value={compressionMode}
                 options={compressionOptions}
                 onChange={setCompressionMode}
-              />
-              <ToggleSwitch
-                label="启用安全搜索"
-                description="尽量过滤明显不合适的搜索结果"
-                checked={safeSearchEnabled}
-                onChange={setSafeSearchEnabled}
-              />
-            </div>
-          </section>
-        </div>
-      )
-
-    case 'memory':
-      return (
-        <div className="settings-page">
-          <section className="settings-card settings-card--form">
-            <div className="settings-card__header">
-              <div>
-                <h3 className="settings-card__title">全局记忆</h3>
-                <p className="settings-card__subtitle">配置长期记忆范围与自动清理行为。</p>
-              </div>
-            </div>
-
-            <div className="settings-stack">
-              <SelectField
-                label="记忆策略"
-                description="决定哪些上下文会被长期保留"
-                value={memoryStrategy}
-                options={memoryStrategyOptions}
-                onChange={setMemoryStrategy}
-              />
-              <ToggleSwitch
-                label="自动清理陈旧记忆"
-                description="定期清理长时间未使用的记忆条目"
-                checked={memoryCleanupEnabled}
-                onChange={setMemoryCleanupEnabled}
               />
             </div>
           </section>
@@ -1447,23 +1954,44 @@ function SettingsPlaceholder({
 
 function SelectField({ label, description, value, options, onChange, placeholder }: SelectFieldProps) {
   const [open, setOpen] = useState(false)
+  const [dropdownDirection, setDropdownDirection] = useState<'down' | 'up'>('down')
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
 
   const selectedOption = options.find((option) => option.value === value)
 
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false)
       }
     }
 
-    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('pointerdown', handlePointerDown, { passive: true })
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('pointerdown', handlePointerDown)
     }
   }, [])
+
+  useEffect(() => {
+    if (!open || !triggerRef.current || !dropdownRef.current) {
+      return
+    }
+
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const dropdownHeight = dropdownRef.current.getBoundingClientRect().height
+    const spaceBelow = window.innerHeight - triggerRect.bottom
+    const spaceAbove = triggerRect.top
+    const shouldOpenUp = spaceBelow < dropdownHeight && spaceAbove > spaceBelow
+
+    setDropdownDirection(shouldOpenUp ? 'up' : 'down')
+  }, [open, options.length])
+
+  const handleToggleOpen = () => {
+    setOpen((previous) => !previous)
+  }
 
   return (
     <div ref={containerRef} className={`form-field${open ? ' form-field--open' : ''}`}>
@@ -1473,11 +2001,12 @@ function SelectField({ label, description, value, options, onChange, placeholder
       </div>
 
       <button
+        ref={triggerRef}
         type="button"
         className={`select-trigger${open ? ' select-trigger--open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((previous) => !previous)}
+        onClick={handleToggleOpen}
       >
         <span className="select-trigger__copy">
           <span className="select-trigger__value">{selectedOption?.label ?? placeholder ?? '请选择'}</span>
@@ -1486,7 +2015,12 @@ function SelectField({ label, description, value, options, onChange, placeholder
         <ChevronDown size={16} className="select-trigger__icon" />
       </button>
 
-      <div className={`select-dropdown${open ? ' select-dropdown--open' : ''}`} role="listbox">
+      <div
+        ref={dropdownRef}
+        className={`select-dropdown${open ? ' select-dropdown--open' : ''}${dropdownDirection === 'up' ? ' select-dropdown--top' : ''}`}
+        role="listbox"
+        aria-hidden={!open}
+      >
         {options.map((option) => {
           const active = option.value === value
 
@@ -1496,6 +2030,7 @@ function SelectField({ label, description, value, options, onChange, placeholder
               type="button"
               role="option"
               aria-selected={active}
+              tabIndex={open ? 0 : -1}
               className={`select-option${active ? ' select-option--active' : ''}`}
               onClick={() => {
                 onChange(option.value)
@@ -1522,6 +2057,7 @@ function TextField({
   onChange,
   placeholder,
   type = 'text',
+  inputRef,
 }: TextFieldProps) {
   return (
     <label className="form-field">
@@ -1530,6 +2066,7 @@ function TextField({
         {description ? <span className="form-field__description">{description}</span> : null}
       </span>
       <input
+        ref={inputRef}
         className="text-input"
         type={type}
         value={value}
