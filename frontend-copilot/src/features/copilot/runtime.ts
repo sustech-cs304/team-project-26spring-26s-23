@@ -4,6 +4,10 @@ import type {
 } from './types'
 
 function getCopilotRuntimeApi() {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
   return window.copilotRuntime
 }
 

@@ -332,6 +332,22 @@ describe('createHostedRuntimeLaunchConfig', () => {
     })
   })
 
+  it('brackets IPv6 loopback hosts when composing runtime urls', () => {
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-ipv6'),
+      processEnv: {},
+      port: 43210,
+      host: '::1',
+      localToken: 'token-ipv6',
+    })
+
+    expect(config.baseUrl).toBe('http://[::1]:43210')
+    expect(config.readyUrl).toBe('http://[::1]:43210/ready')
+    expect(config.healthUrl).toBe('http://[::1]:43210/health')
+    expect(config.diagnosticsUrl).toBe('http://[::1]:43210/diagnostics')
+    expect(formatRuntimeBaseUrl('::1', 9000)).toBe('http://[::1]:9000')
+  })
+
   it('derives runtime directories from Electron userData', () => {
     const paths = createHostedRuntimePaths(path.resolve('.tmp-userdata'))
 

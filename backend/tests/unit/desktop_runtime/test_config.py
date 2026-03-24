@@ -72,6 +72,21 @@ def test_parse_runtime_config_reads_environment_values() -> None:
     assert config.environment == "production"
 
 
+def test_parse_runtime_config_formats_ipv6_loopback_base_url() -> None:
+    config = parse_runtime_config(
+        [],
+        env={
+            ENV_HOST: "::1",
+            ENV_PORT: "9988",
+        },
+        cwd=BACKEND_DIR,
+    )
+
+    assert config.host == "::1"
+    assert config.port == 9988
+    assert config.base_url == "http://[::1]:9988"
+
+
 def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
     env = {
         ENV_HOST: "localhost",

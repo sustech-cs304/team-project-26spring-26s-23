@@ -159,7 +159,8 @@ class DesktopRuntimeConfig:
     @property
     def base_url(self) -> str:
         host = DEFAULT_HOST if self.host == "localhost" else self.host
-        return f"http://{host}:{self.port}"
+        host_for_url = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        return f"http://{host_for_url}:{self.port}"
 
     def ensure_directories(self) -> list[Path]:
         return self.paths.ensure_directories()

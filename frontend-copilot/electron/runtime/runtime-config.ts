@@ -96,7 +96,11 @@ export function createLocalToken(): string {
 }
 
 export function formatRuntimeBaseUrl(host: string, port: number): string {
-  return `http://${host}:${port}`
+  const formattedHost = host.includes(':') && !host.startsWith('[')
+    ? `[${host}]`
+    : host
+
+  return `http://${formattedHost}:${port}`
 }
 
 export function resolveHostedRuntimeEnvironmentOverrides(
