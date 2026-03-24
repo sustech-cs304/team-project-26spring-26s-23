@@ -1,21 +1,44 @@
 # 当前可观察契约参考
 
-> 这份附录服务于 [前后端连接现状说明](./frontend-connection.md) 和 [边界与路线图](./roadmap-and-boundaries.md)。这里整理的是**当前已经能被外部观察到的输出形态**，不是 HTTP API 规范。
+> 这份附录服务于 [前后端连接现状说明](./frontend-connection.md) 和 [边界与路线图](./roadmap-and-boundaries.md)。这里整理的是**当前已经能被外部观察到的输出形态**，包括阶段 1 新增的 desktop runtime 最小 HTTP 契约，但它仍不是完整业务 HTTP API 规范。
 
 ## 1. 先说明这份附录在说什么
 
-当前后端最接近“契约”的内容，并不是 HTTP 路由，而是下面几类输出：
+当前后端可观察到的“契约”主要包括下面几类输出：
 
-1. Blackboard CLI 生成的 JSON 报告；
-2. Blackboard 工具层函数返回的字典；
-3. provider use case 返回的结构化结果对象；
-4. 数据同步后的统计结果。
+1. Desktop runtime 的本地 HTTP 最小契约；
+2. Blackboard CLI 生成的 JSON 报告；
+3. Blackboard 工具层函数返回的字典；
+4. provider use case 返回的结构化结果对象；
+5. 数据同步后的统计结果。
 
-因此，这份附录的关键词是：**可观察输出**，不是“服务端接口”。
+因此，这份附录的关键词仍然是：**可观察输出**。其中新增的 HTTP 部分只覆盖桌面宿主控制面，不代表 Blackboard / TIS 复杂业务 API 已经冻结成正式协议。
 
 ## 2. 已实现的当前契约形态
 
-### 2.1 Blackboard 课程目录搜索 CLI JSON 报告
+### 2.1 Desktop runtime 本地 HTTP 最小契约
+
+来源：`app.desktop_runtime`。
+
+#### 当前已确认的端点
+
+| 端点 | 含义 | 当前稳定度判断 |
+| --- | --- | --- |
+| `GET /health` | 基础健康检查，返回服务名、状态与 `ready` 布尔值 | 较高 |
+| `GET /ready` | readiness 状态，返回 `startup_complete` 与最近错误摘要 | 较高 |
+| `GET /version` | 返回版本、Python 版本、app mode、environment 与入口信息 | 较高 |
+| `GET /build-info` | 当前与 `/version` 返回同形内容 | 中等偏高 |
+| `GET /diagnostics` | 返回运行目录、配置摘要、鉴权摘要与能力摘要 | 中等偏高 |
+| `GET /diagnostics/runtime-info` | 当前与 `/diagnostics` 返回同形内容 | 中等偏高 |
+
+#### 当前已确认的边界
+
+- 只监听 loopback 地址；
+- diagnostics 响应只返回配置摘要，不直接回显敏感 token；
+- 若配置本地 token，只有 diagnostics 端点需要 `X-Local-Token`；
+- 当前只提供桌面宿主控制面契约，不暴露 Blackboard / TIS 复杂业务 API。
+
+### 2.2 Blackboard 课程目录搜索 CLI JSON 报告
 
 来源：课程目录搜索 CLI 在开启 `--save-json` 时写入 `backend/data/reports/`。
 
@@ -41,7 +64,7 @@
 - 适合当前联调、调试、人工审查参考；
 - 若未来对前端正式开放，仍应再做契约收敛。
 
-### 2.2 Blackboard ICS 同步 CLI JSON 报告
+### 2.3 Blackboard ICS 同步 CLI JSON 报告
 
 来源：ICS CLI 在开启 `--save-json` 时写入 `backend/data/reports/`。
 
@@ -66,7 +89,7 @@
 
 其中“有多少条被解析、插入、更新、删除”属于当前比较值得依赖的统计维度。
 
-### 2.3 Blackboard 工具层返回字典
+### 2.4 Blackboard 工具层返回字典
 
 来源：`agent_tools.py`。
 
@@ -180,16 +203,17 @@ Blackboard 工具层返回中显式暴露了：
 
 这里再次强调一次，避免误读：
 
-- 当前这些契约是 **CLI/工具/结果对象层面的输出契约**；
-- 不是 `/api/...` 形式的 HTTP 协议；
-- 也不是已经承诺给前端长期依赖的服务接口规范。
+- 当前已经存在一组 **desktop runtime 控制面 HTTP 契约**；
+- 但 Blackboard / TIS 复杂业务能力仍主要表现为 CLI、工具层和结果对象输出；
+- 现在还没有已经承诺给前端长期依赖的完整业务 HTTP API 规范。
 
-如果后续要做前端正式联调，应把这里的内容作为输入，重新整理为服务端 API 契约，而不是直接照搬现有字典或报告文件。
+如果后续要做前端正式联调，应把这里的内容作为输入，重新整理为服务端 API 契约，而不是直接照搬现有字典、报告文件或阶段 1 的控制面端点。
 
 ## 7. 快速结论
 
 ### 已实现
 
+- Desktop runtime 本地 HTTP 最小契约；
 - Blackboard CLI JSON 报告；
 - Blackboard 工具层返回字典；
 - provider use case 的结构化结果对象；
@@ -198,8 +222,9 @@ Blackboard 工具层返回中显式暴露了：
 ### 代码里可调用但不是正式入口
 
 - TIS provider 结果对象；
-- Blackboard/TIS 更细粒度 DTO 与日志明细。
+- Blackboard/TIS 更细粒度 DTO 与日志明细；
+- Blackboard / TIS 复杂业务能力的正式 HTTP 暴露面。
 
 ### 未来草案
 
-- 把这些输出收束为真正的 HTTP API 响应规范。
+- 把这些输出进一步收束为真正的业务 HTTP API 响应规范。

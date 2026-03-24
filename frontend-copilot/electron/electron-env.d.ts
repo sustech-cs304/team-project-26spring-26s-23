@@ -1,5 +1,6 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 
+import type { CopilotRuntimeApi } from './copilot-runtime'
 import type { CopilotSettingsApi } from './copilot-settings'
 
 declare namespace NodeJS {
@@ -27,6 +28,7 @@ declare global {
   // Used in Renderer process, expose in `preload.ts`
   interface Window {
     copilotSettings: CopilotSettingsApi
+    copilotRuntime: CopilotRuntimeApi
   }
 }
 

@@ -59,12 +59,25 @@
   border-color: var(--warning-border);
 }
 
+.copilot-panel__status--starting {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
 .copilot-panel__status--ready {
   color: var(--success-text);
   background: var(--success-soft);
   border-color: var(--success-border);
 }
 
+.copilot-panel__status--degraded {
+  color: #9a3412;
+  background: #ffedd5;
+  border-color: #fdba74;
+}
+
+.copilot-panel__status--failed,
 .copilot-panel__status--error {
   color: var(--danger-text);
   background: var(--danger-soft);
@@ -88,6 +101,10 @@
 
 .copilot-panel__card--ready {
   border-color: var(--success-border);
+}
+
+.copilot-panel__card--warning {
+  border-color: #fdba74;
 }
 
 .copilot-panel__card--error {
@@ -151,6 +168,35 @@
   margin: 0;
   color: var(--text-primary);
   word-break: break-all;
+}
+
+.copilot-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.copilot-panel__button {
+  border: 1px solid #d0d8e4;
+  border-radius: 999px;
+  background: #172033;
+  color: #ffffff;
+  padding: 0.58rem 0.92rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.copilot-panel__button:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.copilot-panel__button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .copilot-panel__error {
