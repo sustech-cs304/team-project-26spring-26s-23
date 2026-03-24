@@ -23,8 +23,8 @@
 
 | 字段名 | 当前作用 | 存储位置 | 读取时机 | 是否为进入 `ready` 的必填项 | 是否已接到界面 | 当前事实说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `runtimeUrl` | 指定前端准备交给 Copilot 外层能力的运行时地址 | Electron `userData` 目录下的 `copilot-settings.json` | 应用启动时读取；聊天面板初始化时也会再次读取 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示读取结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
-| `agentName` | 指定前端准备使用的智能体名称 | Electron `userData` 目录下的 `copilot-settings.json` | 应用启动时读取；聊天面板初始化时也会再次读取 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示读取结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
+| `runtimeUrl` | 指定前端准备交给 Copilot 外层能力的运行时地址 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动时读取；聊天面板初始化时也会再次读取 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示读取结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
+| `agentName` | 指定前端准备使用的智能体名称 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动时读取；聊天面板初始化时也会再次读取 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示读取结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
 
 ### 2. 当前存储结构里实际存在的字段范围
 
@@ -76,6 +76,7 @@
 ### 当前已实现
 
 - 已有 Electron 本地配置文件承载 `runtimeUrl` 和 `agentName`
+- 该配置文件当前落在 `userData/desktop-runtime/config/`，并兼容从旧版 `userData/copilot-settings.json` 迁移
 - 已有 preload 桥接供 renderer 读取 / 保存配置
 - 已有字段归一化逻辑
 - 已有缺失字段判断逻辑
