@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from 'react'
 import {
   Brain,
   Check,
@@ -140,6 +140,7 @@ type TextFieldProps = {
   onChange: (value: string) => void
   placeholder?: string
   type?: 'text' | 'password' | 'url'
+  inputRef?: Ref<HTMLInputElement>
 }
 
 type TextareaFieldProps = {
@@ -392,6 +393,45 @@ const currencyOptions: SelectOption[] = [
   { value: 'cny', label: '人民币（CNY）', hint: '适合本地或代理服务' },
   { value: 'credits', label: '积分（Credits）', hint: '用于平台积分制计费' },
 ]
+
+const focusableElementSelector = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function isFocusableElementVisible(element: HTMLElement) {
+  let current: HTMLElement | null = element
+
+  while (current) {
+    const style = window.getComputedStyle(current)
+
+    if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') {
+      return false
+    }
+
+    current = current.parentElement
+  }
+
+  return true
+}
+
+function getFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableElementSelector)).filter((element) => {
+    if (element.tabIndex < 0 || element.hasAttribute('disabled') || element.getAttribute('aria-hidden') === 'true') {
+      return false
+    }
+
+    if (element instanceof HTMLInputElement && element.type === 'hidden') {
+      return false
+    }
+
+    return isFocusableElementVisible(element)
+  })
+}
 
 function titleCaseToken(value: string) {
   return value
@@ -877,6 +917,10 @@ function SettingsPlaceholder({
     () => buildInitialModelDrafts(initialProviderProfiles),
   )
   const [modelEditorState, setModelEditorState] = useState<ModelEditorState | null>(null)
+  const modelEditorDialogRef = useRef<HTMLElement | null>(null)
+  const modelEditorInitialFocusRef = useRef<HTMLInputElement | null>(null)
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
+  const isModelEditorOpen = modelEditorState !== null
 
   const activeProvider = useMemo(
     () => providerProfiles.find((profile) => profile.id === activeProviderId) ?? providerProfiles[0],
@@ -893,6 +937,37 @@ function SettingsPlaceholder({
   useEffect(() => {
     setModelEditorState(null)
   }, [activeProviderId])
+
+  useEffect(() => {
+    if (!isModelEditorOpen) {
+      const previousFocusedElement = previouslyFocusedElementRef.current
+      previouslyFocusedElementRef.current = null
+
+      if (previousFocusedElement?.isConnected) {
+        previousFocusedElement.focus()
+      }
+
+      return
+    }
+
+    previouslyFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+    const focusTimer = window.requestAnimationFrame(() => {
+      const dialog = modelEditorDialogRef.current
+
+      if (!dialog) {
+        return
+      }
+
+      const focusTarget = modelEditorInitialFocusRef.current ?? getFocusableElements(dialog)[0] ?? dialog
+      focusTarget.focus()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(focusTimer)
+    }
+  }, [isModelEditorOpen])
 
   const filteredProviderProfiles = useMemo(() => {
     const keyword = providerQuery.trim().toLowerCase()
@@ -1023,6 +1098,52 @@ function SettingsPlaceholder({
 
   const handleCloseModelEditor = () => {
     setModelEditorState(null)
+  }
+
+  const handleModelEditorKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      handleCloseModelEditor()
+      return
+    }
+
+    if (event.key !== 'Tab') {
+      return
+    }
+
+    const dialog = modelEditorDialogRef.current
+
+    if (!dialog) {
+      return
+    }
+
+    const focusableElements = getFocusableElements(dialog)
+
+    if (focusableElements.length === 0) {
+      event.preventDefault()
+      dialog.focus()
+      return
+    }
+
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const activeIndex = activeElement ? focusableElements.indexOf(activeElement) : -1
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    if (event.shiftKey) {
+      if (activeIndex <= 0) {
+        event.preventDefault()
+        lastElement.focus()
+      }
+
+      return
+    }
+
+    if (activeIndex === -1 || activeIndex === focusableElements.length - 1) {
+      event.preventDefault()
+      firstElement.focus()
+    }
   }
 
   const handleToggleModelCapability = (capability: ModelCapability) => {
@@ -1312,11 +1433,14 @@ function SettingsPlaceholder({
             {modelEditorState ? (
               <div className="model-editor-backdrop" role="presentation" onClick={handleCloseModelEditor}>
                 <section
+                  ref={modelEditorDialogRef}
                   className="model-editor-modal"
                   role="dialog"
                   aria-modal="true"
                   aria-label={modelEditorState.isNew ? '添加模型' : '编辑模型'}
+                  tabIndex={-1}
                   onClick={(event) => event.stopPropagation()}
+                  onKeyDown={handleModelEditorKeyDown}
                 >
                   <div className="model-editor-modal__header">
                     <div>
@@ -1352,6 +1476,7 @@ function SettingsPlaceholder({
                           )
                         }
                         placeholder="例如 google/gemini-2.5-pro"
+                        inputRef={modelEditorInitialFocusRef}
                       />
                       <TextField
                         label="模型名称"
@@ -1879,6 +2004,7 @@ function SelectField({ label, description, value, options, onChange, placeholder
       <div
         className={`select-dropdown${open ? ' select-dropdown--open' : ''}${dropdownDirection === 'up' ? ' select-dropdown--top' : ''}`}
         role="listbox"
+        aria-hidden={!open}
       >
         {options.map((option) => {
           const active = option.value === value
@@ -1889,6 +2015,7 @@ function SelectField({ label, description, value, options, onChange, placeholder
               type="button"
               role="option"
               aria-selected={active}
+              tabIndex={open ? 0 : -1}
               className={`select-option${active ? ' select-option--active' : ''}`}
               onClick={() => {
                 onChange(option.value)
@@ -1915,6 +2042,7 @@ function TextField({
   onChange,
   placeholder,
   type = 'text',
+  inputRef,
 }: TextFieldProps) {
   return (
     <label className="form-field">
@@ -1923,6 +2051,7 @@ function TextField({
         {description ? <span className="form-field__description">{description}</span> : null}
       </span>
       <input
+        ref={inputRef}
         className="text-input"
         type={type}
         value={value}
