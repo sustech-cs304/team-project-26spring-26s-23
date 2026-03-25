@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -137,6 +137,21 @@ async function createDevelopmentRuntimeFixture(): Promise<DevelopmentRuntimeFixt
   }
 }
 
+async function writeSuccessfulCommandProbe(directory: string, commandName: string): Promise<void> {
+  const commandPath = process.platform === 'win32'
+    ? path.join(directory, `${commandName}.cmd`)
+    : path.join(directory, commandName)
+  const scriptContent = process.platform === 'win32'
+    ? '@echo off\r\nexit /b 0\r\n'
+    : '#!/bin/sh\nexit 0\n'
+
+  await writeFile(commandPath, scriptContent, 'utf8')
+
+  if (process.platform !== 'win32') {
+    await chmod(commandPath, 0o755)
+  }
+}
+
 describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
   it('resolves backend paths from the Electron app root in development mode', () => {
     const spec = buildDevelopmentPythonRuntimeLaunchSpec({
@@ -150,14 +165,54 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
     expect(spec.backendDir).toBe(path.resolve('..', 'backend'))
     expect(spec.workingDirectory).toBe(path.resolve('..', 'backend'))
     if (spec.pythonExecutablePath === null) {
-      expect(['uv', 'py', 'python', 'python3']).toContain(spec.command)
-      if (spec.command === 'uv') {
-        expect(spec.args.slice(0, 4)).toEqual(['run', '--directory', spec.backendDir, 'python'])
-      }
+      const expectedFallbackCommands = process.platform === 'win32'
+        ? ['py', 'python', 'python3']
+        : ['python3', 'python']
+      expect(expectedFallbackCommands).toContain(spec.command)
     } else {
       expect(spec.command).toBe(spec.pythonExecutablePath)
     }
     expect(spec.args.slice(-2)).toEqual(['-m', 'app.desktop_runtime'])
+  })
+
+  it('does not prefer uv when falling back to shell Python interpreters', async () => {
+    const fixture = await createDevelopmentRuntimeFixture()
+    const fakeBinDir = path.join(fixture.tempRoot, 'fake-bin')
+    const originalPath = process.env.PATH
+    const originalWindowsPath = process.env.Path
+
+    await rm(fixture.pythonExecutablePath, { force: true })
+    await mkdir(fakeBinDir, { recursive: true })
+
+    try {
+      await Promise.all([
+        writeSuccessfulCommandProbe(fakeBinDir, 'uv'),
+        writeSuccessfulCommandProbe(fakeBinDir, 'python'),
+        writeSuccessfulCommandProbe(fakeBinDir, 'python3'),
+        ...(process.platform === 'win32' ? [writeSuccessfulCommandProbe(fakeBinDir, 'py')] : []),
+      ])
+
+      process.env.PATH = fakeBinDir
+      process.env.Path = fakeBinDir
+
+      const spec = buildDevelopmentPythonRuntimeLaunchSpec({
+        appRoot: fixture.appRoot,
+        resourcesPath: path.join(fixture.tempRoot, 'dist-electron'),
+        isPackaged: false,
+      })
+
+      if (process.platform === 'win32') {
+        expect(spec.command).toBe('py')
+        expect(spec.args).toEqual(['-3', '-m', DESKTOP_RUNTIME_ENTRY_MODULE])
+      } else {
+        expect(spec.command).toBe('python3')
+        expect(spec.args).toEqual(['-m', DESKTOP_RUNTIME_ENTRY_MODULE])
+      }
+    } finally {
+      process.env.PATH = originalPath
+      process.env.Path = originalWindowsPath
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
   })
 
   it('prefers the project virtualenv interpreter when present', async () => {
@@ -239,10 +294,10 @@ describe('resolvePythonRuntimeLaunchSpec', () => {
     expect(spec.backendDir).toBe(path.resolve('..', 'backend'))
     expect(spec.entryModule).toBe('app.desktop_runtime')
     if (spec.pythonExecutablePath === null) {
-      expect(['uv', 'py', 'python', 'python3']).toContain(spec.command)
-      if (spec.command === 'uv') {
-        expect(spec.args.slice(0, 4)).toEqual(['run', '--directory', spec.backendDir, 'python'])
-      }
+      const expectedFallbackCommands = process.platform === 'win32'
+        ? ['py', 'python', 'python3']
+        : ['python3', 'python']
+      expect(expectedFallbackCommands).toContain(spec.command)
     } else {
       expect(spec.command).toBe(spec.pythonExecutablePath)
     }

@@ -77,7 +77,7 @@ export function buildDevelopmentPythonRuntimeLaunchSpec(
   const workspaceRoot = path.resolve(normalizedAppRoot, '..')
   const backendDir = path.join(workspaceRoot, 'backend')
   const pythonLaunchCandidate = resolveDevelopmentPythonLaunchCandidate(backendDir)
-    ?? getFallbackDevelopmentPythonLaunchCandidate(backendDir)
+    ?? getFallbackDevelopmentPythonLaunchCandidate()
 
   return {
     mode: 'development',
@@ -139,20 +139,13 @@ function getDevelopmentPythonExecutableCandidates(backendDir: string): string[] 
   ]
 }
 
-function getFallbackDevelopmentPythonLaunchCandidate(backendDir: string): DevelopmentPythonLaunchCandidate {
-  return getFallbackDevelopmentPythonLaunchCandidates(backendDir)[0]
+function getFallbackDevelopmentPythonLaunchCandidate(): DevelopmentPythonLaunchCandidate {
+  return getFallbackDevelopmentPythonLaunchCandidates()[0]
 }
 
-function getFallbackDevelopmentPythonLaunchCandidates(backendDir: string): DevelopmentPythonLaunchCandidate[] {
-  const uvCandidate: DevelopmentPythonLaunchCandidate = {
-    command: 'uv',
-    args: ['run', '--directory', path.resolve(backendDir), 'python'],
-    pythonExecutablePath: null,
-  }
-
+function getFallbackDevelopmentPythonLaunchCandidates(): DevelopmentPythonLaunchCandidate[] {
   if (process.platform === 'win32') {
     return [
-      uvCandidate,
       {
         command: 'py',
         args: ['-3'],
@@ -172,7 +165,6 @@ function getFallbackDevelopmentPythonLaunchCandidates(backendDir: string): Devel
   }
 
   return [
-    uvCandidate,
     {
       command: 'python3',
       args: [],
