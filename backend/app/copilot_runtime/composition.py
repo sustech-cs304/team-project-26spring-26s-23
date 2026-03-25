@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .agent import PydanticAIAgentExecutor
 from .agent_registry import AgentRegistry, build_default_agent_registry
@@ -10,6 +11,9 @@ from .bridge import RuntimeBridge
 from .contracts import RuntimeScaffold, build_runtime_scaffold
 from .session_store import InMemorySessionStore
 from .tool_registry import ToolRegistry, build_default_tool_registry
+
+if TYPE_CHECKING:
+    from app.desktop_runtime.config import DesktopRuntimeConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,13 +30,15 @@ class RuntimeDependencies:
 
 def build_default_runtime_dependencies(
     *,
+    runtime_config: DesktopRuntimeConfig | None = None,
     session_store: InMemorySessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
 ) -> RuntimeDependencies:
     """Create the default runtime object graph without adding protocol logic."""
 
     resolved_session_store = session_store or InMemorySessionStore()
-    resolved_agent_executor = agent_executor or PydanticAIAgentExecutor()
+    runtime_model = runtime_config.model if runtime_config is not None else None
+    resolved_agent_executor = agent_executor or PydanticAIAgentExecutor(model=runtime_model)
     tool_registry = build_default_tool_registry()
     agent_registry = build_default_agent_registry(
         executor_factory=lambda: resolved_agent_executor,

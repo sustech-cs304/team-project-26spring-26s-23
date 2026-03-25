@@ -14,6 +14,8 @@ from app.copilot_runtime import PydanticAIAgentExecutor
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
     ENV_HOST,
+    ENV_LEGACY_MODEL,
+    ENV_MODEL,
     ENV_PORT,
     ENV_USER_DATA_DIR,
     LOCAL_TOKEN_HEADER_NAME,
@@ -78,6 +80,28 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
             "tools": [],
         }
     ]
+
+
+
+def test_create_app_passes_runtime_model_to_default_executor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv(ENV_MODEL, "runtime-env-model")
+    monkeypatch.setenv(ENV_LEGACY_MODEL, "legacy-env-model")
+
+    app = create_app(_build_config(tmp_path, model="cli-model"))
+
+    with TestClient(app) as client:
+        response = client.get("/diagnostics")
+        runtime_executor = app.state.copilot_runtime_agent_executor
+
+    assert response.status_code == 200
+    assert runtime_executor.resolve_model() == "cli-model"
+
+    payload = response.json()
+    assert payload["configuration"]["model"] == "cli-model"
+    assert payload["capabilities"]["model_configured"] is True
 
 
 def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> None:
@@ -241,6 +265,44 @@ def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> Non
     assert authorized_payload["auth"]["header_name"] == LOCAL_TOKEN_HEADER_NAME
 
 
+
+def test_create_app_without_model_keeps_info_and_connect_but_run_fails_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv(ENV_MODEL, raising=False)
+    monkeypatch.delenv(ENV_LEGACY_MODEL, raising=False)
+
+    app = create_app(_build_config(tmp_path))
+
+    with TestClient(app) as client:
+        info_response = client.post("/", json={"method": "info"})
+        connect_response = client.post("/", json=_build_connect_request())
+        run_response = client.post("/", json=_build_run_request())
+        diagnostics_response = client.get("/diagnostics")
+
+    assert info_response.status_code == 200
+    assert info_response.json()["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert connect_response.status_code == 200
+    assert _parse_sse_events(connect_response.text)[-1]["result"]["ok"] is True
+    assert run_response.status_code == 503
+    assert run_response.json() == {
+        "ok": False,
+        "error": {
+            "code": "model_not_configured",
+            "message": "No runtime model is configured. Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL.",
+            "stage": "phase3-run-bridge",
+            "requestedMethod": "agent/run",
+            "supportedMethods": ["info", "agent/connect", "agent/run"],
+            "details": {
+                "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"],
+            },
+        },
+    }
+    assert diagnostics_response.status_code == 200
+    assert diagnostics_response.json()["capabilities"]["model_configured"] is False
+
+
 def _build_connect_request() -> dict[str, Any]:
     return {
         "method": "agent/connect",
@@ -296,7 +358,12 @@ def _build_test_agent_executor() -> PydanticAIAgentExecutor:
     )
 
 
-def _build_config(tmp_path: Path, *, local_token: str | None = None) -> DesktopRuntimeConfig:
+def _build_config(
+    tmp_path: Path,
+    *,
+    local_token: str | None = None,
+    model: str | None = None,
+) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
     return DesktopRuntimeConfig(
@@ -319,4 +386,5 @@ def _build_config(tmp_path: Path, *, local_token: str | None = None) -> DesktopR
         ),
         app_mode="desktop",
         environment="test",
+        model=model,
     )

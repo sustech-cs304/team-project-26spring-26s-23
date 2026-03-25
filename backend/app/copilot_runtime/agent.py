@@ -63,7 +63,7 @@ class PydanticAIAgentExecutor:
 
     @property
     def model_configured(self) -> bool:
-        return self._model_override is not None or self._configured_model_name() is not None
+        return self._resolved_explicit_model() is not None or self._configured_model_name() is not None
 
     @property
     def model_environment_keys(self) -> tuple[str, ...]:
@@ -100,15 +100,24 @@ class PydanticAIAgentExecutor:
         return output
 
     def resolve_model(self) -> Any:
-        if self._model_override is not None:
-            return self._model_override
+        explicit_model = self._resolved_explicit_model()
+        if explicit_model is not None:
+            return explicit_model
 
         model_name = self._configured_model_name()
         if model_name is None:
             raise ModelNotConfiguredError(
-                "No runtime model is configured. Set COPILOT_RUNTIME_MODEL or COPILOT_MODEL."
+                "No runtime model is configured. Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL."
             )
         return model_name
+
+    def _resolved_explicit_model(self) -> Any | None:
+        if self._model_override is None:
+            return None
+        if isinstance(self._model_override, str):
+            value = self._model_override.strip()
+            return value or None
+        return self._model_override
 
     def _configured_model_name(self) -> str | None:
         for key in MODEL_ENVIRONMENT_KEYS:

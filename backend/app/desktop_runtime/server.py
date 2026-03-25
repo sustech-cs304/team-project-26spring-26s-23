@@ -56,6 +56,7 @@ def create_app(
 
     lifecycle_manager = RuntimeLifecycleManager(runtime_config)
     runtime_dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
         session_store=session_store,
         agent_executor=agent_executor,
     )
