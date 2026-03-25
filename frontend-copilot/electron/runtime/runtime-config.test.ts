@@ -193,7 +193,9 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
       ])
 
       process.env.PATH = fakeBinDir
-      process.env.Path = fakeBinDir
+      if (process.platform === 'win32') {
+        process.env.Path = fakeBinDir
+      }
 
       const spec = buildDevelopmentPythonRuntimeLaunchSpec({
         appRoot: fixture.appRoot,
@@ -209,8 +211,18 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
         expect(spec.args).toEqual(['-m', DESKTOP_RUNTIME_ENTRY_MODULE])
       }
     } finally {
-      process.env.PATH = originalPath
-      process.env.Path = originalWindowsPath
+      if (originalPath === undefined) {
+        delete process.env.PATH
+      } else {
+        process.env.PATH = originalPath
+      }
+      if (process.platform === 'win32') {
+        if (originalWindowsPath === undefined) {
+          delete process.env.Path
+        } else {
+          process.env.Path = originalWindowsPath
+        }
+      }
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
   })
