@@ -48,19 +48,17 @@ class RuntimeBridge:
 
     async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
         agent_descriptor = self._resolve_agent(request.agent_name)
-        session, newly_created = self._session_store.get_or_create(
-            thread_id=request.thread_id,
-            agent_name=request.agent_name,
-            metadata={"last_run_id": request.run_id},
+        existing_session = self._session_store.get(request.thread_id)
+        history = self._build_message_history(
+            existing_session.message_history() if existing_session is not None else ()
         )
-        history = self._build_message_history(session.message_history())
         agent_executor = self._build_executor(agent_descriptor)
         assistant_text = await agent_executor.run(
             agent_name=request.agent_name,
             user_prompt=request.user_message_text,
             message_history=history,
         )
-        persisted_session, _ = self._session_store.append_turn(
+        persisted_session, newly_created = self._session_store.append_turn(
             thread_id=request.thread_id,
             agent_name=request.agent_name,
             user_text=request.user_message_text,

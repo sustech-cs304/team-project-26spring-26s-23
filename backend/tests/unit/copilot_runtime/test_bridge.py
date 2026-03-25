@@ -104,6 +104,41 @@ def test_run_resolves_default_agent_through_registry_and_factory() -> None:
     assert history[1].parts[0].content == "hi there"
 
 
+def test_run_creates_new_session_after_successful_first_turn() -> None:
+    store = InMemorySessionStore()
+    executor = RecordingAgentExecutor(reply="First reply")
+    executor_factory = RecordingExecutorFactory(executor)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+    )
+
+    result = asyncio.run(
+        bridge.run(
+            request=_build_run_request(
+                thread_id="thread-new",
+                run_id="run-1",
+                user_message_text="hello there",
+            )
+        )
+    )
+
+    assert executor_factory.call_count == 1
+    assert result.assistant_text == "First reply"
+    assert result.newly_created is True
+    assert result.session.metadata == {"last_run_id": "run-1"}
+    assert _message_pairs(store, "thread-new") == [
+        ("user", "hello there"),
+        ("assistant", "First reply"),
+    ]
+
+    assert len(executor.calls) == 1
+    call = executor.calls[0]
+    history = call["message_history"]
+    assert isinstance(history, list)
+    assert history == []
+
+
 def test_run_raises_explicit_error_when_agent_is_not_registered() -> None:
     store = InMemorySessionStore()
     bridge = RuntimeBridge(session_store=store, agent_registry=build_default_agent_registry())
@@ -132,6 +167,9 @@ def test_run_does_not_append_failed_turn_to_session_history() -> None:
         assistant_text="hi there",
         metadata={"last_run_id": "run-1"},
     )
+    session_before_failure = store.get("thread-1")
+    assert session_before_failure is not None
+    previous_updated_at = session_before_failure.updated_at
     executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
     executor_factory = RecordingExecutorFactory(executor)
     bridge = RuntimeBridge(
@@ -155,6 +193,35 @@ def test_run_does_not_append_failed_turn_to_session_history() -> None:
         ("user", "hello"),
         ("assistant", "hi there"),
     ]
+    session_after_failure = store.get("thread-1")
+    assert session_after_failure is session_before_failure
+    assert session_after_failure.metadata == {"last_run_id": "run-1"}
+    assert session_after_failure.updated_at == previous_updated_at
+
+
+def test_run_does_not_create_session_when_executor_fails_before_first_success() -> None:
+    store = InMemorySessionStore()
+    executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
+    executor_factory = RecordingExecutorFactory(executor)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+    )
+
+    with pytest.raises(AgentExecutionError, match="executor boom"):
+        asyncio.run(
+            bridge.run(
+                request=_build_run_request(
+                    thread_id="thread-new",
+                    run_id="run-1",
+                    user_message_text="should fail",
+                )
+            )
+        )
+
+    assert executor_factory.call_count == 1
+    assert store.get("thread-new") is None
+    assert store.list_messages("thread-new") == ()
 
 
 def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
