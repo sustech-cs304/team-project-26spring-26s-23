@@ -10,6 +10,7 @@ from .agent import (
 )
 from .agent_registry import AgentDescriptor, AgentRegistry, build_default_agent_registry
 from .bridge import InvalidSessionHistoryError, RuntimeBridge, RuntimeBridgeResult
+from .composition import RuntimeDependencies, build_default_runtime_dependencies
 from .contracts import (
     AGENT_CONNECT_METHOD,
     AGENT_RUN_METHOD,
@@ -41,12 +42,14 @@ __all__ = [
     "PydanticAIAgentExecutor",
     "RuntimeBridge",
     "RuntimeBridgeResult",
+    "RuntimeDependencies",
     "RuntimeRunRequest",
     "RuntimeScaffold",
     "ToolDescriptor",
     "ToolRegistry",
     "ToolsetDescriptor",
     "build_default_agent_registry",
+    "build_default_runtime_dependencies",
     "build_default_tool_registry",
     "build_router",
     "build_runtime_scaffold",

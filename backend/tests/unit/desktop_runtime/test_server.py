@@ -28,6 +28,22 @@ def test_create_app_returns_fastapi_instance(tmp_path: Path) -> None:
     assert isinstance(app, FastAPI)
 
 
+def test_create_app_mounts_runtime_dependencies_from_composition(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app):
+        dependencies = app.state.copilot_runtime_dependencies
+
+        assert dependencies.session_store is app.state.copilot_runtime_session_store
+        assert dependencies.agent_registry is app.state.copilot_runtime_agent_registry
+        assert dependencies.tool_registry is app.state.copilot_runtime_tool_registry
+        assert dependencies.agent_executor is app.state.copilot_runtime_agent_executor
+        assert dependencies.runtime_bridge is app.state.copilot_runtime_bridge
+        assert dependencies.scaffold is app.state.copilot_runtime_scaffold
+        assert dependencies.agent_registry.get_default().name == "default"
+        assert dependencies.tool_registry.get_default().name == "default"
+
+
 def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
 

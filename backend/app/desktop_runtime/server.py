@@ -19,9 +19,8 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.copilot_runtime import (  # noqa: E402
     PydanticAIAgentExecutor,
-    RuntimeBridge,
+    build_default_runtime_dependencies,
     build_router,
-    build_runtime_scaffold,
 )
 from app.copilot_runtime.session_store import InMemorySessionStore  # noqa: E402
 from app.desktop_runtime.config import (  # noqa: E402
@@ -56,24 +55,26 @@ def create_app(
         runtime_config = parse_runtime_config([], env=os.environ, cwd=BACKEND_DIR)
 
     lifecycle_manager = RuntimeLifecycleManager(runtime_config)
-    runtime_session_store = session_store or InMemorySessionStore()
-    runtime_agent_executor = agent_executor or PydanticAIAgentExecutor()
-    runtime_bridge = RuntimeBridge(
-        session_store=runtime_session_store,
-        agent_executor=runtime_agent_executor,
+    runtime_dependencies = build_default_runtime_dependencies(
+        session_store=session_store,
+        agent_executor=agent_executor,
     )
-    runtime_scaffold = build_runtime_scaffold(
-        session_store_type=runtime_session_store.storage_type,
-        model_configured=runtime_agent_executor.model_configured,
-        model_environment_keys=runtime_agent_executor.model_environment_keys,
-    )
+    runtime_session_store = runtime_dependencies.session_store
+    runtime_agent_executor = runtime_dependencies.agent_executor
+    runtime_bridge = runtime_dependencies.runtime_bridge
+    runtime_scaffold = runtime_dependencies.scaffold
+    runtime_agent_registry = runtime_dependencies.agent_registry
+    runtime_tool_registry = runtime_dependencies.tool_registry
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.runtime_config = runtime_config
         app.state.lifecycle_manager = lifecycle_manager
+        app.state.copilot_runtime_dependencies = runtime_dependencies
         app.state.copilot_runtime_scaffold = runtime_scaffold
         app.state.copilot_runtime_session_store = runtime_session_store
+        app.state.copilot_runtime_agent_registry = runtime_agent_registry
+        app.state.copilot_runtime_tool_registry = runtime_tool_registry
         app.state.copilot_runtime_agent_executor = runtime_agent_executor
         app.state.copilot_runtime_bridge = runtime_bridge
         lifecycle_manager.startup()
