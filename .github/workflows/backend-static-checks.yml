@@ -49,7 +49,7 @@ jobs:
 
       - name: Run Blackboard pytest
         run: >-
-          uv run --project backend pytest -c backend/pyproject.toml
+          uv run --project backend python -m pytest -c backend/pyproject.toml
           backend/tests/unit/api/test_blackboard_api_layer.py
           backend/tests/unit/api/test_blackboard_remaining_api.py
           backend/tests/unit/api/test_course_catalog_search.py
@@ -88,6 +88,6 @@ jobs:
 
       - name: Run TIS pytest
         run: >-
-          uv run --project backend pytest -c backend/pyproject.toml
+          uv run --project backend python -m pytest -c backend/pyproject.toml
           backend/tests/unit/data/test_tis_database_sync.py
           backend/tests/unit/provider/test_tis_persistence_integration.py

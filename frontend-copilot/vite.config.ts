@@ -1,7 +1,67 @@
+import { spawnSync, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { defineConfig } from 'vite'
 import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
+import { collectForwardedElectronMainProcessArguments } from './electron/runtime/runtime-config'
+
+type ElectronStartup = ((argv?: string[], options?: SpawnOptions, customElectronPkg?: string) => Promise<void>) & {
+  exit?: () => Promise<void>
+  __canduePatched?: true
+}
+
+type ProcessWithElectronApp = NodeJS.Process & {
+  electronApp?: ChildProcess
+}
+
+function createElectronChildEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  delete env.ELECTRON_RUN_AS_NODE
+  return env
+}
+
+function patchElectronDevStartupExit(startup: ElectronStartup): void {
+  if (startup.__canduePatched === true) {
+    return
+  }
+
+  const originalExit = startup.exit?.bind(startup)
+
+  startup.exit = async () => {
+    const processWithElectronApp = process as ProcessWithElectronApp
+    const electronApp = processWithElectronApp.electronApp
+
+    if (electronApp === undefined) {
+      if (process.platform !== 'win32') {
+        await originalExit?.()
+      }
+      return
+    }
+
+    electronApp.removeAllListeners()
+
+    if (process.platform === 'win32') {
+      processWithElectronApp.electronApp = undefined
+
+      if (electronApp.exitCode !== null || electronApp.signalCode !== null) {
+        return
+      }
+
+      if (electronApp.pid !== undefined) {
+        spawnSync('taskkill', ['/pid', String(electronApp.pid), '/T', '/F'], {
+          stdio: 'ignore',
+          windowsHide: true,
+        })
+      }
+
+      return
+    }
+
+    await originalExit?.()
+  }
+
+  startup.__canduePatched = true
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -11,6 +71,14 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
+        onstart({ startup }) {
+          patchElectronDevStartupExit(startup as ElectronStartup)
+          return startup([
+            '.',
+            '--no-sandbox',
+            ...collectForwardedElectronMainProcessArguments(process.argv),
+          ], { env: createElectronChildEnv() })
+        },
       },
       preload: {
         // Shortcut of `build.rollupOptions.input`.

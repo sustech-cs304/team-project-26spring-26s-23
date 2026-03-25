@@ -2,12 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/candue_icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>赶渡 CanDue</title>
+    <link rel="stylesheet" href="/src/index.css" />
+    <link rel="modulepreload" href="/src/CopilotAppRoot.tsx" />
+    <link rel="modulepreload" href="/src/App.tsx" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="startup-shell" data-startup-shell="static" aria-live="polite">
+        <div class="startup-loading" role="status" aria-label="正在准备桌面界面…">
+          <span class="startup-loading__spinner" aria-hidden="true"></span>
+          <p class="startup-loading__message">正在准备桌面界面…</p>
+        </div>
+      </main>
+    </div>
+    <script>
+      console.info('[startup]', JSON.stringify({
+        scope: 'static-shell',
+        stage: 'html-parsed',
+        t: Math.round(performance.now()),
+      }))
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
