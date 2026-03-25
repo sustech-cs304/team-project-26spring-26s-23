@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 
 from app.copilot_runtime import PydanticAIAgentExecutor
+from app.copilot_runtime.session_store import RuntimeTextMessage
 from app.desktop_runtime.server import create_app
 
 
@@ -96,7 +97,6 @@ def test_post_root_agent_run_reuses_history_across_same_thread() -> None:
     assert isinstance(reused_history[1].parts[0], TextPart)
     assert reused_history[1].parts[0].content == "First reply"
 
-
 def test_post_root_agent_run_model_not_configured_returns_structured_error() -> None:
     app = create_app(agent_executor=PydanticAIAgentExecutor(env={}))
 
@@ -109,9 +109,68 @@ def test_post_root_agent_run_model_not_configured_returns_structured_error() -> 
     assert payload["ok"] is False
     assert payload["error"]["code"] == "model_not_configured"
     assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["stage"] == "phase3-run-bridge"
     assert payload["error"]["details"] == {
         "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"]
     }
+
+
+
+def test_post_root_agent_run_unknown_agent_returns_structured_not_found_error() -> None:
+    app = create_app(agent_executor=_build_stubbed_executor(outputs=["unused reply"]))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_run_request(
+                thread_id="thread-http",
+                run_id="run-1",
+                user_text="Hello",
+                agent_id="missing-agent",
+            ),
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 404
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "agent_not_found"
+    assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["stage"] == "phase3-run-bridge"
+    assert payload["error"]["details"] == {"agentName": "missing-agent"}
+    assert payload["error"]["message"] == "Unknown agent 'missing-agent'."
+
+
+
+def test_post_root_agent_run_corrupted_session_history_returns_explicit_error() -> None:
+    app = create_app(agent_executor=_build_stubbed_executor(outputs=["unused reply"]))
+
+    with TestClient(app) as client:
+        store = app.state.copilot_runtime_session_store
+        session, _ = store.get_or_create(
+            thread_id="thread-http",
+            agent_name="default",
+            metadata={"last_run_id": "run-1"},
+        )
+        session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
+        response = client.post(
+            "/",
+            json=_build_run_request(thread_id="thread-http", run_id="run-2", user_text="Hello again"),
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 409
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_message_history"
+    assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["stage"] == "phase3-run-bridge"
+    assert payload["error"]["details"] == {}
+    assert "expected role 'user'" in payload["error"]["message"]
+
 
 
 class CapturingExecutor(PydanticAIAgentExecutor):
@@ -162,10 +221,16 @@ def _build_connect_request(*, thread_id: str, run_id: str) -> dict[str, Any]:
 
 
 
-def _build_run_request(*, thread_id: str, run_id: str, user_text: str) -> dict[str, Any]:
+def _build_run_request(
+    *,
+    thread_id: str,
+    run_id: str,
+    user_text: str,
+    agent_id: str = "default",
+) -> dict[str, Any]:
     return {
         "method": "agent/run",
-        "params": {"agentId": "default"},
+        "params": {"agentId": agent_id},
         "body": {
             "threadId": thread_id,
             "runId": run_id,

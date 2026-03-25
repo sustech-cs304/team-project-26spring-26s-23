@@ -8,14 +8,17 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime import (
+    AgentExecutionError,
     PydanticAIAgentExecutor,
     RuntimeBridge,
+    RuntimeBridgeResult,
+    RuntimeRunRequest,
     RuntimeScaffold,
     build_default_agent_registry,
     build_router,
     build_runtime_scaffold,
 )
-from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
 
 
 TEST_MODEL_REPLY = "Hello from the test model."
@@ -281,7 +284,6 @@ def test_root_post_agent_run_unknown_agent_returns_structured_error() -> None:
     assert payload["error"]["requestedMethod"] == "agent/run"
     assert payload["error"]["details"] == {"agentName": "missing-agent"}
 
-
 def test_root_post_agent_run_model_not_configured_returns_structured_error() -> None:
     app, _scaffold, _store = _build_app(agent_executor=PydanticAIAgentExecutor(env={}))
 
@@ -296,6 +298,68 @@ def test_root_post_agent_run_model_not_configured_returns_structured_error() -> 
     assert payload["error"]["details"] == {
         "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"]
     }
+
+
+
+def test_root_post_agent_run_corrupted_session_history_returns_structured_conflict() -> None:
+    app, _scaffold, store = _build_app()
+    session, _ = store.get_or_create(
+        thread_id="thread-1",
+        agent_name="default",
+        metadata={"last_run_id": "run-0"},
+    )
+    session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
+
+    with TestClient(app) as client:
+        response = client.post("/", json=_build_run_request(user_text="Hello"))
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_message_history"
+    assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["stage"] == "phase3-run-bridge"
+    assert "expected role 'user'" in payload["error"]["message"]
+
+
+
+def test_root_post_agent_run_agent_execution_failure_returns_structured_error() -> None:
+    app, _scaffold, _store = _build_app(
+        runtime_bridge=_ExplodingRuntimeBridge(AgentExecutionError("executor boom"))
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/", json=_build_run_request(user_text="Hello"))
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "agent_execution_failed"
+    assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["stage"] == "phase3-run-bridge"
+    assert payload["error"]["message"] == "executor boom"
+
+
+
+def test_root_post_agent_run_unexpected_bridge_failure_returns_structured_error() -> None:
+    app, _scaffold, _store = _build_app(
+        runtime_bridge=_ExplodingRuntimeBridge(RuntimeError("unexpected boom"))
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/", json=_build_run_request(user_text="Hello"))
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "agent_execution_failed"
+    assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["stage"] == "phase3-run-bridge"
+    assert payload["error"]["message"] == "Unexpected agent execution failure: unexpected boom"
+
 
 
 def test_root_post_agent_run_missing_thread_id_returns_structured_error() -> None:
@@ -341,16 +405,26 @@ def test_root_post_agent_run_unsupported_message_shape_returns_structured_error(
     assert payload["error"]["requestedMethod"] == "agent/run"
 
 
+class _ExplodingRuntimeBridge(RuntimeBridge):
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
+        raise self._error
+
+
+
 def _build_app(
     *,
     agent_executor: PydanticAIAgentExecutor | None = None,
+    runtime_bridge: RuntimeBridge | None = None,
 ) -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
     executor = agent_executor or PydanticAIAgentExecutor(
         model=TestModel(custom_output_text=TEST_MODEL_REPLY)
     )
     store = InMemorySessionStore()
     agent_registry = build_default_agent_registry(executor_factory=lambda: executor)
-    bridge = RuntimeBridge(session_store=store, agent_registry=agent_registry)
+    bridge = runtime_bridge or RuntimeBridge(session_store=store, agent_registry=agent_registry)
     scaffold = build_runtime_scaffold(
         session_store_type=store.storage_type,
         model_configured=executor.model_configured,

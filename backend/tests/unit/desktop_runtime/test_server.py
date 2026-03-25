@@ -44,6 +44,42 @@ def test_create_app_mounts_runtime_dependencies_from_composition(tmp_path: Path)
         assert dependencies.tool_registry.get_default().name == "default"
 
 
+
+def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.get("/diagnostics")
+
+    assert response.status_code == 200
+
+    capabilities = response.json()["capabilities"]
+    assert capabilities["available_agents"] == ["default"]
+    assert capabilities["default_agent"] == "default"
+    assert capabilities["available_toolsets"] == ["default"]
+    assert capabilities["default_toolset"] == "default"
+    assert capabilities["agent_summaries"] == [
+        {
+            "name": "default",
+            "label": "Default",
+            "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+            "default": True,
+            "toolsetName": "default",
+            "hasExecutorFactory": True,
+        }
+    ]
+    assert capabilities["toolset_summaries"] == [
+        {
+            "name": "default",
+            "label": "Default",
+            "description": "Placeholder empty toolset metadata reserved for the default Copilot agent.",
+            "default": True,
+            "toolCount": 0,
+            "tools": [],
+        }
+    ]
+
+
 def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
 

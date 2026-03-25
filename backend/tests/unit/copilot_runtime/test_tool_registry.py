@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.copilot_runtime import (
     ToolDescriptor,
     ToolRegistry,
@@ -52,6 +54,42 @@ def test_default_tool_registry_builds_view_and_diagnostics_summary() -> None:
             }
         ],
     }
+
+
+
+def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolsetDescriptor(
+            name="default",
+            label="Default",
+            description="Default empty toolset.",
+            default=True,
+            tools=(),
+        )
+    )
+
+    with pytest.raises(ValueError, match="already registered"):
+        registry.register(
+            ToolsetDescriptor(
+                name="default",
+                label="Duplicate",
+                description="Duplicate toolset.",
+                default=False,
+                tools=(),
+            )
+        )
+
+    with pytest.raises(ValueError, match="Default toolset is already registered"):
+        registry.register(
+            ToolsetDescriptor(
+                name="secondary",
+                label="Secondary",
+                description="Another default toolset.",
+                default=True,
+                tools=(),
+            )
+        )
 
 
 def test_toolset_descriptor_preserves_tool_metadata_without_execution_semantics() -> None:

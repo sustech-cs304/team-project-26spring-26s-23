@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.copilot_runtime import AgentDescriptor, AgentRegistry, build_default_agent_registry
 
 
@@ -47,3 +49,39 @@ def test_default_agent_registry_builds_info_view_and_diagnostics_summary() -> No
             }
         ],
     }
+
+
+
+def test_agent_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
+    registry = AgentRegistry()
+    registry.register(
+        AgentDescriptor(
+            name="default",
+            label="Default",
+            description="Default runtime agent.",
+            default=True,
+            toolset_name="default",
+        )
+    )
+
+    with pytest.raises(ValueError, match="already registered"):
+        registry.register(
+            AgentDescriptor(
+                name="default",
+                label="Duplicate",
+                description="Duplicate runtime agent.",
+                default=False,
+                toolset_name="default",
+            )
+        )
+
+    with pytest.raises(ValueError, match="Default agent is already registered"):
+        registry.register(
+            AgentDescriptor(
+                name="secondary",
+                label="Secondary",
+                description="Another default runtime agent.",
+                default=True,
+                toolset_name="default",
+            )
+        )
