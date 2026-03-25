@@ -129,6 +129,16 @@ function rememberConfigState(state: CopilotBootstrapState) {
   initialConfigStatePromise = Promise.resolve(state)
 }
 
+export function shouldLoadCopilotProvider(input: {
+  configState: CopilotBootstrapState
+  providerLoadState: ProviderLoadState
+  allowWorkbenchWithoutProvider: boolean
+}): boolean {
+  return isCopilotConnectableState(input.configState)
+    && !input.allowWorkbenchWithoutProvider
+    && input.providerLoadState.status === 'idle'
+}
+
 export function CopilotAppRoot() {
   const [configState, setConfigState] = useState<CopilotBootstrapState>({ status: 'loading' })
   const [retrying, setRetrying] = useState(false)
@@ -236,11 +246,11 @@ export function CopilotAppRoot() {
       return
     }
 
-    if (
-      allowWorkbenchWithoutProvider
-      || providerLoadState.status === 'ready'
-      || providerLoadState.status === 'error'
-    ) {
+    if (!shouldLoadCopilotProvider({
+      configState,
+      providerLoadState,
+      allowWorkbenchWithoutProvider,
+    })) {
       return
     }
 
