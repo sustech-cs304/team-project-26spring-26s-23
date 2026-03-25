@@ -115,6 +115,10 @@ function formatModelGroupName(modelId: string, providerName: string) {
   return titleCaseToken(vendor)
 }
 
+function isThemeMode(value: string): value is ThemeMode {
+  return value === 'light' || value === 'dark'
+}
+
 function getDefaultModelCapabilities(modelId: string): ModelCapability[] {
   const normalized = modelId.toLowerCase()
   const capabilities: ModelCapability[] = []
@@ -1021,7 +1025,11 @@ export function SettingsWorkspace({
                             description="控制整体配色模式"
                             value={themeMode}
                             options={themeOptions}
-                            onChange={(value) => onThemeModeChange(value as ThemeMode)}
+                            onChange={(value) => {
+                              if (isThemeMode(value)) {
+                                onThemeModeChange(value)
+                              }
+                            }}
                           />
                           <SelectField
                             label="字号"
