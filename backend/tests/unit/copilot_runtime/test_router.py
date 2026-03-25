@@ -11,6 +11,7 @@ from app.copilot_runtime import (
     PydanticAIAgentExecutor,
     RuntimeBridge,
     RuntimeScaffold,
+    build_default_agent_registry,
     build_router,
     build_runtime_scaffold,
 )
@@ -348,11 +349,13 @@ def _build_app(
         model=TestModel(custom_output_text=TEST_MODEL_REPLY)
     )
     store = InMemorySessionStore()
-    bridge = RuntimeBridge(session_store=store, agent_executor=executor)
+    agent_registry = build_default_agent_registry(executor_factory=lambda: executor)
+    bridge = RuntimeBridge(session_store=store, agent_registry=agent_registry)
     scaffold = build_runtime_scaffold(
         session_store_type=store.storage_type,
         model_configured=executor.model_configured,
         model_environment_keys=executor.model_environment_keys,
+        agent_registry=agent_registry,
     )
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))

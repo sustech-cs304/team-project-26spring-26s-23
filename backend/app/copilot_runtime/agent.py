@@ -1,10 +1,10 @@
-"""PydanticAI-backed single-agent executor for the Copilot runtime."""
+"""PydanticAI-backed default executor implementation for the Copilot runtime."""
 
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, Protocol
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
@@ -18,16 +18,31 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
 MODEL_ENVIRONMENT_KEYS = ("COPILOT_RUNTIME_MODEL", "COPILOT_MODEL")
 
 
+class RuntimeAgentExecutor(Protocol):
+    """Minimal executor interface consumed by the runtime bridge."""
+
+    async def run(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: Sequence[ModelMessage],
+    ) -> str: ...
+
+
+AgentExecutorFactory = Callable[[], RuntimeAgentExecutor]
+
+
 class ModelNotConfiguredError(RuntimeError):
-    """Raised when no runtime model is configured for the single agent."""
+    """Raised when no runtime model is configured for the default executor."""
 
 
 class AgentExecutionError(RuntimeError):
-    """Raised when the single agent cannot complete a text run."""
+    """Raised when a runtime agent executor cannot complete a text run."""
 
 
 class PydanticAIAgentExecutor:
-    """Minimal single-agent executor backed by PydanticAI."""
+    """Minimal default agent executor backed by PydanticAI."""
 
     def __init__(
         self,

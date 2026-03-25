@@ -8,11 +8,18 @@ from typing import Any, Iterable
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from .bridge import AgentExecutionError, InvalidSessionHistoryError, ModelNotConfiguredError, RuntimeBridge
+from .bridge import (
+    AgentExecutionError,
+    AgentNotFoundError,
+    InvalidSessionHistoryError,
+    ModelNotConfiguredError,
+    RuntimeBridge,
+)
 from .contracts import AGENT_CONNECT_METHOD, AGENT_RUN_METHOD, INFO_METHOD, RuntimeScaffold
 from .errors import (
     RuntimeErrorResponse,
     build_agent_execution_failed_error,
+    build_agent_not_found_error,
     build_invalid_message_history_error,
     build_method_not_implemented_error,
     build_model_not_configured_error,
@@ -104,6 +111,15 @@ async def _handle_run_request(
 
     try:
         bridge_result = await runtime_bridge.run(request=run_request)
+    except AgentNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_agent_not_found_error(
+                agent_name=exc.agent_name,
+                scaffold=scaffold,
+                requested_method=AGENT_RUN_METHOD,
+            ),
+        )
     except ModelNotConfiguredError as exc:
         return _error_response(
             status.HTTP_503_SERVICE_UNAVAILABLE,

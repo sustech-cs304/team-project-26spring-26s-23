@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from collections.abc import Sequence
 
 import pytest
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
 
+from app.copilot_runtime.agent_registry import build_default_agent_registry
 from app.copilot_runtime.bridge import (
     AgentExecutionError,
+    AgentNotFoundError,
     InvalidSessionHistoryError,
     RuntimeBridge,
 )
@@ -17,7 +19,6 @@ from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextM
 
 class RecordingAgentExecutor:
     def __init__(self, *, reply: str = "Bridge reply", error: Exception | None = None) -> None:
-        self.model_environment_keys = ("COPILOT_RUNTIME_MODEL",)
         self._reply = reply
         self._error = error
         self.calls: list[dict[str, object]] = []
@@ -27,7 +28,7 @@ class RecordingAgentExecutor:
         *,
         agent_name: str,
         user_prompt: str,
-        message_history: list[object],
+        message_history: Sequence[ModelMessage],
     ) -> str:
         self.calls.append(
             {
@@ -41,7 +42,17 @@ class RecordingAgentExecutor:
         return self._reply
 
 
-def test_run_reads_session_history_and_persists_successful_turn() -> None:
+class RecordingExecutorFactory:
+    def __init__(self, executor: RecordingAgentExecutor) -> None:
+        self._executor = executor
+        self.call_count = 0
+
+    def __call__(self) -> RecordingAgentExecutor:
+        self.call_count += 1
+        return self._executor
+
+
+def test_run_resolves_default_agent_through_registry_and_factory() -> None:
     store = InMemorySessionStore()
     store.append_turn(
         thread_id="thread-1",
@@ -51,7 +62,11 @@ def test_run_reads_session_history_and_persists_successful_turn() -> None:
         metadata={"last_run_id": "run-1"},
     )
     executor = RecordingAgentExecutor(reply="Bridge success")
-    bridge = RuntimeBridge(session_store=store, agent_executor=executor)  # type: ignore[arg-type]
+    executor_factory = RecordingExecutorFactory(executor)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+    )
 
     result = asyncio.run(
         bridge.run(
@@ -63,6 +78,7 @@ def test_run_reads_session_history_and_persists_successful_turn() -> None:
         )
     )
 
+    assert executor_factory.call_count == 1
     assert result.assistant_text == "Bridge success"
     assert result.newly_created is False
     assert result.session.metadata == {"last_run_id": "run-2"}
@@ -88,6 +104,25 @@ def test_run_reads_session_history_and_persists_successful_turn() -> None:
     assert history[1].parts[0].content == "hi there"
 
 
+def test_run_raises_explicit_error_when_agent_is_not_registered() -> None:
+    store = InMemorySessionStore()
+    bridge = RuntimeBridge(session_store=store, agent_registry=build_default_agent_registry())
+
+    with pytest.raises(AgentNotFoundError, match="Unknown agent 'missing-agent'."):
+        asyncio.run(
+            bridge.run(
+                request=_build_run_request(
+                    thread_id="thread-1",
+                    run_id="run-1",
+                    user_message_text="should fail",
+                    agent_name="missing-agent",
+                )
+            )
+        )
+
+    assert store.get("thread-1") is None
+
+
 def test_run_does_not_append_failed_turn_to_session_history() -> None:
     store = InMemorySessionStore()
     store.append_turn(
@@ -98,7 +133,11 @@ def test_run_does_not_append_failed_turn_to_session_history() -> None:
         metadata={"last_run_id": "run-1"},
     )
     executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
-    bridge = RuntimeBridge(session_store=store, agent_executor=executor)  # type: ignore[arg-type]
+    executor_factory = RecordingExecutorFactory(executor)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+    )
 
     with pytest.raises(AgentExecutionError, match="executor boom"):
         asyncio.run(
@@ -111,6 +150,7 @@ def test_run_does_not_append_failed_turn_to_session_history() -> None:
             )
         )
 
+    assert executor_factory.call_count == 1
     assert _message_pairs(store, "thread-1") == [
         ("user", "hello"),
         ("assistant", "hi there"),
@@ -125,8 +165,11 @@ def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
         metadata={"last_run_id": "run-1"},
     )
     session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
-    executor = RecordingAgentExecutor()
-    bridge = RuntimeBridge(session_store=store, agent_executor=executor)  # type: ignore[arg-type]
+    executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+    )
 
     with pytest.raises(InvalidSessionHistoryError, match="expected role 'user'"):
         asyncio.run(
@@ -139,13 +182,19 @@ def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
             )
         )
 
-    assert executor.calls == []
+    assert executor_factory.call_count == 0
     assert _message_pairs(store, "thread-1") == [("assistant", "orphan assistant")]
 
 
-def _build_run_request(*, thread_id: str, run_id: str, user_message_text: str) -> RuntimeRunRequest:
+def _build_run_request(
+    *,
+    thread_id: str,
+    run_id: str,
+    user_message_text: str,
+    agent_name: str = "default",
+) -> RuntimeRunRequest:
     return RuntimeRunRequest(
-        agent_name="default",
+        agent_name=agent_name,
         thread_id=thread_id,
         run_id=run_id,
         user_message_text=user_message_text,

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+
 from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime.agent import DEFAULT_AGENT_NAME, PydanticAIAgentExecutor
 from app.copilot_runtime.composition import RuntimeDependencies, build_default_runtime_dependencies
+from app.copilot_runtime.contracts import RuntimeRunRequest
 from app.copilot_runtime.session_store import InMemorySessionStore
 
 
@@ -28,8 +31,28 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert dependencies.scaffold.remote_agent_registry[DEFAULT_AGENT_NAME].name == DEFAULT_AGENT_NAME
     assert dependencies.scaffold.diagnostics_summary()["available_agents"] == [DEFAULT_AGENT_NAME]
     assert dependencies.scaffold.diagnostics_summary()["available_toolsets"] == ["default"]
-    assert dependencies.runtime_bridge.model_environment_keys == dependencies.agent_executor.model_environment_keys
 
+
+def test_build_default_runtime_dependencies_wires_bridge_to_registry_backed_factory() -> None:
+    dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
+
+    result = asyncio.run(
+        dependencies.runtime_bridge.run(
+            request=_build_run_request(
+                thread_id="thread-1",
+                run_id="run-1",
+                user_message_text="Hello",
+            )
+        )
+    )
+
+    assert result.assistant_text == TEST_MODEL_REPLY
+    assert result.session.agent_name == DEFAULT_AGENT_NAME
+    assert result.session.metadata == {"last_run_id": "run-1"}
+    assert [(message.role, message.content) for message in dependencies.session_store.list_messages("thread-1")] == [
+        ("user", "Hello"),
+        ("assistant", TEST_MODEL_REPLY),
+    ]
 
 
 def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor() -> None:
@@ -49,6 +72,21 @@ def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor()
     assert executor_factory() is agent_executor
 
 
-
 def _build_test_agent_executor() -> PydanticAIAgentExecutor:
     return PydanticAIAgentExecutor(model=TestModel(custom_output_text=TEST_MODEL_REPLY))
+
+
+def _build_run_request(*, thread_id: str, run_id: str, user_message_text: str) -> RuntimeRunRequest:
+    return RuntimeRunRequest(
+        agent_name=DEFAULT_AGENT_NAME,
+        thread_id=thread_id,
+        run_id=run_id,
+        user_message_text=user_message_text,
+        state={},
+        messages=(),
+        actions=(),
+        meta_events=(),
+        node_name=None,
+        forwarded_props={},
+        metadata={},
+    )

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from .agent import DEFAULT_AGENT_NAME
+from .agent import AgentExecutorFactory, DEFAULT_AGENT_NAME
 from .tool_registry import DEFAULT_TOOLSET_NAME
-
-AgentExecutorFactory = Callable[[], object]
 
 DEFAULT_AGENT_LABEL = "Default"
 DEFAULT_AGENT_DESCRIPTION = "Minimal default agent exposed by the Copilot runtime run bridge."
