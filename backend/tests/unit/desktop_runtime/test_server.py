@@ -2,14 +2,29 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic_ai.models.test import TestModel
+
+_ELECTRON_TEST_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) CanDue/1.0.0 Electron/35.1.4 Safari/537.36"
+)
+_BROWSER_TEST_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+)
+
+from app.copilot_runtime import PydanticAIAgentExecutor
 
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
     ENV_HOST,
+    ENV_LEGACY_MODEL,
+    ENV_MODEL,
     ENV_PORT,
     ENV_USER_DATA_DIR,
     LOCAL_TOKEN_HEADER_NAME,
@@ -20,32 +35,167 @@ from app.desktop_runtime.server import BACKEND_DIR, create_app
 
 
 def test_create_app_returns_fastapi_instance(tmp_path: Path) -> None:
-    app = create_app(_build_config(tmp_path))
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
     assert isinstance(app, FastAPI)
 
 
-def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> None:
-    app = create_app(_build_config(tmp_path))
+def test_create_app_mounts_runtime_dependencies_from_composition(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app):
+        dependencies = app.state.copilot_runtime_dependencies
+
+        assert dependencies.session_store is app.state.copilot_runtime_session_store
+        assert dependencies.agent_registry is app.state.copilot_runtime_agent_registry
+        assert dependencies.tool_registry is app.state.copilot_runtime_tool_registry
+        assert dependencies.agent_executor is app.state.copilot_runtime_agent_executor
+        assert dependencies.runtime_bridge is app.state.copilot_runtime_bridge
+        assert dependencies.scaffold is app.state.copilot_runtime_scaffold
+        assert dependencies.agent_registry.get_default().name == "default"
+        assert dependencies.tool_registry.get_default().name == "default"
+
+
+
+def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
 
     with TestClient(app) as client:
+        response = client.get("/diagnostics")
+
+    assert response.status_code == 200
+
+    capabilities = response.json()["capabilities"]
+    assert capabilities["available_agents"] == ["default"]
+    assert capabilities["default_agent"] == "default"
+    assert capabilities["available_toolsets"] == ["default"]
+    assert capabilities["default_toolset"] == "default"
+    assert capabilities["agent_summaries"] == [
+        {
+            "name": "default",
+            "label": "Default",
+            "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+            "default": True,
+            "toolsetName": "default",
+            "hasExecutorFactory": True,
+        }
+    ]
+    assert capabilities["toolset_summaries"] == [
+        {
+            "name": "default",
+            "label": "Default",
+            "description": "Placeholder empty toolset metadata reserved for the default Copilot agent.",
+            "default": True,
+            "toolCount": 0,
+            "tools": [],
+        }
+    ]
+
+
+
+def test_create_app_passes_runtime_model_to_default_executor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv(ENV_MODEL, "runtime-env-model")
+    monkeypatch.setenv(ENV_LEGACY_MODEL, "legacy-env-model")
+
+    app = create_app(_build_config(tmp_path, model="cli-model"))
+
+    with TestClient(app) as client:
+        response = client.get("/diagnostics")
+        runtime_executor = app.state.copilot_runtime_agent_executor
+
+    assert response.status_code == 200
+    assert runtime_executor.resolve_model() == "cli-model"
+
+    payload = response.json()
+    assert payload["configuration"]["model"] == "cli-model"
+    assert payload["capabilities"]["model_configured"] is True
+
+
+def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        runtime_info_response = client.post("/", json={"method": "info"})
+        connect_response = client.post("/", json=_build_connect_request())
+        run_response = client.post("/", json=_build_run_request())
+        preflight_response = client.options(
+            "/",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
         health_response = client.get("/health")
         ready_response = client.get("/ready")
         version_response = client.get("/version")
         build_response = client.get("/build-info")
         diagnostics_response = client.get("/diagnostics/runtime-info")
 
+    assert runtime_info_response.status_code == 200
+    assert connect_response.status_code == 200
+    assert preflight_response.status_code == 200
     assert health_response.status_code == 200
     assert ready_response.status_code == 200
     assert version_response.status_code == 200
     assert build_response.status_code == 200
     assert diagnostics_response.status_code == 200
 
+    runtime_info_payload = runtime_info_response.json()
+    connect_events = _parse_sse_events(connect_response.text)
+    run_events = _parse_sse_events(run_response.text)
+    connect_payload = connect_events[-1]["result"]
+    run_payload = run_events[-1]["result"]
     health_payload = health_response.json()
     ready_payload = ready_response.json()
     version_payload = version_response.json()
     build_payload = build_response.json()
     diagnostics_payload = diagnostics_response.json()
 
+    assert runtime_info_payload["actions"] == []
+    assert list(runtime_info_payload["agents"]) == ["default"]
+    assert runtime_info_payload["agents"]["default"] == {
+        "name": "default",
+        "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+    }
+    assert runtime_info_payload["defaultAgent"] == "default"
+    assert runtime_info_payload["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert runtime_info_payload["protocol"] == "single-endpoint"
+    assert runtime_info_payload["stage"] == "phase3-run-bridge"
+    assert connect_response.headers["content-type"].startswith("text/event-stream")
+    assert run_response.headers["content-type"].startswith("text/event-stream")
+    assert preflight_response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "POST" in preflight_response.headers["access-control-allow-methods"]
+    assert [event["type"] for event in connect_events] == [
+        "RUN_STARTED",
+        "STATE_SNAPSHOT",
+        "MESSAGES_SNAPSHOT",
+        "RUN_FINISHED",
+    ]
+    assert connect_payload["ok"] is True
+    assert connect_payload["agentName"] == "default"
+    assert connect_payload["threadId"] == "thread-1"
+    assert connect_payload["runId"] == "run-1"
+    assert connect_payload["session"]["newlyCreated"] is True
+    assert connect_payload["session"]["metadata"] == {"last_connect_run_id": "run-1"}
+    assert [event["type"] for event in run_events] == [
+        "RUN_STARTED",
+        "STATE_SNAPSHOT",
+        "TEXT_MESSAGE_START",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_END",
+        "RUN_FINISHED",
+    ]
+    assert run_payload["ok"] is True
+    assert run_payload["agentName"] == "default"
+    assert run_payload["threadId"] == "thread-1"
+    assert run_payload["runId"] == "run-1"
+    assert run_payload["output"] == "Hello from the desktop runtime test model."
+    assert run_payload["session"]["metadata"] == {
+        "last_connect_run_id": "run-1",
+        "last_run_id": "run-1",
+    }
     assert health_payload["status"] == "ok"
     assert health_payload["ready"] is True
     assert ready_payload["status"] == "ready"
@@ -60,8 +210,115 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["configuration"]["paths"]["database_dir"].endswith("database")
     assert diagnostics_payload["configuration"]["paths"]["state_dir"].endswith("state")
     assert diagnostics_payload["capabilities"]["domain_routes_registered"] is False
+    assert diagnostics_payload["capabilities"]["chat_runtime_registered"] is True
+    assert diagnostics_payload["capabilities"]["chat_protocol"] == "single-endpoint"
+    assert diagnostics_payload["capabilities"]["chat_runtime_path"] == "/"
+    assert diagnostics_payload["capabilities"]["available_agents"] == ["default"]
+    assert diagnostics_payload["capabilities"]["default_agent"] == "default"
+    assert diagnostics_payload["capabilities"]["supported_methods"] == ["info", "agent/connect", "agent/run"]
+    assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
+    assert diagnostics_payload["capabilities"]["session_store_type"] == "in-memory"
+    assert diagnostics_payload["capabilities"]["current_stage_supports_info_only"] is False
+    assert diagnostics_payload["capabilities"]["current_stage_supports_connect"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_run"] is True
+    assert diagnostics_payload["capabilities"]["model_configured"] is True
+    assert diagnostics_payload["capabilities"]["model_environment_keys"] == [
+        "COPILOT_RUNTIME_MODEL",
+        "COPILOT_MODEL",
+    ]
+    assert "/" in diagnostics_payload["capabilities"]["contract_paths"]
     assert diagnostics_payload["auth"]["token_configured"] is False
     assert Path(diagnostics_payload["runtime"]["working_directory"]).exists()
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://[::1]:5173",
+    ],
+)
+def test_cors_preflight_allows_loopback_origins(tmp_path: Path, origin: str) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.options("/", headers=_build_cors_preflight_headers(origin))
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+
+def test_cors_preflight_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/",
+            headers=_build_cors_preflight_headers(
+                "null",
+                user_agent=_ELECTRON_TEST_USER_AGENT,
+            ),
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "null"
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+
+def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json={"method": "info"},
+            headers={
+                "Origin": "null",
+                "User-Agent": _ELECTRON_TEST_USER_AGENT,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "null"
+
+
+
+def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/",
+            headers=_build_cors_preflight_headers(
+                "null",
+                user_agent=_BROWSER_TEST_USER_AGENT,
+            ),
+        )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
+
+def test_cors_simple_request_rejects_non_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/health",
+            headers={
+                "Origin": "null",
+                "User-Agent": _BROWSER_TEST_USER_AGENT,
+            },
+        )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
 
 
 def test_create_app_without_explicit_config_reads_environment_values(
@@ -71,7 +328,7 @@ def test_create_app_without_explicit_config_reads_environment_values(
     monkeypatch.setenv(ENV_PORT, "9988")
     monkeypatch.setenv(ENV_USER_DATA_DIR, "env-user-data")
 
-    app = create_app()
+    app = create_app(agent_executor=_build_test_agent_executor())
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -83,9 +340,11 @@ def test_create_app_without_explicit_config_reads_environment_values(
     assert runtime_config.user_data_dir == (BACKEND_DIR / "env-user-data").resolve()
 
 
-
 def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> None:
-    app = create_app(_build_config(tmp_path, local_token="super-secret-token"))
+    app = create_app(
+        _build_config(tmp_path, local_token="super-secret-token"),
+        agent_executor=_build_test_agent_executor(),
+    )
 
     with TestClient(app) as client:
         unauthorized = client.get("/diagnostics")
@@ -105,7 +364,116 @@ def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> Non
     assert authorized_payload["auth"]["header_name"] == LOCAL_TOKEN_HEADER_NAME
 
 
-def _build_config(tmp_path: Path, *, local_token: str | None = None) -> DesktopRuntimeConfig:
+
+def test_create_app_without_model_keeps_info_and_connect_but_run_fails_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv(ENV_MODEL, raising=False)
+    monkeypatch.delenv(ENV_LEGACY_MODEL, raising=False)
+
+    app = create_app(_build_config(tmp_path))
+
+    with TestClient(app) as client:
+        info_response = client.post("/", json={"method": "info"})
+        connect_response = client.post("/", json=_build_connect_request())
+        run_response = client.post("/", json=_build_run_request())
+        diagnostics_response = client.get("/diagnostics")
+
+    assert info_response.status_code == 200
+    assert info_response.json()["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert connect_response.status_code == 200
+    assert _parse_sse_events(connect_response.text)[-1]["result"]["ok"] is True
+    assert run_response.status_code == 503
+    assert run_response.json() == {
+        "ok": False,
+        "error": {
+            "code": "model_not_configured",
+            "message": "No runtime model is configured. Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL.",
+            "stage": "phase3-run-bridge",
+            "requestedMethod": "agent/run",
+            "supportedMethods": ["info", "agent/connect", "agent/run"],
+            "details": {
+                "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"],
+            },
+        },
+    }
+    assert diagnostics_response.status_code == 200
+    assert diagnostics_response.json()["capabilities"]["model_configured"] is False
+
+
+def _build_connect_request() -> dict[str, Any]:
+    return {
+        "method": "agent/connect",
+        "params": {"agentId": "default"},
+        "body": {
+            "threadId": "thread-1",
+            "runId": "run-1",
+            "messages": [],
+            "state": {},
+            "tools": [],
+            "context": [],
+            "forwardedProps": {},
+        },
+    }
+
+
+def _build_run_request() -> dict[str, Any]:
+    return {
+        "method": "agent/run",
+        "params": {"agentId": "default"},
+        "body": {
+            "threadId": "thread-1",
+            "runId": "run-1",
+            "messages": [
+                {
+                    "id": "u1",
+                    "role": "user",
+                    "content": "hello desktop runtime",
+                }
+            ],
+            "state": {},
+            "actions": [],
+            "metaEvents": [],
+            "forwardedProps": {},
+        },
+    }
+
+
+def _build_cors_preflight_headers(origin: str, *, user_agent: str | None = None) -> dict[str, str]:
+    headers = {
+        "Origin": origin,
+        "Access-Control-Request-Method": "POST",
+    }
+    if user_agent is not None:
+        headers["User-Agent"] = user_agent
+    return headers
+
+
+
+def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for chunk in raw_text.strip().split("\n\n"):
+        lines = [line for line in chunk.splitlines() if line.startswith("data: ")]
+        if not lines:
+            continue
+        payload = "\n".join(line[6:] for line in lines)
+        events.append(json.loads(payload))
+    return events
+
+
+def _build_test_agent_executor() -> PydanticAIAgentExecutor:
+    return PydanticAIAgentExecutor(
+        model=TestModel(custom_output_text="Hello from the desktop runtime test model.")
+    )
+
+
+def _build_config(
+    tmp_path: Path,
+    *,
+    local_token: str | None = None,
+    model: str | None = None,
+) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
     return DesktopRuntimeConfig(
@@ -128,4 +496,5 @@ def _build_config(tmp_path: Path, *, local_token: str | None = None) -> DesktopR
         ),
         app_mode="desktop",
         environment="test",
+        model=model,
     )

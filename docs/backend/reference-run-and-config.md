@@ -33,7 +33,7 @@
 
 ## 2. CLI 命令参考
 
-> 以下命令都应在 `backend/` 目录下执行。
+> 以下命令除特别说明外都应在 `backend/` 目录下执行；Desktop runtime 推荐示例从仓库根目录调用 `uv run --directory backend`，以便用纯参数形式显式固定运行时路径与模型。
 
 ### 2.1 课程目录搜索 CLI
 
@@ -102,7 +102,8 @@ python -m app.blackboard.provider.cli.sync_calendar_ics --feed-url https://examp
 ### 2.3 Desktop runtime 本地 HTTP 入口
 
 ```bash
-uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
+uv run --directory backend python -m app.desktop_runtime --help
+uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --app-mode desktop --environment development --root-dir ./backend/data/desktop-runtime-cli --user-data-dir ./backend/data --config-dir ./backend/data/desktop-runtime-cli/config --logs-dir ./backend/data/desktop-runtime-cli/logs --database-dir ./backend/data/desktop-runtime-cli/database --state-dir ./backend/data/desktop-runtime-cli/state --settings-file ./backend/data/desktop-runtime-cli/config/copilot-settings.json --host-log-file ./backend/data/desktop-runtime-cli/logs/electron-host.log --backend-stdout-log-file ./backend/data/desktop-runtime-cli/logs/backend.stdout.log --backend-stderr-log-file ./backend/data/desktop-runtime-cli/logs/backend.stderr.log --runtime-snapshot-file ./backend/data/desktop-runtime-cli/state/runtime-snapshot.json --last-failure-file ./backend/data/desktop-runtime-cli/state/last-failure.json --model test --local-token cli-token
 ```
 
 #### 主要参数
@@ -111,9 +112,10 @@ uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
 | --- | --- | --- | --- |
 | `--host` | 可选 | `127.0.0.1` | 仅允许 loopback 地址，例如 `127.0.0.1`、`localhost`、`::1`。 |
 | `--port` | 可选 | `8765` | 本地监听端口。 |
-| `--local-token` | 可选 | 无 | 若提供，则 diagnostics 端点要求 `X-Local-Token`。 |
+| `--app-mode` | 可选 | `desktop` | 应用模式。 |
+| `--environment` | 可选 | `development` | 运行环境。 |
+| `--root-dir` | 可选 | `data/desktop-runtime` | 桌面运行时根目录。 |
 | `--user-data-dir` | 可选 | `data` | Electron `userData` 根目录。 |
-| `--runtime-root-dir` | 可选 | `data/desktop-runtime` | 桌面运行时根目录。 |
 | `--config-dir` | 可选 | `data/desktop-runtime/config` | 桌面运行时配置目录。 |
 | `--logs-dir` | 可选 | `data/desktop-runtime/logs` | 运行时日志目录。 |
 | `--database-dir` | 可选 | `data/desktop-runtime/database` | 运行时数据库目录。 |
@@ -124,8 +126,8 @@ uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
 | `--backend-stderr-log-file` | 可选 | `data/desktop-runtime/logs/backend.stderr.log` | Python 子进程 stderr 日志文件路径。 |
 | `--runtime-snapshot-file` | 可选 | `data/desktop-runtime/state/runtime-snapshot.json` | 运行态快照文件路径。 |
 | `--last-failure-file` | 可选 | `data/desktop-runtime/state/last-failure.json` | 最近失败摘要文件路径。 |
-| `--app-mode` | 可选 | `desktop` | 应用模式。 |
-| `--environment` | 可选 | `development` | 运行环境。 |
+| `--model` | 可选 | 无 | Copilot 聊天运行时模型；当前推荐显式通过 CLI 传入。 |
+| `--local-token` | 可选 | 无 | 若提供，则 diagnostics 端点要求 `X-Local-Token`。 |
 
 #### 最小契约端点
 
@@ -153,7 +155,9 @@ uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
 | `BLACKBOARD_CALENDAR_FEED_URL` | Blackboard ICS 订阅地址 | ICS CLI | 跑 ICS 时是 |
 | `SUSTECH_DB_PATH` | SQLite 数据库路径 | Blackboard / TIS 持久化相关能力 | 视需要 |
 
-### 3.2 Desktop runtime 运行时变量
+### 3.2 Desktop runtime 运行时环境变量（兼容回退）
+
+> 当前这些变量仍会被解析，但日常开发与联调优先使用 `--host`、`--port`、`--app-mode`、`--environment`、`--model`、`--local-token` 等 CLI 参数；下表主要用于兼容回退与宿主内部传递说明。
 
 | 变量名 | 用途 | 当前适用范围 | 说明 |
 | --- | --- | --- | --- |
@@ -180,6 +184,8 @@ uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
 | 变量名 | 出现位置 | 当前含义 | 说明 |
 | --- | --- | --- | --- |
 | `CALENDAR_FEED_URL` | ICS CLI | Blackboard ICS 订阅地址兼容键 | 可用，但主文档仍以 `BLACKBOARD_CALENDAR_FEED_URL` 为主。 |
+| `COPILOT_RUNTIME_MODEL` | Desktop runtime / agent executor | Copilot 运行时模型兼容键 | 仍会读取，但当前推荐改为显式传 `--model`。 |
+| `COPILOT_MODEL` | Desktop runtime / agent executor | Copilot 运行时模型 legacy 兼容键 | 仍会读取，但当前推荐改为显式传 `--model`。 |
 | `TIS_ROLE_CODE` | TIS 诊断 from env | TIS 角色代码 | 不在 `.env.example` 基础展示里。 |
 | `ROLE_CODE` | TIS 诊断 from env | TIS 角色代码兼容键 | 不在 `.env.example` 基础展示里。 |
 
@@ -228,7 +234,7 @@ uv run pytest tests/unit/desktop_runtime -q
 ## 6. 当前配置与运行边界的简写结论
 
 - Blackboard CLI：**已实现，可直接运行。**
-- Desktop runtime 本地 HTTP 入口：**已实现，但只覆盖最小桌面宿主契约。**
+- Desktop runtime 本地 HTTP 入口：**已实现，但当前推荐以纯 CLI 参数形式启动；环境变量仅保留兼容回退。**
 - Blackboard 工具层与 snapshot use case：**可调用，但不是正式入口。**
 - TIS provider use case：**可调用，但不是正式入口。**
 - 复杂业务 Web API：**当前仍不能写成已实现。**

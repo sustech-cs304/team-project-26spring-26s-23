@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -10,11 +10,14 @@ import {
   readBundledPythonRuntimeManifest,
   resolvePythonRuntimeLaunchSpec,
 } from './python-runtime-resolver'
+import { buildPythonRuntimeSpawnArguments } from './python-runtime-manager'
 import {
+  collectForwardedElectronMainProcessArguments,
   createHostedRuntimeLaunchConfig,
-  DESKTOP_RUNTIME_ENV_NAMES,
   formatRuntimeBaseUrl,
   HOSTED_RUNTIME_OVERRIDE_ENV_NAMES,
+  parseHostedRuntimeCommandLineArguments,
+  parseHostedRuntimeCommandLineArgumentsSafely,
   resolveHostedRuntimeEnvironmentOverrides,
   sanitizeHostedRuntimeLaunchConfig,
 } from './runtime-config'
@@ -134,6 +137,21 @@ async function createDevelopmentRuntimeFixture(): Promise<DevelopmentRuntimeFixt
   }
 }
 
+async function writeSuccessfulCommandProbe(directory: string, commandName: string): Promise<void> {
+  const commandPath = process.platform === 'win32'
+    ? path.join(directory, `${commandName}.cmd`)
+    : path.join(directory, commandName)
+  const scriptContent = process.platform === 'win32'
+    ? '@echo off\r\nexit /b 0\r\n'
+    : '#!/bin/sh\nexit 0\n'
+
+  await writeFile(commandPath, scriptContent, 'utf8')
+
+  if (process.platform !== 'win32') {
+    await chmod(commandPath, 0o755)
+  }
+}
+
 describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
   it('resolves backend paths from the Electron app root in development mode', () => {
     const spec = buildDevelopmentPythonRuntimeLaunchSpec({
@@ -146,8 +164,67 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
     expect(spec.workspaceRoot).toBe(path.resolve('..'))
     expect(spec.backendDir).toBe(path.resolve('..', 'backend'))
     expect(spec.workingDirectory).toBe(path.resolve('..', 'backend'))
-    expect(spec.command).not.toBe('uv')
+    if (spec.pythonExecutablePath === null) {
+      const expectedFallbackCommands = process.platform === 'win32'
+        ? ['py', 'python', 'python3']
+        : ['python3', 'python']
+      expect(expectedFallbackCommands).toContain(spec.command)
+    } else {
+      expect(spec.command).toBe(spec.pythonExecutablePath)
+    }
     expect(spec.args.slice(-2)).toEqual(['-m', 'app.desktop_runtime'])
+  })
+
+  it('does not prefer uv when falling back to shell Python interpreters', async () => {
+    const fixture = await createDevelopmentRuntimeFixture()
+    const fakeBinDir = path.join(fixture.tempRoot, 'fake-bin')
+    const originalPath = process.env.PATH
+    const originalWindowsPath = process.env.Path
+
+    await rm(fixture.pythonExecutablePath, { force: true })
+    await mkdir(fakeBinDir, { recursive: true })
+
+    try {
+      await Promise.all([
+        writeSuccessfulCommandProbe(fakeBinDir, 'uv'),
+        writeSuccessfulCommandProbe(fakeBinDir, 'python'),
+        writeSuccessfulCommandProbe(fakeBinDir, 'python3'),
+        ...(process.platform === 'win32' ? [writeSuccessfulCommandProbe(fakeBinDir, 'py')] : []),
+      ])
+
+      process.env.PATH = fakeBinDir
+      if (process.platform === 'win32') {
+        process.env.Path = fakeBinDir
+      }
+
+      const spec = buildDevelopmentPythonRuntimeLaunchSpec({
+        appRoot: fixture.appRoot,
+        resourcesPath: path.join(fixture.tempRoot, 'dist-electron'),
+        isPackaged: false,
+      })
+
+      if (process.platform === 'win32') {
+        expect(spec.command).toBe('py')
+        expect(spec.args).toEqual(['-3', '-m', DESKTOP_RUNTIME_ENTRY_MODULE])
+      } else {
+        expect(spec.command).toBe('python3')
+        expect(spec.args).toEqual(['-m', DESKTOP_RUNTIME_ENTRY_MODULE])
+      }
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH
+      } else {
+        process.env.PATH = originalPath
+      }
+      if (process.platform === 'win32') {
+        if (originalWindowsPath === undefined) {
+          delete process.env.Path
+        } else {
+          process.env.Path = originalWindowsPath
+        }
+      }
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
   })
 
   it('prefers the project virtualenv interpreter when present', async () => {
@@ -228,7 +305,14 @@ describe('resolvePythonRuntimeLaunchSpec', () => {
 
     expect(spec.backendDir).toBe(path.resolve('..', 'backend'))
     expect(spec.entryModule).toBe('app.desktop_runtime')
-    expect(spec.command).not.toBe('uv')
+    if (spec.pythonExecutablePath === null) {
+      const expectedFallbackCommands = process.platform === 'win32'
+        ? ['py', 'python', 'python3']
+        : ['python3', 'python']
+      expect(expectedFallbackCommands).toContain(spec.command)
+    } else {
+      expect(spec.command).toBe(spec.pythonExecutablePath)
+    }
     expect(spec.args.slice(-2)).toEqual(['-m', 'app.desktop_runtime'])
   })
 
@@ -265,13 +349,127 @@ describe('resolvePythonRuntimeLaunchSpec', () => {
   })
 })
 
+describe('collectForwardedElectronMainProcessArguments', () => {
+  it('keeps hosted runtime flags after the npm-forwarded separator', () => {
+    expect(collectForwardedElectronMainProcessArguments([
+      'node',
+      'vite',
+      '--host',
+      '0.0.0.0',
+      '--',
+      '--runtime-model',
+      'test',
+      '--runtime-environment',
+      'development',
+    ])).toEqual([
+      '--runtime-model',
+      'test',
+      '--runtime-environment',
+      'development',
+    ])
+  })
+
+  it('collects hosted runtime flags even when vite argv arrives without a separator', () => {
+    expect(collectForwardedElectronMainProcessArguments([
+      'node',
+      'vite',
+      '--runtime-model',
+      'test',
+      '--runtime-host=127.0.0.1',
+      '--open',
+    ])).toEqual([
+      '--runtime-model',
+      'test',
+      '--runtime-host=127.0.0.1',
+    ])
+  })
+})
+
+describe('parseHostedRuntimeCommandLineArguments', () => {
+  it('normalizes forwarded Electron main-process runtime flags into launch options', () => {
+    expect(parseHostedRuntimeCommandLineArguments([
+      '--runtime-model=test',
+      '--runtime-host', '127.0.0.1',
+      '--runtime-app-mode', 'desktop',
+      '--runtime-environment', 'development',
+      '--runtime-local-token', 'token-123',
+    ])).toEqual({
+      model: 'test',
+      host: '127.0.0.1',
+      appMode: 'desktop',
+      environment: 'development',
+      localToken: 'token-123',
+    })
+  })
+
+  it('feeds the parsed runtime model into the Python argv builder', () => {
+    const forwardedArgs = collectForwardedElectronMainProcessArguments([
+      'node',
+      'vite',
+      '--',
+      '--runtime-model',
+      'cli-model',
+    ])
+    const runtimeOptions = parseHostedRuntimeCommandLineArguments(forwardedArgs)
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-cli-model'),
+      processEnv: {
+        COPILOT_RUNTIME_MODEL: 'env-model',
+      },
+      port: 43210,
+      model: runtimeOptions.model,
+      localToken: 'token-cli',
+    })
+
+    expect(config.model).toBe('cli-model')
+    expect(config.args).toEqual(expect.arrayContaining([
+      '--model',
+      'cli-model',
+      '--local-token',
+      'token-cli',
+    ]))
+  })
+
+  it('returns a warning and empty options for malformed runtime flags so callers can fall back to defaults', () => {
+    const result = parseHostedRuntimeCommandLineArgumentsSafely([
+      '--runtime-host',
+    ])
+
+    expect(result.warning).toEqual({
+      code: 'invalid-hosted-runtime-command-line-arguments',
+      detail: 'Missing value for hosted runtime option --runtime-host.',
+      flag: '--runtime-host',
+    })
+    expect(result.options).toEqual({})
+
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-cli-defaults'),
+      processEnv: {},
+      port: 43210,
+      ...result.options,
+    })
+
+    expect(config.host).toBe('127.0.0.1')
+    expect(config.appMode).toBe('desktop')
+    expect(config.environment).toBe('development')
+    expect(config.localToken).toHaveLength(48)
+  })
+})
+
 describe('createHostedRuntimeLaunchConfig', () => {
-  it('builds loopback URLs and environment variables for the Python runtime', () => {
+  it('builds loopback URLs, canonical runtime args, and minimal child env for the Python runtime', () => {
     const paths = createHostedRuntimePaths(path.resolve('.tmp-userdata'))
     const config = createHostedRuntimeLaunchConfig({
       environment: 'development',
       userDataPath: path.resolve('.tmp-userdata'),
-      processEnv: { EXISTING_ENV: 'kept' },
+      processEnv: {
+        EXISTING_ENV: 'kept',
+        COPILOT_DESKTOP_RUNTIME_HOST: 'should-not-reach-child',
+        COPILOT_DESKTOP_RUNTIME_PORT: '9999',
+        COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN: 'env-token',
+        COPILOT_RUNTIME_MODEL: 'qwen-plus',
+        COPILOT_MODEL: 'legacy-model',
+      },
       port: 43210,
       host: '127.0.0.1',
       localToken: 'token-123',
@@ -282,26 +480,30 @@ describe('createHostedRuntimeLaunchConfig', () => {
     expect(config.readyUrl).toBe('http://127.0.0.1:43210/ready')
     expect(config.healthUrl).toBe('http://127.0.0.1:43210/health')
     expect(config.diagnosticsUrl).toBe('http://127.0.0.1:43210/diagnostics')
-    expect(config.env).toMatchObject({
+    expect(config.model).toBe('qwen-plus')
+    expect(config.args).toEqual([
+      '--host', '127.0.0.1',
+      '--port', '43210',
+      '--app-mode', 'desktop',
+      '--environment', 'development',
+      '--root-dir', paths.runtimeRootDir,
+      '--user-data-dir', paths.userDataDir,
+      '--config-dir', paths.configDir,
+      '--logs-dir', paths.logsDir,
+      '--database-dir', paths.databaseDir,
+      '--state-dir', paths.stateDir,
+      '--settings-file', paths.copilotSettingsFile,
+      '--host-log-file', paths.hostLogFile,
+      '--backend-stdout-log-file', paths.backendStdoutLogFile,
+      '--backend-stderr-log-file', paths.backendStderrLogFile,
+      '--runtime-snapshot-file', paths.runtimeSnapshotFile,
+      '--last-failure-file', paths.lastFailureFile,
+      '--model', 'qwen-plus',
+      '--local-token', 'token-123',
+    ])
+    expect(config.env).toEqual({
       EXISTING_ENV: 'kept',
       PYTHONUNBUFFERED: '1',
-      [DESKTOP_RUNTIME_ENV_NAMES.HOST]: '127.0.0.1',
-      [DESKTOP_RUNTIME_ENV_NAMES.PORT]: '43210',
-      [DESKTOP_RUNTIME_ENV_NAMES.LOCAL_TOKEN]: 'token-123',
-      [DESKTOP_RUNTIME_ENV_NAMES.USER_DATA_DIR]: paths.userDataDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.ROOT_DIR]: paths.runtimeRootDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.CONFIG_DIR]: paths.configDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.LOGS_DIR]: paths.logsDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.DATABASE_DIR]: paths.databaseDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.STATE_DIR]: paths.stateDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.COPILOT_SETTINGS_FILE]: paths.copilotSettingsFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.HOST_LOG_FILE]: paths.hostLogFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.BACKEND_STDOUT_LOG_FILE]: paths.backendStdoutLogFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.BACKEND_STDERR_LOG_FILE]: paths.backendStderrLogFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.RUNTIME_SNAPSHOT_FILE]: paths.runtimeSnapshotFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.LAST_FAILURE_FILE]: paths.lastFailureFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.APP_MODE]: 'desktop',
-      [DESKTOP_RUNTIME_ENV_NAMES.ENVIRONMENT]: 'development',
     })
 
     expect(sanitizeHostedRuntimeLaunchConfig(config)).toEqual({
@@ -314,6 +516,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
       appMode: 'desktop',
       environment: 'development',
       localTokenConfigured: true,
+      modelConfigured: true,
       paths: {
         userDataDir: paths.userDataDir,
         runtimeRootDir: paths.runtimeRootDir,
@@ -330,6 +533,25 @@ describe('createHostedRuntimeLaunchConfig', () => {
         lastFailureFile: paths.lastFailureFile,
       },
     })
+  })
+
+  it('prefers an explicit model over environment fallbacks when building runtime args', () => {
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-model'),
+      processEnv: {
+        COPILOT_RUNTIME_MODEL: 'env-primary',
+        COPILOT_MODEL: 'env-legacy',
+      },
+      port: 43210,
+      localToken: 'token-model',
+      model: 'explicit-model',
+    })
+
+    expect(config.model).toBe('explicit-model')
+    expect(config.args.slice(-4)).toEqual([
+      '--model', 'explicit-model',
+      '--local-token', 'token-model',
+    ])
   })
 
   it('brackets IPv6 loopback hosts when composing runtime urls', () => {
@@ -367,6 +589,48 @@ describe('createHostedRuntimeLaunchConfig', () => {
       lastFailureFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'state', 'last-failure.json'),
     })
     expect(formatRuntimeBaseUrl('127.0.0.1', 9000)).toBe('http://127.0.0.1:9000')
+  })
+})
+
+describe('buildPythonRuntimeSpawnArguments', () => {
+  it('appends the same hosted runtime args to development and bundled launch specs', async () => {
+    const developmentFixture = await createDevelopmentRuntimeFixture()
+    const bundledFixture = await createBundledRuntimeFixture()
+    const runtimeConfig = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-shared-runtime-args'),
+      processEnv: {
+        COPILOT_RUNTIME_MODEL: 'qwen-plus',
+      },
+      port: 43210,
+      localToken: 'token-shared',
+    })
+
+    try {
+      const developmentSpec = buildDevelopmentPythonRuntimeLaunchSpec({
+        appRoot: developmentFixture.appRoot,
+        resourcesPath: path.join(developmentFixture.tempRoot, 'dist-electron'),
+        isPackaged: false,
+      })
+      const bundledSpec = await resolvePythonRuntimeLaunchSpec({
+        appRoot: path.join(bundledFixture.tempRoot, 'dist-electron'),
+        resourcesPath: bundledFixture.resourcesPath,
+        isPackaged: true,
+      })
+
+      expect(buildPythonRuntimeSpawnArguments(developmentSpec.args, runtimeConfig.args)).toEqual([
+        ...developmentSpec.args,
+        ...runtimeConfig.args,
+      ])
+      expect(buildPythonRuntimeSpawnArguments(bundledSpec.args, runtimeConfig.args)).toEqual([
+        ...bundledSpec.args,
+        ...runtimeConfig.args,
+      ])
+    } finally {
+      await Promise.all([
+        rm(developmentFixture.tempRoot, { recursive: true, force: true }),
+        rm(bundledFixture.tempRoot, { recursive: true, force: true }),
+      ])
+    }
   })
 })
 

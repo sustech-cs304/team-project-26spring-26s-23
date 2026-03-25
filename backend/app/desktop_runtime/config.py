@@ -45,6 +45,8 @@ ENV_RUNTIME_SNAPSHOT_FILE = "COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE"
 ENV_LAST_FAILURE_FILE = "COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE"
 ENV_APP_MODE = "COPILOT_DESKTOP_RUNTIME_APP_MODE"
 ENV_ENVIRONMENT = "COPILOT_DESKTOP_RUNTIME_ENVIRONMENT"
+ENV_MODEL = "COPILOT_RUNTIME_MODEL"
+ENV_LEGACY_MODEL = "COPILOT_MODEL"
 
 _ALLOWED_LOOPBACK_HOSTS = {DEFAULT_HOST, "localhost", "::1"}
 
@@ -106,6 +108,7 @@ class DesktopRuntimeConfig:
     paths: DesktopRuntimePaths
     app_mode: str
     environment: str
+    model: str | None = None
     backend_dir: Path = BACKEND_DIR
 
     @property
@@ -172,6 +175,7 @@ class DesktopRuntimeConfig:
             "base_url": self.base_url,
             "app_mode": self.app_mode,
             "environment": self.environment,
+            "model": self.model,
             "paths": self.paths.sanitized_summary(),
             "local_token_configured": bool(self.local_token),
             "local_token_header": LOCAL_TOKEN_HEADER_NAME,
@@ -203,13 +207,11 @@ def build_runtime_argument_parser() -> argparse.ArgumentParser:
         help="监听地址，仅允许 loopback 地址，例如 127.0.0.1 或 localhost",
     )
     parser.add_argument("--port", type=int, default=None, help="监听端口")
-    parser.add_argument(
-        "--local-token",
-        default=None,
-        help="本地宿主调用令牌，可选；若提供，将保护 diagnostics 端点",
-    )
+    parser.add_argument("--app-mode", default=None, help="应用模式，例如 desktop")
+    parser.add_argument("--environment", default=None, help="运行环境，例如 development 或 production")
+    parser.add_argument("--root-dir", dest="root_dir", default=None, help="桌面运行时根目录")
+    parser.add_argument("--runtime-root-dir", dest="root_dir", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--user-data-dir", default=None, help="Electron userData 根目录")
-    parser.add_argument("--runtime-root-dir", default=None, help="桌面运行时根目录")
     parser.add_argument("--config-dir", default=None, help="桌面运行时配置目录")
     parser.add_argument("--logs-dir", default=None, help="日志目录")
     parser.add_argument("--database-dir", default=None, help="数据库目录")
@@ -220,8 +222,12 @@ def build_runtime_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backend-stderr-log-file", default=None, help="Python 子进程 stderr 日志文件路径")
     parser.add_argument("--runtime-snapshot-file", default=None, help="运行态快照文件路径")
     parser.add_argument("--last-failure-file", default=None, help="最近失败摘要文件路径")
-    parser.add_argument("--app-mode", default=None, help="应用模式，例如 desktop")
-    parser.add_argument("--environment", default=None, help="运行环境，例如 development 或 production")
+    parser.add_argument("--model", default=None, help="Copilot 聊天运行时模型名称")
+    parser.add_argument(
+        "--local-token",
+        default=None,
+        help="本地宿主调用令牌，可选；若提供，将保护 diagnostics 端点",
+    )
     return parser
 
 
@@ -238,71 +244,72 @@ def parse_runtime_config(
 
     host = _resolve_host(args.host, env_map)
     port = _resolve_port(args.port, env_map)
-    local_token = _normalize_optional_text(args.local_token or env_map.get(ENV_LOCAL_TOKEN))
+    local_token = _resolve_optional_text_value(args.local_token, env_map, ENV_LOCAL_TOKEN)
+    model = _resolve_optional_text_value(args.model, env_map, ENV_MODEL, ENV_LEGACY_MODEL)
 
     user_data_dir = _resolve_path(
-        args.user_data_dir or env_map.get(ENV_USER_DATA_DIR),
+        _resolve_optional_text_value(args.user_data_dir, env_map, ENV_USER_DATA_DIR),
         cwd=base_dir,
         fallback=DEFAULT_USER_DATA_DIR,
     )
     runtime_root_dir = _resolve_path(
-        args.runtime_root_dir or env_map.get(ENV_ROOT_DIR),
+        _resolve_optional_text_value(args.root_dir, env_map, ENV_ROOT_DIR),
         cwd=base_dir,
         fallback=user_data_dir / DEFAULT_RUNTIME_ROOT_DIR_NAME,
     )
     config_dir = _resolve_path(
-        args.config_dir or env_map.get(ENV_CONFIG_DIR),
+        _resolve_optional_text_value(args.config_dir, env_map, ENV_CONFIG_DIR),
         cwd=base_dir,
         fallback=runtime_root_dir / DEFAULT_CONFIG_DIR_NAME,
     )
     logs_dir = _resolve_path(
-        args.logs_dir or env_map.get(ENV_LOGS_DIR),
+        _resolve_optional_text_value(args.logs_dir, env_map, ENV_LOGS_DIR),
         cwd=base_dir,
         fallback=runtime_root_dir / DEFAULT_LOGS_DIR_NAME,
     )
     database_dir = _resolve_path(
-        args.database_dir or env_map.get(ENV_DATABASE_DIR),
+        _resolve_optional_text_value(args.database_dir, env_map, ENV_DATABASE_DIR),
         cwd=base_dir,
         fallback=runtime_root_dir / DEFAULT_DATABASE_DIR_NAME,
     )
     state_dir = _resolve_path(
-        args.state_dir or env_map.get(ENV_STATE_DIR),
+        _resolve_optional_text_value(args.state_dir, env_map, ENV_STATE_DIR),
         cwd=base_dir,
         fallback=runtime_root_dir / DEFAULT_STATE_DIR_NAME,
     )
     copilot_settings_file = _resolve_path(
-        args.settings_file or env_map.get(ENV_COPILOT_SETTINGS_FILE),
+        _resolve_optional_text_value(args.settings_file, env_map, ENV_COPILOT_SETTINGS_FILE),
         cwd=base_dir,
         fallback=config_dir / DEFAULT_COPILOT_SETTINGS_FILE_NAME,
     )
     host_log_file = _resolve_path(
-        args.host_log_file or env_map.get(ENV_HOST_LOG_FILE),
+        _resolve_optional_text_value(args.host_log_file, env_map, ENV_HOST_LOG_FILE),
         cwd=base_dir,
         fallback=logs_dir / DEFAULT_HOST_LOG_FILE_NAME,
     )
     backend_stdout_log_file = _resolve_path(
-        args.backend_stdout_log_file or env_map.get(ENV_BACKEND_STDOUT_LOG_FILE),
+        _resolve_optional_text_value(args.backend_stdout_log_file, env_map, ENV_BACKEND_STDOUT_LOG_FILE),
         cwd=base_dir,
         fallback=logs_dir / DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME,
     )
     backend_stderr_log_file = _resolve_path(
-        args.backend_stderr_log_file or env_map.get(ENV_BACKEND_STDERR_LOG_FILE),
+        _resolve_optional_text_value(args.backend_stderr_log_file, env_map, ENV_BACKEND_STDERR_LOG_FILE),
         cwd=base_dir,
         fallback=logs_dir / DEFAULT_BACKEND_STDERR_LOG_FILE_NAME,
     )
     runtime_snapshot_file = _resolve_path(
-        args.runtime_snapshot_file or env_map.get(ENV_RUNTIME_SNAPSHOT_FILE),
+        _resolve_optional_text_value(args.runtime_snapshot_file, env_map, ENV_RUNTIME_SNAPSHOT_FILE),
         cwd=base_dir,
         fallback=state_dir / DEFAULT_RUNTIME_SNAPSHOT_FILE_NAME,
     )
     last_failure_file = _resolve_path(
-        args.last_failure_file or env_map.get(ENV_LAST_FAILURE_FILE),
+        _resolve_optional_text_value(args.last_failure_file, env_map, ENV_LAST_FAILURE_FILE),
         cwd=base_dir,
         fallback=state_dir / DEFAULT_LAST_FAILURE_FILE_NAME,
     )
 
-    app_mode = _normalize_optional_text(args.app_mode or env_map.get(ENV_APP_MODE)) or DEFAULT_APP_MODE
-    environment = _normalize_optional_text(args.environment or env_map.get(ENV_ENVIRONMENT)) or DEFAULT_ENVIRONMENT
+    app_mode = _resolve_optional_text_value(args.app_mode, env_map, ENV_APP_MODE) or DEFAULT_APP_MODE
+    environment = _resolve_optional_text_value(args.environment, env_map, ENV_ENVIRONMENT) or DEFAULT_ENVIRONMENT
 
     return DesktopRuntimeConfig(
         host=host,
@@ -324,6 +331,7 @@ def parse_runtime_config(
         ),
         app_mode=app_mode,
         environment=environment,
+        model=model,
     )
 
 
@@ -334,8 +342,25 @@ def _normalize_optional_text(value: object | None) -> str | None:
     return text or None
 
 
+def _resolve_optional_text_value(
+    cli_value: object | None,
+    env: Mapping[str, str],
+    *env_keys: str,
+) -> str | None:
+    normalized_cli_value = _normalize_optional_text(cli_value)
+    if normalized_cli_value is not None:
+        return normalized_cli_value
+
+    for env_key in env_keys:
+        normalized_env_value = _normalize_optional_text(env.get(env_key))
+        if normalized_env_value is not None:
+            return normalized_env_value
+
+    return None
+
+
 def _resolve_host(cli_value: str | None, env: Mapping[str, str]) -> str:
-    raw_host = _normalize_optional_text(cli_value or env.get(ENV_HOST)) or DEFAULT_HOST
+    raw_host = _resolve_optional_text_value(cli_value, env, ENV_HOST) or DEFAULT_HOST
     host = raw_host.lower()
     if host not in _ALLOWED_LOOPBACK_HOSTS:
         allowed = ", ".join(sorted(_ALLOWED_LOOPBACK_HOSTS))

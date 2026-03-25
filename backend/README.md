@@ -78,20 +78,27 @@ python -m app.blackboard.provider.cli.sync_calendar_ics --save-json
 
 ### 3. Desktop runtime 本地 HTTP 服务（最小入口）
 
-进入 `backend/` 后，在已激活的项目虚拟环境中可以运行：
+在仓库根目录可以直接运行：
 
 ```bash
-python -m app.desktop_runtime --host 127.0.0.1 --port 8765
+uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --app-mode desktop --environment development --root-dir ./backend/data/desktop-runtime-cli --user-data-dir ./backend/data --config-dir ./backend/data/desktop-runtime-cli/config --logs-dir ./backend/data/desktop-runtime-cli/logs --database-dir ./backend/data/desktop-runtime-cli/database --state-dir ./backend/data/desktop-runtime-cli/state --settings-file ./backend/data/desktop-runtime-cli/config/copilot-settings.json --host-log-file ./backend/data/desktop-runtime-cli/logs/electron-host.log --backend-stdout-log-file ./backend/data/desktop-runtime-cli/logs/backend.stdout.log --backend-stderr-log-file ./backend/data/desktop-runtime-cli/logs/backend.stderr.log --runtime-snapshot-file ./backend/data/desktop-runtime-cli/state/runtime-snapshot.json --last-failure-file ./backend/data/desktop-runtime-cli/state/last-failure.json --model test --local-token cli-token
 ```
 
 这个命令会：
 
 - 仅监听本机回环地址；
-- 解析 `host`、`port`、`local token`、`user data dir`、`runtime root dir`、`config dir`、`logs dir`、`database dir`、`state dir`、设置文件路径、日志文件路径、`app mode`、`environment` 等运行时参数；
-- 默认把运行时目录整理到 `userData/desktop-runtime/` 下，并进一步拆分为 `config/`、`logs/`、`database/`、`state/`；
+- 解析 `host`、`port`、`local token`、`user data dir`、`root dir`、`config dir`、`logs dir`、`database dir`、`state dir`、设置文件路径、日志文件路径、`app mode`、`environment`、`model` 等运行时 CLI 参数；
+- 默认把运行时目录整理到 `userData/desktop-runtime/` 下，并进一步拆分为 `config/`、`logs/`、`database/`、`state/`；上面的完整命令则演示了如何把这些目录全部显式固定为参数；
 - 暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info` 等最小契约端点；
+- 在根路径 `/` 挂载最小 Copilot runtime single-endpoint 接口，支持 `info`、`agent/connect`、`agent/run` 三类请求；
 - 在配置本地 token 时，仅对 diagnostics 端点要求 `X-Local-Token` 请求头，且 diagnostics / 快照 / 日志不会写出 token 明文；
-- 为后续 Electron 主进程托管保留稳定入口，但此阶段**还不提供复杂业务 API**。
+- 为后续 Electron 主进程托管保留稳定入口，但此阶段仍只覆盖**最小聊天 MVP**，不是完整业务 API 面。
+
+如果你要做最小聊天联调，还需要额外注意三点：
+
+- 推荐直接通过 `--model` 显式传入模型；开发态如果只是验证协议链路，可用 `--model test` 作为最小测试模型值。
+- `COPILOT_RUNTIME_MODEL` 和 `COPILOT_MODEL` 仍会被读取，但现在只作为短期兼容回退，不再推荐作为日常启动主路径。
+- 当前单 agent 名称固定为 `default`；前端传入的 `agentName` 也需要与它保持一致。
 
 ### 4. Blackboard 的可调用工具层
 
@@ -148,7 +155,7 @@ data/sustech.db
 如果你的目标是先确认“现在到底有没有可运行面”，可以这样区分：
 
 - 想验证现有抓取 / 同步业务链路，优先跑前面两个 Blackboard CLI；
-- 想验证后续可被 Electron 主进程托管的本地 HTTP 层，在项目虚拟环境中运行 `python -m app.desktop_runtime --host 127.0.0.1 --port 8765`。
+- 想验证后续可被 Electron 主进程托管的本地 HTTP 层，优先运行前面那条纯参数启动命令；如果只做最小聊天联调，至少显式传入 `--model test`。
 
 ## 测试怎么理解
 
