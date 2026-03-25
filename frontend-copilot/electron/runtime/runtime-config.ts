@@ -104,6 +104,19 @@ export interface HostedRuntimeCommandLineOptions {
   localToken?: string
 }
 
+export interface HostedRuntimeCommandLineParseWarning {
+  code: 'invalid-hosted-runtime-command-line-arguments'
+  detail: string
+  flag?: string
+}
+
+class HostedRuntimeCommandLineArgumentError extends Error {
+  constructor(readonly flag: string) {
+    super(`Missing value for hosted runtime option ${flag}.`)
+    this.name = 'HostedRuntimeCommandLineArgumentError'
+  }
+}
+
 export interface HostedRuntimeLaunchConfig {
   host: string
   port: number
@@ -260,6 +273,22 @@ export function parseHostedRuntimeCommandLineArguments(
   return options
 }
 
+export function parseHostedRuntimeCommandLineArgumentsSafely(
+  argv: readonly string[],
+): { options: HostedRuntimeCommandLineOptions, warning: HostedRuntimeCommandLineParseWarning | null } {
+  try {
+    return {
+      options: parseHostedRuntimeCommandLineArguments(argv),
+      warning: null,
+    }
+  } catch (error) {
+    return {
+      options: {},
+      warning: buildHostedRuntimeCommandLineParseWarning(error),
+    }
+  }
+}
+
 export function resolveHostedRuntimeModel(
   processEnv: NodeJS.ProcessEnv,
   explicitModel?: string | null,
@@ -405,13 +434,26 @@ function readCommandLineFlagValue(
     || nextValue.startsWith('--')
     || HOSTED_RUNTIME_MAIN_PROCESS_ARGUMENT_FLAGS.has(nextValue)
   ) {
-    throw new Error(`Missing value for hosted runtime option ${flag}.`)
+    throw new HostedRuntimeCommandLineArgumentError(flag)
   }
 
   return {
     value: normalizeOptionalString(nextValue),
     nextIndex: index + 1,
   }
+}
+
+function buildHostedRuntimeCommandLineParseWarning(error: unknown): HostedRuntimeCommandLineParseWarning {
+  const warning: HostedRuntimeCommandLineParseWarning = {
+    code: 'invalid-hosted-runtime-command-line-arguments',
+    detail: error instanceof Error ? error.message : String(error),
+  }
+
+  if (error instanceof HostedRuntimeCommandLineArgumentError) {
+    warning.flag = error.flag
+  }
+
+  return warning
 }
 
 function buildDesktopRuntimeArguments(input: {

@@ -26,7 +26,7 @@ import type {
   CopilotSettingsSaveResult,
 } from './copilot-settings'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
-import { parseHostedRuntimeCommandLineArguments } from './runtime/runtime-config'
+import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
 import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime/runtime-paths'
 import { isHostedBackendFailure, type HostedBackendFailure } from './runtime/runtime-diagnostics'
@@ -344,7 +344,7 @@ function createEmptyCopilotSettings(): CopilotSettings {
 function ensureHostedBackendService(): HostedBackendService {
   if (hostedBackendService === null) {
     const paths = getHostedRuntimePaths()
-    const runtimeCommandLineOptions = parseHostedRuntimeCommandLineArguments(process.argv)
+    const runtimeCommandLineOptions = resolveHostedRuntimeCommandLineOptions()
 
     hostedBackendService = createHostedBackendService({
       appRoot: APP_ROOT,
@@ -443,6 +443,17 @@ function registerApplicationLifecycleHandlers() {
         app.quit()
       })
   })
+}
+
+function resolveHostedRuntimeCommandLineOptions() {
+  const { options, warning } = parseHostedRuntimeCommandLineArgumentsSafely(process.argv)
+
+  if (warning !== null) {
+    console.warn('[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.', JSON.stringify(warning))
+    void appendMainRuntimeLog('warn', 'Ignoring invalid hosted runtime command-line arguments.', warning)
+  }
+
+  return options
 }
 
 function logHostedBackendState(message: string, state: HostedBackendState): void {

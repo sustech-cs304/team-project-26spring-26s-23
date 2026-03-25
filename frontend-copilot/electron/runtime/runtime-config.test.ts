@@ -17,6 +17,7 @@ import {
   formatRuntimeBaseUrl,
   HOSTED_RUNTIME_OVERRIDE_ENV_NAMES,
   parseHostedRuntimeCommandLineArguments,
+  parseHostedRuntimeCommandLineArgumentsSafely,
   resolveHostedRuntimeEnvironmentOverrides,
   sanitizeHostedRuntimeLaunchConfig,
 } from './runtime-config'
@@ -360,6 +361,31 @@ describe('parseHostedRuntimeCommandLineArguments', () => {
       '--local-token',
       'token-cli',
     ]))
+  })
+
+  it('returns a warning and empty options for malformed runtime flags so callers can fall back to defaults', () => {
+    const result = parseHostedRuntimeCommandLineArgumentsSafely([
+      '--runtime-host',
+    ])
+
+    expect(result.warning).toEqual({
+      code: 'invalid-hosted-runtime-command-line-arguments',
+      detail: 'Missing value for hosted runtime option --runtime-host.',
+      flag: '--runtime-host',
+    })
+    expect(result.options).toEqual({})
+
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-cli-defaults'),
+      processEnv: {},
+      port: 43210,
+      ...result.options,
+    })
+
+    expect(config.host).toBe('127.0.0.1')
+    expect(config.appMode).toBe('desktop')
+    expect(config.environment).toBe('development')
+    expect(config.localToken).toHaveLength(48)
   })
 })
 
