@@ -53,33 +53,25 @@ export interface AgentType {
 export interface ConversationItem {
   id: string
   title: string
-  summary: string
   updatedAt: string
-  status: 'active' | 'idle' | 'attention'
 }
 
 export interface SettingsNavItem {
   id: SettingsSection
   label: string
-  description: string
   icon: LucideIcon
 }
 
 export interface HubEntry {
   id: string
   title: string
-  description: string
-  meta: string
 }
 
 export interface HubWorkspaceContent {
   eyebrow: string
   title: string
-  subtitle: string
   panelTitle: string
-  panelSubtitle: string
   spotlightTitle: string
-  spotlightDescription: string
   highlights: string[]
   entries: HubEntry[]
 }

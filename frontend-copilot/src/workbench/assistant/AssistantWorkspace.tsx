@@ -15,11 +15,6 @@ interface AssistantWorkspaceProps {
   bootstrap: CopilotBootstrapController
 }
 
-const conversationStatusLabels = {
-  active: '进行中',
-  attention: '需关注',
-  idle: '已归档',
-} satisfies Record<'active' | 'attention' | 'idle', string>
 
 export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
   const [activeAgentType, setActiveAgentType] = useState<AgentTypeId>('general')
@@ -71,7 +66,6 @@ export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
         <header className="panel-head">
           <p className="panel-head__eyebrow">助手</p>
           <h1 className="panel-head__title">固定智能体类型</h1>
-          <p className="panel-head__subtitle">按智能体能力域组织，不与具体会话混用。</p>
         </header>
 
         <ul className="assistant-list">
@@ -91,8 +85,6 @@ export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
                   </span>
                   <span className="assistant-card__body">
                     <span className="assistant-card__title">{agent.label}</span>
-                    <span className="assistant-card__meta">{agent.shortLabel}</span>
-                    <span className="assistant-card__description">{agent.description}</span>
                   </span>
                 </button>
               </li>
@@ -105,7 +97,6 @@ export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
         <header className="panel-head">
           <p className="panel-head__eyebrow">话题</p>
           <h2 className="panel-head__title">{activeAgent.label}</h2>
-          <p className="panel-head__subtitle">展示当前智能体类型下的会话与主题切换。</p>
         </header>
 
         <button type="button" className="new-thread-button">
@@ -125,13 +116,7 @@ export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
                   onClick={() => setActiveConversationId(conversation.id)}
                 >
                   <span className="topic-card__title">{conversation.title}</span>
-                  <span className="topic-card__summary">{conversation.summary}</span>
-                  <span className="topic-card__meta">
-                    <span>{conversation.updatedAt}</span>
-                    <span className={`status-pill status-pill--${conversation.status}`}>
-                      {conversationStatusLabels[conversation.status]}
-                    </span>
-                  </span>
+                  <span className="topic-card__meta">{conversation.updatedAt}</span>
                 </button>
               </li>
             )

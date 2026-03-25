@@ -541,7 +541,6 @@ export function SettingsWorkspace({
                   <Icon size={16} className="settings-nav-item__icon" />
                   <span className="settings-nav-item__body">
                     <span className="settings-nav-item__title">{item.label}</span>
-                    <span className="settings-nav-item__subtitle">{item.description}</span>
                   </span>
                 </button>
               </li>
@@ -555,7 +554,6 @@ export function SettingsWorkspace({
           <div>
             <p className="workspace-main__eyebrow">当前设置页</p>
             <h2 className="workspace-main__title">{activeSettingsItem.label}</h2>
-            <p className="workspace-main__subtitle">{activeSettingsItem.description}</p>
           </div>
           <span className="workspace-badge">设置布局</span>
         </header>
