@@ -297,7 +297,7 @@
   padding: 1rem;
   border: 1px dashed var(--border-color);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--surface-elevated);
 }
 
 .copilot-chat__empty-title,
