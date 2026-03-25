@@ -16,6 +16,7 @@ import {
   apiReconnectOptions,
   backupCycleOptions,
   compressionOptions,
+  createModelProfileId,
   currencyOptions,
   densityOptions,
   docsFormatOptions,
@@ -154,8 +155,9 @@ function getDefaultModelCapabilities(modelId: string): ModelCapability[] {
   return Array.from(new Set(capabilities))
 }
 
-function createProviderModelProfile(modelId: string, providerName: string): ProviderModelProfile {
+function createProviderModelProfile(providerId: string, modelId: string, providerName: string): ProviderModelProfile {
   return {
+    id: createModelProfileId(providerId, modelId),
     modelId,
     displayName: formatModelDisplayName(modelId),
     groupName: formatModelGroupName(modelId, providerName),
@@ -169,6 +171,7 @@ function createProviderModelProfile(modelId: string, providerName: string): Prov
 
 function createEmptyModelEditorState(providerName: string, index: number): ModelEditorState {
   return {
+    id: '',
     index,
     modelId: '',
     displayName: '',
@@ -487,6 +490,7 @@ export function SettingsWorkspace({
     }
 
     const nextModel: ProviderModelProfile = {
+      id: modelEditorState.isNew ? createModelProfileId(activeProvider.id, nextModelId) : modelEditorState.id,
       modelId: nextModelId,
       displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
       groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
@@ -721,7 +725,7 @@ export function SettingsWorkspace({
                                 const modelIdentifier = model.modelId || '未填写模型 ID'
 
                                 return (
-                                  <article key={`${activeProvider.id}-model-${index}`} className="model-list-row">
+                                  <article key={model.id} className="model-list-row">
                                     <div className="model-list-row__main">
                                       <span className="model-list-row__name" title={modelDisplayName}>
                                         {modelDisplayName}
@@ -736,7 +740,7 @@ export function SettingsWorkspace({
 
                                             return (
                                               <span
-                                                key={`${activeProvider.id}-${index}-${capability}`}
+                                                key={`${model.id}-${capability}`}
                                                 className={`model-capability-chip model-capability-chip--${capability}`}
                                               >
                                                 {option?.label ?? capability}
@@ -1356,9 +1360,12 @@ export function SettingsWorkspace({
 }
 
 function createCustomProvider(index: number): ProviderProfile {
+  const providerId = `custom-provider-${index}`
+  const providerName = `Custom Provider ${index}`
+
   return {
-    id: `custom-provider-${index}`,
-    name: `Custom Provider ${index}`,
+    id: providerId,
+    name: providerName,
     protocol: 'custom-rest',
     endpoint: 'https://api.example.com/v1',
     apiKey: '',
@@ -1371,9 +1378,9 @@ function createCustomProvider(index: number): ProviderProfile {
     enabled: true,
     isDefault: false,
     availableModels: [
-      createProviderModelProfile('custom-model', `Custom Provider ${index}`),
-      createProviderModelProfile('custom-model-fast', `Custom Provider ${index}`),
-      createProviderModelProfile('custom-model-fallback', `Custom Provider ${index}`),
+      createProviderModelProfile(providerId, 'custom-model', providerName),
+      createProviderModelProfile(providerId, 'custom-model-fast', providerName),
+      createProviderModelProfile(providerId, 'custom-model-fallback', providerName),
     ],
   }
 }

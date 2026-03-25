@@ -1,12 +1,28 @@
 import type { ModelCapability, ProviderModelProfile, ProviderProfile, SelectOption } from '../types'
 
+let nextModelProfileSequence = 0
+
+export function createModelProfileId(providerId: string, modelId: string) {
+  const sanitizedModelId = modelId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  nextModelProfileSequence += 1
+
+  return `${providerId}-${sanitizedModelId || 'model'}-${nextModelProfileSequence}`
+}
+
 function createInitialModel(
+  providerId: string,
   modelId: string,
   displayName: string,
   groupName: string,
   capabilities: ModelCapability[],
 ): ProviderModelProfile {
   return {
+    id: createModelProfileId(providerId, modelId),
     modelId,
     displayName,
     groupName,
@@ -131,9 +147,16 @@ export const initialProviderProfiles: ProviderProfile[] = [
     enabled: true,
     isDefault: true,
     availableModels: [
-      createInitialModel('openai/gpt-4.1', 'GPT-4.1', 'OpenAI', ['vision', 'reasoning', 'tools']),
-      createInitialModel('openai/gpt-4.1-mini', 'GPT-4.1 Mini', 'OpenAI', ['vision', 'reasoning', 'tools']),
+      createInitialModel('openrouter', 'openai/gpt-4.1', 'GPT-4.1', 'OpenAI', ['vision', 'reasoning', 'tools']),
       createInitialModel(
+        'openrouter',
+        'openai/gpt-4.1-mini',
+        'GPT-4.1 Mini',
+        'OpenAI',
+        ['vision', 'reasoning', 'tools'],
+      ),
+      createInitialModel(
+        'openrouter',
         'anthropic/claude-3.7-sonnet',
         'Claude 3.7 Sonnet',
         'Anthropic',
@@ -156,9 +179,9 @@ export const initialProviderProfiles: ProviderProfile[] = [
     enabled: true,
     isDefault: false,
     availableModels: [
-      createInitialModel('baili-chat-pro', 'Baili Chat Pro', 'BaiLi', ['reasoning', 'tools']),
-      createInitialModel('baili-chat-lite', 'Baili Chat Lite', 'BaiLi', ['reasoning']),
-      createInitialModel('baili-reasoner', 'Baili Reasoner', 'BaiLi', ['reasoning']),
+      createInitialModel('baill-openai', 'baili-chat-pro', 'Baili Chat Pro', 'BaiLi', ['reasoning', 'tools']),
+      createInitialModel('baill-openai', 'baili-chat-lite', 'Baili Chat Lite', 'BaiLi', ['reasoning']),
+      createInitialModel('baill-openai', 'baili-reasoner', 'Baili Reasoner', 'BaiLi', ['reasoning']),
     ],
   },
   {
@@ -176,9 +199,21 @@ export const initialProviderProfiles: ProviderProfile[] = [
     enabled: false,
     isDefault: false,
     availableModels: [
-      createInitialModel('campus-general-agent', 'Campus General Agent', 'Campus', ['reasoning', 'tools']),
-      createInitialModel('campus-fast-agent', 'Campus Fast Agent', 'Campus', ['reasoning', 'tools']),
-      createInitialModel('campus-summary-agent', 'Campus Summary Agent', 'Campus', ['reasoning', 'tools']),
+      createInitialModel(
+        'custom-gateway',
+        'campus-general-agent',
+        'Campus General Agent',
+        'Campus',
+        ['reasoning', 'tools'],
+      ),
+      createInitialModel('custom-gateway', 'campus-fast-agent', 'Campus Fast Agent', 'Campus', ['reasoning', 'tools']),
+      createInitialModel(
+        'custom-gateway',
+        'campus-summary-agent',
+        'Campus Summary Agent',
+        'Campus',
+        ['reasoning', 'tools'],
+      ),
     ],
   },
 ]

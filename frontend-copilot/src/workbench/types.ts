@@ -26,6 +26,7 @@ export type ThemeMode = 'light' | 'dark'
 export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
 
 export interface ProviderModelProfile {
+  id: string
   modelId: string
   displayName: string
   groupName: string
