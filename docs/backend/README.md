@@ -1,63 +1,195 @@
-# 后端文档
+# 后端分册
 
-这组文档不是为了把当前 `backend/` 包装成一个比现实更完整的系统，而是为了让第一次接手的人先看清楚三件事：**它现在是什么、现在能跑什么、现在还不能当成什么**。
+## 文档目标
 
-当前后端更适合被理解为：**Python 能力库 + CLI + 数据同步/持久化层**。其中 Blackboard 方向已经有较明确的运行面；TIS 方向目前更多停留在 provider 可调用层。仓库里虽然出现了 `api`、`services`、`fastapi` 等名字，但它们不能直接等同于“已经存在面向前端的 HTTP 服务”。
+本文档作为后端子系统的入口，帮助读者理解当前 Python 后端的职责边界、主要组成部分，以及如何在整个系统中定位后端的角色。
 
-## 建议阅读顺序
+## 后端子系统的定位
 
-如果你是第一次接手，建议按下面顺序读：
+当前后端由以下主要部分构成：
 
-1. [`backend/README.md`](../../backend/README.md)：先建立整体判断，避免一上来就把这个目录误认成成熟 Web 服务。
-2. [模块布局](./module-layout.md)：看清 Blackboard、TIS、provider、data、shared 这些目录到底各自负责什么。
-3. [运行与配置](./run-and-config.md)：确认现在应该怎么跑、哪些环境变量真的会影响运行。
-4. [边界与路线图](./roadmap-and-boundaries.md)：明确区分“已实现 / 代码里可调用但不是正式入口 / 未来草案”。
-5. [前后端连接现状说明](./frontend-connection.md)：只在需要和前端对齐预期时再看，不要把它当成现成接口文档。
+- [`backend/app/desktop_runtime/`](../../backend/app/desktop_runtime/)：桌面宿主本地 HTTP 服务，提供健康检查、诊断端点，并挂载 Copilot runtime
+- [`backend/app/copilot_runtime/`](../../backend/app/copilot_runtime/)：单端点聊天 runtime，支持 `info`、`agent/connect`、`agent/run` 三类方法
+- [`backend/app/blackboard/`](../../backend/app/blackboard/)：Blackboard 系统的抓取、解析、同步与持久化能力
+- [`backend/app/teaching_information_system/`](../../backend/app/teaching_information_system/)：TIS 系统的抓取、解析与部分持久化能力
+- [`backend/tests/`](../../backend/tests/)：分层测试（unit / integration / e2e）
 
-## 文档分层
+**代码锚点**：[`backend/README.md`](../../backend/README.md)
 
-这套文档分成两层：**说明型专题** 和 **结构化附录**。
+## 后端在系统中的位置
 
-说明型专题负责回答“现在应该怎么理解这个后端”，重点是解释背景、边界和阅读方式：
+### Desktop Runtime + Copilot Runtime
 
-- [模块布局](./module-layout.md)
-- [运行与配置](./run-and-config.md)
-- [边界与路线图](./roadmap-and-boundaries.md)
-- [前后端连接现状说明](./frontend-connection.md)
+当前已落地的 **desktop runtime** 与 **copilot runtime** 在整个系统中扮演以下角色：
 
-结构化附录负责把已经确认的命令、配置项、输出契约和未来草案整理成便于查阅的参考页：
+1. **Desktop Runtime** 作为 Electron 主进程托管的 Python 子进程，提供本地 HTTP 服务（默认 `127.0.0.1:8765`）
+2. **Copilot Runtime** 挂载在 desktop runtime 的根路径 `/`，提供单端点聊天能力
+3. 两者共同构成**最小聊天 MVP** 的后端支撑，支持多轮对话、session 管理、agent 执行
 
-- [运行与配置参考](./reference-run-and-config.md)
-- [当前可观察契约参考](./reference-current-contracts.md)
-- [未来 API 草案参考](./reference-future-api-draft.md)
+**系统视角**：参见 [系统架构总览](../system/architecture-overview.md) 了解 Electron 主进程、Python runtime、Renderer 之间的关系。
 
-## 读这些文档时，先带着这三个判断
+**启动链路**：参见 [运行时生命周期](../system/runtime-lifecycle.md) 了解 development / bundled 两种模式的启动流程。
 
-### 1. 已实现
+**代码锚点**：
+- Desktop runtime 服务创建：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+- Copilot runtime 路由：[`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py)
+- Copilot runtime 组装：[`backend/app/copilot_runtime/composition.py`](../../backend/app/copilot_runtime/composition.py)
 
-当前已经比较明确的，是 Blackboard 方向的 CLI、provider、同步与本地持久化链路，以及对应的测试分层。
+**测试依据**：
+- Desktop runtime 单元测试：[`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)
+- Copilot runtime 集成测试：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)
 
-### 2. 代码里可调用，但不是正式入口
+### Blackboard / TIS 与桌面聊天运行时的关系
 
-Blackboard 的工具函数、snapshot use case，以及 TIS 的诊断/成绩/学分绩/已选课程 use case，都属于这类内容。它们已经能在 Python 里调用，但还没有形成统一、稳定、面向外部使用者的正式运行入口。
+Blackboard 和 TIS 相关能力当前主要以以下形式存在：
 
-### 3. 未来草案
+- **Blackboard**：已有较明确的 CLI 入口（课程目录搜索、日历 ICS 同步）、provider use case、数据同步与本地持久化链路
+- **TIS**：已有 provider 可调用能力（诊断、个人成绩、学分绩、已选课程），部分支持持久化，但尚无明确的 CLI 入口
 
-凡是涉及“未来怎样接前端”“未来可能怎样包装成 HTTP API”的内容，都只作为草案保留。它们服务于协作讨论，不代表当前实现承诺。
+这些能力与桌面聊天运行时的关系：
 
-## 这组文档刻意避免的误解
+- **当前状态**：Blackboard / TIS 能力主要作为 Python 内部可调用的工具层，尚未直接暴露为桌面聊天运行时的 HTTP API
+- **未来方向**：可通过 tool registry 将这些能力注册为 agent 可调用的 tools，从而在聊天界面中使用
 
-阅读过程中如果遇到下面这些名字，请特别注意不要望文生义：
+**代码锚点**：
+- Blackboard API 层：[`backend/app/blackboard/api/`](../../backend/app/blackboard/api/)
+- TIS API 层：[`backend/app/teaching_information_system/api/`](../../backend/app/teaching_information_system/api/)
+- Tool registry：[`backend/app/copilot_runtime/tool_registry.py`](../../backend/app/copilot_runtime/tool_registry.py)
 
-- `app/blackboard/api/` 和 `app/teaching_information_system/api/`：这里更接近“访问上游系统并解析结果”的代码，不是给前端直接调用的现成 HTTP API。
-- `app/services/`：当前只是占位 package，不表示已经形成服务层编排。
-- `fastapi` / `uvicorn` 依赖：只能说明依赖表里出现过相关包，不能反推出仓库里已经有可启动的 Web 服务。
-- `provider/tools/agent_tools.py` 里的函数：它们当前返回的是字典结果，不是现成 HTTP 接口。
+## 当前后端"已实现什么 / 尚不是什么"
 
-## 文档放置规则
+### 已实现
 
-仓库级后端文档统一放在 `docs/backend/`。当前不把 `backend/docs/` 作为正式文档入口，也不把模块目录里的命名直接当成系统成熟度证明。
+- ✅ Desktop runtime 本地 HTTP 服务（健康检查、诊断、版本信息）
+- ✅ Copilot runtime 单端点聊天能力（info、connect、run）
+- ✅ 内存 session store（多轮对话历史）
+- ✅ Agent registry 与 tool registry（当前默认单 agent、单 toolset）
+- ✅ Blackboard CLI（课程目录搜索、日历 ICS 同步）
+- ✅ Blackboard 数据同步与本地持久化链路
+- ✅ TIS provider 可调用能力（诊断、成绩、学分绩、已选课程）
+- ✅ 分层测试（unit / integration / e2e）
 
-## 如果你只打算看一篇专题
+### 代码里可调用，但不是正式入口
 
-优先看 [边界与路线图](./roadmap-and-boundaries.md)。它最直接回答“哪些东西已经能依赖，哪些只能当内部能力，哪些还只是草案”。
+- ⚠️ Blackboard 工具函数（返回字典结果，非 HTTP 响应）
+- ⚠️ TIS provider use case（可在 Python 内调用，但无明确 CLI 入口）
+- ⚠️ `app/blackboard/api/` 和 `app/teaching_information_system/api/`（这里的 `api` 更接近"访问上游系统并解析结果"，不是给前端直接调用的 HTTP API）
+
+### 尚不是什么
+
+- ❌ **不是完整的统一业务 Web API**：当前 desktop runtime 提供的是最小聊天 MVP 的 HTTP 端点，不是面向前端的完整业务 API 后端
+- ❌ **不是服务化架构**：`app/services/` 当前只是占位 package，不表示已经形成服务层编排
+- ❌ **不是持久化 session 管理**：session store 当前在内存中，Python runtime 重启后丢失
+
+**边界说明**：参见 [`backend/README.md`](../../backend/README.md) 了解更详细的边界判断。
+
+## 推荐阅读顺序
+
+### 首次接手后端
+
+如果你是第一次接手后端，建议按以下顺序阅读：
+
+1. **先建立系统全局视角**：
+   - [系统架构总览](../system/architecture-overview.md)：理解 Electron + Python runtime 的整体架构
+   - [运行时生命周期](../system/runtime-lifecycle.md)：理解 desktop runtime 如何被启动、配置、就绪
+
+2. **再深入后端分册**：
+   - [`backend/README.md`](../../backend/README.md)：理解后端当前是什么、能跑什么、还不能当成什么
+   - [模块布局](./module-layout.md)：理解 `desktop_runtime`、`copilot_runtime`、`blackboard`、`teaching_information_system` 等目录的职责
+   - [运行与配置](./run-and-config.md)：理解如何运行 desktop runtime、Blackboard CLI，以及配置如何影响运行
+
+3. **理解边界与契约**：
+   - [边界与路线图](./roadmap-and-boundaries.md)：明确区分"已实现 / 可调用但不是正式入口 / 未来草案"
+   - [当前可观察契约参考](./reference-current-contracts.md)：查看当前真正可观察到的输出契约
+
+### 需要理解聊天运行时契约
+
+如果你需要理解 desktop runtime 与 copilot runtime 的 HTTP 契约，建议阅读：
+
+- [聊天运行时契约](../system/chat-runtime-contract.md)：理解单端点协议、`info` / `agent/connect` / `agent/run` 三类请求、显式失败与结构化错误
+
+### 需要理解 session 与状态管理
+
+如果你需要理解 session store、threadId 语义、hosted backend state，建议阅读：
+
+- [Session 与状态模型](../system/session-and-state-model.md)：理解 threadId、多轮上下文、session store、hosted backend state、renderer config state
+
+### 需要对接前端或理解前后端连接
+
+如果你需要理解前后端如何连接，建议阅读：
+
+- [前后端连接现状说明](./frontend-connection.md)：理解当前前后端连接的实际状态，避免把未来草案当成现成接口
+
+## 后端分册文档列表
+
+### 说明型专题
+
+- [模块布局](./module-layout.md)：后端目录结构与各模块职责
+- [运行与配置](./run-and-config.md)：如何运行 desktop runtime、Blackboard CLI，配置来源与优先级
+- [边界与路线图](./roadmap-and-boundaries.md)：明确区分已实现、可调用但不是正式入口、未来草案
+- [前后端连接现状说明](./frontend-connection.md)：前后端连接的实际状态
+
+### 结构化附录
+
+- [运行与配置参考](./reference-run-and-config.md)：命令、配置项、环境变量的结构化参考
+- [当前可观察契约参考](./reference-current-contracts.md)：当前真正可观察到的输出契约
+- [未来 API 草案参考](./reference-future-api-draft.md)：未来可能的 API 设计草案（非当前实现承诺）
+
+## 关键代码锚点
+
+### Desktop Runtime
+
+- 服务创建：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+- 配置解析：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
+- 生命周期管理：[`backend/app/desktop_runtime/lifecycle.py`](../../backend/app/desktop_runtime/lifecycle.py)
+- 健康检查：[`backend/app/desktop_runtime/health.py`](../../backend/app/desktop_runtime/health.py)
+
+### Copilot Runtime
+
+- 路由：[`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py)
+- 组装：[`backend/app/copilot_runtime/composition.py`](../../backend/app/copilot_runtime/composition.py)
+- 契约：[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)
+- Bridge：[`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py)
+- Session store：[`backend/app/copilot_runtime/session_store.py`](../../backend/app/copilot_runtime/session_store.py)
+- Agent registry：[`backend/app/copilot_runtime/agent_registry.py`](../../backend/app/copilot_runtime/agent_registry.py)
+- Tool registry：[`backend/app/copilot_runtime/tool_registry.py`](../../backend/app/copilot_runtime/tool_registry.py)
+
+### Blackboard
+
+- API 层：[`backend/app/blackboard/api/`](../../backend/app/blackboard/api/)
+- 数据层：[`backend/app/blackboard/data/`](../../backend/app/blackboard/data/)
+- 共享工具：[`backend/app/blackboard/shared/`](../../backend/app/blackboard/shared/)
+
+### Teaching Information System
+
+- API 层：[`backend/app/teaching_information_system/api/`](../../backend/app/teaching_information_system/api/)
+- 数据层：[`backend/app/teaching_information_system/data/`](../../backend/app/teaching_information_system/data/)
+- Provider 层：[`backend/app/teaching_information_system/provider/`](../../backend/app/teaching_information_system/provider/)
+- 共享工具：[`backend/app/teaching_information_system/shared/`](../../backend/app/teaching_information_system/shared/)
+
+### 测试
+
+- Desktop runtime 单元测试：[`backend/tests/unit/desktop_runtime/`](../../backend/tests/unit/desktop_runtime/)
+- Copilot runtime 单元测试：[`backend/tests/unit/copilot_runtime/`](../../backend/tests/unit/copilot_runtime/)
+- Blackboard 单元测试：[`backend/tests/unit/api/`](../../backend/tests/unit/api/)（部分）、[`backend/tests/unit/provider/`](../../backend/tests/unit/provider/)（部分）
+- TIS 单元测试：[`backend/tests/unit/api/`](../../backend/tests/unit/api/)（部分）、[`backend/tests/unit/provider/`](../../backend/tests/unit/provider/)（部分）
+- 集成测试：[`backend/tests/integration/`](../../backend/tests/integration/)
+- E2E 测试：[`backend/tests/e2e/`](../../backend/tests/e2e/)
+
+## 相关文档
+
+### 系统专题
+
+- [系统架构总览](../system/architecture-overview.md)
+- [运行时生命周期](../system/runtime-lifecycle.md)
+- [聊天运行时契约](../system/chat-runtime-contract.md)
+- [Session 与状态模型](../system/session-and-state-model.md)
+
+### 前端分册
+
+- [前端分册入口](../frontend/README.md)
+
+---
+
+**文档版本**：2026-03-25  
+**对应代码版本**：当前 main 分支
