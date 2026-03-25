@@ -450,7 +450,7 @@ function resolveHostedRuntimeCommandLineOptions() {
 
   if (warning !== null) {
     console.warn('[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.', JSON.stringify(warning))
-    void appendMainRuntimeLog('warn', 'Ignoring invalid hosted runtime command-line arguments.', warning)
+    void appendMainRuntimeLog('warn', 'Ignoring invalid hosted runtime command-line arguments.', { ...warning })
   }
 
   return options

@@ -107,7 +107,7 @@ function resolveDevelopmentPythonLaunchCandidate(backendDir: string): Developmen
     }
   }
 
-  for (const candidate of getFallbackDevelopmentPythonLaunchCandidates(backendDir)) {
+  for (const candidate of getFallbackDevelopmentPythonLaunchCandidates()) {
     if (canExecuteDevelopmentPythonCandidate(candidate)) {
       return candidate
     }
@@ -337,7 +337,7 @@ function assertDevelopmentPythonLaunchSpecResolved(spec: PythonRuntimeLaunchSpec
   const venvCandidates = getDevelopmentPythonExecutableCandidates(spec.backendDir)
     .map((candidate) => `"${candidate}"`)
     .join(', ')
-  const fallbackCandidates = getFallbackDevelopmentPythonLaunchCandidates(spec.backendDir)
+  const fallbackCandidates = getFallbackDevelopmentPythonLaunchCandidates()
     .map((candidate) => candidate.args.length === 0
       ? candidate.command
       : `${candidate.command} ${candidate.args.join(' ')}`)
