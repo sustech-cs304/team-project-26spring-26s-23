@@ -710,6 +710,16 @@ textarea {
   overflow: auto;
 }
 
+.conversation-workspace .workspace-chat-shell {
+  display: flex;
+  flex: 1 1 auto;
+}
+
+.conversation-workspace .workspace-chat-shell > .copilot-panel {
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
 .workspace-main__content {
   flex: 1 1 auto;
   display: flex;

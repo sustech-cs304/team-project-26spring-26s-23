@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { CopilotChatPanel } from '../../features/copilot/CopilotChatPanel'
-import type { CopilotBootstrapController, CopilotBootstrapState } from '../../features/copilot/types'
+import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { agentTypes, conversationsByAgent } from '../config'
 import type { AgentTypeId } from '../types'
 
@@ -125,42 +125,6 @@ export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
       </aside>
 
       <main className="workspace-main" aria-label="会话主内容区">
-        <header className="workspace-main__header">
-          <div>
-            <p className="workspace-main__eyebrow">当前会话</p>
-            <h2 className="workspace-main__title">{activeConversation?.title ?? '未选择话题'}</h2>
-            <p className="workspace-main__subtitle">
-              {activeAgent.label} · {activeConversation?.updatedAt ?? '等待选择话题'}
-            </p>
-          </div>
-          <span className="workspace-badge">{activeAgent.shortLabel}</span>
-        </header>
-
-        <section className="workspace-hero">
-          <div className="workspace-hero__copy">
-            <p className="workspace-hero__eyebrow">工作区摘要</p>
-            <h3 className="workspace-hero__title">已切换到 {activeAgent.label} 工作区</h3>
-            <p className="workspace-hero__text">
-              根层已先完成运行态装配与 retry 收口；当前助手工作区只消费上层解析好的 Copilot 状态，不再自行读取配置或运行时。
-            </p>
-          </div>
-
-          <div className="workspace-facts">
-            <article className="workspace-fact">
-              <span>当前智能体</span>
-              <strong>{activeAgent.description}</strong>
-            </article>
-            <article className="workspace-fact">
-              <span>会话数量</span>
-              <strong>{currentConversations.length} 个主题会话</strong>
-            </article>
-            <article className="workspace-fact">
-              <span>根层 Copilot 状态</span>
-              <strong>{describeBootstrapStatus(bootstrap.state)}</strong>
-            </article>
-          </div>
-        </section>
-
         <section className="workspace-chat-shell">
           <CopilotChatPanel
             state={bootstrap.state}
@@ -173,23 +137,3 @@ export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
   )
 }
 
-function describeBootstrapStatus(state: CopilotBootstrapState): string {
-  switch (state.status) {
-    case 'loading':
-      return '根层仍在读取启动状态'
-    case 'starting':
-      return '宿主后端正在启动'
-    case 'ready':
-      return '宿主管理运行时已就绪'
-    case 'degraded':
-      return '运行时降级但仍保留连接地址'
-    case 'failed':
-      return '宿主启动失败，可从面板发起重试'
-    case 'empty':
-      return '尚无运行时与 Agent 配置'
-    case 'incomplete':
-      return '运行时信息仍不完整'
-    case 'error':
-      return '根层读取运行态失败'
-  }
-}
