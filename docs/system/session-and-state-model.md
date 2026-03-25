@@ -19,14 +19,14 @@
 
 ### Renderer 侧配置状态
 
-前端通过 [`frontend-copilot/src/features/copilot/config.ts`](../frontend-copilot/src/features/copilot/config.ts:41) 中的 `resolveCopilotConfigState` 函数归并多个来源的状态，生成统一的 `CopilotConfigState`。
+前端通过 [`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts#L41) 中的 `resolveCopilotConfigState` 函数归并多个来源的状态，生成统一的 `CopilotConfigState`。
 
 **状态来源**：
 1. **Settings 状态**：从 Electron 预加载桥接读取的用户配置（`runtimeUrl`、`agentName`）
 2. **Hosted Runtime 状态**：宿主后端的运行时快照（`starting` / `ready` / `failed` / `stopped` / `degraded`）
 3. **派生决策**：根据上述两者计算出的 `runtimeSource`（`hosted` / `dev-override` / `none`）
 
-**配置状态类型**（[`frontend-copilot/src/features/copilot/types.ts`](../frontend-copilot/src/features/copilot/types.ts:26)）：
+**配置状态类型**（[`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts#L26)）：
 - `empty`：缺少 `runtimeUrl` 和 `agentName`
 - `incomplete`：部分字段缺失
 - `starting`：宿主后端正在启动
@@ -50,7 +50,7 @@ export function resolveCopilotConfigState(input: {
 
 ### Hosted Backend 运行时状态
 
-宿主后端状态由 Electron 主进程管理，存储在 [`frontend-copilot/electron/runtime/runtime-state.ts`](../frontend-copilot/electron/runtime/runtime-state.ts:4) 中的 `HostedBackendState`。
+宿主后端状态由 Electron 主进程管理，存储在 [`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts#L4) 中的 `HostedBackendState`。
 
 **状态字段**：
 - `status`：`starting` / `ready` / `failed` / `stopped` / `degraded`
@@ -71,7 +71,7 @@ export function resolveCopilotConfigState(input: {
 
 ### UI 展示状态
 
-[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:29) 根据 `CopilotConfigState` 渲染不同的 UI：
+[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L29) 根据 `CopilotConfigState` 渲染不同的 UI：
 
 - `loading`：等待根层完成运行态装配
 - `error`：读取运行态失败（IPC 链路问题）
@@ -81,7 +81,7 @@ export function resolveCopilotConfigState(input: {
 - `degraded`：运行态已降级，但仍可连接
 - `ready`：连接入口已就绪，挂载聊天区域
 
-**诊断信息**（[`frontend-copilot/src/features/copilot/types.ts`](../frontend-copilot/src/features/copilot/types.ts:37)）：
+**诊断信息**（[`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts#L37)）：
 ```typescript
 export interface CopilotDiagnosticsSummary {
   hostedStatus: CopilotRendererRuntimeSnapshot['status']
@@ -98,7 +98,7 @@ export interface CopilotDiagnosticsSummary {
 
 ### Session Store 设计
 
-后端使用 [`backend/app/copilot_runtime/session_store.py`](../backend/app/copilot_runtime/session_store.py:55) 中的 `InMemorySessionStore` 维护会话记录。
+后端使用 [`backend/app/copilot_runtime/session_store.py`](../../backend/app/copilot_runtime/session_store.py#L55) 中的 `InMemorySessionStore` 维护会话记录。
 
 **核心数据结构**：
 ```python
@@ -122,7 +122,7 @@ class RuntimeSessionRecord:
 - `append_turn(thread_id, agent_name, user_text, assistant_text, metadata)`：追加一轮对话
 - `list_messages(thread_id)`：返回会话的消息历史
 
-**测试依据**（[`backend/tests/unit/copilot_runtime/test_session_store.py`](../backend/tests/unit/copilot_runtime/test_session_store.py:6)）：
+**测试依据**（[`backend/tests/unit/copilot_runtime/test_session_store.py`](../../backend/tests/unit/copilot_runtime/test_session_store.py#L6)）：
 - 新 `thread_id` 创建新会话，`created` 为 `True`
 - 相同 `thread_id` 复用会话，`created` 为 `False`，metadata 合并
 - `append_turn` 自动去除首尾空白，空内容抛出 `ValueError`
@@ -131,17 +131,17 @@ class RuntimeSessionRecord:
 ### threadId 传递链路
 
 **前端侧**：
-1. [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx:133) 将用户选择的会话 ID 作为 `threadId` 传递给 `CopilotChatPanel`
-2. [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:279) 调用 `setCopilotThreadId(threadId)` 设置 CopilotKit 的 `threadId`
+1. [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx#L133) 将用户选择的会话 ID 作为 `threadId` 传递给 `CopilotChatPanel`
+2. [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L279) 调用 `setCopilotThreadId(threadId)` 设置 CopilotKit 的 `threadId`
 3. CopilotKit 在发送请求时将 `threadId` 包含在请求体中
 
 **后端侧**：
-1. [`backend/app/copilot_runtime/contracts.py`](../backend/app/copilot_runtime/contracts.py:47) 中的 `RuntimeConnectRequest` 和 `RuntimeRunRequest` 包含 `thread_id` 字段
-2. [`backend/app/copilot_runtime/bridge.py`](../backend/app/copilot_runtime/bridge.py:49) 中的 `RuntimeBridge.run` 方法接收 `request.thread_id`
+1. [`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py#L47) 中的 `RuntimeConnectRequest` 和 `RuntimeRunRequest` 包含 `thread_id` 字段
+2. [`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py#L49) 中的 `RuntimeBridge.run` 方法接收 `request.thread_id`
 3. Bridge 调用 `session_store.get(request.thread_id)` 获取现有会话
 4. 执行成功后调用 `session_store.append_turn(thread_id=request.thread_id, ...)` 持久化
 
-**关键代码**（[`backend/app/copilot_runtime/bridge.py`](../backend/app/copilot_runtime/bridge.py:49)）：
+**关键代码**（[`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py#L49)）：
 ```python
 async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
     existing_session = self._session_store.get(request.thread_id)
@@ -163,7 +163,7 @@ async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
 **历史加载**：
 - Bridge 从 session store 读取 `existing_session.message_history()`
 - 调用 `_build_message_history` 将 `RuntimeTextMessage` 转换为 PydanticAI 的 `ModelMessage`
-- 转换逻辑（[`backend/app/copilot_runtime/bridge.py`](../backend/app/copilot_runtime/bridge.py:88)）：
+- 转换逻辑（[`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py#L88)）：
   - `user` 消息 → `ModelRequest.user_text_prompt(content)`
   - `assistant` 消息 → `ModelResponse(parts=[TextPart(content=content)])`
   - 验证消息角色交替（user → assistant → user → ...）
@@ -178,7 +178,7 @@ async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
 - 失败时不更新 session store，避免污染历史
 - 每次追加更新 `session.updated_at` 和 `metadata`
 
-**测试依据**（[`backend/tests/unit/copilot_runtime/test_bridge.py`](../backend/tests/unit/copilot_runtime/test_bridge.py)）：
+**测试依据**（[`backend/tests/unit/copilot_runtime/test_bridge.py`](../../backend/tests/unit/copilot_runtime/test_bridge.py)）：
 - Bridge 正确加载现有会话历史
 - 历史消息按顺序转换为 model messages
 - 执行成功后会话包含新的 user + assistant 消息对
@@ -188,7 +188,7 @@ async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
 
 ### 前端状态更新
 
-**初始加载**（[`frontend-copilot/src/CopilotAppRoot.tsx`](../frontend-copilot/src/CopilotAppRoot.tsx:100)）：
+**初始加载**（[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx#L100)）：
 - 组件挂载时调用 `loadInitialConfigState()`
 - 并行读取 settings 和 runtime 快照
 - 结果缓存在 `initialConfigStateCache` 中
@@ -218,7 +218,7 @@ async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
 - Session store 保持上一次成功状态
 - 前端可以在同一 `threadId` 上重试
 
-**测试依据**（[`backend/tests/integration/test_copilot_runtime_http.py`](../backend/tests/integration/test_copilot_runtime_http.py)）：
+**测试依据**（[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)）：
 - 集成测试验证完整的 HTTP → Bridge → Session Store 链路
 - 确认相同 `thread_id` 的多次请求共享会话
 - 验证 session descriptor 正确返回 `newlyCreated` 标志
@@ -281,24 +281,24 @@ async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
 ## 代码锚点
 
 **前端配置与状态**：
-- [`frontend-copilot/src/features/copilot/types.ts`](../frontend-copilot/src/features/copilot/types.ts)：状态类型定义
-- [`frontend-copilot/src/features/copilot/config.ts`](../frontend-copilot/src/features/copilot/config.ts)：配置状态归并逻辑
-- [`frontend-copilot/src/CopilotAppRoot.tsx`](../frontend-copilot/src/CopilotAppRoot.tsx)：根层状态装配
-- [`frontend-copilot/electron/runtime/runtime-state.ts`](../frontend-copilot/electron/runtime/runtime-state.ts)：宿主后端状态管理
+- [`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts)：状态类型定义
+- [`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)：配置状态归并逻辑
+- [`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)：根层状态装配
+- [`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)：宿主后端状态管理
 
 **前端 UI 与 threadId 传递**：
-- [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)：会话选择与 threadId 传递
-- [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)：聊天面板与状态展示
+- [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)：会话选择与 threadId 传递
+- [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)：聊天面板与状态展示
 
 **后端会话与 Bridge**：
-- [`backend/app/copilot_runtime/session_store.py`](../backend/app/copilot_runtime/session_store.py)：会话存储实现
-- [`backend/app/copilot_runtime/bridge.py`](../backend/app/copilot_runtime/bridge.py)：Bridge 层协调逻辑
-- [`backend/app/copilot_runtime/contracts.py`](../backend/app/copilot_runtime/contracts.py)：请求/响应契约
+- [`backend/app/copilot_runtime/session_store.py`](../../backend/app/copilot_runtime/session_store.py)：会话存储实现
+- [`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py)：Bridge 层协调逻辑
+- [`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)：请求/响应契约
 
 **测试依据**：
-- [`backend/tests/unit/copilot_runtime/test_session_store.py`](../backend/tests/unit/copilot_runtime/test_session_store.py)：会话存储单元测试
-- [`backend/tests/unit/copilot_runtime/test_bridge.py`](../backend/tests/unit/copilot_runtime/test_bridge.py)：Bridge 层单元测试
-- [`backend/tests/integration/test_copilot_runtime_http.py`](../backend/tests/integration/test_copilot_runtime_http.py)：HTTP 集成测试
-- [`frontend-copilot/src/features/copilot/config.test.ts`](../frontend-copilot/src/features/copilot/config.test.ts)：配置状态归并测试
-- [`frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx`](../frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx)：聊天面板测试
-- [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx`](../frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx)：工作区测试
+- [`backend/tests/unit/copilot_runtime/test_session_store.py`](../../backend/tests/unit/copilot_runtime/test_session_store.py)：会话存储单元测试
+- [`backend/tests/unit/copilot_runtime/test_bridge.py`](../../backend/tests/unit/copilot_runtime/test_bridge.py)：Bridge 层单元测试
+- [`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)：HTTP 集成测试
+- [`frontend-copilot/src/features/copilot/config.test.ts`](../../frontend-copilot/src/features/copilot/config.test.ts)：配置状态归并测试
+- [`frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx)：聊天面板测试
+- [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx)：工作区测试

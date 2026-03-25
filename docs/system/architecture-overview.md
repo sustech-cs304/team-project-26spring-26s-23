@@ -62,7 +62,7 @@
 3. **配置流程**：
    - Renderer 通过 IPC 请求加载/保存 settings
    - Electron 主进程读写 `config/copilot-settings.json`
-   - Settings 包含 model、API key 等配置
+   - Settings 当前仅包含 `runtimeUrl` 与 `agentName`，用于配置本地 Copilot Runtime 地址及默认使用的 agent 名称
 
 ## 关键子系统说明
 
@@ -163,7 +163,7 @@
 
 **状态管理**：
 - `CopilotBootstrapState`：runtime 启动状态（loading、ready、degraded、error）
-- `CopilotSettings`：用户配置（model、API key 等）
+- `CopilotSettings`：用户配置（`runtimeUrl`、`agentName`）
 
 **代码锚点**：[`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)
 
@@ -195,9 +195,8 @@
 ### Settings 语义
 
 `copilot-settings.json` 包含：
-- `model`：LLM 模型名称（如 `openai:gpt-4`）
-- `apiKeys`：API keys（如 `OPENAI_API_KEY`）
-- 其他用户偏好设置
+- `runtimeUrl`：本地 Copilot Runtime 地址（如 `http://127.0.0.1:8765`）
+- `agentName`：默认使用的 agent 名称
 
 **代码锚点**：[`frontend-copilot/electron/copilot-settings.ts`](../../frontend-copilot/electron/copilot-settings.ts)
 
