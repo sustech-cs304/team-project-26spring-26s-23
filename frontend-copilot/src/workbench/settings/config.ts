@@ -1,4 +1,22 @@
-import type { ProviderProfile, SelectOption } from '../types'
+import type { ModelCapability, ProviderModelProfile, ProviderProfile, SelectOption } from '../types'
+
+function createInitialModel(
+  modelId: string,
+  displayName: string,
+  groupName: string,
+  capabilities: ModelCapability[],
+): ProviderModelProfile {
+  return {
+    modelId,
+    displayName,
+    groupName,
+    capabilities,
+    supportsStreaming: true,
+    currency: 'usd',
+    inputPrice: '0.50',
+    outputPrice: '3.00',
+  }
+}
 
 export const protocolOptions: SelectOption[] = [
   { value: 'openai-compatible', label: 'OpenAI Compatible', hint: '兼容 Chat Completions / Responses 风格' },
@@ -83,6 +101,21 @@ export const docsFormatOptions: SelectOption[] = [
   { value: 'pdf', label: 'PDF', hint: '适合归档分享' },
 ]
 
+export const modelCapabilityOptions: Array<{ value: ModelCapability; label: string }> = [
+  { value: 'vision', label: '视觉' },
+  { value: 'search', label: '联网' },
+  { value: 'reasoning', label: '推理' },
+  { value: 'tools', label: '工具' },
+  { value: 'rerank', label: '重排' },
+  { value: 'embedding', label: '向量' },
+]
+
+export const currencyOptions: SelectOption[] = [
+  { value: 'usd', label: '美元（USD）', hint: '适合海外服务商' },
+  { value: 'cny', label: '人民币（CNY）', hint: '适合本地或代理服务' },
+  { value: 'credits', label: '积分（Credits）', hint: '用于平台积分制计费' },
+]
+
 export const initialProviderProfiles: ProviderProfile[] = [
   {
     id: 'openrouter',
@@ -98,7 +131,16 @@ export const initialProviderProfiles: ProviderProfile[] = [
     notes: '适合统一接入多家模型，后续可按成本切换路由。',
     enabled: true,
     isDefault: true,
-    availableModels: ['openai/gpt-4.1', 'openai/gpt-4.1-mini', 'anthropic/claude-3.7-sonnet'],
+    availableModels: [
+      createInitialModel('openai/gpt-4.1', 'GPT-4.1', 'OpenAI', ['vision', 'reasoning', 'tools']),
+      createInitialModel('openai/gpt-4.1-mini', 'GPT-4.1 Mini', 'OpenAI', ['vision', 'reasoning', 'tools']),
+      createInitialModel(
+        'anthropic/claude-3.7-sonnet',
+        'Claude 3.7 Sonnet',
+        'Anthropic',
+        ['vision', 'reasoning', 'tools'],
+      ),
+    ],
   },
   {
     id: 'baill-openai',
@@ -114,7 +156,11 @@ export const initialProviderProfiles: ProviderProfile[] = [
     notes: '面向校园网络环境的占位服务商配置。',
     enabled: true,
     isDefault: false,
-    availableModels: ['baili-chat-pro', 'baili-chat-lite', 'baili-reasoner'],
+    availableModels: [
+      createInitialModel('baili-chat-pro', 'Baili Chat Pro', 'BaiLi', ['reasoning', 'tools']),
+      createInitialModel('baili-chat-lite', 'Baili Chat Lite', 'BaiLi', ['reasoning']),
+      createInitialModel('baili-reasoner', 'Baili Reasoner', 'BaiLi', ['reasoning']),
+    ],
   },
   {
     id: 'custom-gateway',
@@ -130,6 +176,10 @@ export const initialProviderProfiles: ProviderProfile[] = [
     notes: '用于未来直连自建后端或本地代理网关。',
     enabled: false,
     isDefault: false,
-    availableModels: ['campus-general-agent', 'campus-fast-agent', 'campus-summary-agent'],
+    availableModels: [
+      createInitialModel('campus-general-agent', 'Campus General Agent', 'Campus', ['reasoning', 'tools']),
+      createInitialModel('campus-fast-agent', 'Campus Fast Agent', 'Campus', ['reasoning', 'tools']),
+      createInitialModel('campus-summary-agent', 'Campus Summary Agent', 'Campus', ['reasoning', 'tools']),
+    ],
   },
 ]

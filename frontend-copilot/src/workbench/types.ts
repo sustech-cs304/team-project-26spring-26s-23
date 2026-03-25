@@ -21,6 +21,19 @@ export interface SelectOption {
   hint?: string
 }
 
+export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
+
+export interface ProviderModelProfile {
+  modelId: string
+  displayName: string
+  groupName: string
+  capabilities: ModelCapability[]
+  supportsStreaming: boolean
+  currency: string
+  inputPrice: string
+  outputPrice: string
+}
+
 export interface RailItem {
   id: WorkspaceView
   label: string
@@ -83,5 +96,5 @@ export interface ProviderProfile {
   notes: string
   enabled: boolean
   isDefault: boolean
-  availableModels: string[]
+  availableModels: ProviderModelProfile[]
 }

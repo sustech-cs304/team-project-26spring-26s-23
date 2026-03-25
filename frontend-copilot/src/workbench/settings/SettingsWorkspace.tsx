@@ -1,30 +1,187 @@
-import { Plus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import type { CopilotBootstrapController, CopilotBootstrapState } from '../../features/copilot/types'
 import { settingsItems } from '../config'
 import { SelectField, TextareaField, TextField, ToggleSwitch } from '../components/FormFields'
-import type { ProviderProfile, SelectOption, SettingsSection } from '../types'
+import type {
+  ModelCapability,
+  ProviderModelProfile,
+  ProviderProfile,
+  SelectOption,
+  SettingsSection,
+} from '../types'
 import {
   apiReconnectOptions,
   backupCycleOptions,
   compressionOptions,
+  currencyOptions,
+  densityOptions,
   docsFormatOptions,
   fontSizeOptions,
   initialProviderProfiles,
   languageOptions,
   memoryStrategyOptions,
+  modelCapabilityOptions,
   protocolOptions,
   proxyModeOptions,
   resultCountOptions,
   searchEngineOptions,
   themeOptions,
   toolPermissionOptions,
-  densityOptions,
 } from './config'
 
 interface SettingsWorkspaceProps {
   bootstrap: CopilotBootstrapController
+}
+
+type ModelEditorState = ProviderModelProfile & {
+  index: number
+  advancedOpen: boolean
+  isNew: boolean
+}
+
+const focusableElementSelector = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function isFocusableElementVisible(element: HTMLElement) {
+  let current: HTMLElement | null = element
+
+  while (current) {
+    const style = window.getComputedStyle(current)
+
+    if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') {
+      return false
+    }
+
+    current = current.parentElement
+  }
+
+  return true
+}
+
+function getFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableElementSelector)).filter((element) => {
+    if (element.tabIndex < 0 || element.hasAttribute('disabled') || element.getAttribute('aria-hidden') === 'true') {
+      return false
+    }
+
+    if (element instanceof HTMLInputElement && element.type === 'hidden') {
+      return false
+    }
+
+    return isFocusableElementVisible(element)
+  })
+}
+
+function titleCaseToken(value: string) {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function formatModelDisplayName(modelId: string) {
+  const normalized = modelId.trim()
+
+  if (!normalized) {
+    return '未命名模型'
+  }
+
+  const leaf = normalized.split('/').pop() ?? normalized
+
+  return titleCaseToken(leaf)
+}
+
+function formatModelGroupName(modelId: string, providerName: string) {
+  const normalized = modelId.trim()
+
+  if (!normalized) {
+    return providerName
+  }
+
+  const vendor = normalized.includes('/') ? normalized.split('/')[0] : providerName
+
+  return titleCaseToken(vendor)
+}
+
+function getDefaultModelCapabilities(modelId: string): ModelCapability[] {
+  const normalized = modelId.toLowerCase()
+  const capabilities: ModelCapability[] = []
+
+  if (/(gpt|gemini|claude|vision|vl)/.test(normalized)) {
+    capabilities.push('vision')
+  }
+
+  if (/(search|web)/.test(normalized)) {
+    capabilities.push('search')
+  }
+
+  if (/(embed)/.test(normalized)) {
+    capabilities.push('embedding')
+  }
+
+  if (/(rerank)/.test(normalized)) {
+    capabilities.push('rerank')
+  }
+
+  if (/(reason|think|claude|gpt|gemini)/.test(normalized)) {
+    capabilities.push('reasoning')
+  }
+
+  if (/(tool|agent|gpt|gemini|claude)/.test(normalized)) {
+    capabilities.push('tools')
+  }
+
+  if (capabilities.length === 0) {
+    capabilities.push('reasoning')
+  }
+
+  return Array.from(new Set(capabilities))
+}
+
+function createProviderModelProfile(modelId: string, providerName: string): ProviderModelProfile {
+  return {
+    modelId,
+    displayName: formatModelDisplayName(modelId),
+    groupName: formatModelGroupName(modelId, providerName),
+    capabilities: getDefaultModelCapabilities(modelId),
+    supportsStreaming: true,
+    currency: 'usd',
+    inputPrice: '0.50',
+    outputPrice: '3.00',
+  }
+}
+
+function createEmptyModelEditorState(providerName: string, index: number): ModelEditorState {
+  return {
+    index,
+    modelId: '',
+    displayName: '',
+    groupName: providerName,
+    capabilities: ['reasoning', 'tools'],
+    supportsStreaming: true,
+    currency: 'usd',
+    inputPrice: '0.50',
+    outputPrice: '3.00',
+    advancedOpen: false,
+    isNew: true,
+  }
+}
+
+function syncTrackedModelValue(currentValue: string, previousModelId: string | null, nextModelId: string | null) {
+  if (!previousModelId || currentValue !== previousModelId) {
+    return currentValue
+  }
+
+  return nextModelId ?? ''
 }
 
 export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
@@ -32,6 +189,10 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
   const [providerQuery, setProviderQuery] = useState('')
+  const [modelEditorState, setModelEditorState] = useState<ModelEditorState | null>(null)
+  const modelEditorDialogRef = useRef<HTMLElement | null>(null)
+  const modelEditorInitialFocusRef = useRef<HTMLInputElement | null>(null)
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
 
   const [language, setLanguage] = useState('zh-CN')
   const [proxyMode, setProxyMode] = useState('system')
@@ -90,25 +251,34 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
         profile.name.toLowerCase().includes(keyword)
         || profile.endpoint.toLowerCase().includes(keyword)
         || profile.defaultModel.toLowerCase().includes(keyword)
+        || profile.availableModels.some((model) => {
+          return (
+            model.modelId.toLowerCase().includes(keyword)
+            || model.displayName.toLowerCase().includes(keyword)
+          )
+        })
       )
     })
   }, [providerProfiles, providerQuery])
 
-  const providerModelOptions = useMemo<SelectOption[]>(() => {
-    return activeProvider.availableModels.map((model) => ({
-      value: model,
-      label: model,
-      hint: '服务商模型预设',
-    }))
-  }, [activeProvider.availableModels])
-
   const allModelOptions = useMemo<SelectOption[]>(() => {
-    const models = Array.from(new Set(providerProfiles.flatMap((profile) => profile.availableModels)))
+    const modelsById = new Map<string, ProviderModelProfile>()
 
-    return models.map((model) => ({
-      value: model,
-      label: model,
-      hint: '模型候选项',
+    providerProfiles.forEach((profile) => {
+      profile.availableModels.forEach((model) => {
+        if (!modelsById.has(model.modelId)) {
+          modelsById.set(model.modelId, model)
+        }
+      })
+    })
+
+    return Array.from(modelsById.values()).map((model) => ({
+      value: model.modelId,
+      label: model.displayName || model.modelId,
+      hint:
+        model.displayName && model.displayName !== model.modelId
+          ? model.modelId
+          : model.groupName || '模型候选项',
     }))
   }, [providerProfiles])
 
@@ -116,10 +286,41 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
     initialProviderProfiles[0]?.defaultModel ?? '',
   )
   const [fastAssistantModel, setFastAssistantModel] = useState(initialProviderProfiles[0]?.fastModel ?? '')
-  const [translationModel, setTranslationModel] = useState(
-    initialProviderProfiles[1]?.defaultModel ?? initialProviderProfiles[0]?.defaultModel ?? '',
-  )
-  const [fallbackEnabled, setFallbackEnabled] = useState(true)
+
+  useEffect(() => {
+    setModelEditorState(null)
+  }, [activeProviderId])
+
+  useEffect(() => {
+    if (!modelEditorState) {
+      const previousFocusedElement = previouslyFocusedElementRef.current
+      previouslyFocusedElementRef.current = null
+
+      if (previousFocusedElement?.isConnected) {
+        previousFocusedElement.focus()
+      }
+
+      return
+    }
+
+    previouslyFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+    const focusTimer = window.requestAnimationFrame(() => {
+      const dialog = modelEditorDialogRef.current
+
+      if (!dialog) {
+        return
+      }
+
+      const focusTarget = modelEditorInitialFocusRef.current ?? getFocusableElements(dialog)[0] ?? dialog
+      focusTarget.focus()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(focusTimer)
+    }
+  }, [modelEditorState])
 
   const updateActiveProvider = (patch: Partial<ProviderProfile>) => {
     setProviderProfiles((previous) =>
@@ -137,12 +338,177 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
     )
   }
 
+  const commitActiveProviderModels = (
+    nextModels: ProviderModelProfile[],
+    options?: { previousModelId?: string | null; nextModelId?: string | null },
+  ) => {
+    const previousModelId = options?.previousModelId ?? null
+    const nextModelId = options?.nextModelId ?? null
+
+    setProviderProfiles((previous) =>
+      previous.map((profile) => {
+        if (profile.id !== activeProviderId) {
+          return profile
+        }
+
+        return {
+          ...profile,
+          availableModels: nextModels,
+          defaultModel: syncTrackedModelValue(profile.defaultModel, previousModelId, nextModelId),
+          fastModel: syncTrackedModelValue(profile.fastModel, previousModelId, nextModelId),
+          fallbackModel: syncTrackedModelValue(profile.fallbackModel, previousModelId, nextModelId),
+        }
+      }),
+    )
+
+    setPrimaryAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
+    setFastAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
+  }
+
   const handleAddProvider = () => {
     const nextProvider = createCustomProvider(providerProfiles.length + 1)
 
     setProviderProfiles((previous) => [...previous, nextProvider])
     setProviderQuery('')
     setActiveProviderId(nextProvider.id)
+    setModelEditorState(null)
+  }
+
+  const handleOpenCreateModelEditor = () => {
+    setModelEditorState(createEmptyModelEditorState(activeProvider.name, activeProvider.availableModels.length))
+  }
+
+  const handleOpenModelEditor = (index: number) => {
+    const currentModel = activeProvider.availableModels[index]
+
+    if (!currentModel) {
+      return
+    }
+
+    setModelEditorState({
+      ...currentModel,
+      index,
+      advancedOpen: false,
+      isNew: false,
+    })
+  }
+
+  const handleCloseModelEditor = () => {
+    setModelEditorState(null)
+  }
+
+  const handleModelEditorKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      handleCloseModelEditor()
+      return
+    }
+
+    if (event.key !== 'Tab') {
+      return
+    }
+
+    const dialog = modelEditorDialogRef.current
+
+    if (!dialog) {
+      return
+    }
+
+    const focusableElements = getFocusableElements(dialog)
+
+    if (focusableElements.length === 0) {
+      event.preventDefault()
+      dialog.focus()
+      return
+    }
+
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const activeIndex = activeElement ? focusableElements.indexOf(activeElement) : -1
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    if (event.shiftKey) {
+      if (activeIndex <= 0) {
+        event.preventDefault()
+        lastElement.focus()
+      }
+
+      return
+    }
+
+    if (activeIndex === -1 || activeIndex === focusableElements.length - 1) {
+      event.preventDefault()
+      firstElement.focus()
+    }
+  }
+
+  const updateModelEditorState = (patch: Partial<ModelEditorState>) => {
+    setModelEditorState((previous) => (previous ? { ...previous, ...patch } : previous))
+  }
+
+  const handleToggleModelCapability = (capability: ModelCapability) => {
+    setModelEditorState((previous) => {
+      if (!previous) {
+        return previous
+      }
+
+      const capabilities = previous.capabilities.includes(capability)
+        ? previous.capabilities.filter((item) => item !== capability)
+        : [...previous.capabilities, capability]
+
+      return {
+        ...previous,
+        capabilities,
+      }
+    })
+  }
+
+  const handleSaveModel = () => {
+    if (!modelEditorState) {
+      return
+    }
+
+    const nextModelId = modelEditorState.modelId.trim()
+
+    if (!nextModelId) {
+      return
+    }
+
+    const nextModel: ProviderModelProfile = {
+      modelId: nextModelId,
+      displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
+      groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
+      capabilities: modelEditorState.capabilities.length > 0 ? modelEditorState.capabilities : ['reasoning'],
+      supportsStreaming: modelEditorState.supportsStreaming,
+      currency: modelEditorState.currency,
+      inputPrice: modelEditorState.inputPrice,
+      outputPrice: modelEditorState.outputPrice,
+    }
+
+    if (modelEditorState.isNew) {
+      commitActiveProviderModels([...activeProvider.availableModels, nextModel])
+    } else {
+      const previousModelId = activeProvider.availableModels[modelEditorState.index]?.modelId ?? null
+      const nextModels = activeProvider.availableModels.map((model, modelIndex) => {
+        return modelIndex === modelEditorState.index ? nextModel : model
+      })
+
+      commitActiveProviderModels(nextModels, { previousModelId, nextModelId })
+    }
+
+    setModelEditorState(null)
+  }
+
+  const handleRemoveModel = (index: number) => {
+    const previousModelId = activeProvider.availableModels[index]?.modelId ?? null
+    const nextModels = activeProvider.availableModels.filter((_, modelIndex) => modelIndex !== index)
+
+    commitActiveProviderModels(nextModels, {
+      previousModelId,
+      nextModelId: nextModels[0]?.modelId ?? null,
+    })
+    setModelEditorState(null)
   }
 
   return (
@@ -198,7 +564,7 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
                       <div className="settings-card__header settings-card__header--spaced">
                         <div>
                           <h3 className="settings-card__title">模型服务商</h3>
-                          <p className="settings-card__subtitle">左侧选择服务商，右侧编辑完整接入信息与默认模型。</p>
+                          <p className="settings-card__subtitle">左侧选择服务商，右侧查看基础信息与模型列表。</p>
                         </div>
                         <button type="button" className="secondary-button" onClick={handleAddProvider}>
                           <Plus size={14} />
@@ -254,115 +620,290 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
                       </ul>
                     </section>
 
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header settings-card__header--spaced">
-                        <div>
-                          <h3 className="settings-card__title">服务详情</h3>
-                          <p className="settings-card__subtitle">面向前端展示完整配置能力，字段均可点击、切换与编辑。</p>
+                    <div className="settings-detail-column">
+                      <section className="settings-card settings-card--form">
+                        <div className="settings-card__header">
+                          <div>
+                            <h3 className="settings-card__title">服务商基础信息</h3>
+                            <p className="settings-card__subtitle">编辑当前服务商的接入信息、默认模型与备注。</p>
+                          </div>
                         </div>
-                        <div className="toolbar-actions">
-                          <button type="button" className="ghost-button">
-                            测试连接
+
+                        <div className="settings-stack">
+                          <div className="form-grid form-grid--two">
+                            <TextField
+                              label="服务商名称"
+                              description="显示在左侧列表中的名称"
+                              value={activeProvider.name}
+                              onChange={(value) => updateActiveProvider({ name: value })}
+                              placeholder="输入服务商名称"
+                            />
+                            <SelectField
+                              label="协议类型"
+                              description="控制请求的接口风格与参数格式"
+                              value={activeProvider.protocol}
+                              options={protocolOptions}
+                              onChange={(value) => updateActiveProvider({ protocol: value })}
+                            />
+                            <TextField
+                              label="API 地址"
+                              description="填写服务商接口地址或代理网关地址"
+                              value={activeProvider.endpoint}
+                              onChange={(value) => updateActiveProvider({ endpoint: value })}
+                              placeholder="https://api.example.com/v1"
+                              type="url"
+                            />
+                            <TextField
+                              label="默认模型 ID"
+                              description="填写该服务商默认使用的模型 ID"
+                              value={activeProvider.defaultModel}
+                              onChange={(value) => updateActiveProvider({ defaultModel: value })}
+                              placeholder="例如 openai/gpt-4.1"
+                            />
+                            <TextField
+                              label="API 密钥"
+                              description="填写对应服务商提供的访问密钥"
+                              value={activeProvider.apiKey}
+                              onChange={(value) => updateActiveProvider({ apiKey: value })}
+                              placeholder="输入访问密钥"
+                              type="password"
+                            />
+                          </div>
+
+                          <TextareaField
+                            label="备注与扩展配置"
+                            description="补充自定义请求头、路由说明或使用备注"
+                            value={activeProvider.notes}
+                            onChange={(value) => updateActiveProvider({ notes: value })}
+                            placeholder="输入补充说明"
+                          />
+
+                          <div className="toggle-grid">
+                            <ToggleSwitch
+                              label="启用当前服务商"
+                              description="关闭后保留配置，但不参与模型路由"
+                              checked={activeProvider.enabled}
+                              onChange={(checked) => updateActiveProvider({ enabled: checked })}
+                            />
+                            <ToggleSwitch
+                              label="设为默认服务商"
+                              description="置顶为全局默认模型服务入口"
+                              checked={activeProvider.isDefault}
+                              onChange={(checked) => updateActiveProvider({ isDefault: checked })}
+                            />
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="settings-card settings-card--form">
+                        <div className="settings-card__header settings-card__header--spaced">
+                          <div>
+                            <h3 className="settings-card__title">模型列表管理</h3>
+                            <p className="settings-card__subtitle">集中查看当前服务商模型，并通过图标快速编辑或删除。</p>
+                          </div>
+                          <span className="inline-badge">{activeProvider.availableModels.length} 个模型</span>
+                        </div>
+
+                        <div className="settings-stack">
+                          <div className="model-list-shell">
+                            {activeProvider.availableModels.length > 0 ? (
+                              activeProvider.availableModels.map((model, index) => {
+                                const modelDisplayName = model.displayName || '未命名模型'
+                                const modelIdentifier = model.modelId || '未填写模型 ID'
+
+                                return (
+                                  <article key={`${activeProvider.id}-model-${index}`} className="model-list-row">
+                                    <div className="model-list-row__main">
+                                      <span className="model-list-row__name" title={modelDisplayName}>
+                                        {modelDisplayName}
+                                      </span>
+                                      <span className="model-list-row__id" title={modelIdentifier}>
+                                        {modelIdentifier}
+                                      </span>
+                                      <div className="model-capability-list model-capability-list--compact" aria-label="支持特性">
+                                        {model.capabilities.length > 0 ? (
+                                          model.capabilities.map((capability) => {
+                                            const option = modelCapabilityOptions.find((item) => item.value === capability)
+
+                                            return (
+                                              <span
+                                                key={`${activeProvider.id}-${index}-${capability}`}
+                                                className={`model-capability-chip model-capability-chip--${capability}`}
+                                              >
+                                                {option?.label ?? capability}
+                                              </span>
+                                            )
+                                          })
+                                        ) : (
+                                          <span className="model-capability-chip model-capability-chip--empty">未标记特性</span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="model-list-row__actions">
+                                      <button
+                                        type="button"
+                                        className="icon-button"
+                                        title={`编辑 ${modelDisplayName}`}
+                                        aria-label={`编辑模型 ${modelDisplayName}`}
+                                        onClick={() => handleOpenModelEditor(index)}
+                                      >
+                                        <Pencil size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="icon-button icon-button--danger"
+                                        title={`删除 ${modelDisplayName}`}
+                                        aria-label={`删除模型 ${modelDisplayName}`}
+                                        onClick={() => handleRemoveModel(index)}
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  </article>
+                                )
+                              })
+                            ) : (
+                              <div className="model-list-empty">当前服务商还没有可用模型。点击下方按钮添加第一个模型。</div>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            className="secondary-button secondary-button--subtle"
+                            onClick={handleOpenCreateModelEditor}
+                          >
+                            添加模型
                           </button>
-                          <button type="button" className="primary-button">
-                            保存配置
-                          </button>
                         </div>
-                      </div>
+                      </section>
 
-                      <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
-                          <TextField
-                            label="服务商名称"
-                            description="显示在左侧列表中的名称"
-                            value={activeProvider.name}
-                            onChange={(value) => updateActiveProvider({ name: value })}
-                            placeholder="输入服务商名称"
-                          />
-                          <SelectField
-                            label="协议类型"
-                            description="控制请求的接口风格与参数格式"
-                            value={activeProvider.protocol}
-                            options={protocolOptions}
-                            onChange={(value) => updateActiveProvider({ protocol: value })}
-                          />
-                          <TextField
-                            label="API 地址"
-                            description="支持自定义 Base URL 或代理网关"
-                            value={activeProvider.endpoint}
-                            onChange={(value) => updateActiveProvider({ endpoint: value })}
-                            placeholder="https://api.example.com/v1"
-                            type="url"
-                          />
-                          <TextField
-                            label="默认模型 ID"
-                            description="直接填写完整模型名称"
-                            value={activeProvider.defaultModel}
-                            onChange={(value) => updateActiveProvider({ defaultModel: value })}
-                            placeholder="例如 openai/gpt-4.1"
-                          />
-                          <TextField
-                            label="API 密钥"
-                            description="前端仅展示占位，可继续接 Electron 持久化"
-                            value={activeProvider.apiKey}
-                            onChange={(value) => updateActiveProvider({ apiKey: value })}
-                            placeholder="输入访问密钥"
-                            type="password"
-                          />
-                          <TextField
-                            label="组织 / 项目"
-                            description="适配带组织隔离的服务商"
-                            value={activeProvider.organization}
-                            onChange={(value) => updateActiveProvider({ organization: value })}
-                            placeholder="例如 team-project-26spring"
-                          />
-                          <SelectField
-                            label="快速模型"
-                            description="用于轻量任务或快速响应"
-                            value={activeProvider.fastModel}
-                            options={providerModelOptions}
-                            onChange={(value) => updateActiveProvider({ fastModel: value })}
-                          />
-                          <SelectField
-                            label="回退模型"
-                            description="主模型不可用时的兜底策略"
-                            value={activeProvider.fallbackModel}
-                            options={providerModelOptions}
-                            onChange={(value) => updateActiveProvider({ fallbackModel: value })}
-                          />
-                          <TextField
-                            label="区域 / 机房"
-                            description="用于区分本地、校园或公网服务"
-                            value={activeProvider.region}
-                            onChange={(value) => updateActiveProvider({ region: value })}
-                            placeholder="例如 CN-North / Local"
-                          />
+                      {modelEditorState ? (
+                        <div className="model-editor-backdrop" role="presentation" onClick={handleCloseModelEditor}>
+                          <section
+                            ref={modelEditorDialogRef}
+                            className="model-editor-modal"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label={modelEditorState.isNew ? '添加模型' : '编辑模型'}
+                            tabIndex={-1}
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={handleModelEditorKeyDown}
+                          >
+                            <div className="model-editor-modal__header">
+                              <div>
+                                <h3 className="settings-card__title">{modelEditorState.isNew ? '添加模型' : '编辑模型'}</h3>
+                                <p className="settings-card__subtitle">填写模型名称、特性与价格信息。</p>
+                              </div>
+                              <button
+                                type="button"
+                                className="model-editor-modal__close"
+                                aria-label="关闭模型编辑弹层"
+                                onClick={handleCloseModelEditor}
+                              >
+                                ×
+                              </button>
+                            </div>
+
+                            <div className="model-editor-modal__body">
+                              <div className="form-grid form-grid--two">
+                                <TextField
+                                  label="模型 ID"
+                                  description="用于请求路由与默认模型引用"
+                                  value={modelEditorState.modelId}
+                                  onChange={(value) => updateModelEditorState({ modelId: value })}
+                                  placeholder="例如 google/gemini-2.5-pro"
+                                  inputRef={modelEditorInitialFocusRef}
+                                />
+                                <TextField
+                                  label="模型名称"
+                                  description="显示在模型列表中的名称"
+                                  value={modelEditorState.displayName}
+                                  onChange={(value) => updateModelEditorState({ displayName: value })}
+                                  placeholder="例如 Gemini 2.5 Pro"
+                                />
+                              </div>
+
+                              <div className="model-editor-section">
+                                <div className="model-editor-section__header">
+                                  <span className="form-field__label">模型类型</span>
+                                  <p className="form-field__description">选择需要展示在列表中的能力标签。</p>
+                                </div>
+
+                                <div className="model-capability-picker">
+                                  {modelCapabilityOptions.map((option) => {
+                                    const active = modelEditorState.capabilities.includes(option.value)
+
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        className={`model-capability-button model-capability-button--${option.value}${active ? ' model-capability-button--active' : ''}`}
+                                        onClick={() => handleToggleModelCapability(option.value)}
+                                      >
+                                        {option.label}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="model-editor-advanced">
+                                <button
+                                  type="button"
+                                  className="ghost-button model-editor-advanced__toggle"
+                                  onClick={() => updateModelEditorState({ advancedOpen: !modelEditorState.advancedOpen })}
+                                >
+                                  {modelEditorState.advancedOpen ? '收起更多设置' : '更多设置'}
+                                </button>
+
+                                {modelEditorState.advancedOpen ? (
+                                  <div className="model-editor-section">
+                                    <div className="form-grid form-grid--pricing">
+                                      <SelectField
+                                        label="币种"
+                                        description="用于标记价格信息的计价币种"
+                                        value={modelEditorState.currency}
+                                        options={currencyOptions}
+                                        onChange={(value) => updateModelEditorState({ currency: value })}
+                                      />
+                                      <TextField
+                                        label="输入价格"
+                                        description="按每百万 Token 估算"
+                                        value={modelEditorState.inputPrice}
+                                        onChange={(value) => updateModelEditorState({ inputPrice: value })}
+                                        placeholder="0.50"
+                                      />
+                                      <TextField
+                                        label="输出价格"
+                                        description="按每百万 Token 估算"
+                                        value={modelEditorState.outputPrice}
+                                        onChange={(value) => updateModelEditorState({ outputPrice: value })}
+                                        placeholder="3.00"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="model-editor-modal__footer">
+                              <button type="button" className="secondary-button" onClick={handleCloseModelEditor}>
+                                取消
+                              </button>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={handleSaveModel}
+                                disabled={!modelEditorState.modelId.trim()}
+                              >
+                                保存
+                              </button>
+                            </div>
+                          </section>
                         </div>
-
-                        <TextareaField
-                          label="备注与扩展配置"
-                          description="展示自定义 Header、路由说明或使用备注"
-                          value={activeProvider.notes}
-                          onChange={(value) => updateActiveProvider({ notes: value })}
-                          placeholder="输入补充说明"
-                        />
-
-                        <div className="toggle-grid">
-                          <ToggleSwitch
-                            label="启用当前服务商"
-                            description="关闭后保留配置，但不参与模型路由"
-                            checked={activeProvider.enabled}
-                            onChange={(checked) => updateActiveProvider({ enabled: checked })}
-                          />
-                          <ToggleSwitch
-                            label="设为默认服务商"
-                            description="置顶为全局默认模型服务入口"
-                            checked={activeProvider.isDefault}
-                            onChange={(checked) => updateActiveProvider({ isDefault: checked })}
-                          />
-                        </div>
-                      </div>
-                    </section>
+                      ) : null}
+                    </div>
                   </div>
                 )
 
@@ -373,7 +914,7 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">默认模型路由</h3>
-                          <p className="settings-card__subtitle">通过下拉选择不同任务的首选模型，保留点击展开与选择反馈。</p>
+                          <p className="settings-card__subtitle">为常用任务选择默认模型。</p>
                         </div>
                       </div>
 
@@ -393,21 +934,7 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
                             options={allModelOptions}
                             onChange={setFastAssistantModel}
                           />
-                          <SelectField
-                            label="翻译与改写模型"
-                            description="面向压缩、润色与翻译场景"
-                            value={translationModel}
-                            options={allModelOptions}
-                            onChange={setTranslationModel}
-                          />
                         </div>
-
-                        <ToggleSwitch
-                          label="允许自动回退模型"
-                          description="当主模型不可达时自动切换到备用模型"
-                          checked={fallbackEnabled}
-                          onChange={setFallbackEnabled}
-                        />
                       </div>
                     </section>
                   </div>
@@ -823,10 +1350,14 @@ function createCustomProvider(index: number): ProviderProfile {
     fallbackModel: 'custom-model-fallback',
     organization: '',
     region: 'Custom',
-    notes: '新添加的占位服务商，可在右侧继续补全完整配置。',
+    notes: '',
     enabled: true,
     isDefault: false,
-    availableModels: ['custom-model', 'custom-model-fast', 'custom-model-fallback'],
+    availableModels: [
+      createProviderModelProfile('custom-model', `Custom Provider ${index}`),
+      createProviderModelProfile('custom-model-fast', `Custom Provider ${index}`),
+      createProviderModelProfile('custom-model-fallback', `Custom Provider ${index}`),
+    ],
   }
 }
 
