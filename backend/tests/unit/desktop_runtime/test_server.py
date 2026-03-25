@@ -69,6 +69,11 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     diagnostics_payload = diagnostics_response.json()
 
     assert runtime_info_payload["actions"] == []
+    assert list(runtime_info_payload["agents"]) == ["default"]
+    assert runtime_info_payload["agents"]["default"] == {
+        "name": "default",
+        "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+    }
     assert runtime_info_payload["defaultAgent"] == "default"
     assert runtime_info_payload["supportedMethods"] == ["info", "agent/connect", "agent/run"]
     assert runtime_info_payload["protocol"] == "single-endpoint"

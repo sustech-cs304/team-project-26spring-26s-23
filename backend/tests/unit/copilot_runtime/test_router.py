@@ -33,8 +33,14 @@ def test_root_post_info_request_returns_runtime_info() -> None:
             },
         )
 
+    payload = response.json()
+
     assert response.status_code == 200
-    assert response.json() == scaffold.build_info_response().to_dict()
+    assert payload == scaffold.build_info_response().to_dict()
+    assert list(payload["agents"]) == ["default"]
+    assert payload["agents"]["default"]["description"] == (
+        "Minimal default agent exposed by the Copilot runtime run bridge."
+    )
 
 
 def test_root_post_info_shape_without_method_is_recognized() -> None:

@@ -127,16 +127,44 @@ function createWindow() {
   })
 
   win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    if (!message.startsWith('[startup]')) {
-      return
-    }
-
-    void appendMainRuntimeLog('info', '[startup] renderer-console', {
+    const rendererLogLevel = normalizeRendererConsoleLogLevel(level)
+    const payload = {
       sinceWindowMs: Date.now() - windowCreatedAt,
       level,
       line,
       sourceId,
       message,
+    }
+
+    if (message.startsWith('[startup]')) {
+      void appendMainRuntimeLog('info', '[startup] renderer-console', payload)
+      return
+    }
+
+    if (rendererLogLevel === 'warn' || rendererLogLevel === 'error' || message.startsWith('[renderer]')) {
+      void appendMainRuntimeLog(rendererLogLevel, 'renderer-console', payload)
+    }
+  })
+
+  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+    void appendMainRuntimeLog('error', 'Renderer preload script failed.', {
+      sinceWindowMs: Date.now() - windowCreatedAt,
+      preloadPath,
+      detail: formatUnknownError(error),
+    })
+  })
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    void appendMainRuntimeLog('error', 'Renderer process exited unexpectedly.', {
+      sinceWindowMs: Date.now() - windowCreatedAt,
+      reason: details.reason,
+      exitCode: details.exitCode,
+    })
+  })
+
+  win.webContents.on('unresponsive', () => {
+    logStartupTrace('webContents:unresponsive', {
+      sinceWindowMs: Date.now() - windowCreatedAt,
     })
   })
 
@@ -556,6 +584,18 @@ function formatUnknownError(error: unknown): string {
   }
 
   return String(error)
+}
+
+function normalizeRendererConsoleLogLevel(level: number): RuntimeLogLevel {
+  if (level >= 3) {
+    return 'error'
+  }
+
+  if (level === 2) {
+    return 'warn'
+  }
+
+  return 'info'
 }
 
 registerApplicationLifecycleHandlers()

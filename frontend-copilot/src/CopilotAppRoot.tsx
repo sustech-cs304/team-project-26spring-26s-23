@@ -213,8 +213,11 @@ export function CopilotAppRoot() {
       configStatus: configState.status,
       providerStatus: providerLoadState.status,
       allowWorkbenchWithoutProvider,
+      providerLoaded: copilotKit !== null,
+      runtimeUrl: isCopilotConnectableState(configState) ? configState.runtimeUrl : null,
+      agentName: isCopilotConnectableState(configState) ? configState.agentName : null,
     })
-  }, [allowWorkbenchWithoutProvider, configState.status, providerLoadState.status, visibleStage])
+  }, [allowWorkbenchWithoutProvider, configState, copilotKit, providerLoadState.status, visibleStage])
 
   useEffect(() => {
     if (!isCopilotConnectableState(configState)) {

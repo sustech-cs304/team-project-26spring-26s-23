@@ -33,7 +33,7 @@ class RuntimeAgentDescriptor(RuntimeContract):
 @dataclass(frozen=True, slots=True)
 class RuntimeInfoResponse(RuntimeContract):
     actions: tuple[dict[str, Any], ...]
-    agents: tuple[RuntimeAgentDescriptor, ...]
+    agents: dict[str, RuntimeAgentDescriptor]
     defaultAgent: str
     protocol: str
     stage: str
@@ -133,10 +133,14 @@ class RuntimeScaffold(RuntimeContract):
     model_environment_keys: tuple[str, ...] = ()
     transport: dict[str, Any] = field(default_factory=dict)
 
+    def build_remote_agent_registry(self) -> dict[str, RuntimeAgentDescriptor]:
+        """Return the runtime info agent registry keyed by agent id."""
+        return {agent.name: agent for agent in self.available_agents}
+
     def build_info_response(self) -> RuntimeInfoResponse:
         return RuntimeInfoResponse(
             actions=(),
-            agents=self.available_agents,
+            agents=self.build_remote_agent_registry(),
             defaultAgent=self.default_agent,
             protocol=self.protocol,
             stage=self.stage,
