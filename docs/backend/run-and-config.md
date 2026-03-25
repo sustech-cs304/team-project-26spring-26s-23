@@ -1,327 +1,277 @@
-# 运行与配置
+# 后端运行与配置
 
-这篇文档回答的是最实际的问题：**现在这个后端到底怎么跑，运行会依赖哪些配置，哪些路径是今天就能用的，哪些还不适合当成正式入口。**
+本文档说明当前 Python desktop runtime 的启动方式、配置来源与运行边界。
 
-先说结论：当前除了 Blackboard CLI 之外，已经补齐了一个供桌面宿主使用的最小本地 HTTP 服务入口；但它只覆盖 health / ready / version / diagnostics 等基础契约，并不等于完整业务 Web API 已成型。如果你要验证业务抓取链路，仍然优先跑 Blackboard CLI；如果你要验证后续 Electron 可托管的运行时边界，再运行 desktop runtime 入口。
+## 文档范围
 
-## 当前最值得优先理解的运行面
+本文档覆盖：
 
-### 已实现
+- Desktop runtime / copilot runtime 的启动入口与运行路径
+- CLI 参数主导、环境变量兼容回退的配置规则
+- 关键参数类别与运行时路径的角色
+- Loopback-only / local desktop runtime 的安全边界
 
-当前已经有两类可运行入口：
+本文档不覆盖：
 
-- Blackboard 课程目录搜索 CLI；
-- Blackboard 日历 ICS 同步 CLI；
-- 桌面宿主本地 HTTP 最小入口。
+- Blackboard / TIS 业务能力说明（参见 [`docs/backend/README.md`](README.md)）
+- 完整 HTTP 契约文档（参见 [`docs/system/chat-runtime-contract.md`](../system/chat-runtime-contract.md)）
+- 跨进程启动链路（参见 [`docs/system/runtime-lifecycle.md`](../system/runtime-lifecycle.md)）
 
-前两者更适合验证现有业务抓取 / 同步链路；第三者更适合验证 Electron 后续需要托管的 loopback HTTP 运行时边界。
+## 启动入口
 
-### 代码里可调用，但不是正式入口
+### 主要启动路径
 
-除了 CLI 之外，当前还有一批 Python 内部可调用能力：
+当前后端的主要启动入口是 [`backend/app/desktop_runtime/__main__.py`](../../backend/app/desktop_runtime/__main__.py)，它会调用 [`server.py`](../../backend/app/desktop_runtime/server.py:165) 中的 `main()` 函数。
 
-- Blackboard 工具层函数，返回字典；
-- Blackboard snapshot 抓取与同步 use case；
-- TIS 诊断、个人成绩、学分绩、已选课程 use case。
-
-这些能力对开发很重要，但今天不宜写成“用户只要启动一个服务就能调用”的形态。
-
-### 当前不要误认为已经存在的运行方式
-
-- 现在已经有可直接运行的 FastAPI 应用入口，但它是**桌面宿主使用的最小 loopback 服务**，不是完整业务 API 面；
-- 仍然没有确认到已经面向前端开放的复杂业务 HTTP API 服务；
-- 也不应把 `app/blackboard/api/`、`app/teaching_information_system/api/` 直接理解为给前端调用的 HTTP 路由层。
-
-依赖表里出现 `fastapi`、`uvicorn`，曾经只能说明相关包被加入过依赖；而现在真正落地的，也只是最小桌面运行时入口，而不是全面服务化改造。
-
-## 环境准备
-
-### Python 版本
-
-`pyproject.toml` 要求 Python `>=3.12`。如果版本不对，后续依赖安装和类型特性都可能出问题。
-
-### 依赖安装
-
-建议在 `backend/` 目录下使用 `uv`：
+启动方式：
 
 ```bash
-uv sync
+python -m app.desktop_runtime [参数...]
 ```
 
-这一步会按 `pyproject.toml` 和锁文件准备依赖环境。当前依赖里可以看到抓取、解析、环境变量、数据库、测试，以及一些未来可能用于服务化或集成的包。
-
-但需要再次强调：**依赖里有某个框架，不等于仓库里已经形成对应运行入口。**
-
-## 环境变量怎么理解
-
-当前 `.env.example` 至少给出了三类直接相关配置：
-
-### 1. 统一认证凭据
-
-- `SUSTECH_USERNAME`
-- `SUSTECH_PASSWORD`
-
-这两个值既会影响 Blackboard CLI，也会影响 TIS 相关 live 测试和 provider 调用。没有它们，很多真实链路都无法建立。
-
-### 2. Blackboard ICS 订阅地址
-
-- `BLACKBOARD_CALENDAR_FEED_URL`
-
-Blackboard ICS CLI 会优先读这个值；代码里还兼容 `CALENDAR_FEED_URL`，但 `.env.example` 中明确展示的是 Blackboard 专用命名。文档里可以把兼容键写进参考页，但主文应优先讲清当前推荐配置名。
-
-### 3. 本地 SQLite 路径
-
-- `SUSTECH_DB_PATH`
-
-这个值决定本地数据库落盘路径。若未显式提供，Blackboard ICS CLI 会退回默认路径 `backend/data/sustech.db` 对应的项目内位置。
-
-### 4. Desktop runtime：推荐 CLI 参数，环境变量仅兼容回退
-
-当前桌面宿主本地运行时的推荐启动方式已经切换为 CLI 参数。日常开发或联调时，优先显式传入：
-
-- `--host`
-- `--port`
-- `--app-mode`
-- `--environment`
-- `--model`
-- `--local-token`
-- `--root-dir`
-- `--user-data-dir`
-- `--config-dir`
-- `--logs-dir`
-- `--database-dir`
-- `--state-dir`
-- `--settings-file`
-- `--host-log-file`
-- `--backend-stdout-log-file`
-- `--backend-stderr-log-file`
-- `--runtime-snapshot-file`
-- `--last-failure-file`
-
-下面这组环境变量仍会被解析，但现在只作为短期兼容回退，不再推荐作为终端手工启动的主路径：
-
-- `COPILOT_DESKTOP_RUNTIME_HOST`
-- `COPILOT_DESKTOP_RUNTIME_PORT`
-- `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN`
-- `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR`
-- `COPILOT_DESKTOP_RUNTIME_ROOT_DIR`
-- `COPILOT_DESKTOP_RUNTIME_CONFIG_DIR`
-- `COPILOT_DESKTOP_RUNTIME_LOGS_DIR`
-- `COPILOT_DESKTOP_RUNTIME_DATABASE_DIR`
-- `COPILOT_DESKTOP_RUNTIME_STATE_DIR`
-- `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE`
-- `COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE`
-- `COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE`
-- `COPILOT_DESKTOP_RUNTIME_BACKEND_STDERR_LOG_FILE`
-- `COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE`
-- `COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE`
-- `COPILOT_DESKTOP_RUNTIME_APP_MODE`
-- `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT`
-- `COPILOT_RUNTIME_MODEL`
-- `COPILOT_MODEL`
-
-其中 `host` 只允许 loopback 地址，例如 `127.0.0.1`、`localhost`、`::1`；`local token` 当前可以不传，但接口边界已经预留好，配置后会保护 diagnostics 端点。模型解析也已经改为“显式运行时配置优先，环境变量短暂回退”，因此日常启动优先传 `--model`，不再推荐先写 `COPILOT_RUNTIME_MODEL` 或 `COPILOT_MODEL`。
-
-## 推荐的 `.env` 准备方式
-
-先把 `.env.example` 复制成 `.env`，再按用途补值。
-
-### 只想跑 Blackboard 课程目录搜索
-
-至少需要：
-
-- `SUSTECH_USERNAME`
-- `SUSTECH_PASSWORD`
-
-### 想跑 Blackboard ICS 同步
-
-至少需要：
-
-- `BLACKBOARD_CALENDAR_FEED_URL`
-
-如果同时需要写本地数据库，还建议确认：
-
-- `SUSTECH_DB_PATH`
-
-### 想做 live 测试或 TIS provider 调用
-
-至少需要：
-
-- `SUSTECH_USERNAME`
-- `SUSTECH_PASSWORD`
-
-有些 TIS 场景还会读取 role code 相关值，但它不在当前 `.env.example` 的基础展示里，因此更适合放在参考页说明，而不在入口文里写成“每个人都必须先配”。
-
-## 今天就能直接跑的命令
-
-### Blackboard 课程目录搜索 CLI
-
-在 `backend/` 下运行：
+或在仓库根目录使用 `uv`：
 
 ```bash
-python -m app.blackboard.provider.cli.search_course_catalog --keyword 计算机 --preview 5
+uv run --directory backend python -m app.desktop_runtime [参数...]
 ```
 
-这个命令会做几件事：
+### 配置解析入口
 
-- 加载 `backend/.env`；
-- 检查账号密码是否存在；
-- 调用 Blackboard 课程目录搜索 use case；
-- 在终端打印结果预览；
-- 如果加 `--save-json`，在 `backend/data/reports/` 下生成报告文件。
+配置解析由 [`parse_runtime_config()`](../../backend/app/desktop_runtime/config.py:234) 完成，它会：
 
-这条 CLI 的输出重点不是“服务返回码”，而是：
+1. 解析 CLI 参数（通过 [`build_runtime_argument_parser()`](../../backend/app/desktop_runtime/config.py:202)）
+2. 读取环境变量作为回退
+3. 应用默认值
+4. 构造 [`DesktopRuntimeConfig`](../../backend/app/desktop_runtime/config.py:102) 对象
 
-- 终端日志；
-- 预览结果；
-- 可选 JSON 报告。
+### 服务器创建与启动
 
-### Blackboard ICS 同步 CLI
+[`create_app()`](../../backend/app/desktop_runtime/server.py:73) 函数负责：
 
-在 `backend/` 下运行：
+- 创建 FastAPI 应用实例
+- 配置 CORS 中间件（仅允许 loopback origin）
+- 注册健康检查端点（`/health`、`/ready`、`/version`、`/diagnostics`）
+- 挂载 copilot runtime 路由（单端点协议，路径 `/`）
+- 配置生命周期管理（startup/shutdown）
+
+[`main()`](../../backend/app/desktop_runtime/server.py:165) 函数使用 uvicorn 启动服务器。
+
+## 配置来源与优先级
+
+### 优先级规则
+
+配置来源按以下优先级应用（高优先级覆盖低优先级）：
+
+1. **CLI 参数**（最高优先级）
+2. **环境变量**
+3. **默认值**（最低优先级）
+
+这一规则在 [`parse_runtime_config()`](../../backend/app/desktop_runtime/config.py:234) 中实现，通过 `_resolve_optional_text_value()` 等辅助函数完成。
+
+### 测试验证
+
+优先级规则在 [`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py:109) 中有明确测试：
+
+```python
+def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
+    # CLI 参数会覆盖环境变量
+```
+
+## 关键参数类别
+
+### 网络参数
+
+| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
+|------|---------|---------|--------|------|
+| Host | `--host` | `COPILOT_DESKTOP_RUNTIME_HOST` | `127.0.0.1` | 监听地址，仅允许 loopback |
+| Port | `--port` | `COPILOT_DESKTOP_RUNTIME_PORT` | `8765` | 监听端口 |
+
+**安全约束**：Host 必须是 loopback 地址（`127.0.0.1`、`localhost`、`::1`），否则会抛出 `ValueError`。这一约束在 [`_resolve_host()`](../../backend/app/desktop_runtime/config.py:362) 中强制执行。
+
+### 应用模式与环境
+
+| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
+|------|---------|---------|--------|------|
+| App Mode | `--app-mode` | `COPILOT_DESKTOP_RUNTIME_APP_MODE` | `desktop` | 应用模式标识 |
+| Environment | `--environment` | `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT` | `development` | 运行环境标识 |
+
+### 目录参数
+
+所有目录参数支持相对路径（相对于 `cwd`）和绝对路径。相对路径会被解析为绝对路径。
+
+| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
+|------|---------|---------|--------|------|
+| User Data Dir | `--user-data-dir` | `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR` | `backend/data` | Electron userData 根目录 |
+| Runtime Root Dir | `--root-dir` | `COPILOT_DESKTOP_RUNTIME_ROOT_DIR` | `{user_data_dir}/desktop-runtime` | 运行时根目录 |
+| Config Dir | `--config-dir` | `COPILOT_DESKTOP_RUNTIME_CONFIG_DIR` | `{runtime_root_dir}/config` | 配置目录 |
+| Logs Dir | `--logs-dir` | `COPILOT_DESKTOP_RUNTIME_LOGS_DIR` | `{runtime_root_dir}/logs` | 日志目录 |
+| Database Dir | `--database-dir` | `COPILOT_DESKTOP_RUNTIME_DATABASE_DIR` | `{runtime_root_dir}/database` | 数据库目录 |
+| State Dir | `--state-dir` | `COPILOT_DESKTOP_RUNTIME_STATE_DIR` | `{runtime_root_dir}/state` | 诊断与状态目录 |
+
+### 文件路径参数
+
+| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
+|------|---------|---------|--------|------|
+| Settings File | `--settings-file` | `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE` | `{config_dir}/copilot-settings.json` | Copilot 设置文件 |
+| Host Log File | `--host-log-file` | `COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE` | `{logs_dir}/electron-host.log` | Electron 主进程日志 |
+| Backend Stdout Log | `--backend-stdout-log-file` | `COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE` | `{logs_dir}/backend.stdout.log` | Python 子进程 stdout |
+| Backend Stderr Log | `--backend-stderr-log-file` | `COPILOT_DESKTOP_RUNTIME_BACKEND_STDERR_LOG_FILE` | `{logs_dir}/backend.stderr.log` | Python 子进程 stderr |
+| Runtime Snapshot | `--runtime-snapshot-file` | `COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE` | `{state_dir}/runtime-snapshot.json` | 运行态快照 |
+| Last Failure | `--last-failure-file` | `COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE` | `{state_dir}/last-failure.json` | 最近失败摘要 |
+
+### 模型与认证参数
+
+| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
+|------|---------|---------|--------|------|
+| Model | `--model` | `COPILOT_RUNTIME_MODEL`<br>`COPILOT_MODEL`（兼容） | `None` | Copilot 聊天运行时模型名称 |
+| Local Token | `--local-token` | `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN` | `None` | 本地宿主调用令牌（可选） |
+
+**模型参数说明**：
+
+- 推荐通过 `--model` 显式传入
+- 环境变量 `COPILOT_RUNTIME_MODEL` 优先于 `COPILOT_MODEL`
+- 开发态验证协议链路时可用 `--model test`
+
+**Local Token 说明**：
+
+- 可选参数，若提供则保护 `/diagnostics` 端点
+- 需通过 `X-Local-Token` 请求头传递
+- Diagnostics 响应与日志不会写出 token 明文
+
+## 运行时路径与产物
+
+### 目录结构
+
+默认目录结构（基于 `backend/data`）：
+
+```
+backend/data/
+└── desktop-runtime/          # runtime_root_dir
+    ├── config/               # config_dir
+    │   └── copilot-settings.json
+    ├── logs/                 # logs_dir
+    │   ├── electron-host.log
+    │   ├── backend.stdout.log
+    │   └── backend.stderr.log
+    ├── database/             # database_dir
+    └── state/                # state_dir
+        ├── runtime-snapshot.json
+        └── last-failure.json
+```
+
+### 路径角色说明
+
+| 路径 | 角色 | 创建时机 |
+|------|------|---------|
+| `copilot-settings.json` | Copilot 用户设置持久化 | 按需创建 |
+| `electron-host.log` | Electron 主进程日志（由前端写入） | 前端启动时 |
+| `backend.stdout.log` | Python 子进程标准输出 | 前端重定向时 |
+| `backend.stderr.log` | Python 子进程标准错误 | 前端重定向时 |
+| `runtime-snapshot.json` | 运行态快照（配置、状态、能力） | 启动时 |
+| `last-failure.json` | 最近失败摘要 | 失败时 |
+
+### 目录初始化
+
+目录在运行时启动时自动创建，通过 [`DesktopRuntimePaths.ensure_directories()`](../../backend/app/desktop_runtime/config.py:71) 实现。
+
+## 前端调用方如何传参
+
+Electron 主进程通过 [`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts) 构造启动参数。
+
+关键函数：
+
+- [`createHostedRuntimeLaunchConfig()`](../../frontend-copilot/electron/runtime/runtime-config.ts:315)：创建启动配置
+- [`buildDesktopRuntimeArguments()`](../../frontend-copilot/electron/runtime/runtime-config.ts:459)：构造 CLI 参数数组
+- [`allocateLoopbackPort()`](../../frontend-copilot/electron/runtime/runtime-config.ts:369)：分配可用端口
+
+前端会：
+
+1. 分配一个可用的 loopback 端口
+2. 生成随机 local token（通过 [`createLocalToken()`](../../frontend-copilot/electron/runtime/runtime-config.ts:162)）
+3. 构造完整的 CLI 参数数组
+4. 启动 Python 子进程并传递参数
+
+## 安全边界
+
+### Loopback-only 约束
+
+Desktop runtime 强制执行 loopback-only 约束：
+
+- Host 必须是 `127.0.0.1`、`localhost` 或 `::1`
+- 尝试绑定其他地址会导致启动失败
+- CORS 中间件仅允许 loopback origin（通过正则 [`_DESKTOP_LOOPBACK_ORIGIN_REGEX`](../../backend/app/desktop_runtime/server.py:43)）
+
+### Electron 打包应用的特殊处理
+
+对于 `Origin: null` 的请求（Electron 打包应用的典型行为），[`DesktopNullOriginMiddleware`](../../backend/app/desktop_runtime/server.py:49) 会：
+
+1. 检查 User-Agent 是否包含 `electron/`
+2. 仅允许来自 Electron 的 `null` origin 请求
+3. 拒绝其他 `null` origin 请求（返回 400）
+
+### Local Token 保护
+
+当配置 `--local-token` 时：
+
+- `/diagnostics` 和 `/diagnostics/runtime-info` 端点需要 `X-Local-Token` 请求头
+- Token 不匹配时返回 401 Unauthorized
+- Token 不会出现在日志、快照或 diagnostics 响应中
+
+## 开发运行示例
+
+### 最小启动
 
 ```bash
-python -m app.blackboard.provider.cli.sync_calendar_ics --save-json
+cd backend
+python -m app.desktop_runtime
 ```
 
-它会：
+使用默认配置：`127.0.0.1:8765`，数据目录 `backend/data/desktop-runtime`。
 
-- 从命令行参数或环境变量解析 feed URL；
-- 解析数据库路径；
-- 调用 ICS 刷新 use case；
-- 输出同步统计；
-- 可选保存 JSON 报告。
-
-如果 feed URL 没提供，它会明确报错并提示应该配置哪些环境变量。这说明它已经是一个对使用者比较友好的真实入口。
-
-### Desktop runtime 本地 HTTP 最小入口
-
-推荐直接在仓库根目录运行下面这条纯参数命令：
+### 显式指定参数
 
 ```bash
-uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --app-mode desktop --environment development --root-dir ./backend/data/desktop-runtime-cli --user-data-dir ./backend/data --config-dir ./backend/data/desktop-runtime-cli/config --logs-dir ./backend/data/desktop-runtime-cli/logs --database-dir ./backend/data/desktop-runtime-cli/database --state-dir ./backend/data/desktop-runtime-cli/state --settings-file ./backend/data/desktop-runtime-cli/config/copilot-settings.json --host-log-file ./backend/data/desktop-runtime-cli/logs/electron-host.log --backend-stdout-log-file ./backend/data/desktop-runtime-cli/logs/backend.stdout.log --backend-stderr-log-file ./backend/data/desktop-runtime-cli/logs/backend.stderr.log --runtime-snapshot-file ./backend/data/desktop-runtime-cli/state/runtime-snapshot.json --last-failure-file ./backend/data/desktop-runtime-cli/state/last-failure.json --model test --local-token cli-token
+python -m app.desktop_runtime \
+  --host 127.0.0.1 \
+  --port 8771 \
+  --app-mode desktop \
+  --environment development \
+  --root-dir ./backend/data/desktop-runtime-cli \
+  --model test \
+  --local-token cli-token
 ```
 
-它会：
+### 使用 uv（从仓库根目录）
 
-- 构造一个仅监听 loopback 地址的 FastAPI 应用；
-- 解析 `host`、`port`、`local token`、`user data dir`、`root dir`、`config dir`、`logs dir`、`database dir`、`state dir`、设置文件路径、日志文件路径、`app mode`、`environment`、`model` 等运行时 CLI 参数；
-- 暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info`；
-- 在根路径 `/` 挂载最小 Copilot runtime single-endpoint 接口，支持 `info`、`agent/connect`、`agent/run`；
-- 在配置 `local token` 时，仅对 diagnostics 端点要求 `X-Local-Token` 请求头；
-- 对来自 loopback 开发源的聊天请求提供最小 CORS 支持，供 Electron / Vite 开发态联调使用；
-- 在启动时准备运行时目录，但此阶段仍只覆盖**最小聊天 MVP**，不是完整业务接口面。
+```bash
+uv run --directory backend python -m app.desktop_runtime \
+  --host 127.0.0.1 \
+  --port 8771 \
+  --model test
+```
 
-如果你只是想验证入口最小契约，优先访问 `/health`、`/ready` 与 `/version`；如果要看目录与配置摘要，再访问 diagnostics 端点。若要验证最小聊天链路，还需要额外满足：
+**注意**：开发运行时不强制依赖 `uv`。`uv` 仅作为后端虚拟环境/依赖管理工具，不是 Electron 开发运行时的必要依赖。
 
-- 推荐显式传入 `--model`；开发态纯协议联调可先用 `--model test`。
-- `COPILOT_RUNTIME_MODEL` 与 `COPILOT_MODEL` 仍会被读取，但现在只作为短期兼容回退，不再推荐作为日常启动主路径。
-- 前端传入的 agent 名称需要与当前单 agent 默认值 `default` 一致。
+### 验证启动
 
-## Python 内部可调用的运行路径
+启动后可访问：
 
-除了 CLI，当前还存在几条“更像能力接口”的调用路径。
+- `http://127.0.0.1:8765/health` - 健康检查
+- `http://127.0.0.1:8765/ready` - 就绪状态
+- `http://127.0.0.1:8765/version` - 版本信息
+- `http://127.0.0.1:8765/diagnostics` - 运行时诊断（需要 local token）
 
-### Blackboard 工具层
+## 与系统专题的关系
 
-`provider/tools/agent_tools.py` 中的几个函数会把 use case 结果整理成字典：
+本文档聚焦于"如何运行、如何理解配置"。相关系统专题：
 
-- 课程目录搜索结果字典；
-- ICS 同步结果字典；
-- snapshot 同步结果字典。
+- **跨进程启动链路**：参见 [`docs/system/runtime-lifecycle.md`](../system/runtime-lifecycle.md)
+- **HTTP 契约**：参见 [`docs/system/chat-runtime-contract.md`](../system/chat-runtime-contract.md)
+- **会话语义**：参见 [`docs/system/session-and-state-model.md`](../system/session-and-state-model.md)
 
-从测试看，这些返回结构已经被当成“稳定形状”在校验，因此它们是当前很重要的可观察输出。
+## 参考
 
-但要注意文档口径：**这是 Python 工具层，不是 HTTP API。**
-
-### Blackboard snapshot 同步
-
-`snapshot_sync` use case 能完成较完整的一条链：
-
-1. 登录 Blackboard；
-2. 抓课程列表；
-3. 逐课抓作业、成绩；
-4. 按策略抓部分课程资源；
-5. 抓公告；
-6. 构建同步 payload；
-7. 同步数据库；
-8. 计算表计数与预期活跃数；
-9. 可选执行第二次同步校验。
-
-这说明它已经不只是“抓点数据”，而是很接近一个完整任务流程。但它当前仍属于 provider use case，不是外部正式入口。
-
-### TIS provider use cases
-
-TIS 当前有几条核心调用路径：
-
-- 链路诊断；
-- 个人成绩抓取；
-- 学分绩抓取；
-- 已选课程抓取。
-
-这些 use case 往往会：
-
-- 建立 TIS/CAS 会话；
-- 访问首页或具体接口；
-- 分析页面和候选接口；
-- 生成结构化结果；
-- 在需要时写入本地数据库。
-
-它们对后续开发非常有价值，但目前缺的是对第一次接手者一眼就能跑起来的统一入口。因此现在更适合把它们写成“开发可调用能力”。
-
-## 本地数据与输出会落到哪里
-
-### SQLite 数据库
-
-当前本地持久化默认围绕 SQLite 展开。数据库路径由 `SUSTECH_DB_PATH` 或默认值决定。
-
-这意味着当前后端不只是“请求时抓一下”，而是已经具备“抓取后同步到本地数据层”的能力。
-
-### JSON 报告
-
-Blackboard 两个 CLI 都支持把结果写到 `backend/data/reports/`：
-
-- 课程目录搜索会生成搜索结果 JSON；
-- ICS 同步会生成统计与事件快照 JSON。
-
-这类 JSON 报告非常重要，因为它们构成了当前最容易被其他角色观察和复用的输出之一。
-
-## 测试怎么跑，测试结果代表什么
-
-当前 `tests/` 已按类型分层：
-
-### `tests/unit/`
-
-主要是偏本地、偏离线的验证，覆盖解析、DTO、provider、data 同步等逻辑。对第一次接手者来说，这一层最适合快速确认“核心代码形状是不是还正常”。阶段 1 新增的 `tests/unit/desktop_runtime/` 也属于这一层，用来覆盖配置解析与最小 HTTP 契约。
-
-### `tests/integration/`
-
-这里已经有多组 `live` 标记测试，会依赖：
-
-- 真实凭据；
-- 网络；
-- 上游系统可访问。
-
-因此它们更适合用来验证真实链路，而不是每次都在本地无条件执行。
-
-### `tests/e2e/`
-
-当前也有 Blackboard snapshot sync 的 e2e 测试，同样依赖 `live`。这说明仓库已经开始把“抓取 + 同步 + 校验”当成整链路能力来验证。
-
-## 建议的实际使用顺序
-
-如果你今天接手这个后端，建议这样走：
-
-1. 在 `backend/` 下执行 `uv sync`；
-2. 准备 `.env`；
-3. 先跑 Blackboard 课程目录搜索 CLI；
-4. 再跑 Blackboard ICS 同步 CLI；
-5. 如果你的目标是验证桌面宿主运行时边界，再回到仓库根目录运行上面的纯参数 `app.desktop_runtime` 启动命令；日常不再推荐先写 `COPILOT_RUNTIME_MODEL`、`COPILOT_MODEL` 或其他运行时环境变量；
-6. 如需理解数据层，再看 snapshot use case；
-7. 如需扩展 TIS，再进入对应 provider use case。
-
-这个顺序的好处是，你会先建立对“已实现运行面”的真实认知，而不是直接掉进一堆目录名和未来设想里。
-
-## 和参考页的关系
-
-这篇文档主要负责解释“为什么现在应该这样运行和理解配置”。如果你需要更快查命令、环境变量和测试分层事实，可以继续看 [运行与配置参考](./reference-run-and-config.md)。
+- 配置模型：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
+- 服务器入口：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+- 配置测试：[`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py)
+- 前端配置构造：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts)
