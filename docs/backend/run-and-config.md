@@ -75,20 +75,52 @@ Blackboard ICS CLI 会优先读这个值；代码里还兼容 `CALENDAR_FEED_URL
 
 这个值决定本地数据库落盘路径。若未显式提供，Blackboard ICS CLI 会退回默认路径 `backend/data/sustech.db` 对应的项目内位置。
 
-### 4. 桌面宿主本地运行时变量（阶段 1）
+### 4. Desktop runtime：推荐 CLI 参数，环境变量仅兼容回退
 
-下面这组变量通常由后续的 Electron 主进程注入，而不是要求终端用户长期手工维护：
+当前桌面宿主本地运行时的推荐启动方式已经切换为 CLI 参数。日常开发或联调时，优先显式传入：
+
+- `--host`
+- `--port`
+- `--app-mode`
+- `--environment`
+- `--model`
+- `--local-token`
+- `--root-dir`
+- `--user-data-dir`
+- `--config-dir`
+- `--logs-dir`
+- `--database-dir`
+- `--state-dir`
+- `--settings-file`
+- `--host-log-file`
+- `--backend-stdout-log-file`
+- `--backend-stderr-log-file`
+- `--runtime-snapshot-file`
+- `--last-failure-file`
+
+下面这组环境变量仍会被解析，但现在只作为短期兼容回退，不再推荐作为终端手工启动的主路径：
 
 - `COPILOT_DESKTOP_RUNTIME_HOST`
 - `COPILOT_DESKTOP_RUNTIME_PORT`
 - `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN`
 - `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR`
+- `COPILOT_DESKTOP_RUNTIME_ROOT_DIR`
+- `COPILOT_DESKTOP_RUNTIME_CONFIG_DIR`
 - `COPILOT_DESKTOP_RUNTIME_LOGS_DIR`
 - `COPILOT_DESKTOP_RUNTIME_DATABASE_DIR`
+- `COPILOT_DESKTOP_RUNTIME_STATE_DIR`
+- `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE`
+- `COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE`
+- `COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE`
+- `COPILOT_DESKTOP_RUNTIME_BACKEND_STDERR_LOG_FILE`
+- `COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE`
+- `COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE`
 - `COPILOT_DESKTOP_RUNTIME_APP_MODE`
 - `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT`
+- `COPILOT_RUNTIME_MODEL`
+- `COPILOT_MODEL`
 
-其中 `host` 只允许 loopback 地址，例如 `127.0.0.1`、`localhost`、`::1`；`local token` 当前可以不传，但接口边界已经预留好，配置后会保护 diagnostics 端点。
+其中 `host` 只允许 loopback 地址，例如 `127.0.0.1`、`localhost`、`::1`；`local token` 当前可以不传，但接口边界已经预留好，配置后会保护 diagnostics 端点。模型解析也已经改为“显式运行时配置优先，环境变量短暂回退”，因此日常启动优先传 `--model`，不再推荐先写 `COPILOT_RUNTIME_MODEL` 或 `COPILOT_MODEL`。
 
 ## 推荐的 `.env` 准备方式
 
@@ -164,16 +196,16 @@ python -m app.blackboard.provider.cli.sync_calendar_ics --save-json
 
 ### Desktop runtime 本地 HTTP 最小入口
 
-在 `backend/` 下运行：
+推荐直接在仓库根目录运行下面这条纯参数命令：
 
 ```bash
-uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
+uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --app-mode desktop --environment development --root-dir ./backend/data/desktop-runtime-cli --user-data-dir ./backend/data --config-dir ./backend/data/desktop-runtime-cli/config --logs-dir ./backend/data/desktop-runtime-cli/logs --database-dir ./backend/data/desktop-runtime-cli/database --state-dir ./backend/data/desktop-runtime-cli/state --settings-file ./backend/data/desktop-runtime-cli/config/copilot-settings.json --host-log-file ./backend/data/desktop-runtime-cli/logs/electron-host.log --backend-stdout-log-file ./backend/data/desktop-runtime-cli/logs/backend.stdout.log --backend-stderr-log-file ./backend/data/desktop-runtime-cli/logs/backend.stderr.log --runtime-snapshot-file ./backend/data/desktop-runtime-cli/state/runtime-snapshot.json --last-failure-file ./backend/data/desktop-runtime-cli/state/last-failure.json --model test --local-token cli-token
 ```
 
 它会：
 
 - 构造一个仅监听 loopback 地址的 FastAPI 应用；
-- 解析 `host`、`port`、`local token`、`user data dir`、`logs dir`、`database dir`、`app mode`、`environment`；
+- 解析 `host`、`port`、`local token`、`user data dir`、`root dir`、`config dir`、`logs dir`、`database dir`、`state dir`、设置文件路径、日志文件路径、`app mode`、`environment`、`model` 等运行时 CLI 参数；
 - 暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info`；
 - 在根路径 `/` 挂载最小 Copilot runtime single-endpoint 接口，支持 `info`、`agent/connect`、`agent/run`；
 - 在配置 `local token` 时，仅对 diagnostics 端点要求 `X-Local-Token` 请求头；
@@ -182,7 +214,8 @@ uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
 
 如果你只是想验证入口最小契约，优先访问 `/health`、`/ready` 与 `/version`；如果要看目录与配置摘要，再访问 diagnostics 端点。若要验证最小聊天链路，还需要额外满足：
 
-- 设置 `COPILOT_RUNTIME_MODEL` 或 `COPILOT_MODEL`；开发态纯协议联调可先用 `test`。
+- 推荐显式传入 `--model`；开发态纯协议联调可先用 `--model test`。
+- `COPILOT_RUNTIME_MODEL` 与 `COPILOT_MODEL` 仍会被读取，但现在只作为短期兼容回退，不再推荐作为日常启动主路径。
 - 前端传入的 agent 名称需要与当前单 agent 默认值 `default` 一致。
 
 ## Python 内部可调用的运行路径
@@ -283,7 +316,7 @@ Blackboard 两个 CLI 都支持把结果写到 `backend/data/reports/`：
 2. 准备 `.env`；
 3. 先跑 Blackboard 课程目录搜索 CLI；
 4. 再跑 Blackboard ICS 同步 CLI；
-5. 如果你的目标是验证桌面宿主运行时边界，再运行 `uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765`；
+5. 如果你的目标是验证桌面宿主运行时边界，再回到仓库根目录运行上面的纯参数 `app.desktop_runtime` 启动命令；日常不再推荐先写 `COPILOT_RUNTIME_MODEL`、`COPILOT_MODEL` 或其他运行时环境变量；
 6. 如需理解数据层，再看 snapshot use case；
 7. 如需扩展 TIS，再进入对应 provider use case。
 

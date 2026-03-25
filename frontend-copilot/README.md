@@ -29,19 +29,34 @@ npm install
 
 ## 怎么启动开发环境
 
-在 `frontend-copilot` 目录执行：
+在 `frontend-copilot` 目录执行基础开发命令：
 
 ```bash
 npm run dev
+```
+
+如果你的目标是直接联调 hosted backend，推荐改用纯参数形式把运行时模型从 Electron 主进程参数传入：
+
+```bash
+npm run dev -- -- --runtime-model test
+```
+
+如果只需要最小测试模型，也可以直接使用仓库内置的便捷命令：
+
+```bash
+npm run dev:hosted
 ```
 
 这个项目使用 Electron 和 Vite 的集成开发方式。当前 `dev` 脚本会走 Vite 开发流程，并由现有插件配置带起桌面端开发链路。
 
 当前阶段中，Electron 主进程启动后会自动尝试托管本地 Python 桌面运行时。开发态会优先使用 `../backend/.venv/` 里的解释器（Windows 常见为 `../backend/.venv/Scripts/python.exe`，macOS / Linux 常见为 `../backend/.venv/bin/python`）；如果项目虚拟环境不存在，则再探测命令行中明确可用的解释器：Windows 依次尝试 `py -3`、`python`、`python3`，macOS / Linux 依次尝试 `python3`、`python`，并直接执行 `-m app.desktop_runtime`。Electron 运行链路本身不再依赖 `uv`。
 
-如果你只是想做本仓库当前最小聊天联调，建议先额外准备两项：
+当前推荐的 hosted backend 启动参数会先以 Electron 主进程参数形式传入，例如 `--runtime-model`、`--runtime-host`、`--runtime-app-mode`、`--runtime-environment`、`--runtime-local-token`；随后主进程会把它们转换成 Python 运行时的 `--model`、`--host`、`--app-mode`、`--environment`、`--local-token` 等 CLI 参数并拉起后端子进程。
 
-- 在 Windows `cmd.exe` 中可以用 `set "COPILOT_RUNTIME_MODEL=test" && npm run dev` 为 hosted backend 注入测试模型；如果你实际使用的是 PowerShell，请改用 `$env:COPILOT_RUNTIME_MODEL = 'test'; npm run dev`。**不要在 PowerShell 中使用 cmd 风格的 `set "..." && ...`，否则环境变量不会真正传给后端子进程。**
+`COPILOT_RUNTIME_MODEL` 和 `COPILOT_MODEL` 仍然保留为短期兼容回退，但现在不再推荐作为日常开发启动主路径。
+
+如果你只是想做本仓库当前最小聊天联调，建议再额外准备一项：
+
 - 由于当前设置页还没有 [`agentName`](frontend-copilot/electron/copilot-settings.ts:6) 的正式编辑入口，开发态首次联调前可先在 Electron `userData/desktop-runtime/config/copilot-settings.json` 写入最小配置，例如 Windows 常见内容为 `{"agentName":"default"}`。
 
 当前 renderer 首屏会先由 [`frontend-copilot/index.html`](frontend-copilot/index.html) 直接渲染静态启动壳，再由 [`frontend-copilot/src/main.tsx`](frontend-copilot/src/main.tsx:12) 首次挂载立即接管，最后再按需加载完整工作台与 Copilot provider，避免开发态在首轮模块编译期间长时间白屏。
@@ -84,7 +99,7 @@ npm run build
 npm run stage:bundled-runtime
 ```
 
-构建机必须显式提供一个可分发的 Python runtime 目录；最少需要准备这些环境变量：
+构建机必须显式提供一个可分发的 Python runtime 目录；下面这些环境变量属于**构建期 / 打包期输入**，不是开发态 hosted backend 的日常启动参数：
 
 - `CANDUE_BUNDLED_PYTHON_DIR`：必填，指向可分发 Python runtime 根目录
 - `CANDUE_BUNDLED_PYTHON_EXECUTABLE_RELATIVE`：可选，指定解释器相对路径；Windows 常见值是 `python.exe`
@@ -168,6 +183,8 @@ npm run lint
 
 5. bundled runtime staging：
 
+   以下仍然使用环境变量，因为这些值属于 bundled runtime staging 的构建期输入，不是开发态 hosted backend 的运行时 CLI 参数。
+
    `cmd.exe` 下可以直接执行：
 
    ```bat
@@ -211,20 +228,22 @@ npm run lint
 1. 在 [`frontend-copilot/package.json`](frontend-copilot/package.json) 所在目录完成 `npm install`。
 2. 优先准备 [`backend/.venv/`](../backend/.venv/)；若不使用项目虚拟环境，则确认命令行中存在受支持的解释器：Windows 为 `py -3` / `python` / `python3` 之一，macOS / Linux 为 `python3` / `python` 之一。
 3. 先准备最小设置文件：当前设置页还没有 [`agentName`](frontend-copilot/electron/copilot-settings.ts:6) 的正式编辑入口，因此首次联调前请确认 Electron `userData/desktop-runtime/config/copilot-settings.json` 中至少存在 `{"agentName":"default"}`。
-4. 再执行开发态启动命令：
+4. 再执行开发态启动命令；推荐顺序如下：
 
-   - `cmd.exe`：
+   - 显式参数主命令：
 
-     ```bat
-     set "COPILOT_RUNTIME_MODEL=test" && npm run dev
+     ```bash
+     npm run dev -- -- --runtime-model test
      ```
 
-   - PowerShell：
+   - 便捷命令：
 
-     ```powershell
-     $env:COPILOT_RUNTIME_MODEL = 'test'
-     npm run dev
+     ```bash
+     npm run dev:hosted
      ```
+
+   - 如需额外覆盖 hosted runtime 参数，可继续追加 `--runtime-host 127.0.0.1`、`--runtime-app-mode desktop`、`--runtime-environment development`、`--runtime-local-token demo-token`；主进程会把它们转换为 Python 运行时 CLI 参数。
+   - `COPILOT_RUNTIME_MODEL` 与 `COPILOT_MODEL` 仍可作为兼容回退，但不再推荐作为开发态主路径。
 
 5. 若启动成功，应继续确认：
    - Electron 主窗口出现；
@@ -254,7 +273,7 @@ npm run lint
 以下事项在本阶段已形成验证步骤，但没有在当前环境里宣称实测通过：
 
 - 开发态 `npm run dev` 的 hosted backend 启动、工作台装配与最小聊天挂载已能进入，但本阶段没有在 Electron 窗口里稳定完成“同一 `threadId` 下两轮成功回复”的完整人工点击闭环；后端侧对应链路已通过命令验证与测试验证覆盖。
-- 如果在 PowerShell 中误用 cmd 风格 `set "COPILOT_RUNTIME_MODEL=test" && npm run dev`，模型环境变量不会真正传给后端子进程，随后聊天运行会显式返回 `model_not_configured`；当前文档已补充正确命令写法。
+- 当前代码仍兼容从 `COPILOT_RUNTIME_MODEL` / `COPILOT_MODEL` 读取模型，但这条路径只作为短期回退保留；当前文档已统一改为 CLI 参数启动，避免 shell 差异导致模型未传入并触发 `model_not_configured`。
 - 打包后的安装包“首次启动 → runtime ready → 关闭无残留进程”冒烟未在本阶段人工走完整链路。
 - 当前 staging / packaging 验证使用的是本机 [`C:\Python312`](frontend-copilot/.bundled-runtime/staging/python/) 作为 bundled runtime 输入；这足以验证脚本、manifest、资源布局和打包链路，但不等同于已经验证过最终发布要分发的专用 Python runtime 产物。
 
