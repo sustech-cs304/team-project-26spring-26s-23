@@ -90,8 +90,14 @@ python -m app.desktop_runtime --host 127.0.0.1 --port 8765
 - 解析 `host`、`port`、`local token`、`user data dir`、`runtime root dir`、`config dir`、`logs dir`、`database dir`、`state dir`、设置文件路径、日志文件路径、`app mode`、`environment` 等运行时参数；
 - 默认把运行时目录整理到 `userData/desktop-runtime/` 下，并进一步拆分为 `config/`、`logs/`、`database/`、`state/`；
 - 暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info` 等最小契约端点；
+- 在根路径 `/` 挂载最小 Copilot runtime single-endpoint 接口，支持 `info`、`agent/connect`、`agent/run` 三类请求；
 - 在配置本地 token 时，仅对 diagnostics 端点要求 `X-Local-Token` 请求头，且 diagnostics / 快照 / 日志不会写出 token 明文；
-- 为后续 Electron 主进程托管保留稳定入口，但此阶段**还不提供复杂业务 API**。
+- 为后续 Electron 主进程托管保留稳定入口，但此阶段仍只覆盖**最小聊天 MVP**，不是完整业务 API 面。
+
+如果你要做最小聊天联调，还需要额外注意两点：
+
+- 需要配置 `COPILOT_RUNTIME_MODEL` 或 `COPILOT_MODEL`；开发态如果只是验证协议链路，可用 `test` 作为最小测试模型值。
+- 当前单 agent 名称固定为 `default`；前端传入的 `agentName` 也需要与它保持一致。
 
 ### 4. Blackboard 的可调用工具层
 

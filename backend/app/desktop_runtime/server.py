@@ -11,6 +11,7 @@ from pathlib import Path
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(BACKEND_DIR) not in sys.path:
@@ -37,6 +38,10 @@ from app.desktop_runtime.health import (  # noqa: E402
     build_version_contract,
 )
 from app.desktop_runtime.lifecycle import RuntimeLifecycleManager  # noqa: E402
+
+
+_DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+_DESKTOP_PACKAGED_FILE_ORIGIN = "null"
 
 
 def create_app(
@@ -84,6 +89,14 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[_DESKTOP_PACKAGED_FILE_ORIGIN],
+        allow_origin_regex=_DESKTOP_LOOPBACK_ORIGIN_REGEX,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     app.include_router(build_router(runtime_scaffold, runtime_session_store, runtime_bridge))

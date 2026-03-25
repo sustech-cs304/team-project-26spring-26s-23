@@ -175,10 +175,15 @@ uv run python -m app.desktop_runtime --host 127.0.0.1 --port 8765
 - 构造一个仅监听 loopback 地址的 FastAPI 应用；
 - 解析 `host`、`port`、`local token`、`user data dir`、`logs dir`、`database dir`、`app mode`、`environment`；
 - 暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info`；
+- 在根路径 `/` 挂载最小 Copilot runtime single-endpoint 接口，支持 `info`、`agent/connect`、`agent/run`；
 - 在配置 `local token` 时，仅对 diagnostics 端点要求 `X-Local-Token` 请求头；
-- 在启动时准备运行时目录，但此阶段**不暴露复杂业务接口**。
+- 对来自 loopback 开发源的聊天请求提供最小 CORS 支持，供 Electron / Vite 开发态联调使用；
+- 在启动时准备运行时目录，但此阶段仍只覆盖**最小聊天 MVP**，不是完整业务接口面。
 
-如果你只是想验证入口最小契约，优先访问 `/health`、`/ready` 与 `/version`；如果要看目录与配置摘要，再访问 diagnostics 端点。
+如果你只是想验证入口最小契约，优先访问 `/health`、`/ready` 与 `/version`；如果要看目录与配置摘要，再访问 diagnostics 端点。若要验证最小聊天链路，还需要额外满足：
+
+- 设置 `COPILOT_RUNTIME_MODEL` 或 `COPILOT_MODEL`；开发态纯协议联调可先用 `test`。
+- 前端传入的 agent 名称需要与当前单 agent 默认值 `default` 一致。
 
 ## Python 内部可调用的运行路径
 

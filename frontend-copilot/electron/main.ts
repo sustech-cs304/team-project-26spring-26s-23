@@ -184,6 +184,17 @@ function registerCopilotRuntimeHandlers() {
 
 async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
+    if (hostedBackendStartupInFlight) {
+      const service = ensureHostedBackendService()
+
+      try {
+        await service.start()
+      } catch (error) {
+        const failure = isHostedBackendFailure(error) ? error : service.getLastFailure()
+        logHostedBackendFailure('Hosted backend startup failed while loading the runtime snapshot.', failure, error)
+      }
+    }
+
     return {
       ok: true,
       snapshot: buildCopilotRuntimeSnapshot(),

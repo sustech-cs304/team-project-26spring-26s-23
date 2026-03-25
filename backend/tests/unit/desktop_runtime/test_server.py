@@ -35,6 +35,13 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
         runtime_info_response = client.post("/", json={"method": "info"})
         connect_response = client.post("/", json=_build_connect_request())
         run_response = client.post("/", json=_build_run_request())
+        preflight_response = client.options(
+            "/",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
         health_response = client.get("/health")
         ready_response = client.get("/ready")
         version_response = client.get("/version")
@@ -43,6 +50,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
 
     assert runtime_info_response.status_code == 200
     assert connect_response.status_code == 200
+    assert preflight_response.status_code == 200
     assert health_response.status_code == 200
     assert ready_response.status_code == 200
     assert version_response.status_code == 200
@@ -67,6 +75,8 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert runtime_info_payload["stage"] == "phase3-run-bridge"
     assert connect_response.headers["content-type"].startswith("text/event-stream")
     assert run_response.headers["content-type"].startswith("text/event-stream")
+    assert preflight_response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "POST" in preflight_response.headers["access-control-allow-methods"]
     assert [event["type"] for event in connect_events] == [
         "RUN_STARTED",
         "STATE_SNAPSHOT",

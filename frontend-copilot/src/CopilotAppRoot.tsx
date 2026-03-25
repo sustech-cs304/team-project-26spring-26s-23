@@ -235,7 +235,6 @@ export function CopilotAppRoot() {
 
     if (
       allowWorkbenchWithoutProvider
-      || providerLoadState.status === 'loading'
       || providerLoadState.status === 'ready'
       || providerLoadState.status === 'error'
     ) {
@@ -243,7 +242,13 @@ export function CopilotAppRoot() {
     }
 
     let disposed = false
-    setProviderLoadState({ status: 'loading' })
+    setProviderLoadState((current) => {
+      if (current.status === 'loading') {
+        return current
+      }
+
+      return { status: 'loading' }
+    })
 
     void loadCopilotKit()
       .then((module) => {

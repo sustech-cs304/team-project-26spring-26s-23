@@ -14,9 +14,9 @@
 
 - 这是一个 **Electron + React + TypeScript + Vite** 的桌面前端，不是单纯的网页原型。
 - 当前最明确、最能依赖的前端事实，是 **只存在两个真正生效的 Copilot 配置字段：`runtimeUrl` 和 `agentName`**。
-- 应用启动时会先读取本地配置；只有这两个字段都齐了，前端才会把它们传给 Copilot 外层能力。
-- 现在最完整的界面是工作区结构、助手切换、会话列表骨架和设置页外观；**真实聊天 UI 还没有接上**。
-- 设置页里很多字段虽然能点、能改、能切换，但大多数还只是前端本地交互，**不能当成已经生效的配置能力**。
+- 应用启动时会先读取本地配置；宿主管理的 hosted backend ready 且 `agentName` 存在时，前端会把它们传给 Copilot 外层能力。
+- `assistant` 工作区已经接上最小纯文本聊天 UI：当前话题 ID 会作为 `threadId` 传给聊天区，后端显式失败会以内联红色错误消息显示。
+- 设置页里很多字段虽然能点、能改、能切换，但大多数还只是前端本地交互，**不能当成已经生效的配置能力**；其中当前设置页仍没有 [`agentName`](frontend-copilot/electron/copilot-settings.ts:6) 的正式编辑入口。
 
 ## 怎么安装
 
@@ -38,6 +38,11 @@ npm run dev
 这个项目使用 Electron 和 Vite 的集成开发方式。当前 `dev` 脚本会走 Vite 开发流程，并由现有插件配置带起桌面端开发链路。
 
 当前阶段中，Electron 主进程启动后会自动尝试托管本地 Python 桌面运行时。开发态会优先使用 `../backend/.venv/` 里的解释器（Windows 常见为 `../backend/.venv/Scripts/python.exe`，macOS / Linux 常见为 `../backend/.venv/bin/python`）；如果项目虚拟环境不存在，则再探测命令行中明确可用的解释器：Windows 依次尝试 `py -3`、`python`、`python3`，macOS / Linux 依次尝试 `python3`、`python`，并直接执行 `-m app.desktop_runtime`。Electron 运行链路本身不再依赖 `uv`。
+
+如果你只是想做本仓库当前最小聊天联调，建议先额外准备两项：
+
+- 在 Windows `cmd.exe` 中可以用 `set "COPILOT_RUNTIME_MODEL=test" && npm run dev` 为 hosted backend 注入测试模型；如果你实际使用的是 PowerShell，请改用 `$env:COPILOT_RUNTIME_MODEL = 'test'; npm run dev`。**不要在 PowerShell 中使用 cmd 风格的 `set "..." && ...`，否则环境变量不会真正传给后端子进程。**
+- 由于当前设置页还没有 [`agentName`](frontend-copilot/electron/copilot-settings.ts:6) 的正式编辑入口，开发态首次联调前可先在 Electron `userData/desktop-runtime/config/copilot-settings.json` 写入最小配置，例如 Windows 常见内容为 `{"agentName":"default"}`。
 
 当前 renderer 首屏会先由 [`frontend-copilot/index.html`](frontend-copilot/index.html) 直接渲染静态启动壳，再由 [`frontend-copilot/src/main.tsx`](frontend-copilot/src/main.tsx:12) 首次挂载立即接管，最后再按需加载完整工作台与 Copilot provider，避免开发态在首轮模块编译期间长时间白屏。
 
@@ -150,7 +155,7 @@ npm run lint
    npm run test
    ```
 
-   当前测试覆盖 [`frontend-copilot/electron/runtime/`](frontend-copilot/electron/runtime/) 与 [`frontend-copilot/src/features/copilot/config.test.ts`](frontend-copilot/src/features/copilot/config.test.ts) 的纯模块基线，共 `18 passed`。
+   当前测试覆盖 [`frontend-copilot/electron/runtime/`](frontend-copilot/electron/runtime/) 与 [`frontend-copilot/src/features/copilot/config.test.ts`](frontend-copilot/src/features/copilot/config.test.ts)、[`frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx`](frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx)、[`frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx`](frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx) 的最小链路，共 `27 passed`。
 
    说明：Windows 下直接调用 `vitest run` 时，当前环境曾出现盘符大小写相关的基线问题，表现为测试收集阶段报 `Cannot read properties of undefined (reading 'config')`。目前 [`frontend-copilot/package.json`](frontend-copilot/package.json) 已将 `test` 脚本切换为 [`frontend-copilot/scripts/run-vitest.mjs`](frontend-copilot/scripts/run-vitest.mjs)，先统一项目目录盘符大小写，再调用本地 Vitest CLI，确保现有测试链路可稳定复现。
 
@@ -205,15 +210,26 @@ npm run lint
 
 1. 在 [`frontend-copilot/package.json`](frontend-copilot/package.json) 所在目录完成 `npm install`。
 2. 优先准备 [`backend/.venv/`](../backend/.venv/)；若不使用项目虚拟环境，则确认命令行中存在受支持的解释器：Windows 为 `py -3` / `python` / `python3` 之一，macOS / Linux 为 `python3` / `python` 之一。
-3. 执行：
+3. 先准备最小设置文件：当前设置页还没有 [`agentName`](frontend-copilot/electron/copilot-settings.ts:6) 的正式编辑入口，因此首次联调前请确认 Electron `userData/desktop-runtime/config/copilot-settings.json` 中至少存在 `{"agentName":"default"}`。
+4. 再执行开发态启动命令：
 
-   ```bash
-   npm run dev
-   ```
+   - `cmd.exe`：
 
-4. 若启动成功，应继续确认：
+     ```bat
+     set "COPILOT_RUNTIME_MODEL=test" && npm run dev
+     ```
+
+   - PowerShell：
+
+     ```powershell
+     $env:COPILOT_RUNTIME_MODEL = 'test'
+     npm run dev
+     ```
+
+5. 若启动成功，应继续确认：
    - Electron 主窗口出现；
    - 本地后端进入 `ready`；
+   - 助手工作区右侧进入可聊天状态，并显示当前 `threadId`；
    - Electron `userData/desktop-runtime/` 下出现 `logs/` 与 `state/`；
    - [`electron-host.log`](frontend-copilot/electron/runtime/runtime-paths.ts:11)、[`backend.stdout.log`](frontend-copilot/electron/runtime/runtime-paths.ts:12)、[`backend.stderr.log`](frontend-copilot/electron/runtime/runtime-paths.ts:13)、[`runtime-snapshot.json`](frontend-copilot/electron/runtime/runtime-paths.ts:14)、[`last-failure.json`](frontend-copilot/electron/runtime/runtime-paths.ts:15) 可定位。
 
@@ -237,7 +253,8 @@ npm run lint
 
 以下事项在本阶段已形成验证步骤，但没有在当前环境里宣称实测通过：
 
-- 开发态 `npm run dev` 的 hosted backend 冒烟未通过。当前环境里实际观测到 Electron 主进程编译产物在加载 [`frontend-copilot/electron/main.ts`](frontend-copilot/electron/main.ts:1) 时以 `Node.js v24.14.0` 报出 `electron` ESM named export 错误，因此该项需要在后续真实 Electron 开发环境中复测。
+- 开发态 `npm run dev` 的 hosted backend 启动、工作台装配与最小聊天挂载已能进入，但本阶段没有在 Electron 窗口里稳定完成“同一 `threadId` 下两轮成功回复”的完整人工点击闭环；后端侧对应链路已通过命令验证与测试验证覆盖。
+- 如果在 PowerShell 中误用 cmd 风格 `set "COPILOT_RUNTIME_MODEL=test" && npm run dev`，模型环境变量不会真正传给后端子进程，随后聊天运行会显式返回 `model_not_configured`；当前文档已补充正确命令写法。
 - 打包后的安装包“首次启动 → runtime ready → 关闭无残留进程”冒烟未在本阶段人工走完整链路。
 - 当前 staging / packaging 验证使用的是本机 [`C:\Python312`](frontend-copilot/.bundled-runtime/staging/python/) 作为 bundled runtime 输入；这足以验证脚本、manifest、资源布局和打包链路，但不等同于已经验证过最终发布要分发的专用 Python runtime 产物。
 
@@ -254,18 +271,19 @@ npm run lint
 - 已经有稳定的前端启动链路：`src/main.tsx` → `src/CopilotAppRoot.tsx` → `src/App.tsx`。
 - 已经有左侧工作区导航，当前工作区包括：`assistant`、`capabilities`、`files`、`developer`、`settings`。
 - `assistant` 工作区已经有三段式骨架：助手类型列、话题列、右侧主内容区。
-- 应用启动时会先读取本地 Copilot 配置；只有 `runtimeUrl` 和 `agentName` 都完整时，才会把这两个值传给 Copilot 外层能力。
+- 应用启动时会先读取本地 Copilot 配置；宿主提供的 `runtimeUrl` 与本地 `agentName` 同时齐备时，会把它们传给 Copilot 外层能力。
+- 右侧聊天区已经接上最小纯文本聊天 UI：当前话题 ID 会继续作为 `threadId` 传给后端。
 - 这两个字段现在保存在 Electron `userData/desktop-runtime/config/copilot-settings.json` 文件里；旧版 `userData/copilot-settings.json` 会在读取时迁移。
 - Electron 主进程与 Python 托管层会把关键运行事件、stdout / stderr、运行态快照与最近失败摘要落到 `userData/desktop-runtime/` 下的 `logs/` 与 `state/` 目录。
-- 前端已经能区分 `loading`、`empty`、`incomplete`、`ready`、`error` 这些运行态，并在聊天面板里给出不同提示。
+- 前端已经能区分 `loading`、`empty`、`incomplete`、`starting`、`ready`、`failed`、`degraded`、`error` 这些运行态，并在聊天面板里给出不同提示；后端显式失败会以内联红色错误消息显示。
 
 ### 当前只是前端交互、占位或骨架的部分
 
-- 右侧聊天区现在还是“状态说明面板 + 占位文案”，不是完整聊天窗口。
 - 会话列表、助手类型、能力中心、文件工作区、开发工作区，当前主要使用前端本地静态数据。
 - 设置页里大部分内容——比如模型服务、默认模型、网络搜索、全局记忆、API 服务器——目前主要由 React 本地 state 驱动。
 - 设置页虽然出现了“测试连接”“保存配置”等按钮，但当前代码并没有把这些设置正式接成可依赖的后端配置能力。
 - 当前前端里虽然存在 Copilot 设置的底层读写封装，但**现有设置界面并没有提供 `runtimeUrl` 和 `agentName` 的正式编辑入口**。
+- 当前聊天面板仍只覆盖最小 MVP：单 agent、纯文本、多轮上下文与显式失败；不包含工具调用、确认机制或完整会话产品化。
 
 ## 不要误解的地方
 
