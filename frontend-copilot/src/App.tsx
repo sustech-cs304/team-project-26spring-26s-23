@@ -4,7 +4,7 @@ import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/Boots
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
 import type { CopilotBootstrapController } from './features/copilot/types'
 import { isHubWorkspaceView, railPrimaryItems, railSecondaryItems } from './workbench/config'
-import type { WorkspaceView } from './workbench/types'
+import type { ThemeMode, WorkspaceView } from './workbench/types'
 import './App.css'
 
 function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
@@ -69,6 +69,7 @@ interface AppProps {
 
 function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light')
 
   useEffect(() => {
     logStartupTrace('mounted')
@@ -77,6 +78,10 @@ function App({ bootstrap }: AppProps) {
       logStartupTrace('unmounted')
     }
   }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode
+  }, [themeMode])
 
   useEffect(() => {
     logStartupTrace('active-workspace', {
@@ -88,7 +93,7 @@ function App({ bootstrap }: AppProps) {
   const workspaceMeta = useMemo(() => resolveWorkspaceMeta(activeWorkspace), [activeWorkspace])
 
   return (
-    <div className="workbench-shell">
+    <div className="workbench-shell" data-theme={themeMode}>
       <aside className="workbench-rail" aria-label="主图标栏">
         {railPrimaryItems.map((item) => {
           const Icon = item.icon
@@ -163,7 +168,7 @@ function App({ bootstrap }: AppProps) {
         <Suspense
           fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
         >
-          {renderActiveWorkspace(activeWorkspace, bootstrap)}
+          {renderActiveWorkspace(activeWorkspace, bootstrap, themeMode, setThemeMode)}
         </Suspense>
       </RecoverableErrorBoundary>
     </div>
@@ -173,13 +178,21 @@ function App({ bootstrap }: AppProps) {
 function renderActiveWorkspace(
   activeWorkspace: WorkspaceView,
   bootstrap: CopilotBootstrapController,
+  themeMode: ThemeMode,
+  onThemeModeChange: (value: ThemeMode) => void,
 ) {
   if (activeWorkspace === 'assistant') {
     return <AssistantWorkspace bootstrap={bootstrap} />
   }
 
   if (activeWorkspace === 'settings') {
-    return <SettingsWorkspace bootstrap={bootstrap} />
+    return (
+      <SettingsWorkspace
+        bootstrap={bootstrap}
+        themeMode={themeMode}
+        onThemeModeChange={onThemeModeChange}
+      />
+    )
   }
 
   if (isHubWorkspaceView(activeWorkspace)) {

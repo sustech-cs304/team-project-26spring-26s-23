@@ -38,7 +38,6 @@ export const proxyModeOptions: SelectOption[] = [
 
 export const themeOptions: SelectOption[] = [
   { value: 'light', label: '浅色', hint: '推荐办公环境使用' },
-  { value: 'system', label: '跟随系统', hint: '与系统主题同步' },
   { value: 'dark', label: '深色', hint: '夜间使用' },
 ]
 

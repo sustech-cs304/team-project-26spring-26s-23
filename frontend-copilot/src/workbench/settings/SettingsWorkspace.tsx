@@ -10,6 +10,7 @@ import type {
   ProviderProfile,
   SelectOption,
   SettingsSection,
+  ThemeMode,
 } from '../types'
 import {
   apiReconnectOptions,
@@ -33,6 +34,8 @@ import {
 
 interface SettingsWorkspaceProps {
   bootstrap: CopilotBootstrapController
+  themeMode: ThemeMode
+  onThemeModeChange: (value: ThemeMode) => void
 }
 
 type ModelEditorState = ProviderModelProfile & {
@@ -184,7 +187,11 @@ function syncTrackedModelValue(currentValue: string, previousModelId: string | n
   return nextModelId ?? ''
 }
 
-export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
+export function SettingsWorkspace({
+  bootstrap,
+  themeMode,
+  onThemeModeChange,
+}: SettingsWorkspaceProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('model-service')
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
@@ -200,7 +207,6 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
   const [assistantNotificationsEnabled, setAssistantNotificationsEnabled] = useState(false)
   const [backupEnabled, setBackupEnabled] = useState(true)
 
-  const [themeMode, setThemeMode] = useState('light')
   const [fontSize, setFontSize] = useState('medium')
   const [density, setDensity] = useState('compact')
   const [animationsEnabled, setAnimationsEnabled] = useState(true)
@@ -1012,7 +1018,7 @@ export function SettingsWorkspace({ bootstrap }: SettingsWorkspaceProps) {
                             description="控制整体配色模式"
                             value={themeMode}
                             options={themeOptions}
-                            onChange={setThemeMode}
+                            onChange={(value) => onThemeModeChange(value as ThemeMode)}
                           />
                           <SelectField
                             label="字号"

@@ -21,6 +21,8 @@ export interface SelectOption {
   hint?: string
 }
 
+export type ThemeMode = 'light' | 'dark'
+
 export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
 
 export interface ProviderModelProfile {
