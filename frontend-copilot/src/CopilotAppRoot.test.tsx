@@ -4,39 +4,62 @@ import { shouldLoadCopilotProvider } from './CopilotAppRoot'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './features/copilot/types'
 
 describe('shouldLoadCopilotProvider', () => {
-  it('starts a provider load only from the idle state of a connectable runtime', () => {
+  it('starts a provider load when a connectable runtime still has no provider instance', () => {
     const configState = createReadyState()
 
     expect(shouldLoadCopilotProvider({
       configState,
       providerLoadState: { status: 'idle' },
       allowWorkbenchWithoutProvider: false,
+      providerLoaded: false,
     })).toBe(true)
 
     expect(shouldLoadCopilotProvider({
       configState,
       providerLoadState: { status: 'loading' },
       allowWorkbenchWithoutProvider: false,
-    })).toBe(false)
+      providerLoaded: false,
+    })).toBe(true)
 
     expect(shouldLoadCopilotProvider({
       configState,
       providerLoadState: { status: 'ready' },
       allowWorkbenchWithoutProvider: false,
+      providerLoaded: true,
     })).toBe(false)
 
     expect(shouldLoadCopilotProvider({
       configState,
       providerLoadState: { status: 'error', error: 'boom' },
       allowWorkbenchWithoutProvider: false,
+      providerLoaded: false,
     })).toBe(false)
   })
 
-  it('does not start a provider load after opting into workbench fallback', () => {
+  it('keeps waiting on an in-flight provider import during StrictMode remounts', () => {
+    expect(shouldLoadCopilotProvider({
+      configState: createReadyState(),
+      providerLoadState: { status: 'loading' },
+      allowWorkbenchWithoutProvider: false,
+      providerLoaded: false,
+    })).toBe(true)
+  })
+
+  it('does not start another provider load after opting into workbench fallback', () => {
     expect(shouldLoadCopilotProvider({
       configState: createReadyState(),
       providerLoadState: { status: 'idle' },
       allowWorkbenchWithoutProvider: true,
+      providerLoaded: false,
+    })).toBe(false)
+  })
+
+  it('does not start another provider load after the provider module is already available', () => {
+    expect(shouldLoadCopilotProvider({
+      configState: createReadyState(),
+      providerLoadState: { status: 'loading' },
+      allowWorkbenchWithoutProvider: false,
+      providerLoaded: true,
     })).toBe(false)
   })
 })

@@ -15,6 +15,8 @@ import type {
 
 let workbenchImportAttempts = 0
 let providerImportAttempts = 0
+let cachedCopilotKitModule: typeof import('@copilotkit/react-core') | null = null
+let cachedCopilotKitPromise: Promise<typeof import('@copilotkit/react-core')> | null = null
 
 function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
   console.info('[startup]', JSON.stringify({
@@ -49,12 +51,23 @@ const loadWorkbenchApp = () => {
 }
 const LazyApp = lazy(loadWorkbenchApp)
 const loadCopilotKit = () => {
+  if (cachedCopilotKitModule !== null) {
+    logStartupTrace('provider-import:cache-hit')
+    return Promise.resolve(cachedCopilotKitModule)
+  }
+
+  if (cachedCopilotKitPromise !== null) {
+    logStartupTrace('provider-import:promise-hit')
+    return cachedCopilotKitPromise
+  }
+
   const attempt = ++providerImportAttempts
   const startedAt = performance.now()
   logStartupTrace('provider-import:start', { attempt })
 
-  return import('@copilotkit/react-core')
+  cachedCopilotKitPromise = import('@copilotkit/react-core')
     .then((module) => {
+      cachedCopilotKitModule = module
       logStartupTrace('provider-import:resolved', {
         attempt,
         durationMs: Math.round(performance.now() - startedAt),
@@ -62,6 +75,7 @@ const loadCopilotKit = () => {
       return module
     })
     .catch((error) => {
+      cachedCopilotKitPromise = null
       logStartupTrace('provider-import:failed', {
         attempt,
         durationMs: Math.round(performance.now() - startedAt),
@@ -69,6 +83,8 @@ const loadCopilotKit = () => {
       })
       throw error
     })
+
+  return cachedCopilotKitPromise
 }
 
 type CopilotKitComponent = typeof import('@copilotkit/react-core')['CopilotKit']
@@ -133,10 +149,12 @@ export function shouldLoadCopilotProvider(input: {
   configState: CopilotBootstrapState
   providerLoadState: ProviderLoadState
   allowWorkbenchWithoutProvider: boolean
+  providerLoaded: boolean
 }): boolean {
   return isCopilotConnectableState(input.configState)
     && !input.allowWorkbenchWithoutProvider
-    && input.providerLoadState.status === 'idle'
+    && !input.providerLoaded
+    && (input.providerLoadState.status === 'idle' || input.providerLoadState.status === 'loading')
 }
 
 export function CopilotAppRoot() {
@@ -250,6 +268,7 @@ export function CopilotAppRoot() {
       configState,
       providerLoadState,
       allowWorkbenchWithoutProvider,
+      providerLoaded: copilotKit !== null,
     })) {
       return
     }
