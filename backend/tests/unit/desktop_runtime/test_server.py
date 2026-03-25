@@ -9,6 +9,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
+_ELECTRON_TEST_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) CanDue/1.0.0 Electron/35.1.4 Safari/537.36"
+)
+_BROWSER_TEST_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+)
+
 from app.copilot_runtime import PydanticAIAgentExecutor
 
 from app.desktop_runtime.config import (
@@ -222,6 +231,96 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert Path(diagnostics_payload["runtime"]["working_directory"]).exists()
 
 
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://[::1]:5173",
+    ],
+)
+def test_cors_preflight_allows_loopback_origins(tmp_path: Path, origin: str) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.options("/", headers=_build_cors_preflight_headers(origin))
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+
+def test_cors_preflight_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/",
+            headers=_build_cors_preflight_headers(
+                "null",
+                user_agent=_ELECTRON_TEST_USER_AGENT,
+            ),
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "null"
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+
+def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json={"method": "info"},
+            headers={
+                "Origin": "null",
+                "User-Agent": _ELECTRON_TEST_USER_AGENT,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "null"
+
+
+
+def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/",
+            headers=_build_cors_preflight_headers(
+                "null",
+                user_agent=_BROWSER_TEST_USER_AGENT,
+            ),
+        )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
+
+def test_cors_simple_request_rejects_non_electron_null_origin(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path), agent_executor=_build_test_agent_executor())
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/health",
+            headers={
+                "Origin": "null",
+                "User-Agent": _BROWSER_TEST_USER_AGENT,
+            },
+        )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
+
 def test_create_app_without_explicit_config_reads_environment_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -339,6 +438,17 @@ def _build_run_request() -> dict[str, Any]:
             "forwardedProps": {},
         },
     }
+
+
+def _build_cors_preflight_headers(origin: str, *, user_agent: str | None = None) -> dict[str, str]:
+    headers = {
+        "Origin": origin,
+        "Access-Control-Request-Method": "POST",
+    }
+    if user_agent is not None:
+        headers["User-Agent"] = user_agent
+    return headers
+
 
 
 def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:

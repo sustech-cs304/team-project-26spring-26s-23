@@ -10,8 +10,9 @@ from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(BACKEND_DIR) not in sys.path:
@@ -39,8 +40,34 @@ from app.desktop_runtime.health import (  # noqa: E402
 from app.desktop_runtime.lifecycle import RuntimeLifecycleManager  # noqa: E402
 
 
-_DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
-_DESKTOP_PACKAGED_FILE_ORIGIN = "null"
+_DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
+_DESKTOP_NULL_ORIGIN = "null"
+_ELECTRON_USER_AGENT_MARKER = "electron/"
+_CORS_ALLOW_METHODS = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
+
+
+class DesktopNullOriginMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        origin = request.headers.get("origin")
+        if origin != _DESKTOP_NULL_ORIGIN:
+            return await call_next(request)
+
+        is_preflight_request = _is_cors_preflight_request(request)
+        if not _is_packaged_electron_request(request):
+            return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Disallowed CORS origin")
+
+        if is_preflight_request:
+            response = Response(status_code=status.HTTP_200_OK)
+        else:
+            response = await call_next(request)
+
+        _apply_cors_headers(
+            response,
+            origin=origin,
+            requested_headers=request.headers.get("access-control-request-headers"),
+            is_preflight_request=is_preflight_request,
+        )
+        return response
 
 
 def create_app(
@@ -94,12 +121,13 @@ def create_app(
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[_DESKTOP_PACKAGED_FILE_ORIGIN],
+        allow_origins=[],
         allow_origin_regex=_DESKTOP_LOOPBACK_ORIGIN_REGEX,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(DesktopNullOriginMiddleware)
 
     app.include_router(build_router(runtime_scaffold, runtime_session_store, runtime_bridge))
 
@@ -170,6 +198,55 @@ def _require_local_token(request: Request, runtime_config: DesktopRuntimeConfig)
             "header_name": LOCAL_TOKEN_HEADER_NAME,
         },
     )
+
+
+def _is_cors_preflight_request(request: Request) -> bool:
+    return (
+        request.method == "OPTIONS"
+        and request.headers.get("origin") is not None
+        and request.headers.get("access-control-request-method") is not None
+    )
+
+
+
+def _is_packaged_electron_request(request: Request) -> bool:
+    user_agent = request.headers.get("user-agent", "")
+    return _ELECTRON_USER_AGENT_MARKER in user_agent.lower()
+
+
+
+def _apply_cors_headers(
+    response: Response,
+    *,
+    origin: str,
+    requested_headers: str | None,
+    is_preflight_request: bool,
+) -> None:
+    response.headers["Access-Control-Allow-Origin"] = origin
+    _append_vary_header(response, "Origin")
+
+    if not is_preflight_request:
+        return
+
+    response.headers["Access-Control-Allow-Methods"] = _CORS_ALLOW_METHODS
+    response.headers["Access-Control-Allow-Headers"] = requested_headers or "*"
+    response.headers["Access-Control-Max-Age"] = "600"
+    _append_vary_header(response, "Access-Control-Request-Method")
+    _append_vary_header(response, "Access-Control-Request-Headers")
+
+
+
+def _append_vary_header(response: Response, value: str) -> None:
+    current_value = response.headers.get("Vary")
+    if current_value is None:
+        response.headers["Vary"] = value
+        return
+
+    vary_values = {item.strip() for item in current_value.split(",") if item.strip()}
+    if value in vary_values:
+        return
+
+    response.headers["Vary"] = ", ".join([*vary_values, value])
 
 
 if __name__ == "__main__":
