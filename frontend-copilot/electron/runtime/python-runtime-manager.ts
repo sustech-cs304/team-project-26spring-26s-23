@@ -246,13 +246,15 @@ export class PythonRuntimeManager {
       paths: this.runtimePaths,
     })
 
+    const childArgs = buildPythonRuntimeSpawnArguments(launchSpec.args, this.launchConfig.args)
+
     await this.persistObservability('info', 'Prepared hosted desktop runtime launch configuration.', {
       launchConfig: sanitizeHostedRuntimeLaunchConfig(this.launchConfig),
-      launchSpec: summarizeLaunchSpec(launchSpec),
+      launchSpec: summarizeLaunchSpec(launchSpec, childArgs),
     })
     await this.initializeOutputSinks()
 
-    const child = spawn(launchSpec.command, launchSpec.args, {
+    const child = spawn(launchSpec.command, childArgs, {
       cwd: launchSpec.workingDirectory,
       env: {
         ...this.launchConfig.env,
@@ -771,7 +773,17 @@ function isHostedBackendFailureLike(value: unknown): value is HostedBackendFailu
     && 'timestamp' in value
 }
 
-function summarizeLaunchSpec(spec: PythonRuntimeLaunchSpec): Record<string, unknown> {
+export function buildPythonRuntimeSpawnArguments(
+  launchSpecArgs: readonly string[],
+  runtimeArgs: readonly string[],
+): string[] {
+  return [...launchSpecArgs, ...runtimeArgs]
+}
+
+function summarizeLaunchSpec(
+  spec: PythonRuntimeLaunchSpec,
+  args: readonly string[] = spec.args,
+): Record<string, unknown> {
   return {
     mode: spec.mode,
     workspaceRoot: spec.workspaceRoot,
@@ -780,7 +792,9 @@ function summarizeLaunchSpec(spec: PythonRuntimeLaunchSpec): Record<string, unkn
     workingDirectory: spec.workingDirectory,
     entryModule: spec.entryModule,
     command: spec.command,
-    args: spec.args,
+    baseArgs: [...spec.args],
+    runtimeArgs: args.slice(spec.args.length),
+    args: [...args],
     manifestPath: spec.manifestPath,
     pythonExecutablePath: spec.pythonExecutablePath,
     pythonPathEntries: [...spec.pythonPathEntries],

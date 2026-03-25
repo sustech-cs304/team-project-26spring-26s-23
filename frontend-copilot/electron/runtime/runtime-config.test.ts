@@ -10,9 +10,9 @@ import {
   readBundledPythonRuntimeManifest,
   resolvePythonRuntimeLaunchSpec,
 } from './python-runtime-resolver'
+import { buildPythonRuntimeSpawnArguments } from './python-runtime-manager'
 import {
   createHostedRuntimeLaunchConfig,
-  DESKTOP_RUNTIME_ENV_NAMES,
   formatRuntimeBaseUrl,
   HOSTED_RUNTIME_OVERRIDE_ENV_NAMES,
   resolveHostedRuntimeEnvironmentOverrides,
@@ -266,12 +266,19 @@ describe('resolvePythonRuntimeLaunchSpec', () => {
 })
 
 describe('createHostedRuntimeLaunchConfig', () => {
-  it('builds loopback URLs and environment variables for the Python runtime', () => {
+  it('builds loopback URLs, canonical runtime args, and minimal child env for the Python runtime', () => {
     const paths = createHostedRuntimePaths(path.resolve('.tmp-userdata'))
     const config = createHostedRuntimeLaunchConfig({
       environment: 'development',
       userDataPath: path.resolve('.tmp-userdata'),
-      processEnv: { EXISTING_ENV: 'kept' },
+      processEnv: {
+        EXISTING_ENV: 'kept',
+        COPILOT_DESKTOP_RUNTIME_HOST: 'should-not-reach-child',
+        COPILOT_DESKTOP_RUNTIME_PORT: '9999',
+        COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN: 'env-token',
+        COPILOT_RUNTIME_MODEL: 'qwen-plus',
+        COPILOT_MODEL: 'legacy-model',
+      },
       port: 43210,
       host: '127.0.0.1',
       localToken: 'token-123',
@@ -282,26 +289,30 @@ describe('createHostedRuntimeLaunchConfig', () => {
     expect(config.readyUrl).toBe('http://127.0.0.1:43210/ready')
     expect(config.healthUrl).toBe('http://127.0.0.1:43210/health')
     expect(config.diagnosticsUrl).toBe('http://127.0.0.1:43210/diagnostics')
-    expect(config.env).toMatchObject({
+    expect(config.model).toBe('qwen-plus')
+    expect(config.args).toEqual([
+      '--host', '127.0.0.1',
+      '--port', '43210',
+      '--app-mode', 'desktop',
+      '--environment', 'development',
+      '--root-dir', paths.runtimeRootDir,
+      '--user-data-dir', paths.userDataDir,
+      '--config-dir', paths.configDir,
+      '--logs-dir', paths.logsDir,
+      '--database-dir', paths.databaseDir,
+      '--state-dir', paths.stateDir,
+      '--settings-file', paths.copilotSettingsFile,
+      '--host-log-file', paths.hostLogFile,
+      '--backend-stdout-log-file', paths.backendStdoutLogFile,
+      '--backend-stderr-log-file', paths.backendStderrLogFile,
+      '--runtime-snapshot-file', paths.runtimeSnapshotFile,
+      '--last-failure-file', paths.lastFailureFile,
+      '--model', 'qwen-plus',
+      '--local-token', 'token-123',
+    ])
+    expect(config.env).toEqual({
       EXISTING_ENV: 'kept',
       PYTHONUNBUFFERED: '1',
-      [DESKTOP_RUNTIME_ENV_NAMES.HOST]: '127.0.0.1',
-      [DESKTOP_RUNTIME_ENV_NAMES.PORT]: '43210',
-      [DESKTOP_RUNTIME_ENV_NAMES.LOCAL_TOKEN]: 'token-123',
-      [DESKTOP_RUNTIME_ENV_NAMES.USER_DATA_DIR]: paths.userDataDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.ROOT_DIR]: paths.runtimeRootDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.CONFIG_DIR]: paths.configDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.LOGS_DIR]: paths.logsDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.DATABASE_DIR]: paths.databaseDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.STATE_DIR]: paths.stateDir,
-      [DESKTOP_RUNTIME_ENV_NAMES.COPILOT_SETTINGS_FILE]: paths.copilotSettingsFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.HOST_LOG_FILE]: paths.hostLogFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.BACKEND_STDOUT_LOG_FILE]: paths.backendStdoutLogFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.BACKEND_STDERR_LOG_FILE]: paths.backendStderrLogFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.RUNTIME_SNAPSHOT_FILE]: paths.runtimeSnapshotFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.LAST_FAILURE_FILE]: paths.lastFailureFile,
-      [DESKTOP_RUNTIME_ENV_NAMES.APP_MODE]: 'desktop',
-      [DESKTOP_RUNTIME_ENV_NAMES.ENVIRONMENT]: 'development',
     })
 
     expect(sanitizeHostedRuntimeLaunchConfig(config)).toEqual({
@@ -314,6 +325,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
       appMode: 'desktop',
       environment: 'development',
       localTokenConfigured: true,
+      modelConfigured: true,
       paths: {
         userDataDir: paths.userDataDir,
         runtimeRootDir: paths.runtimeRootDir,
@@ -330,6 +342,25 @@ describe('createHostedRuntimeLaunchConfig', () => {
         lastFailureFile: paths.lastFailureFile,
       },
     })
+  })
+
+  it('prefers an explicit model over environment fallbacks when building runtime args', () => {
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-model'),
+      processEnv: {
+        COPILOT_RUNTIME_MODEL: 'env-primary',
+        COPILOT_MODEL: 'env-legacy',
+      },
+      port: 43210,
+      localToken: 'token-model',
+      model: 'explicit-model',
+    })
+
+    expect(config.model).toBe('explicit-model')
+    expect(config.args.slice(-4)).toEqual([
+      '--model', 'explicit-model',
+      '--local-token', 'token-model',
+    ])
   })
 
   it('brackets IPv6 loopback hosts when composing runtime urls', () => {
@@ -367,6 +398,48 @@ describe('createHostedRuntimeLaunchConfig', () => {
       lastFailureFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'state', 'last-failure.json'),
     })
     expect(formatRuntimeBaseUrl('127.0.0.1', 9000)).toBe('http://127.0.0.1:9000')
+  })
+})
+
+describe('buildPythonRuntimeSpawnArguments', () => {
+  it('appends the same hosted runtime args to development and bundled launch specs', async () => {
+    const developmentFixture = await createDevelopmentRuntimeFixture()
+    const bundledFixture = await createBundledRuntimeFixture()
+    const runtimeConfig = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-shared-runtime-args'),
+      processEnv: {
+        COPILOT_RUNTIME_MODEL: 'qwen-plus',
+      },
+      port: 43210,
+      localToken: 'token-shared',
+    })
+
+    try {
+      const developmentSpec = buildDevelopmentPythonRuntimeLaunchSpec({
+        appRoot: developmentFixture.appRoot,
+        resourcesPath: path.join(developmentFixture.tempRoot, 'dist-electron'),
+        isPackaged: false,
+      })
+      const bundledSpec = await resolvePythonRuntimeLaunchSpec({
+        appRoot: path.join(bundledFixture.tempRoot, 'dist-electron'),
+        resourcesPath: bundledFixture.resourcesPath,
+        isPackaged: true,
+      })
+
+      expect(buildPythonRuntimeSpawnArguments(developmentSpec.args, runtimeConfig.args)).toEqual([
+        ...developmentSpec.args,
+        ...runtimeConfig.args,
+      ])
+      expect(buildPythonRuntimeSpawnArguments(bundledSpec.args, runtimeConfig.args)).toEqual([
+        ...bundledSpec.args,
+        ...runtimeConfig.args,
+      ])
+    } finally {
+      await Promise.all([
+        rm(developmentFixture.tempRoot, { recursive: true, force: true }),
+        rm(bundledFixture.tempRoot, { recursive: true, force: true }),
+      ])
+    }
   })
 })
 
