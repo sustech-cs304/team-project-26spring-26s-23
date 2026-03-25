@@ -292,6 +292,7 @@ export function SettingsWorkspace({
     initialProviderProfiles[0]?.defaultModel ?? '',
   )
   const [fastAssistantModel, setFastAssistantModel] = useState(initialProviderProfiles[0]?.fastModel ?? '')
+  const modelEditorAdvancedSectionId = 'settings-model-editor-advanced-panel'
 
   useEffect(() => {
     setModelEditorState(null)
@@ -856,38 +857,42 @@ export function SettingsWorkspace({
                                 <button
                                   type="button"
                                   className="ghost-button model-editor-advanced__toggle"
+                                  aria-expanded={modelEditorState.advancedOpen}
+                                  aria-controls={modelEditorAdvancedSectionId}
                                   onClick={() => updateModelEditorState({ advancedOpen: !modelEditorState.advancedOpen })}
                                 >
                                   {modelEditorState.advancedOpen ? '收起更多设置' : '更多设置'}
                                 </button>
 
-                                {modelEditorState.advancedOpen ? (
-                                  <div className="model-editor-section">
-                                    <div className="form-grid form-grid--pricing">
-                                      <SelectField
-                                        label="币种"
-                                        description="用于标记价格信息的计价币种"
-                                        value={modelEditorState.currency}
-                                        options={currencyOptions}
-                                        onChange={(value) => updateModelEditorState({ currency: value })}
-                                      />
-                                      <TextField
-                                        label="输入价格"
-                                        description="按每百万 Token 估算"
-                                        value={modelEditorState.inputPrice}
-                                        onChange={(value) => updateModelEditorState({ inputPrice: value })}
-                                        placeholder="0.50"
-                                      />
-                                      <TextField
-                                        label="输出价格"
-                                        description="按每百万 Token 估算"
-                                        value={modelEditorState.outputPrice}
-                                        onChange={(value) => updateModelEditorState({ outputPrice: value })}
-                                        placeholder="3.00"
-                                      />
+                                <div id={modelEditorAdvancedSectionId}>
+                                  {modelEditorState.advancedOpen ? (
+                                    <div className="model-editor-section">
+                                      <div className="form-grid form-grid--pricing">
+                                        <SelectField
+                                          label="币种"
+                                          description="用于标记价格信息的计价币种"
+                                          value={modelEditorState.currency}
+                                          options={currencyOptions}
+                                          onChange={(value) => updateModelEditorState({ currency: value })}
+                                        />
+                                        <TextField
+                                          label="输入价格"
+                                          description="按每百万 Token 估算"
+                                          value={modelEditorState.inputPrice}
+                                          onChange={(value) => updateModelEditorState({ inputPrice: value })}
+                                          placeholder="0.50"
+                                        />
+                                        <TextField
+                                          label="输出价格"
+                                          description="按每百万 Token 估算"
+                                          value={modelEditorState.outputPrice}
+                                          onChange={(value) => updateModelEditorState({ outputPrice: value })}
+                                          placeholder="3.00"
+                                        />
+                                      </div>
                                     </div>
-                                  </div>
-                                ) : null}
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
 
