@@ -21,6 +21,22 @@ export interface SelectOption {
   hint?: string
 }
 
+export type ThemeMode = 'light' | 'dark'
+
+export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
+
+export interface ProviderModelProfile {
+  id: string
+  modelId: string
+  displayName: string
+  groupName: string
+  capabilities: ModelCapability[]
+  supportsStreaming: boolean
+  currency: string
+  inputPrice: string
+  outputPrice: string
+}
+
 export interface RailItem {
   id: WorkspaceView
   label: string
@@ -38,33 +54,25 @@ export interface AgentType {
 export interface ConversationItem {
   id: string
   title: string
-  summary: string
   updatedAt: string
-  status: 'active' | 'idle' | 'attention'
 }
 
 export interface SettingsNavItem {
   id: SettingsSection
   label: string
-  description: string
   icon: LucideIcon
 }
 
 export interface HubEntry {
   id: string
   title: string
-  description: string
-  meta: string
 }
 
 export interface HubWorkspaceContent {
   eyebrow: string
   title: string
-  subtitle: string
   panelTitle: string
-  panelSubtitle: string
   spotlightTitle: string
-  spotlightDescription: string
   highlights: string[]
   entries: HubEntry[]
 }
@@ -83,5 +91,5 @@ export interface ProviderProfile {
   notes: string
   enabled: boolean
   isDefault: boolean
-  availableModels: string[]
+  availableModels: ProviderModelProfile[]
 }

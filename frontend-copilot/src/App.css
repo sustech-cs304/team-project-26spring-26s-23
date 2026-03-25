@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --app-bg: #f3f5f8;
   --surface-bg: #ffffff;
   --surface-muted: #f8fafc;
@@ -96,6 +97,7 @@
 
 :root[data-theme='dark'],
 .workbench-shell[data-theme='dark'] {
+  color-scheme: dark;
   --app-bg: #161b22;
   --surface-bg: #1c222b;
   --surface-muted: #202732;
@@ -496,6 +498,7 @@ textarea {
   color: var(--text-primary);
 }
 
+
 .new-thread-button {
   display: inline-flex;
   align-items: center;
@@ -705,6 +708,16 @@ textarea {
 .workspace-main__content {
   min-height: 0;
   overflow: auto;
+}
+
+.conversation-workspace .workspace-chat-shell {
+  display: flex;
+  flex: 1 1 auto;
+}
+
+.conversation-workspace .workspace-chat-shell > .copilot-panel {
+  flex: 1 1 auto;
+  min-height: 100%;
 }
 
 .workspace-main__content {
