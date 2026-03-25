@@ -873,6 +873,7 @@ export function SettingsWorkspace({
                                       <button
                                         key={option.value}
                                         type="button"
+                                        aria-pressed={active}
                                         className={`model-capability-button model-capability-button--${option.value}${active ? ' model-capability-button--active' : ''}`}
                                         onClick={() => handleToggleModelCapability(option.value)}
                                       >
