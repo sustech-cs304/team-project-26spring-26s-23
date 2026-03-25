@@ -545,7 +545,6 @@ export function SettingsWorkspace({
         <header className="panel-head">
           <p className="panel-head__eyebrow">设置</p>
           <h1 className="panel-head__title">全局设置目录</h1>
-          <p className="panel-head__subtitle">通过左侧主图标栏进入的独立布局，不复用助手与话题的语义。</p>
         </header>
 
         <ul className="settings-nav-list">
