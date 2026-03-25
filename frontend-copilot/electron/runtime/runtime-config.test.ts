@@ -12,9 +12,11 @@ import {
 } from './python-runtime-resolver'
 import { buildPythonRuntimeSpawnArguments } from './python-runtime-manager'
 import {
+  collectForwardedElectronMainProcessArguments,
   createHostedRuntimeLaunchConfig,
   formatRuntimeBaseUrl,
   HOSTED_RUNTIME_OVERRIDE_ENV_NAMES,
+  parseHostedRuntimeCommandLineArguments,
   resolveHostedRuntimeEnvironmentOverrides,
   sanitizeHostedRuntimeLaunchConfig,
 } from './runtime-config'
@@ -146,7 +148,14 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
     expect(spec.workspaceRoot).toBe(path.resolve('..'))
     expect(spec.backendDir).toBe(path.resolve('..', 'backend'))
     expect(spec.workingDirectory).toBe(path.resolve('..', 'backend'))
-    expect(spec.command).not.toBe('uv')
+    if (spec.pythonExecutablePath === null) {
+      expect(['uv', 'py', 'python', 'python3']).toContain(spec.command)
+      if (spec.command === 'uv') {
+        expect(spec.args.slice(0, 4)).toEqual(['run', '--directory', spec.backendDir, 'python'])
+      }
+    } else {
+      expect(spec.command).toBe(spec.pythonExecutablePath)
+    }
     expect(spec.args.slice(-2)).toEqual(['-m', 'app.desktop_runtime'])
   })
 
@@ -228,7 +237,14 @@ describe('resolvePythonRuntimeLaunchSpec', () => {
 
     expect(spec.backendDir).toBe(path.resolve('..', 'backend'))
     expect(spec.entryModule).toBe('app.desktop_runtime')
-    expect(spec.command).not.toBe('uv')
+    if (spec.pythonExecutablePath === null) {
+      expect(['uv', 'py', 'python', 'python3']).toContain(spec.command)
+      if (spec.command === 'uv') {
+        expect(spec.args.slice(0, 4)).toEqual(['run', '--directory', spec.backendDir, 'python'])
+      }
+    } else {
+      expect(spec.command).toBe(spec.pythonExecutablePath)
+    }
     expect(spec.args.slice(-2)).toEqual(['-m', 'app.desktop_runtime'])
   })
 
@@ -262,6 +278,88 @@ describe('resolvePythonRuntimeLaunchSpec', () => {
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
+  })
+})
+
+describe('collectForwardedElectronMainProcessArguments', () => {
+  it('keeps hosted runtime flags after the npm-forwarded separator', () => {
+    expect(collectForwardedElectronMainProcessArguments([
+      'node',
+      'vite',
+      '--host',
+      '0.0.0.0',
+      '--',
+      '--runtime-model',
+      'test',
+      '--runtime-environment',
+      'development',
+    ])).toEqual([
+      '--runtime-model',
+      'test',
+      '--runtime-environment',
+      'development',
+    ])
+  })
+
+  it('collects hosted runtime flags even when vite argv arrives without a separator', () => {
+    expect(collectForwardedElectronMainProcessArguments([
+      'node',
+      'vite',
+      '--runtime-model',
+      'test',
+      '--runtime-host=127.0.0.1',
+      '--open',
+    ])).toEqual([
+      '--runtime-model',
+      'test',
+      '--runtime-host=127.0.0.1',
+    ])
+  })
+})
+
+describe('parseHostedRuntimeCommandLineArguments', () => {
+  it('normalizes forwarded Electron main-process runtime flags into launch options', () => {
+    expect(parseHostedRuntimeCommandLineArguments([
+      '--runtime-model=test',
+      '--runtime-host', '127.0.0.1',
+      '--runtime-app-mode', 'desktop',
+      '--runtime-environment', 'development',
+      '--runtime-local-token', 'token-123',
+    ])).toEqual({
+      model: 'test',
+      host: '127.0.0.1',
+      appMode: 'desktop',
+      environment: 'development',
+      localToken: 'token-123',
+    })
+  })
+
+  it('feeds the parsed runtime model into the Python argv builder', () => {
+    const forwardedArgs = collectForwardedElectronMainProcessArguments([
+      'node',
+      'vite',
+      '--',
+      '--runtime-model',
+      'cli-model',
+    ])
+    const runtimeOptions = parseHostedRuntimeCommandLineArguments(forwardedArgs)
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-cli-model'),
+      processEnv: {
+        COPILOT_RUNTIME_MODEL: 'env-model',
+      },
+      port: 43210,
+      model: runtimeOptions.model,
+      localToken: 'token-cli',
+    })
+
+    expect(config.model).toBe('cli-model')
+    expect(config.args).toEqual(expect.arrayContaining([
+      '--model',
+      'cli-model',
+      '--local-token',
+      'token-cli',
+    ]))
   })
 })
 

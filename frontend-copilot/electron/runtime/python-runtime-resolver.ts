@@ -77,7 +77,7 @@ export function buildDevelopmentPythonRuntimeLaunchSpec(
   const workspaceRoot = path.resolve(normalizedAppRoot, '..')
   const backendDir = path.join(workspaceRoot, 'backend')
   const pythonLaunchCandidate = resolveDevelopmentPythonLaunchCandidate(backendDir)
-    ?? getFallbackDevelopmentPythonLaunchCandidate()
+    ?? getFallbackDevelopmentPythonLaunchCandidate(backendDir)
 
   return {
     mode: 'development',
@@ -107,7 +107,7 @@ function resolveDevelopmentPythonLaunchCandidate(backendDir: string): Developmen
     }
   }
 
-  for (const candidate of getFallbackDevelopmentPythonLaunchCandidates()) {
+  for (const candidate of getFallbackDevelopmentPythonLaunchCandidates(backendDir)) {
     if (canExecuteDevelopmentPythonCandidate(candidate)) {
       return candidate
     }
@@ -139,13 +139,20 @@ function getDevelopmentPythonExecutableCandidates(backendDir: string): string[] 
   ]
 }
 
-function getFallbackDevelopmentPythonLaunchCandidate(): DevelopmentPythonLaunchCandidate {
-  return getFallbackDevelopmentPythonLaunchCandidates()[0]
+function getFallbackDevelopmentPythonLaunchCandidate(backendDir: string): DevelopmentPythonLaunchCandidate {
+  return getFallbackDevelopmentPythonLaunchCandidates(backendDir)[0]
 }
 
-function getFallbackDevelopmentPythonLaunchCandidates(): DevelopmentPythonLaunchCandidate[] {
+function getFallbackDevelopmentPythonLaunchCandidates(backendDir: string): DevelopmentPythonLaunchCandidate[] {
+  const uvCandidate: DevelopmentPythonLaunchCandidate = {
+    command: 'uv',
+    args: ['run', '--directory', path.resolve(backendDir), 'python'],
+    pythonExecutablePath: null,
+  }
+
   if (process.platform === 'win32') {
     return [
+      uvCandidate,
       {
         command: 'py',
         args: ['-3'],
@@ -165,6 +172,7 @@ function getFallbackDevelopmentPythonLaunchCandidates(): DevelopmentPythonLaunch
   }
 
   return [
+    uvCandidate,
     {
       command: 'python3',
       args: [],
@@ -337,7 +345,7 @@ function assertDevelopmentPythonLaunchSpecResolved(spec: PythonRuntimeLaunchSpec
   const venvCandidates = getDevelopmentPythonExecutableCandidates(spec.backendDir)
     .map((candidate) => `"${candidate}"`)
     .join(', ')
-  const fallbackCandidates = getFallbackDevelopmentPythonLaunchCandidates()
+  const fallbackCandidates = getFallbackDevelopmentPythonLaunchCandidates(spec.backendDir)
     .map((candidate) => candidate.args.length === 0
       ? candidate.command
       : `${candidate.command} ${candidate.args.join(' ')}`)

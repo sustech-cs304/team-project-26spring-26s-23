@@ -52,6 +52,8 @@ export interface PythonRuntimeManagerOptions extends PythonRuntimeResolverContex
   processEnv?: NodeJS.ProcessEnv
   host?: string
   appMode?: string
+  model?: string | null
+  localToken?: string
   startupTimeoutMs?: number
   shutdownTimeoutMs?: number
   healthcheckIntervalMs?: number
@@ -64,6 +66,8 @@ interface ResolvedPythonRuntimeManagerOptions extends PythonRuntimeResolverConte
   host: string
   appMode: string
   environment: string
+  model?: string | null
+  localToken?: string
   startupTimeoutMs: number
   shutdownTimeoutMs: number
   healthcheckIntervalMs: number
@@ -243,6 +247,8 @@ export class PythonRuntimeManager {
       host: this.options.host,
       appMode: this.options.appMode,
       environment: this.options.environment,
+      model: this.options.model,
+      localToken: this.options.localToken,
       paths: this.runtimePaths,
     })
 

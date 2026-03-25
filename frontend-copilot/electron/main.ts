@@ -26,6 +26,7 @@ import type {
   CopilotSettingsSaveResult,
 } from './copilot-settings'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
+import { parseHostedRuntimeCommandLineArguments } from './runtime/runtime-config'
 import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime/runtime-paths'
 import { isHostedBackendFailure, type HostedBackendFailure } from './runtime/runtime-diagnostics'
@@ -343,6 +344,7 @@ function createEmptyCopilotSettings(): CopilotSettings {
 function ensureHostedBackendService(): HostedBackendService {
   if (hostedBackendService === null) {
     const paths = getHostedRuntimePaths()
+    const runtimeCommandLineOptions = parseHostedRuntimeCommandLineArguments(process.argv)
 
     hostedBackendService = createHostedBackendService({
       appRoot: APP_ROOT,
@@ -350,6 +352,11 @@ function ensureHostedBackendService(): HostedBackendService {
       isPackaged: app.isPackaged,
       userDataPath: paths.userDataDir,
       runtimePaths: paths,
+      host: runtimeCommandLineOptions.host,
+      appMode: runtimeCommandLineOptions.appMode,
+      environment: runtimeCommandLineOptions.environment,
+      localToken: runtimeCommandLineOptions.localToken,
+      model: runtimeCommandLineOptions.model,
     })
   }
 
