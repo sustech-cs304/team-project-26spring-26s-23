@@ -204,6 +204,7 @@ export function SettingsWorkspace({
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
   const [providerQuery, setProviderQuery] = useState('')
   const [modelEditorState, setModelEditorState] = useState<ModelEditorState | null>(null)
+  const [modelEditorError, setModelEditorError] = useState<string | null>(null)
   const modelEditorDialogRef = useRef<HTMLElement | null>(null)
   const modelEditorInitialFocusRef = useRef<HTMLInputElement | null>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
@@ -389,6 +390,7 @@ export function SettingsWorkspace({
   }
 
   const handleOpenCreateModelEditor = () => {
+    setModelEditorError(null)
     setModelEditorState(createEmptyModelEditorState(activeProvider.name, activeProvider.availableModels.length))
   }
 
@@ -399,6 +401,7 @@ export function SettingsWorkspace({
       return
     }
 
+    setModelEditorError(null)
     setModelEditorState({
       ...currentModel,
       index,
@@ -408,6 +411,7 @@ export function SettingsWorkspace({
   }
 
   const handleCloseModelEditor = () => {
+    setModelEditorError(null)
     setModelEditorState(null)
   }
 
@@ -486,6 +490,15 @@ export function SettingsWorkspace({
     const nextModelId = modelEditorState.modelId.trim()
 
     if (!nextModelId) {
+      return
+    }
+
+    const duplicateModelIndex = activeProvider.availableModels.findIndex((model, index) => {
+      return model.modelId === nextModelId && index !== modelEditorState.index
+    })
+
+    if (duplicateModelIndex !== -1) {
+      setModelEditorError('模型 ID 已存在，请使用不同的模型 ID。')
       return
     }
 
@@ -824,7 +837,10 @@ export function SettingsWorkspace({
                                   label="模型 ID"
                                   description="用于请求路由与默认模型引用"
                                   value={modelEditorState.modelId}
-                                  onChange={(value) => updateModelEditorState({ modelId: value })}
+                                  onChange={(value) => {
+                                    setModelEditorError(null)
+                                    updateModelEditorState({ modelId: value })
+                                  }}
                                   placeholder="例如 google/gemini-2.5-pro"
                                   inputRef={modelEditorInitialFocusRef}
                                 />
@@ -836,6 +852,12 @@ export function SettingsWorkspace({
                                   placeholder="例如 Gemini 2.5 Pro"
                                 />
                               </div>
+
+                              {modelEditorError ? (
+                                <p className="form-field__description" role="alert">
+                                  {modelEditorError}
+                                </p>
+                              ) : null}
 
                               <div className="model-editor-section">
                                 <div className="model-editor-section__header">
