@@ -6,7 +6,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, cast
 
+from .agent_registry import AgentRegistry, build_default_agent_registry
 from .session_store import RuntimeSessionRecord
+from .tool_registry import ToolRegistry, build_default_tool_registry
 
 INFO_METHOD = "info"
 AGENT_CONNECT_METHOD = "agent/connect"
@@ -127,7 +129,9 @@ class RuntimeScaffold(RuntimeContract):
     stage: str
     supported_methods: tuple[str, ...]
     default_agent: str
-    available_agents: tuple[RuntimeAgentDescriptor, ...]
+    remote_agent_registry: dict[str, RuntimeAgentDescriptor]
+    agent_diagnostics_summary: dict[str, Any]
+    tool_diagnostics_summary: dict[str, Any]
     session_store_type: str
     model_configured: bool
     model_environment_keys: tuple[str, ...] = ()
@@ -135,7 +139,7 @@ class RuntimeScaffold(RuntimeContract):
 
     def build_remote_agent_registry(self) -> dict[str, RuntimeAgentDescriptor]:
         """Return the runtime info agent registry keyed by agent id."""
-        return {agent.name: agent for agent in self.available_agents}
+        return dict(self.remote_agent_registry)
 
     def build_info_response(self) -> RuntimeInfoResponse:
         return RuntimeInfoResponse(
@@ -149,7 +153,7 @@ class RuntimeScaffold(RuntimeContract):
         )
 
     def supports_agent(self, agent_name: str) -> bool:
-        return any(agent.name == agent_name for agent in self.available_agents)
+        return agent_name in self.remote_agent_registry
 
     def build_session_descriptor(
         self,
@@ -264,12 +268,10 @@ class RuntimeScaffold(RuntimeContract):
         )
 
     def diagnostics_summary(self) -> dict[str, Any]:
-        return {
+        summary = {
             "chat_runtime_registered": True,
             "chat_protocol": self.protocol,
             "chat_runtime_path": self.transport.get("root_path", "/"),
-            "available_agents": [agent.name for agent in self.available_agents],
-            "default_agent": self.default_agent,
             "supported_methods": list(self.supported_methods),
             "chat_runtime_stage": self.stage,
             "session_store_type": self.session_store_type,
@@ -279,6 +281,9 @@ class RuntimeScaffold(RuntimeContract):
             "model_configured": self.model_configured,
             "model_environment_keys": list(self.model_environment_keys),
         }
+        summary.update(self.agent_diagnostics_summary)
+        summary.update(self.tool_diagnostics_summary)
+        return summary
 
 
 def build_runtime_scaffold(
@@ -286,22 +291,35 @@ def build_runtime_scaffold(
     session_store_type: str = "in-memory",
     model_configured: bool = False,
     model_environment_keys: tuple[str, ...] = (),
+    agent_registry: AgentRegistry | None = None,
+    tool_registry: ToolRegistry | None = None,
 ) -> RuntimeScaffold:
-    default_agent = RuntimeAgentDescriptor(
-        name="default",
-        description="Minimal default agent exposed by the Copilot runtime run bridge.",
+    resolved_tool_registry = tool_registry or build_default_tool_registry()
+    resolved_agent_registry = agent_registry or build_default_agent_registry(
+        toolset_name=resolved_tool_registry.get_default().name
     )
     return RuntimeScaffold(
         protocol=DEFAULT_RUNTIME_PROTOCOL,
         stage=DEFAULT_RUNTIME_STAGE,
         supported_methods=(INFO_METHOD, AGENT_CONNECT_METHOD, AGENT_RUN_METHOD),
-        default_agent=default_agent.name,
-        available_agents=(default_agent,),
+        default_agent=resolved_agent_registry.get_default().name,
+        remote_agent_registry=_build_runtime_agent_registry(resolved_agent_registry),
+        agent_diagnostics_summary=resolved_agent_registry.build_diagnostics_summary(),
+        tool_diagnostics_summary=resolved_tool_registry.build_diagnostics_summary(),
         session_store_type=session_store_type,
         model_configured=model_configured,
         model_environment_keys=model_environment_keys,
         transport=dict(DEFAULT_TRANSPORT),
     )
+
+
+def _build_runtime_agent_registry(
+    agent_registry: AgentRegistry,
+) -> dict[str, RuntimeAgentDescriptor]:
+    return {
+        name: RuntimeAgentDescriptor(**agent_view)
+        for name, agent_view in agent_registry.build_info_view().items()
+    }
 
 
 def _jsonable(value: Any) -> Any:

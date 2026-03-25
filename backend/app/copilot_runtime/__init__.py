@@ -8,6 +8,7 @@ from .agent import (
     ModelNotConfiguredError,
     PydanticAIAgentExecutor,
 )
+from .agent_registry import AgentDescriptor, AgentRegistry, build_default_agent_registry
 from .bridge import InvalidSessionHistoryError, RuntimeBridge, RuntimeBridgeResult
 from .contracts import (
     AGENT_CONNECT_METHOD,
@@ -18,11 +19,19 @@ from .contracts import (
     build_runtime_scaffold,
 )
 from .router import build_router
+from .tool_registry import (
+    ToolDescriptor,
+    ToolRegistry,
+    ToolsetDescriptor,
+    build_default_tool_registry,
+)
 
 __all__ = [
     "AGENT_CONNECT_METHOD",
     "AGENT_RUN_METHOD",
+    "AgentDescriptor",
     "AgentExecutionError",
+    "AgentRegistry",
     "DEFAULT_AGENT_NAME",
     "DEFAULT_AGENT_SYSTEM_PROMPT",
     "INFO_METHOD",
@@ -34,6 +43,11 @@ __all__ = [
     "RuntimeBridgeResult",
     "RuntimeRunRequest",
     "RuntimeScaffold",
+    "ToolDescriptor",
+    "ToolRegistry",
+    "ToolsetDescriptor",
+    "build_default_agent_registry",
+    "build_default_tool_registry",
     "build_router",
     "build_runtime_scaffold",
 ]
