@@ -18,20 +18,20 @@
 - **触发条件**：`app.isPackaged === false`
 - **Python 解析策略**：使用工作区 `backend/` 目录下的源码，通过 `python -m app.desktop_runtime` 启动
 - **依赖管理**：不强制依赖 `uv`，开发者可自行管理 Python 虚拟环境
-- **代码锚点**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](frontend-copilot/electron/runtime/python-runtime-resolver.ts)
+- **代码锚点**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
 
 ### bundled 模式
 
 - **触发条件**：`app.isPackaged === true`
-- **Python 解析策略**：使用 `app.getPath('resources')` 下的 `bundled-runtime/` 目录，包含预打包的 Python 解释器与依赖
-- **打包脚本**：[`frontend-copilot/scripts/prepare-bundled-runtime.mjs`](frontend-copilot/scripts/prepare-bundled-runtime.mjs)
-- **代码锚点**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](frontend-copilot/electron/runtime/python-runtime-resolver.ts)
+- **Python 解析策略**：使用 `app.getPath('resources')` 下的 `python-runtime/` 目录，包含预打包的 Python 解释器与依赖；具体布局以 `backend-runtime-manifest.json` 为准，由 `python-runtime-resolver.ts` 解析
+- **打包脚本**：[`frontend-copilot/scripts/prepare-bundled-runtime.mjs`](../../frontend-copilot/scripts/prepare-bundled-runtime.mjs)
+- **代码锚点**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
 
 ## 启动阶段
 
 ### 1. Electron 主进程初始化
 
-**入口**：[`frontend-copilot/electron/main.ts`](frontend-copilot/electron/main.ts)
+**入口**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
 
 ```
 app.whenReady() → registerHandlers() → startHostedBackend() → createWindow()
@@ -53,12 +53,12 @@ app.whenReady() → registerHandlers() → startHostedBackend() → createWindow
 5. 创建 BrowserWindow 并加载 renderer
 
 **代码锚点**：
-- 命令行参数解析：[`frontend-copilot/electron/runtime/runtime-config.ts`](frontend-copilot/electron/runtime/runtime-config.ts) `parseHostedRuntimeCommandLineArguments()`
-- 服务创建：[`frontend-copilot/electron/runtime/hosted-backend-service.ts`](frontend-copilot/electron/runtime/hosted-backend-service.ts)
+- 命令行参数解析：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts) `parseHostedRuntimeCommandLineArguments()`
+- 服务创建：[`frontend-copilot/electron/runtime/hosted-backend-service.ts`](../../frontend-copilot/electron/runtime/hosted-backend-service.ts)
 
 ### 2. 运行时配置组装
 
-**负责模块**：[`frontend-copilot/electron/runtime/runtime-config.ts`](frontend-copilot/electron/runtime/runtime-config.ts)
+**负责模块**：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts)
 
 **配置来源优先级**（从高到低）：
 
@@ -82,11 +82,11 @@ app.whenReady() → registerHandlers() → startHostedBackend() → createWindow
 - `buildDesktopRuntimeArguments()`：构建传递给 Python 子进程的 CLI 参数数组
 - `allocateLoopbackPort()`：动态分配可用端口
 
-**测试依据**：[`frontend-copilot/electron/runtime/runtime-config.test.ts`](frontend-copilot/electron/runtime/runtime-config.test.ts)
+**测试依据**：[`frontend-copilot/electron/runtime/runtime-config.test.ts`](../../frontend-copilot/electron/runtime/runtime-config.test.ts)
 
 ### 3. Python 运行时解析
 
-**负责模块**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](frontend-copilot/electron/runtime/python-runtime-resolver.ts)
+**负责模块**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
 
 **解析逻辑**：
 
@@ -108,7 +108,7 @@ resolvePythonRuntimeLaunchSpec({
 
 **bundled 模式解析**：
 - `resourcesRoot`: `resourcesPath`
-- `backendDir`: `resourcesRoot/bundled-runtime`
+- `backendDir`: `resourcesRoot/python-runtime`
 - `command`: `backendDir/python/bin/python`（Windows 为 `python.exe`）
 - `args`: `['-m', 'app.desktop_runtime']`
 - `workingDirectory`: `backendDir`
@@ -117,11 +117,11 @@ resolvePythonRuntimeLaunchSpec({
 **失败面**：
 - Python 可执行文件不存在
 - `backend/` 目录结构不完整
-- `bundled-runtime/` 目录缺失或损坏
+- `python-runtime/` 目录缺失或损坏
 
 ### 4. Python 子进程启动
 
-**负责模块**：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](frontend-copilot/electron/runtime/python-runtime-manager.ts)
+**负责模块**：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
 
 **启动流程**：
 
@@ -152,13 +152,13 @@ PythonRuntimeManager.start() →
 - `trackSpawnedProcess()`：监听子进程事件
 - `waitForRuntimeReady()`：轮询健康检查
 
-**测试依据**：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](frontend-copilot/electron/runtime/runtime-state.test.ts)
+**测试依据**：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts)
 
 ### 5. Python 后端配置解析与 FastAPI 启动
 
-**入口**：[`backend/app/desktop_runtime/__main__.py`](backend/app/desktop_runtime/__main__.py) → [`backend/app/desktop_runtime/server.py`](backend/app/desktop_runtime/server.py)
+**入口**：[`backend/app/desktop_runtime/__main__.py`](../../backend/app/desktop_runtime/__main__.py) → [`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
 
-**配置解析**：[`backend/app/desktop_runtime/config.py`](backend/app/desktop_runtime/config.py)
+**配置解析**：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
 
 ```python
 parse_runtime_config(argv, env=os.environ) → DesktopRuntimeConfig
@@ -202,16 +202,16 @@ create_app(config) →
 - `/agent/*`：Copilot 聊天运行时端点
 
 **代码锚点**：
-- `create_app()`：[`backend/app/desktop_runtime/server.py`](backend/app/desktop_runtime/server.py)
-- `parse_runtime_config()`：[`backend/app/desktop_runtime/config.py`](backend/app/desktop_runtime/config.py)
+- `create_app()`：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+- `parse_runtime_config()`：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
 
 **测试依据**：
-- [`backend/tests/unit/desktop_runtime/test_config.py`](backend/tests/unit/desktop_runtime/test_config.py)
-- [`backend/tests/unit/desktop_runtime/test_server.py`](backend/tests/unit/desktop_runtime/test_server.py)
+- [`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py)
+- [`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)
 
 ### 6. 就绪检查与状态同步
 
-**Electron 侧健康检查**：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](frontend-copilot/electron/runtime/python-runtime-manager.ts)
+**Electron 侧健康检查**：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
 
 ```typescript
 waitForRuntimeReady(child, config) →
@@ -227,7 +227,7 @@ waitForRuntimeReady(child, config) →
 - `starting` → `ready`：就绪检查通过
 - `starting` → `failed`：超时或子进程退出
 
-**renderer 侧等待**：[`frontend-copilot/src/features/copilot/runtime.ts`](frontend-copilot/src/features/copilot/runtime.ts)
+**renderer 侧等待**：[`frontend-copilot/src/features/copilot/runtime.ts`](../../frontend-copilot/src/features/copilot/runtime.ts)
 
 ```typescript
 loadCopilotRuntime() →
@@ -241,14 +241,14 @@ loadCopilotRuntime() →
 - `hosted.failure`：失败摘要（如果有）
 
 **代码锚点**：
-- `probeRuntimeReadiness()`：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](frontend-copilot/electron/runtime/python-runtime-manager.ts)
-- `buildCopilotRuntimeSnapshot()`：[`frontend-copilot/electron/main.ts`](frontend-copilot/electron/main.ts)
+- `probeRuntimeReadiness()`：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
+- `buildCopilotRuntimeSnapshot()`：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
 
 ## 运行时状态模型
 
 ### HostedBackendState
 
-**定义**：[`frontend-copilot/electron/runtime/runtime-state.ts`](frontend-copilot/electron/runtime/runtime-state.ts)
+**定义**：[`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)
 
 **状态枚举**：
 
@@ -282,7 +282,7 @@ loadCopilotRuntime() →
 - `markHostedBackendDegraded()`
 - `markHostedBackendStopped()`
 
-**测试依据**：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](frontend-copilot/electron/runtime/runtime-state.test.ts)
+**测试依据**：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts)
 
 ## 停止与回收
 
@@ -292,7 +292,7 @@ loadCopilotRuntime() →
 - 用户关闭应用窗口
 - Electron `before-quit` 事件
 
-**停止流程**：[`frontend-copilot/electron/main.ts`](frontend-copilot/electron/main.ts)
+**停止流程**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
 
 ```typescript
 app.on('before-quit') →
@@ -308,13 +308,13 @@ app.on('before-quit') →
 - `ready` → `failed`：停止超时
 
 **代码锚点**：
-- `stopInternal()`：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](frontend-copilot/electron/runtime/python-runtime-manager.ts)
+- `stopInternal()`：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
 
 ### 异常退出处理
 
 **监听机制**：`child.once('exit', (code, signal) => ...)`
 
-**退出分类**：[`frontend-copilot/electron/runtime/runtime-diagnostics.ts`](frontend-copilot/electron/runtime/runtime-diagnostics.ts)
+**退出分类**：[`frontend-copilot/electron/runtime/runtime-diagnostics.ts`](../../frontend-copilot/electron/runtime/runtime-diagnostics.ts)
 
 - `code === 0`：正常退出
 - `code !== 0`：异常退出
@@ -348,8 +348,8 @@ Python CLI:   --model=gpt-4
 ```
 
 **代码锚点**：
-- Electron 侧：[`frontend-copilot/electron/runtime/runtime-config.ts`](frontend-copilot/electron/runtime/runtime-config.ts) `buildDesktopRuntimeArguments()`
-- Python 侧：[`backend/app/desktop_runtime/config.py`](backend/app/desktop_runtime/config.py) `parse_runtime_config()`
+- Electron 侧：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts) `buildDesktopRuntimeArguments()`
+- Python 侧：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py) `parse_runtime_config()`
 
 ### 环境变量兼容回退
 
@@ -399,25 +399,25 @@ Python CLI:   --model=gpt-4
 
 ### Electron 主进程
 
-- 启动入口：[`frontend-copilot/electron/main.ts`](frontend-copilot/electron/main.ts)
-- 配置解析：[`frontend-copilot/electron/runtime/runtime-config.ts`](frontend-copilot/electron/runtime/runtime-config.ts)
-- 运行时管理：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](frontend-copilot/electron/runtime/python-runtime-manager.ts)
-- 运行时解析：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](frontend-copilot/electron/runtime/python-runtime-resolver.ts)
-- 状态模型：[`frontend-copilot/electron/runtime/runtime-state.ts`](frontend-copilot/electron/runtime/runtime-state.ts)
-- 失败诊断：[`frontend-copilot/electron/runtime/runtime-diagnostics.ts`](frontend-copilot/electron/runtime/runtime-diagnostics.ts)
+- 启动入口：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
+- 配置解析：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts)
+- 运行时管理：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
+- 运行时解析：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
+- 状态模型：[`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)
+- 失败诊断：[`frontend-copilot/electron/runtime/runtime-diagnostics.ts`](../../frontend-copilot/electron/runtime/runtime-diagnostics.ts)
 
 ### Python 后端
 
-- 启动入口：[`backend/app/desktop_runtime/__main__.py`](backend/app/desktop_runtime/__main__.py)
-- 服务创建：[`backend/app/desktop_runtime/server.py`](backend/app/desktop_runtime/server.py)
-- 配置解析：[`backend/app/desktop_runtime/config.py`](backend/app/desktop_runtime/config.py)
-- 生命周期管理：[`backend/app/desktop_runtime/lifecycle.py`](backend/app/desktop_runtime/lifecycle.py)
-- 健康检查：[`backend/app/desktop_runtime/health.py`](backend/app/desktop_runtime/health.py)
+- 启动入口：[`backend/app/desktop_runtime/__main__.py`](../../backend/app/desktop_runtime/__main__.py)
+- 服务创建：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+- 配置解析：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
+- 生命周期管理：[`backend/app/desktop_runtime/lifecycle.py`](../../backend/app/desktop_runtime/lifecycle.py)
+- 健康检查：[`backend/app/desktop_runtime/health.py`](../../backend/app/desktop_runtime/health.py)
 
 ### 测试
 
-- Electron 配置测试：[`frontend-copilot/electron/runtime/runtime-config.test.ts`](frontend-copilot/electron/runtime/runtime-config.test.ts)
-- Electron 状态测试：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](frontend-copilot/electron/runtime/runtime-state.test.ts)
-- Python 配置测试：[`backend/tests/unit/desktop_runtime/test_config.py`](backend/tests/unit/desktop_runtime/test_config.py)
-- Python 服务测试：[`backend/tests/unit/desktop_runtime/test_server.py`](backend/tests/unit/desktop_runtime/test_server.py)
-- 集成测试：[`backend/tests/integration/test_copilot_runtime_http.py`](backend/tests/integration/test_copilot_runtime_http.py)
+- Electron 配置测试：[`frontend-copilot/electron/runtime/runtime-config.test.ts`](../../frontend-copilot/electron/runtime/runtime-config.test.ts)
+- Electron 状态测试：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts)
+- Python 配置测试：[`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py)
+- Python 服务测试：[`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)
+- 集成测试：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)

@@ -38,8 +38,9 @@ Electron 主进程
               └─> Renderer 侧
                     └─> 读取用户设置 (runtimeUrl, agentName)
                           └─> resolveCopilotConfigState()
-                                └─> CopilotConfigState (loading/empty/incomplete/starting/ready/failed/degraded/error)
-                                      └─> UI 消费
+                                └─> CopilotConfigState (empty/incomplete/starting/ready/failed/degraded/error)
+                                      └─> CopilotBootstrapState（加 loading 包装）
+                                            └─> UI 消费
 ```
 
 ## Electron 主进程层：HostedBackendState
@@ -79,14 +80,14 @@ export interface HostedBackendState {
 
 核心转换函数（[`runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)）：
 
-- [`createInitialHostedBackendState()`](../../frontend-copilot/electron/runtime/runtime-state.ts:36) - 创建初始 `stopped` 状态
-- [`markHostedBackendStarting()`](../../frontend-copilot/electron/runtime/runtime-state.ts:51) - 标记为 `starting`，清空上次失败信息
-- [`markHostedBackendReady()`](../../frontend-copilot/electron/runtime/runtime-state.ts:70) - 标记为 `ready`，记录 `readyAt`
-- [`markHostedBackendFailed()`](../../frontend-copilot/electron/runtime/runtime-state.ts:81) - 标记为 `failed`，记录失败详情
-- [`markHostedBackendDegraded()`](../../frontend-copilot/electron/runtime/runtime-state.ts:96) - 标记为 `degraded`，保留 `baseUrl`
-- [`markHostedBackendStopped()`](../../frontend-copilot/electron/runtime/runtime-state.ts:111) - 标记为 `stopped`
+- [`createInitialHostedBackendState()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L36) - 创建初始 `stopped` 状态
+- [`markHostedBackendStarting()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L51) - 标记为 `starting`，清空上次失败信息
+- [`markHostedBackendReady()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L70) - 标记为 `ready`，记录 `readyAt`
+- [`markHostedBackendFailed()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L81) - 标记为 `failed`，记录失败详情
+- [`markHostedBackendDegraded()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L96) - 标记为 `degraded`，保留 `baseUrl`
+- [`markHostedBackendStopped()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L111) - 标记为 `stopped`
 
-测试覆盖：[`runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts:46)
+测试覆盖：[`runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts#L46)
 
 ### 关键设计决策
 
@@ -113,13 +114,17 @@ export type CopilotConfigState =
   | CopilotConfigFailedState
   | CopilotConfigDegradedState
   | CopilotConfigErrorState
+
+// loading 属于 bootstrap 包装层，不属于 CopilotConfigState
+export type CopilotBootstrapState = CopilotConfigState | { status: 'loading' }
 ```
+
+> **注意**：`loading` 状态属于 `CopilotBootstrapState`，不属于 `CopilotConfigState`。`loading` 由根层（`CopilotAppRoot`）在异步读取配置之前注入，表示配置尚未装配完成，此时尚无 `CopilotConfigState` 可消费。
 
 ### 状态语义
 
 | 状态 | 语义 | UI 表现 | 是否加载 Provider |
 |------|------|---------|------------------|
-| `loading` | 根层正在读取配置与运行时 snapshot | 显示 loading 提示 | 否 |
 | `error` | 配置或运行时读取链路本身失败 | 显示错误信息，提示检查 IPC 链路 | 否 |
 | `empty` | `runtimeUrl` 和 `agentName` 都缺失 | 显示"尚未获得可用运行时" | 否 |
 | `incomplete` | `runtimeUrl` 或 `agentName` 缺失其一 | 显示"连接信息仍不完整"，列出缺失字段 | 否 |
@@ -128,9 +133,11 @@ export type CopilotConfigState =
 | `failed` | Hosted backend 启动失败，且无 dev override | 显示失败详情，提供重试按钮 | 否 |
 | `degraded` | Hosted backend 降级，但保留可用 URL | 显示降级警告，仍加载 Copilot provider | 是 |
 
+> **`loading` 状态（`CopilotBootstrapState` 专属）**：根层正在读取配置与运行时 snapshot，显示 loading 提示，不加载 Provider。该状态由根层注入，属于 `CopilotBootstrapState` 而非 `CopilotConfigState`。
+
 ### 状态归并逻辑
 
-核心函数：[`resolveCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:41)
+核心函数：[`resolveCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts#L41)
 
 输入：
 - `settingsResult`：用户本地设置（`runtimeUrl`, `agentName`）
@@ -143,7 +150,7 @@ export type CopilotConfigState =
 1. **错误态优先**：
    - 如果 `settingsResult` 或 `runtimeResult` 读取失败 → `error`
 
-2. **Runtime URL 来源选择**（[`resolveRuntimeSelection()`](../../frontend-copilot/src/features/copilot/config.ts:233)）：
+2. **Runtime URL 来源选择**（[`resolveRuntimeSelection()`](../../frontend-copilot/src/features/copilot/config.ts#L233)）：
    - Hosted backend 为 `ready`/`starting`/`degraded` → 使用 hosted `runtimeUrl`，来源标记为 `hosted`
    - Hosted backend 为 `failed`/`stopped` 且允许 dev override（开发模式 + 用户填写了 `runtimeUrl`）→ 使用用户填写的 `runtimeUrl`，来源标记为 `dev-override`
    - 否则 → `runtimeUrl` 为 `null`，来源标记为 `none`
@@ -187,8 +194,8 @@ export type CopilotConfigState =
 位置：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)
 
 根层负责：
-1. 读取配置与运行时状态（[`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:196)）
-2. 决策是否加载 CopilotKit provider（[`shouldLoadCopilotProvider()`](../../frontend-copilot/src/CopilotAppRoot.tsx:148)）
+1. 读取配置与运行时状态（[`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts#L196)）
+2. 决策是否加载 CopilotKit provider（[`shouldLoadCopilotProvider()`](../../frontend-copilot/src/CopilotAppRoot.tsx#L148)）
 3. 提供统一的 bootstrap controller 给工作台
 
 加载 Provider 条件：
@@ -200,9 +207,9 @@ export type CopilotConfigState =
 
 位置：[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)
 
-根据 `CopilotConfigState.status` 渲染不同 UI：
+根据 `CopilotBootstrapState.status` 渲染不同 UI：
 
-- `loading`：显示"正在等待根层完成运行态装配"
+- `loading`：显示"正在等待根层完成运行态装配"（来自 `CopilotBootstrapState`，`CopilotConfigState` 不含此状态）
 - `error`：显示"读取运行态失败"，展示错误信息
 - `empty`：显示"尚未获得可用运行时"，说明缺少连接信息
 - `incomplete`：显示"连接信息仍不完整"，列出缺失字段
@@ -211,7 +218,7 @@ export type CopilotConfigState =
 - `degraded`：显示"宿主运行态已降级"警告，但仍挂载聊天区域
 - `ready`：显示"Copilot 连接入口已就绪"，挂载聊天区域
 
-失败态重试条件（[`canRetry()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:505)）：
+失败态重试条件（[`canRetry()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L505)）：
 - 状态为 `failed`
 - `diagnostics.failure` 存在
 - `diagnostics.failure.retryable` 为 `true`
@@ -277,7 +284,7 @@ A: `error` 表示配置或运行时读取链路本身失败，优先检查：
 
 ### Q: 为什么用户手填 runtime URL 与 hosted runtime snapshot 会被统一？
 
-A: [`resolveCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:41) 负责归并两者：
+A: [`resolveCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts#L41) 负责归并两者：
 - 优先使用 hosted runtime 提供的 URL（如果可用）
 - 仅在 hosted runtime 不可用且允许 dev override 时，才使用用户手填 URL
 - 最终输出统一的 `CopilotConfigState`，UI 只需消费这一状态

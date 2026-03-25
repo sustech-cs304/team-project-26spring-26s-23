@@ -12,10 +12,10 @@ Desktop runtime 提供两类 HTTP 端点：
 当前实现阶段：`phase3-run-bridge`，支持最小聊天 MVP，包括 info 查询、session 连接与文本对话运行。
 
 **代码锚点**：
-- [`backend/app/desktop_runtime/server.py`](../backend/app/desktop_runtime/server.py) - FastAPI 应用与端点注册
-- [`backend/app/copilot_runtime/router.py`](../backend/app/copilot_runtime/router.py) - 单端点方法分发路由
-- [`backend/app/copilot_runtime/contracts.py`](../backend/app/copilot_runtime/contracts.py) - 契约数据结构
-- [`backend/app/copilot_runtime/protocol.py`](../backend/app/copilot_runtime/protocol.py) - 协议解析与验证
+- [`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py) - FastAPI 应用与端点注册
+- [`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py) - 单端点方法分发路由
+- [`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py) - 契约数据结构
+- [`backend/app/copilot_runtime/protocol.py`](../../backend/app/copilot_runtime/protocol.py) - 协议解析与验证
 
 ## Control-Plane 端点
 
@@ -23,7 +23,7 @@ Desktop runtime 提供两类 HTTP 端点：
 
 健康检查端点，返回服务基本状态。
 
-**响应结构**（[`HealthContract`](../backend/app/desktop_runtime/contracts.py:17-21)）：
+**响应结构**（[`HealthContract`](../../backend/app/desktop_runtime/contracts.py#L17-L21)）：
 ```json
 {
   "service": "sustech-copilot-desktop-runtime",
@@ -37,13 +37,13 @@ Desktop runtime 提供两类 HTTP 端点：
 - `ready`: 运行时是否完成启动并可接受请求
 - 始终返回 200 状态码（即使 `ready: false`）
 
-**测试依据**：[`backend/tests/unit/desktop_runtime/test_server.py:116-232`](../backend/tests/unit/desktop_runtime/test_server.py:116-232)
+**测试依据**：[`backend/tests/unit/desktop_runtime/test_server.py:116-232`](../../backend/tests/unit/desktop_runtime/test_server.py#L116-L232)
 
 ### GET /ready
 
 就绪状态端点，返回详细的启动状态。
 
-**响应结构**（[`ReadinessContract`](../backend/app/desktop_runtime/contracts.py:24-30)）：
+**响应结构**（[`ReadinessContract`](../../backend/app/desktop_runtime/contracts.py#L24-L30)）：
 ```json
 {
   "service": "sustech-copilot-desktop-runtime",
@@ -63,7 +63,7 @@ Desktop runtime 提供两类 HTTP 端点：
 
 版本信息端点（两个路径返回相同内容）。
 
-**响应结构**（[`VersionContract`](../backend/app/desktop_runtime/contracts.py:34-40)）：
+**响应结构**（[`VersionContract`](../../backend/app/desktop_runtime/contracts.py#L34-L40)）：
 ```json
 {
   "service": "sustech-copilot-desktop-runtime",
@@ -84,10 +84,10 @@ Desktop runtime 提供两类 HTTP 端点：
 诊断信息端点（需要 local token 认证，如已配置）。
 
 **认证**：
-- 如果配置了 `local_token`，必须在请求头 `X-Desktop-Runtime-Token` 中提供
+- 如果配置了 `local_token`，必须在请求头 `X-Local-Token` 中提供
 - 认证失败返回 401，错误码 `invalid_local_token`
 
-**响应结构**（[`DiagnosticsContract`](../backend/app/desktop_runtime/contracts.py:44-50)）：
+**响应结构**（[`DiagnosticsContract`](../../backend/app/desktop_runtime/contracts.py#L44-L50)）：
 ```json
 {
   "service": "sustech-copilot-desktop-runtime",
@@ -108,7 +108,7 @@ Desktop runtime 提供两类 HTTP 端点：
     "paths": { "config_dir": "...", "logs_dir": "..." }
   },
   "auth": {
-    "header_name": "X-Desktop-Runtime-Token",
+    "header_name": "X-Local-Token",
     "token_configured": false,
     "protected_paths": ["/diagnostics", "/diagnostics/runtime-info"]
   },
@@ -132,7 +132,7 @@ Desktop runtime 提供两类 HTTP 端点：
 }
 ```
 
-**代码锚点**：[`backend/app/desktop_runtime/health.py`](../backend/app/desktop_runtime/health.py)
+**代码锚点**：[`backend/app/desktop_runtime/health.py`](../../backend/app/desktop_runtime/health.py)
 
 ## 聊天 Runtime 单端点契约
 
@@ -144,7 +144,7 @@ Desktop runtime 提供两类 HTTP 端点：
 **当前阶段**：`"phase3-run-bridge"`  
 **支持的方法**：`["info", "agent/connect", "agent/run"]`
 
-**方法分发逻辑**（[`RuntimeProtocolParser.extract_method`](../backend/app/copilot_runtime/protocol.py:86-132)）：
+**方法分发逻辑**（[`RuntimeProtocolParser.extract_method`](../../backend/app/copilot_runtime/protocol.py#L86-L132)）：
 
 1. 空载荷或仅包含 `properties`/`frontendUrl` → `info`
 2. 显式 `method` 字段 → 使用该方法（`"run"` 规范化为 `"agent/run"`）
@@ -166,7 +166,7 @@ Desktop runtime 提供两类 HTTP 端点：
 
 或空载荷：`{}`
 
-**响应结构**（[`RuntimeInfoResponse`](../backend/app/copilot_runtime/contracts.py:36-43)）：
+**响应结构**（[`RuntimeInfoResponse`](../../backend/app/copilot_runtime/contracts.py#L36-L43)）：
 ```json
 {
   "actions": [],
@@ -192,13 +192,13 @@ Desktop runtime 提供两类 HTTP 端点：
 - `agents`: 当前仅包含 `default` agent，未来可扩展多 agent
 - 不返回完整 tool 定义，仅元数据
 
-**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py:15-34`](../backend/tests/integration/test_copilot_runtime_http.py:15-34)
+**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py:15-34`](../../backend/tests/integration/test_copilot_runtime_http.py#L15-L34)
 
 ### 方法 2: agent/connect
 
 建立或恢复 session，不执行 agent 运行。
 
-**请求结构**（[`RuntimeConnectRequest`](../backend/app/copilot_runtime/contracts.py:47-67)）：
+**请求结构**（[`RuntimeConnectRequest`](../../backend/app/copilot_runtime/contracts.py#L47-L67)）：
 ```json
 {
   "method": "agent/connect",
@@ -228,7 +228,7 @@ Desktop runtime 提供两类 HTTP 端点：
 
 **响应格式**：Server-Sent Events (SSE)，`Content-Type: text/event-stream`
 
-**事件序列**（[`RuntimeScaffold.build_connect_events`](../backend/app/copilot_runtime/contracts.py:203-229)）：
+**事件序列**（[`RuntimeScaffold.build_connect_events`](../../backend/app/copilot_runtime/contracts.py#L203-L229)）：
 ```
 data: {"type":"RUN_STARTED","threadId":"thread-123","runId":"connect-1"}
 
@@ -239,7 +239,7 @@ data: {"type":"MESSAGES_SNAPSHOT","messages":[]}
 data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"connect-1","result":{...}}
 ```
 
-**最终 result 结构**（[`RuntimeConnectResult`](../backend/app/copilot_runtime/contracts.py:108-114)）：
+**最终 result 结构**（[`RuntimeConnectResult`](../../backend/app/copilot_runtime/contracts.py#L108-L114)）：
 ```json
 {
   "ok": true,
@@ -262,13 +262,13 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"connect-1","result
 - 如果 `threadId` 已存在，返回现有 session（`newlyCreated: false`）
 - 不执行 agent 推理，仅管理 session 生命周期
 
-**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py:36-59`](../backend/tests/integration/test_copilot_runtime_http.py:36-59)
+**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py:36-59`](../../backend/tests/integration/test_copilot_runtime_http.py#L36-L59)
 
 ### 方法 3: agent/run
 
 执行 agent 对话运行，返回 assistant 响应。
 
-**请求结构**（[`RuntimeRunRequest`](../backend/app/copilot_runtime/contracts.py:71-94)）：
+**请求结构**（[`RuntimeRunRequest`](../../backend/app/copilot_runtime/contracts.py#L71-L94)）：
 ```json
 {
   "method": "agent/run",
@@ -297,7 +297,7 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"connect-1","result
 - `runId`: 本次运行 ID
 - `messages`: 消息数组，至少包含一条消息，最后一条必须是 `role: "user"` 的文本消息
 
-**消息格式约束**（[`RuntimeProtocolParser._validate_supported_message_shape`](../backend/app/copilot_runtime/protocol.py:469-535)）：
+**消息格式约束**（[`RuntimeProtocolParser._validate_supported_message_shape`](../../backend/app/copilot_runtime/protocol.py#L469-L535)）：
 - 支持的 `role`: `"user"`, `"assistant"`, `"system"`, `"developer"`
 - `user` 消息 `content` 可以是字符串或 `[{"type":"text","text":"..."}]` 数组
 - `assistant` 消息 `content` 必须是纯文本字符串（当前不支持 tool calls）
@@ -306,7 +306,7 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"connect-1","result
 
 **响应格式**：Server-Sent Events (SSE)
 
-**事件序列**（[`RuntimeScaffold.build_run_events`](../backend/app/copilot_runtime/contracts.py:231-268)）：
+**事件序列**（[`RuntimeScaffold.build_run_events`](../../backend/app/copilot_runtime/contracts.py#L231-L268)）：
 ```
 data: {"type":"RUN_STARTED","threadId":"thread-123","runId":"run-1"}
 
@@ -321,7 +321,7 @@ data: {"type":"TEXT_MESSAGE_END","messageId":"run-1:assistant"}
 data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"run-1","result":{...}}
 ```
 
-**最终 result 结构**（[`RuntimeRunResult`](../backend/app/copilot_runtime/contracts.py:117-124)）：
+**最终 result 结构**（[`RuntimeRunResult`](../../backend/app/copilot_runtime/contracts.py#L117-L124)）：
 ```json
 {
   "ok": true,
@@ -346,19 +346,19 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"run-1","result":{.
 - Session 自动持久化对话历史（user + assistant 消息对）
 - 同一 `threadId` 的后续请求会复用历史上下文
 
-**历史复用机制**（[`RuntimeBridge.run`](../backend/app/copilot_runtime/bridge.py:49-72)）：
+**历史复用机制**（[`RuntimeBridge.run`](../../backend/app/copilot_runtime/bridge.py#L49-L72)）：
 - 从 session store 加载现有消息历史
 - 转换为 PydanticAI `ModelMessage` 格式
 - 传递给 agent executor 作为上下文
 - 执行成功后追加新的 user/assistant 消息对到 session
 
 **测试依据**：
-- 基本运行：[`backend/tests/integration/test_copilot_runtime_http.py:61-99`](../backend/tests/integration/test_copilot_runtime_http.py:61-99)
-- 历史复用：[`backend/tests/integration/test_copilot_runtime_http.py:61-99`](../backend/tests/integration/test_copilot_runtime_http.py:61-99)
+- 基本运行：[`backend/tests/integration/test_copilot_runtime_http.py:61-99`](../../backend/tests/integration/test_copilot_runtime_http.py#L61-L99)
+- 历史复用：[`backend/tests/integration/test_copilot_runtime_http.py:61-99`](../../backend/tests/integration/test_copilot_runtime_http.py#L61-L99)
 
 ## 错误处理与结构化错误
 
-所有聊天 runtime 错误返回统一的 JSON 结构（[`RuntimeErrorResponse`](../backend/app/copilot_runtime/errors.py:29-32)）：
+所有聊天 runtime 错误返回统一的 JSON 结构（[`RuntimeErrorResponse`](../../backend/app/copilot_runtime/errors.py#L29-L32)）：
 
 ```json
 {
@@ -378,13 +378,13 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"run-1","result":{.
 
 | 错误码 | HTTP 状态 | 触发场景 | 代码锚点 |
 |--------|----------|---------|---------|
-| `invalid_runtime_request` | 400 | 请求载荷格式错误、缺少必需字段 | [`errors.py:35-48`](../backend/app/copilot_runtime/errors.py:35-48) |
-| `unsupported_message_shape` | 400 | 消息格式不符合 MVP 约束（如包含 tool calls） | [`errors.py:66-79`](../backend/app/copilot_runtime/errors.py:66-79) |
-| `agent_not_found` | 404 | 请求的 agent 不存在 | [`errors.py:51-63`](../backend/app/copilot_runtime/errors.py:51-63) |
-| `invalid_message_history` | 409 | Session 历史消息序列损坏（如 assistant 后不是 user） | [`errors.py:82-95`](../backend/app/copilot_runtime/errors.py:82-95) |
-| `agent_execution_failed` | 500 | Agent 执行过程中发生异常 | [`errors.py:113-126`](../backend/app/copilot_runtime/errors.py:113-126) |
-| `method_not_implemented` | 501 | 请求的方法当前阶段不支持 | [`errors.py:129-143`](../backend/app/copilot_runtime/errors.py:129-143) |
-| `model_not_configured` | 503 | 未配置 LLM 模型（缺少环境变量或 CLI 参数） | [`errors.py:98-110`](../backend/app/copilot_runtime/errors.py:98-110) |
+| `invalid_runtime_request` | 400 | 请求载荷格式错误、缺少必需字段 | [`errors.py:35-48`](../../backend/app/copilot_runtime/errors.py#L35-L48) |
+| `unsupported_message_shape` | 400 | 消息格式不符合 MVP 约束（如包含 tool calls） | [`errors.py:66-79`](../../backend/app/copilot_runtime/errors.py#L66-L79) |
+| `agent_not_found` | 404 | 请求的 agent 不存在 | [`errors.py:51-63`](../../backend/app/copilot_runtime/errors.py#L51-L63) |
+| `invalid_message_history` | 409 | Session 历史消息序列损坏（如 assistant 后不是 user） | [`errors.py:82-95`](../../backend/app/copilot_runtime/errors.py#L82-L95) |
+| `agent_execution_failed` | 500 | Agent 执行过程中发生异常 | [`errors.py:113-126`](../../backend/app/copilot_runtime/errors.py#L113-L126) |
+| `method_not_implemented` | 501 | 请求的方法当前阶段不支持 | [`errors.py:129-143`](../../backend/app/copilot_runtime/errors.py#L129-L143) |
+| `model_not_configured` | 503 | 未配置 LLM 模型（缺少环境变量或 CLI 参数） | [`errors.py:98-110`](../../backend/app/copilot_runtime/errors.py#L98-L110) |
 
 ### 错误示例
 
@@ -423,9 +423,9 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"run-1","result":{.
 ```
 
 **测试依据**：
-- 模型未配置：[`test_copilot_runtime_http.py:100-117`](../backend/tests/integration/test_copilot_runtime_http.py:100-117)
-- Agent 不存在：[`test_copilot_runtime_http.py:120-144`](../backend/tests/integration/test_copilot_runtime_http.py:120-144)
-- 历史损坏：[`test_copilot_runtime_http.py:147-173`](../backend/tests/integration/test_copilot_runtime_http.py:147-173)
+- 模型未配置：[`test_copilot_runtime_http.py:100-117`](../../backend/tests/integration/test_copilot_runtime_http.py#L100-L117)
+- Agent 不存在：[`test_copilot_runtime_http.py:120-144`](../../backend/tests/integration/test_copilot_runtime_http.py#L120-L144)
+- 历史损坏：[`test_copilot_runtime_http.py:147-173`](../../backend/tests/integration/test_copilot_runtime_http.py#L147-L173)
 
 ## 当前边界与未来扩展
 
@@ -468,12 +468,12 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"run-1","result":{.
 
 完整的契约实现分布在以下模块：
 
-- **端点注册**：[`backend/app/desktop_runtime/server.py`](../backend/app/desktop_runtime/server.py)
-- **方法路由**：[`backend/app/copilot_runtime/router.py`](../backend/app/copilot_runtime/router.py)
-- **协议解析**：[`backend/app/copilot_runtime/protocol.py`](../backend/app/copilot_runtime/protocol.py)
-- **契约结构**：[`backend/app/copilot_runtime/contracts.py`](../backend/app/copilot_runtime/contracts.py)
-- **错误定义**：[`backend/app/copilot_runtime/errors.py`](../backend/app/copilot_runtime/errors.py)
-- **执行桥接**：[`backend/app/copilot_runtime/bridge.py`](../backend/app/copilot_runtime/bridge.py)
+- **端点注册**：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+- **方法路由**：[`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py)
+- **协议解析**：[`backend/app/copilot_runtime/protocol.py`](../../backend/app/copilot_runtime/protocol.py)
+- **契约结构**：[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)
+- **错误定义**：[`backend/app/copilot_runtime/errors.py`](../../backend/app/copilot_runtime/errors.py)
+- **执行桥接**：[`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py)
 
-**集成测试**：[`backend/tests/integration/test_copilot_runtime_http.py`](../backend/tests/integration/test_copilot_runtime_http.py)  
-**单元测试**：[`backend/tests/unit/desktop_runtime/test_server.py`](../backend/tests/unit/desktop_runtime/test_server.py)
+**集成测试**：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)  
+**单元测试**：[`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)

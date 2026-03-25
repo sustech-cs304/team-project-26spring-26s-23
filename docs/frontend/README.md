@@ -143,8 +143,8 @@
 - `COPILOT_RUNTIME_LOAD_CHANNEL` / `COPILOT_RUNTIME_RETRY_CHANNEL` - Runtime 状态与重试
 
 **代码锚点**：
-- [`frontend-copilot/electron/preload.ts`](../../frontend-copilot/electron/preload.ts:13-29) - IPC API 暴露
-- [`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts:188-212) - IPC handlers 注册
+- [`frontend-copilot/electron/preload.ts`](../../frontend-copilot/electron/preload.ts#L13-L29) - IPC API 暴露
+- [`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts#L188-L212) - IPC handlers 注册
 
 ### 与 Hosted Backend 的关系
 
@@ -200,9 +200,9 @@
 - ✅ 启动失败兜底与重试机制
 
 **代码锚点**：
-- [`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts:366-390) - Hosted backend 启动
-- [`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx:160-434) - 根装配层
-- [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:221-384) - 聊天 UI
+- [`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts#L366-L390) - Hosted backend 启动
+- [`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx#L160-L434) - 根装配层
+- [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L221-L384) - 聊天 UI
 - [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx) - 助手工作区
 
 ### 尚不是什么
@@ -253,7 +253,7 @@
 
 ### 1. 前端如何决策是否注入 CopilotKit Provider？
 
-**决策逻辑**：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx:148-158)
+**决策逻辑**：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx#L148-L158)
 
 ```typescript
 export function shouldLoadCopilotProvider(input: {
@@ -284,7 +284,7 @@ export async function loadCopilotRuntimeSnapshot(): Promise<CopilotRuntimeLoadRe
 }
 ```
 
-**主进程实现**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts:214-237)
+**主进程实现**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts#L214-L237)
 
 返回的 snapshot 包含：
 - `hosted.status` - Hosted backend 状态（stopped、starting、ready、failed、degraded）
@@ -320,7 +320,7 @@ export type CopilotBootstrapState =
   | { status: 'degraded'; runtimeUrl: string; agentName: string; ... }
 ```
 
-**UI 渲染**：[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:51-219)
+**UI 渲染**：[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L51-L219)
 
 - `loading` / `starting` - 显示等待提示
 - `empty` / `incomplete` - 显示缺失字段提示
