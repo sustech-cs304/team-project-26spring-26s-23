@@ -130,6 +130,7 @@ export function AssistantWorkspace({ bootstrap }: AssistantWorkspaceProps) {
             state={bootstrap.state}
             retrying={bootstrap.retrying}
             retry={bootstrap.retry}
+            threadId={activeConversation?.id ?? activeConversationId}
           />
         </section>
       </main>

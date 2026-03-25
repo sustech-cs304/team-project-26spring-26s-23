@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
+import { collectForwardedElectronMainProcessArguments } from './electron/runtime/runtime-config'
 
 type ElectronStartup = ((argv?: string[], options?: SpawnOptions, customElectronPkg?: string) => Promise<void>) & {
   exit?: () => Promise<void>
@@ -72,7 +73,11 @@ export default defineConfig({
         entry: 'electron/main.ts',
         onstart({ startup }) {
           patchElectronDevStartupExit(startup as ElectronStartup)
-          return startup(undefined, { env: createElectronChildEnv() })
+          return startup([
+            '.',
+            '--no-sandbox',
+            ...collectForwardedElectronMainProcessArguments(process.argv),
+          ], { env: createElectronChildEnv() })
         },
       },
       preload: {

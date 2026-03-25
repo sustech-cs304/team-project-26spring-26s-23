@@ -26,6 +26,7 @@ import type {
   CopilotSettingsSaveResult,
 } from './copilot-settings'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
+import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
 import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime/runtime-paths'
 import { isHostedBackendFailure, type HostedBackendFailure } from './runtime/runtime-diagnostics'
@@ -127,16 +128,44 @@ function createWindow() {
   })
 
   win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    if (!message.startsWith('[startup]')) {
-      return
-    }
-
-    void appendMainRuntimeLog('info', '[startup] renderer-console', {
+    const rendererLogLevel = normalizeRendererConsoleLogLevel(level)
+    const payload = {
       sinceWindowMs: Date.now() - windowCreatedAt,
       level,
       line,
       sourceId,
       message,
+    }
+
+    if (message.startsWith('[startup]')) {
+      void appendMainRuntimeLog('info', '[startup] renderer-console', payload)
+      return
+    }
+
+    if (rendererLogLevel === 'warn' || rendererLogLevel === 'error' || message.startsWith('[renderer]')) {
+      void appendMainRuntimeLog(rendererLogLevel, 'renderer-console', payload)
+    }
+  })
+
+  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+    void appendMainRuntimeLog('error', 'Renderer preload script failed.', {
+      sinceWindowMs: Date.now() - windowCreatedAt,
+      preloadPath,
+      detail: formatUnknownError(error),
+    })
+  })
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    void appendMainRuntimeLog('error', 'Renderer process exited unexpectedly.', {
+      sinceWindowMs: Date.now() - windowCreatedAt,
+      reason: details.reason,
+      exitCode: details.exitCode,
+    })
+  })
+
+  win.webContents.on('unresponsive', () => {
+    logStartupTrace('webContents:unresponsive', {
+      sinceWindowMs: Date.now() - windowCreatedAt,
     })
   })
 
@@ -184,6 +213,17 @@ function registerCopilotRuntimeHandlers() {
 
 async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
+    if (hostedBackendStartupInFlight) {
+      const service = ensureHostedBackendService()
+
+      try {
+        await service.start()
+      } catch (error) {
+        const failure = isHostedBackendFailure(error) ? error : service.getLastFailure()
+        logHostedBackendFailure('Hosted backend startup failed while loading the runtime snapshot.', failure, error)
+      }
+    }
+
     return {
       ok: true,
       snapshot: buildCopilotRuntimeSnapshot(),
@@ -304,6 +344,7 @@ function createEmptyCopilotSettings(): CopilotSettings {
 function ensureHostedBackendService(): HostedBackendService {
   if (hostedBackendService === null) {
     const paths = getHostedRuntimePaths()
+    const runtimeCommandLineOptions = resolveHostedRuntimeCommandLineOptions()
 
     hostedBackendService = createHostedBackendService({
       appRoot: APP_ROOT,
@@ -311,6 +352,11 @@ function ensureHostedBackendService(): HostedBackendService {
       isPackaged: app.isPackaged,
       userDataPath: paths.userDataDir,
       runtimePaths: paths,
+      host: runtimeCommandLineOptions.host,
+      appMode: runtimeCommandLineOptions.appMode,
+      environment: runtimeCommandLineOptions.environment,
+      localToken: runtimeCommandLineOptions.localToken,
+      model: runtimeCommandLineOptions.model,
     })
   }
 
@@ -397,6 +443,17 @@ function registerApplicationLifecycleHandlers() {
         app.quit()
       })
   })
+}
+
+function resolveHostedRuntimeCommandLineOptions() {
+  const { options, warning } = parseHostedRuntimeCommandLineArgumentsSafely(process.argv)
+
+  if (warning !== null) {
+    console.warn('[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.', JSON.stringify(warning))
+    void appendMainRuntimeLog('warn', 'Ignoring invalid hosted runtime command-line arguments.', { ...warning })
+  }
+
+  return options
 }
 
 function logHostedBackendState(message: string, state: HostedBackendState): void {
@@ -545,6 +602,18 @@ function formatUnknownError(error: unknown): string {
   }
 
   return String(error)
+}
+
+function normalizeRendererConsoleLogLevel(level: number): RuntimeLogLevel {
+  if (level >= 3) {
+    return 'error'
+  }
+
+  if (level === 2) {
+    return 'warn'
+  }
+
+  return 'info'
 }
 
 registerApplicationLifecycleHandlers()
