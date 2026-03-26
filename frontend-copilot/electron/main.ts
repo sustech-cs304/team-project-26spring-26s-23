@@ -1,14 +1,10 @@
 import { app, BrowserWindow, Menu, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
   COPILOT_SETTINGS_LOAD_CHANNEL,
   COPILOT_SETTINGS_SAVE_CHANNEL,
-  getCopilotSettingsStorageState,
-  mergeCopilotSettings,
-  normalizeCopilotSettings,
 } from './copilot-settings'
 import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
@@ -20,11 +16,14 @@ import type {
   CopilotRuntimeSnapshot,
 } from './copilot-runtime'
 import type {
-  CopilotSettings,
   CopilotSettingsLoadResult,
   CopilotSettingsPatch,
   CopilotSettingsSaveResult,
 } from './copilot-settings'
+import {
+  createElectronUnifiedConfigService,
+  type ElectronUnifiedConfigService,
+} from './config-center/main-process'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
 import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
@@ -57,6 +56,7 @@ const VITE_PUBLIC = process.env.VITE_PUBLIC ?? RENDERER_DIST
 let win: BrowserWindow | null = null
 let hostedBackendService: HostedBackendService | null = null
 let runtimePaths: HostedRuntimePaths | null = null
+let unifiedConfigService: ElectronUnifiedConfigService | null = null
 let quitSequenceStarted = false
 let hostedBackendStartupInFlight = false
 const electronStartupStartedAt = Date.now()
@@ -262,83 +262,11 @@ async function retryCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
 }
 
 async function loadCopilotSettings(): Promise<CopilotSettingsLoadResult> {
-  const paths = await prepareApplicationRuntimePaths()
-
-  try {
-    const fileContent = await readFile(paths.copilotSettingsFile, 'utf8')
-    const settings = normalizeCopilotSettings(JSON.parse(fileContent))
-
-    return {
-      ok: true,
-      settings,
-      storageState: getCopilotSettingsStorageState(settings),
-    }
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      try {
-        const migratedSettings = await tryMigrateLegacyCopilotSettings(paths)
-        if (migratedSettings !== null) {
-          return {
-            ok: true,
-            settings: migratedSettings,
-            storageState: getCopilotSettingsStorageState(migratedSettings),
-          }
-        }
-      } catch (migrationError) {
-        return {
-          ok: false,
-          error: `Failed to migrate legacy Copilot settings: ${formatUnknownError(migrationError)}`,
-        }
-      }
-
-      const emptySettings = createEmptyCopilotSettings()
-
-      return {
-        ok: true,
-        settings: emptySettings,
-        storageState: 'empty',
-      }
-    }
-
-    return {
-      ok: false,
-      error: `Failed to load Copilot settings: ${formatUnknownError(error)}`,
-    }
-  }
+  return await getUnifiedConfigService().loadCopilotSettings()
 }
 
 async function saveCopilotSettings(patch: CopilotSettingsPatch): Promise<CopilotSettingsSaveResult> {
-  const currentSettingsResult = await loadCopilotSettings()
-
-  if (!currentSettingsResult.ok) {
-    return currentSettingsResult
-  }
-
-  const settings = mergeCopilotSettings(currentSettingsResult.settings, patch)
-  const paths = await prepareApplicationRuntimePaths()
-
-  try {
-    await writeFile(paths.copilotSettingsFile, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
-    void appendMainRuntimeLog('info', 'Saved Copilot settings to desktop runtime config storage.', {
-      storageState: getCopilotSettingsStorageState(settings),
-      settingsFile: paths.copilotSettingsFile,
-    })
-
-    return {
-      ok: true,
-      settings,
-      storageState: getCopilotSettingsStorageState(settings),
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      error: `Failed to save Copilot settings: ${formatUnknownError(error)}`,
-    }
-  }
-}
-
-function createEmptyCopilotSettings(): CopilotSettings {
-  return normalizeCopilotSettings({})
+  return await getUnifiedConfigService().saveCopilotSettings(patch)
 }
 
 function ensureHostedBackendService(): HostedBackendService {
@@ -484,30 +412,21 @@ function getHostedRuntimePaths(): HostedRuntimePaths {
   return runtimePaths
 }
 
+function getUnifiedConfigService(): ElectronUnifiedConfigService {
+  unifiedConfigService ??= createElectronUnifiedConfigService({
+    prepareRuntimePaths: prepareApplicationRuntimePaths,
+    appendLog(level, message, context) {
+      void appendMainRuntimeLog(level, message, context)
+    },
+  })
+
+  return unifiedConfigService
+}
+
 async function prepareApplicationRuntimePaths(): Promise<HostedRuntimePaths> {
   const paths = getHostedRuntimePaths()
   await ensureHostedRuntimeDirectories(paths)
   return paths
-}
-
-async function tryMigrateLegacyCopilotSettings(paths: HostedRuntimePaths): Promise<CopilotSettings | null> {
-  try {
-    const legacyContent = await readFile(paths.legacyCopilotSettingsFile, 'utf8')
-    const settings = normalizeCopilotSettings(JSON.parse(legacyContent))
-    await writeFile(paths.copilotSettingsFile, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
-    void appendMainRuntimeLog('info', 'Migrated legacy Copilot settings into desktop runtime config storage.', {
-      legacySettingsFile: paths.legacyCopilotSettingsFile,
-      settingsFile: paths.copilotSettingsFile,
-      storageState: getCopilotSettingsStorageState(settings),
-    })
-    return settings
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      return null
-    }
-
-    throw error
-  }
 }
 
 async function appendMainRuntimeLog(
@@ -590,10 +509,6 @@ function summarizeHostedBackendFailure(failure: HostedBackendFailure): Record<st
     signal: failure.signal,
     timestamp: failure.timestamp,
   }
-}
-
-function isFileNotFoundError(error: unknown): error is NodeJS.ErrnoException {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 function formatUnknownError(error: unknown): string {
