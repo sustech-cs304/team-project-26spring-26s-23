@@ -72,7 +72,7 @@ function logStartupTrace(stage: string, context: Record<string, unknown> = {}): 
 }
 
 function openDetachedDevTools(targetWindow: BrowserWindow): void {
-  if (targetWindow.isDestroyed()) {
+  if (targetWindow.isDestroyed() || targetWindow.webContents.isDevToolsOpened()) {
     return
   }
 
@@ -89,7 +89,7 @@ function openDetachedDevTools(targetWindow: BrowserWindow): void {
 
 function registerDeveloperShortcuts(targetWindow: BrowserWindow): void {
   targetWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || input.key !== 'F12') {
+    if (input.type !== 'keyDown' || input.key !== 'F12' || input.isAutoRepeat) {
       return
     }
 
