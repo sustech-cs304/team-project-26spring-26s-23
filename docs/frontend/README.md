@@ -355,7 +355,7 @@ cd frontend-copilot
 npm run test
 ```
 
-当前测试共 27 passed。
+预期上述命令执行后所有测试均应通过。
 
 ### 类型检查
 
