@@ -64,6 +64,9 @@ describe('config center public bridge', () => {
           hostConfig: {
             runtimeUrl: 'http://127.0.0.1:8765',
           },
+          backendExposed: {
+            model: null,
+          },
         },
       },
     }
@@ -93,6 +96,9 @@ describe('config center public bridge', () => {
           },
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
+          },
+          backendExposed: {
+            model: null,
           },
         },
       },
@@ -177,6 +183,9 @@ describe('config center public bridge', () => {
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
         },
+        backendExposed: {
+          model: null,
+        },
       },
     })
 
@@ -192,6 +201,9 @@ describe('config center public bridge', () => {
         },
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
+        },
+        backendExposed: {
+          model: null,
         },
       },
     })
@@ -213,6 +225,9 @@ describe('config center public bridge', () => {
         },
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
+        },
+        backendExposed: {
+          model: null,
         },
       },
     })).toBe('dark')

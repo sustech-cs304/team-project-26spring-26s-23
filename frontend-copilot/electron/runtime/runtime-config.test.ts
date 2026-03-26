@@ -535,7 +535,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
     })
   })
 
-  it('prefers an explicit model over environment fallbacks when building runtime args', () => {
+  it('prefers an explicit model over config-center and environment fallbacks when building runtime args', () => {
     const config = createHostedRuntimeLaunchConfig({
       userDataPath: path.resolve('.tmp-userdata-model'),
       processEnv: {
@@ -545,12 +545,32 @@ describe('createHostedRuntimeLaunchConfig', () => {
       port: 43210,
       localToken: 'token-model',
       model: 'explicit-model',
+      configuredModel: 'configured-model',
     })
 
     expect(config.model).toBe('explicit-model')
     expect(config.args.slice(-4)).toEqual([
       '--model', 'explicit-model',
       '--local-token', 'token-model',
+    ])
+  })
+
+  it('uses the configured config-center model when no explicit runtime flag is provided', () => {
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-configured-model'),
+      processEnv: {
+        COPILOT_RUNTIME_MODEL: 'env-primary',
+        COPILOT_MODEL: 'env-legacy',
+      },
+      port: 43210,
+      localToken: 'token-configured-model',
+      configuredModel: 'configured-model',
+    })
+
+    expect(config.model).toBe('configured-model')
+    expect(config.args.slice(-4)).toEqual([
+      '--model', 'configured-model',
+      '--local-token', 'token-configured-model',
     ])
   })
 

@@ -18,6 +18,9 @@ export interface ConfigCenterPublicPatch {
     hostConfig?: {
       runtimeUrl?: string | null
     }
+    backendExposed?: {
+      model?: string | null
+    }
   }
 }
 
@@ -57,6 +60,11 @@ const CONFIG_CENTER_PUBLIC_PATCH_DOMAIN_REGISTRY: Record<string, ConfigCenterPub
   hostConfig: {
     fields: {
       runtimeUrl: 'runtimeUrl',
+    },
+  },
+  backendExposed: {
+    fields: {
+      model: 'model',
     },
   },
 }

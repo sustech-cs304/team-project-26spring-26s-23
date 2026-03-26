@@ -16,11 +16,15 @@ describe('parseConfigCenterPublicPatch', () => {
         hostConfig: {
           runtimeUrl: '  http://127.0.0.1:4400  ',
         },
+        backendExposed: {
+          model: '  qwen-plus  ',
+        },
       },
     })).toEqual({
       theme: 'dark',
       agentName: 'planner',
       runtimeUrl: 'http://127.0.0.1:4400',
+      model: 'qwen-plus',
     })
   })
 

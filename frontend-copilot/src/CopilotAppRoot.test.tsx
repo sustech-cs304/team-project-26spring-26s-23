@@ -101,6 +101,9 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
           },
+          backendExposed: {
+            model: null,
+          },
         },
       },
       applyState,
@@ -128,6 +131,9 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
           },
           hostConfig: {
             runtimeUrl: null,
+          },
+          backendExposed: {
+            model: null,
           },
         },
       },

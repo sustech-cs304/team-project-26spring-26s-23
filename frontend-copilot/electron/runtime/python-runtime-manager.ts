@@ -53,6 +53,7 @@ export interface PythonRuntimeManagerOptions extends PythonRuntimeResolverContex
   host?: string
   appMode?: string
   model?: string | null
+  configuredModel?: string | null
   localToken?: string
   startupTimeoutMs?: number
   shutdownTimeoutMs?: number
@@ -67,6 +68,7 @@ interface ResolvedPythonRuntimeManagerOptions extends PythonRuntimeResolverConte
   appMode: string
   environment: string
   model?: string | null
+  configuredModel?: string | null
   localToken?: string
   startupTimeoutMs: number
   shutdownTimeoutMs: number
@@ -248,6 +250,7 @@ export class PythonRuntimeManager {
       appMode: this.options.appMode,
       environment: this.options.environment,
       model: this.options.model,
+      configuredModel: this.options.configuredModel,
       localToken: this.options.localToken,
       paths: this.runtimePaths,
     })

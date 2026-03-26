@@ -33,7 +33,9 @@ export interface HostConfigValues {
   runtimeUrl: string | null
 }
 
-export interface BackendExposedConfigValues {}
+export interface BackendExposedConfigValues {
+  model: string | null
+}
 
 export interface UnifiedConfigDomainValueMap {
   'frontend-preferences': FrontendPreferencesConfigValues
@@ -57,12 +59,13 @@ export interface UnifiedConfigSnapshot {
   documents: UnifiedConfigSnapshotDocuments
 }
 
-export type UnifiedConfigFieldKey = 'theme' | 'agentName' | 'runtimeUrl'
+export type UnifiedConfigFieldKey = 'theme' | 'agentName' | 'runtimeUrl' | 'model'
 
 export interface UnifiedConfigFieldValueMap {
   theme: UnifiedConfigTheme
   agentName: string | null
   runtimeUrl: string | null
+  model: string | null
 }
 
 export type UnifiedConfigFieldPatch = Partial<Record<UnifiedConfigFieldKey, unknown>>
@@ -151,6 +154,19 @@ export const UNIFIED_CONFIG_FIELD_REGISTRY: UnifiedConfigFieldRegistry = {
     normalize: normalizeOptionalString,
     parsePatchValue: parseOptionalStringPatchValue,
   },
+  model: {
+    key: 'model',
+    storageKey: 'model',
+    domain: UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED,
+    defaultValue: null,
+    valueType: 'optional-string',
+    effectLevel: 'restart-application',
+    rendererEditable: true,
+    runtimeProjectable: true,
+    uiSection: 'backend',
+    normalize: normalizeOptionalString,
+    parsePatchValue: parseOptionalStringPatchValue,
+  },
 }
 
 export function createUnifiedConfigDomainDocument<TDomain extends UnifiedConfigDomainKey>(
@@ -195,7 +211,9 @@ export function createDefaultUnifiedConfigDomainDocument<TDomain extends Unified
     case UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED:
       return createUnifiedConfigDomainDocument(
         UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED,
-        {},
+        {
+          model: UNIFIED_CONFIG_FIELD_REGISTRY.model.defaultValue,
+        },
       ) as UnifiedConfigDomainDocument<TDomain>
   }
 
@@ -237,7 +255,9 @@ export function normalizeUnifiedConfigDomainDocument<TDomain extends UnifiedConf
     case UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED:
       return createUnifiedConfigDomainDocument(
         UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED,
-        {},
+        {
+          model: UNIFIED_CONFIG_FIELD_REGISTRY.model.normalize(values.model),
+        },
       ) as UnifiedConfigDomainDocument<TDomain>
   }
 
@@ -277,6 +297,9 @@ export function applyUnifiedConfigFieldPatch(
   const nextHostValues = {
     ...snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG].values,
   }
+  const nextBackendExposedValues = {
+    ...snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].values,
+  }
 
   if ('theme' in patch) {
     nextFrontendValues.theme = UNIFIED_CONFIG_FIELD_REGISTRY.theme.normalize(patch.theme)
@@ -288,6 +311,10 @@ export function applyUnifiedConfigFieldPatch(
 
   if ('runtimeUrl' in patch) {
     nextHostValues.runtimeUrl = UNIFIED_CONFIG_FIELD_REGISTRY.runtimeUrl.normalize(patch.runtimeUrl)
+  }
+
+  if ('model' in patch) {
+    nextBackendExposedValues.model = UNIFIED_CONFIG_FIELD_REGISTRY.model.normalize(patch.model)
   }
 
   return {
@@ -305,6 +332,10 @@ export function applyUnifiedConfigFieldPatch(
       [UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG]: createUnifiedConfigDomainDocument(
         UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG,
         nextHostValues,
+      ),
+      [UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED]: createUnifiedConfigDomainDocument(
+        UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED,
+        nextBackendExposedValues,
       ),
     },
   }

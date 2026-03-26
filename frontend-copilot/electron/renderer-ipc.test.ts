@@ -39,6 +39,9 @@ describe('registerRendererIpcHandlers', () => {
             hostConfig: {
               runtimeUrl: 'http://127.0.0.1:4400',
             },
+            backendExposed: {
+              model: null,
+            },
           },
         },
       }),
@@ -55,6 +58,9 @@ describe('registerRendererIpcHandlers', () => {
             },
             hostConfig: {
               runtimeUrl: 'http://127.0.0.1:4400',
+            },
+            backendExposed: {
+              model: 'qwen-plus',
             },
           },
         },

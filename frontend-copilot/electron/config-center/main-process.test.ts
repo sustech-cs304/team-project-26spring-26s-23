@@ -31,6 +31,9 @@ describe('createElectronUnifiedConfigService', () => {
           hostConfig: {
             runtimeUrl: null,
           },
+          backendExposed: {
+            model: null,
+          },
         },
       },
     })
@@ -52,6 +55,9 @@ describe('createElectronUnifiedConfigService', () => {
         hostConfig: {
           runtimeUrl: '  http://127.0.0.1:4400  ',
         },
+        backendExposed: {
+          model: '  qwen-plus  ',
+        },
       },
     })
 
@@ -68,6 +74,9 @@ describe('createElectronUnifiedConfigService', () => {
           },
           hostConfig: {
             runtimeUrl: 'http://127.0.0.1:4400',
+          },
+          backendExposed: {
+            model: 'qwen-plus',
           },
         },
       },

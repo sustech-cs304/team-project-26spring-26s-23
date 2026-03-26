@@ -20,6 +20,7 @@ import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
+import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/schema'
 import { registerRendererIpcHandlers } from './renderer-ipc'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
@@ -52,6 +53,7 @@ const VITE_PUBLIC = process.env.VITE_PUBLIC ?? RENDERER_DIST
 
 let win: BrowserWindow | null = null
 let hostedBackendService: HostedBackendService | null = null
+let hostedBackendServicePromise: Promise<HostedBackendService> | null = null
 let runtimePaths: HostedRuntimePaths | null = null
 let unifiedConfigService: ElectronUnifiedConfigService | null = null
 let quitSequenceStarted = false
@@ -186,7 +188,7 @@ function createWindow() {
 async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
     if (hostedBackendStartupInFlight) {
-      const service = ensureHostedBackendService()
+      const service = await ensureHostedBackendService()
 
       try {
         await service.start()
@@ -211,7 +213,7 @@ async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
 async function retryCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
     await prepareApplicationRuntimePaths()
-    const service = ensureHostedBackendService()
+    const service = await ensureHostedBackendService()
 
     try {
       const state = await service.start()
@@ -243,12 +245,21 @@ async function applyConfigCenterPublicPatch(
   return await getUnifiedConfigService().applyPublicPatch(patch)
 }
 
-function ensureHostedBackendService(): HostedBackendService {
-  if (hostedBackendService === null) {
+async function ensureHostedBackendService(): Promise<HostedBackendService> {
+  if (hostedBackendService !== null) {
+    return hostedBackendService
+  }
+
+  if (hostedBackendServicePromise !== null) {
+    return await hostedBackendServicePromise
+  }
+
+  hostedBackendServicePromise = (async () => {
     const paths = getHostedRuntimePaths()
     const runtimeCommandLineOptions = resolveHostedRuntimeCommandLineOptions()
+    const configuredModel = await loadConfiguredHostedRuntimeModel()
 
-    hostedBackendService = createHostedBackendService({
+    const service = createHostedBackendService({
       appRoot: APP_ROOT,
       resourcesPath: process.resourcesPath,
       isPackaged: app.isPackaged,
@@ -259,33 +270,49 @@ function ensureHostedBackendService(): HostedBackendService {
       environment: runtimeCommandLineOptions.environment,
       localToken: runtimeCommandLineOptions.localToken,
       model: runtimeCommandLineOptions.model,
+      configuredModel,
     })
-  }
 
-  return hostedBackendService
+    hostedBackendService = service
+    return service
+  })()
+
+  try {
+    return await hostedBackendServicePromise
+  } finally {
+    hostedBackendServicePromise = null
+  }
+}
+
+async function loadConfiguredHostedRuntimeModel(): Promise<string | null> {
+  const loadResult = await getUnifiedConfigService().loadSnapshot()
+  return loadResult.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].values.model
 }
 
 async function startHostedBackend(): Promise<void> {
   hostedBackendStartupInFlight = true
-  const service = ensureHostedBackendService()
-  const paths = getHostedRuntimePaths()
-
-  void appendMainRuntimeLog('info', 'Starting hosted desktop backend.', {
-    isPackaged: app.isPackaged,
-    userDataPath: paths.userDataDir,
-    runtimeRootDir: paths.runtimeRootDir,
-    configDir: paths.configDir,
-    logsDir: paths.logsDir,
-    databaseDir: paths.databaseDir,
-    stateDir: paths.stateDir,
-  })
 
   try {
-    const state = await service.start()
-    logHostedBackendState('Hosted backend is ready.', state)
-  } catch (error) {
-    const failure = isHostedBackendFailure(error) ? error : service.getLastFailure()
-    logHostedBackendFailure('Hosted backend startup failed.', failure, error)
+    const service = await ensureHostedBackendService()
+    const paths = getHostedRuntimePaths()
+
+    void appendMainRuntimeLog('info', 'Starting hosted desktop backend.', {
+      isPackaged: app.isPackaged,
+      userDataPath: paths.userDataDir,
+      runtimeRootDir: paths.runtimeRootDir,
+      configDir: paths.configDir,
+      logsDir: paths.logsDir,
+      databaseDir: paths.databaseDir,
+      stateDir: paths.stateDir,
+    })
+
+    try {
+      const state = await service.start()
+      logHostedBackendState('Hosted backend is ready.', state)
+    } catch (error) {
+      const failure = isHostedBackendFailure(error) ? error : service.getLastFailure()
+      logHostedBackendFailure('Hosted backend startup failed.', failure, error)
+    }
   } finally {
     hostedBackendStartupInFlight = false
   }

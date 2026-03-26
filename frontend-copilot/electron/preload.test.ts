@@ -102,6 +102,9 @@ describe('preload renderer bridge', () => {
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
         },
+        backendExposed: {
+          model: 'qwen-plus',
+        },
       },
     }
 

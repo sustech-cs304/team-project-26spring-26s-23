@@ -19,6 +19,9 @@ export interface ConfigCenterPublicSnapshot {
     hostConfig: {
       runtimeUrl: string | null
     }
+    backendExposed: {
+      model: string | null
+    }
   }
 }
 
@@ -61,6 +64,9 @@ export function projectConfigCenterPublicSnapshot(
       },
       hostConfig: {
         runtimeUrl: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG].values.runtimeUrl,
+      },
+      backendExposed: {
+        model: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].values.model,
       },
     },
   }

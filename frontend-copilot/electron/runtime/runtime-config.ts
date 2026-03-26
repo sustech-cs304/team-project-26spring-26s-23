@@ -154,6 +154,7 @@ export interface HostedRuntimeLaunchConfigOptions {
   host?: string
   localToken?: string
   model?: string | null
+  configuredModel?: string | null
   appMode?: string
   environment?: string
   paths?: HostedRuntimePaths
@@ -292,10 +293,16 @@ export function parseHostedRuntimeCommandLineArgumentsSafely(
 export function resolveHostedRuntimeModel(
   processEnv: NodeJS.ProcessEnv,
   explicitModel?: string | null,
+  configuredModel?: string | null,
 ): string | null {
   const normalizedExplicitModel = normalizeOptionalString(explicitModel)
   if (normalizedExplicitModel !== undefined) {
     return normalizedExplicitModel
+  }
+
+  const normalizedConfiguredModel = normalizeOptionalString(configuredModel)
+  if (normalizedConfiguredModel !== undefined) {
+    return normalizedConfiguredModel
   }
 
   return normalizeOptionalString(processEnv[HOSTED_RUNTIME_MODEL_ENV_NAMES.PRIMARY])
@@ -317,7 +324,7 @@ export function createHostedRuntimeLaunchConfig(
 ): HostedRuntimeLaunchConfig {
   const host = options.host ?? DEFAULT_RUNTIME_HOST
   const localToken = options.localToken ?? createLocalToken()
-  const model = resolveHostedRuntimeModel(options.processEnv, options.model)
+  const model = resolveHostedRuntimeModel(options.processEnv, options.model, options.configuredModel)
   const appMode = options.appMode ?? DEFAULT_RUNTIME_APP_MODE
   const environment = options.environment ?? DEFAULT_RUNTIME_ENVIRONMENT
   const paths = options.paths ?? createHostedRuntimePaths(options.userDataPath)

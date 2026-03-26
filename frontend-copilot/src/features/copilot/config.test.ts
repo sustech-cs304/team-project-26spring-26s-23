@@ -250,6 +250,9 @@ describe('loadBootstrapFieldsFromConfigCenterPublicSnapshot', () => {
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
         },
+        backendExposed: {
+          model: null,
+        },
       },
     })).toEqual({
       ok: true,
@@ -277,6 +280,9 @@ describe('loadCopilotConfigState', () => {
           },
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
+          },
+          backendExposed: {
+            model: null,
           },
         },
       },
@@ -344,6 +350,9 @@ describe('loadCopilotConfigState', () => {
           },
           hostConfig: {
             runtimeUrl: 'http://127.0.0.1:3000',
+          },
+          backendExposed: {
+            model: null,
           },
         },
       },

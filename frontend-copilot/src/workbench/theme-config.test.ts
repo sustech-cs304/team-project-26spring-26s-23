@@ -164,6 +164,9 @@ function createPublicSnapshot(theme: ThemeMode): ConfigCenterPublicSnapshot {
       hostConfig: {
         runtimeUrl: 'http://localhost:4400',
       },
+      backendExposed: {
+        model: null,
+      },
     },
   }
 }

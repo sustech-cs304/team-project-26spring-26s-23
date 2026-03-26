@@ -247,6 +247,9 @@ describe('createUnifiedConfigCenter', () => {
           hostConfig: {
             runtimeUrl: '  http://localhost:4400  ',
           },
+          backendExposed: {
+            model: '  qwen-plus  ',
+          },
         },
       })
 
@@ -261,6 +264,9 @@ describe('createUnifiedConfigCenter', () => {
           },
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
+          },
+          backendExposed: {
+            model: 'qwen-plus',
           },
         },
       }
@@ -286,6 +292,13 @@ describe('createUnifiedConfigCenter', () => {
         ),
       ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG, {
         runtimeUrl: 'http://localhost:4400',
+      }))
+      expect(
+        await readJsonFile(
+          fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED],
+        ),
+      ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED, {
+        model: 'qwen-plus',
       }))
 
       const reloaded = await fixture.configCenter.loadSnapshot()
@@ -322,6 +335,7 @@ describe('createUnifiedConfigCenter', () => {
         theme: 'dark',
         runtimeUrl: '  http://localhost:4400  ',
         agentName: '  planner  ',
+        model: '  qwen-plus  ',
       })
 
       const publicSnapshot = projectConfigCenterPublicSnapshot(updated.snapshot)
@@ -337,13 +351,16 @@ describe('createUnifiedConfigCenter', () => {
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
           },
+          backendExposed: {
+            model: 'qwen-plus',
+          },
         },
       }
 
       expect(publicSnapshot).toEqual(expectedSnapshot)
       expect(JSON.parse(JSON.stringify(publicSnapshot))).toEqual(expectedSnapshot)
       expect('frontendPreferences' in publicSnapshot.domains).toBe(true)
-      expect('backendExposed' in publicSnapshot.domains).toBe(false)
+      expect('backendExposed' in publicSnapshot.domains).toBe(true)
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
