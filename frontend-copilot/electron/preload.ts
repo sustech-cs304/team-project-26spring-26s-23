@@ -1,9 +1,5 @@
 import { ipcRenderer, contextBridge } from 'electron'
 import {
-  COPILOT_SETTINGS_LOAD_CHANNEL,
-  COPILOT_SETTINGS_SAVE_CHANNEL,
-} from './copilot-settings'
-import {
   CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
   type ConfigCenterPublicPatchApi,
 } from './config-center/public-patch'
@@ -16,17 +12,7 @@ import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
 } from './copilot-runtime'
-import type { CopilotSettingsApi } from './copilot-settings'
 import type { CopilotRuntimeApi } from './copilot-runtime'
-
-const copilotSettingsApi: CopilotSettingsApi = {
-  load() {
-    return ipcRenderer.invoke(COPILOT_SETTINGS_LOAD_CHANNEL)
-  },
-  save(patch) {
-    return ipcRenderer.invoke(COPILOT_SETTINGS_SAVE_CHANNEL, patch)
-  },
-}
 
 const copilotRuntimeApi: CopilotRuntimeApi = {
   load() {
@@ -51,7 +37,6 @@ const configCenterPublicPatchApi: ConfigCenterPublicPatchApi = {
   },
 }
 
-contextBridge.exposeInMainWorld('copilotSettings', copilotSettingsApi)
 contextBridge.exposeInMainWorld('copilotRuntime', copilotRuntimeApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshot', configCenterPublicSnapshotApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshotSubscription', configCenterPublicSnapshotSubscriptionApi)

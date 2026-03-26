@@ -1,47 +1,10 @@
-export const COPILOT_SETTINGS_LOAD_CHANNEL = 'copilot-settings:load'
-export const COPILOT_SETTINGS_SAVE_CHANNEL = 'copilot-settings:save'
-
+/**
+ * Legacy disk schema for pre-unified-config Copilot settings files.
+ * Main-process internal only; renderer code must use config center public APIs.
+ */
 export interface CopilotSettings {
   runtimeUrl: string | null
   agentName: string | null
-}
-
-export interface CopilotSettingsPatch {
-  runtimeUrl?: string | null
-  agentName?: string | null
-}
-
-export type CopilotSettingsStorageState = 'empty' | 'stored'
-
-export interface CopilotSettingsLoadSuccess {
-  ok: true
-  settings: CopilotSettings
-  storageState: CopilotSettingsStorageState
-}
-
-export interface CopilotSettingsLoadFailure {
-  ok: false
-  error: string
-}
-
-export type CopilotSettingsLoadResult = CopilotSettingsLoadSuccess | CopilotSettingsLoadFailure
-
-export interface CopilotSettingsSaveSuccess {
-  ok: true
-  settings: CopilotSettings
-  storageState: CopilotSettingsStorageState
-}
-
-export interface CopilotSettingsSaveFailure {
-  ok: false
-  error: string
-}
-
-export type CopilotSettingsSaveResult = CopilotSettingsSaveSuccess | CopilotSettingsSaveFailure
-
-export interface CopilotSettingsApi {
-  load: () => Promise<CopilotSettingsLoadResult>
-  save: (patch: CopilotSettingsPatch) => Promise<CopilotSettingsSaveResult>
 }
 
 export function normalizeCopilotSettings(input: unknown): CopilotSettings {
@@ -53,17 +16,6 @@ export function normalizeCopilotSettings(input: unknown): CopilotSettings {
     runtimeUrl: normalizeOptionalString(record.runtimeUrl),
     agentName: normalizeOptionalString(record.agentName),
   }
-}
-
-export function mergeCopilotSettings(current: CopilotSettings, patch: CopilotSettingsPatch): CopilotSettings {
-  return normalizeCopilotSettings({
-    ...current,
-    ...patch,
-  })
-}
-
-export function getCopilotSettingsStorageState(settings: CopilotSettings): CopilotSettingsStorageState {
-  return settings.runtimeUrl === null && settings.agentName === null ? 'empty' : 'stored'
 }
 
 function normalizeOptionalString(value: unknown): string | null {

@@ -2,39 +2,25 @@ import { app, BrowserWindow, Menu, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import {
-  COPILOT_SETTINGS_LOAD_CHANNEL,
-  COPILOT_SETTINGS_SAVE_CHANNEL,
-} from './copilot-settings'
-import {
-  CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
-  type ConfigCenterPublicPatch,
-  type ConfigCenterPublicPatchResult,
+import type {
+  ConfigCenterPublicPatch,
+  ConfigCenterPublicPatchResult,
 } from './config-center/public-patch'
 import {
-  CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
   CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL,
   type ConfigCenterPublicSnapshot,
   type ConfigCenterPublicSnapshotLoadResult,
 } from './config-center/public-snapshot'
-import {
-  COPILOT_RUNTIME_LOAD_CHANNEL,
-  COPILOT_RUNTIME_RETRY_CHANNEL,
-} from './copilot-runtime'
 import type {
   CopilotHostedRuntimeFailureSummary,
   CopilotRuntimeLoadResult,
   CopilotRuntimeSnapshot,
 } from './copilot-runtime'
-import type {
-  CopilotSettingsLoadResult,
-  CopilotSettingsPatch,
-  CopilotSettingsSaveResult,
-} from './copilot-settings'
 import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
+import { registerRendererIpcHandlers } from './renderer-ipc'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
 import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
@@ -196,47 +182,6 @@ function createWindow() {
   }
 }
 
-function registerCopilotSettingsHandlers() {
-  ipcMain.removeHandler(COPILOT_SETTINGS_LOAD_CHANNEL)
-  ipcMain.removeHandler(COPILOT_SETTINGS_SAVE_CHANNEL)
-
-  ipcMain.handle(COPILOT_SETTINGS_LOAD_CHANNEL, async (): Promise<CopilotSettingsLoadResult> => {
-    return await loadCopilotSettings()
-  })
-
-  ipcMain.handle(COPILOT_SETTINGS_SAVE_CHANNEL, async (_event, patch: CopilotSettingsPatch): Promise<CopilotSettingsSaveResult> => {
-    return await saveCopilotSettings(patch)
-  })
-}
-
-function registerConfigCenterHandlers() {
-  ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
-  ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL)
-
-  ipcMain.handle(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL, async (): Promise<ConfigCenterPublicSnapshotLoadResult> => {
-    return await loadConfigCenterPublicSnapshot()
-  })
-
-  ipcMain.handle(
-    CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
-    async (_event, patch: ConfigCenterPublicPatch): Promise<ConfigCenterPublicPatchResult> => {
-      return await applyConfigCenterPublicPatch(patch)
-    },
-  )
-}
-
-function registerCopilotRuntimeHandlers() {
-  ipcMain.removeHandler(COPILOT_RUNTIME_LOAD_CHANNEL)
-  ipcMain.removeHandler(COPILOT_RUNTIME_RETRY_CHANNEL)
-
-  ipcMain.handle(COPILOT_RUNTIME_LOAD_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
-    return loadCopilotRuntime()
-  })
-
-  ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
-    return retryCopilotRuntime()
-  })
-}
 
 async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
@@ -286,14 +231,6 @@ async function retryCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
       error: `Failed to retry hosted backend startup: ${formatUnknownError(error)}`,
     }
   }
-}
-
-async function loadCopilotSettings(): Promise<CopilotSettingsLoadResult> {
-  return await getUnifiedConfigService().loadCopilotSettings()
-}
-
-async function saveCopilotSettings(patch: CopilotSettingsPatch): Promise<CopilotSettingsSaveResult> {
-  return await getUnifiedConfigService().saveCopilotSettings(patch)
 }
 
 async function loadConfigCenterPublicSnapshot(): Promise<ConfigCenterPublicSnapshotLoadResult> {
@@ -585,9 +522,12 @@ void app.whenReady()
   .then(() => {
     logStartupTrace('app:ready')
     Menu.setApplicationMenu(null)
-    registerCopilotSettingsHandlers()
-    registerConfigCenterHandlers()
-    registerCopilotRuntimeHandlers()
+    registerRendererIpcHandlers(ipcMain, {
+      loadConfigCenterPublicSnapshot,
+      applyConfigCenterPublicPatch,
+      loadCopilotRuntime,
+      retryCopilotRuntime,
+    })
     void startHostedBackend()
     createWindow()
   })

@@ -1,11 +1,4 @@
-import type {
-  CopilotSettingsLoadResult,
-  CopilotSettingsPatch,
-  CopilotSettingsSaveResult,
-} from '../copilot-settings'
-import { getCopilotSettingsStorageState } from '../copilot-settings'
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
-import { projectCopilotSettings, projectCopilotSettingsPatch } from './copilot-settings-bridge'
 import { createUnifiedConfigCenterPaths } from './paths'
 import type {
   ConfigCenterPublicPatch,
@@ -47,8 +40,6 @@ export interface ElectronUnifiedConfigService {
   applyFieldPatch: (patch: UnifiedConfigFieldPatch) => Promise<UnifiedConfigUpdateResult>
   loadPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
   applyPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
-  loadCopilotSettings: () => Promise<CopilotSettingsLoadResult>
-  saveCopilotSettings: (patch: CopilotSettingsPatch) => Promise<CopilotSettingsSaveResult>
 }
 
 export function createElectronUnifiedConfigService(
@@ -104,48 +95,6 @@ export function createElectronUnifiedConfigService(
     applyFieldPatch,
     loadPublicSnapshot,
     applyPublicPatch,
-    async loadCopilotSettings() {
-      try {
-        const loadResult = await loadSnapshot()
-        const settings = projectCopilotSettings(loadResult.snapshot)
-
-        return {
-          ok: true,
-          settings,
-          storageState: getCopilotSettingsStorageState(settings),
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          error: `Failed to load Copilot settings: ${formatUnknownError(error)}`,
-        }
-      }
-    },
-    async saveCopilotSettings(patch) {
-      try {
-        const updateResult = await applyFieldPatch(projectCopilotSettingsPatch(patch))
-        const settings = projectCopilotSettings(updateResult.snapshot)
-        await notifyPublicSnapshotUpdated(
-          projectConfigCenterPublicSnapshot(updateResult.snapshot),
-          options.publishPublicSnapshotUpdate,
-        )
-
-        await options.appendLog?.('info', 'Saved Copilot settings through the unified config center.', {
-          storageState: getCopilotSettingsStorageState(settings),
-        })
-
-        return {
-          ok: true,
-          settings,
-          storageState: getCopilotSettingsStorageState(settings),
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          error: `Failed to save Copilot settings: ${formatUnknownError(error)}`,
-        }
-      }
-    },
   }
 }
 
