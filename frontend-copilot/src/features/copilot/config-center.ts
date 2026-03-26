@@ -10,7 +10,6 @@ import type {
   ConfigCenterPublicSnapshotUnsubscribe,
 } from '../../../electron/config-center/public-snapshot'
 import type { ThemeMode } from '../../workbench/types'
-import type { CopilotRendererSettings } from './types'
 
 function getConfigCenterPublicSnapshotApi() {
   if (typeof window === 'undefined') {
@@ -82,11 +81,3 @@ export function projectThemeModeFromConfigCenterPublicSnapshot(
   return snapshot.domains.frontendPreferences.theme
 }
 
-export function projectCopilotSettingsFromConfigCenterPublicSnapshot(
-  snapshot: ConfigCenterPublicSnapshot,
-): CopilotRendererSettings {
-  return {
-    runtimeUrl: snapshot.domains.hostConfig.runtimeUrl,
-    agentName: snapshot.domains.assistantBehavior.agentName,
-  }
-}

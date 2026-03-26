@@ -2,34 +2,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const configCenterMocks = vi.hoisted(() => ({
   loadConfigCenterPublicSnapshot: vi.fn(),
-  projectCopilotSettingsFromConfigCenterPublicSnapshot: vi.fn(),
 }))
 
 vi.mock('./config-center', () => ({
   loadConfigCenterPublicSnapshot: configCenterMocks.loadConfigCenterPublicSnapshot,
-  projectCopilotSettingsFromConfigCenterPublicSnapshot:
-    configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot,
 }))
 
-import { loadCopilotConfigState, resolveCopilotConfigState, retryCopilotConfigState } from './config'
+import {
+  loadBootstrapFieldsFromConfigCenterPublicSnapshot,
+  loadCopilotConfigState,
+  resolveCopilotConfigState,
+  retryCopilotConfigState,
+} from './config'
 import type {
+  CopilotBootstrapFieldsLoadResult,
+  CopilotBootstrapFieldsStorageState,
   CopilotRendererRuntimeLoadResult,
   CopilotRendererRuntimeSnapshot,
-  CopilotRendererSettingsLoadResult,
 } from './types'
-import type { CopilotSettingsStorageState } from '../../../electron/copilot-settings'
 
 type RuntimeModule = typeof import('./runtime')
 
-function createSettingsResult(
-  settings: Partial<{ runtimeUrl: string | null; agentName: string | null }> = {},
-  storageState: CopilotSettingsStorageState = 'stored',
-): CopilotRendererSettingsLoadResult {
+function createBootstrapFieldsResult(
+  fields: Partial<{ runtimeUrl: string | null; agentName: string | null }> = {},
+  storageState: CopilotBootstrapFieldsStorageState = 'stored',
+): CopilotBootstrapFieldsLoadResult {
   return {
     ok: true,
-    settings: {
-      runtimeUrl: settings.runtimeUrl ?? null,
-      agentName: settings.agentName ?? null,
+    fields: {
+      runtimeUrl: fields.runtimeUrl ?? null,
+      agentName: fields.agentName ?? null,
     },
     storageState,
   }
@@ -56,7 +58,6 @@ function createRuntimeResult(
 
 beforeEach(() => {
   configCenterMocks.loadConfigCenterPublicSnapshot.mockReset()
-  configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot.mockReset()
 })
 
 afterEach(() => {
@@ -66,7 +67,7 @@ afterEach(() => {
 describe('resolveCopilotConfigState', () => {
   it('prefers hosted runtime facts when the backend is ready', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://manual-override:9000',
         agentName: 'campus-agent',
       }),
@@ -85,12 +86,17 @@ describe('resolveCopilotConfigState', () => {
     expect(state.runtimeUrl).toBe('http://127.0.0.1:8765')
     expect(state.runtimeSource).toBe('hosted')
     expect(state.agentName).toBe('campus-agent')
+    expect(state.agentNameSource).toBe('config-center')
+    expect(state.bootstrapFields).toEqual({
+      runtimeUrl: 'http://manual-override:9000',
+      agentName: 'campus-agent',
+    })
     expect(state.diagnostics.modeSource).toBe('resolved')
   })
 
   it('keeps a distinct starting state while the hosted backend boots', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         agentName: 'campus-agent',
       }),
       runtimeResult: createRuntimeResult({
@@ -110,7 +116,7 @@ describe('resolveCopilotConfigState', () => {
 
   it('surfaces hosted startup failures in packaged mode without allowing overrides', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://manual-override:9000',
         agentName: 'campus-agent',
       }),
@@ -142,7 +148,7 @@ describe('resolveCopilotConfigState', () => {
 
   it('falls back to a development override when hosted runtime is unavailable', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://127.0.0.1:3000',
         agentName: 'campus-agent',
       }),
@@ -163,7 +169,7 @@ describe('resolveCopilotConfigState', () => {
 
   it('reports incomplete development override state when the agent name is missing', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://127.0.0.1:3000',
         agentName: null,
       }),
@@ -183,7 +189,7 @@ describe('resolveCopilotConfigState', () => {
 
   it('preserves degraded hosted runtime state when a usable runtime url still exists', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         agentName: 'campus-agent',
       }),
       runtimeResult: createRuntimeResult({
@@ -211,9 +217,9 @@ describe('resolveCopilotConfigState', () => {
     expect(state.diagnostics.failure?.code).toBe('unexpected_exit')
   })
 
-  it('returns an empty state when neither hosted runtime nor settings provide connection facts', () => {
+  it('returns an empty state when neither hosted runtime nor bootstrap fields provide connection facts', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({}, 'empty'),
+      bootstrapFieldsResult: createBootstrapFieldsResult({}, 'empty'),
       runtimeResult: createRuntimeResult({
         status: 'stopped',
       }),
@@ -226,11 +232,38 @@ describe('resolveCopilotConfigState', () => {
 
     expect(state.missingFields).toEqual(['runtimeUrl', 'agentName'])
     expect(state.runtimeSource).toBe('none')
+    expect(state.storageState).toBe('empty')
+  })
+})
+
+describe('loadBootstrapFieldsFromConfigCenterPublicSnapshot', () => {
+  it('extracts bootstrap fields directly from the config center public snapshot shape', () => {
+    expect(loadBootstrapFieldsFromConfigCenterPublicSnapshot({
+      version: 1,
+      domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
+        assistantBehavior: {
+          agentName: 'planner',
+        },
+        hostConfig: {
+          runtimeUrl: 'http://localhost:4400',
+        },
+      },
+    })).toEqual({
+      ok: true,
+      fields: {
+        runtimeUrl: 'http://localhost:4400',
+        agentName: 'planner',
+      },
+      storageState: 'stored',
+    })
   })
 })
 
 describe('loadCopilotConfigState', () => {
-  it('loads renderer bootstrap settings from the config center public snapshot bridge', async () => {
+  it('loads renderer bootstrap fields directly from the config center public snapshot bridge', async () => {
     configCenterMocks.loadConfigCenterPublicSnapshot.mockResolvedValueOnce({
       ok: true,
       snapshot: {
@@ -248,10 +281,6 @@ describe('loadCopilotConfigState', () => {
         },
       },
     })
-    configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot.mockReturnValueOnce({
-      runtimeUrl: 'http://localhost:4400',
-      agentName: 'planner',
-    })
 
     const runtimeModule = await import('./runtime') as RuntimeModule
     const loadCopilotRuntimeSpy = vi.spyOn(runtimeModule, 'loadCopilotRuntime').mockResolvedValueOnce(
@@ -265,7 +294,8 @@ describe('loadCopilotConfigState', () => {
       runtimeSource: 'dev-override',
       runtimeUrl: 'http://localhost:4400',
       agentName: 'planner',
-      settings: {
+      agentNameSource: 'config-center',
+      bootstrapFields: {
         runtimeUrl: 'http://localhost:4400',
         agentName: 'planner',
       },
@@ -273,21 +303,6 @@ describe('loadCopilotConfigState', () => {
     })
 
     expect(configCenterMocks.loadConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
-    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
-    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).toHaveBeenCalledWith({
-      version: 1,
-      domains: {
-        frontendPreferences: {
-          theme: 'dark',
-        },
-        assistantBehavior: {
-          agentName: 'planner',
-        },
-        hostConfig: {
-          runtimeUrl: 'http://localhost:4400',
-        },
-      },
-    })
     expect(loadCopilotRuntimeSpy).toHaveBeenCalledOnce()
   })
 
@@ -311,7 +326,7 @@ describe('loadCopilotConfigState', () => {
       error: 'snapshot unavailable',
     })
 
-    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).not.toHaveBeenCalled()
+    expect(configCenterMocks.loadConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
     expect(loadCopilotRuntimeSpy).toHaveBeenCalledOnce()
   })
 
@@ -333,10 +348,6 @@ describe('loadCopilotConfigState', () => {
         },
       },
     })
-    configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot.mockReturnValueOnce({
-      runtimeUrl: 'http://127.0.0.1:3000',
-      agentName: 'campus-agent',
-    })
 
     const runtimeModule = await import('./runtime') as RuntimeModule
     const retryCopilotRuntimeSpy = vi.spyOn(runtimeModule, 'retryCopilotRuntime').mockResolvedValueOnce(
@@ -350,10 +361,14 @@ describe('loadCopilotConfigState', () => {
       runtimeSource: 'dev-override',
       runtimeUrl: 'http://127.0.0.1:3000',
       agentName: 'campus-agent',
+      agentNameSource: 'config-center',
+      bootstrapFields: {
+        runtimeUrl: 'http://127.0.0.1:3000',
+        agentName: 'campus-agent',
+      },
     })
 
     expect(configCenterMocks.loadConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
-    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
     expect(retryCopilotRuntimeSpy).toHaveBeenCalledOnce()
   })
 })

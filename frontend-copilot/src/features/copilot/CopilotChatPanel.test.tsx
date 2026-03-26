@@ -118,7 +118,7 @@ function createDiagnosticsSummary(
 
 function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'> {
   return {
-    settings: {
+    bootstrapFields: {
       runtimeUrl: 'http://127.0.0.1:8765',
       agentName: 'campus-agent',
     },
@@ -134,7 +134,7 @@ function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status
     runtimeUrl: 'http://127.0.0.1:8765',
     runtimeSource: 'hosted',
     agentName: 'campus-agent',
-    agentNameSource: 'settings',
+    agentNameSource: 'config-center',
     diagnostics: createDiagnosticsSummary(),
     devOverrideAllowed: true,
     devOverrideConfigured: false,

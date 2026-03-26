@@ -519,10 +519,10 @@ function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string
   }
 }
 
-function formatAgentNameSource(source: 'settings' | 'missing'): string {
+function formatAgentNameSource(source: 'config-center' | 'missing'): string {
   switch (source) {
-    case 'settings':
-      return '本地设置'
+    case 'config-center':
+      return '配置中心'
     case 'missing':
       return '未提供'
   }

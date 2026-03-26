@@ -73,7 +73,7 @@ function createBootstrapController(): CopilotBootstrapController {
     retry: vi.fn(),
     state: {
       status: 'ready',
-      settings: {
+      bootstrapFields: {
         runtimeUrl: 'http://127.0.0.1:8765',
         agentName: 'campus-agent',
       },
@@ -89,7 +89,7 @@ function createBootstrapController(): CopilotBootstrapController {
       runtimeUrl: 'http://127.0.0.1:8765',
       runtimeSource: 'hosted',
       agentName: 'campus-agent',
-      agentNameSource: 'settings',
+      agentNameSource: 'config-center',
       diagnostics: {
         hostedStatus: 'ready',
         failure: null,

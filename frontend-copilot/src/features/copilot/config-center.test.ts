@@ -13,7 +13,6 @@ import type {
 import {
   applyConfigCenterPublicPatch,
   loadConfigCenterPublicSnapshot,
-  projectCopilotSettingsFromConfigCenterPublicSnapshot,
   projectThemeModeFromConfigCenterPublicSnapshot,
   subscribeToConfigCenterPublicSnapshotUpdates,
 } from './config-center'
@@ -219,23 +218,4 @@ describe('config center public bridge', () => {
     })).toBe('dark')
   })
 
-  it('projects copilot bootstrap settings from the public snapshot shape', () => {
-    expect(projectCopilotSettingsFromConfigCenterPublicSnapshot({
-      version: 1,
-      domains: {
-        frontendPreferences: {
-          theme: 'light',
-        },
-        assistantBehavior: {
-          agentName: 'planner',
-        },
-        hostConfig: {
-          runtimeUrl: 'http://localhost:4400',
-        },
-      },
-    })).toEqual({
-      runtimeUrl: 'http://localhost:4400',
-      agentName: 'planner',
-    })
-  })
 })
