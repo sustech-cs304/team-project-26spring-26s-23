@@ -1,4 +1,4 @@
-# 赶渡 GanDue
+# 赶渡 CanDue
 
 Team 26s-23 项目
 
