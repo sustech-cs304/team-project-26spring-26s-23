@@ -1,0 +1,42 @@
+name: website-validation
+
+on:
+  push:
+    paths:
+      - .github/workflows/website-validation.yml
+      - website/**
+      - docs/**
+  pull_request:
+    paths:
+      - .github/workflows/website-validation.yml
+      - website/**
+      - docs/**
+  workflow_dispatch:
+
+jobs:
+  website-validation:
+    name: Website validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install website dependencies
+        run: npm ci
+
+      - name: Run website typecheck
+        run: npm run typecheck
+
+      - name: Run website build
+        run: npm run build
