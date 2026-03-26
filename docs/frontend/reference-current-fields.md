@@ -1,3 +1,9 @@
+---
+title: 当前生效字段参考
+description: 快速说明前端当前真正会影响启动与连接判断的字段范围。
+sidebar_position: 3
+---
+
 # 当前生效字段参考
 
 ## 文档用途
@@ -66,9 +72,9 @@
 
 因为当前代码里，配置与运行态摘要已经收敛到根装配层统一读取：
 
-- 应用启动时，[`loadInitialConfigState()`](../../frontend-copilot/src/CopilotAppRoot.tsx:84) 会调用 [`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:196)，并统一读取 settings 与 runtime
-- [`CopilotAppRoot()`](../../frontend-copilot/src/CopilotAppRoot.tsx:132) 会缓存并注入这份状态，供子组件消费
-- [`CopilotChatPanel()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:22) 当前只消费注入状态与重试动作，不再自行重复读取
+- 应用启动时，[`loadInitialConfigState()`](../../frontend-copilot/src/CopilotAppRoot.tsx#L84) 会调用 [`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts#L196)，并统一读取 settings 与 runtime
+- [`CopilotAppRoot()`](../../frontend-copilot/src/CopilotAppRoot.tsx#L132) 会缓存并注入这份状态，供子组件消费
+- [`CopilotChatPanel()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L22) 当前只消费注入状态与重试动作，不再自行重复读取
 
 所以当前字段事实既影响启动阶段的连接判断，也影响聊天骨架最终展示的状态和字段值，但读取入口已经统一到根层。
 

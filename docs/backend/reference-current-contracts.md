@@ -1,3 +1,9 @@
+---
+title: 当前可观察契约参考
+description: 整理当前已经可被外部观察到的后端输出形态与最小 HTTP 契约。
+sidebar_position: 6
+---
+
 # 当前可观察契约参考
 
 > 这份附录服务于 [前后端连接现状说明](./frontend-connection.md) 和 [边界与路线图](./roadmap-and-boundaries.md)。这里整理的是**当前已经能被外部观察到的输出形态**，包括阶段 1 新增的 desktop runtime 最小 HTTP 契约，但它仍不是完整业务 HTTP API 规范。

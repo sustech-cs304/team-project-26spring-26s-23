@@ -1,3 +1,10 @@
+---
+title: 前端现在怎样连接后端
+description: 说明 renderer 侧如何读取设置、宿主运行态与开发态覆盖，并决定最小后端连接链路。
+sidebar_position: 2
+sidebar_label: 后端连接契约
+---
+
 # 前端现在怎样连接后端
 
 ## 这篇文档适合谁看
