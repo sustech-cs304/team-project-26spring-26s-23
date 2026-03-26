@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: '赶渡 GanDue',
+  title: '赶渡 CanDue',
   tagline: 'SUSTech 学生课程管理与智能助手项目文档',
   favicon: 'img/candue_icon.png',
 
@@ -48,9 +48,9 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: '赶渡 GanDue',
+      title: '赶渡 CanDue',
       logo: {
-        alt: 'GanDue Logo',
+        alt: 'CanDue Logo',
         src: 'img/candue_icon.png',
       },
       items: [
