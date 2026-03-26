@@ -55,9 +55,9 @@ Desktop runtime 提供两类 HTTP 端点：
 ```
 
 **语义**：
-- `status`: 生命周期状态（`"starting"` | `"ready"` | `"stopped"`）
+- `status`: 生命周期状态（`"starting"` | `"ready"` | `"stopped"` | `"failed"`）。当存在启动错误且尚未恢复时为 `"failed"`
 - `startup_complete`: 启动流程是否完成
-- `last_error`: 最近一次启动错误消息（如有）
+- `last_error`: 最近一次启动错误消息（如有）；当该字段非空时，`status` 通常为 `"failed"`
 
 ### GET /version 与 GET /build-info
 

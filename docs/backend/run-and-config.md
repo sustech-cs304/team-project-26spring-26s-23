@@ -101,7 +101,7 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
 
 | 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
 |------|---------|---------|--------|------|
-| User Data Dir | `--user-data-dir` | `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR` | `backend/data` | Electron userData 根目录 |
+| User Data Dir | `--user-data-dir` | `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR` | `backend/data` | 运行时 user data 根目录（Electron 传入 userData；CLI 默认 `backend/data`） |
 | Runtime Root Dir | `--root-dir` | `COPILOT_DESKTOP_RUNTIME_ROOT_DIR` | `{user_data_dir}/desktop-runtime` | 运行时根目录 |
 | Config Dir | `--config-dir` | `COPILOT_DESKTOP_RUNTIME_CONFIG_DIR` | `{runtime_root_dir}/config` | 配置目录 |
 | Logs Dir | `--logs-dir` | `COPILOT_DESKTOP_RUNTIME_LOGS_DIR` | `{runtime_root_dir}/logs` | 日志目录 |

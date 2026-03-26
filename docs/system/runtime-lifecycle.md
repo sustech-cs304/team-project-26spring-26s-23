@@ -101,18 +101,17 @@ resolvePythonRuntimeLaunchSpec({
 **development 模式解析**：
 - `workspaceRoot`: `appRoot` 的父目录
 - `backendDir`: `workspaceRoot/backend`
-- `command`: `python`（系统 PATH 中的 Python）
+- `command`: 优先使用 `backend/.venv` 下的 Python 可执行文件（如 `.venv/bin/python` 或 Windows 下的 `.venv/Scripts/python.exe`），若不存在或不可用则回退到系统 PATH 中的 `python3` / `python`
 - `args`: `['-m', 'app.desktop_runtime']`
 - `workingDirectory`: `backendDir`
 - `entryModule`: `app.desktop_runtime`
 
 **bundled 模式解析**：
-- `resourcesRoot`: `resourcesPath`
-- `backendDir`: `resourcesRoot/python-runtime`
-- `command`: `backendDir/python/bin/python`（Windows 为 `python.exe`）
-- `args`: `['-m', 'app.desktop_runtime']`
-- `workingDirectory`: `backendDir`
-- `entryModule`: `app.desktop_runtime`
+- **清单文件**：从 `resourcesRoot/python-runtime/backend-runtime-manifest.json` 读取运行时清单
+- `backendDir`: 由清单字段 `manifest.backend.workingDirectoryRelativePath` 决定（相对于 `resourcesRoot`）
+- `command`: 由清单字段 `manifest.python.executableRelativePath` 决定（相对于 `resourcesRoot`）
+- `args`: `['-m', '<manifest.backend.entryModule>']`
+- `workingDirectory`: `backendDir`（即基于清单解析出的后端工作目录）
 
 **失败面**：
 - Python 可执行文件不存在
