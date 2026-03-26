@@ -1,30 +1,282 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * GanDue docs theme tuned to match the desktop frontend's calmer,
+ * flatter workspace aesthetic.
  */
 
-/* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-font-family-base: Inter, 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --ifm-font-family-monospace: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --ifm-color-primary: #4f6b95;
+  --ifm-color-primary-dark: #465f84;
+  --ifm-color-primary-darker: #42597d;
+  --ifm-color-primary-darkest: #374a67;
+  --ifm-color-primary-light: #617aa1;
+  --ifm-color-primary-lighter: #7890b3;
+  --ifm-color-primary-lightest: #9baec9;
+  --ifm-background-color: #f5f7fa;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-navbar-background-color: #f7f9fc;
+  --ifm-footer-background-color: #171c24;
+  --ifm-font-color-base: #172033;
+  --ifm-font-color-secondary: #4d5b70;
+  --ifm-heading-color: #172033;
+  --ifm-color-emphasis-100: #f8fafc;
+  --ifm-color-emphasis-200: #eef2f7;
+  --ifm-color-emphasis-300: #dbe3ec;
+  --ifm-color-emphasis-700: #4d5b70;
+  --ifm-color-emphasis-800: #334155;
+  --ifm-color-emphasis-900: #172033;
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-line-height-base: 1.7;
+  --ifm-leading: 1.1rem;
+  --ifm-global-radius: 6px;
+  --ifm-navbar-shadow: none;
+  --ifm-toc-border-color: #dbe3ec;
+  --ifm-menu-color: #4d5b70;
+  --ifm-menu-color-background-active: #e9eef5;
+  --ifm-menu-color-background-hover: #edf2f7;
+  --ifm-hover-overlay: rgba(79, 107, 149, 0.04);
+  --ifm-table-border-color: #dbe3ec;
+  --ifm-table-head-background: #f8fafc;
+  --ifm-table-stripe-background: #fbfcfe;
+  --ifm-code-background: #f8fafc;
+  --ifm-pre-background: #172033;
+  --ifm-pre-color: #e8edf5;
+  --docusaurus-highlighted-code-line-bg: rgba(37, 99, 235, 0.14);
+
+  --doc-border: #dbe3ec;
+  --doc-card-bg: #ffffff;
+  --doc-muted-surface: #f8fafc;
+  --doc-shadow-sm: none;
+  --doc-shadow-md: none;
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: #8da3c8;
+  --ifm-color-primary-dark: #7f95bc;
+  --ifm-color-primary-darker: #748ab2;
+  --ifm-color-primary-darkest: #607398;
+  --ifm-color-primary-light: #9fb4d3;
+  --ifm-color-primary-lighter: #b3c4de;
+  --ifm-color-primary-lightest: #cad6e8;
+  --ifm-background-color: #161b22;
+  --ifm-background-surface-color: #1c222b;
+  --ifm-navbar-background-color: #171c24;
+  --ifm-footer-background-color: #11161d;
+  --ifm-font-color-base: #e8edf5;
+  --ifm-font-color-secondary: #afb8c7;
+  --ifm-heading-color: #e8edf5;
+  --ifm-color-emphasis-100: #202732;
+  --ifm-color-emphasis-200: #232b37;
+  --ifm-color-emphasis-300: #313a49;
+  --ifm-color-emphasis-700: #afb8c7;
+  --ifm-color-emphasis-800: #c5d0df;
+  --ifm-color-emphasis-900: #e8edf5;
+  --ifm-navbar-shadow: none;
+  --ifm-toc-border-color: #313a49;
+  --ifm-menu-color: #afb8c7;
+  --ifm-menu-color-background-active: #263140;
+  --ifm-menu-color-background-hover: #232b37;
+  --ifm-hover-overlay: rgba(141, 163, 200, 0.06);
+  --ifm-table-border-color: #313a49;
+  --ifm-table-head-background: #202732;
+  --ifm-table-stripe-background: #1f2732;
+  --ifm-code-background: #202732;
+  --ifm-pre-background: #111827;
+  --ifm-pre-color: #e8edf5;
+  --docusaurus-highlighted-code-line-bg: rgba(117, 144, 205, 0.18);
+
+  --doc-border: #313a49;
+  --doc-card-bg: #1c222b;
+  --doc-muted-surface: #202732;
+  --doc-shadow-sm: none;
+  --doc-shadow-md: none;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--ifm-background-color);
+}
+
+[data-theme='dark'] body {
+  background: var(--ifm-background-color);
+}
+
+.navbar {
+  border-bottom: 1px solid var(--doc-border);
+}
+
+.navbar__brand {
+  gap: 0.75rem;
+  font-weight: 700;
+}
+
+.navbar__logo img {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.navbar__link {
+  font-weight: 600;
+}
+
+.footer {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+@media (min-width: 1440px) {
+  .container {
+    max-width: 1400px;
+  }
+}
+
+.theme-doc-sidebar-container {
+  border-right: none;
+}
+
+.theme-doc-sidebar-menu {
+  padding: 0.25rem 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.theme-doc-breadcrumbs {
+  margin-bottom: 1rem;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.theme-doc-markdown {
+  padding: 0 0 1rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.theme-doc-markdown > h1:first-child {
+  margin-top: 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+.theme-doc-markdown h2,
+.theme-doc-markdown h3,
+.theme-doc-markdown h4 {
+  letter-spacing: -0.015em;
+}
+
+.theme-doc-markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.theme-doc-markdown th,
+.theme-doc-markdown td {
+  border-color: var(--doc-border);
+}
+
+.theme-doc-markdown th {
+  background: var(--ifm-table-head-background);
+}
+
+.theme-doc-markdown tr:nth-child(2n) {
+  background: var(--ifm-table-stripe-background);
+}
+
+.theme-doc-markdown :not(pre) > code {
+  padding: 0.18rem 0.42rem;
+  border: 1px solid var(--doc-border);
+  border-radius: 4px;
+  background: var(--ifm-code-background);
+}
+
+pre {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.alert {
+  border: 1px solid var(--doc-border);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.pagination-nav__link,
+.table-of-contents {
+  border: 1px solid var(--doc-border);
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.table-of-contents {
+  padding: 0.75rem 0.85rem;
+}
+
+.pagination-nav__link {
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.pagination-nav__link:hover {
+  transform: none;
+  border-color: var(--ifm-color-primary-light);
+  background: var(--doc-muted-surface);
+  box-shadow: none;
+}
+
+.menu__link,
+.menu__caret,
+.table-of-contents__link,
+.menu__list-item-collapsible {
+  border-radius: 4px;
+}
+
+.menu__link {
+  font-weight: 500;
+}
+
+.menu__link--active:not(.menu__link--sublist),
+.table-of-contents__link--active {
+  font-weight: 700;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  border-left: 2px solid var(--ifm-color-primary);
+  background: var(--ifm-menu-color-background-active);
+  box-shadow: none;
+}
+
+@media (min-width: 997px) {
+  .theme-doc-sidebar-container {
+    padding-top: 1rem;
+  }
+
+  .theme-doc-toc-desktop {
+    top: calc(var(--ifm-navbar-height) + 1rem);
+  }
+}
+
+@media (max-width: 996px) {
+  .theme-doc-markdown {
+    padding: 0 0 1rem;
+    border-radius: 0;
+  }
+
+  .theme-doc-breadcrumbs,
+  .theme-doc-sidebar-menu,
+  .table-of-contents,
+  .pagination-nav__link {
+    border-radius: 6px;
+  }
 }
