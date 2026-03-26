@@ -71,15 +71,15 @@ function logStartupTrace(stage: string, context: Record<string, unknown> = {}): 
   void appendMainRuntimeLog('info', `[startup] ${stage}`, payload)
 }
 
-function openDetachedDevTools(targetWindow: BrowserWindow): void {
+function openDetachedDevTools(targetWindow: BrowserWindow): boolean {
   if (targetWindow.isDestroyed()) {
-    return
+    return false
   }
 
   const { webContents } = targetWindow
 
   if (webContents.isDestroyed() || webContents.isDevToolsOpened()) {
-    return
+    return false
   }
 
   try {
@@ -92,12 +92,14 @@ function openDetachedDevTools(targetWindow: BrowserWindow): void {
       triggeredBy: 'F12',
       windowId: targetWindow.id,
     })
+    return true
   } catch (error) {
     void appendMainRuntimeLog('warn', 'Failed to open detached DevTools window.', {
       triggeredBy: 'F12',
       windowId: targetWindow.id,
       detail: formatUnknownError(error),
     })
+    return false
   }
 }
 
@@ -107,8 +109,11 @@ function registerDeveloperShortcuts(targetWindow: BrowserWindow): void {
       return
     }
 
+    if (!openDetachedDevTools(targetWindow)) {
+      return
+    }
+
     event.preventDefault()
-    openDetachedDevTools(targetWindow)
   })
 }
 
