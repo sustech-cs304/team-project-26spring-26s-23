@@ -71,6 +71,33 @@ function logStartupTrace(stage: string, context: Record<string, unknown> = {}): 
   void appendMainRuntimeLog('info', `[startup] ${stage}`, payload)
 }
 
+function openDetachedDevTools(targetWindow: BrowserWindow): void {
+  if (targetWindow.isDestroyed()) {
+    return
+  }
+
+  void appendMainRuntimeLog('info', 'Opening detached DevTools window.', {
+    triggeredBy: 'F12',
+    windowId: targetWindow.id,
+  })
+
+  targetWindow.webContents.openDevTools({
+    mode: 'detach',
+    activate: true,
+  })
+}
+
+function registerDeveloperShortcuts(targetWindow: BrowserWindow): void {
+  targetWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'F12') {
+      return
+    }
+
+    event.preventDefault()
+    openDetachedDevTools(targetWindow)
+  })
+}
+
 function createWindow() {
   logStartupTrace('createWindow:start', {
     devServerUrl: VITE_DEV_SERVER_URL ?? null,
@@ -99,6 +126,7 @@ function createWindow() {
   })
 
   win.setMenuBarVisibility(false)
+  registerDeveloperShortcuts(win)
 
   win.webContents.on('did-start-loading', () => {
     logStartupTrace('webContents:did-start-loading', {
