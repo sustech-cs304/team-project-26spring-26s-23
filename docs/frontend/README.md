@@ -1,3 +1,10 @@
+---
+title: 前端分册入口
+description: 前端文档入口，汇总快速上手、系统定位、页面能力与推荐阅读路径。
+sidebar_position: 1
+sidebar_label: 总览
+---
+
 # 前端分册入口
 
 ## 文档目标
@@ -13,11 +20,57 @@
 - 消费宿主托管的 Python desktop runtime 提供的 HTTP 聊天端点
 - 展示最小聊天 UI，支持纯文本多轮对话
 
+## 前端快速上手
+
+### 安装依赖
+
+在 `frontend-copilot/` 目录执行：
+
+```bash
+cd frontend-copilot
+npm install
+```
+
+### 启动开发环境
+
+常用开发命令如下：
+
+```bash
+cd frontend-copilot
+npm run dev
+npm run dev -- -- --runtime-model test
+npm run dev:hosted
+```
+
+当前开发态会优先尝试托管本地 Python desktop runtime。如果你要做最小聊天联调，还需要注意：
+
+- 当前正式生效的关键设置只有 `runtimeUrl` 与 `agentName`
+- 设置页还没有 `agentName` 的正式编辑入口
+- 首次联调前，通常需要先确保 Electron `userData/desktop-runtime/config/copilot-settings.json` 中至少存在 `{"agentName":"default"}`
+
+### 构建、测试与检查
+
+```bash
+cd frontend-copilot
+npm run build
+npm run preview
+npm run test
+npm run lint
+npx tsc --noEmit
+```
+
+如果你需要验证打包前的 bundled runtime staging，还可以进一步执行：
+
+```bash
+cd frontend-copilot
+npm run stage:bundled-runtime
+```
+
 ## 前端组成部分
 
 ### 1. Electron 主进程层
 
-**代码位置**：[`frontend-copilot/electron/`](../../frontend-copilot/electron/)
+**代码位置**：`frontend-copilot/electron/`
 
 **核心模块**：
 - [`main.ts`](../../frontend-copilot/electron/main.ts) - 主进程入口，管理窗口生命周期、IPC handlers、Python runtime 托管
@@ -32,7 +85,7 @@
 
 ### 2. Runtime 托管层
 
-**代码位置**：[`frontend-copilot/electron/runtime/`](../../frontend-copilot/electron/runtime/)
+**代码位置**：`frontend-copilot/electron/runtime/`
 
 **核心模块**：
 - [`hosted-backend-service.ts`](../../frontend-copilot/electron/runtime/hosted-backend-service.ts) - 封装 Python runtime manager，提供统一 start/stop 接口
@@ -57,7 +110,7 @@
 
 ### 3. Renderer 根装配层
 
-**代码位置**：[`frontend-copilot/src/`](../../frontend-copilot/src/)
+**代码位置**：`frontend-copilot/src/`
 
 **核心模块**：
 - [`main.tsx`](../../frontend-copilot/src/main.tsx) - Renderer 入口，挂载 React 根组件
@@ -78,7 +131,7 @@
 
 ### 4. Copilot 聊天能力层
 
-**代码位置**：[`frontend-copilot/src/features/copilot/`](../../frontend-copilot/src/features/copilot/)
+**代码位置**：`frontend-copilot/src/features/copilot/`
 
 **核心模块**：
 - [`config.ts`](../../frontend-copilot/src/features/copilot/config.ts) - 从 IPC 读取 runtime snapshot 与 settings，决策 bootstrap 状态
@@ -100,7 +153,7 @@
 
 ### 5. 工作区界面层
 
-**代码位置**：[`frontend-copilot/src/workbench/`](../../frontend-copilot/src/workbench/)
+**代码位置**：`frontend-copilot/src/workbench/`
 
 **核心模块**：
 - [`assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx) - 助手工作区，提供三段式布局（助手类型列、话题列、聊天区）
@@ -224,8 +277,8 @@
    - [Runtime 生命周期](../system/runtime-lifecycle.md) - 理解启动链路与两种运行模式
 
 2. **再深入前端实现**：
-   - [`frontend-copilot/README.md`](../../frontend-copilot/README.md) - 前端快速上手指南（安装、启动、构建）
-   - 本文档（`docs/frontend/README.md`）- 前端分册入口（你正在阅读）
+   - 本文档（`docs/frontend/README.md`）- 前端分册入口，已合并快速上手说明
+   - [UI 当前状态](./ui-current-state.md) - 理解界面结构与交互程度
 
 3. **查阅前端分册其他页面**（按需）：
    - [UI 当前状态](./ui-current-state.md) - 界面结构与交互程度
@@ -397,7 +450,7 @@ npm run lint
 
 ### 快速上手
 
-- [`frontend-copilot/README.md`](../../frontend-copilot/README.md) - 前端快速上手指南
+- 本文档前部的“前端快速上手”章节 - 安装、启动、构建、测试与检查命令入口
 
 ---
 

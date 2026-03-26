@@ -1,3 +1,9 @@
+---
+title: 运行时生命周期
+description: 说明桌面运行时在 development 与 bundled 模式下的启动、配置、就绪与回收流程。
+sidebar_position: 2
+---
+
 # 运行时生命周期
 
 ## 文档目标

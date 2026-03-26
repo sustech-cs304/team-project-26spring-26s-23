@@ -1,3 +1,10 @@
+---
+title: 后端分册
+description: 后端文档入口，说明能力边界、快速上手路径与推荐阅读顺序。
+sidebar_position: 1
+sidebar_label: 总览
+---
+
 # 后端分册
 
 ## 文档目标
@@ -8,13 +15,13 @@
 
 当前后端由以下主要部分构成：
 
-- [`backend/app/desktop_runtime/`](../../backend/app/desktop_runtime/)：桌面宿主本地 HTTP 服务，提供健康检查、诊断端点，并挂载 Copilot runtime
-- [`backend/app/copilot_runtime/`](../../backend/app/copilot_runtime/)：单端点聊天 runtime，支持 `info`、`agent/connect`、`agent/run` 三类方法
-- [`backend/app/blackboard/`](../../backend/app/blackboard/)：Blackboard 系统的抓取、解析、同步与持久化能力
-- [`backend/app/teaching_information_system/`](../../backend/app/teaching_information_system/)：TIS 系统的抓取、解析与部分持久化能力
-- [`backend/tests/`](../../backend/tests/)：分层测试（unit / integration / e2e）
+- `backend/app/desktop_runtime/`：桌面宿主本地 HTTP 服务，提供健康检查、诊断端点，并挂载 Copilot runtime
+- `backend/app/copilot_runtime/`：单端点聊天 runtime，支持 `info`、`agent/connect`、`agent/run` 三类方法
+- `backend/app/blackboard/`：Blackboard 系统的抓取、解析、同步与持久化能力
+- `backend/app/teaching_information_system/`：TIS 系统的抓取、解析与部分持久化能力
+- `backend/tests/`：分层测试（unit / integration / e2e）
 
-**代码锚点**：[`backend/README.md`](../../backend/README.md)
+**文档定位**：本文档是后端分册入口，并吸收了原 `backend/README.md` 中的快速上手信息。
 
 ## 后端在系统中的位置
 
@@ -52,9 +59,71 @@ Blackboard 和 TIS 相关能力当前主要以以下形式存在：
 - **未来方向**：可通过 tool registry 将这些能力注册为 agent 可调用的 tools，从而在聊天界面中使用
 
 **代码锚点**：
-- Blackboard API 层：[`backend/app/blackboard/api/`](../../backend/app/blackboard/api/)
-- TIS API 层：[`backend/app/teaching_information_system/api/`](../../backend/app/teaching_information_system/api/)
+- Blackboard API 层：`backend/app/blackboard/api/`
+- TIS API 层：`backend/app/teaching_information_system/api/`
 - Tool registry：[`backend/app/copilot_runtime/tool_registry.py`](../../backend/app/copilot_runtime/tool_registry.py)
+
+## 后端快速上手
+
+### 安装依赖
+
+如果你主要是运行后端能力或 desktop runtime，推荐先在 `backend/` 目录执行：
+
+```bash
+cd backend
+uv sync
+```
+
+如果你还需要运行测试或类型检查，建议补齐可选依赖：
+
+```bash
+cd backend
+uv sync --extra test --extra dev
+```
+
+### 准备环境变量
+
+建议将 [`backend/.env.example`](../../backend/.env.example) 复制为 `.env`，并至少准备以下项目：
+
+- `SUSTECH_USERNAME`
+- `SUSTECH_PASSWORD`
+- `BLACKBOARD_CALENDAR_FEED_URL`（运行 ICS 同步时）
+- `SUSTECH_DB_PATH`（如果你希望覆盖默认数据库路径）
+
+### 优先选择的运行入口
+
+如果你要快速确认当前后端到底能跑什么，优先按下面顺序尝试：
+
+1. **Blackboard 课程目录搜索 CLI**
+
+   ```bash
+   cd backend
+   python -m app.blackboard.provider.cli.search_course_catalog --keyword 计算机 --preview 5
+   ```
+
+2. **Blackboard 日历 ICS 同步 CLI**
+
+   ```bash
+   cd backend
+   python -m app.blackboard.provider.cli.sync_calendar_ics --save-json
+   ```
+
+3. **Desktop runtime 最小聊天入口**
+
+   如果你要验证桌面宿主本地 HTTP 服务或最小聊天链路，建议优先阅读 [后端运行与配置](./run-and-config.md)。开发态最小链路至少应显式传入 `--model test`，以确认 runtime 协议链路可以启动。
+
+### 测试与验证
+
+常见测试命令如下：
+
+```bash
+cd backend
+pytest
+pytest -m "not live"
+pytest -m live
+```
+
+其中 `live` 类测试依赖真实凭据与网络环境；如果你只做本地结构验证，优先运行 `pytest -m "not live"`。
 
 ## 当前后端"已实现什么 / 尚不是什么"
 
@@ -81,7 +150,7 @@ Blackboard 和 TIS 相关能力当前主要以以下形式存在：
 - ❌ **不是服务化架构**：`app/services/` 当前只是占位 package，不表示已经形成服务层编排
 - ❌ **不是持久化 session 管理**：session store 当前在内存中，Python runtime 重启后丢失
 
-**边界说明**：参见 [`backend/README.md`](../../backend/README.md) 了解更详细的边界判断。
+**边界说明**：可继续阅读 [边界与路线图](./roadmap-and-boundaries.md) 与 [当前可观察契约参考](./reference-current-contracts.md) 获取更细的判断依据。
 
 ## 推荐阅读顺序
 
@@ -94,7 +163,7 @@ Blackboard 和 TIS 相关能力当前主要以以下形式存在：
    - [运行时生命周期](../system/runtime-lifecycle.md)：理解 desktop runtime 如何被启动、配置、就绪
 
 2. **再深入后端分册**：
-   - [`backend/README.md`](../../backend/README.md)：理解后端当前是什么、能跑什么、还不能当成什么
+   - 本文档：理解后端当前是什么、能跑什么、还不能当成什么
    - [模块布局](./module-layout.md)：理解 `desktop_runtime`、`copilot_runtime`、`blackboard`、`teaching_information_system` 等目录的职责
    - [运行与配置](./run-and-config.md)：理解如何运行 desktop runtime、Blackboard CLI，以及配置如何影响运行
 
@@ -156,25 +225,25 @@ Blackboard 和 TIS 相关能力当前主要以以下形式存在：
 
 ### Blackboard
 
-- API 层：[`backend/app/blackboard/api/`](../../backend/app/blackboard/api/)
-- 数据层：[`backend/app/blackboard/data/`](../../backend/app/blackboard/data/)
-- 共享工具：[`backend/app/blackboard/shared/`](../../backend/app/blackboard/shared/)
+- API 层：`backend/app/blackboard/api/`
+- 数据层：`backend/app/blackboard/data/`
+- 共享工具：`backend/app/blackboard/shared/`
 
 ### Teaching Information System
 
-- API 层：[`backend/app/teaching_information_system/api/`](../../backend/app/teaching_information_system/api/)
-- 数据层：[`backend/app/teaching_information_system/data/`](../../backend/app/teaching_information_system/data/)
-- Provider 层：[`backend/app/teaching_information_system/provider/`](../../backend/app/teaching_information_system/provider/)
-- 共享工具：[`backend/app/teaching_information_system/shared/`](../../backend/app/teaching_information_system/shared/)
+- API 层：`backend/app/teaching_information_system/api/`
+- 数据层：`backend/app/teaching_information_system/data/`
+- Provider 层：`backend/app/teaching_information_system/provider/`
+- 共享工具：`backend/app/teaching_information_system/shared/`
 
 ### 测试
 
-- Desktop runtime 单元测试：[`backend/tests/unit/desktop_runtime/`](../../backend/tests/unit/desktop_runtime/)
-- Copilot runtime 单元测试：[`backend/tests/unit/copilot_runtime/`](../../backend/tests/unit/copilot_runtime/)
-- Blackboard 单元测试：[`backend/tests/unit/api/`](../../backend/tests/unit/api/)（部分）、[`backend/tests/unit/provider/`](../../backend/tests/unit/provider/)（部分）
-- TIS 单元测试：[`backend/tests/unit/api/`](../../backend/tests/unit/api/)（部分）、[`backend/tests/unit/provider/`](../../backend/tests/unit/provider/)（部分）
-- 集成测试：[`backend/tests/integration/`](../../backend/tests/integration/)
-- E2E 测试：[`backend/tests/e2e/`](../../backend/tests/e2e/)
+- Desktop runtime 单元测试：`backend/tests/unit/desktop_runtime/`
+- Copilot runtime 单元测试：`backend/tests/unit/copilot_runtime/`
+- Blackboard 单元测试：`backend/tests/unit/api/`（部分）、`backend/tests/unit/provider/`（部分）
+- TIS 单元测试：`backend/tests/unit/api/`（部分）、`backend/tests/unit/provider/`（部分）
+- 集成测试：`backend/tests/integration/`
+- E2E 测试：`backend/tests/e2e/`
 
 ## 相关文档
 

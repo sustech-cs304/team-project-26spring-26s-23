@@ -1,3 +1,10 @@
+---
+title: 聊天运行时 HTTP 契约
+description: 整理 desktop runtime 控制面端点与单端点聊天 runtime 的当前 HTTP 契约。
+sidebar_position: 3
+sidebar_label: 聊天运行时契约
+---
+
 # 聊天运行时 HTTP 契约
 
 本文档描述当前已实现的聊天运行时 HTTP 契约，包括 control-plane 端点、单端点聊天方法分发、请求/响应结构与错误语义。

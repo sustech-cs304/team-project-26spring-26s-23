@@ -1,0 +1,11 @@
+{
+  "label": "系统专题",
+  "position": 1,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "系统专题",
+    "description": "跨前后端的系统级专题，帮助从整体视角理解运行时、契约与状态模型。",
+    "slug": "/system"
+  }
+}
