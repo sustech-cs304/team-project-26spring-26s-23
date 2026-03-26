@@ -71,9 +71,9 @@ export function resolveCopilotConfigState(input: {
 
 ### UI 展示状态
 
-[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L29) 根据 `CopilotConfigState` 渲染不同的 UI：
+[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L29) 根据 `CopilotBootstrapState` 渲染不同的 UI：最外层 bootstrap 包装提供 `loading` 状态，内部状态部分才是 `CopilotConfigState`，其 `status` 字段对应其余状态。
 
-- `loading`：等待根层完成运行态装配
+- `loading`（bootstrap 外层）：等待根层完成运行态装配
 - `error`：读取运行态失败（IPC 链路问题）
 - `empty` / `incomplete`：显示缺失字段提示
 - `starting`：宿主正在启动本地后端

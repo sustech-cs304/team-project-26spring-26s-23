@@ -24,7 +24,7 @@
              ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Python Desktop Runtime (backend/app/desktop_runtime/)       │
-│  - FastAPI HTTP 服务（默认 127.0.0.1:8765）                  │
+│  - FastAPI HTTP 服务（手动启动时默认 127.0.0.1:8765；Electron 托管时端口动态分配） │
 │  - 提供 /health、/ready、/diagnostics 等管理端点             │
 │  - 挂载 Copilot Runtime 单端点路由                           │
 └────────────┬────────────────────────────────────────────────┘
@@ -87,7 +87,7 @@
 **代码锚点**：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
 
 **职责**：
-- 提供本地 HTTP 服务（FastAPI），默认监听 `127.0.0.1:8765`
+- 提供本地 HTTP 服务（FastAPI）；手动启动时默认监听 `127.0.0.1:8765`，Electron 托管路径下端口由宿主动态分配
 - 仅允许 loopback 地址，拒绝外部访问
 - 提供管理端点：
   - `GET /health`：健康检查

@@ -219,9 +219,9 @@ Desktop runtime 提供两类 HTTP 端点：
 - `threadId`: 会话线程 ID（非空字符串）
 - `runId`: 本次连接运行 ID（非空字符串）
 - `messages`: 消息数组（可为空）
-- `state`: 状态对象（可为空对象）
 
 **可选字段**：
+- `state`: 状态对象（当前实现中可省略，缺省为 `{}`）
 - `tools`: 工具定义数组（当前未使用）
 - `context`: 上下文数组（当前未使用）
 - `forwardedProps`: 转发属性对象
@@ -296,6 +296,13 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"connect-1","result
 - `threadId`: 会话线程 ID
 - `runId`: 本次运行 ID
 - `messages`: 消息数组，至少包含一条消息，最后一条必须是 `role: "user"` 的文本消息
+
+**可选字段（未提供时使用默认值）**：
+- `state`: 运行时状态对象；当前实现中可省略，缺省为 `{}`
+- `actions`: agent 可用动作数组；未提供时等价于空数组 `[]`
+- `metaEvents`: 元事件数组；未提供时等价于空数组 `[]`
+- `nodeName`: 当前节点名称；未提供时为 `null`
+- `forwardedProps`: 透传属性对象；未提供时等价于空对象 `{}`
 
 **消息格式约束**（[`RuntimeProtocolParser._validate_supported_message_shape`](../../backend/app/copilot_runtime/protocol.py#L469-L535)）：
 - 支持的 `role`: `"user"`, `"assistant"`, `"system"`, `"developer"`
