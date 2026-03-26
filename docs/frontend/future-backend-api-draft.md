@@ -1,3 +1,10 @@
+---
+title: 未来后端 API 讨论草案
+description: 讨论前端视角下未来后端 API 的可能方向，不代表当前实现承诺。
+sidebar_position: 8
+sidebar_label: 未来后端 API 草案
+---
+
 # 未来后端 API 讨论草案
 
 > **状态说明：草案、未实现、仅供设计讨论。**

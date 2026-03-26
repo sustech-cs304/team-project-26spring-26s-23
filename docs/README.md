@@ -1,11 +1,19 @@
+---
+title: 项目文档
+description: 项目文档总入口，概览阅读顺序、文档结构与当前项目边界。
+sidebar_position: 1
+sidebar_label: 文档首页
+slug: /
+---
+
 # 项目文档
 
 ## 这个项目现在是什么
 
 这是一个 Electron 桌面应用项目，目标是为 SUSTech 学生提供统一的课程管理与智能助手工具。当前项目包含：
 
-- **桌面前端**（[`frontend-copilot/`](../frontend-copilot/)）：Electron + React + TypeScript 实现的桌面应用壳，已接入最小 Copilot 聊天链路
-- **Python 后端**（[`backend/`](../backend/)）：能力库 + CLI + 数据同步层，包含 Blackboard 与教务系统（TIS）的抓取、解析与本地持久化能力
+- **桌面前端**（[`frontend-copilot/`](https://github.com/sustech-cs304/team-project-26spring-26s-23/tree/main/frontend-copilot)）：Electron + React + TypeScript 实现的桌面应用壳，已接入最小 Copilot 聊天链路
+- **Python 后端**（[`backend/`](https://github.com/sustech-cs304/team-project-26spring-26s-23/tree/main/backend)）：能力库 + CLI + 数据同步层，包含 Blackboard 与教务系统（TIS）的抓取、解析与本地持久化能力
 - **桌面运行时**：Electron 主进程托管的本地 Python HTTP 服务，提供最小聊天运行时契约
 
 当前阶段重点是"先把基础设施搭起来"，而不是"先把所有业务做完"。
@@ -15,8 +23,8 @@
 ### 如果你是第一次接手项目
 
 1. **快速上手**
-   - [`frontend-copilot/README.md`](../frontend-copilot/README.md)：前端快速上手，了解怎么安装、启动、构建
-   - [`backend/README.md`](../backend/README.md)：后端快速上手，了解现在能跑什么
+   - [`docs/frontend/README.md`](frontend/README.md)：前端快速上手，了解怎么安装、启动、构建
+   - [`docs/backend/README.md`](backend/README.md)：后端快速上手，了解现在能跑什么
 
 2. **理解系统全貌**（推荐顺序）
    - [`docs/system/architecture-overview.md`](system/architecture-overview.md)：系统架构总览
@@ -44,7 +52,7 @@
 
 这些文档构成项目的正式文档主路径，适合作为稳定参考：
 
-- **[`docs/system/`](system/)**：跨前后端的系统专题层，覆盖架构、运行时、聊天契约、session 模型
+- **系统专题层**（入口见 [`docs/system/architecture-overview.md`](system/architecture-overview.md)）：跨前后端的系统专题层，覆盖架构、运行时、聊天契约、session 模型
 - **[`docs/backend/`](backend/)**：后端子系统分册，包含模块布局、运行配置、边界与路线图、契约参考
 - **[`docs/frontend/`](frontend/)**：前端子系统分册，包含 UI 现状、连接契约、运行态、页面能力
 
@@ -52,8 +60,8 @@
 
 以下目录不属于正式文档主阅读路径，仅在特定场景下查阅：
 
-- **[`docs/plans/`](plans/)**：临时计划文档，用于设计与实施规划，不属于稳定手册
-- **[`docs/meetings/`](meetings/)**：团队内部会议存根，与项目正式文档主路径关联不大
+- **`docs/plans/`**：当前仓库未保留该目录；若后续恢复，仅应作为临时计划文档目录，不属于稳定手册
+- **`docs/meetings/`**：团队内部会议存根，与项目正式文档主路径关联不大
 
 这些材料服务于团队内部协作与历史追溯，但不应被当作项目当前状态的权威说明。
 
@@ -61,7 +69,7 @@
 
 ### 子系统 README 与 `docs/` 体系的分工
 
-- **[`backend/README.md`](../backend/README.md)** 和 **[`frontend-copilot/README.md`](../frontend-copilot/README.md)**：快速上手入口，重点回答"这是什么、怎么跑起来、现在做到哪一步"
+- **[`docs/backend/README.md`](backend/README.md)** 和 **[`docs/frontend/README.md`](frontend/README.md)**：快速上手入口，重点回答"这是什么、怎么跑起来、现在做到哪一步"
 - **`docs/backend/` 和 `docs/frontend/`**：详细说明与参考附录，重点回答"模块怎么组织、边界在哪里、哪些能力已实现、哪些还是占位"
 
 两者互为补充：子系统 README 负责"快速建立认识"，`docs/` 体系负责"深入理解细节"。

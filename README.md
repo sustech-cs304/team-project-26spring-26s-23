@@ -1,5 +1,5 @@
-# Project 26s-23
+# 赶渡 GanDue
 
-For backend, see [backend README](./backend/README.md)
+Team 26s-23 项目
 
-For frontend, see [frontend README](./frontend/README.md)
+项目文档可见 [赶渡文档](https://sustech-cs304.github.io/GanDue/)

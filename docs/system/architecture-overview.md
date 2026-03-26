@@ -1,3 +1,9 @@
+---
+title: 系统架构总览
+description: 从系统级视角说明 Electron、Python runtime 与 Renderer 的组件关系和主数据流。
+sidebar_position: 1
+---
+
 # 系统架构总览
 
 ## 文档目标

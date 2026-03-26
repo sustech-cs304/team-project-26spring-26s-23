@@ -1,3 +1,9 @@
+---
+title: 前端运行时状态参考
+description: 汇总 hosted backend 状态、配置归并逻辑与前端运行态展示语义。
+sidebar_position: 4
+---
+
 # 前端运行时状态参考
 
 ## 文档用途
@@ -20,7 +26,7 @@
 
 - 本文档聚焦运行时与配置状态，不是完整聊天协议说明，也不是完整 UI 文档
 - 本文档严格基于当前仓库事实，不虚构未实现的状态机或未来 UI 行为
-- 跨进程启动链路、HTTP 契约、session store 语义请参考 [`docs/system/`](../system/) 相关文档
+- 跨进程启动链路、HTTP 契约、session store 语义请参考 [系统架构总览](../system/architecture-overview.md)、[运行时生命周期](../system/runtime-lifecycle.md) 与 [Session 与状态模型](../system/session-and-state-model.md)
 
 ## 状态层次概览
 

@@ -1,3 +1,9 @@
+---
+title: 后端运行与配置
+description: 说明 desktop runtime 与 Blackboard CLI 的运行方式、配置来源、参数优先级与目录结构。
+sidebar_position: 3
+---
+
 # 后端运行与配置
 
 本文档说明当前 Python desktop runtime 的启动方式、配置来源与运行边界。
@@ -123,7 +129,7 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
 
 | 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
 |------|---------|---------|--------|------|
-| Model | `--model` | `COPILOT_RUNTIME_MODEL`<br>`COPILOT_MODEL`（兼容） | `None` | Copilot 聊天运行时模型名称 |
+| Model | `--model` | `COPILOT_RUNTIME_MODEL`<br />`COPILOT_MODEL`（兼容） | `None` | Copilot 聊天运行时模型名称 |
 | Local Token | `--local-token` | `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN` | `None` | 本地宿主调用令牌（可选） |
 
 **模型参数说明**：

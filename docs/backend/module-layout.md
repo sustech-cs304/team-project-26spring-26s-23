@@ -1,3 +1,9 @@
+---
+title: 后端模块布局
+description: 说明 Python 后端的目录组织、模块职责边界以及测试分层方式。
+sidebar_position: 2
+---
+
 # 后端模块布局
 
 本文档说明当前 Python 后端的目录组织与模块职责边界，帮助读者理解代码按什么原则分层、新增的 runtime 模块如何与既有领域模块协作、以及测试如何按层次分布。
@@ -6,15 +12,15 @@
 
 当前后端按以下边界组织：
 
-- **Desktop Runtime**（[`backend/app/desktop_runtime/`](../../backend/app/desktop_runtime/)）：桌面宿主使用的本地 HTTP 服务器，负责启动、配置解析、健康检查与生命周期管理
-- **Copilot Runtime**（[`backend/app/copilot_runtime/`](../../backend/app/copilot_runtime/)）：聊天运行时核心，包含协议解析、会话管理、agent/tool 注册表与执行桥接
-- **领域模块**（[`backend/app/blackboard/`](../../backend/app/blackboard/) 与 [`backend/app/teaching_information_system/`](../../backend/app/teaching_information_system/)）：围绕上游系统组织的抓取、解析、同步与持久化能力
-- **基础设施**（[`backend/app/core/`](../../backend/app/core/)）：认证等跨领域复用能力
-- **服务层占位**（[`backend/app/services/`](../../backend/app/services/)）：目录已存在但尚未形成强存在感的统一服务层
+- **Desktop Runtime**（`backend/app/desktop_runtime/`）：桌面宿主使用的本地 HTTP 服务器，负责启动、配置解析、健康检查与生命周期管理
+- **Copilot Runtime**（`backend/app/copilot_runtime/`）：聊天运行时核心，包含协议解析、会话管理、agent/tool 注册表与执行桥接
+- **领域模块**（`backend/app/blackboard/` 与 `backend/app/teaching_information_system/`）：围绕上游系统组织的抓取、解析、同步与持久化能力
+- **基础设施**（`backend/app/core/`）：认证等跨领域复用能力
+- **服务层占位**（`backend/app/services/`）：目录已存在但尚未形成强存在感的统一服务层
 
 ## Desktop Runtime：本地 HTTP 服务器
 
-[`backend/app/desktop_runtime/`](../../backend/app/desktop_runtime/) 是桌面宿主（Electron 主进程）启动的 Python 子进程入口，负责：
+`backend/app/desktop_runtime/` 是桌面宿主（Electron 主进程）启动的 Python 子进程入口，负责：
 
 - **HTTP 服务器**（[`server.py`](../../backend/app/desktop_runtime/server.py)）：基于 FastAPI 的最小本地服务，监听 loopback 地址，处理 CORS 与 Electron null origin，挂载 copilot runtime 路由与健康检查端点
 - **配置解析**（[`config.py`](../../backend/app/desktop_runtime/config.py)）：解析 CLI 参数与环境变量，构建运行时配置（host/port、路径、模型、local token 等）
@@ -29,7 +35,7 @@ Desktop runtime 不直接实现聊天逻辑，而是通过 [`composition.py`](..
 
 ## Copilot Runtime：聊天运行时核心
 
-[`backend/app/copilot_runtime/`](../../backend/app/copilot_runtime/) 实现最小可用的多 agent 聊天运行时，当前处于 MVP 阶段（phase3-run-bridge），支持纯文本对话。
+`backend/app/copilot_runtime/` 实现最小可用的多 agent 聊天运行时，当前处于 MVP 阶段（phase3-run-bridge），支持纯文本对话。
 
 ### 模块职责分工
 
@@ -66,7 +72,7 @@ Desktop runtime 不直接实现聊天逻辑，而是通过 [`composition.py`](..
 
 ## 领域模块：Blackboard 与 TIS
 
-[`backend/app/blackboard/`](../../backend/app/blackboard/) 和 [`backend/app/teaching_information_system/`](../../backend/app/teaching_information_system/) 是两条并列的领域线，围绕上游系统组织抓取、解析、同步能力。
+`backend/app/blackboard/` 和 `backend/app/teaching_information_system/` 是两条并列的领域线，围绕上游系统组织抓取、解析、同步能力。
 
 ### 共同的内部分层
 
@@ -94,7 +100,7 @@ Desktop runtime 与 copilot runtime 是**独立的运行时层**，不依赖 Bla
 
 ### Core：跨领域基础能力
 
-[`backend/app/core/`](../../backend/app/core/) 提供认证等底层能力：
+`backend/app/core/` 提供认证等底层能力：
 
 - **[`core/auth/cas_client.py`](../../backend/app/core/auth/cas_client.py)**：CAS 登录客户端，被 Blackboard/TIS 的 `api/context.py` 使用
 
@@ -102,15 +108,15 @@ Desktop runtime 与 copilot runtime 是**独立的运行时层**，不依赖 Bla
 
 ### Services：尚未成型的服务层
 
-[`backend/app/services/`](../../backend/app/services/) 目录已存在，但当前只有空的 `__init__.py`，尚未形成统一的服务编排层。不要将其预设为成熟的 service layer。
+`backend/app/services/` 目录已存在，但当前只有空的 `__init__.py`，尚未形成统一的服务编排层。不要将其预设为成熟的 service layer。
 
 ## 测试分层
 
-[`backend/tests/`](../../backend/tests/) 按测试类型与模块边界组织：
+`backend/tests/` 按测试类型与模块边界组织：
 
 ### Unit 测试
 
-- **[`tests/unit/copilot_runtime/`](../../backend/tests/unit/copilot_runtime/)**：copilot runtime 各模块的单元测试
+- **`backend/tests/unit/copilot_runtime/`**：copilot runtime 各模块的单元测试
   - [`test_protocol.py`](../../backend/tests/unit/copilot_runtime/test_protocol.py) - 协议解析逻辑
   - [`test_router.py`](../../backend/tests/unit/copilot_runtime/test_router.py) - 路由分发逻辑
   - [`test_bridge.py`](../../backend/tests/unit/copilot_runtime/test_bridge.py) - 桥接层逻辑
@@ -119,20 +125,20 @@ Desktop runtime 与 copilot runtime 是**独立的运行时层**，不依赖 Bla
   - [`test_tool_registry.py`](../../backend/tests/unit/copilot_runtime/test_tool_registry.py) - tool 注册表
   - [`test_composition.py`](../../backend/tests/unit/copilot_runtime/test_composition.py) - 依赖组装
 
-- **[`tests/unit/desktop_runtime/`](../../backend/tests/unit/desktop_runtime/)**：desktop runtime 的单元测试
+- **`backend/tests/unit/desktop_runtime/`**：desktop runtime 的单元测试
   - [`test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py) - 配置解析
   - [`test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py) - 服务器创建与路由挂载
 
-- **[`tests/unit/api/`](../../backend/tests/unit/api/)**：Blackboard/TIS 的 API 层单元测试
-- **[`tests/unit/data/`](../../backend/tests/unit/data/)**：数据同步与持久化单元测试
-- **[`tests/unit/provider/`](../../backend/tests/unit/provider/)**：用例编排层单元测试
-- **[`tests/unit/shared/`](../../backend/tests/unit/shared/)**：共享工具单元测试
+- **`backend/tests/unit/api/`**：Blackboard/TIS 的 API 层单元测试
+- **`backend/tests/unit/data/`**：数据同步与持久化单元测试
+- **`backend/tests/unit/provider/`**：用例编排层单元测试
+- **`backend/tests/unit/shared/`**：共享工具单元测试
 
 ### Integration 测试
 
 - **[`tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)**：copilot runtime 的 HTTP 端到端测试，验证 info/connect/run 方法的完整流程
 - **[`tests/integration/test_comprehensive_live.py`](../../backend/tests/integration/test_comprehensive_live.py)**：Blackboard 综合集成测试（需真实凭据）
-- **[`tests/integration/test_tis_*_live.py`](../../backend/tests/integration/)**：TIS 各模块的集成测试（需真实凭据）
+- **`backend/tests/integration/`**：TIS 各模块的集成测试（需真实凭据）
 
 ### E2E 测试
 
@@ -151,7 +157,7 @@ Desktop runtime 与 copilot runtime 是**独立的运行时层**，不依赖 Bla
 2. **理解聊天协议**：阅读 [`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py) 与 [`backend/app/copilot_runtime/protocol.py`](../../backend/app/copilot_runtime/protocol.py)，了解请求如何解析与分发
 3. **理解执行流程**：阅读 [`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py)，了解 agent 如何被调用
 4. **理解领域能力**：选择 Blackboard 或 TIS 其中一条线，从 `api/` → `provider/` → `data/` 顺序阅读，了解如何抓取与持久化数据
-5. **理解测试覆盖**：查看 [`backend/tests/unit/copilot_runtime/`](../../backend/tests/unit/copilot_runtime/) 与 [`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)，了解如何验证运行时行为
+5. **理解测试覆盖**：查看 `backend/tests/unit/copilot_runtime/` 与 [`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)，了解如何验证运行时行为
 
 **相关文档**：
 - [运行与配置](./run-and-config.md) - 如何启动后端与配置参数

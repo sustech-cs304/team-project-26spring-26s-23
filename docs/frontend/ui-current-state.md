@@ -1,3 +1,10 @@
+---
+title: 前端当前 UI 状态说明
+description: 说明 Electron renderer 中当前已落地的界面结构、启动阶段与聊天面板状态。
+sidebar_position: 6
+sidebar_label: UI 当前状态
+---
+
 # 前端当前 UI 状态说明
 
 本文档描述 Electron renderer 中当前已落地的界面状态，帮助读者理解用户实际能在界面中看到和操作的内容。
