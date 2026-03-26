@@ -1,12 +1,25 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { resolveCopilotConfigState } from './config'
+const configCenterMocks = vi.hoisted(() => ({
+  loadConfigCenterPublicSnapshot: vi.fn(),
+  projectCopilotSettingsFromConfigCenterPublicSnapshot: vi.fn(),
+}))
+
+vi.mock('./config-center', () => ({
+  loadConfigCenterPublicSnapshot: configCenterMocks.loadConfigCenterPublicSnapshot,
+  projectCopilotSettingsFromConfigCenterPublicSnapshot:
+    configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot,
+}))
+
+import { loadCopilotConfigState, resolveCopilotConfigState, retryCopilotConfigState } from './config'
 import type {
   CopilotRendererRuntimeLoadResult,
   CopilotRendererRuntimeSnapshot,
   CopilotRendererSettingsLoadResult,
 } from './types'
 import type { CopilotSettingsStorageState } from '../../../electron/copilot-settings'
+
+type RuntimeModule = typeof import('./runtime')
 
 function createSettingsResult(
   settings: Partial<{ runtimeUrl: string | null; agentName: string | null }> = {},
@@ -40,6 +53,15 @@ function createRuntimeResult(
     },
   }
 }
+
+beforeEach(() => {
+  configCenterMocks.loadConfigCenterPublicSnapshot.mockReset()
+  configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot.mockReset()
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('resolveCopilotConfigState', () => {
   it('prefers hosted runtime facts when the backend is ready', () => {
@@ -204,5 +226,125 @@ describe('resolveCopilotConfigState', () => {
 
     expect(state.missingFields).toEqual(['runtimeUrl', 'agentName'])
     expect(state.runtimeSource).toBe('none')
+  })
+})
+
+describe('loadCopilotConfigState', () => {
+  it('loads renderer bootstrap settings from the config center public snapshot bridge', async () => {
+    configCenterMocks.loadConfigCenterPublicSnapshot.mockResolvedValueOnce({
+      ok: true,
+      snapshot: {
+        version: 1,
+        domains: {
+          assistantBehavior: {
+            agentName: 'planner',
+          },
+          hostConfig: {
+            runtimeUrl: 'http://localhost:4400',
+          },
+        },
+      },
+    })
+    configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot.mockReturnValueOnce({
+      runtimeUrl: 'http://localhost:4400',
+      agentName: 'planner',
+    })
+
+    const runtimeModule = await import('./runtime') as RuntimeModule
+    const loadCopilotRuntimeSpy = vi.spyOn(runtimeModule, 'loadCopilotRuntime').mockResolvedValueOnce(
+      createRuntimeResult({
+        status: 'stopped',
+      }),
+    )
+
+    await expect(loadCopilotConfigState()).resolves.toMatchObject({
+      status: 'ready',
+      runtimeSource: 'dev-override',
+      runtimeUrl: 'http://localhost:4400',
+      agentName: 'planner',
+      settings: {
+        runtimeUrl: 'http://localhost:4400',
+        agentName: 'planner',
+      },
+      storageState: 'stored',
+    })
+
+    expect(configCenterMocks.loadConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
+    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
+    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).toHaveBeenCalledWith({
+      version: 1,
+      domains: {
+        assistantBehavior: {
+          agentName: 'planner',
+        },
+        hostConfig: {
+          runtimeUrl: 'http://localhost:4400',
+        },
+      },
+    })
+    expect(loadCopilotRuntimeSpy).toHaveBeenCalledOnce()
+  })
+
+  it('surfaces config center public snapshot load failures as config errors', async () => {
+    configCenterMocks.loadConfigCenterPublicSnapshot.mockResolvedValueOnce({
+      ok: false,
+      error: 'snapshot unavailable',
+    })
+
+    const runtimeModule = await import('./runtime') as RuntimeModule
+    const loadCopilotRuntimeSpy = vi.spyOn(runtimeModule, 'loadCopilotRuntime').mockResolvedValueOnce(
+      createRuntimeResult({
+        status: 'ready',
+        runtimeUrl: 'http://127.0.0.1:8765',
+        resolvedMode: 'development',
+      }),
+    )
+
+    await expect(loadCopilotConfigState()).resolves.toEqual({
+      status: 'error',
+      error: 'snapshot unavailable',
+    })
+
+    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).not.toHaveBeenCalled()
+    expect(loadCopilotRuntimeSpy).toHaveBeenCalledOnce()
+  })
+
+  it('reuses the same config center public snapshot path during retry', async () => {
+    configCenterMocks.loadConfigCenterPublicSnapshot.mockResolvedValueOnce({
+      ok: true,
+      snapshot: {
+        version: 1,
+        domains: {
+          assistantBehavior: {
+            agentName: 'campus-agent',
+          },
+          hostConfig: {
+            runtimeUrl: 'http://127.0.0.1:3000',
+          },
+        },
+      },
+    })
+    configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot.mockReturnValueOnce({
+      runtimeUrl: 'http://127.0.0.1:3000',
+      agentName: 'campus-agent',
+    })
+
+    const runtimeModule = await import('./runtime') as RuntimeModule
+    const retryCopilotRuntimeSpy = vi.spyOn(runtimeModule, 'retryCopilotRuntime').mockResolvedValueOnce(
+      createRuntimeResult({
+        status: 'stopped',
+      }),
+    )
+
+    await expect(retryCopilotConfigState()).resolves.toMatchObject({
+      status: 'ready',
+      runtimeSource: 'dev-override',
+      runtimeUrl: 'http://127.0.0.1:3000',
+      agentName: 'campus-agent',
+    })
+
+    expect(configCenterMocks.loadConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
+    expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).toHaveBeenCalledOnce()
+    expect(retryCopilotRuntimeSpy).toHaveBeenCalledOnce()
   })
 })

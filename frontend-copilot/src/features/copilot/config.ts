@@ -1,5 +1,8 @@
+import {
+  loadConfigCenterPublicSnapshot,
+  projectCopilotSettingsFromConfigCenterPublicSnapshot,
+} from './config-center'
 import { loadCopilotRuntime, retryCopilotRuntime } from './runtime'
-import { loadCopilotSettings } from './settings'
 import type {
   CopilotAgentNameSource,
   CopilotConfigMissingField,
@@ -195,7 +198,7 @@ export function resolveCopilotConfigState(input: {
 
 export async function loadCopilotConfigState(): Promise<CopilotConfigState> {
   const [settingsResult, runtimeResult] = await Promise.all([
-    loadCopilotSettings(),
+    loadBootstrapSettings(),
     loadCopilotRuntime(),
   ])
 
@@ -207,7 +210,7 @@ export async function loadCopilotConfigState(): Promise<CopilotConfigState> {
 
 export async function retryCopilotConfigState(): Promise<CopilotConfigState> {
   const [settingsResult, runtimeResult] = await Promise.all([
-    loadCopilotSettings(),
+    loadBootstrapSettings(),
     retryCopilotRuntime(),
   ])
 
@@ -215,6 +218,25 @@ export async function retryCopilotConfigState(): Promise<CopilotConfigState> {
     settingsResult,
     runtimeResult,
   })
+}
+
+async function loadBootstrapSettings(): Promise<CopilotRendererSettingsLoadResult> {
+  const snapshotResult = await loadConfigCenterPublicSnapshot()
+
+  if (!snapshotResult.ok) {
+    return {
+      ok: false,
+      error: snapshotResult.error,
+    }
+  }
+
+  const settings = projectCopilotSettingsFromConfigCenterPublicSnapshot(snapshotResult.snapshot)
+
+  return {
+    ok: true,
+    settings,
+    storageState: settings.runtimeUrl === null && settings.agentName === null ? 'empty' : 'stored',
+  }
 }
 
 function buildCopilotDiagnosticsSummary(input: {

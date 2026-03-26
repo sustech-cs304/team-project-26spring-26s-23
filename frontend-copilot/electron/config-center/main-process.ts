@@ -6,6 +6,10 @@ import type {
 import { getCopilotSettingsStorageState } from '../copilot-settings'
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 import { projectCopilotSettings, projectCopilotSettingsPatch } from './copilot-settings-bridge'
+import {
+  projectConfigCenterPublicSnapshot,
+  type ConfigCenterPublicSnapshotLoadResult,
+} from './public-snapshot'
 import { createUnifiedConfigCenterPaths } from './paths'
 import {
   createUnifiedConfigCenter,
@@ -31,6 +35,7 @@ export interface CreateElectronUnifiedConfigServiceOptions {
 export interface ElectronUnifiedConfigService {
   loadSnapshot: () => Promise<UnifiedConfigLoadResult>
   applyFieldPatch: (patch: UnifiedConfigFieldPatch) => Promise<UnifiedConfigUpdateResult>
+  loadPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
   loadCopilotSettings: () => Promise<CopilotSettingsLoadResult>
   saveCopilotSettings: (patch: CopilotSettingsPatch) => Promise<CopilotSettingsSaveResult>
 }
@@ -51,9 +56,25 @@ export function createElectronUnifiedConfigService(
     return await configCenter.applyFieldPatch(patch)
   }
 
+  const loadPublicSnapshot = async (): Promise<ConfigCenterPublicSnapshotLoadResult> => {
+    try {
+      const loadResult = await loadSnapshot()
+      return {
+        ok: true,
+        snapshot: projectConfigCenterPublicSnapshot(loadResult.snapshot),
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Failed to load config center public snapshot: ${formatUnknownError(error)}`,
+      }
+    }
+  }
+
   return {
     loadSnapshot,
     applyFieldPatch,
+    loadPublicSnapshot,
     async loadCopilotSettings() {
       try {
         const loadResult = await loadSnapshot()

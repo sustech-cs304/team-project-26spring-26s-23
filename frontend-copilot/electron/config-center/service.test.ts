@@ -4,6 +4,10 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createUnifiedConfigCenterPaths } from './paths'
+import {
+  projectConfigCenterPublicSnapshot,
+  type ConfigCenterPublicSnapshot,
+} from './public-snapshot'
 import { createUnifiedConfigCenter } from './service'
 import {
   UNIFIED_CONFIG_DOMAIN_KEYS,
@@ -194,6 +198,37 @@ describe('createUnifiedConfigCenter', () => {
       ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG, {
         runtimeUrl: 'http://localhost:9100',
       }))
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('projects a renderer-safe public snapshot with only stable public domains', async () => {
+    const fixture = await createConfigCenterFixture()
+
+    try {
+      const updated = await fixture.configCenter.applyFieldPatch({
+        runtimeUrl: '  http://localhost:4400  ',
+        agentName: '  planner  ',
+      })
+
+      const publicSnapshot = projectConfigCenterPublicSnapshot(updated.snapshot)
+      const expectedSnapshot: ConfigCenterPublicSnapshot = {
+        version: 1,
+        domains: {
+          assistantBehavior: {
+            agentName: 'planner',
+          },
+          hostConfig: {
+            runtimeUrl: 'http://localhost:4400',
+          },
+        },
+      }
+
+      expect(publicSnapshot).toEqual(expectedSnapshot)
+      expect(JSON.parse(JSON.stringify(publicSnapshot))).toEqual(expectedSnapshot)
+      expect('frontendPreferences' in publicSnapshot.domains).toBe(false)
+      expect('backendExposed' in publicSnapshot.domains).toBe(false)
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }

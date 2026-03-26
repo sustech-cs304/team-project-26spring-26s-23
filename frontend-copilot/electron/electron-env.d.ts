@@ -1,5 +1,6 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 
+import type { ConfigCenterPublicSnapshotApi } from './config-center/public-snapshot'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 import type { CopilotSettingsApi } from './copilot-settings'
 
@@ -29,6 +30,7 @@ declare global {
   interface Window {
     copilotSettings: CopilotSettingsApi
     copilotRuntime: CopilotRuntimeApi
+    configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
   }
 }
 

@@ -7,6 +7,10 @@ import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
 } from './copilot-runtime'
+import {
+  CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
+  type ConfigCenterPublicSnapshotApi,
+} from './config-center/public-snapshot'
 import type { CopilotSettingsApi } from './copilot-settings'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 
@@ -28,5 +32,12 @@ const copilotRuntimeApi: CopilotRuntimeApi = {
   },
 }
 
+const configCenterPublicSnapshotApi: ConfigCenterPublicSnapshotApi = {
+  load() {
+    return ipcRenderer.invoke(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
+  },
+}
+
 contextBridge.exposeInMainWorld('copilotSettings', copilotSettingsApi)
 contextBridge.exposeInMainWorld('copilotRuntime', copilotRuntimeApi)
+contextBridge.exposeInMainWorld('configCenterPublicSnapshot', configCenterPublicSnapshotApi)

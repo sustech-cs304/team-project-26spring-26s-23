@@ -7,6 +7,10 @@ import {
   COPILOT_SETTINGS_SAVE_CHANNEL,
 } from './copilot-settings'
 import {
+  CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
+  type ConfigCenterPublicSnapshotLoadResult,
+} from './config-center/public-snapshot'
+import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
 } from './copilot-runtime'
@@ -198,6 +202,14 @@ function registerCopilotSettingsHandlers() {
   })
 }
 
+function registerConfigCenterHandlers() {
+  ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
+
+  ipcMain.handle(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL, async (): Promise<ConfigCenterPublicSnapshotLoadResult> => {
+    return await loadConfigCenterPublicSnapshot()
+  })
+}
+
 function registerCopilotRuntimeHandlers() {
   ipcMain.removeHandler(COPILOT_RUNTIME_LOAD_CHANNEL)
   ipcMain.removeHandler(COPILOT_RUNTIME_RETRY_CHANNEL)
@@ -267,6 +279,10 @@ async function loadCopilotSettings(): Promise<CopilotSettingsLoadResult> {
 
 async function saveCopilotSettings(patch: CopilotSettingsPatch): Promise<CopilotSettingsSaveResult> {
   return await getUnifiedConfigService().saveCopilotSettings(patch)
+}
+
+async function loadConfigCenterPublicSnapshot(): Promise<ConfigCenterPublicSnapshotLoadResult> {
+  return await getUnifiedConfigService().loadPublicSnapshot()
 }
 
 function ensureHostedBackendService(): HostedBackendService {
@@ -538,6 +554,7 @@ void app.whenReady()
     logStartupTrace('app:ready')
     Menu.setApplicationMenu(null)
     registerCopilotSettingsHandlers()
+    registerConfigCenterHandlers()
     registerCopilotRuntimeHandlers()
     void startHostedBackend()
     createWindow()
