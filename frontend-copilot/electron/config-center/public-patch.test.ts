@@ -7,6 +7,9 @@ describe('parseConfigCenterPublicPatch', () => {
   it('normalizes supported public domains into a unified field patch', () => {
     expect(parseConfigCenterPublicPatch({
       domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
         assistantBehavior: {
           agentName: '  planner  ',
         },
@@ -15,6 +18,7 @@ describe('parseConfigCenterPublicPatch', () => {
         },
       },
     })).toEqual({
+      theme: 'dark',
       agentName: 'planner',
       runtimeUrl: 'http://127.0.0.1:4400',
     })
@@ -47,13 +51,13 @@ describe('parseConfigCenterPublicPatch', () => {
     }
   })
 
-  it('rejects invalid field values', () => {
+  it('rejects invalid theme values', () => {
     expect(() => parseConfigCenterPublicPatch({
       domains: {
-        assistantBehavior: {
-          agentName: 42,
+        frontendPreferences: {
+          theme: 'system',
         },
       },
-    })).toThrow('Invalid public config field "assistantBehavior.agentName": Expected a string or null.')
+    })).toThrow('Invalid public config field "frontendPreferences.theme": Expected "light" or "dark".')
   })
 })

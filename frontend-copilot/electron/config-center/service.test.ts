@@ -133,6 +133,17 @@ describe('createUnifiedConfigCenter', () => {
       await mkdir(fixture.configCenterPaths.rootDir, { recursive: true })
 
       await writeFile(
+        fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES],
+        `${JSON.stringify({
+          version: 7,
+          domain: UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
+          values: {
+            theme: 'system',
+          },
+        }, null, 2)}\n`,
+        'utf8',
+      )
+      await writeFile(
         fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR],
         `${JSON.stringify({
           version: 99,
@@ -158,6 +169,11 @@ describe('createUnifiedConfigCenter', () => {
       const loaded = await fixture.configCenter.loadSnapshot()
 
       expect(loaded.source).toBe('stored')
+      expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES]).toEqual(
+        createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
+          theme: 'light',
+        }),
+      )
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: null,
@@ -170,10 +186,16 @@ describe('createUnifiedConfigCenter', () => {
       )
 
       const updated = await fixture.configCenter.applyFieldPatch({
+        theme: 'dark',
         agentName: 42,
         runtimeUrl: '  http://localhost:9100  ',
       })
 
+      expect(updated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES]).toEqual(
+        createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
+          theme: 'dark',
+        }),
+      )
       expect(updated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: null,
@@ -184,6 +206,13 @@ describe('createUnifiedConfigCenter', () => {
           runtimeUrl: 'http://localhost:9100',
         }),
       )
+      expect(
+        await readJsonFile(
+          fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES],
+        ),
+      ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
+        theme: 'dark',
+      }))
       expect(
         await readJsonFile(
           fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR],
@@ -209,6 +238,9 @@ describe('createUnifiedConfigCenter', () => {
     try {
       const result = await fixture.configCenter.applyPublicPatch({
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: '  planner  ',
           },
@@ -221,6 +253,9 @@ describe('createUnifiedConfigCenter', () => {
       const expectedSnapshot: ConfigCenterPublicSnapshot = {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: 'planner',
           },
@@ -231,6 +266,13 @@ describe('createUnifiedConfigCenter', () => {
       }
 
       expect(result.snapshot).toEqual(expectedSnapshot)
+      expect(
+        await readJsonFile(
+          fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES],
+        ),
+      ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
+        theme: 'dark',
+      }))
       expect(
         await readJsonFile(
           fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR],
@@ -277,6 +319,7 @@ describe('createUnifiedConfigCenter', () => {
 
     try {
       const updated = await fixture.configCenter.applyFieldPatch({
+        theme: 'dark',
         runtimeUrl: '  http://localhost:4400  ',
         agentName: '  planner  ',
       })
@@ -285,6 +328,9 @@ describe('createUnifiedConfigCenter', () => {
       const expectedSnapshot: ConfigCenterPublicSnapshot = {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: 'planner',
           },
@@ -296,7 +342,7 @@ describe('createUnifiedConfigCenter', () => {
 
       expect(publicSnapshot).toEqual(expectedSnapshot)
       expect(JSON.parse(JSON.stringify(publicSnapshot))).toEqual(expectedSnapshot)
-      expect('frontendPreferences' in publicSnapshot.domains).toBe(false)
+      expect('frontendPreferences' in publicSnapshot.domains).toBe(true)
       expect('backendExposed' in publicSnapshot.domains).toBe(false)
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })

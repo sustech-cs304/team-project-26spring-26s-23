@@ -14,6 +14,7 @@ import {
   applyConfigCenterPublicPatch,
   loadConfigCenterPublicSnapshot,
   projectCopilotSettingsFromConfigCenterPublicSnapshot,
+  projectThemeModeFromConfigCenterPublicSnapshot,
   subscribeToConfigCenterPublicSnapshotUpdates,
 } from './config-center'
 
@@ -55,6 +56,9 @@ describe('config center public bridge', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: 'campus-agent',
           },
@@ -82,6 +86,9 @@ describe('config center public bridge', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: 'planner',
           },
@@ -162,6 +169,9 @@ describe('config center public bridge', () => {
     registeredListener?.(undefined, {
       version: 1,
       domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
         assistantBehavior: {
           agentName: 'planner',
         },
@@ -175,6 +185,9 @@ describe('config center public bridge', () => {
     expect(listener).toHaveBeenCalledWith({
       version: 1,
       domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
         assistantBehavior: {
           agentName: 'planner',
         },
@@ -189,10 +202,30 @@ describe('config center public bridge', () => {
     expect(listeners.size).toBe(0)
   })
 
+  it('projects theme mode from the public snapshot shape', () => {
+    expect(projectThemeModeFromConfigCenterPublicSnapshot({
+      version: 1,
+      domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
+        assistantBehavior: {
+          agentName: 'planner',
+        },
+        hostConfig: {
+          runtimeUrl: 'http://localhost:4400',
+        },
+      },
+    })).toBe('dark')
+  })
+
   it('projects copilot bootstrap settings from the public snapshot shape', () => {
     expect(projectCopilotSettingsFromConfigCenterPublicSnapshot({
       version: 1,
       domains: {
+        frontendPreferences: {
+          theme: 'light',
+        },
         assistantBehavior: {
           agentName: 'planner',
         },

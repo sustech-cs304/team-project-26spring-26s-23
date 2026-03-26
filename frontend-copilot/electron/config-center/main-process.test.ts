@@ -22,6 +22,9 @@ describe('createElectronUnifiedConfigService', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'light',
+          },
           assistantBehavior: {
             agentName: null,
           },
@@ -40,6 +43,9 @@ describe('createElectronUnifiedConfigService', () => {
 
     const result = await service.applyPublicPatch({
       domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
         assistantBehavior: {
           agentName: '  planner  ',
         },
@@ -54,6 +60,9 @@ describe('createElectronUnifiedConfigService', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: 'planner',
           },
@@ -74,6 +83,9 @@ describe('createElectronUnifiedConfigService', () => {
 
     const result = await service.applyPublicPatch({
       domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
         assistantBehavior: {
           agentName: '  planner  ',
         },

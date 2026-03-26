@@ -1,9 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
 import type { CopilotBootstrapController } from './features/copilot/types'
 import { isHubWorkspaceView, railPrimaryItems, railSecondaryItems } from './workbench/config'
+import {
+  loadThemeModePreference,
+  persistThemeModePreference,
+  subscribeToThemeModePreferenceUpdates,
+} from './workbench/theme-config'
 import type { ThemeMode, WorkspaceView } from './workbench/types'
 import './App.css'
 
@@ -71,6 +76,22 @@ function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
   const [themeMode, setThemeMode] = useState<ThemeMode>('light')
 
+  const applyThemeMode = useCallback((nextThemeMode: ThemeMode) => {
+    setThemeMode(nextThemeMode)
+  }, [])
+
+  const handleThemeModeChange = useCallback((nextThemeMode: ThemeMode) => {
+    if (nextThemeMode === themeMode) {
+      return
+    }
+
+    void persistThemeModePreference({
+      previousThemeMode: themeMode,
+      themeMode: nextThemeMode,
+      applyThemeMode,
+    })
+  }, [applyThemeMode, themeMode])
+
   useEffect(() => {
     logStartupTrace('mounted')
 
@@ -78,6 +99,31 @@ function App({ bootstrap }: AppProps) {
       logStartupTrace('unmounted')
     }
   }, [])
+
+  useEffect(() => {
+    let disposed = false
+
+    void loadThemeModePreference().then((result) => {
+      if (disposed || !result.ok) {
+        return
+      }
+
+      applyThemeMode(result.themeMode)
+    })
+
+    const unsubscribe = subscribeToThemeModePreferenceUpdates((nextThemeMode) => {
+      if (disposed) {
+        return
+      }
+
+      applyThemeMode(nextThemeMode)
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [applyThemeMode])
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode
@@ -168,7 +214,7 @@ function App({ bootstrap }: AppProps) {
         <Suspense
           fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
         >
-          {renderActiveWorkspace(activeWorkspace, bootstrap, themeMode, setThemeMode)}
+          {renderActiveWorkspace(activeWorkspace, bootstrap, themeMode, handleThemeModeChange)}
         </Suspense>
       </RecoverableErrorBoundary>
     </div>

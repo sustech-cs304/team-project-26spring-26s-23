@@ -9,6 +9,7 @@ import type {
   ConfigCenterPublicSnapshotSubscriptionApi,
   ConfigCenterPublicSnapshotUnsubscribe,
 } from '../../../electron/config-center/public-snapshot'
+import type { ThemeMode } from '../../workbench/types'
 import type { CopilotRendererSettings } from './types'
 
 function getConfigCenterPublicSnapshotApi() {
@@ -73,6 +74,12 @@ export function subscribeToConfigCenterPublicSnapshotUpdates(
   }
 
   return api.subscribe(listener)
+}
+
+export function projectThemeModeFromConfigCenterPublicSnapshot(
+  snapshot: ConfigCenterPublicSnapshot,
+): ThemeMode {
+  return snapshot.domains.frontendPreferences.theme
 }
 
 export function projectCopilotSettingsFromConfigCenterPublicSnapshot(

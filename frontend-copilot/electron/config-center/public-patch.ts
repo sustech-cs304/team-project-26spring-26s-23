@@ -9,6 +9,9 @@ export const CONFIG_CENTER_PUBLIC_PATCH_CHANNEL = 'config-center:apply-public-pa
 
 export interface ConfigCenterPublicPatch {
   domains?: {
+    frontendPreferences?: {
+      theme?: 'light' | 'dark'
+    }
     assistantBehavior?: {
       agentName?: string | null
     }
@@ -41,6 +44,11 @@ interface ConfigCenterPublicPatchDomainDefinition {
 }
 
 const CONFIG_CENTER_PUBLIC_PATCH_DOMAIN_REGISTRY: Record<string, ConfigCenterPublicPatchDomainDefinition> = {
+  frontendPreferences: {
+    fields: {
+      theme: 'theme',
+    },
+  },
   assistantBehavior: {
     fields: {
       agentName: 'agentName',

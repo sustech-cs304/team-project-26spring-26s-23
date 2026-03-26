@@ -10,6 +10,9 @@ export const CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL = 'config-center:publ
 export interface ConfigCenterPublicSnapshot {
   version: typeof UNIFIED_CONFIG_DOCUMENT_VERSION
   domains: {
+    frontendPreferences: {
+      theme: 'light' | 'dark'
+    }
     assistantBehavior: {
       agentName: string | null
     }
@@ -50,6 +53,9 @@ export function projectConfigCenterPublicSnapshot(
   return {
     version: UNIFIED_CONFIG_DOCUMENT_VERSION,
     domains: {
+      frontendPreferences: {
+        theme: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES].values.theme,
+      },
       assistantBehavior: {
         agentName: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,
       },

@@ -92,6 +92,9 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: 'planner',
           },
@@ -117,6 +120,9 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'light',
+          },
           assistantBehavior: {
             agentName: null,
           },

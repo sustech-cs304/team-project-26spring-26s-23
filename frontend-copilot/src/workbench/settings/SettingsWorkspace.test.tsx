@@ -34,6 +34,21 @@ describe('SettingsWorkspace', () => {
     expect(html).toContain('默认 Agent 名称')
   })
 
+  it('reflects the incoming theme prop in the display section without adding local theme state', () => {
+    const html = renderToStaticMarkup(
+      <SettingsWorkspace
+        bootstrap={createBootstrapController()}
+        themeMode="dark"
+        onThemeModeChange={vi.fn()}
+        initialSection="display"
+      />,
+    )
+
+    expect(html).toContain('显示设置')
+    expect(html).toContain('主题')
+    expect(html).toContain('class="select-trigger__value">深色</span>')
+  })
+
   it('wires the development runtime override card into the api section', () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace

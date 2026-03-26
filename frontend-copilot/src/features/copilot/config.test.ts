@@ -236,6 +236,9 @@ describe('loadCopilotConfigState', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'dark',
+          },
           assistantBehavior: {
             agentName: 'planner',
           },
@@ -274,6 +277,9 @@ describe('loadCopilotConfigState', () => {
     expect(configCenterMocks.projectCopilotSettingsFromConfigCenterPublicSnapshot).toHaveBeenCalledWith({
       version: 1,
       domains: {
+        frontendPreferences: {
+          theme: 'dark',
+        },
         assistantBehavior: {
           agentName: 'planner',
         },
@@ -315,6 +321,9 @@ describe('loadCopilotConfigState', () => {
       snapshot: {
         version: 1,
         domains: {
+          frontendPreferences: {
+            theme: 'light',
+          },
           assistantBehavior: {
             agentName: 'campus-agent',
           },

@@ -17,10 +17,13 @@ export const UNIFIED_CONFIG_DOMAIN_LIST = [
 ] as const satisfies readonly UnifiedConfigDomainKey[]
 
 export type UnifiedConfigEffectLevel = 'immediate' | 'restart-module' | 'restart-application'
-export type UnifiedConfigFieldValueType = 'optional-string'
+export type UnifiedConfigTheme = 'light' | 'dark'
+export type UnifiedConfigFieldValueType = 'optional-string' | 'theme-mode'
 export type UnifiedConfigUiSection = 'appearance' | 'assistant' | 'connection' | 'backend'
 
-export interface FrontendPreferencesConfigValues {}
+export interface FrontendPreferencesConfigValues {
+  theme: UnifiedConfigTheme
+}
 
 export interface AssistantBehaviorConfigValues {
   agentName: string | null
@@ -54,9 +57,10 @@ export interface UnifiedConfigSnapshot {
   documents: UnifiedConfigSnapshotDocuments
 }
 
-export type UnifiedConfigFieldKey = 'agentName' | 'runtimeUrl'
+export type UnifiedConfigFieldKey = 'theme' | 'agentName' | 'runtimeUrl'
 
 export interface UnifiedConfigFieldValueMap {
+  theme: UnifiedConfigTheme
   agentName: string | null
   runtimeUrl: string | null
 }
@@ -108,6 +112,19 @@ export const UNIFIED_CONFIG_DOMAIN_DEFINITIONS: {
 }
 
 export const UNIFIED_CONFIG_FIELD_REGISTRY: UnifiedConfigFieldRegistry = {
+  theme: {
+    key: 'theme',
+    storageKey: 'theme',
+    domain: UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
+    defaultValue: 'light',
+    valueType: 'theme-mode',
+    effectLevel: 'immediate',
+    rendererEditable: true,
+    runtimeProjectable: false,
+    uiSection: 'appearance',
+    normalize: normalizeThemeMode,
+    parsePatchValue: parseThemeModePatchValue,
+  },
   agentName: {
     key: 'agentName',
     storageKey: 'agentName',
@@ -154,7 +171,9 @@ export function createDefaultUnifiedConfigDomainDocument<TDomain extends Unified
     case UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES:
       return createUnifiedConfigDomainDocument(
         UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
-        {},
+        {
+          theme: UNIFIED_CONFIG_FIELD_REGISTRY.theme.defaultValue,
+        },
       ) as UnifiedConfigDomainDocument<TDomain>
 
     case UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR:
@@ -194,7 +213,9 @@ export function normalizeUnifiedConfigDomainDocument<TDomain extends UnifiedConf
     case UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES:
       return createUnifiedConfigDomainDocument(
         UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
-        {},
+        {
+          theme: UNIFIED_CONFIG_FIELD_REGISTRY.theme.normalize(values.theme),
+        },
       ) as UnifiedConfigDomainDocument<TDomain>
 
     case UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR:
@@ -247,11 +268,18 @@ export function applyUnifiedConfigFieldPatch(
   snapshot: UnifiedConfigSnapshot,
   patch: UnifiedConfigFieldPatch,
 ): UnifiedConfigSnapshot {
+  const nextFrontendValues = {
+    ...snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES].values,
+  }
   const nextAssistantValues = {
     ...snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values,
   }
   const nextHostValues = {
     ...snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG].values,
+  }
+
+  if ('theme' in patch) {
+    nextFrontendValues.theme = UNIFIED_CONFIG_FIELD_REGISTRY.theme.normalize(patch.theme)
   }
 
   if ('agentName' in patch) {
@@ -266,6 +294,10 @@ export function applyUnifiedConfigFieldPatch(
     version: UNIFIED_CONFIG_DOCUMENT_VERSION,
     documents: {
       ...snapshot.documents,
+      [UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES]: createUnifiedConfigDomainDocument(
+        UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
+        nextFrontendValues,
+      ),
       [UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]: createUnifiedConfigDomainDocument(
         UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR,
         nextAssistantValues,
@@ -282,6 +314,18 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null
     ? value as Record<string, unknown>
     : {}
+}
+
+function normalizeThemeMode(value: unknown): UnifiedConfigTheme {
+  return value === 'dark' ? 'dark' : 'light'
+}
+
+function parseThemeModePatchValue(value: unknown): UnifiedConfigTheme {
+  if (value === 'light' || value === 'dark') {
+    return value
+  }
+
+  throw new Error('Expected "light" or "dark".')
 }
 
 function normalizeOptionalString(value: unknown): string | null {
