@@ -72,19 +72,33 @@ function logStartupTrace(stage: string, context: Record<string, unknown> = {}): 
 }
 
 function openDetachedDevTools(targetWindow: BrowserWindow): void {
-  if (targetWindow.isDestroyed() || targetWindow.webContents.isDevToolsOpened()) {
+  if (targetWindow.isDestroyed()) {
     return
   }
 
-  void appendMainRuntimeLog('info', 'Opening detached DevTools window.', {
-    triggeredBy: 'F12',
-    windowId: targetWindow.id,
-  })
+  const { webContents } = targetWindow
 
-  targetWindow.webContents.openDevTools({
-    mode: 'detach',
-    activate: true,
-  })
+  if (webContents.isDestroyed() || webContents.isDevToolsOpened()) {
+    return
+  }
+
+  try {
+    webContents.openDevTools({
+      mode: 'detach',
+      activate: true,
+    })
+
+    void appendMainRuntimeLog('info', 'Opening detached DevTools window.', {
+      triggeredBy: 'F12',
+      windowId: targetWindow.id,
+    })
+  } catch (error) {
+    void appendMainRuntimeLog('warn', 'Failed to open detached DevTools window.', {
+      triggeredBy: 'F12',
+      windowId: targetWindow.id,
+      detail: formatUnknownError(error),
+    })
+  }
 }
 
 function registerDeveloperShortcuts(targetWindow: BrowserWindow): void {
