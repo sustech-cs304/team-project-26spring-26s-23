@@ -1,3 +1,4 @@
+import type { ConfigCenterPublicSnapshot } from '../../../electron/config-center/public-snapshot'
 import {
   loadConfigCenterPublicSnapshot,
   projectCopilotSettingsFromConfigCenterPublicSnapshot,
@@ -208,6 +209,20 @@ export async function loadCopilotConfigState(): Promise<CopilotConfigState> {
   })
 }
 
+export async function loadCopilotConfigStateFromPublicSnapshot(
+  snapshot: ConfigCenterPublicSnapshot,
+): Promise<CopilotConfigState> {
+  const [settingsResult, runtimeResult] = await Promise.all([
+    Promise.resolve(loadBootstrapSettingsFromConfigCenterPublicSnapshot(snapshot)),
+    loadCopilotRuntime(),
+  ])
+
+  return resolveCopilotConfigState({
+    settingsResult,
+    runtimeResult,
+  })
+}
+
 export async function retryCopilotConfigState(): Promise<CopilotConfigState> {
   const [settingsResult, runtimeResult] = await Promise.all([
     loadBootstrapSettings(),
@@ -230,7 +245,13 @@ async function loadBootstrapSettings(): Promise<CopilotRendererSettingsLoadResul
     }
   }
 
-  const settings = projectCopilotSettingsFromConfigCenterPublicSnapshot(snapshotResult.snapshot)
+  return loadBootstrapSettingsFromConfigCenterPublicSnapshot(snapshotResult.snapshot)
+}
+
+export function loadBootstrapSettingsFromConfigCenterPublicSnapshot(
+  snapshot: ConfigCenterPublicSnapshot,
+): CopilotRendererSettingsLoadResult {
+  const settings = projectCopilotSettingsFromConfigCenterPublicSnapshot(snapshot)
 
   return {
     ok: true,

@@ -13,6 +13,7 @@ import type {
 } from './public-patch'
 import {
   projectConfigCenterPublicSnapshot,
+  type ConfigCenterPublicSnapshot,
   type ConfigCenterPublicSnapshotLoadResult,
 } from './public-snapshot'
 import {
@@ -31,9 +32,14 @@ export interface ElectronUnifiedConfigLogger {
   ): void | Promise<void>
 }
 
+export type ConfigCenterPublicSnapshotPublisher = (
+  snapshot: ConfigCenterPublicSnapshot,
+) => void | Promise<void>
+
 export interface CreateElectronUnifiedConfigServiceOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
   appendLog?: ElectronUnifiedConfigLogger
+  publishPublicSnapshotUpdate?: ConfigCenterPublicSnapshotPublisher
 }
 
 export interface ElectronUnifiedConfigService {
@@ -80,6 +86,7 @@ export function createElectronUnifiedConfigService(
     try {
       const configCenter = await createConfigCenter(options)
       const updateResult = await configCenter.applyPublicPatch(patch)
+      await notifyPublicSnapshotUpdated(updateResult.snapshot, options.publishPublicSnapshotUpdate)
       return {
         ok: true,
         snapshot: updateResult.snapshot,
@@ -118,6 +125,10 @@ export function createElectronUnifiedConfigService(
       try {
         const updateResult = await applyFieldPatch(projectCopilotSettingsPatch(patch))
         const settings = projectCopilotSettings(updateResult.snapshot)
+        await notifyPublicSnapshotUpdated(
+          projectConfigCenterPublicSnapshot(updateResult.snapshot),
+          options.publishPublicSnapshotUpdate,
+        )
 
         await options.appendLog?.('info', 'Saved Copilot settings through the unified config center.', {
           storageState: getCopilotSettingsStorageState(settings),
@@ -145,6 +156,13 @@ async function createConfigCenter(
   return createUnifiedConfigCenter({
     paths: createUnifiedConfigCenterPaths(paths),
   })
+}
+
+async function notifyPublicSnapshotUpdated(
+  snapshot: ConfigCenterPublicSnapshot,
+  publishPublicSnapshotUpdate?: ConfigCenterPublicSnapshotPublisher,
+): Promise<void> {
+  await publishPublicSnapshotUpdate?.(snapshot)
 }
 
 async function logSnapshotLoad(

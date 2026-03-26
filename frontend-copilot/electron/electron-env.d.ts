@@ -1,7 +1,10 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 
 import type { ConfigCenterPublicPatchApi } from './config-center/public-patch'
-import type { ConfigCenterPublicSnapshotApi } from './config-center/public-snapshot'
+import type {
+  ConfigCenterPublicSnapshotApi,
+  ConfigCenterPublicSnapshotSubscriptionApi,
+} from './config-center/public-snapshot'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 import type { CopilotSettingsApi } from './copilot-settings'
 
@@ -32,6 +35,7 @@ declare global {
     copilotSettings: CopilotSettingsApi
     copilotRuntime: CopilotRuntimeApi
     configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
+    configCenterPublicSnapshotSubscription: ConfigCenterPublicSnapshotSubscriptionApi
     configCenterPublicPatch: ConfigCenterPublicPatchApi
   }
 }

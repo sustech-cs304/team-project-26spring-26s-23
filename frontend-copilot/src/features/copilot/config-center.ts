@@ -4,7 +4,10 @@ import type {
 } from '../../../electron/config-center/public-patch'
 import type {
   ConfigCenterPublicSnapshot,
+  ConfigCenterPublicSnapshotListener,
   ConfigCenterPublicSnapshotLoadResult,
+  ConfigCenterPublicSnapshotSubscriptionApi,
+  ConfigCenterPublicSnapshotUnsubscribe,
 } from '../../../electron/config-center/public-snapshot'
 import type { CopilotRendererSettings } from './types'
 
@@ -22,6 +25,14 @@ function getConfigCenterPublicPatchApi() {
   }
 
   return window.configCenterPublicPatch
+}
+
+function getConfigCenterPublicSnapshotSubscriptionApi(): ConfigCenterPublicSnapshotSubscriptionApi | undefined {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  return window.configCenterPublicSnapshotSubscription
 }
 
 export async function loadConfigCenterPublicSnapshot(): Promise<ConfigCenterPublicSnapshotLoadResult> {
@@ -50,6 +61,18 @@ export async function applyConfigCenterPublicPatch(
   }
 
   return api.apply(patch)
+}
+
+export function subscribeToConfigCenterPublicSnapshotUpdates(
+  listener: ConfigCenterPublicSnapshotListener,
+): ConfigCenterPublicSnapshotUnsubscribe {
+  const api = getConfigCenterPublicSnapshotSubscriptionApi()
+
+  if (!api) {
+    return () => {}
+  }
+
+  return api.subscribe(listener)
 }
 
 export function projectCopilotSettingsFromConfigCenterPublicSnapshot(

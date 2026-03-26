@@ -11,6 +11,7 @@ import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
   type ConfigCenterPublicSnapshotApi,
 } from './config-center/public-snapshot'
+import { createConfigCenterPublicSnapshotSubscriptionApi } from './config-center/public-snapshot-subscription'
 import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
@@ -42,6 +43,8 @@ const configCenterPublicSnapshotApi: ConfigCenterPublicSnapshotApi = {
   },
 }
 
+const configCenterPublicSnapshotSubscriptionApi = createConfigCenterPublicSnapshotSubscriptionApi(ipcRenderer)
+
 const configCenterPublicPatchApi: ConfigCenterPublicPatchApi = {
   apply(patch) {
     return ipcRenderer.invoke(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL, patch)
@@ -51,4 +54,5 @@ const configCenterPublicPatchApi: ConfigCenterPublicPatchApi = {
 contextBridge.exposeInMainWorld('copilotSettings', copilotSettingsApi)
 contextBridge.exposeInMainWorld('copilotRuntime', copilotRuntimeApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshot', configCenterPublicSnapshotApi)
+contextBridge.exposeInMainWorld('configCenterPublicSnapshotSubscription', configCenterPublicSnapshotSubscriptionApi)
 contextBridge.exposeInMainWorld('configCenterPublicPatch', configCenterPublicPatchApi)

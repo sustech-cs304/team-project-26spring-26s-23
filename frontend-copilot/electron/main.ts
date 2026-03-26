@@ -13,6 +13,8 @@ import {
 } from './config-center/public-patch'
 import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
+  CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL,
+  type ConfigCenterPublicSnapshot,
   type ConfigCenterPublicSnapshotLoadResult,
 } from './config-center/public-snapshot'
 import {
@@ -447,12 +449,23 @@ function getHostedRuntimePaths(): HostedRuntimePaths {
   return runtimePaths
 }
 
+function publishConfigCenterPublicSnapshotUpdate(snapshot: ConfigCenterPublicSnapshot): void {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (browserWindow.isDestroyed()) {
+      continue
+    }
+
+    browserWindow.webContents.send(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL, snapshot)
+  }
+}
+
 function getUnifiedConfigService(): ElectronUnifiedConfigService {
   unifiedConfigService ??= createElectronUnifiedConfigService({
     prepareRuntimePaths: prepareApplicationRuntimePaths,
     appendLog(level, message, context) {
       void appendMainRuntimeLog(level, message, context)
     },
+    publishPublicSnapshotUpdate: publishConfigCenterPublicSnapshotUpdate,
   })
 
   return unifiedConfigService

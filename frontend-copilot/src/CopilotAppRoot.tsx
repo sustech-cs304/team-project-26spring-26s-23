@@ -1,12 +1,18 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 
+import type { ConfigCenterPublicSnapshot } from '../electron/config-center/public-snapshot'
 import {
   BootstrapScreen,
   BOOTSTRAP_CONNECTING_MESSAGE,
   BOOTSTRAP_PREPARING_MESSAGE,
 } from './components/BootstrapScreen'
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
-import { loadCopilotConfigState, retryCopilotConfigState } from './features/copilot/config'
+import {
+  loadCopilotConfigState,
+  loadCopilotConfigStateFromPublicSnapshot,
+  retryCopilotConfigState,
+} from './features/copilot/config'
+import { subscribeToConfigCenterPublicSnapshotUpdates } from './features/copilot/config-center'
 import type {
   CopilotBootstrapController,
   CopilotBootstrapState,
@@ -145,6 +151,27 @@ function rememberConfigState(state: CopilotBootstrapState) {
   initialConfigStatePromise = Promise.resolve(state)
 }
 
+export async function refreshCopilotBootstrapStateFromPublicSnapshot(input: {
+  snapshot: ConfigCenterPublicSnapshot
+  applyState: (state: CopilotBootstrapState) => void
+}): Promise<CopilotBootstrapState> {
+  try {
+    const nextState = await loadCopilotConfigStateFromPublicSnapshot(input.snapshot)
+    rememberConfigState(nextState)
+    input.applyState(nextState)
+    return nextState
+  } catch (error) {
+    const nextState = {
+      status: 'error',
+      error: formatErrorMessage(error),
+    } satisfies CopilotBootstrapState
+
+    rememberConfigState(nextState)
+    input.applyState(nextState)
+    return nextState
+  }
+}
+
 export function shouldLoadCopilotProvider(input: {
   configState: CopilotBootstrapState
   providerLoadState: ProviderLoadState
@@ -234,6 +261,41 @@ export function CopilotAppRoot() {
       logStartupTrace('root-unmounted')
     }
   }, [readConfigState])
+
+  useEffect(() => {
+    let disposed = false
+    const unsubscribe = subscribeToConfigCenterPublicSnapshotUpdates((snapshot) => {
+      logStartupTrace('config-state:subscription:received', {
+        version: snapshot.version,
+        runtimeUrl: snapshot.domains.hostConfig.runtimeUrl,
+        agentName: snapshot.domains.assistantBehavior.agentName,
+      })
+
+      void refreshCopilotBootstrapStateFromPublicSnapshot({
+        snapshot,
+        applyState(nextState) {
+          if (disposed) {
+            return
+          }
+
+          setConfigState(nextState)
+        },
+      }).then((nextState) => {
+        if (disposed) {
+          return
+        }
+
+        logStartupTrace('config-state:subscription:resolved', {
+          status: nextState.status,
+        })
+      })
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [])
 
   useEffect(() => {
     logStartupTrace('visible-stage', {

@@ -5,6 +5,7 @@ import {
 } from './schema'
 
 export const CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL = 'config-center:load-public-snapshot'
+export const CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL = 'config-center:public-snapshot-updated'
 
 export interface ConfigCenterPublicSnapshot {
   version: typeof UNIFIED_CONFIG_DOCUMENT_VERSION
@@ -32,8 +33,15 @@ export type ConfigCenterPublicSnapshotLoadResult =
   | ConfigCenterPublicSnapshotLoadSuccess
   | ConfigCenterPublicSnapshotLoadFailure
 
+export type ConfigCenterPublicSnapshotListener = (snapshot: ConfigCenterPublicSnapshot) => void
+export type ConfigCenterPublicSnapshotUnsubscribe = () => void
+
 export interface ConfigCenterPublicSnapshotApi {
   load: () => Promise<ConfigCenterPublicSnapshotLoadResult>
+}
+
+export interface ConfigCenterPublicSnapshotSubscriptionApi {
+  subscribe: (listener: ConfigCenterPublicSnapshotListener) => ConfigCenterPublicSnapshotUnsubscribe
 }
 
 export function projectConfigCenterPublicSnapshot(
