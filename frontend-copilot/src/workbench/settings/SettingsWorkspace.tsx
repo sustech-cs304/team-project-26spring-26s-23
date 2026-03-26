@@ -32,11 +32,16 @@ import {
   themeOptions,
   toolPermissionOptions,
 } from './config'
+import {
+  AssistantBehaviorConfigCard,
+  HostConfigRuntimeOverrideCard,
+} from './ConfigCenterPublicFieldCards'
 
 interface SettingsWorkspaceProps {
   bootstrap: CopilotBootstrapController
   themeMode: ThemeMode
   onThemeModeChange: (value: ThemeMode) => void
+  initialSection?: SettingsSection
 }
 
 type ModelEditorState = ProviderModelProfile & {
@@ -198,8 +203,9 @@ export function SettingsWorkspace({
   bootstrap,
   themeMode,
   onThemeModeChange,
+  initialSection,
 }: SettingsWorkspaceProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('model-service')
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'model-service')
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
   const [providerQuery, setProviderQuery] = useState('')
@@ -982,6 +988,8 @@ export function SettingsWorkspace({
               case 'general':
                 return (
                   <div className="settings-page">
+                    <AssistantBehaviorConfigCard />
+
                     <section className="settings-card settings-card--form">
                       <div className="settings-card__header">
                         <div>
@@ -1262,6 +1270,8 @@ export function SettingsWorkspace({
               case 'api':
                 return (
                   <div className="settings-page">
+                    <HostConfigRuntimeOverrideCard />
+
                     <section className="settings-card settings-card--form">
                       <div className="settings-card__header settings-card__header--spaced">
                         <div>
