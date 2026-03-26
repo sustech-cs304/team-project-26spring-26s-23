@@ -24,8 +24,8 @@
 Desktop runtime 不直接实现聊天逻辑，而是通过 [`composition.py`](../../backend/app/copilot_runtime/composition.py) 组装 copilot runtime 依赖，并将其路由挂载到 FastAPI 应用中。
 
 **关键代码锚点**：
-- [`backend/app/desktop_runtime/server.py:73-162`](../../backend/app/desktop_runtime/server.py) - `create_app()` 函数展示如何组装 runtime 依赖并挂载路由
-- [`backend/app/desktop_runtime/config.py:234-336`](../../backend/app/desktop_runtime/config.py) - `parse_runtime_config()` 展示配置解析逻辑
+- [`backend/app/desktop_runtime/server.py#L73-L162`](../../backend/app/desktop_runtime/server.py#L73-L162) - `create_app()` 函数展示如何组装 runtime 依赖并挂载路由
+- [`backend/app/desktop_runtime/config.py#L234-L336`](../../backend/app/desktop_runtime/config.py#L234-L336) - `parse_runtime_config()` 展示配置解析逻辑
 
 ## Copilot Runtime：聊天运行时核心
 
@@ -54,9 +54,9 @@ Desktop runtime 不直接实现聊天逻辑，而是通过 [`composition.py`](..
 5. **响应返回** → 以 SSE 格式流式返回事件（`RUN_STARTED`、`TEXT_MESSAGE_CONTENT`、`RUN_FINISHED` 等）
 
 **关键代码锚点**：
-- [`backend/app/copilot_runtime/composition.py:31-65`](../../backend/app/copilot_runtime/composition.py) - `build_default_runtime_dependencies()` 展示依赖组装
-- [`backend/app/copilot_runtime/router.py:39-70`](../../backend/app/copilot_runtime/router.py) - 单端点路由分发逻辑
-- [`backend/app/copilot_runtime/bridge.py:49-72`](../../backend/app/copilot_runtime/bridge.py) - `RuntimeBridge.run()` 展示执行流程
+- [`backend/app/copilot_runtime/composition.py#L31-L65`](../../backend/app/copilot_runtime/composition.py#L31-L65) - `build_default_runtime_dependencies()` 展示依赖组装
+- [`backend/app/copilot_runtime/router.py#L39-L70`](../../backend/app/copilot_runtime/router.py#L39-L70) - 单端点路由分发逻辑
+- [`backend/app/copilot_runtime/bridge.py#L49-L72`](../../backend/app/copilot_runtime/bridge.py#L49-L72) - `RuntimeBridge.run()` 展示执行流程
 
 ### 当前扩展边界
 

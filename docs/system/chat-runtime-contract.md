@@ -307,7 +307,7 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"connect-1","result
 **消息格式约束**（[`RuntimeProtocolParser._validate_supported_message_shape`](../../backend/app/copilot_runtime/protocol.py#L469-L535)）：
 - 支持的 `role`: `"user"`, `"assistant"`, `"system"`, `"developer"`
 - `user` 消息 `content` 可以是字符串或 `[{"type":"text","text":"..."}]` 数组
-- `assistant` 消息 `content` 必须是纯文本字符串（当前不支持 tool calls）
+- `assistant` 消息 `content` 若提供必须为字符串（当前不支持 tool calls / 多段内容）
 - `system`/`developer` 消息 `content` 必须是非空字符串
 - 不支持 `toolCalls` 字段（MVP 限制）
 

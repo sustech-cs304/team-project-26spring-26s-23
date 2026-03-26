@@ -21,7 +21,7 @@
 
 ### 主要启动路径
 
-当前后端的主要启动入口是 [`backend/app/desktop_runtime/__main__.py`](../../backend/app/desktop_runtime/__main__.py)，它会调用 [`server.py`](../../backend/app/desktop_runtime/server.py:165) 中的 `main()` 函数。
+当前后端的主要启动入口是 [`backend/app/desktop_runtime/__main__.py`](../../backend/app/desktop_runtime/__main__.py)，它会调用 [`server.py`](../../backend/app/desktop_runtime/server.py#L165) 中的 `main()` 函数。
 
 启动方式：
 
@@ -37,16 +37,16 @@ uv run --directory backend python -m app.desktop_runtime [参数...]
 
 ### 配置解析入口
 
-配置解析由 [`parse_runtime_config()`](../../backend/app/desktop_runtime/config.py:234) 完成，它会：
+配置解析由 [`parse_runtime_config()`](../../backend/app/desktop_runtime/config.py#L234) 完成，它会：
 
-1. 解析 CLI 参数（通过 [`build_runtime_argument_parser()`](../../backend/app/desktop_runtime/config.py:202)）
+1. 解析 CLI 参数（通过 [`build_runtime_argument_parser()`](../../backend/app/desktop_runtime/config.py#L202)）
 2. 读取环境变量作为回退
 3. 应用默认值
-4. 构造 [`DesktopRuntimeConfig`](../../backend/app/desktop_runtime/config.py:102) 对象
+4. 构造 [`DesktopRuntimeConfig`](../../backend/app/desktop_runtime/config.py#L102) 对象
 
 ### 服务器创建与启动
 
-[`create_app()`](../../backend/app/desktop_runtime/server.py:73) 函数负责：
+[`create_app()`](../../backend/app/desktop_runtime/server.py#L73) 函数负责：
 
 - 创建 FastAPI 应用实例
 - 配置 CORS 中间件（仅允许 loopback origin）
@@ -54,7 +54,7 @@ uv run --directory backend python -m app.desktop_runtime [参数...]
 - 挂载 copilot runtime 路由（单端点协议，路径 `/`）
 - 配置生命周期管理（startup/shutdown）
 
-[`main()`](../../backend/app/desktop_runtime/server.py:165) 函数使用 uvicorn 启动服务器。
+[`main()`](../../backend/app/desktop_runtime/server.py#L165) 函数使用 uvicorn 启动服务器。
 
 ## 配置来源与优先级
 
@@ -66,11 +66,11 @@ uv run --directory backend python -m app.desktop_runtime [参数...]
 2. **环境变量**
 3. **默认值**（最低优先级）
 
-这一规则在 [`parse_runtime_config()`](../../backend/app/desktop_runtime/config.py:234) 中实现，通过 `_resolve_optional_text_value()` 等辅助函数完成。
+这一规则在 [`parse_runtime_config()`](../../backend/app/desktop_runtime/config.py#L234) 中实现，通过 `_resolve_optional_text_value()` 等辅助函数完成。
 
 ### 测试验证
 
-优先级规则在 [`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py:109) 中有明确测试：
+优先级规则在 [`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py#L109) 中有明确测试：
 
 ```python
 def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
@@ -86,7 +86,7 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
 | Host | `--host` | `COPILOT_DESKTOP_RUNTIME_HOST` | `127.0.0.1` | 监听地址，仅允许 loopback |
 | Port | `--port` | `COPILOT_DESKTOP_RUNTIME_PORT` | `8765` | 监听端口 |
 
-**安全约束**：Host 必须是 loopback 地址（`127.0.0.1`、`localhost`、`::1`），否则会抛出 `ValueError`。这一约束在 [`_resolve_host()`](../../backend/app/desktop_runtime/config.py:362) 中强制执行。
+**安全约束**：Host 必须是 loopback 地址（`127.0.0.1`、`localhost`、`::1`），否则会抛出 `ValueError`。这一约束在 [`_resolve_host()`](../../backend/app/desktop_runtime/config.py#L362) 中强制执行。
 
 ### 应用模式与环境
 
@@ -172,7 +172,7 @@ backend/data/
 
 ### 目录初始化
 
-目录在运行时启动时自动创建，通过 [`DesktopRuntimePaths.ensure_directories()`](../../backend/app/desktop_runtime/config.py:71) 实现。
+目录在运行时启动时自动创建，通过 [`DesktopRuntimePaths.ensure_directories()`](../../backend/app/desktop_runtime/config.py#L71) 实现。
 
 ## 前端调用方如何传参
 
@@ -180,14 +180,14 @@ Electron 主进程通过 [`frontend-copilot/electron/runtime/runtime-config.ts`]
 
 关键函数：
 
-- [`createHostedRuntimeLaunchConfig()`](../../frontend-copilot/electron/runtime/runtime-config.ts:315)：创建启动配置
-- [`buildDesktopRuntimeArguments()`](../../frontend-copilot/electron/runtime/runtime-config.ts:459)：构造 CLI 参数数组
-- [`allocateLoopbackPort()`](../../frontend-copilot/electron/runtime/runtime-config.ts:369)：分配可用端口
+- [`createHostedRuntimeLaunchConfig()`](../../frontend-copilot/electron/runtime/runtime-config.ts#L315)：创建启动配置
+- [`buildDesktopRuntimeArguments()`](../../frontend-copilot/electron/runtime/runtime-config.ts#L459)：构造 CLI 参数数组
+- [`allocateLoopbackPort()`](../../frontend-copilot/electron/runtime/runtime-config.ts#L369)：分配可用端口
 
 前端会：
 
 1. 分配一个可用的 loopback 端口
-2. 生成随机 local token（通过 [`createLocalToken()`](../../frontend-copilot/electron/runtime/runtime-config.ts:162)）
+2. 生成随机 local token（通过 [`createLocalToken()`](../../frontend-copilot/electron/runtime/runtime-config.ts#L162)）
 3. 构造完整的 CLI 参数数组
 4. 启动 Python 子进程并传递参数
 
@@ -199,11 +199,11 @@ Desktop runtime 强制执行 loopback-only 约束：
 
 - Host 必须是 `127.0.0.1`、`localhost` 或 `::1`
 - 尝试绑定其他地址会导致启动失败
-- CORS 中间件仅允许 loopback origin（通过正则 [`_DESKTOP_LOOPBACK_ORIGIN_REGEX`](../../backend/app/desktop_runtime/server.py:43)）
+- CORS 中间件仅允许 loopback origin（通过正则 [`_DESKTOP_LOOPBACK_ORIGIN_REGEX`](../../backend/app/desktop_runtime/server.py#L43)）
 
 ### Electron 打包应用的特殊处理
 
-对于 `Origin: null` 的请求（Electron 打包应用的典型行为），[`DesktopNullOriginMiddleware`](../../backend/app/desktop_runtime/server.py:49) 会：
+对于 `Origin: null` 的请求（Electron 打包应用的典型行为），[`DesktopNullOriginMiddleware`](../../backend/app/desktop_runtime/server.py#L49) 会：
 
 1. 检查 User-Agent 是否包含 `electron/`
 2. 仅允许来自 Electron 的 `null` origin 请求
