@@ -7,6 +7,11 @@ import {
   COPILOT_SETTINGS_SAVE_CHANNEL,
 } from './copilot-settings'
 import {
+  CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
+  type ConfigCenterPublicPatch,
+  type ConfigCenterPublicPatchResult,
+} from './config-center/public-patch'
+import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
   type ConfigCenterPublicSnapshotLoadResult,
 } from './config-center/public-snapshot'
@@ -204,10 +209,18 @@ function registerCopilotSettingsHandlers() {
 
 function registerConfigCenterHandlers() {
   ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
+  ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL)
 
   ipcMain.handle(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL, async (): Promise<ConfigCenterPublicSnapshotLoadResult> => {
     return await loadConfigCenterPublicSnapshot()
   })
+
+  ipcMain.handle(
+    CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
+    async (_event, patch: ConfigCenterPublicPatch): Promise<ConfigCenterPublicPatchResult> => {
+      return await applyConfigCenterPublicPatch(patch)
+    },
+  )
 }
 
 function registerCopilotRuntimeHandlers() {
@@ -283,6 +296,12 @@ async function saveCopilotSettings(patch: CopilotSettingsPatch): Promise<Copilot
 
 async function loadConfigCenterPublicSnapshot(): Promise<ConfigCenterPublicSnapshotLoadResult> {
   return await getUnifiedConfigService().loadPublicSnapshot()
+}
+
+async function applyConfigCenterPublicPatch(
+  patch: ConfigCenterPublicPatch,
+): Promise<ConfigCenterPublicPatchResult> {
+  return await getUnifiedConfigService().applyPublicPatch(patch)
 }
 
 function ensureHostedBackendService(): HostedBackendService {

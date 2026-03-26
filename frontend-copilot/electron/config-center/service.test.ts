@@ -203,6 +203,75 @@ describe('createUnifiedConfigCenter', () => {
     }
   })
 
+  it('applies a public patch, persists the change, and returns the latest public snapshot', async () => {
+    const fixture = await createConfigCenterFixture()
+
+    try {
+      const result = await fixture.configCenter.applyPublicPatch({
+        domains: {
+          assistantBehavior: {
+            agentName: '  planner  ',
+          },
+          hostConfig: {
+            runtimeUrl: '  http://localhost:4400  ',
+          },
+        },
+      })
+
+      const expectedSnapshot: ConfigCenterPublicSnapshot = {
+        version: 1,
+        domains: {
+          assistantBehavior: {
+            agentName: 'planner',
+          },
+          hostConfig: {
+            runtimeUrl: 'http://localhost:4400',
+          },
+        },
+      }
+
+      expect(result.snapshot).toEqual(expectedSnapshot)
+      expect(
+        await readJsonFile(
+          fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR],
+        ),
+      ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
+        agentName: 'planner',
+      }))
+      expect(
+        await readJsonFile(
+          fixture.configCenterPaths.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG],
+        ),
+      ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG, {
+        runtimeUrl: 'http://localhost:4400',
+      }))
+
+      const reloaded = await fixture.configCenter.loadSnapshot()
+      expect(projectConfigCenterPublicSnapshot(reloaded.snapshot)).toEqual(expectedSnapshot)
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects invalid public patch fields before writing persisted changes', async () => {
+    const fixture = await createConfigCenterFixture()
+
+    try {
+      await expect(fixture.configCenter.applyPublicPatch({
+        domains: {
+          assistantBehavior: {
+            theme: 'dark',
+          } as never,
+        },
+      })).rejects.toThrow('Unknown public config field: "assistantBehavior.theme".')
+
+      const loaded = await fixture.configCenter.loadSnapshot()
+      expect(loaded.snapshot).toEqual(createDefaultUnifiedConfigSnapshot())
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
   it('projects a renderer-safe public snapshot with only stable public domains', async () => {
     const fixture = await createConfigCenterFixture()
 

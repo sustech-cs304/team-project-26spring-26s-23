@@ -1,6 +1,14 @@
 import { mkdir as fsMkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
-import type { UnifiedConfigCenterPaths } from './paths'
 import { extractLegacyCopilotSettingsMigrationPatch } from './copilot-settings-bridge'
+import {
+  parseConfigCenterPublicPatch,
+  type ConfigCenterPublicPatch,
+} from './public-patch'
+import {
+  projectConfigCenterPublicSnapshot,
+  type ConfigCenterPublicSnapshot,
+} from './public-snapshot'
+import type { UnifiedConfigCenterPaths } from './paths'
 import {
   UNIFIED_CONFIG_DOMAIN_LIST,
   applyUnifiedConfigFieldPatch,
@@ -25,9 +33,14 @@ export interface UnifiedConfigUpdateResult {
   snapshot: UnifiedConfigSnapshot
 }
 
+export interface UnifiedConfigPublicPatchResult {
+  snapshot: ConfigCenterPublicSnapshot
+}
+
 export interface UnifiedConfigCenter {
   loadSnapshot: () => Promise<UnifiedConfigLoadResult>
   applyFieldPatch: (patch: UnifiedConfigFieldPatch) => Promise<UnifiedConfigUpdateResult>
+  applyPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<UnifiedConfigPublicPatchResult>
 }
 
 interface UnifiedConfigCenterFileSystem {
@@ -84,16 +97,28 @@ export function createUnifiedConfigCenter(options: CreateUnifiedConfigCenterOpti
     }
   }
 
+  const applyFieldPatch = async (patch: UnifiedConfigFieldPatch): Promise<UnifiedConfigUpdateResult> => {
+    const currentSnapshot = (await loadSnapshot()).snapshot
+    const nextSnapshot = applyUnifiedConfigFieldPatch(currentSnapshot, patch)
+    await writeSnapshot(options.paths, nextSnapshot, fileSystem)
+    return {
+      snapshot: nextSnapshot,
+    }
+  }
+
+  const applyPublicPatch = async (
+    patch: ConfigCenterPublicPatch,
+  ): Promise<UnifiedConfigPublicPatchResult> => {
+    const updateResult = await applyFieldPatch(parseConfigCenterPublicPatch(patch))
+    return {
+      snapshot: projectConfigCenterPublicSnapshot(updateResult.snapshot),
+    }
+  }
+
   return {
     loadSnapshot,
-    async applyFieldPatch(patch) {
-      const currentSnapshot = (await loadSnapshot()).snapshot
-      const nextSnapshot = applyUnifiedConfigFieldPatch(currentSnapshot, patch)
-      await writeSnapshot(options.paths, nextSnapshot, fileSystem)
-      return {
-        snapshot: nextSnapshot,
-      }
-    },
+    applyFieldPatch,
+    applyPublicPatch,
   }
 }
 

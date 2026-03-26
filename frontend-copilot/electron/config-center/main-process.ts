@@ -6,11 +6,15 @@ import type {
 import { getCopilotSettingsStorageState } from '../copilot-settings'
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 import { projectCopilotSettings, projectCopilotSettingsPatch } from './copilot-settings-bridge'
+import { createUnifiedConfigCenterPaths } from './paths'
+import type {
+  ConfigCenterPublicPatch,
+  ConfigCenterPublicPatchResult,
+} from './public-patch'
 import {
   projectConfigCenterPublicSnapshot,
   type ConfigCenterPublicSnapshotLoadResult,
 } from './public-snapshot'
-import { createUnifiedConfigCenterPaths } from './paths'
 import {
   createUnifiedConfigCenter,
   type UnifiedConfigLoadResult,
@@ -36,6 +40,7 @@ export interface ElectronUnifiedConfigService {
   loadSnapshot: () => Promise<UnifiedConfigLoadResult>
   applyFieldPatch: (patch: UnifiedConfigFieldPatch) => Promise<UnifiedConfigUpdateResult>
   loadPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
+  applyPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
   loadCopilotSettings: () => Promise<CopilotSettingsLoadResult>
   saveCopilotSettings: (patch: CopilotSettingsPatch) => Promise<CopilotSettingsSaveResult>
 }
@@ -71,10 +76,27 @@ export function createElectronUnifiedConfigService(
     }
   }
 
+  const applyPublicPatch = async (patch: ConfigCenterPublicPatch): Promise<ConfigCenterPublicPatchResult> => {
+    try {
+      const configCenter = await createConfigCenter(options)
+      const updateResult = await configCenter.applyPublicPatch(patch)
+      return {
+        ok: true,
+        snapshot: updateResult.snapshot,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Failed to apply config center public patch: ${formatUnknownError(error)}`,
+      }
+    }
+  }
+
   return {
     loadSnapshot,
     applyFieldPatch,
     loadPublicSnapshot,
+    applyPublicPatch,
     async loadCopilotSettings() {
       try {
         const loadResult = await loadSnapshot()

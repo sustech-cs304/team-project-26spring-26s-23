@@ -4,13 +4,17 @@ import {
   COPILOT_SETTINGS_SAVE_CHANNEL,
 } from './copilot-settings'
 import {
-  COPILOT_RUNTIME_LOAD_CHANNEL,
-  COPILOT_RUNTIME_RETRY_CHANNEL,
-} from './copilot-runtime'
+  CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
+  type ConfigCenterPublicPatchApi,
+} from './config-center/public-patch'
 import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
   type ConfigCenterPublicSnapshotApi,
 } from './config-center/public-snapshot'
+import {
+  COPILOT_RUNTIME_LOAD_CHANNEL,
+  COPILOT_RUNTIME_RETRY_CHANNEL,
+} from './copilot-runtime'
 import type { CopilotSettingsApi } from './copilot-settings'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 
@@ -38,6 +42,13 @@ const configCenterPublicSnapshotApi: ConfigCenterPublicSnapshotApi = {
   },
 }
 
+const configCenterPublicPatchApi: ConfigCenterPublicPatchApi = {
+  apply(patch) {
+    return ipcRenderer.invoke(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL, patch)
+  },
+}
+
 contextBridge.exposeInMainWorld('copilotSettings', copilotSettingsApi)
 contextBridge.exposeInMainWorld('copilotRuntime', copilotRuntimeApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshot', configCenterPublicSnapshotApi)
+contextBridge.exposeInMainWorld('configCenterPublicPatch', configCenterPublicPatchApi)

@@ -79,6 +79,7 @@ export interface UnifiedConfigFieldDefinition<TValue> {
   runtimeProjectable: boolean
   uiSection: UnifiedConfigUiSection
   normalize: (value: unknown) => TValue
+  parsePatchValue: (value: unknown) => TValue
 }
 
 export type UnifiedConfigFieldRegistry = {
@@ -118,6 +119,7 @@ export const UNIFIED_CONFIG_FIELD_REGISTRY: UnifiedConfigFieldRegistry = {
     runtimeProjectable: false,
     uiSection: 'assistant',
     normalize: normalizeOptionalString,
+    parsePatchValue: parseOptionalStringPatchValue,
   },
   runtimeUrl: {
     key: 'runtimeUrl',
@@ -130,6 +132,7 @@ export const UNIFIED_CONFIG_FIELD_REGISTRY: UnifiedConfigFieldRegistry = {
     runtimeProjectable: true,
     uiSection: 'connection',
     normalize: normalizeOptionalString,
+    parsePatchValue: parseOptionalStringPatchValue,
   },
 }
 
@@ -284,6 +287,19 @@ function asRecord(value: unknown): Record<string, unknown> {
 function normalizeOptionalString(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null
+  }
+
+  const normalizedValue = value.trim()
+  return normalizedValue === '' ? null : normalizedValue
+}
+
+function parseOptionalStringPatchValue(value: unknown): string | null {
+  if (value === null) {
+    return null
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error('Expected a string or null.')
   }
 
   const normalizedValue = value.trim()
