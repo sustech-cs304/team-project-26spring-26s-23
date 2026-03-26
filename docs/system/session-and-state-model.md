@@ -54,12 +54,14 @@ export function resolveCopilotConfigState(input: {
 
 **状态字段**：
 - `status`：`starting` / `ready` / `failed` / `stopped` / `degraded`
-- `mode`：运行模式（`development` / `production` / `bundled`）
+- `mode`：运行模式（`development` / `bundled`）
 - `baseUrl`：后端运行地址（例如 `http://127.0.0.1:8000`）
 - `pid`：进程 ID
 - `startedAt` / `readyAt` / `stoppedAt`：时间戳
 - `exitCode` / `signal`：进程退出信息
 - `lastFailure`：失败摘要（包含 `code`、`phase`、`message`、`retryable` 等）
+
+`HostedBackendState` 本身不包含 `environment` 字段；`development` / `production` 的运行环境区分来自 hosted runtime 启动配置，而 `mode` 仅表示 Python runtime 解析结果（`development` / `bundled`）。
 
 **状态转换**：
 - `stopped` → `starting`：调用 `markHostedBackendStarting`

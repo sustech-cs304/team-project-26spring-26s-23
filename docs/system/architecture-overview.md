@@ -135,7 +135,7 @@
 - 当前实现：`InMemorySessionStore`（进程内存，重启丢失）
 
 **语义**：
-- `threadId` 是前端生成的 UUID，代表一个对话线程
+- `threadId` 是前端选择的会话/话题 ID（字符串），代表一个对话线程
 - 同一 `threadId` 的多次 `agent/run` 请求会复用历史消息
 - Session 在 Python runtime 重启后丢失（未持久化）
 
@@ -232,7 +232,8 @@
 ### 启动链路
 
 1. **Electron 主进程启动**：
-   - 解析 CLI 参数（如 `--host`、`--port`、`--model`）
+   - 解析主进程 CLI 参数（如 `--runtime-host`、`--runtime-port`、`--runtime-model`）
+   - 将解析到的 runtime 配置转换为 Python 子进程参数（如 `--host`、`--port`、`--model`）
    - 创建 `PythonRuntimeManager`
    - 调用 `manager.start()`
 
