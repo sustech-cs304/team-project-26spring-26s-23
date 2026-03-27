@@ -1,6 +1,6 @@
 ---
 title: 前端运行时状态参考
-description: 汇总 hosted backend 状态、配置归并逻辑与前端运行态展示语义。
+description: 汇总统一配置中心 bootstrap 字段、hosted runtime 状态与 renderer 侧连接状态的关系。
 sidebar_position: 4
 ---
 
@@ -10,311 +10,362 @@ sidebar_position: 4
 
 本文档是前端运行时状态的权威说明，帮助读者理解：
 
-- 前端如何表示、归并和消费运行时状态
-- 为什么会显示 loading / disconnected / degraded / failed / ready 等不同体验
-- 这些状态分别由谁产生、如何转换
-- 哪些字段决定是否真正加载 Copilot provider
-
-适用场景：
-
-- 联调时快速判断当前卡在哪一步
-- 理解 Electron 主进程托管的 hosted backend 状态如何传递到 renderer
-- 理解用户手填 runtime URL 与 hosted runtime snapshot 如何统一归并
-- 排查为什么 UI 显示特定状态
+- renderer 现在怎样把配置中心公共快照和 hosted runtime 快照合并起来
+- 为什么会显示 `loading`、`empty`、`incomplete`、`starting`、`ready`、`failed`、`degraded`、`error`
+- 哪些字段真正决定聊天入口是否能挂起来
+- 配置改动以后，哪些状态会跟着更新，哪些还不会自动推送
 
 ## 使用边界
 
-- 本文档聚焦运行时与配置状态，不是完整聊天协议说明，也不是完整 UI 文档
-- 本文档严格基于当前仓库事实，不虚构未实现的状态机或未来 UI 行为
-- 跨进程启动链路、HTTP 契约、session store 语义请参考 [系统架构总览](../system/architecture-overview.md)、[运行时生命周期](../system/runtime-lifecycle.md) 与 [Session 与状态模型](../system/session-and-state-model.md)
+- 本文聚焦运行时与连接状态，不展开完整聊天协议。
+- 本文只写当前仓库里已经存在的状态与行为。
+- 本文不会把未来状态机或未来联动写成当前事实。
+
+如果你想先看字段范围，请先看 [当前生效字段参考](./reference-current-fields.md)。
+
+## 先给结论
+
+当前前端运行时状态有两层：
+
+1. **主进程层**：hosted backend 的生命周期状态
+2. **renderer 层**：把 bootstrap fields 与 hosted runtime 快照归并后的连接状态
+
+其中 renderer 当前真正用来判断聊天入口的 bootstrap fields 只有两个：
+
+- `assistantBehavior.agentName`
+- `hostConfig.runtimeUrl`
+
+它们都来自统一配置中心公共快照，而不是旧 renderer settings API。
 
 ## 状态层次概览
 
-前端运行时状态分为两个层次：
+### 第一层：Hosted backend 状态
 
-1. **Electron 主进程层**：[`HostedBackendState`](../../frontend-copilot/electron/runtime/runtime-state.ts) - 托管后端的生命周期状态
-2. **Renderer 层**：[`CopilotConfigState`](../../frontend-copilot/src/features/copilot/types.ts) - 归并用户设置、hosted runtime snapshot、错误态后的 UI 可消费状态
+这部分由 Electron 主进程维护，表示“本地 Python runtime 现在是什么状态”。
 
-### 状态流转路径
+当前状态值为：
+
+- `stopped`
+- `starting`
+- `ready`
+- `failed`
+- `degraded`
+
+### 第二层：Renderer 连接状态
+
+这部分由 renderer 计算，表示“当前聊天入口能不能挂起来，以及应该怎么解释当前情况”。
+
+当前状态值为：
+
+- `loading`
+- `empty`
+- `incomplete`
+- `starting`
+- `ready`
+- `failed`
+- `degraded`
+- `error`
+
+## 数据流怎么走
+
+当前状态流转路径可以简单理解成：
 
 ```
 Electron 主进程
-  └─> HostedBackendState (starting/ready/failed/degraded/stopped)
-        └─> IPC 传递 snapshot
-              └─> Renderer 侧
-                    └─> 读取用户设置 (runtimeUrl, agentName)
-                          └─> resolveCopilotConfigState()
-                                └─> CopilotConfigState (empty/incomplete/starting/ready/failed/degraded/error)
-                                      └─> CopilotBootstrapState（加 loading 包装）
-                                            └─> UI 消费
+  └─> Hosted runtime 快照
+        └─> 通过 preload 暴露给 renderer
+
+配置中心主服务
+  └─> 公共快照
+        └─> 通过 preload 暴露给 renderer
+
+Renderer
+  └─> 读取 bootstrap fields（agentName / runtimeUrl）
+        + hosted runtime 快照
+        └─> resolveCopilotConfigState()
+              └─> CopilotBootstrapState
+                    └─> UI 消费
 ```
 
-## Electron 主进程层：HostedBackendState
+## Bootstrap fields 当前来自哪里
+
+### 当前来源
+
+renderer 当前通过配置中心公共快照读取 bootstrap fields：
+
+- `snapshot.domains.assistantBehavior.agentName`
+- `snapshot.domains.hostConfig.runtimeUrl`
+
+然后由 `loadBootstrapFieldsFromConfigCenterPublicSnapshot()` 把这两个字段整理成统一结构。
+
+### 当前不参与聊天连接判断的公共字段
+
+公共快照里虽然还有：
+
+- `frontendPreferences.theme`
+- `backendExposed.model`
+
+但它们当前**不参与聊天连接状态判断**：
+
+- `theme` 用于前端显示偏好
+- `model` 由主进程读取后参与 runtime 参数投影
+
+## Hosted backend 状态语义
 
 ### 状态定义
 
-定义位置：[`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)
+| 状态 | 当前语义 |
+| --- | --- |
+| `stopped` | 初始状态或已停止 |
+| `starting` | 子进程已启动，正在等待 `/ready` |
+| `ready` | 本地 runtime 已就绪，可提供 hosted 地址 |
+| `failed` | 启动失败或运行中遇到不可恢复错误 |
+| `degraded` | 曾经 ready，但后续异常退出；当前仍保留 base URL 供 renderer 继续尝试 |
 
-```typescript
-export type HostedBackendStatus = 'starting' | 'ready' | 'failed' | 'stopped' | 'degraded'
+### `failed` 和 `degraded` 的区别
 
-export interface HostedBackendState {
-  status: HostedBackendStatus
-  mode: PythonRuntimeMode | null
-  baseUrl: string | null
-  pid: number | null
-  startedAt: string | null
-  readyAt: string | null
-  stoppedAt: string | null
-  exitCode: number | null
-  signal: NodeJS.Signals | null
-  lastFailure: HostedBackendFailure | null
-}
-```
-
-### 状态语义与转换
+这是最容易混淆的一组状态：
 
-| 状态 | 语义 | 典型转换路径 | 关键字段 |
-|------|------|-------------|---------|
-| `stopped` | 初始状态或已停止 | 初始 → `starting`<br/>任意状态 → `stopped` | `exitCode`, `signal` 可能保留上次退出信息 |
-| `starting` | 后端进程已启动，等待健康检查通过 | `stopped` → `starting` → `ready`/`failed` | `mode`, `baseUrl`, `pid`, `startedAt` |
-| `ready` | 后端健康检查通过，可用 | `starting` → `ready` | `readyAt` 记录就绪时间 |
-| `failed` | 启动失败或运行中遇到不可恢复错误 | `starting` → `failed`<br/>`ready` → `failed` | `lastFailure` 记录失败详情 |
-| `degraded` | 曾经 ready，但后续异常退出；保留 baseUrl 供 renderer 继续尝试连接 | `ready` → `degraded` | `lastFailure` 记录降级原因，`baseUrl` 仍保留 |
+- **`failed`**：当前没有形成稳定可用的 hosted 入口
+- **`degraded`**：曾经形成过 hosted 入口，只是后续记录到了异常退出；当前可能仍能继续尝试连接
 
-### 状态转换函数
+## Renderer 连接状态语义
 
-核心转换函数（[`runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)）：
+### `loading`
 
-- [`createInitialHostedBackendState()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L36) - 创建初始 `stopped` 状态
-- [`markHostedBackendStarting()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L51) - 标记为 `starting`，清空上次失败信息
-- [`markHostedBackendReady()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L70) - 标记为 `ready`，记录 `readyAt`
-- [`markHostedBackendFailed()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L81) - 标记为 `failed`，记录失败详情
-- [`markHostedBackendDegraded()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L96) - 标记为 `degraded`，保留 `baseUrl`
-- [`markHostedBackendStopped()`](../../frontend-copilot/electron/runtime/runtime-state.ts#L111) - 标记为 `stopped`
-
-测试覆盖：[`runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts#L46)
-
-### 关键设计决策
+表示根装配层还在读取：
 
-1. **`degraded` 与 `failed` 的区别**：
-   - `failed`：从未成功启动，或遇到不可恢复错误
-   - `degraded`：曾经 `ready`，但后续异常退出；保留 `baseUrl` 允许 renderer 继续尝试连接
+- 配置中心公共快照
+- hosted runtime 快照
 
-2. **失败信息结构化**：`lastFailure` 包含 `code`、`phase`、`message`、`retryable` 等字段，支持 UI 显示详细诊断信息
+这时还没有完成状态归并。
 
-## Renderer 层：CopilotConfigState
+### `error`
 
-### 状态定义
+表示读取链路本身失败，例如：
 
-定义位置：[`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts)
+- 配置中心公共快照读取失败
+- hosted runtime 快照读取失败
+- preload 暴露接口不可用
 
-```typescript
-export type CopilotConfigStatus = 'empty' | 'incomplete' | 'starting' | 'ready' | 'failed' | 'degraded' | 'error'
+### `empty`
 
-export type CopilotConfigState =
-  | CopilotConfigEmptyState
-  | CopilotConfigIncompleteState
-  | CopilotConfigStartingState
-  | CopilotConfigReadyState
-  | CopilotConfigFailedState
-  | CopilotConfigDegradedState
-  | CopilotConfigErrorState
+表示当前两项 bootstrap fields 都缺失：
 
-// loading 属于 bootstrap 包装层，不属于 CopilotConfigState
-export type CopilotBootstrapState = CopilotConfigState | { status: 'loading' }
-```
+- `runtimeUrl`
+- `agentName`
 
-> **注意**：`loading` 状态属于 `CopilotBootstrapState`，不属于 `CopilotConfigState`。`loading` 由根层（`CopilotAppRoot`）在异步读取配置之前注入，表示配置尚未装配完成，此时尚无 `CopilotConfigState` 可消费。
+并且宿主当前也没有提供可用 hosted 地址。
 
-### 状态语义
+### `incomplete`
 
-| 状态 | 语义 | UI 表现 | 是否加载 Provider |
-|------|------|---------|------------------|
-| `error` | 配置或运行时读取链路本身失败 | 显示错误信息，提示检查 IPC 链路 | 否 |
-| `empty` | `runtimeUrl` 和 `agentName` 都缺失 | 显示"尚未获得可用运行时" | 否 |
-| `incomplete` | `runtimeUrl` 或 `agentName` 缺失其一 | 显示"连接信息仍不完整"，列出缺失字段 | 否 |
-| `starting` | Hosted backend 正在启动 | 显示"宿主正在启动本地后端" | 否 |
-| `ready` | 连接信息完整，可加载 Copilot provider | 显示"Copilot 连接入口已就绪"，展示连接信息 | 是 |
-| `failed` | Hosted backend 启动失败，且无 dev override | 显示失败详情，提供重试按钮 | 否 |
-| `degraded` | Hosted backend 降级，但保留可用 URL | 显示降级警告，仍加载 Copilot provider | 是 |
+表示已经读到部分连接信息，但还缺少至少一个关键字段。
 
-> **`loading` 状态（`CopilotBootstrapState` 专属）**：根层正在读取配置与运行时 snapshot，显示 loading 提示，不加载 Provider。该状态由根层注入，属于 `CopilotBootstrapState` 而非 `CopilotConfigState`。
+最常见的情况是：
 
-### 状态归并逻辑
+- 宿主 ready，但 `agentName` 为空
+- 或开发态填写了 `runtimeUrl`，但 `agentName` 为空
 
-核心函数：[`resolveCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts#L41)
+### `starting`
 
-输入：
-- `settingsResult`：用户本地设置（`runtimeUrl`, `agentName`）
-- `runtimeResult`：Electron 主进程提供的 hosted runtime snapshot
+表示宿主正在启动本地后端。
 
-输出：`CopilotConfigState`
+### `ready`
 
-#### 归并规则
+表示当前连接信息完整，可以挂载聊天入口。
 
-1. **错误态优先**：
-   - 如果 `settingsResult` 或 `runtimeResult` 读取失败 → `error`
-
-2. **Runtime URL 来源选择**（[`resolveRuntimeSelection()`](../../frontend-copilot/src/features/copilot/config.ts#L233)）：
-   - Hosted backend 为 `ready`/`starting`/`degraded` → 使用 hosted `runtimeUrl`，来源标记为 `hosted`
-   - Hosted backend 为 `failed`/`stopped` 且允许 dev override（开发模式 + 用户填写了 `runtimeUrl`）→ 使用用户填写的 `runtimeUrl`，来源标记为 `dev-override`
-   - 否则 → `runtimeUrl` 为 `null`，来源标记为 `none`
-
-3. **状态映射**（基于 hosted backend status）：
-   - `ready` + 连接信息完整 → `ready`
-   - `ready` + 连接信息不完整 → `incomplete`
-   - `starting` → `starting`
-   - `degraded` + 连接信息完整 → `degraded`
-   - `degraded` + 连接信息不完整 → `incomplete`
-   - `failed` + dev override 可用 → `ready`（使用 dev override）
-   - `failed` + dev override 不可用 → `failed`
-   - `stopped` + dev override 可用 → `ready`（使用 dev override）
-   - `stopped` + 两个字段都缺失 → `empty`
-   - `stopped` + 部分字段缺失 → `incomplete`
+这时必须满足：
 
-测试覆盖：[`config.test.ts`](../../frontend-copilot/src/features/copilot/config.test.ts)
+- 最终选定的 `runtimeUrl` 不为空
+- `agentName` 不为空
 
-### 关键字段说明
+### `failed`
 
-每个 `CopilotConfigState`（除 `error`）都包含以下字段：
+表示宿主启动失败，并且当前没有可用的 dev override 可以回退。
 
-- `settings`：归一化后的用户设置
-- `storageState`：设置存储状态（`empty`/`stored`/`error`）
-- `runtime`：Hosted runtime snapshot
-- `runtimeUrl`：最终选定的 runtime URL（可能来自 hosted 或 dev override）
-- `runtimeSource`：URL 来源（`hosted`/`dev-override`/`none`）
-- `agentName`：Agent 名称
-- `agentNameSource`：Agent 名称来源（`settings`/`missing`）
-- `diagnostics`：诊断摘要，包含 hosted status、failure、mode 等信息
-- `devOverrideAllowed`：是否允许 dev override（开发模式 + 非打包）
-- `devOverrideConfigured`：是否已配置 dev override
+### `degraded`
 
-`ready` 和 `degraded` 状态额外保证：
-- `runtimeUrl` 和 `agentName` 都非 `null`
+表示宿主运行态已经降级，但仍保留可用 URL，因此前端仍然允许挂载聊天入口。
 
-## UI 消费
+## Runtime URL 是怎么选出来的
 
-### 根层装配（CopilotAppRoot）
+renderer 不会直接把配置中心里的 `runtimeUrl` 无脑当正式地址使用。
 
-位置：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)
+当前选择规则是：
 
-根层负责：
-1. 读取配置与运行时状态（[`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts#L196)）
-2. 决策是否加载 CopilotKit provider（[`shouldLoadCopilotProvider()`](../../frontend-copilot/src/CopilotAppRoot.tsx#L148)）
-3. 提供统一的 bootstrap controller 给工作台
+### 宿主状态为 `ready` / `starting` / `degraded`
 
-加载 Provider 条件：
-- `configState` 为 `ready` 或 `degraded`
-- Provider 尚未加载
-- 不允许无 Provider 进入工作台
+直接使用 hosted runtime 提供的 `runtimeUrl`。
 
-### 聊天面板消费（CopilotChatPanel）
+此时来源标记为：
 
-位置：[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)
+- `hosted`
 
-根据 `CopilotBootstrapState.status` 渲染不同 UI：
+### 宿主状态为 `failed` / `stopped`
 
-- `loading`：显示"正在等待根层完成运行态装配"（来自 `CopilotBootstrapState`，`CopilotConfigState` 不含此状态）
-- `error`：显示"读取运行态失败"，展示错误信息
-- `empty`：显示"尚未获得可用运行时"，说明缺少连接信息
-- `incomplete`：显示"连接信息仍不完整"，列出缺失字段
-- `starting`：显示"宿主正在启动本地后端"
-- `failed`：显示"宿主启动后端失败"，展示失败详情，提供重试按钮
-- `degraded`：显示"宿主运行态已降级"警告，但仍挂载聊天区域
-- `ready`：显示"Copilot 连接入口已就绪"，挂载聊天区域
+只有在以下条件同时满足时，才允许使用配置中心中的 `hostConfig.runtimeUrl`：
 
-失败态重试条件（[`canRetry()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L505)）：
-- 状态为 `failed`
-- `diagnostics.failure` 存在
-- `diagnostics.failure.retryable` 为 `true`
+- 当前是开发模式
+- 当前不是打包态
+- 配置中心里已经填写了 `runtimeUrl`
 
-## 典型场景示例
+此时来源标记为：
 
-### 场景 1：正常启动（hosted backend）
+- `dev-override`
 
-1. 初始：`HostedBackendState.status = 'stopped'`
-2. Electron 主进程启动 Python runtime → `starting`
-3. 健康检查通过 → `ready`，`baseUrl = 'http://127.0.0.1:8765'`
-4. Renderer 读取 snapshot + 用户设置（`agentName = 'campus-agent'`）
-5. `resolveCopilotConfigState()` → `CopilotConfigState.status = 'ready'`，`runtimeSource = 'hosted'`
-6. UI 显示"Copilot 连接入口已就绪"，加载 CopilotKit provider
+### 其他情况
 
-### 场景 2：启动失败，允许 dev override
+如果两条路径都拿不到地址，则：
 
-1. Hosted backend 启动失败 → `HostedBackendState.status = 'failed'`
-2. 用户在开发模式下手填 `runtimeUrl = 'http://127.0.0.1:3000'`，`agentName = 'campus-agent'`
-3. `resolveCopilotConfigState()` 检测到 dev override 可用 → `CopilotConfigState.status = 'ready'`，`runtimeSource = 'dev-override'`
-4. UI 显示"Copilot 连接入口已就绪"，使用 dev override URL
+- `runtimeSource = 'none'`
+- `runtimeUrl = null`
 
-### 场景 3：运行中降级
+## 状态归并规则
 
-1. Hosted backend 曾经 `ready`，后异常退出
-2. Electron 主进程标记为 `degraded`，保留 `baseUrl`
-3. Renderer 读取 snapshot → `CopilotConfigState.status = 'degraded'`
-4. UI 显示降级警告，但仍挂载聊天区域，允许用户继续尝试连接
+当前归并逻辑可以概括成下面这张表：
 
-### 场景 4：配置不完整
+| Hosted 状态 | bootstrap fields 是否完整 | 最终 renderer 状态 |
+| --- | --- | --- |
+| `ready` | 完整 | `ready` |
+| `ready` | 不完整 | `incomplete` |
+| `starting` | 无论是否完整 | `starting` |
+| `degraded` | 完整 | `degraded` |
+| `degraded` | 不完整 | `incomplete` |
+| `failed` | 可用 dev override 且完整 | `ready` |
+| `failed` | 无可用 dev override | `failed` |
+| `stopped` | 可用 dev override 且完整 | `ready` |
+| `stopped` | 两项都缺失 | `empty` |
+| `stopped` | 只缺一部分 | `incomplete` |
 
-1. Hosted backend 为 `stopped`
-2. 用户只填写了 `runtimeUrl`，未填写 `agentName`
-3. `resolveCopilotConfigState()` → `CopilotConfigState.status = 'incomplete'`，`missingFields = ['agentName']`
-4. UI 显示"连接信息仍不完整"，列出缺失字段
+## `ready` / `degraded` 为什么还要看 `agentName`
 
-## 常见问题
+这点很关键。
 
-### Q: 为什么 `ready` 状态下仍看不到完整聊天 UI？
+当前聊天入口不是“只要有 URL 就能挂起来”，而是至少还要知道当前使用哪个 agent。
 
-A: `ready` 只表示"连接信息完整，可加载 Copilot provider"，不等于"聊天 UI 已完成"。当前实现中，`ready` 后会挂载聊天区域，但完整消息界面取决于 CopilotKit 的加载与连接状态。
+所以现在：
 
-### Q: `degraded` 和 `failed` 有什么区别？
+- 宿主 `ready` 不等于聊天入口一定 `ready`
+- `agentName` 缺失时，前端仍会落到 `incomplete`
 
-A: 
-- `failed`：从未成功启动，或遇到不可恢复错误，无可用 runtime URL
-- `degraded`：曾经 `ready`，但后续异常退出；保留 runtime URL，允许 renderer 继续尝试连接
+## 哪些更新会自动反映到界面
 
-### Q: Dev override 什么时候生效？
+### 会自动反映的
 
-A: 仅在以下条件同时满足时生效：
-- 开发模式（`expectedMode = 'development'`）
-- 非打包环境（`isPackaged = false`）
-- Hosted backend 为 `failed` 或 `stopped`
-- 用户手填了 `runtimeUrl`
+配置中心公共快照现在已经有订阅更新机制。
 
-### Q: 如何排查 `error` 状态？
+因此这些字段变化后，根装配层会收到更新并重新计算 bootstrap 状态：
 
-A: `error` 表示配置或运行时读取链路本身失败，优先检查：
-- Electron 主进程是否正常读取配置文件
-- Preload 是否正常暴露 IPC 桥接
-- Renderer 中 `window.copilotRuntime` 和 `window.copilotSettings` 是否可用
+- `agentName`
+- `runtimeUrl`
+- `theme`
 
-### Q: 为什么用户手填 runtime URL 与 hosted runtime snapshot 会被统一？
+其中：
 
-A: [`resolveCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts#L41) 负责归并两者：
-- 优先使用 hosted runtime 提供的 URL（如果可用）
-- 仅在 hosted runtime 不可用且允许 dev override 时，才使用用户手填 URL
-- 最终输出统一的 `CopilotConfigState`，UI 只需消费这一状态
+- `agentName` / `runtimeUrl` 会影响连接状态
+- `theme` 会影响界面显示，但不影响聊天连接状态
 
-## 代码锚点
+### 当前还不会主动推送的
 
-### 主进程层
+hosted runtime 状态本身当前仍然主要是快照式读取。
 
-- 状态定义：[`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)
-- 状态测试：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts)
-- Runtime manager：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
-- IPC 契约：[`frontend-copilot/electron/copilot-runtime.ts`](../../frontend-copilot/electron/copilot-runtime.ts)
+也就是说：
 
-### Renderer 层
+- 配置中心字段更新现在可以推送到 renderer
+- 但 runtime 运行事实本身还没有形成完整的持续推送链路
 
-- 状态定义：[`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts)
-- 状态归并：[`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)
-- 归并测试：[`frontend-copilot/src/features/copilot/config.test.ts`](../../frontend-copilot/src/features/copilot/config.test.ts)
-- 根层装配：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)
-- 聊天面板：[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)
+因此文档里不能写成“所有运行态变化都会实时推送到前端”。
+
+## UI 当前怎样消费这些状态
+
+### 根装配层
+
+根装配层负责：
+
+- 首次读取 bootstrap 状态
+- 在配置中心公共快照更新后重新计算 bootstrap 状态
+- 决定是否加载 CopilotKit Provider
+- 统一提供 retry 动作
+
+### 聊天面板
+
+聊天面板根据最终状态渲染：
+
+- `loading`：等待装配
+- `error`：读取失败
+- `empty`：未获得可用运行时
+- `incomplete`：连接信息不完整
+- `starting`：宿主正在启动
+- `failed`：宿主启动失败，可显示失败摘要与重试
+- `degraded`：显示降级警告，但仍可挂载聊天区
+- `ready`：显示连接详情并挂载聊天区
+
+## 典型场景
+
+### 场景 1：宿主正常启动
+
+1. 主进程启动 Python runtime
+2. hosted 状态从 `starting` 进入 `ready`
+3. renderer 读到 hosted URL 和配置中心中的 `agentName`
+4. 最终状态为 `ready`
+
+### 场景 2：宿主失败，但开发态 override 可用
+
+1. hosted 状态为 `failed`
+2. 配置中心里已填写开发态 `runtimeUrl`
+3. `agentName` 也存在
+4. 最终 renderer 状态仍可进入 `ready`
+5. 此时 `runtimeSource = 'dev-override'`
+
+### 场景 3：宿主 ready，但 `agentName` 缺失
+
+1. hosted runtime 已就绪
+2. `assistantBehavior.agentName` 为空
+3. 最终状态不是 `ready`，而是 `incomplete`
+
+### 场景 4：主题更新
+
+1. 设置页修改 `theme`
+2. 主进程写盘并广播公共快照
+3. App 收到更新后同步主题
+4. 但聊天连接状态本身不会因为 `theme` 改变而变化
+
+## 常见误解
+
+### 误解 1：`runtimeUrl` 现在总是来自配置中心
+
+不对。
+
+当前优先级仍然是：
+
+1. hosted runtime 提供的地址
+2. 开发态 override
+
+### 误解 2：公共快照里的所有字段都会影响聊天连接状态
+
+不对。
+
+当前真正参与聊天连接判断的只有：
+
+- `agentName`
+- `runtimeUrl`
+
+### 误解 3：配置中心接入以后，runtime 状态也变成实时推送了
+
+不对。
+
+当前有推送的是**配置中心公共快照更新**，不是完整的 runtime 状态流。
+
+### 误解 4：`model` 现在也是进入 `ready` 的必填项
+
+不对。
+
+`model` 当前属于主进程向 runtime 投影的样板字段，不属于 renderer bootstrap 判断字段。
 
 ## 相关文档
 
-- 系统架构总览：[`docs/system/architecture-overview.md`](../system/architecture-overview.md)
-- 运行时生命周期：[`docs/system/runtime-lifecycle.md`](../system/runtime-lifecycle.md)
-- Session 与状态模型：[`docs/system/session-and-state-model.md`](../system/session-and-state-model.md)
-- 前端分册入口：[`docs/frontend/README.md`](./README.md)
+- [当前生效字段参考](./reference-current-fields.md)
+- [前端现在怎样连接后端](./backend-connection-contract.md)
+- [前端当前 UI 状态说明](./ui-current-state.md)
+- [会话与状态模型](../system/session-and-state-model.md)
+- [运行时生命周期](../system/runtime-lifecycle.md)

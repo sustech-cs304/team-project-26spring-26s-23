@@ -118,7 +118,7 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
 
 | 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
 |------|---------|---------|--------|------|
-| Settings File | `--settings-file` | `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE` | `{config_dir}/copilot-settings.json` | Copilot 设置文件 |
+| Settings File | `--settings-file` | `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE` | `{config_dir}/copilot-settings.json` | legacy Copilot 设置文件路径；当前主要保留给宿主内部迁移与兼容语义 |
 | Host Log File | `--host-log-file` | `COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE` | `{logs_dir}/electron-host.log` | Electron 主进程日志 |
 | Backend Stdout Log | `--backend-stdout-log-file` | `COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE` | `{logs_dir}/backend.stdout.log` | Python 子进程 stdout |
 | Backend Stderr Log | `--backend-stderr-log-file` | `COPILOT_DESKTOP_RUNTIME_BACKEND_STDERR_LOG_FILE` | `{logs_dir}/backend.stderr.log` | Python 子进程 stderr |
@@ -154,6 +154,11 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
 backend/data/
 └── desktop-runtime/          # runtime_root_dir
     ├── config/               # config_dir
+    │   ├── config-center/
+    │   │   ├── frontend-preferences.json
+    │   │   ├── assistant-behavior.json
+    │   │   ├── host-config.json
+    │   │   └── backend-exposed.json
     │   └── copilot-settings.json
     ├── logs/                 # logs_dir
     │   ├── electron-host.log
@@ -169,7 +174,8 @@ backend/data/
 
 | 路径 | 角色 | 创建时机 |
 |------|------|---------|
-| `copilot-settings.json` | Copilot 用户设置持久化 | 按需创建 |
+| `config-center/*.json` | 统一配置中心正式分域文档 | 宿主首次读取或写入配置中心时按需创建 |
+| `copilot-settings.json` | legacy 磁盘格式路径 | 当前主要保留给宿主内部迁移与兼容输入语义 |
 | `electron-host.log` | Electron 主进程日志（由前端写入） | 前端启动时 |
 | `backend.stdout.log` | Python 子进程标准输出 | 前端重定向时 |
 | `backend.stderr.log` | Python 子进程标准错误 | 前端重定向时 |
@@ -194,8 +200,25 @@ Electron 主进程通过 [`frontend-copilot/electron/runtime/runtime-config.ts`]
 
 1. 分配一个可用的 loopback 端口
 2. 生成随机 local token（通过 [`createLocalToken()`](../../frontend-copilot/electron/runtime/runtime-config.ts#L162)）
-3. 构造完整的 CLI 参数数组
-4. 启动 Python 子进程并传递参数
+3. 在宿主侧决定 `--model` 最终来源（显式主进程参数优先，其次是统一配置中心中的 `backendExposed.model`，最后才是环境变量回退）
+4. 构造完整的 CLI 参数数组
+5. 启动 Python 子进程并传递参数
+
+## 统一配置中心与 Python runtime 的关系
+
+当前统一配置中心已经在 Electron 主进程侧正式落地，但 Python runtime 自己并不会直接读取这些分域文档。
+
+当前更准确的分工是：
+
+- Electron 主进程负责管理 `config/config-center/` 下的正式配置域文档
+- renderer 通过 preload 只消费配置中心公共快照与公共补丁接口
+- Python runtime 继续只解释 CLI 参数、环境变量和默认值
+
+这意味着：
+
+- `config-center/*.json` 当前属于**宿主配置治理层**
+- `--settings-file` 对应的 `copilot-settings.json` 当前主要保留为 **legacy migration / compatibility path**
+- 统一配置中心中的 `backendExposed.model` 当前是由宿主读取后再投影成 Python `--model` 参数，而不是由 Python 直接读取配置文件
 
 ## 安全边界
 

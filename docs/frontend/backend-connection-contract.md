@@ -1,6 +1,6 @@
 ---
 title: 前端现在怎样连接后端
-description: 说明 renderer 侧如何读取设置、宿主运行态与开发态覆盖，并决定最小后端连接链路。
+description: 说明 renderer 当前如何通过统一配置中心公共快照与 hosted runtime 快照决定最小连接链路。
 sidebar_position: 2
 sidebar_label: 后端连接契约
 ---
@@ -11,99 +11,107 @@ sidebar_label: 后端连接契约
 
 这篇文档适合：
 
-- 准备做桌面前后端联调，但想先知道 renderer 现在到底依赖什么事实来源的人
-- 需要区分“用户设置”“宿主运行态”“开发态覆盖”三层语义的人
-- 接手 Electron + React 前端，想快速看懂最小连接链路的人
+- 准备做桌面前后端联调，但想先知道 renderer 现在到底依赖哪些事实来源的人
+- 想确认“统一配置中心接入以后，连接链路到底改成什么样了”的人
+- 接手 Electron + React 前端，想快速看懂当前最小连接主路径的人
 
-如果你想继续查附录，可以优先看：
+如果你还想继续查表，可以配合阅读：
 
-- [reference-current-fields.md](./reference-current-fields.md)
-- [reference-runtime-states.md](./reference-runtime-states.md)
+- [当前生效字段参考](./reference-current-fields.md)
+- [前端运行时状态参考](./reference-runtime-states.md)
+- [会话与状态模型](../system/session-and-state-model.md)
 
 ## 先给结论
 
-- renderer 现在不再默认靠自己猜测 `runtimeUrl`，而是优先读取 Electron 主进程导出的宿主运行态摘要。
-- preload 当前同时暴露两类最小接口：一类用于读取 / 保存用户 Copilot 设置，另一类用于读取 / 受控重试宿主运行态。
-- 宿主管理链路优先；只有在开发态且宿主当前没有可用 runtime URL 时，才允许使用手工 `runtimeUrl` 作为 dev override / fallback。
-- `agentName` 目前仍来自本地设置；它不再决定宿主是否 ready，但仍决定 CopilotKit 最终是否能完成最小接入。
-- 前端现在区分 `loading`、`empty`、`incomplete`、`starting`、`ready`、`failed`、`degraded`、`error` 这些状态。
-- CopilotKit 现在会在 `ready` 或 `degraded` 且存在可用 `runtimeUrl` / `agentName` 时初始化；其接入路径本身没有被破坏。
+当前 renderer 连接后端时，不再走“自己读取旧 settings 文件接口”的做法，而是同时消费两类信息：
+
+1. **统一配置中心公共快照**
+   - 当前真正用于 bootstrap 的字段是：
+     - `assistantBehavior.agentName`
+     - `hostConfig.runtimeUrl`
+2. **hosted runtime 快照**
+   - 由 Electron 主进程维护当前本地 Python runtime 的运行事实
+
+然后 renderer 会把这两类信息合并，整理成最终的连接状态。
+
+现在最重要的几条事实是：
+
+- renderer 已经不再直接使用旧 `CopilotSettings` renderer API
+- preload 暴露的是“配置中心公共接口 + runtime 接口”，而不是旧 settings 读写接口
+- 宿主管理的 runtime URL 仍然优先于手工填写值
+- `runtimeUrl` 现在主要表示**开发态 override**
+- `agentName` 仍然是进入 `ready` / `degraded` 聊天入口的必需字段之一
+- `model` 已经在统一配置中心里存在，但它当前属于主进程投影给 runtime 的字段，不属于 renderer 连接判断字段
 
 ## 当前连接信息从哪里来
 
-当前前端连接后端时，会同时读取两类信息：
+### 1. 统一配置中心公共快照
 
-1. **用户设置**
-   - 仍保存在 Electron `userData/desktop-runtime/config/copilot-settings.json`
-   - 当前主要字段仍是 `runtimeUrl` 与 `agentName`
-   - 其中 `runtimeUrl` 现在主要只用于开发态 override，而不是发布态主来源
+renderer 当前通过 preload 调用配置中心公共快照接口，拿到一份裁剪后的配置视图。
 
-2. **宿主运行态摘要**
-   - 由 Electron 主进程维护 hosted backend 状态
-   - 通过 preload 暴露给 renderer
-   - 当前摘要至少包含：宿主状态、预期 / 已解析模式、当前 runtime URL、是否打包态、最小失败摘要
+当前公共快照里包含 4 个域：
 
-换句话说，renderer 现在消费的是：
+- `frontendPreferences`
+- `assistantBehavior`
+- `hostConfig`
+- `backendExposed`
 
-- 一份**用户可编辑设置**
-- 一份**宿主管理的运行事实**
+但真正参与当前聊天连接判断的只有两个字段：
 
-而不是继续把两者混成一个“只要配了 `runtimeUrl` 就算可以了”的单层模型。
+- `assistantBehavior.agentName`
+- `hostConfig.runtimeUrl`
+
+这两个字段会先被 renderer 归一化成 bootstrap fields，再与 runtime 快照一起参与状态计算。
+
+### 2. Hosted runtime 快照
+
+renderer 还会读取 Electron 主进程给出的 hosted runtime 快照。它当前至少会告诉 renderer：
+
+- 宿主状态：`starting` / `ready` / `failed` / `stopped` / `degraded`
+- 当前可用 runtime URL
+- 当前预期模式和已解析模式
+- 是否为打包态
+- 最小失败摘要
+
+这部分表示的是**宿主当前运行事实**，不是用户设置。
 
 ## 当前最小桥接面是什么
 
-当前 preload 暴露的能力仍然保持在最小范围：
+现在 preload 暴露给 renderer 的最小能力是：
 
-- 读取 / 保存 Copilot 设置
-- 读取当前宿主运行态摘要
-- 触发一次受控的 hosted backend 重试启动
+- 读取配置中心公共快照
+- 订阅配置中心公共快照更新
+- 发送配置中心公共补丁
+- 读取当前 hosted runtime 快照
+- 触发一次受控的 runtime 重试
 
-它**不会**向 renderer 暴露：
+它不会把这些能力直接交给 renderer：
 
-- Python 解释器路径
+- Python 可执行文件路径
 - spawn 参数
-- token 原文
-- 任意文件系统访问能力
-- 任意诊断文件读写能力
+- local token 明文
+- 任意文件系统访问
+- 任意日志和诊断文件读写
 
-因此，renderer 看到的是已经裁剪过的摘要，而不是底层宿主细节。
+所以 renderer 看到的是一个**已经裁剪过、适合 UI 消费的桥接面**。
 
-## 应用启动时会怎么决定连接状态
+## 应用启动时怎样决定连接状态
 
-当前前端启动时，会按下面的顺序工作：
+当前前端启动时，大致会按下面的顺序工作：
 
-1. renderer 通过 preload 读取本地 Copilot 设置
-2. renderer 通过 preload 读取主进程维护的 hosted backend 运行态摘要
-3. 前端先判断宿主当前是否已经提供可用 runtime URL
-4. 如果宿主尚未提供，且当前处于开发态，则再判断是否允许使用手工 `runtimeUrl` 作为 override
-5. 再结合 `agentName` 是否存在，整理为最终连接状态
-6. 只有在可连接状态下，才把结果交给 CopilotKit
+1. 根装配层读取配置中心公共快照
+2. 根装配层读取 hosted runtime 快照
+3. renderer 先从公共快照中整理 bootstrap fields
+4. renderer 再判断宿主当前是否已经提供可用 runtime URL
+5. 如果宿主没有提供，且当前处于开发态，再判断是否允许使用 `hostConfig.runtimeUrl` 作为 dev override
+6. 最后再结合 `agentName` 是否存在，整理出最终连接状态
+7. 只有在连接条件满足时，才会加载 CopilotKit Provider
 
 这里最关键的变化是：
 
-- **正式宿主管理链路优先**
-- **开发态 override 只是补充，不是默认主路径**
-
-## 现在怎样理解各类状态
-
-当前前端最少需要区分下面几类：
-
-- `loading`：正在读取设置和宿主运行态
-- `empty`：既没有宿主提供的可用 runtime URL，也没有开发态 override，且 `agentName` 也缺失
-- `incomplete`：已读取到部分信息，但仍缺少 `runtimeUrl` 或 `agentName`
-- `starting`：宿主正在启动本地 hosted backend，renderer 等待宿主提供地址
-- `ready`：已拿到可用 runtime URL 与 `agentName`，可以初始化 CopilotKit
-- `failed`：宿主启动失败，且当前没有可用 dev override 可回退
-- `degraded`：宿主记录到降级 / 异常退出，但当前仍保留可用 runtime URL，因此前端仍可维持最小连接入口
-- `error`：preload / IPC / 设置读取链路本身失败
-
-这里尤其要注意：
-
-- `failed` / `degraded` 是**宿主运行态问题**
-- `empty` / `incomplete` 是**连接信息不足**
-- `error` 是**读取链路本身有问题**
-
-这三类语义不能混在一起写。
+- **宿主管理链路优先**
+- **开发态 override 只是补充**
+- **renderer 的配置读取入口已经统一到配置中心公共快照**
 
 ## `runtimeUrl` 和 `agentName` 现在分别扮演什么角色
 
@@ -111,57 +119,128 @@ sidebar_label: 后端连接契约
 
 `runtimeUrl` 现在有两种来源：
 
-1. 宿主 hosted backend 成功启动后自动导出的地址
-2. 开发态下显式配置的 override 地址
+1. hosted backend 成功启动后，由宿主直接提供的地址
+2. 开发态下配置中心中的 `hostConfig.runtimeUrl`
 
 优先级是：
 
-1. 宿主管理地址
+1. 宿主提供的 hosted runtime URL
 2. 开发态 override
 3. 无可用地址
 
-因此，发布态用户不应该再被默认要求手工填写内置 runtime 地址。
+所以现在不能再把 `runtimeUrl` 理解成“用户总是需要手填的正式后端地址”。
 
 ### `agentName`
 
-`agentName` 当前仍来自设置层。
+`agentName` 当前来自统一配置中心中的 `assistantBehavior.agentName`。
 
 这意味着：
 
-- 宿主 ready 并不自动等于 CopilotKit 一定可初始化
-- 如果 `agentName` 为空，前端仍会落到 `incomplete`
-- 当前仍保留“agent 名称来源来自设置”的最小语义
+- 宿主进入 `ready` 并不自动代表聊天入口一定可用
+- 如果 `agentName` 缺失，renderer 仍会落到 `incomplete`
+- 当前最小聊天接入仍然需要它
 
 ## 当前 UI 会怎样反映这些状态
 
-当前聊天面板已经从“单纯检查配置完整性”转为“显示宿主运行态 + 可选开发态覆盖”的最小状态 UI：
+当前聊天面板和根装配层已经把下面几类情况分开：
 
-- 能区分启动中 / 已连接 / 启动失败 / 配置缺失 / 读取失败 / 运行降级
-- `ready` 会展示当前有效 runtime URL、来源、agent 来源、模式来源等摘要
-- `failed` 会展示最小失败摘要，并允许受控重试
-- `degraded` 会明确提示宿主已降级，但仍可能保留可用连接入口
-- `empty` / `incomplete` 会明确提示“这主要是连接信息不足”，而不是误导成后端异常
+- `loading`：根层还在读取配置与运行态
+- `empty`：既没有宿主地址，也没有 dev override，且 `agentName` 也缺失
+- `incomplete`：只拿到了一部分连接信息
+- `starting`：宿主正在启动本地后端
+- `ready`：连接信息完整，可加载聊天入口
+- `failed`：宿主启动失败，且没有可用 dev override
+- `degraded`：宿主曾经就绪，但后来降级；当前仍保留可用 URL
+- `error`：读取链路本身失败
+
+这里尤其要注意：
+
+- `failed` / `degraded` 主要是**宿主运行态问题**
+- `empty` / `incomplete` 主要是**连接信息不足**
+- `error` 主要是**读取链路本身出错**
+
+这三类语义不应混写。
+
+## 配置更新后，连接状态会不会跟着变
+
+会，但当前方式仍然比较克制。
+
+现在已经有一条明确链路：
+
+1. 设置页通过配置中心公共补丁修改 `agentName` 或 `runtimeUrl`
+2. 主进程写入配置中心分域文件
+3. 主进程广播新的公共快照
+4. 根装配层收到公共快照更新后，重新计算 bootstrap 状态
+
+所以当前这两个字段已经不只是“启动时读一次”的静态输入了。
+
+不过要注意：
+
+- 这是**配置更新触发的重算**
+- 不是 runtime 状态本身已经变成了持续推送流
+
+也就是说，runtime 运行事实仍然是按需读取的快照式模型，只是配置中心现在已经有了公共订阅更新。
+
+## 旧设置链路现在还剩什么
+
+这里最容易混淆，必须分清两层：
+
+### Renderer 侧
+
+旧 renderer settings API 已经移除。
+
+现在 renderer 不应再被描述成：
+
+- “通过旧 `copilotSettings.load()` 读取设置”
+- “直接保存旧 settings 文件”
+
+### Main process 内部
+
+主进程内部仍然保留从旧 `copilot-settings.json` 提取 `runtimeUrl` / `agentName` 的迁移语义。
+
+这表示：
+
+- 旧磁盘格式还有 **legacy disk migration** 价值
+- 但它已经不是 renderer 正式接口
+- 也不是未来长期配置外观
+
+## 当前不要误写成已实现的事
+
+下面这些写法当前都不准确：
+
+- “renderer 仍然通过旧 settings API 连接后端”
+- “preload 现在主要暴露 settings load/save 接口”
+- “`runtimeUrl` 是发布态默认连接方式”
+- “设置页里的 API 服务器表单都已经接到真实后端”
+- “`model` 已经成为 renderer 连接后端时的正式必需字段”
+
+其中最后一点尤其重要：
+
+- `model` 确实已经纳入统一配置中心
+- 但它当前属于主进程向 runtime 投影的样板字段
+- 它现在**不是** renderer bootstrap 判断字段
 
 ## 当前边界
 
-当前已经成立的事实是：
+当前已经成立的事实：
 
-- renderer 已优先消费宿主运行态，而不是自己推断地址
+- renderer 已经优先消费配置中心公共快照与 hosted runtime 快照
 - preload 暴露面仍保持在受控最小范围
-- CopilotKit 注入路径仍然沿用原有入口
-- 开发态手工地址仍可作为 fallback，但边界已经显式化
+- 配置中心公共补丁已经能驱动部分连接字段更新
+- `agentName` 与 `runtimeUrl` 已经有设置页正式入口
+- CopilotKit 注入路径仍然沿用根装配层统一决策
 
-当前还**不是**这篇文档要声称的事实：
+当前还不是这篇文档要声称的事实：
 
-- bundled Python staging 已完成
-- 安装包资源布局已完成
-- 打包后发布态验收矩阵已完成
-- 完整聊天产品 UI 已经完成
-- renderer 可以直接访问底层运行日志或任意诊断文件
+- 设置页整个“API 服务器”分区都已接通真实运行闭环
+- 后端可暴露字段样板已经做完整套产品化
+- Python runtime 会直接读取配置中心分域文件
+- renderer 可以直接访问底层日志或诊断文件
 
 ## 继续阅读
 
-- 字段事实：[reference-current-fields.md](./reference-current-fields.md)
-- 状态附录：[reference-runtime-states.md](./reference-runtime-states.md)
-- 页面能力：[reference-page-capabilities.md](./reference-page-capabilities.md)
-- 未来接口讨论草案：[future-backend-api-draft.md](./future-backend-api-draft.md)
+- [当前生效字段参考](./reference-current-fields.md)
+- [前端当前 UI 状态说明](./ui-current-state.md)
+- [前端运行时状态参考](./reference-runtime-states.md)
+- [会话与状态模型](../system/session-and-state-model.md)
+- [后端运行与配置](../backend/run-and-config.md)

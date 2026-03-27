@@ -1,6 +1,6 @@
 ---
 title: 会话与状态模型
-description: 解释前端配置状态、宿主运行时状态与后端会话模型如何协同工作。
+description: 解释统一配置中心公共快照、宿主运行时状态与后端会话模型如何协同工作。
 sidebar_position: 4
 ---
 
@@ -8,305 +8,325 @@ sidebar_position: 4
 
 ## 概述
 
-本文档描述当前系统中的会话（session）与状态（state）模型，解释前端工作区如何通过 `threadId` 维持多轮对话上下文，以及 renderer 侧配置状态、运行时状态与后端会话存储之间的协作关系。
+本文档解释当前系统中的两类“状态”：
 
-**核心问题**：
-- 为什么同一个会话可以延续上下文？
-- 前端展示的"运行时状态 / 配置状态 / 错误状态"分别来自哪里？
-- `threadId` 是如何变成后端 session key 的？
-- 哪些状态是宿主 runtime 的，哪些状态是 renderer 侧派生的？
+1. **前端 bootstrap / 连接状态**
+2. **后端 session / thread 状态**
 
-**当前边界**：
-- 会话存储为内存态（`InMemorySessionStore`），进程重启后丢失
-- 默认单 agent 运行，未实现持久化记忆或复杂状态机
-- 前端 `threadId` 直接映射为后端 `thread_id`，一对一关系
+它重点回答这些问题：
+
+- renderer 现在到底从哪里拿配置状态
+- 配置中心公共快照和 runtime 快照怎样合并
+- `threadId` 为什么可以维持多轮对话上下文
+- 哪些状态是宿主 runtime 的，哪些状态是 renderer 侧派生出来的
+
+## 当前边界
+
+- 会话存储当前仍为内存态，Python runtime 重启后丢失
+- 当前默认仍是单 agent
+- renderer 当前真正参与聊天连接判断的 bootstrap fields 只有 `agentName` 和 `runtimeUrl`
+- 统一配置中心公共快照现在已经可以推送配置更新，但 runtime 运行事实本身还不是完整实时流
 
 ## 前端状态层次
 
+### Renderer 侧现在读的不是旧 settings 接口
+
+当前 renderer 不再以旧 renderer settings API 作为正式来源。
+
+现在它主要读取两类输入：
+
+1. **统一配置中心公共快照**
+2. **hosted runtime 快照**
+
+然后由 renderer 自己把这两部分归并成最终的 bootstrap 状态。
+
+### 配置中心公共快照当前提供什么
+
+当前公共快照包含 4 个域：
+
+- `frontendPreferences`
+- `assistantBehavior`
+- `hostConfig`
+- `backendExposed`
+
+但它们在状态模型里的角色并不一样：
+
+| 域 | 当前字段 | 在状态模型中的角色 |
+| --- | --- | --- |
+| `frontendPreferences` | `theme` | 前端显示偏好，不参与聊天连接判断 |
+| `assistantBehavior` | `agentName` | bootstrap field，直接影响聊天入口是否完整 |
+| `hostConfig` | `runtimeUrl` | bootstrap field，在开发态下作为 runtime override 候选 |
+| `backendExposed` | `model` | 当前由主进程读取并投影给 runtime，不参与 renderer bootstrap 判断 |
+
 ### Renderer 侧配置状态
 
-前端通过 [`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts#L41) 中的 `resolveCopilotConfigState` 函数归并多个来源的状态，生成统一的 `CopilotConfigState`。
+renderer 当前通过 `resolveCopilotConfigState()` 把多来源状态归并为统一的 `CopilotConfigState`。
 
-**状态来源**：
-1. **Settings 状态**：从 Electron 预加载桥接读取的用户配置（`runtimeUrl`、`agentName`）
-2. **Hosted Runtime 状态**：宿主后端的运行时快照（`starting` / `ready` / `failed` / `stopped` / `degraded`）
-3. **派生决策**：根据上述两者计算出的 `runtimeSource`（`hosted` / `dev-override` / `none`）
+### 当前状态来源
 
-**配置状态类型**（[`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts#L26)）：
-- `empty`：缺少 `runtimeUrl` 和 `agentName`
-- `incomplete`：部分字段缺失
-- `starting`：宿主后端正在启动
-- `ready`：可连接，所有必需字段完整
-- `failed`：宿主后端启动失败
-- `degraded`：宿主后端曾成功但已降级，保留的 URL 仍可用
-- `error`：读取配置或运行时失败
+1. **配置中心 bootstrap fields**
+   - `agentName`
+   - `runtimeUrl`
+2. **Hosted runtime 状态**
+   - `starting` / `ready` / `failed` / `stopped` / `degraded`
+3. **派生决策**
+   - `runtimeSource`（`hosted` / `dev-override` / `none`）
+   - `agentNameSource`
+   - 最终 `status`
 
-**状态归并逻辑**：
-```typescript
-// frontend-copilot/src/features/copilot/config.ts:41
-export function resolveCopilotConfigState(input: {
-  settingsResult: CopilotRendererSettingsLoadResult
-  runtimeResult: CopilotRendererRuntimeLoadResult
-}): CopilotConfigState
-```
+### 当前配置状态类型
 
-该函数将 settings 与 hosted runtime 状态合并，决定最终的 `status`、`runtimeUrl`、`runtimeSource` 等字段。例如：
-- 当 `runtime.status === 'ready'` 且所有字段完整时，返回 `{ status: 'ready' }`
-- 当 `runtime.status === 'failed'` 但配置了 `dev-override` 时，仍可返回 `{ status: 'ready' }`
+renderer 当前会归并出这些状态：
 
-### Hosted Backend 运行时状态
+- `empty`
+- `incomplete`
+- `starting`
+- `ready`
+- `failed`
+- `degraded`
+- `error`
 
-宿主后端状态由 Electron 主进程管理，存储在 [`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts#L4) 中的 `HostedBackendState`。
+另外，根装配层还会在外层额外加一个：
 
-**状态字段**：
-- `status`：`starting` / `ready` / `failed` / `stopped` / `degraded`
-- `mode`：运行模式（`development` / `bundled`）
-- `baseUrl`：后端运行地址（例如 `http://127.0.0.1:8000`）
-- `pid`：进程 ID
-- `startedAt` / `readyAt` / `stoppedAt`：时间戳
-- `exitCode` / `signal`：进程退出信息
-- `lastFailure`：失败摘要（包含 `code`、`phase`、`message`、`retryable` 等）
+- `loading`
 
-`HostedBackendState` 本身不包含 `environment` 字段；`development` / `production` 的运行环境区分来自 hosted runtime 启动配置，而 `mode` 仅表示 Python runtime 解析结果（`development` / `bundled`）。
+### 这些状态分别是什么意思
 
-**状态转换**：
-- `stopped` → `starting`：调用 `markHostedBackendStarting`
-- `starting` → `ready`：健康检查通过后调用 `markHostedBackendReady`
-- `starting` / `ready` → `failed`：启动失败或运行时错误调用 `markHostedBackendFailed`
-- `ready` → `degraded`：曾成功但异常退出调用 `markHostedBackendDegraded`
+| 状态 | 当前语义 |
+| --- | --- |
+| `loading` | 根层还在读取配置中心公共快照和 runtime 快照 |
+| `empty` | `runtimeUrl` 和 `agentName` 都缺失 |
+| `incomplete` | 只读到部分连接信息 |
+| `starting` | 宿主正在启动本地后端 |
+| `ready` | 最终连接信息完整，可以挂载聊天入口 |
+| `failed` | 宿主启动失败，且当前没有可用 dev override |
+| `degraded` | 宿主已降级，但当前仍保留可用 URL |
+| `error` | 读取链路本身失败 |
 
-这些状态通过 IPC 传递给 renderer 进程，成为配置状态归并的输入之一。
+## Bootstrap fields 当前怎样参与判断
 
-### UI 展示状态
+### `agentName`
 
-[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L29) 根据 `CopilotBootstrapState` 渲染不同的 UI：最外层 bootstrap 包装提供 `loading` 状态，内部状态部分才是 `CopilotConfigState`，其 `status` 字段对应其余状态。
+当前 `agentName` 来自：
 
-- `loading`（bootstrap 外层）：等待根层完成运行态装配
-- `error`：读取运行态失败（IPC 链路问题）
-- `empty` / `incomplete`：显示缺失字段提示
-- `starting`：宿主正在启动本地后端
-- `failed`：宿主启动后端失败，显示失败摘要与重试按钮
-- `degraded`：运行态已降级，但仍可连接
+- `snapshot.domains.assistantBehavior.agentName`
+
+它现在仍然是进入 `ready` / `degraded` 的必需字段之一。
+
+这意味着：
+
+- 宿主 `ready` 并不自动代表聊天入口一定 `ready`
+- 如果 `agentName` 为空，前端仍会落到 `incomplete`
+
+### `runtimeUrl`
+
+当前 `runtimeUrl` 来自：
+
+- `snapshot.domains.hostConfig.runtimeUrl`
+
+但它并不是任何时候都直接拿来用。
+
+当前选择规则是：
+
+1. 如果 hosted runtime 已经提供 URL，则优先使用 hosted URL
+2. 只有当 hosted 状态为 `failed` / `stopped`，且当前处于开发态时，才允许把配置中心中的 `runtimeUrl` 当作 dev override
+3. 否则视为没有可用 URL
+
+所以当前 `runtimeUrl` 更准确的语义是：
+
+- **开发态 override 候选**
+
+而不是：
+
+- **发布态总是由用户手填的正式服务地址**
+
+## Hosted backend 运行时状态
+
+宿主后端状态由 Electron 主进程维护。
+
+### 当前状态字段
+
+它当前至少包含：
+
+- `status`
+- `mode`
+- `baseUrl`
+- `pid`
+- `startedAt` / `readyAt` / `stoppedAt`
+- `exitCode` / `signal`
+- `lastFailure`
+
+### 当前状态转换
+
+- `stopped` → `starting`
+- `starting` → `ready`
+- `starting` / `ready` → `failed`
+- `ready` → `degraded`
+
+这些状态通过 IPC 传给 renderer，成为 renderer 归并状态的重要输入。
+
+## 配置更新与状态更新时机
+
+### 初始加载
+
+应用启动时，根装配层会：
+
+1. 读取配置中心公共快照
+2. 读取 hosted runtime 快照
+3. 归并成初始 bootstrap 状态
+4. 缓存在根层
+
+### 配置中心被动更新
+
+这是当前和旧实现相比最重要的变化之一。
+
+现在配置中心公共快照已经支持订阅更新，所以：
+
+- 当 `theme` 更新时，App 可以同步主题
+- 当 `agentName` 或 `runtimeUrl` 更新时，根装配层会重新计算 bootstrap 状态
+
+这意味着当前配置状态不再只是“启动时读一次”的模型。
+
+### Runtime 状态更新
+
+但当前还要注意另一半边界：
+
+- **配置中心公共快照更新可以推送**
+- **runtime 运行事实本身仍主要是快照式读取**
+
+所以当前不能把系统写成“所有运行态变化都会实时推送到 renderer”。
+
+## UI 展示状态
+
+`CopilotChatPanel` 当前根据 `CopilotBootstrapState` 渲染不同 UI：
+
+- `loading`：等待根层完成装配
+- `error`：读取失败
+- `empty` / `incomplete`：提示缺失字段
+- `starting`：提示宿主正在启动
+- `failed`：显示失败摘要与重试按钮
+- `degraded`：显示降级警告，但仍可连接
 - `ready`：连接入口已就绪，挂载聊天区域
 
-**诊断信息**（[`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts#L37)）：
-```typescript
-export interface CopilotDiagnosticsSummary {
-  hostedStatus: CopilotRendererRuntimeSnapshot['status']
-  failure: CopilotRendererRuntimeFailureSummary | null
-  mode: PythonRuntimeMode
-  modeSource: 'resolved' | 'expected'
-  runtimeSource: 'hosted' | 'dev-override' | 'none'
-}
-```
+### 诊断信息现在主要解释什么
 
-这些诊断信息在 UI 中以详情网格形式展示，帮助用户理解当前状态来源。
+当前 UI 里的诊断信息主要回答：
+
+- 当前 hosted 状态是什么
+- 当前 runtime URL 来自哪里
+- 当前模式来自宿主已解析值，还是只拿到了 expected mode
+- 当前是否有可重试失败信息
 
 ## 后端会话存储
 
 ### Session Store 设计
 
-后端使用 [`backend/app/copilot_runtime/session_store.py`](../../backend/app/copilot_runtime/session_store.py#L55) 中的 `InMemorySessionStore` 维护会话记录。
+后端当前使用 `InMemorySessionStore` 维护会话记录。
 
-**核心数据结构**：
-```python
-@dataclass(slots=True)
-class RuntimeSessionRecord:
-    thread_id: str
-    agent_name: str
-    metadata: dict[str, Any]
-    messages: list[RuntimeTextMessage]
-    created_at: datetime
-    updated_at: datetime
-```
+### 核心语义
 
-**存储语义**：
-- 以 `thread_id` 为 key 存储在内存字典中
-- 每个 session 包含完整的消息历史（`messages`）
-- 消息为 `RuntimeTextMessage`，包含 `role`（`user` / `assistant`）、`content`、`created_at`
+- 以 `thread_id` 为 key 存储在内存中
+- 每个 session 保存完整消息历史
+- 会话记录包含：
+  - `thread_id`
+  - `agent_name`
+  - `metadata`
+  - `messages`
+  - `created_at` / `updated_at`
 
-**关键方法**：
-- `get_or_create(thread_id, agent_name, metadata)`：获取或创建会话，返回 `(session, newly_created)`
-- `append_turn(thread_id, agent_name, user_text, assistant_text, metadata)`：追加一轮对话
-- `list_messages(thread_id)`：返回会话的消息历史
+### 当前限制
 
-**测试依据**（[`backend/tests/unit/copilot_runtime/test_session_store.py`](../../backend/tests/unit/copilot_runtime/test_session_store.py#L6)）：
-- 新 `thread_id` 创建新会话，`created` 为 `True`
-- 相同 `thread_id` 复用会话，`created` 为 `False`，metadata 合并
-- `append_turn` 自动去除首尾空白，空内容抛出 `ValueError`
-- 消息历史按追加顺序保存，`updated_at` 更新为最后一条消息的时间
+- Python runtime 重启后会话丢失
+- 当前没有持久化记忆、长期记忆或摘要压缩机制
 
-### threadId 传递链路
+## `threadId` 传递链路
 
-**前端侧**：
-1. [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx#L133) 将用户选择的会话 ID 作为 `threadId` 传递给 `CopilotChatPanel`
-2. [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L279) 调用 `setCopilotThreadId(threadId)` 设置 CopilotKit 的 `threadId`
-3. CopilotKit 在发送请求时将 `threadId` 包含在请求体中
+### 前端侧
 
-**后端侧**：
-1. [`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py#L47) 中的 `RuntimeConnectRequest` 和 `RuntimeRunRequest` 包含 `thread_id` 字段
-2. [`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py#L49) 中的 `RuntimeBridge.run` 方法接收 `request.thread_id`
-3. Bridge 调用 `session_store.get(request.thread_id)` 获取现有会话
-4. 执行成功后调用 `session_store.append_turn(thread_id=request.thread_id, ...)` 持久化
+1. `AssistantWorkspace` 把当前选中的话题 ID 作为 `threadId` 传给聊天面板
+2. `CopilotChatPanel` 把它传给 CopilotKit
+3. CopilotKit 在请求体中携带该 `threadId`
 
-**关键代码**（[`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py#L49)）：
-```python
-async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
-    existing_session = self._session_store.get(request.thread_id)
-    history = self._build_message_history(
-        existing_session.message_history() if existing_session is not None else ()
-    )
-    # ... 执行 agent ...
-    persisted_session, newly_created = self._session_store.append_turn(
-        thread_id=request.thread_id,
-        agent_name=request.agent_name,
-        user_text=request.user_message_text,
-        assistant_text=assistant_text,
-        metadata={"last_run_id": request.run_id},
-    )
-```
+### 后端侧
 
-### 多轮上下文实现
+1. Copilot runtime 合约接收 `thread_id`
+2. `RuntimeBridge.run()` 读取该字段
+3. `session_store` 用它获取已有 session
+4. agent 执行成功后，把这一轮 user / assistant 消息追加回同一个 `thread_id`
 
-**历史加载**：
-- Bridge 从 session store 读取 `existing_session.message_history()`
-- 调用 `_build_message_history` 将 `RuntimeTextMessage` 转换为 PydanticAI 的 `ModelMessage`
-- 转换逻辑（[`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py#L88)）：
-  - `user` 消息 → `ModelRequest.user_text_prompt(content)`
-  - `assistant` 消息 → `ModelResponse(parts=[TextPart(content=content)])`
-  - 验证消息角色交替（user → assistant → user → ...）
+### 结果是什么
 
-**历史传递**：
-- Agent executor 接收 `message_history: list[ModelMessage]`
-- PydanticAI 将历史作为上下文传递给 LLM
-- LLM 基于完整历史生成回复
+只要继续使用同一个 `threadId`，后端就会复用已有历史，于是多轮上下文能够延续。
 
-**成功持久化**：
-- 仅在 agent 执行成功后调用 `append_turn`
-- 失败时不更新 session store，避免污染历史
-- 每次追加更新 `session.updated_at` 和 `metadata`
+## 多轮上下文当前怎样实现
 
-**测试依据**（[`backend/tests/unit/copilot_runtime/test_bridge.py`](../../backend/tests/unit/copilot_runtime/test_bridge.py)）：
-- Bridge 正确加载现有会话历史
-- 历史消息按顺序转换为 model messages
-- 执行成功后会话包含新的 user + assistant 消息对
-- 相同 `thread_id` 的多次调用累积历史
+### 历史加载
 
-## 状态更新时机
+运行时执行前：
 
-### 前端状态更新
+- Bridge 从 session store 读取已有消息
+- 再把内部消息结构转换为模型上下文历史
 
-**初始加载**（[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx#L100)）：
-- 组件挂载时调用 `loadInitialConfigState()`
-- 并行读取 settings 和 runtime 快照
-- 结果缓存在 `initialConfigStateCache` 中
+### 成功持久化
 
-**重试更新**：
-- 用户点击"重试"按钮触发 `retryCopilotConfigState()`
-- 调用 `retryCopilotRuntime()` 重新尝试启动宿主后端
-- 重新归并 settings 和 runtime 状态
+只有当 agent 执行成功后，系统才会：
 
-**被动更新**：
-- 当前实现中，runtime 状态不会主动推送更新
-- 需要用户手动重试或重新加载应用
+- 追加 user + assistant 消息对
+- 更新 session 的 `updated_at`
+- 记录最新 metadata
 
-### 后端会话更新
+### 失败处理
 
-**创建时机**：
-- 首次使用某个 `thread_id` 发送消息时
-- `get_or_create` 返回 `newly_created=True`
+如果 agent 执行失败：
 
-**更新时机**：
-- 每次成功执行 agent run 后
-- `append_turn` 追加 user + assistant 消息对
-- 更新 `updated_at` 和 `metadata`（包含 `last_run_id`）
+- 当前不会把失败轮次写回 session store
+- 这样可以避免把损坏或不完整结果写进历史
 
-**失败处理**：
-- Agent 执行失败时不调用 `append_turn`
-- Session store 保持上一次成功状态
-- 前端可以在同一 `threadId` 上重试
+## 当前边界与限制
 
-**测试依据**（[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)）：
-- 集成测试验证完整的 HTTP → Bridge → Session Store 链路
-- 确认相同 `thread_id` 的多次请求共享会话
-- 验证 session descriptor 正确返回 `newlyCreated` 标志
+### 1. 统一配置中心并不等于所有状态都进了配置中心
 
-## 状态边界与限制
+当前统一配置中心只承载**稳定配置**。
 
-### 内存态存储
+下面这些内容仍然不是配置中心的一部分：
 
-**当前实现**：
-- `InMemorySessionStore` 将所有会话存储在进程内存中
-- 后端进程重启后所有会话丢失
-- 无持久化到数据库或文件系统
+- hosted runtime 状态
+- runtime snapshot
+- last failure
+- session store
+- 消息历史
 
-**影响**：
-- 适合开发和原型验证
-- 生产环境需要替换为持久化存储（例如 Redis、PostgreSQL）
-- 当前架构支持替换存储实现（通过 `session_store` 参数注入）
+### 2. `model` 当前不属于 renderer bootstrap 字段
 
-### 单 Agent 默认
+虽然 `backendExposed.model` 已进入统一配置中心，但它当前作用在：
 
-**当前实现**：
-- 每个会话绑定一个 `agent_name`
-- `get_or_create` 会更新 `agent_name`，允许同一 `thread_id` 切换 agent
-- 但前端当前未实现 agent 切换 UI
+- 主进程读取
+- 宿主参数投影
+- Python `--model` 解析
 
-**限制**：
-- 未实现多 agent 协作或路由
-- 未实现 agent 切换时的上下文迁移策略
+它现在不是 renderer 判断 `ready` / `incomplete` 的必需字段。
 
-### 无持久化记忆
+### 3. 旧 `copilot-settings.json` 当前只剩 migration 语义
 
-**当前实现**：
-- 会话历史仅包含文本消息（`role` + `content`）
-- 无结构化记忆、知识图谱或长期记忆系统
-- 无消息摘要或历史压缩机制
+当前 renderer 已不再把旧 settings 文件当作正式接口。
 
-**限制**：
-- 长会话可能超出 LLM 上下文窗口
-- 无法跨会话共享知识
-- 无法实现"记住用户偏好"等高级功能
+它现在只在主进程内部承担：
 
-### 前端状态同步
+- legacy disk migration 输入来源
 
-**当前实现**：
-- 前端状态为快照式读取，无实时推送
-- 宿主后端状态变化不会主动通知 renderer
-- 需要用户手动重试或重新加载
+### 4. 前端状态同步仍是不对称的
 
-**限制**：
-- 后端启动完成后前端可能仍显示 `starting`
-- 后端异常退出后前端可能仍显示 `ready`
-- 未来可通过 IPC 事件或轮询改进
+当前系统里有一个容易忽略的不对称：
+
+- 配置更新：已经支持公共快照订阅更新
+- runtime 运行事实：仍主要依赖按需读取和重试
+
+这正是当前文档里需要如实说明的边界。
 
 ## 相关文档
 
-- [架构概览](./architecture-overview.md)：系统整体架构与模块划分
-- [运行时生命周期](./runtime-lifecycle.md)：宿主后端启动、健康检查与停止流程
-- [聊天运行时契约](./chat-runtime-contract.md)：HTTP 端点、请求/响应格式与事件流
-
-## 代码锚点
-
-**前端配置与状态**：
-- [`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts)：状态类型定义
-- [`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)：配置状态归并逻辑
-- [`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)：根层状态装配
-- [`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)：宿主后端状态管理
-
-**前端 UI 与 threadId 传递**：
-- [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)：会话选择与 threadId 传递
-- [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)：聊天面板与状态展示
-
-**后端会话与 Bridge**：
-- [`backend/app/copilot_runtime/session_store.py`](../../backend/app/copilot_runtime/session_store.py)：会话存储实现
-- [`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py)：Bridge 层协调逻辑
-- [`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)：请求/响应契约
-
-**测试依据**：
-- [`backend/tests/unit/copilot_runtime/test_session_store.py`](../../backend/tests/unit/copilot_runtime/test_session_store.py)：会话存储单元测试
-- [`backend/tests/unit/copilot_runtime/test_bridge.py`](../../backend/tests/unit/copilot_runtime/test_bridge.py)：Bridge 层单元测试
-- [`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)：HTTP 集成测试
-- [`frontend-copilot/src/features/copilot/config.test.ts`](../../frontend-copilot/src/features/copilot/config.test.ts)：配置状态归并测试
-- [`frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx)：聊天面板测试
-- [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx)：工作区测试
+- [系统架构总览](./architecture-overview.md)
+- [运行时生命周期](./runtime-lifecycle.md)
+- [聊天运行时契约](./chat-runtime-contract.md)
+- [前端现在怎样连接后端](../frontend/backend-connection-contract.md)
+- [当前生效字段参考](../frontend/reference-current-fields.md)
