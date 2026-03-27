@@ -58,6 +58,37 @@ def test_extract_session_create_request_unknown_agent_raises_structured_protocol
     assert exc.error.error.details == {"agentName": "missing-agent"}
 
 
+def test_extract_capabilities_get_request_reads_session_id() -> None:
+    parser = _build_parser()
+
+    request = parser.extract_capabilities_get_request(
+        {
+            "method": "capabilities/get",
+            "body": {"sessionId": "session-123"},
+        }
+    )
+
+    assert request.session_id == "session-123"
+
+
+def test_extract_capabilities_get_request_requires_session_id() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_capabilities_get_request(
+            {
+                "method": "capabilities/get",
+                "body": {},
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_runtime_request"
+    assert exc.error.error.requestedMethod == "capabilities/get"
+    assert exc.error.error.details == {"field": "sessionId"}
+
+
 def test_extract_run_request_normalizes_latest_user_message_text_parts() -> None:
     parser = _build_parser()
 

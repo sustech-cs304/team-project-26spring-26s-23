@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .agent import AgentExecutorFactory, DEFAULT_AGENT_NAME
-from .tool_registry import DEFAULT_TOOLSET_NAME
+from .tool_registry import DEFAULT_TOOLSET_NAME, FILE_CONVERT_TOOL_ID
 
 DEFAULT_AGENT_LABEL = "Default"
 DEFAULT_AGENT_DESCRIPTION = "Minimal default agent exposed by the Copilot runtime run bridge."
@@ -124,6 +124,12 @@ class AgentRegistry:
             raise LookupError(f"Unknown agent '{agent_id}'.")
         return descriptor.build_bound_agent_view()
 
+    def build_agent_toolset_map(self) -> dict[str, str | None]:
+        return {
+            descriptor.name: descriptor.toolset_name
+            for descriptor in self._descriptors_by_name.values()
+        }
+
     def build_diagnostics_summary(self) -> dict[str, Any]:
         return {
             "available_agents": [
@@ -152,6 +158,7 @@ def build_default_agent_registry(
             default=True,
             toolset_name=toolset_name,
             executor_factory=executor_factory,
+            recommended_tools=(FILE_CONVERT_TOOL_ID,),
         )
     )
     return registry

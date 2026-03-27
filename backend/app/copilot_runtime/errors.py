@@ -168,7 +168,7 @@ def build_method_not_implemented_error(
         code=METHOD_NOT_IMPLEMENTED_CODE,
         message=(
             f"Runtime method '{requested_method}' is not implemented yet in the current scaffold. "
-            "Supported methods are info, agents/list, session/create, agent/connect, and agent/run."
+            "Supported methods are info, agents/list, session/create, capabilities/get, agent/connect, and agent/run."
         ),
         scaffold=scaffold,
         requested_method=requested_method,

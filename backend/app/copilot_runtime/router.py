@@ -20,6 +20,7 @@ from .contracts import (
     AGENT_CONNECT_METHOD,
     AGENT_RUN_METHOD,
     AGENTS_LIST_METHOD,
+    CAPABILITIES_GET_METHOD,
     INFO_METHOD,
     SESSION_CREATE_METHOD,
     RuntimeScaffold,
@@ -67,6 +68,14 @@ def build_router(
                 session_store=session_store,
             )
 
+        if requested_method == CAPABILITIES_GET_METHOD:
+            return _handle_capabilities_get_request(
+                parser=parser,
+                payload=payload,
+                scaffold=scaffold,
+                runtime_bridge=runtime_bridge,
+            )
+
         if requested_method == AGENT_CONNECT_METHOD:
             return _handle_connect_request(
                 parser=parser,
@@ -108,6 +117,35 @@ def _handle_session_create_request(
         bound_agent_id=session_create_request.agent_id,
     )
     return JSONResponse(content=scaffold.build_session_create_response(session=session_record).to_dict())
+
+
+
+def _handle_capabilities_get_request(
+    *,
+    parser: RuntimeProtocolParser,
+    payload: dict[str, Any] | None,
+    scaffold: RuntimeScaffold,
+    runtime_bridge: RuntimeBridge,
+) -> JSONResponse:
+    try:
+        capabilities_request = parser.extract_capabilities_get_request(payload)
+    except RuntimeProtocolError as exc:
+        return _error_response(exc.status_code, exc.error)
+
+    try:
+        capabilities = runtime_bridge.get_capabilities(session_id=capabilities_request.session_id)
+    except LookupError:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_invalid_message_history_error(
+                message=f"Unknown session '{capabilities_request.session_id}'.",
+                scaffold=scaffold,
+                requested_method=CAPABILITIES_GET_METHOD,
+                details={"sessionId": capabilities_request.session_id},
+            ),
+        )
+
+    return JSONResponse(content=capabilities.to_dict())
 
 
 

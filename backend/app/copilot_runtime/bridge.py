@@ -9,7 +9,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 
 from .agent import AgentExecutionError, ModelNotConfiguredError, RuntimeAgentExecutor
 from .agent_registry import AgentDescriptor, AgentRegistry
-from .contracts import RuntimeRunRequest
+from .contracts import RuntimeCapabilitiesResponse, RuntimeRunRequest, RuntimeScaffold
 from .session_store import (
     BoundAgentMismatchError,
     InMemorySessionStore,
@@ -47,9 +47,11 @@ class RuntimeBridge:
         *,
         session_store: InMemorySessionStore,
         agent_registry: AgentRegistry,
+        scaffold: RuntimeScaffold | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
+        self._scaffold = scaffold
 
     async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
         agent_descriptor = self._resolve_agent(request.agent_name)
@@ -75,6 +77,15 @@ class RuntimeBridge:
             session=persisted_session,
             newly_created=newly_created,
         )
+
+    def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
+        if self._scaffold is None:
+            raise RuntimeError("Runtime scaffold is required for capabilities queries.")
+        session = self._session_store.get(session_id)
+        if session is None:
+            raise LookupError(f"Unknown session '{session_id}'.")
+        self._resolve_agent(session.bound_agent_id)
+        return self._scaffold.build_capabilities_response(session=session)
 
     def _resolve_agent(self, agent_name: str) -> AgentDescriptor:
         descriptor = self._agent_registry.get(agent_name)

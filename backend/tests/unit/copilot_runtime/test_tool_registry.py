@@ -16,7 +16,7 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
             ToolsetDescriptor(
                 name="default",
                 label="Default",
-                description="Default empty toolset.",
+                description="Default toolset.",
                 default=True,
                 tools=(),
             )
@@ -30,31 +30,49 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
     assert registry.supports("default") is True
 
 
-def test_default_tool_registry_builds_view_and_diagnostics_summary() -> None:
+def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
 
     assert registry.build_view() == {
         "default": {
             "name": "default",
-            "description": "Placeholder empty toolset metadata reserved for the default Copilot agent.",
-            "toolCount": 0,
+            "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
+            "toolCount": 1,
         }
     }
+    assert registry.build_tool_catalog() == (
+        {
+            "toolId": "tool.file-convert",
+            "kind": "builtin",
+            "availability": "available",
+            "displayName": "File Convert",
+            "description": "Convert DOCX, PDF, and PPTX files into text.",
+        },
+    )
+    assert registry.list_tool_ids() == ("tool.file-convert",)
     assert registry.build_diagnostics_summary() == {
         "available_toolsets": ["default"],
         "default_toolset": "default",
+        "tool_directory_version": "tools-v1",
         "toolset_summaries": [
             {
                 "name": "default",
                 "label": "Default",
-                "description": "Placeholder empty toolset metadata reserved for the default Copilot agent.",
+                "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
                 "default": True,
-                "toolCount": 0,
-                "tools": [],
+                "toolCount": 1,
+                "tools": [
+                    {
+                        "toolId": "tool.file-convert",
+                        "kind": "builtin",
+                        "availability": "available",
+                        "displayName": "File Convert",
+                        "description": "Convert DOCX, PDF, and PPTX files into text.",
+                    }
+                ],
             }
         ],
     }
-
 
 
 def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
@@ -63,7 +81,7 @@ def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
         ToolsetDescriptor(
             name="default",
             label="Default",
-            description="Default empty toolset.",
+            description="Default toolset.",
             default=True,
             tools=(),
         )
@@ -92,7 +110,25 @@ def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
         )
 
 
-def test_toolset_descriptor_preserves_tool_metadata_without_execution_semantics() -> None:
+def test_tool_registry_rejects_duplicate_tool_ids_within_toolset() -> None:
+    registry = ToolRegistry()
+
+    with pytest.raises(ValueError, match="duplicate tool id 'tool.lookup'"):
+        registry.register(
+            ToolsetDescriptor(
+                name="default",
+                label="Default",
+                description="Default toolset.",
+                default=True,
+                tools=(
+                    ToolDescriptor(tool_id="tool.lookup", display_name="Lookup"),
+                    ToolDescriptor(tool_id="tool.lookup", display_name="Lookup Duplicate"),
+                ),
+            )
+        )
+
+
+def test_toolset_descriptor_preserves_stable_tool_id_and_display_hints_without_execution_semantics() -> None:
     registry = ToolRegistry(
         [
             ToolsetDescriptor(
@@ -100,7 +136,14 @@ def test_toolset_descriptor_preserves_tool_metadata_without_execution_semantics(
                 label="Default",
                 description="Toolset with metadata only.",
                 default=True,
-                tools=(ToolDescriptor(name="lookup", description="Lookup metadata."),),
+                tools=(
+                    ToolDescriptor(
+                        tool_id="tool.lookup",
+                        kind="builtin",
+                        display_name="Lookup",
+                        description="Lookup metadata.",
+                    ),
+                ),
             )
         ]
     )
@@ -108,6 +151,14 @@ def test_toolset_descriptor_preserves_tool_metadata_without_execution_semantics(
     descriptor = registry.get("default")
 
     assert descriptor is not None
-    assert descriptor.tools == (ToolDescriptor(name="lookup", description="Lookup metadata."),)
+    assert descriptor.tools == (
+        ToolDescriptor(
+            tool_id="tool.lookup",
+            kind="builtin",
+            display_name="Lookup",
+            description="Lookup metadata.",
+        ),
+    )
+    assert descriptor.tools[0].build_catalog_entry()["toolId"] == "tool.lookup"
     assert not hasattr(descriptor, "execute")
     assert not hasattr(registry, "execute")

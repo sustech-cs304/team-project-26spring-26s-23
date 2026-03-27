@@ -54,6 +54,7 @@ def build_default_runtime_dependencies(
     runtime_bridge = RuntimeBridge(
         session_store=resolved_session_store,
         agent_registry=agent_registry,
+        scaffold=scaffold,
     )
     return RuntimeDependencies(
         session_store=resolved_session_store,

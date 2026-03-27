@@ -14,8 +14,9 @@ from app.copilot_runtime.bridge import (
     InvalidSessionHistoryError,
     RuntimeBridge,
 )
-from app.copilot_runtime.contracts import RuntimeRunRequest
+from app.copilot_runtime.contracts import RuntimeRunRequest, build_runtime_scaffold
 from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
+from app.copilot_runtime.tool_registry import build_default_tool_registry
 
 
 class RecordingAgentExecutor:
@@ -64,9 +65,11 @@ def test_run_resolves_default_agent_through_registry_and_factory() -> None:
     )
     executor = RecordingAgentExecutor(reply="Bridge success")
     executor_factory = RecordingExecutorFactory(executor)
+    registry = build_default_agent_registry(executor_factory=executor_factory)
     bridge = RuntimeBridge(
         session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+        agent_registry=registry,
+        scaffold=_build_scaffold(agent_registry=registry),
     )
 
     result = asyncio.run(
@@ -109,9 +112,11 @@ def test_run_creates_new_session_after_successful_first_turn() -> None:
     store = InMemorySessionStore()
     executor = RecordingAgentExecutor(reply="First reply")
     executor_factory = RecordingExecutorFactory(executor)
+    registry = build_default_agent_registry(executor_factory=executor_factory)
     bridge = RuntimeBridge(
         session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+        agent_registry=registry,
+        scaffold=_build_scaffold(agent_registry=registry),
     )
 
     result = asyncio.run(
@@ -140,9 +145,42 @@ def test_run_creates_new_session_after_successful_first_turn() -> None:
     assert history == []
 
 
+def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:
+    store = InMemorySessionStore()
+    session = store.create(bound_agent_id="default", session_id="session-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry)
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry, scaffold=scaffold)
+
+    capabilities = bridge.get_capabilities(session_id=session.session_id)
+
+    assert capabilities.sessionId == "session-1"
+    assert capabilities.boundAgent.agentId == "default"
+    assert capabilities.toolSelectionMode == "recommendation-only"
+    assert capabilities.recommendedTools == ("tool.file-convert",)
+    assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
+    assert capabilities.tools[0].toolId == "tool.file-convert"
+    assert capabilities.tools[0].displayName == "File Convert"
+
+
+def test_get_capabilities_raises_lookup_error_for_unknown_session() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry)
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry, scaffold=scaffold)
+
+    with pytest.raises(LookupError, match="Unknown session 'missing-session'."):
+        bridge.get_capabilities(session_id="missing-session")
+
+
 def test_run_raises_explicit_error_when_agent_is_not_registered() -> None:
     store = InMemorySessionStore()
-    bridge = RuntimeBridge(session_store=store, agent_registry=build_default_agent_registry())
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=_build_scaffold(agent_registry=registry),
+    )
 
     with pytest.raises(AgentNotFoundError, match="Unknown agent 'missing-agent'."):
         asyncio.run(
@@ -182,7 +220,11 @@ def test_run_rejects_existing_session_bound_to_different_agent() -> None:
             ),
         ]
     )
-    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=_build_scaffold(agent_registry=registry),
+    )
 
     with pytest.raises(BoundAgentMismatchError, match="bound to agent 'default'"):
         asyncio.run(
@@ -211,9 +253,11 @@ def test_run_does_not_append_failed_turn_to_session_history() -> None:
     previous_updated_at = session_before_failure.updated_at
     executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
     executor_factory = RecordingExecutorFactory(executor)
+    registry = build_default_agent_registry(executor_factory=executor_factory)
     bridge = RuntimeBridge(
         session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+        agent_registry=registry,
+        scaffold=_build_scaffold(agent_registry=registry),
     )
 
     with pytest.raises(AgentExecutionError, match="executor boom"):
@@ -242,9 +286,11 @@ def test_run_does_not_create_session_when_executor_fails_before_first_success() 
     store = InMemorySessionStore()
     executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
     executor_factory = RecordingExecutorFactory(executor)
+    registry = build_default_agent_registry(executor_factory=executor_factory)
     bridge = RuntimeBridge(
         session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+        agent_registry=registry,
+        scaffold=_build_scaffold(agent_registry=registry),
     )
 
     with pytest.raises(AgentExecutionError, match="executor boom"):
@@ -272,9 +318,11 @@ def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
     )
     session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
     executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
+    registry = build_default_agent_registry(executor_factory=executor_factory)
     bridge = RuntimeBridge(
         session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+        agent_registry=registry,
+        scaffold=_build_scaffold(agent_registry=registry),
     )
 
     with pytest.raises(InvalidSessionHistoryError, match="expected role 'user'"):
@@ -290,6 +338,15 @@ def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
 
     assert executor_factory.call_count == 0
     assert _message_pairs(store, "thread-1") == [("assistant", "orphan assistant")]
+
+
+def _build_scaffold(*, agent_registry: AgentRegistry):
+    return build_runtime_scaffold(
+        session_store_type="in-memory",
+        model_configured=True,
+        agent_registry=agent_registry,
+        tool_registry=build_default_tool_registry(),
+    )
 
 
 def _build_run_request(

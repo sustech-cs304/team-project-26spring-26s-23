@@ -13,6 +13,7 @@ from .tool_registry import ToolRegistry, build_default_tool_registry
 INFO_METHOD = "info"
 AGENTS_LIST_METHOD = "agents/list"
 SESSION_CREATE_METHOD = "session/create"
+CAPABILITIES_GET_METHOD = "capabilities/get"
 AGENT_CONNECT_METHOD = "agent/connect"
 AGENT_RUN_METHOD = "agent/run"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
@@ -88,6 +89,32 @@ class RuntimeSessionCreateResponse(RuntimeContract):
     recommendedTools: tuple[str, ...] = ()
     defaultModelPreference: str | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCapabilitiesGetRequest(RuntimeContract):
+    session_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeToolDirectoryEntry(RuntimeContract):
+    toolId: str
+    kind: str
+    availability: str
+    displayName: str | None = None
+    description: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCapabilitiesResponse(RuntimeContract):
+    ok: bool
+    sessionId: str
+    boundAgent: RuntimeBoundAgent
+    capabilitiesVersion: str
+    tools: tuple[RuntimeToolDirectoryEntry, ...]
+    recommendedTools: tuple[str, ...] = ()
+    toolSelectionMode: str = "recommendation-only"
+    defaultModelPreference: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +207,10 @@ class RuntimeScaffold(RuntimeContract):
     agent_directory_version: str
     agent_directory: tuple[RuntimeAgentDirectoryEntry, ...]
     bound_agent_views: dict[str, RuntimeBoundAgent]
+    default_toolset: str
+    agent_toolsets: dict[str, str]
+    tool_directory_version: str
+    tool_catalog_by_toolset: dict[str, tuple[RuntimeToolDirectoryEntry, ...]]
     agent_diagnostics_summary: dict[str, Any]
     tool_diagnostics_summary: dict[str, Any]
     session_store_type: str
@@ -230,6 +261,27 @@ class RuntimeScaffold(RuntimeContract):
                     "recommendedTools": list(entry.recommendedTools),
                 }
             },
+        )
+
+    def build_capabilities_version(self) -> str:
+        return f"capabilities:{self.agent_directory_version}:{self.tool_directory_version}"
+
+    def build_capabilities_response(
+        self,
+        *,
+        session: RuntimeSessionRecord,
+    ) -> RuntimeCapabilitiesResponse:
+        entry = self._get_agent_directory_entry(session.bound_agent_id)
+        toolset_name = self._get_agent_toolset_name(session.bound_agent_id)
+        return RuntimeCapabilitiesResponse(
+            ok=True,
+            sessionId=session.session_id,
+            boundAgent=self._get_bound_agent_view(session.bound_agent_id),
+            capabilitiesVersion=self.build_capabilities_version(),
+            tools=self._get_tool_catalog(toolset_name),
+            recommendedTools=entry.recommendedTools,
+            toolSelectionMode="recommendation-only",
+            defaultModelPreference=entry.defaultModelPreference,
         )
 
     def supports_agent(self, agent_name: str) -> bool:
@@ -358,6 +410,7 @@ class RuntimeScaffold(RuntimeContract):
             "current_stage_supports_info_only": self.supported_methods == (INFO_METHOD,),
             "current_stage_supports_agents_list": AGENTS_LIST_METHOD in self.supported_methods,
             "current_stage_supports_session_create": SESSION_CREATE_METHOD in self.supported_methods,
+            "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD in self.supported_methods,
             "current_stage_supports_connect": AGENT_CONNECT_METHOD in self.supported_methods,
             "current_stage_supports_run": AGENT_RUN_METHOD in self.supported_methods,
             "model_configured": self.model_configured,
@@ -378,6 +431,15 @@ class RuntimeScaffold(RuntimeContract):
             return self.bound_agent_views[agent_id]
         except KeyError as exc:  # pragma: no cover - defensive guard
             raise LookupError(f"Unknown agent '{agent_id}'.") from exc
+
+    def _get_agent_toolset_name(self, agent_id: str) -> str:
+        return self.agent_toolsets.get(agent_id, self.default_toolset)
+
+    def _get_tool_catalog(self, toolset_name: str) -> tuple[RuntimeToolDirectoryEntry, ...]:
+        try:
+            return self.tool_catalog_by_toolset[toolset_name]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            raise LookupError(f"Unknown toolset '{toolset_name}'.") from exc
 
 
 
@@ -401,6 +463,7 @@ def build_runtime_scaffold(
             INFO_METHOD,
             AGENTS_LIST_METHOD,
             SESSION_CREATE_METHOD,
+            CAPABILITIES_GET_METHOD,
             AGENT_CONNECT_METHOD,
             AGENT_RUN_METHOD,
         ),
@@ -409,6 +472,10 @@ def build_runtime_scaffold(
         agent_directory_version=resolved_agent_registry.directory_version,
         agent_directory=agent_directory,
         bound_agent_views=_build_runtime_bound_agent_views(agent_directory),
+        default_toolset=resolved_tool_registry.get_default().name,
+        agent_toolsets=_build_runtime_agent_toolsets(resolved_agent_registry, resolved_tool_registry),
+        tool_directory_version=resolved_tool_registry.directory_version,
+        tool_catalog_by_toolset=_build_runtime_tool_catalogs(resolved_tool_registry),
         agent_diagnostics_summary=resolved_agent_registry.build_diagnostics_summary(),
         tool_diagnostics_summary=resolved_tool_registry.build_diagnostics_summary(),
         session_store_type=session_store_type,
@@ -432,10 +499,12 @@ def _build_runtime_agent_registry(
 def _build_runtime_agent_directory(
     agent_registry: AgentRegistry,
 ) -> tuple[RuntimeAgentDirectoryEntry, ...]:
-    return tuple(
-        RuntimeAgentDirectoryEntry(**agent_view)
-        for agent_view in agent_registry.build_directory_view()
-    )
+    entries: list[RuntimeAgentDirectoryEntry] = []
+    for agent_view in agent_registry.build_directory_view():
+        normalized_view = dict(agent_view)
+        normalized_view["recommendedTools"] = tuple(agent_view.get("recommendedTools", ()))
+        entries.append(RuntimeAgentDirectoryEntry(**normalized_view))
+    return tuple(entries)
 
 
 
@@ -451,6 +520,31 @@ def _build_runtime_bound_agent_views(
             iconKey=entry.iconKey,
         )
         for entry in agent_directory
+    }
+
+
+
+def _build_runtime_agent_toolsets(
+    agent_registry: AgentRegistry,
+    tool_registry: ToolRegistry,
+) -> dict[str, str]:
+    default_toolset = tool_registry.get_default().name
+    return {
+        agent_id: toolset_name or default_toolset
+        for agent_id, toolset_name in agent_registry.build_agent_toolset_map().items()
+    }
+
+
+
+def _build_runtime_tool_catalogs(
+    tool_registry: ToolRegistry,
+) -> dict[str, tuple[RuntimeToolDirectoryEntry, ...]]:
+    return {
+        toolset_name: tuple(
+            RuntimeToolDirectoryEntry(**tool_view)
+            for tool_view in tool_registry.build_tool_catalog(toolset_name)
+        )
+        for toolset_name in tool_registry.build_view()
     }
 
 

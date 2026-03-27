@@ -39,7 +39,7 @@ def test_default_agent_registry_builds_info_directory_and_diagnostics_views() ->
         {
             "agentId": "default",
             "status": "active",
-            "recommendedTools": [],
+            "recommendedTools": ["tool.file-convert"],
             "defaultModelPreference": None,
             "displayName": "Default",
             "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
@@ -53,6 +53,7 @@ def test_default_agent_registry_builds_info_directory_and_diagnostics_views() ->
         "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
         "iconKey": None,
     }
+    assert registry.build_agent_toolset_map() == {"default": "default"}
     assert registry.build_diagnostics_summary() == {
         "available_agents": ["default"],
         "default_agent": "default",
@@ -65,7 +66,7 @@ def test_default_agent_registry_builds_info_directory_and_diagnostics_views() ->
                 "default": True,
                 "status": "active",
                 "toolsetName": "default",
-                "recommendedTools": [],
+                "recommendedTools": ["tool.file-convert"],
                 "defaultModelPreference": None,
                 "iconKey": None,
                 "hasExecutorFactory": False,

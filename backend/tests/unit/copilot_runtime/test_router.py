@@ -15,6 +15,7 @@ from app.copilot_runtime import (
     RuntimeRunRequest,
     RuntimeScaffold,
     build_default_agent_registry,
+    build_default_tool_registry,
     build_router,
     build_runtime_scaffold,
 )
@@ -23,7 +24,14 @@ from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextM
 
 
 TEST_MODEL_REPLY = "Hello from the test model."
-SUPPORTED_METHODS = ["info", "agents/list", "session/create", "agent/connect", "agent/run"]
+SUPPORTED_METHODS = [
+    "info",
+    "agents/list",
+    "session/create",
+    "capabilities/get",
+    "agent/connect",
+    "agent/run",
+]
 
 
 def test_root_post_info_request_returns_runtime_info() -> None:
@@ -71,9 +79,47 @@ def test_root_post_session_create_returns_bound_agent_session_payload() -> None:
     assert payload["capabilities"] == {
         "tools": {
             "selectionMode": "recommendation-only",
-            "recommendedTools": [],
+            "recommendedTools": ["tool.file-convert"],
         }
     }
+
+
+def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool_catalog() -> None:
+    app, scaffold, store = _build_app()
+    session = store.create(bound_agent_id="default", session_id="session-1")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json={"method": "capabilities/get", "body": {"sessionId": session.session_id}},
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload == scaffold.build_capabilities_response(session=session).to_dict()
+    assert payload["recommendedTools"] == ["tool.file-convert"]
+    assert payload["toolSelectionMode"] == "recommendation-only"
+    assert payload["tools"][0]["toolId"] == "tool.file-convert"
+    assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
+
+
+def test_root_post_capabilities_get_unknown_session_returns_structured_error() -> None:
+    app, _scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json={"method": "capabilities/get", "body": {"sessionId": "missing-session"}},
+        )
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_message_history"
+    assert payload["error"]["requestedMethod"] == "capabilities/get"
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
+    assert payload["error"]["details"] == {"sessionId": "missing-session"}
 
 
 def test_root_post_info_shape_without_method_is_recognized() -> None:
@@ -324,7 +370,13 @@ def test_root_post_agent_run_unsupported_message_shape_returns_structured_error(
                         {
                             "id": "u1",
                             "role": "user",
-                            "content": [{"type": "binary", "mimeType": "text/plain", "url": "https://example.com/file.txt"}],
+                            "content": [
+                                {
+                                    "type": "binary",
+                                    "mimeType": "text/plain",
+                                    "url": "https://example.com/file.txt",
+                                }
+                            ],
                         }
                     ]
                 },
@@ -371,13 +423,22 @@ def _build_app(
         model=TestModel(custom_output_text=TEST_MODEL_REPLY)
     )
     store = InMemorySessionStore()
-    agent_registry = build_default_agent_registry(executor_factory=lambda: executor)
-    bridge = runtime_bridge or RuntimeBridge(session_store=store, agent_registry=agent_registry)
+    tool_registry = build_default_tool_registry()
+    agent_registry = build_default_agent_registry(
+        executor_factory=lambda: executor,
+        toolset_name=tool_registry.get_default().name,
+    )
     scaffold = build_runtime_scaffold(
         session_store_type=store.storage_type,
         model_configured=executor.model_configured,
         model_environment_keys=executor.model_environment_keys,
         agent_registry=agent_registry,
+        tool_registry=tool_registry,
+    )
+    bridge = runtime_bridge or RuntimeBridge(
+        session_store=store,
+        agent_registry=agent_registry,
+        scaffold=scaffold,
     )
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))
@@ -387,6 +448,7 @@ def _build_app(
 def _build_app_with_secondary_agent() -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
     executor = _PermissiveExecutor(reply=TEST_MODEL_REPLY)
     store = InMemorySessionStore()
+    tool_registry = build_default_tool_registry()
     registry = AgentRegistry(
         [
             AgentDescriptor(
@@ -394,25 +456,27 @@ def _build_app_with_secondary_agent() -> tuple[FastAPI, RuntimeScaffold, InMemor
                 label="Default",
                 description="Default runtime agent.",
                 default=True,
-                toolset_name="default",
+                toolset_name=tool_registry.get_default().name,
                 executor_factory=lambda: executor,
+                recommended_tools=("tool.file-convert",),
             ),
             AgentDescriptor(
                 name="secondary",
                 label="Secondary",
                 description="Secondary runtime agent.",
-                toolset_name="default",
+                toolset_name=tool_registry.get_default().name,
                 executor_factory=lambda: executor,
             ),
         ]
     )
-    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
     scaffold = build_runtime_scaffold(
         session_store_type=store.storage_type,
         model_configured=executor.model_configured,
         model_environment_keys=executor.model_environment_keys,
         agent_registry=registry,
+        tool_registry=tool_registry,
     )
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry, scaffold=scaffold)
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))
     return app, scaffold, store

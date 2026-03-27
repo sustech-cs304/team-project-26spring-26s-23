@@ -10,8 +10,10 @@ from fastapi import Request, status
 from .contracts import (
     AGENT_CONNECT_METHOD,
     AGENT_RUN_METHOD,
+    CAPABILITIES_GET_METHOD,
     INFO_METHOD,
     SESSION_CREATE_METHOD,
+    RuntimeCapabilitiesGetRequest,
     RuntimeConnectRequest,
     RuntimeRunRequest,
     RuntimeScaffold,
@@ -226,6 +228,28 @@ class RuntimeProtocolParser:
                 requested_method=SESSION_CREATE_METHOD,
             ),
         )
+
+    def extract_capabilities_get_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeCapabilitiesGetRequest:
+        if payload is None:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message="Runtime method 'capabilities/get' requires a JSON payload.",
+                    scaffold=self._scaffold,
+                    requested_method=CAPABILITIES_GET_METHOD,
+                ),
+            )
+
+        request_body = self._extract_body(payload, requested_method=CAPABILITIES_GET_METHOD)
+        session_id = self._require_non_empty_string(
+            request_body.get("sessionId"),
+            field_name="sessionId",
+            requested_method=CAPABILITIES_GET_METHOD,
+        )
+        return RuntimeCapabilitiesGetRequest(session_id=session_id)
 
     def extract_run_request(self, payload: dict[str, Any] | None) -> RuntimeRunRequest:
         if payload is None:
