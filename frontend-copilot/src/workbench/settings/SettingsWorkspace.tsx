@@ -34,6 +34,7 @@ import {
 } from './config'
 import {
   AssistantBehaviorConfigCard,
+  BackendExposedModelConfigCard,
   HostConfigRuntimeOverrideCard,
 } from './ConfigCenterPublicFieldCards'
 
@@ -955,6 +956,8 @@ export function SettingsWorkspace({
               case 'default-model':
                 return (
                   <div className="settings-page">
+                    <BackendExposedModelConfigCard />
+
                     <section className="settings-card settings-card--form">
                       <div className="settings-card__header">
                         <div>

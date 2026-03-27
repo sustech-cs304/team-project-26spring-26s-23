@@ -34,6 +34,24 @@ describe('SettingsWorkspace', () => {
     expect(html).toContain('默认 Agent 名称')
   })
 
+  it('wires the backend model public config card into the default model section without breaking existing model routing controls', () => {
+    const html = renderToStaticMarkup(
+      <SettingsWorkspace
+        bootstrap={createBootstrapController()}
+        themeMode="light"
+        onThemeModeChange={vi.fn()}
+        initialSection="default-model"
+      />,
+    )
+
+    expect(html).toContain('默认模型路由')
+    expect(html).toContain('后端模型')
+    expect(html).toContain('后端默认模型 ID')
+    expect(html).toContain('保存后需重启整个程序生效')
+    expect(html).toContain('主助手模型')
+    expect(html).toContain('快速执行模型')
+  })
+
   it('reflects the incoming theme prop in the display section without adding local theme state', () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace
