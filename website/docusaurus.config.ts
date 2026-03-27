@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: '赶渡 GanDue',
+  title: '赶渡 CanDue',
   tagline: 'SUSTech 学生课程管理与智能助手项目文档',
   favicon: 'img/candue_icon.png',
 
@@ -43,14 +43,30 @@ const config: Config = {
     ],
   ],
 
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        hashed: true,
+        indexDocs: true,
+        indexBlog: false,
+        indexPages: false,
+        docsRouteBasePath: '/',
+        docsDir: '../docs',
+        language: ['en', 'zh'],
+        removeDefaultStopWordFilter: ['en'],
+      },
+    ],
+  ],
+
   themeConfig: {
     colorMode: {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: '赶渡 GanDue',
+      title: '赶渡 CanDue',
       logo: {
-        alt: 'GanDue Logo',
+        alt: 'CanDue Logo',
         src: 'img/candue_icon.png',
       },
       items: [
@@ -59,6 +75,10 @@ const config: Config = {
           sidebarId: 'tutorialSidebar',
           position: 'left',
           label: '文档',
+        },
+        {
+          type: 'search',
+          position: 'right',
         },
         {
           href: 'https://github.com/sustech-cs304/team-project-26spring-26s-23',

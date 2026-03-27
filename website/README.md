@@ -1,4 +1,4 @@
-# GanDue 文档站
+# CanDue 文档站
 
 基于 Docusaurus 构建，用于发布 [`docs/`](../docs/) 下的项目文档。
 
