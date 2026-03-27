@@ -42,7 +42,7 @@ describe('ConfigCenterPublicFieldCards', () => {
 
   it('reads and writes backend model through the public snapshot and patch contract', () => {
     const snapshot = {
-      version: 1,
+      version: 1 as const,
       domains: {
         frontendPreferences: {
           theme: 'light' as const,

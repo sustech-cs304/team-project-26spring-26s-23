@@ -2,10 +2,27 @@ import { describe, expect, it, vi } from 'vitest'
 import { createElectronUnifiedConfigService } from './main-process'
 
 function createPreparedPaths(testName: string) {
+  const userDataDir = `/mock/user-data/${testName}`
+  const runtimeRootDir = `${userDataDir}/desktop-runtime`
+  const configDir = `${runtimeRootDir}/config`
+  const logsDir = `${runtimeRootDir}/logs`
+  const databaseDir = `${runtimeRootDir}/database`
+  const stateDir = `${runtimeRootDir}/state`
+
   return {
-    configDir: `/mock/user-data/${testName}/desktop-runtime/config`,
-    copilotSettingsFile: `/mock/user-data/${testName}/desktop-runtime/config/copilot-settings.json`,
-    legacyCopilotSettingsFile: `/mock/user-data/${testName}/copilot-settings.json`,
+    userDataDir,
+    runtimeRootDir,
+    configDir,
+    logsDir,
+    databaseDir,
+    stateDir,
+    copilotSettingsFile: `${configDir}/copilot-settings.json`,
+    legacyCopilotSettingsFile: `${userDataDir}/copilot-settings.json`,
+    hostLogFile: `${logsDir}/electron-host.log`,
+    backendStdoutLogFile: `${logsDir}/backend.stdout.log`,
+    backendStderrLogFile: `${logsDir}/backend.stderr.log`,
+    runtimeSnapshotFile: `${stateDir}/runtime-snapshot.json`,
+    lastFailureFile: `${stateDir}/last-failure.json`,
   } as const
 }
 

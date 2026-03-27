@@ -94,6 +94,7 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
         domains: {
           frontendPreferences: {
             theme: 'dark',
+            animationsEnabled: true,
           },
           assistantBehavior: {
             agentName: 'planner',
@@ -125,6 +126,7 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
         domains: {
           frontendPreferences: {
             theme: 'light',
+            animationsEnabled: true,
           },
           assistantBehavior: {
             agentName: null,

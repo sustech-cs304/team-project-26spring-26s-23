@@ -95,6 +95,7 @@ describe('preload renderer bridge', () => {
       domains: {
         frontendPreferences: {
           theme: 'dark',
+          animationsEnabled: true,
         },
         assistantBehavior: {
           agentName: 'planner',

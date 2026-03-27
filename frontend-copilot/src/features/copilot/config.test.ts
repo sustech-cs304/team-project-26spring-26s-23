@@ -243,6 +243,7 @@ describe('loadBootstrapFieldsFromConfigCenterPublicSnapshot', () => {
       domains: {
         frontendPreferences: {
           theme: 'dark',
+          animationsEnabled: true,
         },
         assistantBehavior: {
           agentName: 'planner',
