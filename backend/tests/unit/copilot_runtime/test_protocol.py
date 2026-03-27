@@ -19,13 +19,43 @@ def test_extract_method_recognizes_info_shape_without_explicit_method() -> None:
     assert method == "info"
 
 
-
 def test_extract_method_normalizes_legacy_run_alias_to_agent_run() -> None:
     parser = _build_parser()
 
     method = parser.extract_method({"method": "  Run  "})
 
     assert method == "agent/run"
+
+
+def test_extract_session_create_request_validates_known_agent() -> None:
+    parser = _build_parser()
+
+    request = parser.extract_session_create_request(
+        {
+            "method": "session/create",
+            "body": {"agentId": "default"},
+        }
+    )
+
+    assert request.agent_id == "default"
+
+
+def test_extract_session_create_request_unknown_agent_raises_structured_protocol_error() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_session_create_request(
+            {
+                "method": "session/create",
+                "body": {"agentId": "missing-agent"},
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 404
+    assert exc.error.error.code == "agent_not_found"
+    assert exc.error.error.requestedMethod == "session/create"
+    assert exc.error.error.details == {"agentName": "missing-agent"}
 
 
 def test_extract_run_request_normalizes_latest_user_message_text_parts() -> None:
@@ -130,7 +160,6 @@ def test_extract_run_request_rejects_assistant_tool_calls_in_history() -> None:
     assert exc.error.error.details == {"field": "messages[0].toolCalls"}
 
 
-
 def test_extract_connect_request_defaults_to_scaffold_agent_and_preserves_optional_fields() -> None:
     parser = _build_parser()
 
@@ -157,7 +186,6 @@ def test_extract_connect_request_defaults_to_scaffold_agent_and_preserves_option
     assert request.tools == ({"name": "noop"},)
     assert request.context == ({"kind": "preview"},)
     assert request.forwarded_props == {"source": "desktop"}
-
 
 
 def _build_parser() -> RuntimeProtocolParser:

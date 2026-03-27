@@ -11,9 +11,11 @@ from .contracts import (
     AGENT_CONNECT_METHOD,
     AGENT_RUN_METHOD,
     INFO_METHOD,
+    SESSION_CREATE_METHOD,
     RuntimeConnectRequest,
     RuntimeRunRequest,
     RuntimeScaffold,
+    RuntimeSessionCreateRequest,
 )
 from .errors import (
     RuntimeErrorResponse,
@@ -191,6 +193,38 @@ class RuntimeProtocolParser:
             context=context,
             forwarded_props=forwarded_props,
             metadata={},
+        )
+
+    def extract_session_create_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeSessionCreateRequest:
+        if payload is None:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message="Runtime method 'session/create' requires a JSON payload.",
+                    scaffold=self._scaffold,
+                    requested_method=SESSION_CREATE_METHOD,
+                ),
+            )
+
+        request_body = self._extract_body(payload, requested_method=SESSION_CREATE_METHOD)
+        agent_id = self._require_non_empty_string(
+            request_body.get("agentId"),
+            field_name="agentId",
+            requested_method=SESSION_CREATE_METHOD,
+        )
+        if self._scaffold.supports_agent(agent_id):
+            return RuntimeSessionCreateRequest(agent_id=agent_id)
+
+        raise RuntimeProtocolError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error=build_agent_not_found_error(
+                agent_name=agent_id,
+                scaffold=self._scaffold,
+                requested_method=SESSION_CREATE_METHOD,
+            ),
         )
 
     def extract_run_request(self, payload: dict[str, Any] | None) -> RuntimeRunRequest:

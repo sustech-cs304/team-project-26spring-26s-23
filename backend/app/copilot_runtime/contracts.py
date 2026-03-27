@@ -1,4 +1,4 @@
-"""Contracts for the minimal Copilot runtime scaffold."""
+"""Contracts for the Copilot runtime scaffold."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from .session_store import RuntimeSessionRecord
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
 INFO_METHOD = "info"
+AGENTS_LIST_METHOD = "agents/list"
+SESSION_CREATE_METHOD = "session/create"
 AGENT_CONNECT_METHOD = "agent/connect"
 AGENT_RUN_METHOD = "agent/run"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
@@ -33,6 +35,26 @@ class RuntimeAgentDescriptor(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeAgentDirectoryEntry(RuntimeContract):
+    agentId: str
+    status: str
+    recommendedTools: tuple[str, ...] = ()
+    defaultModelPreference: str | None = None
+    displayName: str | None = None
+    description: str | None = None
+    iconKey: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeBoundAgent(RuntimeContract):
+    agentId: str
+    status: str
+    displayName: str | None = None
+    description: str | None = None
+    iconKey: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeInfoResponse(RuntimeContract):
     actions: tuple[dict[str, Any], ...]
     agents: dict[str, RuntimeAgentDescriptor]
@@ -41,6 +63,31 @@ class RuntimeInfoResponse(RuntimeContract):
     stage: str
     supportedMethods: tuple[str, ...]
     transport: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeAgentsListResponse(RuntimeContract):
+    ok: bool
+    directoryVersion: str
+    defaultAgentId: str
+    agents: tuple[RuntimeAgentDirectoryEntry, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSessionCreateRequest(RuntimeContract):
+    agent_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSessionCreateResponse(RuntimeContract):
+    ok: bool
+    sessionId: str
+    boundAgent: RuntimeBoundAgent
+    createdAt: datetime
+    updatedAt: datetime
+    recommendedTools: tuple[str, ...] = ()
+    defaultModelPreference: str | None = None
+    capabilities: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +177,9 @@ class RuntimeScaffold(RuntimeContract):
     supported_methods: tuple[str, ...]
     default_agent: str
     remote_agent_registry: dict[str, RuntimeAgentDescriptor]
+    agent_directory_version: str
+    agent_directory: tuple[RuntimeAgentDirectoryEntry, ...]
+    bound_agent_views: dict[str, RuntimeBoundAgent]
     agent_diagnostics_summary: dict[str, Any]
     tool_diagnostics_summary: dict[str, Any]
     session_store_type: str
@@ -152,8 +202,38 @@ class RuntimeScaffold(RuntimeContract):
             transport=dict(self.transport),
         )
 
+    def build_agents_list_response(self) -> RuntimeAgentsListResponse:
+        return RuntimeAgentsListResponse(
+            ok=True,
+            directoryVersion=self.agent_directory_version,
+            defaultAgentId=self.default_agent,
+            agents=self.agent_directory,
+        )
+
+    def build_session_create_response(
+        self,
+        *,
+        session: RuntimeSessionRecord,
+    ) -> RuntimeSessionCreateResponse:
+        entry = self._get_agent_directory_entry(session.bound_agent_id)
+        return RuntimeSessionCreateResponse(
+            ok=True,
+            sessionId=session.session_id,
+            boundAgent=self._get_bound_agent_view(session.bound_agent_id),
+            createdAt=session.created_at,
+            updatedAt=session.updated_at,
+            recommendedTools=entry.recommendedTools,
+            defaultModelPreference=entry.defaultModelPreference,
+            capabilities={
+                "tools": {
+                    "selectionMode": "recommendation-only",
+                    "recommendedTools": list(entry.recommendedTools),
+                }
+            },
+        )
+
     def supports_agent(self, agent_name: str) -> bool:
-        return agent_name in self.remote_agent_registry
+        return agent_name in self.bound_agent_views
 
     def build_session_descriptor(
         self,
@@ -276,6 +356,8 @@ class RuntimeScaffold(RuntimeContract):
             "chat_runtime_stage": self.stage,
             "session_store_type": self.session_store_type,
             "current_stage_supports_info_only": self.supported_methods == (INFO_METHOD,),
+            "current_stage_supports_agents_list": AGENTS_LIST_METHOD in self.supported_methods,
+            "current_stage_supports_session_create": SESSION_CREATE_METHOD in self.supported_methods,
             "current_stage_supports_connect": AGENT_CONNECT_METHOD in self.supported_methods,
             "current_stage_supports_run": AGENT_RUN_METHOD in self.supported_methods,
             "model_configured": self.model_configured,
@@ -284,6 +366,19 @@ class RuntimeScaffold(RuntimeContract):
         summary.update(self.agent_diagnostics_summary)
         summary.update(self.tool_diagnostics_summary)
         return summary
+
+    def _get_agent_directory_entry(self, agent_id: str) -> RuntimeAgentDirectoryEntry:
+        for entry in self.agent_directory:
+            if entry.agentId == agent_id:
+                return entry
+        raise LookupError(f"Unknown agent '{agent_id}'.")
+
+    def _get_bound_agent_view(self, agent_id: str) -> RuntimeBoundAgent:
+        try:
+            return self.bound_agent_views[agent_id]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            raise LookupError(f"Unknown agent '{agent_id}'.") from exc
+
 
 
 def build_runtime_scaffold(
@@ -298,12 +393,22 @@ def build_runtime_scaffold(
     resolved_agent_registry = agent_registry or build_default_agent_registry(
         toolset_name=resolved_tool_registry.get_default().name
     )
+    agent_directory = _build_runtime_agent_directory(resolved_agent_registry)
     return RuntimeScaffold(
         protocol=DEFAULT_RUNTIME_PROTOCOL,
         stage=DEFAULT_RUNTIME_STAGE,
-        supported_methods=(INFO_METHOD, AGENT_CONNECT_METHOD, AGENT_RUN_METHOD),
+        supported_methods=(
+            INFO_METHOD,
+            AGENTS_LIST_METHOD,
+            SESSION_CREATE_METHOD,
+            AGENT_CONNECT_METHOD,
+            AGENT_RUN_METHOD,
+        ),
         default_agent=resolved_agent_registry.get_default().name,
         remote_agent_registry=_build_runtime_agent_registry(resolved_agent_registry),
+        agent_directory_version=resolved_agent_registry.directory_version,
+        agent_directory=agent_directory,
+        bound_agent_views=_build_runtime_bound_agent_views(agent_directory),
         agent_diagnostics_summary=resolved_agent_registry.build_diagnostics_summary(),
         tool_diagnostics_summary=resolved_tool_registry.build_diagnostics_summary(),
         session_store_type=session_store_type,
@@ -313,6 +418,7 @@ def build_runtime_scaffold(
     )
 
 
+
 def _build_runtime_agent_registry(
     agent_registry: AgentRegistry,
 ) -> dict[str, RuntimeAgentDescriptor]:
@@ -320,6 +426,33 @@ def _build_runtime_agent_registry(
         name: RuntimeAgentDescriptor(**agent_view)
         for name, agent_view in agent_registry.build_info_view().items()
     }
+
+
+
+def _build_runtime_agent_directory(
+    agent_registry: AgentRegistry,
+) -> tuple[RuntimeAgentDirectoryEntry, ...]:
+    return tuple(
+        RuntimeAgentDirectoryEntry(**agent_view)
+        for agent_view in agent_registry.build_directory_view()
+    )
+
+
+
+def _build_runtime_bound_agent_views(
+    agent_directory: tuple[RuntimeAgentDirectoryEntry, ...],
+) -> dict[str, RuntimeBoundAgent]:
+    return {
+        entry.agentId: RuntimeBoundAgent(
+            agentId=entry.agentId,
+            status=entry.status,
+            displayName=entry.displayName,
+            description=entry.description,
+            iconKey=entry.iconKey,
+        )
+        for entry in agent_directory
+    }
+
 
 
 def _jsonable(value: Any) -> Any:

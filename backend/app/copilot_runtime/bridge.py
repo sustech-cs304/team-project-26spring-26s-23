@@ -10,7 +10,12 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 from .agent import AgentExecutionError, ModelNotConfiguredError, RuntimeAgentExecutor
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import RuntimeRunRequest
-from .session_store import InMemorySessionStore, RuntimeSessionRecord, RuntimeTextMessage
+from .session_store import (
+    BoundAgentMismatchError,
+    InMemorySessionStore,
+    RuntimeSessionRecord,
+    RuntimeTextMessage,
+)
 
 
 class AgentNotFoundError(LookupError):
@@ -59,8 +64,8 @@ class RuntimeBridge:
             message_history=history,
         )
         persisted_session, newly_created = self._session_store.append_turn(
-            thread_id=request.thread_id,
-            agent_name=request.agent_name,
+            session_id=request.thread_id,
+            bound_agent_id=request.agent_name,
             user_text=request.user_message_text,
             assistant_text=assistant_text,
             metadata={"last_run_id": request.run_id},
@@ -102,6 +107,7 @@ class RuntimeBridge:
         return history
 
 
+
 def _to_model_message(message: RuntimeTextMessage) -> ModelMessage:
     if message.role == "user":
         return cast(ModelMessage, ModelRequest.user_text_prompt(message.content))
@@ -113,6 +119,7 @@ def _to_model_message(message: RuntimeTextMessage) -> ModelMessage:
 __all__ = [
     "AgentExecutionError",
     "AgentNotFoundError",
+    "BoundAgentMismatchError",
     "InvalidSessionHistoryError",
     "ModelNotConfiguredError",
     "RuntimeBridge",

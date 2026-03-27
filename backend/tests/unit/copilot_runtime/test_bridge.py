@@ -6,10 +6,11 @@ from collections.abc import Sequence
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
 
-from app.copilot_runtime.agent_registry import build_default_agent_registry
+from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry, build_default_agent_registry
 from app.copilot_runtime.bridge import (
     AgentExecutionError,
     AgentNotFoundError,
+    BoundAgentMismatchError,
     InvalidSessionHistoryError,
     RuntimeBridge,
 )
@@ -55,8 +56,8 @@ class RecordingExecutorFactory:
 def test_run_resolves_default_agent_through_registry_and_factory() -> None:
     store = InMemorySessionStore()
     store.append_turn(
-        thread_id="thread-1",
-        agent_name="default",
+        session_id="thread-1",
+        bound_agent_id="default",
         user_text="hello",
         assistant_text="hi there",
         metadata={"last_run_id": "run-1"},
@@ -158,11 +159,49 @@ def test_run_raises_explicit_error_when_agent_is_not_registered() -> None:
     assert store.get("thread-1") is None
 
 
+def test_run_rejects_existing_session_bound_to_different_agent() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="thread-1")
+    executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
+    registry = AgentRegistry(
+        [
+            AgentDescriptor(
+                name="default",
+                label="Default",
+                description="Default runtime agent.",
+                default=True,
+                toolset_name="default",
+                executor_factory=executor_factory,
+            ),
+            AgentDescriptor(
+                name="secondary",
+                label="Secondary",
+                description="Secondary runtime agent.",
+                toolset_name="default",
+                executor_factory=executor_factory,
+            ),
+        ]
+    )
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+
+    with pytest.raises(BoundAgentMismatchError, match="bound to agent 'default'"):
+        asyncio.run(
+            bridge.run(
+                request=_build_run_request(
+                    thread_id="thread-1",
+                    run_id="run-1",
+                    user_message_text="should fail",
+                    agent_name="secondary",
+                )
+            )
+        )
+
+
 def test_run_does_not_append_failed_turn_to_session_history() -> None:
     store = InMemorySessionStore()
     store.append_turn(
-        thread_id="thread-1",
-        agent_name="default",
+        session_id="thread-1",
+        bound_agent_id="default",
         user_text="hello",
         assistant_text="hi there",
         metadata={"last_run_id": "run-1"},
@@ -227,8 +266,8 @@ def test_run_does_not_create_session_when_executor_fails_before_first_success() 
 def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
     store = InMemorySessionStore()
     session, _ = store.get_or_create(
-        thread_id="thread-1",
-        agent_name="default",
+        session_id="thread-1",
+        bound_agent_id="default",
         metadata={"last_run_id": "run-1"},
     )
     session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))

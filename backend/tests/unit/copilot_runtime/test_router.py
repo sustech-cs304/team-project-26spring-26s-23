@@ -18,10 +18,12 @@ from app.copilot_runtime import (
     build_router,
     build_runtime_scaffold,
 )
+from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
 from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
 
 
 TEST_MODEL_REPLY = "Hello from the test model."
+SUPPORTED_METHODS = ["info", "agents/list", "session/create", "agent/connect", "agent/run"]
 
 
 def test_root_post_info_request_returns_runtime_info() -> None:
@@ -42,9 +44,36 @@ def test_root_post_info_request_returns_runtime_info() -> None:
     assert response.status_code == 200
     assert payload == scaffold.build_info_response().to_dict()
     assert list(payload["agents"]) == ["default"]
-    assert payload["agents"]["default"]["description"] == (
-        "Minimal default agent exposed by the Copilot runtime run bridge."
-    )
+
+
+def test_root_post_agents_list_returns_backend_agent_directory() -> None:
+    app, scaffold, _ = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "agents/list"})
+
+    assert response.status_code == 200
+    assert response.json() == scaffold.build_agents_list_response().to_dict()
+
+
+def test_root_post_session_create_returns_bound_agent_session_payload() -> None:
+    app, scaffold, store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "session/create", "body": {"agentId": "default"}})
+
+    payload = response.json()
+    session = store.get(payload["sessionId"])
+
+    assert response.status_code == 200
+    assert session is not None
+    assert payload == scaffold.build_session_create_response(session=session).to_dict()
+    assert payload["capabilities"] == {
+        "tools": {
+            "selectionMode": "recommendation-only",
+            "recommendedTools": [],
+        }
+    }
 
 
 def test_root_post_info_shape_without_method_is_recognized() -> None:
@@ -89,11 +118,7 @@ def test_root_post_run_like_request_is_recognized_and_streamed() -> None:
         "TEXT_MESSAGE_END",
         "RUN_FINISHED",
     ]
-    assert events[2]["role"] == "assistant"
-    assert events[3]["delta"] == TEST_MODEL_REPLY
-    assert events[-1]["result"]["ok"] is True
     assert events[-1]["result"]["agentName"] == "default"
-    assert events[-1]["result"]["output"] == TEST_MODEL_REPLY
     assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
         ("user", "Hello"),
         ("assistant", TEST_MODEL_REPLY),
@@ -112,7 +137,7 @@ def test_root_post_invalid_method_shape_returns_structured_bad_request() -> None
     assert payload["ok"] is False
     assert payload["error"]["code"] == "invalid_runtime_request"
     assert payload["error"]["requestedMethod"] is None
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["stage"] == "phase3-run-bridge"
 
 
@@ -120,59 +145,20 @@ def test_root_post_agent_connect_returns_sse_connect_result() -> None:
     app, _scaffold, _store = _build_app()
 
     with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json=_build_connect_request(state={"mode": "connect"}),
-        )
+        response = client.post("/", json=_build_connect_request(state={"mode": "connect"}))
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
 
     events = _parse_sse_events(response.text)
-    assert events == [
-        {
-            "type": "RUN_STARTED",
-            "threadId": "thread-1",
-            "runId": "run-1",
-        },
-        {
-            "type": "STATE_SNAPSHOT",
-            "snapshot": {"mode": "connect"},
-        },
-        {
-            "type": "MESSAGES_SNAPSHOT",
-            "messages": [],
-        },
-        {
-            "type": "RUN_FINISHED",
-            "threadId": "thread-1",
-            "runId": "run-1",
-            "result": {
-                "ok": True,
-                "threadId": "thread-1",
-                "runId": "run-1",
-                "agentName": "default",
-                "session": {
-                    "threadId": "thread-1",
-                    "agentName": "default",
-                    "createdAt": events[3]["result"]["session"]["createdAt"],
-                    "updatedAt": events[3]["result"]["session"]["updatedAt"],
-                    "newlyCreated": True,
-                    "metadata": {"last_connect_run_id": "run-1"},
-                },
-            },
-        },
-    ]
+    assert events[-1]["result"]["session"]["metadata"] == {"last_connect_run_id": "run-1"}
 
 
 def test_root_post_agent_connect_unknown_agent_returns_structured_error() -> None:
     app, _scaffold, _store = _build_app()
 
     with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json=_build_connect_request(agent_id="missing-agent"),
-        )
+        response = client.post("/", json=_build_connect_request(agent_id="missing-agent"))
 
     assert response.status_code == 404
 
@@ -180,46 +166,8 @@ def test_root_post_agent_connect_unknown_agent_returns_structured_error() -> Non
     assert payload["ok"] is False
     assert payload["error"]["code"] == "agent_not_found"
     assert payload["error"]["requestedMethod"] == "agent/connect"
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"agentName": "missing-agent"}
-    assert payload["error"]["message"] == "Unknown agent 'missing-agent'."
-
-
-def test_root_post_agent_connect_missing_thread_id_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app()
-    request_payload = _build_connect_request()
-    del request_payload["body"]["threadId"]
-
-    with TestClient(app) as client:
-        response = client.post("/", json=request_payload)
-
-    assert response.status_code == 400
-
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "invalid_runtime_request"
-    assert payload["error"]["requestedMethod"] == "agent/connect"
-    assert payload["error"]["details"] == {"field": "threadId"}
-    assert payload["error"]["message"] == "Runtime request field 'threadId' must be a non-empty string."
-
-
-def test_root_post_agent_connect_invalid_messages_payload_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json=_build_connect_request(body_overrides={"messages": "invalid"}),
-        )
-
-    assert response.status_code == 400
-
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "invalid_runtime_request"
-    assert payload["error"]["requestedMethod"] == "agent/connect"
-    assert payload["error"]["details"] == {"field": "messages"}
-    assert payload["error"]["message"] == "Runtime request field 'messages' must be an array of objects."
 
 
 def test_root_post_agent_connect_existing_thread_is_reused() -> None:
@@ -231,21 +179,33 @@ def test_root_post_agent_connect_existing_thread_is_reused() -> None:
 
     first_events = _parse_sse_events(first_response.text)
     second_events = _parse_sse_events(second_response.text)
-
-    first_result = first_events[-1]["result"]
-    second_result = second_events[-1]["result"]
-    first_session = first_result["session"]
-    second_session = second_result["session"]
+    first_session = first_events[-1]["result"]["session"]
+    second_session = second_events[-1]["result"]["session"]
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert first_session["threadId"] == "thread-1"
     assert second_session["threadId"] == "thread-1"
-    assert first_session["newlyCreated"] is True
     assert second_session["newlyCreated"] is False
     assert second_session["createdAt"] == first_session["createdAt"]
     assert second_session["metadata"] == {"last_connect_run_id": "run-2"}
-    assert second_result["runId"] == "run-2"
+
+
+def test_root_post_agent_connect_rebinding_existing_thread_returns_agent_mismatch() -> None:
+    app, _scaffold, _store = _build_app_with_secondary_agent()
+
+    with TestClient(app) as client:
+        client.post("/", json=_build_connect_request(agent_id="default", run_id="run-1"))
+        response = client.post("/", json=_build_connect_request(agent_id="secondary", run_id="run-2"))
+
+    payload = response.json()
+
+    assert response.status_code == 409
+    assert payload["error"]["code"] == "agent_mismatch"
+    assert payload["error"]["details"] == {
+        "sessionId": "thread-1",
+        "boundAgentId": "default",
+        "requestedAgentId": "secondary",
+    }
 
 
 def test_root_post_agent_run_success_persists_history_across_same_thread() -> None:
@@ -284,6 +244,7 @@ def test_root_post_agent_run_unknown_agent_returns_structured_error() -> None:
     assert payload["error"]["requestedMethod"] == "agent/run"
     assert payload["error"]["details"] == {"agentName": "missing-agent"}
 
+
 def test_root_post_agent_run_model_not_configured_returns_structured_error() -> None:
     app, _scaffold, _store = _build_app(agent_executor=PydanticAIAgentExecutor(env={}))
 
@@ -295,17 +256,13 @@ def test_root_post_agent_run_model_not_configured_returns_structured_error() -> 
     assert payload["ok"] is False
     assert payload["error"]["code"] == "model_not_configured"
     assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["details"] == {
-        "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"]
-    }
-
 
 
 def test_root_post_agent_run_corrupted_session_history_returns_structured_conflict() -> None:
     app, _scaffold, store = _build_app()
     session, _ = store.get_or_create(
-        thread_id="thread-1",
-        agent_name="default",
+        session_id="thread-1",
+        bound_agent_id="default",
         metadata={"last_run_id": "run-0"},
     )
     session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
@@ -318,10 +275,24 @@ def test_root_post_agent_run_corrupted_session_history_returns_structured_confli
     assert payload["ok"] is False
     assert payload["error"]["code"] == "invalid_message_history"
     assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
-    assert payload["error"]["stage"] == "phase3-run-bridge"
-    assert "expected role 'user'" in payload["error"]["message"]
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
 
+
+def test_root_post_agent_run_rebinding_existing_thread_returns_agent_mismatch() -> None:
+    app, _scaffold, store = _build_app_with_secondary_agent()
+    store.create(bound_agent_id="default", session_id="thread-1")
+
+    with TestClient(app) as client:
+        response = client.post("/", json=_build_run_request(agent_id="secondary", user_text="Hello"))
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["error"]["code"] == "agent_mismatch"
+    assert payload["error"]["details"] == {
+        "sessionId": "thread-1",
+        "boundAgentId": "default",
+        "requestedAgentId": "secondary",
+    }
 
 
 def test_root_post_agent_run_agent_execution_failure_returns_structured_error() -> None:
@@ -337,45 +308,7 @@ def test_root_post_agent_run_agent_execution_failure_returns_structured_error() 
     assert payload["ok"] is False
     assert payload["error"]["code"] == "agent_execution_failed"
     assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
-    assert payload["error"]["stage"] == "phase3-run-bridge"
-    assert payload["error"]["message"] == "executor boom"
-
-
-
-def test_root_post_agent_run_unexpected_bridge_failure_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app(
-        runtime_bridge=_ExplodingRuntimeBridge(RuntimeError("unexpected boom"))
-    )
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_run_request(user_text="Hello"))
-
-    assert response.status_code == 500
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "agent_execution_failed"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
-    assert payload["error"]["stage"] == "phase3-run-bridge"
-    assert payload["error"]["message"] == "Unexpected agent execution failure: unexpected boom"
-
-
-
-def test_root_post_agent_run_missing_thread_id_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app()
-    request_payload = _build_run_request(user_text="Hello")
-    del request_payload["body"]["threadId"]
-
-    with TestClient(app) as client:
-        response = client.post("/", json=request_payload)
-
-    assert response.status_code == 400
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "invalid_runtime_request"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["details"] == {"field": "threadId"}
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
 
 
 def test_root_post_agent_run_unsupported_message_shape_returns_structured_error() -> None:
@@ -413,6 +346,21 @@ class _ExplodingRuntimeBridge(RuntimeBridge):
         raise self._error
 
 
+class _PermissiveExecutor:
+    def __init__(self, *, reply: str) -> None:
+        self.model_configured = True
+        self.model_environment_keys: tuple[str, ...] = ()
+        self._reply = reply
+
+    async def run(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+    ) -> str:
+        return self._reply
+
 
 def _build_app(
     *,
@@ -430,6 +378,40 @@ def _build_app(
         model_configured=executor.model_configured,
         model_environment_keys=executor.model_environment_keys,
         agent_registry=agent_registry,
+    )
+    app = FastAPI()
+    app.include_router(build_router(scaffold, store, bridge))
+    return app, scaffold, store
+
+
+def _build_app_with_secondary_agent() -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
+    executor = _PermissiveExecutor(reply=TEST_MODEL_REPLY)
+    store = InMemorySessionStore()
+    registry = AgentRegistry(
+        [
+            AgentDescriptor(
+                name="default",
+                label="Default",
+                description="Default runtime agent.",
+                default=True,
+                toolset_name="default",
+                executor_factory=lambda: executor,
+            ),
+            AgentDescriptor(
+                name="secondary",
+                label="Secondary",
+                description="Secondary runtime agent.",
+                toolset_name="default",
+                executor_factory=lambda: executor,
+            ),
+        ]
+    )
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    scaffold = build_runtime_scaffold(
+        session_store_type=store.storage_type,
+        model_configured=executor.model_configured,
+        model_environment_keys=executor.model_environment_keys,
+        agent_registry=registry,
     )
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))

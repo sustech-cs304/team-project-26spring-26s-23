@@ -9,12 +9,19 @@ from .agent import (
     PydanticAIAgentExecutor,
 )
 from .agent_registry import AgentDescriptor, AgentRegistry, build_default_agent_registry
-from .bridge import InvalidSessionHistoryError, RuntimeBridge, RuntimeBridgeResult
+from .bridge import (
+    BoundAgentMismatchError,
+    InvalidSessionHistoryError,
+    RuntimeBridge,
+    RuntimeBridgeResult,
+)
 from .composition import RuntimeDependencies, build_default_runtime_dependencies
 from .contracts import (
     AGENT_CONNECT_METHOD,
     AGENT_RUN_METHOD,
+    AGENTS_LIST_METHOD,
     INFO_METHOD,
+    SESSION_CREATE_METHOD,
     RuntimeRunRequest,
     RuntimeScaffold,
     build_runtime_scaffold,
@@ -30,9 +37,11 @@ from .tool_registry import (
 __all__ = [
     "AGENT_CONNECT_METHOD",
     "AGENT_RUN_METHOD",
+    "AGENTS_LIST_METHOD",
     "AgentDescriptor",
     "AgentExecutionError",
     "AgentRegistry",
+    "BoundAgentMismatchError",
     "DEFAULT_AGENT_NAME",
     "DEFAULT_AGENT_SYSTEM_PROMPT",
     "INFO_METHOD",
@@ -45,6 +54,7 @@ __all__ = [
     "RuntimeDependencies",
     "RuntimeRunRequest",
     "RuntimeScaffold",
+    "SESSION_CREATE_METHOD",
     "ToolDescriptor",
     "ToolRegistry",
     "ToolsetDescriptor",
