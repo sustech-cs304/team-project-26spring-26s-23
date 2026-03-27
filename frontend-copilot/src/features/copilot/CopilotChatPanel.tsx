@@ -112,6 +112,42 @@ export function CopilotChatPanel({
   const sessionIdentity = sessionShell === null
     ? null
     : `${sessionShell.sessionId}:${sessionShell.capabilities.capabilitiesVersion}`
+  const sessionToolSnapshot = sessionShell === null
+    ? ''
+    : sessionShell.capabilities.allAvailableTools
+      .map((tool) => `${tool.toolId}:${tool.kind}:${tool.availability}`)
+      .join('|')
+  const sessionRecommendedSnapshot = sessionShell === null
+    ? ''
+    : sessionShell.capabilities.recommendedToolsForAgent.join('|')
+  const sessionDefaultEnabledSnapshot = sessionShell === null
+    ? ''
+    : sessionShell.capabilities.defaultEnabledTools.join('|')
+
+  const runtimeDebugSummary = useMemo(() => {
+    if (!isCopilotConnectableState(state)) {
+      return null
+    }
+
+    return buildRuntimeDebugSummary({
+      state,
+      directoryState,
+      selectedAgent,
+    })
+  }, [directoryState.status, selectedAgent?.id, selectedAgent?.label, state])
+
+  const sessionDebugSummary = useMemo(
+    () => (sessionShell === null ? null : buildSessionDebugSummary(sessionShell)),
+    [
+      sessionDefaultEnabledSnapshot,
+      sessionIdentity,
+      sessionRecommendedSnapshot,
+      sessionShell?.boundAgent.id,
+      sessionShell?.capabilities.defaultModelPreference,
+      sessionShell?.capabilities.toolSelectionMode,
+      sessionToolSnapshot,
+    ],
+  )
 
   useEffect(() => {
     if (sessionShell === null) {
@@ -129,6 +165,18 @@ export function CopilotChatPanel({
   useEffect(() => {
     setConversation([])
   }, [sessionShell?.sessionId])
+
+  useEffect(() => {
+    if (runtimeDebugSummary !== null) {
+      console.debug('[copilot-chat-shell] runtime-summary', runtimeDebugSummary)
+    }
+  }, [runtimeDebugSummary])
+
+  useEffect(() => {
+    if (sessionDebugSummary !== null) {
+      console.debug('[copilot-chat-shell] session-summary', sessionDebugSummary)
+    }
+  }, [sessionDebugSummary])
 
   const sendDisabledReason = useMemo(() => {
     if (!isCopilotConnectableState(state)) {
@@ -357,52 +405,11 @@ function renderCopilotPanelContent(
 }
 
 function renderConnectedShell(
-  state: Extract<CopilotBootstrapState, { status: 'ready' | 'degraded' }>,
+  _state: Extract<CopilotBootstrapState, { status: 'ready' | 'degraded' }>,
   actions: RenderPanelActions,
-  tone: 'ready' | 'warning',
+  _tone: 'ready' | 'warning',
 ) {
-  const selectedAgent = actions.selectedAgent
-  const sessionShell = actions.sessionShell
-
-  return (
-    <>
-      <section className={`copilot-panel__card copilot-panel__card--${tone}`} aria-live="polite">
-        <p className="copilot-panel__eyebrow">Copilot</p>
-        <h2 className="copilot-panel__title">主聊天入口已切到会话优先壳层</h2>
-        <p className="copilot-panel__description">
-          当前入口先拉取后端智能体目录，再由用户显式创建会话。旧全局 agentName 与旧 Provider 路径不再驱动主聊天入口。
-        </p>
-        <dl className="copilot-panel__details-grid">
-          <div>
-            <dt>当前 Runtime URL</dt>
-            <dd>{state.runtimeUrl}</dd>
-          </div>
-          <div>
-            <dt>Runtime 来源</dt>
-            <dd>{formatRuntimeSource(state.runtimeSource)}</dd>
-          </div>
-          <div>
-            <dt>目录状态</dt>
-            <dd>{formatDirectoryStatus(actions.directoryState.status)}</dd>
-          </div>
-          <div>
-            <dt>已选智能体</dt>
-            <dd>{selectedAgent?.label ?? '尚未选择'}</dd>
-          </div>
-          <div>
-            <dt>当前会话</dt>
-            <dd>{sessionShell?.sessionId ?? '尚未创建'}</dd>
-          </div>
-          <div>
-            <dt>运行模式</dt>
-            <dd>{formatModeSummary(state.diagnostics)}</dd>
-          </div>
-        </dl>
-      </section>
-
-      {renderSessionContent(actions)}
-    </>
-  )
+  return renderSessionContent(actions)
 }
 
 function renderSessionContent(actions: RenderPanelActions) {
@@ -484,55 +491,6 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
 
   return (
     <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite" data-testid="chat-session-shell-ready">
-      <p className="copilot-panel__eyebrow">Session Shell</p>
-      <h2 className="copilot-panel__title">当前会话已接入 request-scoped message/send 闭环</h2>
-      <p className="copilot-panel__description">
-        当前会话已通过 session/create 创建成功，并紧接着读取 capabilities/get。发送时会显式带上 sessionId、消息内容、会话绑定智能体校验值、消息级模型、enabledTools 与最小 requestOptions。
-      </p>
-      <dl className="copilot-panel__details-grid">
-        <div>
-          <dt>Session ID</dt>
-          <dd>{sessionShell.sessionId}</dd>
-        </div>
-        <div>
-          <dt>Bound Agent</dt>
-          <dd>{sessionShell.boundAgent.label}</dd>
-        </div>
-        <div>
-          <dt>Capabilities Version</dt>
-          <dd>{capabilities.capabilitiesVersion}</dd>
-        </div>
-        <div>
-          <dt>默认模型偏好</dt>
-          <dd>{capabilities.defaultModelPreference ?? '未提供'}</dd>
-        </div>
-      </dl>
-      <div className="copilot-panel__details-block">
-        <p className="copilot-panel__details-heading">总体可用工具集合（后端能力面真源）</p>
-        <ul className="copilot-panel__list">
-          {capabilities.allAvailableTools.map((tool) => (
-            <li key={tool.toolId}>
-              <strong>{tool.toolId}</strong>
-              {' · '}
-              {tool.displayName ?? '未提供显示名'}
-              {' · '}
-              {tool.kind}
-              {' · '}
-              {tool.availability}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="copilot-panel__details-block">
-        <p className="copilot-panel__details-heading">当前默认启用来源</p>
-        <ul className="copilot-panel__list">
-          <li>当前 boundAgent：{sessionShell.boundAgent.id}</li>
-          <li>默认模型来源：{capabilities.defaultModelPreference ?? '未提供'}</li>
-          <li>默认启用 toolId：{formatToolIdList(capabilities.defaultEnabledTools)}</li>
-          <li>recommendedTools 只作为默认来源，不构成硬限制。</li>
-        </ul>
-      </div>
-
       <section className="copilot-chat" data-testid="chat-send-shell">
         <div className="copilot-chat__meta">
           <div className="copilot-chat__meta-item">
@@ -769,6 +727,42 @@ export function formatRuntimeMessageSendError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+export function buildRuntimeDebugSummary(input: {
+  state: Extract<CopilotBootstrapState, { status: 'ready' | 'degraded' }>
+  directoryState: AssistantAgentDirectoryState
+  selectedAgent: AgentType | null
+}) {
+  return {
+    runtimeSource: input.state.runtimeSource,
+    connectionSummary: `${formatRuntimeSource(input.state.runtimeSource)} · ${input.state.runtimeUrl} · ${formatModeSummary(input.state.diagnostics)}`,
+    runtimeUrl: input.state.runtimeUrl,
+    hostedStatus: input.state.diagnostics.hostedStatus,
+    directoryStatus: input.directoryState.status,
+    selectedAgent: input.selectedAgent === null
+      ? null
+      : {
+          id: input.selectedAgent.id,
+          label: input.selectedAgent.label,
+        },
+  }
+}
+
+export function buildSessionDebugSummary(sessionShell: AssistantSessionShell) {
+  return {
+    sessionId: sessionShell.sessionId,
+    boundAgent: sessionShell.boundAgent.id,
+    capabilitiesVersion: sessionShell.capabilities.capabilitiesVersion,
+    allAvailableTools: sessionShell.capabilities.allAvailableTools.map((tool) => tool.toolId),
+    recommendedTools: [...sessionShell.capabilities.recommendedToolsForAgent],
+    defaultEnabledTools: [...sessionShell.capabilities.defaultEnabledTools],
+    defaultEnabledSource: {
+      boundAgent: sessionShell.boundAgent.id,
+      defaultModelPreference: sessionShell.capabilities.defaultModelPreference,
+      toolSelectionMode: sessionShell.capabilities.toolSelectionMode,
+    },
+  }
+}
+
 function createEmptyComposerDraft(): CopilotChatComposerDraft {
   return {
     messageText: '',
@@ -920,19 +914,6 @@ function formatModeSummary(diagnostics: CopilotDiagnosticsSummary): string {
 
 function formatToolIdList(toolIds: string[]): string {
   return toolIds.length === 0 ? '空集合' : toolIds.join(', ')
-}
-
-function formatDirectoryStatus(status: AssistantAgentDirectoryState['status']): string {
-  switch (status) {
-    case 'idle':
-      return '未开始'
-    case 'loading':
-      return '加载中'
-    case 'ready':
-      return '已就绪'
-    case 'error':
-      return '加载失败'
-  }
 }
 
 function formatSessionStatus(status: 'idle' | 'creating' | 'error'): string {

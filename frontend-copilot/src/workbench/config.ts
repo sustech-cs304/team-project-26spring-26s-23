@@ -49,17 +49,33 @@ const agentIconsByHint: Record<string, LucideIcon> = {
   brain: Brain,
 }
 
+const agentPresentationOverridesById: Record<string, { label: string, hint: string | null }> = {
+  general: {
+    label: '通用智能体',
+    hint: '默认使用所有工具',
+  },
+  default: {
+    label: '通用智能体',
+    hint: '默认使用所有工具',
+  },
+}
+
 export function enhanceRuntimeAgents(agents: RuntimeAgentDirectoryEntry[]): AgentType[] {
-  return agents.map((agent) => ({
-    id: agent.agentId,
-    label: agent.displayName ?? agent.agentId,
-    shortLabel: buildAgentShortLabel(agent),
-    description: agent.description ?? '后端目录未提供该智能体的描述。',
-    status: agent.status,
-    icon: resolveAgentIcon(agent),
-    recommendedTools: [...agent.recommendedTools],
-    defaultModelPreference: agent.defaultModelPreference,
-  }))
+  return agents.map((agent) => {
+    const presentation = resolveAgentPresentation(agent)
+
+    return {
+      id: agent.agentId,
+      label: presentation.label,
+      shortLabel: presentation.shortLabel,
+      description: agent.description ?? '后端目录未提供该智能体的描述。',
+      hint: presentation.hint,
+      status: agent.status,
+      icon: resolveAgentIcon(agent),
+      recommendedTools: [...agent.recommendedTools],
+      defaultModelPreference: agent.defaultModelPreference,
+    }
+  })
 }
 
 export function pickDefaultAgentId(input: {
@@ -88,6 +104,32 @@ function resolveAgentIcon(agent: RuntimeAgentDirectoryEntry): LucideIcon {
   }
 
   return Sparkles
+}
+
+function resolveAgentPresentation(agent: RuntimeAgentDirectoryEntry): {
+  label: string
+  shortLabel: string
+  hint: string | null
+} {
+  const override = agentPresentationOverridesById[agent.agentId]
+    ?? resolveAgentPresentationOverrideByDisplayName(agent.displayName)
+  const resolvedLabel = override?.label ?? agent.displayName ?? agent.agentId
+
+  return {
+    label: resolvedLabel,
+    shortLabel: override?.label ?? buildAgentShortLabel(agent),
+    hint: override?.hint ?? null,
+  }
+}
+
+function resolveAgentPresentationOverrideByDisplayName(
+  displayName: string | null,
+): { label: string, hint: string | null } | null {
+  if (displayName?.trim().toLowerCase() === 'default') {
+    return agentPresentationOverridesById.default
+  }
+
+  return null
 }
 
 function buildAgentShortLabel(agent: RuntimeAgentDirectoryEntry): string {

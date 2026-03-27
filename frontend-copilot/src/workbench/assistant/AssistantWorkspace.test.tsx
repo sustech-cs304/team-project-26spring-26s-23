@@ -10,10 +10,13 @@ import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { enhanceRuntimeAgents } from '../config'
 import {
   AssistantWorkspace,
+  appendAssistantSessionShell,
   createAssistantAgentDirectoryState,
+  createAssistantSessionListState,
   createAssistantSessionCapabilities,
   createAssistantSessionShell,
   createAssistantSessionShellForAgent,
+  resolveActiveAssistantSessionShell,
 } from './AssistantWorkspace'
 
 const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
@@ -55,8 +58,11 @@ describe('AssistantWorkspace', () => {
     )
 
     expect(html).toContain('后端智能体目录')
-    expect(html).toContain('通用助手')
+    expect(html).toContain('通用智能体')
+    expect(html).toContain('默认使用所有工具')
     expect(html).toContain('Blackboard')
+    expect(html).not.toContain('当前入口语义')
+    expect(html).not.toContain('当前会话绑定')
     expect(mockCopilotChatPanel).toHaveBeenCalled()
     expect(mockCopilotChatPanel.mock.calls[0][0]).toMatchObject({
       selectedAgent: expect.objectContaining({ id: 'general' }),
@@ -119,7 +125,7 @@ describe('AssistantWorkspace', () => {
       sessionId: 'session-1',
       boundAgent: expect.objectContaining({
         id: 'general',
-        label: '通用助手',
+        label: '通用智能体',
       }),
       createdAt: '2026-03-27T10:00:00Z',
       updatedAt: '2026-03-27T10:00:00Z',
@@ -178,6 +184,69 @@ describe('AssistantWorkspace', () => {
     expect(shell.capabilities.defaultEnabledTools).toEqual(['tool.file-convert'])
     expect(shell.capabilities.recommendedToolsForAgent).toEqual(['tool.file-convert'])
   })
+
+  it('appends newly created sessions to the session list and switches the active session to the newest entry', () => {
+    const selectedAgent = enhanceRuntimeAgents(createDirectoryResponse().agents)[0]
+
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent.')
+    }
+
+    const firstSession = createAssistantSessionShell({
+      response: createSessionResponse(),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse(),
+    })
+    const nextSession = createAssistantSessionShell({
+      response: createSessionResponse({
+        sessionId: 'session-2',
+        createdAt: '2026-03-27T10:05:00Z',
+        updatedAt: '2026-03-27T10:05:00Z',
+      }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({
+        sessionId: 'session-2',
+        capabilitiesVersion: 'cap-v13',
+      }),
+    })
+
+    const nextState = appendAssistantSessionShell(
+      createAssistantSessionListState(firstSession),
+      nextSession,
+    )
+
+    expect(nextState.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-1', 'session-2'])
+    expect(nextState.activeSessionId).toBe('session-2')
+    expect(resolveActiveAssistantSessionShell(nextState)?.sessionId).toBe('session-2')
+  })
+
+  it('does not append to the existing session list when creating a new session fails', async () => {
+    const selectedAgent = enhanceRuntimeAgents(createDirectoryResponse().agents)[0]
+
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent.')
+    }
+
+    const existingSession = createAssistantSessionShell({
+      response: createSessionResponse(),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse(),
+    })
+    const existingState = createAssistantSessionListState(existingSession)
+    const createSession = vi.fn().mockRejectedValue(new Error('session/create failed'))
+    const getCapabilities = vi.fn()
+
+    await expect(createAssistantSessionShellForAgent({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      selectedAgent,
+      createSession,
+      getCapabilities,
+    })).rejects.toThrow('session/create failed')
+
+    expect(existingState.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-1'])
+    expect(existingState.activeSessionId).toBe('session-1')
+    expect(getCapabilities).not.toHaveBeenCalled()
+  })
 })
 
 function createDirectoryResponse(): RuntimeAgentsListResponse {
@@ -191,7 +260,7 @@ function createDirectoryResponse(): RuntimeAgentsListResponse {
         status: 'active',
         recommendedTools: ['tool.file-convert'],
         defaultModelPreference: 'openai/gpt-4.1',
-        displayName: '通用助手',
+        displayName: 'Default',
         description: '默认通用智能体',
         iconKey: 'sparkles',
       },
@@ -208,14 +277,14 @@ function createDirectoryResponse(): RuntimeAgentsListResponse {
   }
 }
 
-function createSessionResponse(): RuntimeSessionCreateResponse {
+function createSessionResponse(overrides: Partial<RuntimeSessionCreateResponse> = {}): RuntimeSessionCreateResponse {
   return {
     ok: true,
     sessionId: 'session-1',
     boundAgent: {
       agentId: 'general',
       status: 'active',
-      displayName: '通用助手',
+      displayName: 'Default',
       description: '默认通用智能体',
       iconKey: 'sparkles',
     },
@@ -228,17 +297,18 @@ function createSessionResponse(): RuntimeSessionCreateResponse {
         selectionMode: 'recommendation-only',
       },
     },
+    ...overrides,
   }
 }
 
-function createCapabilitiesResponse(): RuntimeCapabilitiesGetResponse {
+function createCapabilitiesResponse(overrides: Partial<RuntimeCapabilitiesGetResponse> = {}): RuntimeCapabilitiesGetResponse {
   return {
     ok: true,
     sessionId: 'session-1',
     boundAgent: {
       agentId: 'general',
       status: 'active',
-      displayName: '通用助手',
+      displayName: 'Default',
       description: '默认通用智能体',
       iconKey: 'sparkles',
     },
@@ -262,6 +332,7 @@ function createCapabilitiesResponse(): RuntimeCapabilitiesGetResponse {
     recommendedTools: ['tool.file-convert'],
     toolSelectionMode: 'recommendation-only',
     defaultModelPreference: 'openai/gpt-4.1',
+    ...overrides,
   }
 }
 

@@ -50,6 +50,7 @@ export interface AgentType {
   label: string
   shortLabel: string
   description: string
+  hint: string | null
   status: string
   icon: LucideIcon
   recommendedTools: string[]

@@ -27,6 +27,11 @@ export interface AssistantAgentDirectoryState {
   error: string | null
 }
 
+export interface AssistantSessionListState {
+  sessions: AssistantSessionShell[]
+  activeSessionId: string | null
+}
+
 interface AssistantWorkspaceProps {
   bootstrap: CopilotBootstrapController
   listAgents?: typeof listRuntimeAgents
@@ -59,7 +64,9 @@ export function AssistantWorkspace({
       defaultAgentId: initialDirectoryState.defaultAgentId,
     }),
   )
-  const [sessionShell, setSessionShell] = useState<AssistantSessionShell | null>(initialSessionShell)
+  const [sessionListState, setSessionListState] = useState<AssistantSessionListState>(() => (
+    createAssistantSessionListState(initialSessionShell)
+  ))
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'creating' | 'error'>('idle')
   const [sessionError, setSessionError] = useState<string | null>(null)
 
@@ -133,6 +140,11 @@ export function AssistantWorkspace({
     [directoryState.agents, selectedAgentId],
   )
 
+  const sessionShell = useMemo(
+    () => resolveActiveAssistantSessionShell(sessionListState),
+    [sessionListState],
+  )
+
   const handleCreateSession = async () => {
     if (!isCopilotConnectableState(bootstrap.state) || selectedAgent === null || sessionStatus === 'creating') {
       return
@@ -148,7 +160,7 @@ export function AssistantWorkspace({
         createSession: createSessionImpl,
         getCapabilities: getCapabilitiesImpl,
       })
-      setSessionShell(nextSessionShell)
+      setSessionListState((current) => appendAssistantSessionShell(current, nextSessionShell))
       setSessionStatus('idle')
     } catch (error) {
       setSessionStatus('error')
@@ -195,16 +207,17 @@ export function AssistantWorkspace({
                   className={`assistant-card${active ? ' assistant-card--active' : ''}`}
                   onClick={() => setSelectedAgentId(agent.id)}
                   disabled={agent.status !== 'active'}
-                >
-                  <span className="assistant-card__icon-wrap">
-                    <Icon size={18} className="assistant-card__icon" />
-                  </span>
-                  <span className="assistant-card__body">
-                    <span className="assistant-card__title">{agent.label}</span>
-                    <span className="assistant-card__meta">{agent.description}</span>
-                  </span>
-                </button>
-              </li>
+                  >
+                    <span className="assistant-card__icon-wrap">
+                      <Icon size={18} className="assistant-card__icon" />
+                    </span>
+                    <span className="assistant-card__body">
+                      <span className="assistant-card__title">{agent.label}</span>
+                      {agent.hint !== null && <span className="assistant-card__hint">{agent.hint}</span>}
+                      <span className="assistant-card__meta">{agent.description}</span>
+                    </span>
+                  </button>
+                </li>
             )
           })}
         </ul>
@@ -230,37 +243,36 @@ export function AssistantWorkspace({
           <span>{sessionStatus === 'creating' ? '正在创建会话…' : createSessionLabel}</span>
         </button>
 
-        <div className="copilot-panel__details-block">
-          <p className="copilot-panel__details-heading">当前入口语义</p>
-          <ul className="copilot-panel__list">
-            <li>智能体目录以服务端 [`agents/list`](backend/app/copilot_runtime/contracts.py:14) 为真源。</li>
-            <li>创建会话后立即请求 [`capabilities/get`](backend/app/copilot_runtime/contracts.py:16)，建立会话级能力状态真源。</li>
-            <li>本阶段不再回落到旧全局 agent/provider 消息路径。</li>
-          </ul>
-        </div>
+        {sessionListState.sessions.length > 0 && (
+          <ul className="topic-list topic-list--detailed" data-testid="assistant-session-list">
+            {sessionListState.sessions.map((sessionEntry) => {
+              const active = sessionEntry.sessionId === sessionListState.activeSessionId
 
-        {sessionShell !== null && (
-          <div className="copilot-panel__details-block" data-testid="assistant-session-shell-summary">
-            <p className="copilot-panel__details-heading">当前会话绑定</p>
-            <ul className="copilot-panel__list">
-              <li>
-                <strong>Session ID：</strong>
-                {sessionShell.sessionId}
-              </li>
-              <li>
-                <strong>Bound Agent：</strong>
-                {sessionShell.boundAgent.label}
-              </li>
-              <li>
-                <strong>Capabilities Version：</strong>
-                {sessionShell.capabilities.capabilitiesVersion}
-              </li>
-              <li>
-                <strong>创建时间：</strong>
-                {sessionShell.createdAt}
-              </li>
-            </ul>
-          </div>
+              return (
+                <li key={sessionEntry.sessionId}>
+                  <button
+                    type="button"
+                    className={`topic-card${active ? ' topic-card--active' : ''}`}
+                    onClick={() => {
+                      setSessionListState((current) => ({
+                        ...current,
+                        activeSessionId: sessionEntry.sessionId,
+                      }))
+                      setSelectedAgentId(sessionEntry.boundAgent.id)
+                    }}
+                  >
+                    <span className="topic-card__title">{sessionEntry.boundAgent.label}</span>
+                    <span className="topic-card__meta">
+                      <span className={`inline-badge ${active ? 'inline-badge--primary' : 'inline-badge--success'}`}>
+                        {active ? '当前会话' : '已创建'}
+                      </span>
+                      <span>{sessionEntry.sessionId}</span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         )}
 
         {sessionError !== null && (
@@ -345,6 +357,44 @@ export async function createAssistantSessionShellForAgent(input: {
     selectedAgent: input.selectedAgent,
     capabilities: capabilitiesResponse,
   })
+}
+
+export function createAssistantSessionListState(
+  initialSessionShell: AssistantSessionShell | null,
+): AssistantSessionListState {
+  if (initialSessionShell === null) {
+    return {
+      sessions: [],
+      activeSessionId: null,
+    }
+  }
+
+  return {
+    sessions: [initialSessionShell],
+    activeSessionId: initialSessionShell.sessionId,
+  }
+}
+
+export function appendAssistantSessionShell(
+  state: AssistantSessionListState,
+  nextSessionShell: AssistantSessionShell,
+): AssistantSessionListState {
+  const remainingSessions = state.sessions.filter((sessionEntry) => sessionEntry.sessionId !== nextSessionShell.sessionId)
+
+  return {
+    sessions: [...remainingSessions, nextSessionShell],
+    activeSessionId: nextSessionShell.sessionId,
+  }
+}
+
+export function resolveActiveAssistantSessionShell(
+  state: AssistantSessionListState,
+): AssistantSessionShell | null {
+  if (state.activeSessionId === null) {
+    return null
+  }
+
+  return state.sessions.find((sessionEntry) => sessionEntry.sessionId === state.activeSessionId) ?? null
 }
 
 function isCopilotConnectableState(

@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import {
+  buildRuntimeDebugSummary,
+  buildSessionDebugSummary,
   buildRuntimeMessageSendInput,
   CopilotChatPanel,
   createComposerDraftFromSession,
@@ -32,11 +34,12 @@ describe('CopilotChatPanel', () => {
     expect(html).toContain('会话创建成功后会立即拉取')
     expect(html).toContain('消息发送只会从新的 session-first message/send 路径进入')
     expect(html).toContain('当前不会静默回落到旧 Provider 消息路径')
+    expect(html).not.toContain('当前 Runtime URL')
     expect(html).not.toContain('当前 threadId')
     expect(html).not.toContain('发送消息')
   })
 
-  it('renders request-scoped message shell for a bound session and shows capability-derived defaults', () => {
+  it('renders the minimal message shell for a bound session without the removed debug information blocks', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
         state={createReadyState()}
@@ -50,21 +53,51 @@ describe('CopilotChatPanel', () => {
       />,
     )
 
-    expect(html).toContain('当前会话已接入 request-scoped message/send 闭环')
-    expect(html).toContain('session-1')
-    expect(html).toContain('通用助手')
-    expect(html).toContain('cap-v12')
-    expect(html).toContain('总体可用工具集合（后端能力面真源）')
-    expect(html).toContain('tool.file-convert')
-    expect(html).toContain('tool.remote-search')
-    expect(html).toContain('默认模型偏好')
-    expect(html).toContain('默认模型来源：openai/gpt-4.1')
-    expect(html).toContain('默认启用 toolId：tool.file-convert')
+    expect(html).toContain('当前校验 Agent')
+    expect(html).toContain('general')
     expect(html).toContain('消息级模型')
     expect(html).toContain('requestOptions（JSON 对象）')
     expect(html).toContain('消息级 enabledTools')
     expect(html).toContain('发送消息')
+    expect(html).not.toContain('当前 Runtime URL')
+    expect(html).not.toContain('Runtime 来源')
+    expect(html).not.toContain('目录状态')
+    expect(html).not.toContain('Capabilities Version')
+    expect(html).not.toContain('总体可用工具集合（后端能力面真源）')
+    expect(html).not.toContain('当前默认启用来源')
     expect(html).not.toContain('当前 threadId')
+  })
+
+  it('builds runtime and session debug summaries for console logging', () => {
+    expect(buildRuntimeDebugSummary({
+      state: createReadyState() as Extract<CopilotBootstrapState, { status: 'ready' }>,
+      directoryState: createDirectoryState(),
+      selectedAgent: createSelectedAgent(),
+    })).toEqual({
+      runtimeSource: 'hosted',
+      connectionSummary: '宿主管理 · http://127.0.0.1:8765 · development（已解析）',
+      runtimeUrl: 'http://127.0.0.1:8765',
+      hostedStatus: 'ready',
+      directoryStatus: 'ready',
+      selectedAgent: {
+        id: 'general',
+        label: '通用智能体',
+      },
+    })
+
+    expect(buildSessionDebugSummary(createSessionShell())).toEqual({
+      sessionId: 'session-1',
+      boundAgent: 'general',
+      capabilitiesVersion: 'cap-v12',
+      allAvailableTools: ['tool.file-convert', 'tool.remote-search'],
+      recommendedTools: ['tool.file-convert'],
+      defaultEnabledTools: ['tool.file-convert'],
+      defaultEnabledSource: {
+        boundAgent: 'general',
+        defaultModelPreference: 'openai/gpt-4.1',
+        toolSelectionMode: 'recommendation-only',
+      },
+    })
   })
 
   it('creates composer defaults from session capabilities instead of hardcoded values', () => {
@@ -282,9 +315,10 @@ function createFailedState(): CopilotBootstrapState {
 function createSelectedAgent(): AgentType {
   return {
     id: 'general',
-    label: '通用助手',
-    shortLabel: '通用助手',
+    label: '通用智能体',
+    shortLabel: '通用智能体',
     description: '默认通用智能体',
+    hint: '默认使用所有工具',
     status: 'active',
     icon: ((() => null) as unknown) as AgentType['icon'],
     recommendedTools: ['tool.file-convert'],
