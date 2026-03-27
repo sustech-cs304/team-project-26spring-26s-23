@@ -8,7 +8,9 @@ import {
   type RuntimeMessageSendResponse,
 } from './chat-contract'
 import type { CopilotBootstrapState, CopilotConfigState, CopilotDiagnosticsSummary } from './types'
+import { ModelPicker } from './components/ModelPicker'
 import { NotConnectedNotice } from './components/NotConnectedNotice'
+import { getCopilotDefaultModel } from './model-picker'
 import './copilot.css'
 
 export interface CopilotChatComposerDraft {
@@ -467,21 +469,6 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
   return (
     <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
-        <div className="copilot-chat__meta">
-          <div className="copilot-chat__meta-item">
-            <span className="copilot-chat__meta-label">当前校验 Agent</span>
-            <span className="copilot-chat__meta-value">{sessionShell.boundAgent.id}</span>
-          </div>
-          <div className="copilot-chat__meta-item">
-            <span className="copilot-chat__meta-label">当前发送模型</span>
-            <span className="copilot-chat__meta-value">{actions.composerDraft.model || '未填写'}</span>
-          </div>
-          <div className="copilot-chat__meta-item">
-            <span className="copilot-chat__meta-label">当前启用工具</span>
-            <span className="copilot-chat__meta-value">{formatToolIdList(actions.composerDraft.enabledTools)}</span>
-          </div>
-        </div>
-
         <div className="copilot-chat__stream" data-testid="chat-message-scroll-region">
           {actions.conversation.length === 0
             ? (
@@ -520,23 +507,19 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
           </label>
 
           <div className="copilot-panel__form-grid copilot-chat__composer-grid">
-            <label className="copilot-panel__field-group">
+            <div className="copilot-panel__field-group">
               <span className="copilot-chat__composer-label">消息级模型</span>
-              <input
-                className="copilot-panel__field-input"
-                name="model"
-                value={actions.composerDraft.model}
-                onChange={(event) => {
-                  const nextValue = event.currentTarget.value
+              <ModelPicker
+                selectedModelId={actions.composerDraft.model}
+                onSelectModel={(model) => {
                   actions.onComposerDraftChange((current) => ({
                     ...current,
-                    model: nextValue,
+                    model: model.id,
                   }))
                 }}
-                placeholder={capabilities.defaultModelPreference ?? '例如 openai/gpt-4.1'}
                 disabled={actions.sendStatus === 'sending'}
               />
-            </label>
+            </div>
           </div>
 
           <div className="copilot-panel__details-block">
@@ -599,7 +582,7 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
 export function createComposerDraftFromSession(sessionShell: AssistantSessionShell): CopilotChatComposerDraft {
   return {
     messageText: '',
-    model: sessionShell.capabilities.defaultModelPreference ?? '',
+    model: getCopilotDefaultModel().id,
     enabledTools: [...sessionShell.capabilities.defaultEnabledTools],
     requestOptionsText: '{}',
   }
@@ -699,7 +682,7 @@ export function buildSessionDebugSummary(sessionShell: AssistantSessionShell) {
 function createEmptyComposerDraft(): CopilotChatComposerDraft {
   return {
     messageText: '',
-    model: '',
+    model: getCopilotDefaultModel().id,
     enabledTools: [],
     requestOptionsText: '{}',
   }
@@ -839,8 +822,4 @@ function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string
 
 function formatModeSummary(diagnostics: CopilotDiagnosticsSummary): string {
   return `${diagnostics.mode}（${diagnostics.modeSource === 'resolved' ? '已解析' : '预期'}）`
-}
-
-function formatToolIdList(toolIds: string[]): string {
-  return toolIds.length === 0 ? '空集合' : toolIds.join(', ')
 }

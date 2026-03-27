@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest'
+/** @vitest-environment jsdom */
+
+import type { ReactElement } from 'react'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { describe, expect, it, vi, beforeAll, afterAll } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
@@ -12,8 +17,23 @@ import {
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
 } from './CopilotChatPanel'
-import { RuntimeRequestError } from './chat-contract'
+import { RuntimeRequestError, sendRuntimeMessage } from './chat-contract'
+import type { RuntimeMessageSendResponse } from './chat-contract'
+import { DEFAULT_COPILOT_MODEL_ID } from './model-picker'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './types'
+
+declare global {
+  // eslint-disable-next-line no-var
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
+}
+
+beforeAll(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+})
+
+afterAll(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
+})
 
 describe('CopilotChatPanel', () => {
   it('renders the session-first placeholder when runtime is ready but no session has been created yet', () => {
@@ -62,9 +82,6 @@ describe('CopilotChatPanel', () => {
     expect(html).toContain('data-testid="chat-composer-dock"')
     expect(html).toContain('Copilot Feature')
     expect(html).toContain('Session-First Chat Shell')
-    expect(html).toContain('当前校验 Agent')
-    expect(html).toContain('当前发送模型')
-    expect(html).toContain('当前启用工具')
     expect(html).toContain('消息内容')
     expect(html).toContain('消息级模型')
     expect(html).toContain('消息级 enabledTools')
@@ -79,6 +96,9 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('推荐工具只用于初始化默认勾选')
     expect(html).not.toContain('本阶段只保留最小透传结构')
     expect(html).not.toContain('发送时会显式提交 sessionId')
+    expect(html).not.toContain('当前校验 Agent')
+    expect(html).not.toContain('当前发送模型')
+    expect(html).not.toContain('当前启用工具')
     expect(html).not.toContain('已连接')
     expect(html).not.toContain('当前 Runtime URL')
     expect(html).not.toContain('Runtime 来源')
@@ -126,10 +146,76 @@ describe('CopilotChatPanel', () => {
 
     expect(draft).toEqual({
       messageText: '',
-      model: 'openai/gpt-4.1',
+      model: DEFAULT_COPILOT_MODEL_ID,
       enabledTools: ['tool.file-convert'],
       requestOptionsText: '{}',
     })
+  })
+
+  it('sends messages with the updated model selected from the picker', async () => {
+    const sendMessage = vi.fn<(input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>>(async (input) => ({
+      ok: true,
+      sessionId: input.sessionId,
+      boundAgent: {
+        agentId: input.agent ?? 'general',
+        status: 'ready',
+        displayName: '通用智能体',
+        description: '默认通用智能体',
+        iconKey: null,
+      },
+      assistantMessage: {
+        role: 'assistant',
+        content: '已收到',
+      },
+      resolvedModelId: input.model,
+      resolvedToolIds: input.enabledTools,
+      requestOptions: input.requestOptions ?? {},
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+      />,
+    )
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+
+    expect(modelTrigger.textContent).toContain('Gemini 2.5 Pro Preview')
+    expect(getTriggerIconText(modelTrigger)).toBe('G')
+
+    await clickElement(modelTrigger)
+
+    const targetOption = rendered.getByTestId('chat-model-option-anthropic/claude-opus-4.1') as HTMLButtonElement
+
+    await clickElement(targetOption)
+
+    expect(modelTrigger.textContent).toContain('Claude Opus 4.1')
+    expect(getTriggerIconText(modelTrigger)).toBe('C')
+    expect(rendered.container.textContent).toContain('Claude Opus 4.1')
+
+    await setFormControlValue(messageInput, '请总结刚才的内容')
+
+    const form = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    await submitForm(form)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      model: 'anthropic/claude-opus-4.1',
+      message: {
+        content: '请总结刚才的内容',
+      },
+    })
+
+    rendered.unmount()
   })
 
   it('builds request-scoped message input with sessionId, boundAgent validation value, model, enabledTools and requestOptions', () => {
@@ -397,4 +483,66 @@ function createSessionShell(): AssistantSessionShell {
       defaultModelPreference: 'openai/gpt-4.1',
     },
   }
+}
+
+function renderWithRoot(element: ReactElement) {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  act(() => {
+    root.render(element)
+  })
+
+  return {
+    container,
+    getByTestId(testId: string) {
+      const target = container.querySelector(`[data-testid="${testId}"]`)
+      if (target === null) {
+        throw new Error(`Missing element for data-testid=${testId}`)
+      }
+
+      return target
+    },
+    unmount() {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    },
+  }
+}
+
+function getTriggerIconText(trigger: HTMLButtonElement): string {
+  const icon = trigger.querySelector('.copilot-model-picker__icon')
+  return icon?.textContent ?? ''
+}
+
+async function clickElement(element: Element) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function setFormControlValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+
+  if (valueSetter === undefined) {
+    throw new Error('Unable to resolve native value setter')
+  }
+
+  await act(async () => {
+    const previousValue = element.value
+    valueSetter.call(element, value)
+    const tracker = (element as HTMLInputElement & { _valueTracker?: { setValue: (nextValue: string) => void } })._valueTracker
+    tracker?.setValue(previousValue)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+async function submitForm(form: HTMLFormElement) {
+  await act(async () => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
 }
