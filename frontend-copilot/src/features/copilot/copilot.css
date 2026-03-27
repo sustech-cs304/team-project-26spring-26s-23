@@ -211,6 +211,67 @@
   word-break: break-word;
 }
 
+.copilot-panel__form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.copilot-panel__field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.copilot-panel__field-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.copilot-panel__field-input--code {
+  min-height: 88px;
+  resize: vertical;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.copilot-panel__field-input:focus {
+  outline: 2px solid rgba(29, 78, 216, 0.18);
+  border-color: #93c5fd;
+}
+
+.copilot-panel__field-hint {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.copilot-panel__checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.copilot-panel__checkbox-item {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  color: var(--text-secondary);
+}
+
+.copilot-panel__checkbox-item input {
+  margin-top: 0.2rem;
+}
+
+.copilot-chat__message-list {
+  margin-top: 0.2rem;
+}
+
 .copilot-chat {
   display: flex;
   flex-direction: column;

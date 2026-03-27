@@ -14,7 +14,7 @@ export type SettingsSection =
   | 'mcp'
   | 'search'
   | 'memory'
-  | 'a​pi'
+  | 'api'
   | 'docs'
 
 export interface SelectOption {
@@ -98,7 +98,7 @@ export interface ProviderProfile {
   name: string
   protocol: string
   endpoint: string
-  a​piK​ey: string
+  apiKey: string
   defaultModel: string
   fastModel: string
   fallbackModel: string

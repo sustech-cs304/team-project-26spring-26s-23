@@ -53,6 +53,21 @@ export interface RuntimeCapabilitiesGetResponse {
   defaultModelPreference: string | null
 }
 
+export interface RuntimeMessagePayload {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface RuntimeMessageSendResponse {
+  ok: true
+  sessionId: string
+  boundAgent: RuntimeBoundAgent
+  assistantMessage: RuntimeMessagePayload
+  resolvedModelId: string
+  resolvedToolIds: string[]
+  requestOptions: Record<string, unknown>
+}
+
 interface RuntimeErrorPayload {
   ok?: false
   error?: {
@@ -62,11 +77,23 @@ interface RuntimeErrorPayload {
 }
 
 interface RuntimeMethodRequest {
-  method: 'agents/list' | 'session/create' | 'capabilities/get'
+  method: 'agents/list' | 'session/create' | 'capabilities/get' | 'message/send'
   body?: Record<string, unknown>
 }
 
 export type FetchLike = typeof fetch
+
+export class RuntimeRequestError extends Error {
+  readonly code: string | null
+  readonly status: number
+
+  constructor(message: string, input: { code?: string, status: number }) {
+    super(message)
+    this.name = 'RuntimeRequestError'
+    this.code = input.code ?? null
+    this.status = input.status
+  }
+}
 
 export async function listRuntimeAgents(input: {
   runtimeUrl: string
@@ -109,6 +136,31 @@ export async function getRuntimeCapabilities(input: {
   })
 }
 
+export async function sendRuntimeMessage(input: {
+  runtimeUrl: string
+  sessionId: string
+  agent?: string
+  message: RuntimeMessagePayload
+  model: string
+  enabledTools: string[]
+  requestOptions?: Record<string, unknown>
+  fetchFn?: FetchLike
+}): Promise<RuntimeMessageSendResponse> {
+  return postRuntimeMethod<RuntimeMessageSendResponse>({
+    runtimeUrl: input.runtimeUrl,
+    method: 'message/send',
+    body: {
+      sessionId: input.sessionId,
+      ...(input.agent === undefined ? {} : { agent: input.agent }),
+      message: input.message,
+      model: input.model,
+      enabledTools: input.enabledTools,
+      requestOptions: input.requestOptions ?? {},
+    },
+    fetchFn: input.fetchFn,
+  })
+}
+
 async function postRuntimeMethod<TResponse>(input: {
   runtimeUrl: string
   method: RuntimeMethodRequest['method']
@@ -127,11 +179,14 @@ async function postRuntimeMethod<TResponse>(input: {
   const payload = await response.json() as TResponse | RuntimeErrorPayload
 
   if (!response.ok) {
-    throw new Error(buildRuntimeErrorMessage(payload, response.status))
+    throw buildRuntimeRequestError(
+      isRuntimeErrorPayload(payload) ? payload : {},
+      response.status,
+    )
   }
 
   if (isRuntimeErrorPayload(payload)) {
-    throw new Error(buildRuntimeErrorMessage(payload, response.status))
+    throw buildRuntimeRequestError(payload, response.status)
   }
 
   return payload
@@ -161,6 +216,13 @@ function isRuntimeErrorPayload(payload: unknown): payload is RuntimeErrorPayload
   }
 
   return 'ok' in payload && payload.ok === false
+}
+
+function buildRuntimeRequestError(payload: RuntimeErrorPayload, status: number): RuntimeRequestError {
+  return new RuntimeRequestError(buildRuntimeErrorMessage(payload, status), {
+    code: payload.error?.code,
+    status,
+  })
 }
 
 function buildRuntimeErrorMessage(payload: RuntimeErrorPayload, status: number): string {

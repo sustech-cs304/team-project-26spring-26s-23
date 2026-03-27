@@ -5,7 +5,10 @@ import {
   createRuntimeSession,
   getRuntimeCapabilities,
   listRuntimeAgents,
+  RuntimeRequestError,
+  sendRuntimeMessage,
   type RuntimeCapabilitiesGetResponse,
+  type RuntimeMessageSendResponse,
   type RuntimeSessionCreateResponse,
 } from './chat-contract'
 
@@ -163,6 +166,75 @@ describe('chat-contract', () => {
     expect(response.recommendedTools).toEqual(['tool.file-convert'])
   })
 
+  it('posts message/send with request-scoped model, enabledTools and requestOptions', async () => {
+    const payload: RuntimeMessageSendResponse = {
+      ok: true,
+      sessionId: 'session-1',
+      boundAgent: {
+        agentId: 'general',
+        status: 'active',
+        displayName: '通用助手',
+        description: '默认通用智能体',
+        iconKey: 'sparkles',
+      },
+      assistantMessage: {
+        role: 'assistant',
+        content: '这是总结结果。',
+      },
+      resolvedModelId: 'qwen-plus',
+      resolvedToolIds: ['tool.file-convert'],
+      requestOptions: {
+        trace: true,
+      },
+    }
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    })
+
+    const response = await sendRuntimeMessage({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionId: 'session-1',
+      agent: 'general',
+      message: {
+        role: 'user',
+        content: '请总结这份文档',
+      },
+      model: 'qwen-plus',
+      enabledTools: ['tool.file-convert'],
+      requestOptions: {
+        trace: true,
+      },
+      fetchFn,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        method: 'message/send',
+        body: {
+          sessionId: 'session-1',
+          agent: 'general',
+          message: {
+            role: 'user',
+            content: '请总结这份文档',
+          },
+          model: 'qwen-plus',
+          enabledTools: ['tool.file-convert'],
+          requestOptions: {
+            trace: true,
+          },
+        },
+      }),
+    })
+    expect(response.resolvedModelId).toBe('qwen-plus')
+    expect(response.resolvedToolIds).toEqual(['tool.file-convert'])
+  })
+
   it('normalizes runtime endpoint paths to the root slash', () => {
     expect(buildRuntimeEndpoint('http://127.0.0.1:8765')).toBe('http://127.0.0.1:8765/')
     expect(buildRuntimeEndpoint('http://127.0.0.1:8765/')).toBe('http://127.0.0.1:8765/')
@@ -186,5 +258,37 @@ describe('chat-contract', () => {
       agentId: 'general',
       fetchFn,
     })).rejects.toThrow('legacy_chat_contract_removed: old provider path removed')
+  })
+
+  it('throws RuntimeRequestError for explicit message/send backend failures', async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        ok: false,
+        error: {
+          code: 'agent_mismatch',
+          message: 'session is bound to general',
+        },
+      }),
+    })
+
+    await expect(sendRuntimeMessage({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionId: 'session-1',
+      agent: 'blackboard',
+      message: {
+        role: 'user',
+        content: '请总结这份文档',
+      },
+      model: 'qwen-plus',
+      enabledTools: ['tool.file-convert'],
+      requestOptions: {},
+      fetchFn,
+    })).rejects.toMatchObject({
+      name: 'RuntimeRequestError',
+      code: 'agent_mismatch',
+      status: 409,
+    } satisfies Partial<RuntimeRequestError>)
   })
 })

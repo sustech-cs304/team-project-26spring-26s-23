@@ -111,7 +111,7 @@ export const settingsItems: SettingsNavItem[] = [
   { id: 'mcp', label: 'MCP 服务器', icon: PlugZap },
   { id: 'search', label: '网络搜索', icon: Search },
   { id: 'memory', label: '全局记忆', icon: MemoryStick },
-  { id: 'a​pi', label: 'A​PI 服务器', icon: Workflow },
+  { id: 'api', label: 'API 服务器', icon: Workflow },
   { id: 'docs', label: '文档处理', icon: FileText },
 ]
 

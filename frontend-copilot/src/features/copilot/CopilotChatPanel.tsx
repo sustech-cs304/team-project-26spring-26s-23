@@ -1,5 +1,12 @@
+import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
+import {
+  RuntimeRequestError,
+  sendRuntimeMessage,
+  type RuntimeMessageSendResponse,
+} from './chat-contract'
 import type { CopilotBootstrapState, CopilotConfigState, CopilotDiagnosticsSummary } from './types'
 import { NotConnectedNotice } from './components/NotConnectedNotice'
 import './copilot.css'
@@ -15,6 +22,36 @@ const statusLabels: Record<CopilotBootstrapState['status'], string> = {
   error: '读取失败',
 }
 
+export interface CopilotChatComposerDraft {
+  messageText: string
+  model: string
+  enabledTools: string[]
+  requestOptionsText: string
+}
+
+export interface RuntimeMessageSendInput {
+  runtimeUrl: string
+  sessionId: string
+  agent: string
+  message: {
+    role: 'user'
+    content: string
+  }
+  model: string
+  enabledTools: string[]
+  requestOptions: Record<string, unknown>
+}
+
+interface CopilotConversationTurn {
+  id: string
+  kind: 'user' | 'assistant' | 'error'
+  title: string
+  content: string
+  resolvedModelId?: string
+  resolvedToolIds?: string[]
+  requestOptions?: Record<string, unknown>
+}
+
 interface CopilotChatPanelProps {
   state: CopilotBootstrapState
   retrying: boolean
@@ -24,6 +61,36 @@ interface CopilotChatPanelProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  sendMessage?: typeof sendRuntimeMessage
+}
+
+interface RenderPanelActions {
+  retrying: boolean
+  onRetry: () => void
+  selectedAgent: AgentType | null
+  sessionShell: AssistantSessionShell | null
+  directoryState: AssistantAgentDirectoryState
+  sessionStatus: 'idle' | 'creating' | 'error'
+  sessionError: string | null
+  composerDraft: CopilotChatComposerDraft
+  onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  onSend: (event: FormEvent<HTMLFormElement>) => void
+  sendStatus: 'idle' | 'sending'
+  sendDisabledReason: string | null
+  sendError: string | null
+  conversation: CopilotConversationTurn[]
+}
+
+interface RenderMessageShellActions {
+  sessionShell: AssistantSessionShell
+  sessionError: string | null
+  composerDraft: CopilotChatComposerDraft
+  onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  onSend: (event: FormEvent<HTMLFormElement>) => void
+  sendStatus: 'idle' | 'sending'
+  sendDisabledReason: string | null
+  sendError: string | null
+  conversation: CopilotConversationTurn[]
 }
 
 export function CopilotChatPanel({
@@ -35,7 +102,121 @@ export function CopilotChatPanel({
   directoryState,
   sessionStatus,
   sessionError,
+  sendMessage = sendRuntimeMessage,
 }: CopilotChatPanelProps) {
+  const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
+  const [conversation, setConversation] = useState<CopilotConversationTurn[]>([])
+  const [sendStatus, setSendStatus] = useState<'idle' | 'sending'>('idle')
+  const [sendError, setSendError] = useState<string | null>(null)
+
+  const sessionIdentity = sessionShell === null
+    ? null
+    : `${sessionShell.sessionId}:${sessionShell.capabilities.capabilitiesVersion}`
+
+  useEffect(() => {
+    if (sessionShell === null) {
+      setComposerDraft(createEmptyComposerDraft())
+      setSendStatus('idle')
+      setSendError(null)
+      return
+    }
+
+    setComposerDraft(createComposerDraftFromSession(sessionShell))
+    setSendStatus('idle')
+    setSendError(null)
+  }, [sessionIdentity, sessionShell])
+
+  useEffect(() => {
+    setConversation([])
+  }, [sessionShell?.sessionId])
+
+  const sendDisabledReason = useMemo(() => {
+    if (!isCopilotConnectableState(state)) {
+      return '当前运行态未就绪，无法发送消息。'
+    }
+
+    if (sessionShell === null) {
+      return '请先创建会话。'
+    }
+
+    if (sendStatus === 'sending') {
+      return '当前消息仍在发送中。'
+    }
+
+    if (composerDraft.messageText.trim() === '') {
+      return '请输入消息内容。'
+    }
+
+    if (composerDraft.model.trim() === '') {
+      return '请提供本次发送要使用的模型 ID。'
+    }
+
+    return null
+  }, [composerDraft.messageText, composerDraft.model, sendStatus, sessionShell, state])
+
+  const handleSend = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!isCopilotConnectableState(state) || sessionShell === null || sendStatus === 'sending') {
+      return
+    }
+
+    const trimmedMessage = composerDraft.messageText.trim()
+    if (trimmedMessage === '') {
+      setSendError('请输入消息内容后再发送。')
+      return
+    }
+
+    if (composerDraft.model.trim() === '') {
+      setSendError('请提供本次发送要使用的模型 ID。')
+      return
+    }
+
+    let requestOptions: Record<string, unknown>
+    try {
+      requestOptions = parseRequestOptionsText(composerDraft.requestOptionsText)
+    } catch (error) {
+      setSendError(formatRequestOptionsError(error))
+      return
+    }
+
+    const runtimeInput = buildRuntimeMessageSendInput({
+      runtimeUrl: state.runtimeUrl,
+      sessionShell,
+      draft: {
+        ...composerDraft,
+        messageText: trimmedMessage,
+      },
+      requestOptions,
+    })
+
+    setSendStatus('sending')
+    setSendError(null)
+
+    try {
+      const response = await sendMessage(runtimeInput)
+      setConversation((current) => [
+        ...current,
+        createUserTurn(trimmedMessage),
+        createAssistantTurn(response),
+      ])
+      setComposerDraft((current) => ({
+        ...current,
+        messageText: '',
+      }))
+    } catch (error) {
+      const formattedError = formatRuntimeMessageSendError(error)
+      setSendError(formattedError)
+      setConversation((current) => [
+        ...current,
+        createUserTurn(trimmedMessage),
+        createErrorTurn(formattedError),
+      ])
+    } finally {
+      setSendStatus('idle')
+    }
+  }
+
   return (
     <section className="copilot-panel">
       <header className="copilot-panel__header">
@@ -56,6 +237,13 @@ export function CopilotChatPanel({
         directoryState,
         sessionStatus,
         sessionError,
+        composerDraft,
+        onComposerDraftChange: setComposerDraft,
+        onSend: handleSend,
+        sendStatus,
+        sendDisabledReason,
+        sendError,
+        conversation,
       })}
     </section>
   )
@@ -63,15 +251,7 @@ export function CopilotChatPanel({
 
 function renderCopilotPanelContent(
   state: CopilotBootstrapState,
-  actions: {
-    retrying: boolean
-    onRetry: () => void
-    selectedAgent: AgentType | null
-    sessionShell: AssistantSessionShell | null
-    directoryState: AssistantAgentDirectoryState
-    sessionStatus: 'idle' | 'creating' | 'error'
-    sessionError: string | null
-  },
+  actions: RenderPanelActions,
 ) {
   switch (state.status) {
     case 'loading':
@@ -178,13 +358,7 @@ function renderCopilotPanelContent(
 
 function renderConnectedShell(
   state: Extract<CopilotBootstrapState, { status: 'ready' | 'degraded' }>,
-  actions: {
-    selectedAgent: AgentType | null
-    sessionShell: AssistantSessionShell | null
-    directoryState: AssistantAgentDirectoryState
-    sessionStatus: 'idle' | 'creating' | 'error'
-    sessionError: string | null
-  },
+  actions: RenderPanelActions,
   tone: 'ready' | 'warning',
 ) {
   const selectedAgent = actions.selectedAgent
@@ -231,20 +405,14 @@ function renderConnectedShell(
   )
 }
 
-function renderSessionContent(actions: {
-  selectedAgent: AgentType | null
-  sessionShell: AssistantSessionShell | null
-  directoryState: AssistantAgentDirectoryState
-  sessionStatus: 'idle' | 'creating' | 'error'
-  sessionError: string | null
-}) {
+function renderSessionContent(actions: RenderPanelActions) {
   if (actions.directoryState.status === 'loading' || actions.directoryState.status === 'idle') {
     return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
         <p className="copilot-panel__eyebrow">Session Shell</p>
         <h2 className="copilot-panel__title">正在准备智能体目录</h2>
         <p className="copilot-panel__description">
-          主入口正在等待后端 [`agents/list`](backend/app/copilot_runtime/contracts.py:14) 返回目录数据。
+          主入口正在等待后端 agents/list 返回目录数据。
         </p>
       </section>
     )
@@ -281,13 +449,13 @@ function renderSessionContent(actions: {
         <p className="copilot-panel__eyebrow">Session Shell</p>
         <h2 className="copilot-panel__title">尚未创建会话</h2>
         <p className="copilot-panel__description">
-          请选择智能体并创建会话。当前主聊天入口已经切到 [`session/create`](backend/app/copilot_runtime/contracts.py:15) 语义，不再使用旧全局 agentName 自动进入聊天。
+          请选择智能体并创建会话。当前主聊天入口已经切到 session/create 语义，不再使用旧全局 agentName 自动进入聊天。
         </p>
         <ul className="copilot-panel__list">
           <li>当前选择：{actions.selectedAgent.label}</li>
           <li>会话创建状态：{formatSessionStatus(actions.sessionStatus)}</li>
-          <li>会话创建成功后会立即拉取 [`capabilities/get`](backend/app/copilot_runtime/contracts.py:16) 能力面。</li>
-          <li>消息发送将在下一阶段接入 [`message/send`](backend/app/copilot_runtime/contracts.py:17)。</li>
+          <li>会话创建成功后会立即拉取 capabilities/get 能力面。</li>
+          <li>消息发送只会从新的 session-first message/send 路径进入。</li>
           <li>当前不会静默回落到旧 Provider 消息路径。</li>
         </ul>
         {actions.sessionError !== null && (
@@ -297,23 +465,38 @@ function renderSessionContent(actions: {
     )
   }
 
-  const capabilities = actions.sessionShell.capabilities
+  return renderMessageSendShell({
+    sessionShell: actions.sessionShell,
+    sessionError: actions.sessionError,
+    composerDraft: actions.composerDraft,
+    onComposerDraftChange: actions.onComposerDraftChange,
+    onSend: actions.onSend,
+    sendStatus: actions.sendStatus,
+    sendDisabledReason: actions.sendDisabledReason,
+    sendError: actions.sendError,
+    conversation: actions.conversation,
+  })
+}
+
+function renderMessageSendShell(actions: RenderMessageShellActions) {
+  const sessionShell = actions.sessionShell
+  const capabilities = sessionShell.capabilities
 
   return (
     <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite" data-testid="chat-session-shell-ready">
       <p className="copilot-panel__eyebrow">Session Shell</p>
-      <h2 className="copilot-panel__title">当前会话已绑定智能体并加载能力面</h2>
+      <h2 className="copilot-panel__title">当前会话已接入 request-scoped message/send 闭环</h2>
       <p className="copilot-panel__description">
-        会话已通过 [`session/create`](backend/app/copilot_runtime/contracts.py:15) 创建成功，并紧接着读取 [`capabilities/get`](backend/app/copilot_runtime/contracts.py:16)。本阶段建立的是“总体可用工具集合 + 当前智能体推荐工具子集 + 默认启用来源”，不是消息级最终执行开关。
+        当前会话已通过 session/create 创建成功，并紧接着读取 capabilities/get。发送时会显式带上 sessionId、消息内容、会话绑定智能体校验值、消息级模型、enabledTools 与最小 requestOptions。
       </p>
       <dl className="copilot-panel__details-grid">
         <div>
           <dt>Session ID</dt>
-          <dd>{actions.sessionShell.sessionId}</dd>
+          <dd>{sessionShell.sessionId}</dd>
         </div>
         <div>
           <dt>Bound Agent</dt>
-          <dd>{actions.sessionShell.boundAgent.label}</dd>
+          <dd>{sessionShell.boundAgent.label}</dd>
         </div>
         <div>
           <dt>Capabilities Version</dt>
@@ -341,37 +524,315 @@ function renderSessionContent(actions: {
         </ul>
       </div>
       <div className="copilot-panel__details-block">
-        <p className="copilot-panel__details-heading">当前智能体推荐工具子集（recommendation）</p>
-        <p className="copilot-panel__description">
-          这些 `toolId` 只是该智能体的推荐默认值来源，不是 allowlist，也不是硬限制。
-        </p>
+        <p className="copilot-panel__details-heading">当前默认启用来源</p>
         <ul className="copilot-panel__list">
-          {capabilities.recommendedToolsForAgent.length === 0
-            ? <li>当前智能体未提供推荐工具。</li>
-            : capabilities.recommendedToolsForAgent.map((toolId) => <li key={toolId}>{toolId}</li>)}
+          <li>当前 boundAgent：{sessionShell.boundAgent.id}</li>
+          <li>默认模型来源：{capabilities.defaultModelPreference ?? '未提供'}</li>
+          <li>默认启用 toolId：{formatToolIdList(capabilities.defaultEnabledTools)}</li>
+          <li>recommendedTools 只作为默认来源，不构成硬限制。</li>
         </ul>
       </div>
-      <div className="copilot-panel__details-block">
-        <p className="copilot-panel__details-heading">当前默认启用值来源</p>
-        <ul className="copilot-panel__list">
-          <li>默认启用集合初始化自推荐工具子集，而不是前端硬编码。</li>
-          <li>当前默认启用 toolId：{formatToolIdList(capabilities.defaultEnabledTools)}</li>
-          <li>工具选择模式：{capabilities.toolSelectionMode}</li>
-        </ul>
-      </div>
-      <div className="copilot-panel__details-block">
-        <p className="copilot-panel__details-heading">下一阶段占位</p>
-        <ul className="copilot-panel__list">
-          <li>下一阶段将在此处接入 [`message/send`](backend/app/copilot_runtime/contracts.py:17)。</li>
-          <li>本阶段不会渲染旧 `threadId`/旧 Provider 聊天表面。</li>
-          <li>当前不会出现“新会话 shell 外面继续包旧消息入口”的混合方案。</li>
-        </ul>
-      </div>
+
+      <section className="copilot-chat" data-testid="chat-send-shell">
+        <div className="copilot-chat__meta">
+          <div className="copilot-chat__meta-item">
+            <span className="copilot-chat__meta-label">当前校验 Agent</span>
+            <span className="copilot-chat__meta-value">{sessionShell.boundAgent.id}</span>
+          </div>
+          <div className="copilot-chat__meta-item">
+            <span className="copilot-chat__meta-label">当前发送模型</span>
+            <span className="copilot-chat__meta-value">{actions.composerDraft.model || '未填写'}</span>
+          </div>
+          <div className="copilot-chat__meta-item">
+            <span className="copilot-chat__meta-label">当前启用工具</span>
+            <span className="copilot-chat__meta-value">{formatToolIdList(actions.composerDraft.enabledTools)}</span>
+          </div>
+        </div>
+
+        <div className="copilot-chat__stream">
+          {actions.conversation.length === 0
+            ? (
+                <div className="copilot-chat__empty">
+                  <p className="copilot-chat__empty-title">当前尚未发送消息</p>
+                  <p className="copilot-chat__empty-text">
+                    下面的最小 UI 会直接走新的 message/send 契约，不会再接回旧 Provider 或旧全局 agentName 发送路径。
+                  </p>
+                </div>
+              )
+            : actions.conversation.map((turn) => (
+                <article
+                  key={turn.id}
+                  className={`copilot-chat__message copilot-chat__message--${turn.kind}`}
+                >
+                  <p className="copilot-chat__message-label">{turn.title}</p>
+                  <p className="copilot-chat__message-text">{turn.content}</p>
+                  {turn.kind === 'assistant' && (
+                    <ul className="copilot-panel__list copilot-chat__message-list">
+                      <li>resolvedModelId：{turn.resolvedModelId ?? '未返回'}</li>
+                      <li>resolvedToolIds：{formatToolIdList(turn.resolvedToolIds ?? [])}</li>
+                      <li>requestOptions：{formatRequestOptions(turn.requestOptions ?? {})}</li>
+                    </ul>
+                  )}
+                </article>
+              ))}
+        </div>
+
+        <form className="copilot-chat__composer" onSubmit={actions.onSend}>
+          <label className="copilot-panel__field-group">
+            <span className="copilot-chat__composer-label">消息内容</span>
+            <textarea
+              className="copilot-chat__composer-input"
+              name="messageText"
+              value={actions.composerDraft.messageText}
+              onChange={(event) => {
+                const nextValue = event.currentTarget.value
+                actions.onComposerDraftChange((current) => ({
+                  ...current,
+                  messageText: nextValue,
+                }))
+              }}
+              placeholder="输入当前会话中的用户消息内容"
+              disabled={actions.sendStatus === 'sending'}
+            />
+          </label>
+
+          <div className="copilot-panel__form-grid">
+            <label className="copilot-panel__field-group">
+              <span className="copilot-chat__composer-label">消息级模型</span>
+              <input
+                className="copilot-panel__field-input"
+                name="model"
+                value={actions.composerDraft.model}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value
+                  actions.onComposerDraftChange((current) => ({
+                    ...current,
+                    model: nextValue,
+                  }))
+                }}
+                placeholder={capabilities.defaultModelPreference ?? '例如 openai/gpt-4.1'}
+                disabled={actions.sendStatus === 'sending'}
+              />
+              <span className="copilot-panel__field-hint">
+                默认值来自当前 capabilities.defaultModelPreference，而不是旧全局 backendExposed.model。
+              </span>
+            </label>
+
+            <label className="copilot-panel__field-group">
+              <span className="copilot-chat__composer-label">requestOptions（JSON 对象）</span>
+              <textarea
+                className="copilot-panel__field-input copilot-panel__field-input--code"
+                name="requestOptions"
+                value={actions.composerDraft.requestOptionsText}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value
+                  actions.onComposerDraftChange((current) => ({
+                    ...current,
+                    requestOptionsText: nextValue,
+                  }))
+                }}
+                placeholder="{}"
+                disabled={actions.sendStatus === 'sending'}
+              />
+              <span className="copilot-panel__field-hint">
+                本阶段只保留最小透传结构；留空会按空对象发送。
+              </span>
+            </label>
+          </div>
+
+          <div className="copilot-panel__details-block">
+            <p className="copilot-panel__details-heading">消息级 enabledTools</p>
+            <p className="copilot-panel__description">
+              推荐工具只用于初始化默认勾选；你可以在当前消息前临时切换任意 toolId，后端会继续按稳定 toolId 校验。
+            </p>
+            <div className="copilot-panel__checkbox-list">
+              {capabilities.allAvailableTools.map((tool) => {
+                const checked = actions.composerDraft.enabledTools.includes(tool.toolId)
+
+                return (
+                  <label key={tool.toolId} className="copilot-panel__checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={actions.sendStatus === 'sending'}
+                      onChange={(event) => {
+                        const nextChecked = event.currentTarget.checked
+                        actions.onComposerDraftChange((current) => ({
+                          ...current,
+                          enabledTools: nextChecked
+                            ? [...current.enabledTools, tool.toolId]
+                            : current.enabledTools.filter((toolId) => toolId !== tool.toolId),
+                        }))
+                      }}
+                    />
+                    <span>
+                      <strong>{tool.toolId}</strong>
+                      {' · '}
+                      {tool.displayName ?? '未提供显示名'}
+                      {' · '}
+                      {tool.availability}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          {actions.sendError !== null && (
+            <p className="copilot-panel__error" role="alert">{actions.sendError}</p>
+          )}
+
+          <div className="copilot-chat__composer-actions">
+            <p className="copilot-chat__composer-hint">
+              发送时会显式提交 sessionId、agent 校验值、message、model、enabledTools 与 requestOptions。
+            </p>
+            <button
+              type="submit"
+              className="copilot-panel__button"
+              disabled={actions.sendDisabledReason !== null}
+              title={actions.sendDisabledReason ?? '发送消息'}
+            >
+              {actions.sendStatus === 'sending' ? '发送中…' : '发送消息'}
+            </button>
+          </div>
+        </form>
+      </section>
+
       {actions.sessionError !== null && (
         <pre className="copilot-panel__error">{actions.sessionError}</pre>
       )}
     </section>
   )
+}
+
+export function createComposerDraftFromSession(sessionShell: AssistantSessionShell): CopilotChatComposerDraft {
+  return {
+    messageText: '',
+    model: sessionShell.capabilities.defaultModelPreference ?? '',
+    enabledTools: [...sessionShell.capabilities.defaultEnabledTools],
+    requestOptionsText: '{}',
+  }
+}
+
+export function buildRuntimeMessageSendInput(input: {
+  runtimeUrl: string
+  sessionShell: AssistantSessionShell
+  draft: CopilotChatComposerDraft
+  requestOptions: Record<string, unknown>
+}): RuntimeMessageSendInput {
+  return {
+    runtimeUrl: input.runtimeUrl,
+    sessionId: input.sessionShell.sessionId,
+    agent: input.sessionShell.boundAgent.id,
+    message: {
+      role: 'user',
+      content: input.draft.messageText.trim(),
+    },
+    model: input.draft.model.trim(),
+    enabledTools: dedupeToolIds(input.draft.enabledTools),
+    requestOptions: { ...input.requestOptions },
+  }
+}
+
+export function parseRequestOptionsText(requestOptionsText: string): Record<string, unknown> {
+  const trimmed = requestOptionsText.trim()
+  if (trimmed === '') {
+    return {}
+  }
+
+  const parsed = JSON.parse(trimmed) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('requestOptions 必须是 JSON 对象。')
+  }
+
+  return { ...(parsed as Record<string, unknown>) }
+}
+
+export function formatRuntimeMessageSendError(error: unknown): string {
+  if (error instanceof RuntimeRequestError) {
+    switch (error.code) {
+      case 'agent_mismatch':
+        return `agent_mismatch：当前消息携带的 agent 校验值与会话绑定智能体不一致。${error.message}`
+      case 'tool_not_found':
+        return `tool_not_found：本次消息启用了后端未注册的 toolId。${error.message}`
+      case 'tool_unavailable':
+        return `tool_unavailable：本次消息请求的工具当前不可用。${error.message}`
+      case 'invalid_request':
+        return `invalid_request：消息请求结构无效。${error.message}`
+      case 'capabilities_version_stale':
+        return `capabilities_version_stale：当前能力面版本已过期，需要重新拉取 capabilities 后再发。${error.message}`
+      default:
+        return error.message
+    }
+  }
+
+  return error instanceof Error ? error.message : String(error)
+}
+
+function createEmptyComposerDraft(): CopilotChatComposerDraft {
+  return {
+    messageText: '',
+    model: '',
+    enabledTools: [],
+    requestOptionsText: '{}',
+  }
+}
+
+function createUserTurn(content: string): CopilotConversationTurn {
+  return {
+    id: `user:${content}:${Math.random().toString(36).slice(2)}`,
+    kind: 'user',
+    title: '用户消息',
+    content,
+  }
+}
+
+function createAssistantTurn(response: RuntimeMessageSendResponse): CopilotConversationTurn {
+  return {
+    id: `assistant:${response.sessionId}:${Math.random().toString(36).slice(2)}`,
+    kind: 'assistant',
+    title: '助手响应',
+    content: response.assistantMessage.content,
+    resolvedModelId: response.resolvedModelId,
+    resolvedToolIds: [...response.resolvedToolIds],
+    requestOptions: { ...response.requestOptions },
+  }
+}
+
+function createErrorTurn(content: string): CopilotConversationTurn {
+  return {
+    id: `error:${content}:${Math.random().toString(36).slice(2)}`,
+    kind: 'error',
+    title: '发送失败',
+    content,
+  }
+}
+
+function dedupeToolIds(toolIds: string[]): string[] {
+  const uniqueToolIds = new Set<string>()
+
+  for (const toolId of toolIds) {
+    const normalizedToolId = toolId.trim()
+    if (normalizedToolId !== '') {
+      uniqueToolIds.add(normalizedToolId)
+    }
+  }
+
+  return [...uniqueToolIds]
+}
+
+function formatRequestOptions(requestOptions: Record<string, unknown>): string {
+  return JSON.stringify(requestOptions)
+}
+
+function formatRequestOptionsError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isCopilotConnectableState(
+  state: CopilotBootstrapState,
+): state is Extract<CopilotBootstrapState, { status: 'ready' | 'degraded' }> {
+  return state.status === 'ready' || state.status === 'degraded'
 }
 
 function buildSharedDetails(state: Exclude<CopilotConfigState, { status: 'error' }>): Array<{ label: string, value: string }> {
