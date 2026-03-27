@@ -15,11 +15,11 @@ import {
   Sparkles,
   Workflow,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
+import type { RuntimeAgentDirectoryEntry } from '../features/copilot/chat-contract'
 import type {
   AgentType,
-  AgentTypeId,
-  ConversationItem,
   HubWorkspaceContent,
   HubWorkspaceView,
   RailItem,
@@ -36,82 +36,70 @@ export const railPrimaryItems: RailItem[] = [
 
 export const railSecondaryItems: RailItem[] = [{ id: 'settings', label: '设置', icon: Settings }]
 
-export const agentTypes: AgentType[] = [
-  {
-    id: 'general',
-    label: '通用助手',
-    shortLabel: 'General',
-    description: '面向开放式问答、写作协作与通用推理任务。',
-    icon: Brain,
-  },
-  {
-    id: 'blackboard',
-    label: 'Blackboard',
-    shortLabel: 'Blackboard',
-    description: '聚焦课程公告、作业、成绩与 Blackboard 数据检索。',
-    icon: Database,
-  },
-  {
-    id: 'tis',
-    label: 'TIS',
-    shortLabel: 'Teaching Information System',
-    description: '聚焦教学信息系统、选课安排与培养方案查询。',
-    icon: Workflow,
-  },
-]
+const agentIconsById: Record<string, LucideIcon> = {
+  general: Brain,
+  blackboard: Database,
+  tis: Workflow,
+}
 
-export const conversationsByAgent: Record<AgentTypeId, ConversationItem[]> = {
-  general: [
-    {
-      id: 'general-project-sync',
-      title: '课程项目阶段总结',
-      updatedAt: '刚刚更新',
-    },
-    {
-      id: 'general-exam-review',
-      title: '算法复习提纲整理',
-      updatedAt: '20 分钟前',
-    },
-    {
-      id: 'general-java-notes',
-      title: 'Java 类型系统速查',
-      updatedAt: '昨天',
-    },
-  ],
-  blackboard: [
-    {
-      id: 'bb-announcement-digest',
-      title: '公告摘要与待办',
-      updatedAt: '5 分钟前',
-    },
-    {
-      id: 'bb-grades-check',
-      title: '成绩波动检查',
-      updatedAt: '今天上午',
-    },
-    {
-      id: 'bb-assignment-plan',
-      title: '作业截止时间排程',
-      updatedAt: '昨天',
-    },
-  ],
-  tis: [
-    {
-      id: 'tis-course-selection',
-      title: '选课冲突排查',
-      updatedAt: '12 分钟前',
-    },
-    {
-      id: 'tis-training-plan',
-      title: '培养方案缺口分析',
-      updatedAt: '昨天',
-    },
-    {
-      id: 'tis-calendar-sync',
-      title: '学期日程同步确认',
-      updatedAt: '2 天前',
-    },
-  ],
+const agentIconsByHint: Record<string, LucideIcon> = {
+  sparkles: Sparkles,
+  database: Database,
+  workflow: Workflow,
+  brain: Brain,
+}
+
+export function enhanceRuntimeAgents(agents: RuntimeAgentDirectoryEntry[]): AgentType[] {
+  return agents.map((agent) => ({
+    id: agent.agentId,
+    label: agent.displayName ?? agent.agentId,
+    shortLabel: buildAgentShortLabel(agent),
+    description: agent.description ?? '后端目录未提供该智能体的描述。',
+    status: agent.status,
+    icon: resolveAgentIcon(agent),
+    recommendedTools: [...agent.recommendedTools],
+    defaultModelPreference: agent.defaultModelPreference,
+  }))
+}
+
+export function pickDefaultAgentId(input: {
+  agents: AgentType[]
+  defaultAgentId: string | null
+  previousAgentId?: string | null
+}): string | null {
+  if (input.previousAgentId && input.agents.some((agent) => agent.id === input.previousAgentId)) {
+    return input.previousAgentId
+  }
+
+  if (input.defaultAgentId && input.agents.some((agent) => agent.id === input.defaultAgentId)) {
+    return input.defaultAgentId
+  }
+
+  return input.agents[0]?.id ?? null
+}
+
+function resolveAgentIcon(agent: RuntimeAgentDirectoryEntry): LucideIcon {
+  if (agent.agentId in agentIconsById) {
+    return agentIconsById[agent.agentId]!
+  }
+
+  if (agent.iconKey && agent.iconKey in agentIconsByHint) {
+    return agentIconsByHint[agent.iconKey]!
+  }
+
+  return Sparkles
+}
+
+function buildAgentShortLabel(agent: RuntimeAgentDirectoryEntry): string {
+  if (agent.displayName) {
+    return agent.displayName
+  }
+
+  return agent.agentId
+    .split(/[-_\s]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 export const settingsItems: SettingsNavItem[] = [
@@ -123,7 +111,7 @@ export const settingsItems: SettingsNavItem[] = [
   { id: 'mcp', label: 'MCP 服务器', icon: PlugZap },
   { id: 'search', label: '网络搜索', icon: Search },
   { id: 'memory', label: '全局记忆', icon: MemoryStick },
-  { id: 'api', label: 'API 服务器', icon: Workflow },
+  { id: 'a​pi', label: 'A​PI 服务器', icon: Workflow },
   { id: 'docs', label: '文档处理', icon: FileText },
 ]
 

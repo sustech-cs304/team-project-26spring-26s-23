@@ -14,7 +14,6 @@ export interface NotConnectedNoticeProps {
 
 const missingFieldLabels: Record<CopilotConfigMissingField, string> = {
   runtimeUrl: 'Runtime URL（仅开发态可手填）',
-  agentName: 'Agent 名称',
 }
 
 export function NotConnectedNotice({

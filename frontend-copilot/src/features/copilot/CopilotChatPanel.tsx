@@ -1,9 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-
-import { useCopilotChatInternal, useCopilotContext } from '@copilotkit/react-core'
-import type { Message as CopilotMessage } from '@copilotkit/shared'
-
-import { RecoverableErrorBoundary } from '../../components/RecoverableErrorBoundary'
+import type { AgentType, AssistantSessionShell } from '../../workbench/types'
+import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
 import type { CopilotBootstrapState, CopilotConfigState, CopilotDiagnosticsSummary } from './types'
 import { NotConnectedNotice } from './components/NotConnectedNotice'
 import './copilot.css'
@@ -23,16 +19,29 @@ interface CopilotChatPanelProps {
   state: CopilotBootstrapState
   retrying: boolean
   retry: () => void
-  threadId: string
+  selectedAgent: AgentType | null
+  sessionShell: AssistantSessionShell | null
+  directoryState: AssistantAgentDirectoryState
+  sessionStatus: 'idle' | 'creating' | 'error'
+  sessionError: string | null
 }
 
-export function CopilotChatPanel({ state, retrying, retry, threadId }: CopilotChatPanelProps) {
+export function CopilotChatPanel({
+  state,
+  retrying,
+  retry,
+  selectedAgent,
+  sessionShell,
+  directoryState,
+  sessionStatus,
+  sessionError,
+}: CopilotChatPanelProps) {
   return (
     <section className="copilot-panel">
       <header className="copilot-panel__header">
         <div>
           <p className="copilot-panel__eyebrow">Copilot Feature</p>
-          <h1 className="copilot-panel__heading">最小聊天面板</h1>
+          <h1 className="copilot-panel__heading">Session-First Chat Shell</h1>
         </div>
         <span className={`copilot-panel__status copilot-panel__status--${state.status}`}>
           {statusLabels[state.status]}
@@ -42,7 +51,11 @@ export function CopilotChatPanel({ state, retrying, retry, threadId }: CopilotCh
       {renderCopilotPanelContent(state, {
         retrying,
         onRetry: retry,
-        threadId,
+        selectedAgent,
+        sessionShell,
+        directoryState,
+        sessionStatus,
+        sessionError,
       })}
     </section>
   )
@@ -53,7 +66,11 @@ function renderCopilotPanelContent(
   actions: {
     retrying: boolean
     onRetry: () => void
-    threadId: string
+    selectedAgent: AgentType | null
+    sessionShell: AssistantSessionShell | null
+    directoryState: AssistantAgentDirectoryState
+    sessionStatus: 'idle' | 'creating' | 'error'
+    sessionError: string | null
   },
 ) {
   switch (state.status) {
@@ -63,7 +80,7 @@ function renderCopilotPanelContent(
           <p className="copilot-panel__eyebrow">Copilot</p>
           <h2 className="copilot-panel__title">正在等待根层完成运行态装配</h2>
           <p className="copilot-panel__description">
-            聊天面板不再自行读取配置或运行时；当前仅消费来自根装配层的统一状态与动作。
+            当前主入口只等待运行态，不再把旧全局 agent 作为聊天就绪前提。
           </p>
         </section>
       )
@@ -84,7 +101,7 @@ function renderCopilotPanelContent(
       return (
         <NotConnectedNotice
           title="尚未获得可用运行时"
-          description="当前既没有可用的宿主运行时地址，也没有开发态覆盖地址。开发态下可继续使用手填 runtime URL 作为外接联调覆盖；正式宿主管理链路则会在后端 ready 后自动提供地址。"
+          description="当前既没有可用的宿主运行时地址，也没有开发态覆盖地址。主入口已切到 session-first 壳层，但仍需要 runtime URL 才能继续向后端拉取智能体目录。"
           missingFields={state.missingFields}
           details={buildSharedDetails(state)}
         />
@@ -94,7 +111,7 @@ function renderCopilotPanelContent(
       return (
         <NotConnectedNotice
           title="连接信息仍不完整"
-          description="宿主运行态与本地设置已由根层统一读取，但当前缺少继续接入 CopilotKit 所需的最小字段。若宿主尚未提供 runtime URL，正式模式需要等待 hosted backend ready；开发态则可显式填写 override。"
+          description="宿主运行态与本地设置已由根层统一读取，但当前缺少继续访问后端目录所需的最小字段。这里不再把旧全局 agentName 视为聊天必填项。"
           missingFields={state.missingFields}
           details={buildSharedDetails(state)}
         />
@@ -106,7 +123,7 @@ function renderCopilotPanelContent(
           <p className="copilot-panel__eyebrow">Copilot</p>
           <h2 className="copilot-panel__title">宿主正在启动本地后端</h2>
           <p className="copilot-panel__description">
-            当前由 Electron 主进程托管 hosted backend；Renderer 不再自行猜测地址，而是等待宿主进入 ready 后提供有效 runtime URL。
+            当前由 Electron 主进程托管 hosted backend；Renderer 只会在拿到有效 runtime URL 后继续拉取智能体目录与创建会话。
           </p>
           <dl className="copilot-panel__details-grid">
             {buildSharedDetails(state).map((detail) => (
@@ -125,7 +142,7 @@ function renderCopilotPanelContent(
           <p className="copilot-panel__eyebrow">Copilot</p>
           <h2 className="copilot-panel__title">宿主启动后端失败</h2>
           <p className="copilot-panel__description">
-            当前未拿到可用的 hosted backend 运行地址。界面仅展示最小失败摘要，不暴露 token、spawn 参数或底层文件访问能力。
+            当前未拿到可用的 hosted backend 运行地址，因此无法继续进入“后端智能体目录 + 会话创建”主路径。
           </p>
           <dl className="copilot-panel__details-grid">
             {buildSharedDetails(state).map((detail) => (
@@ -152,288 +169,171 @@ function renderCopilotPanelContent(
       )
 
     case 'degraded':
-      return (
-        <>
-          <section className="copilot-panel__card copilot-panel__card--warning" aria-live="polite">
-            <p className="copilot-panel__eyebrow">Copilot</p>
-            <h2 className="copilot-panel__title">宿主运行态已降级</h2>
-            <p className="copilot-panel__description">
-              Hosted backend 曾成功提供运行地址，但当前记录到异常退出或降级。若保留的 runtime URL 仍可连接，CopilotKit 仍会继续使用；同时请关注宿主诊断摘要。
-            </p>
-            <dl className="copilot-panel__details-grid">
-              {buildSharedDetails(state).map((detail) => (
-                <div key={`${detail.label}:${detail.value}`}>
-                  <dt>{detail.label}</dt>
-                  <dd>{detail.value}</dd>
-                </div>
-              ))}
-            </dl>
-            {state.diagnostics.failure && (
-              <pre className="copilot-panel__error">{formatFailureSummary(state.diagnostics)}</pre>
-            )}
-          </section>
-          <ConnectedChatMount threadId={actions.threadId} />
-        </>
-      )
+      return renderConnectedShell(state, actions, 'warning')
 
     case 'ready':
-      return (
-        <>
-          <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite">
-            <p className="copilot-panel__eyebrow">Copilot</p>
-            <h2 className="copilot-panel__title">Copilot 连接入口已就绪</h2>
-            <p className="copilot-panel__description">
-              当前连接优先使用宿主管理的 hosted backend；仅当宿主未提供可用地址且处于开发态时，才会回落到显式 dev override。CopilotKit 注入路径保持不变，当前工作区会把所选会话 ID 作为 threadId 继续传入聊天区。
-            </p>
-            <dl className="copilot-panel__details-grid">
-              <div>
-                <dt>当前 Runtime URL</dt>
-                <dd>{state.runtimeUrl}</dd>
-              </div>
-              <div>
-                <dt>Runtime 来源</dt>
-                <dd>{formatRuntimeSource(state.runtimeSource)}</dd>
-              </div>
-              <div>
-                <dt>Agent 名称</dt>
-                <dd>{state.agentName}</dd>
-              </div>
-              <div>
-                <dt>Agent 来源</dt>
-                <dd>{formatAgentNameSource(state.agentNameSource)}</dd>
-              </div>
-              <div>
-                <dt>存储状态</dt>
-                <dd>{state.storageState}</dd>
-              </div>
-              <div>
-                <dt>运行模式</dt>
-                <dd>{formatModeSummary(state.diagnostics)}</dd>
-              </div>
-            </dl>
-          </section>
-          <ConnectedChatMount threadId={actions.threadId} />
-        </>
-      )
+      return renderConnectedShell(state, actions, 'ready')
   }
 }
 
-function ConnectedChatMount({ threadId }: { threadId: string }) {
+function renderConnectedShell(
+  state: Extract<CopilotBootstrapState, { status: 'ready' | 'degraded' }>,
+  actions: {
+    selectedAgent: AgentType | null
+    sessionShell: AssistantSessionShell | null
+    directoryState: AssistantAgentDirectoryState
+    sessionStatus: 'idle' | 'creating' | 'error'
+    sessionError: string | null
+  },
+  tone: 'ready' | 'warning',
+) {
+  const selectedAgent = actions.selectedAgent
+  const sessionShell = actions.sessionShell
+
   return (
-    <RecoverableErrorBoundary
-      resetKeys={[threadId]}
-      fallback={({ error, reset }) => (
-        <section className="copilot-chat" aria-label="聊天区域异常">
-          <div className="copilot-chat__stream">
-            <article className="copilot-chat__message copilot-chat__message--error" role="alert">
-              <p className="copilot-chat__message-label">聊天运行时错误</p>
-              <p className="copilot-chat__message-text">{formatThrownError(error)}</p>
-              <button type="button" className="copilot-panel__button" onClick={reset}>
-                重新挂载聊天区域
-              </button>
-            </article>
+    <>
+      <section className={`copilot-panel__card copilot-panel__card--${tone}`} aria-live="polite">
+        <p className="copilot-panel__eyebrow">Copilot</p>
+        <h2 className="copilot-panel__title">主聊天入口已切到会话优先壳层</h2>
+        <p className="copilot-panel__description">
+          当前入口先拉取后端智能体目录，再由用户显式创建会话。旧全局 agentName 与旧 Provider 路径不再驱动主聊天入口。
+        </p>
+        <dl className="copilot-panel__details-grid">
+          <div>
+            <dt>当前 Runtime URL</dt>
+            <dd>{state.runtimeUrl}</dd>
           </div>
-        </section>
-      )}
-    >
-      <ConnectedChatSurface threadId={threadId} />
-    </RecoverableErrorBoundary>
+          <div>
+            <dt>Runtime 来源</dt>
+            <dd>{formatRuntimeSource(state.runtimeSource)}</dd>
+          </div>
+          <div>
+            <dt>目录状态</dt>
+            <dd>{formatDirectoryStatus(actions.directoryState.status)}</dd>
+          </div>
+          <div>
+            <dt>已选智能体</dt>
+            <dd>{selectedAgent?.label ?? '尚未选择'}</dd>
+          </div>
+          <div>
+            <dt>当前会话</dt>
+            <dd>{sessionShell?.sessionId ?? '尚未创建'}</dd>
+          </div>
+          <div>
+            <dt>运行模式</dt>
+            <dd>{formatModeSummary(state.diagnostics)}</dd>
+          </div>
+        </dl>
+      </section>
+
+      {renderSessionContent(actions)}
+    </>
   )
 }
 
-function ConnectedChatSurface({ threadId }: { threadId: string }) {
-  const {
-    bannerError,
-    setBannerError,
-    setThreadId: setCopilotThreadId,
-    threadId: currentThreadId,
-  } = useCopilotContext()
-  const { messages, sendMessage, isLoading, isAvailable, reset } = useCopilotChatInternal()
-  const [draft, setDraft] = useState('')
-  const resetRef = useRef(reset)
-  const setBannerErrorRef = useRef(setBannerError)
-  const setCopilotThreadIdRef = useRef(setCopilotThreadId)
-  const lastAppliedThreadIdRef = useRef<string | null>(null)
+function renderSessionContent(actions: {
+  selectedAgent: AgentType | null
+  sessionShell: AssistantSessionShell | null
+  directoryState: AssistantAgentDirectoryState
+  sessionStatus: 'idle' | 'creating' | 'error'
+  sessionError: string | null
+}) {
+  if (actions.directoryState.status === 'loading' || actions.directoryState.status === 'idle') {
+    return (
+      <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
+        <p className="copilot-panel__eyebrow">Session Shell</p>
+        <h2 className="copilot-panel__title">正在准备智能体目录</h2>
+        <p className="copilot-panel__description">
+          主入口正在等待后端 [`agents/list`](backend/app/copilot_runtime/contracts.py:14) 返回目录数据。
+        </p>
+      </section>
+    )
+  }
 
-  useEffect(() => {
-    resetRef.current = reset
-  }, [reset])
+  if (actions.directoryState.status === 'error') {
+    return (
+      <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
+        <p className="copilot-panel__eyebrow">Session Shell</p>
+        <h2 className="copilot-panel__title">后端智能体目录加载失败</h2>
+        <p className="copilot-panel__description">
+          当前主入口只认后端目录为真源，因此不会回落到本地静态智能体列表。
+        </p>
+        <pre className="copilot-panel__error">{actions.directoryState.error}</pre>
+      </section>
+    )
+  }
 
-  useEffect(() => {
-    setBannerErrorRef.current = setBannerError
-  }, [setBannerError])
+  if (actions.selectedAgent === null) {
+    return (
+      <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
+        <p className="copilot-panel__eyebrow">Session Shell</p>
+        <h2 className="copilot-panel__title">后端目录中暂无可选智能体</h2>
+        <p className="copilot-panel__description">
+          当前未拿到可用于创建会话的智能体条目，因此消息区保持占位，不会静默走旧路径。
+        </p>
+      </section>
+    )
+  }
 
-  useEffect(() => {
-    setCopilotThreadIdRef.current = setCopilotThreadId
-  }, [setCopilotThreadId])
-
-  useEffect(() => {
-    if (lastAppliedThreadIdRef.current === threadId) {
-      return
-    }
-
-    lastAppliedThreadIdRef.current = threadId
-    setDraft('')
-    setBannerErrorRef.current(null)
-    resetRef.current()
-    setCopilotThreadIdRef.current(threadId)
-  }, [threadId])
-
-  const visibleMessages = useMemo(
-    () => messages.filter((message) => message.role === 'user' || message.role === 'assistant'),
-    [messages],
-  )
-
-  const activeThreadId = currentThreadId || threadId
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    const content = draft.trim()
-    if (content.length === 0 || isLoading || !isAvailable) {
-      return
-    }
-
-    setBannerError(null)
-    setDraft('')
-    await sendMessage(createUserTextMessage(content))
+  if (actions.sessionShell === null) {
+    return (
+      <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite" data-testid="chat-session-placeholder">
+        <p className="copilot-panel__eyebrow">Session Shell</p>
+        <h2 className="copilot-panel__title">尚未创建会话</h2>
+        <p className="copilot-panel__description">
+          请选择智能体并创建会话。当前主聊天入口已经切到 [`session/create`](backend/app/copilot_runtime/contracts.py:15) 语义，不再使用旧全局 agentName 自动进入聊天。
+        </p>
+        <ul className="copilot-panel__list">
+          <li>当前选择：{actions.selectedAgent.label}</li>
+          <li>会话创建状态：{formatSessionStatus(actions.sessionStatus)}</li>
+          <li>消息发送将在下一阶段接入 [`message/send`](backend/app/copilot_runtime/contracts.py:17)。</li>
+          <li>当前不会静默回落到旧 Provider 消息路径。</li>
+        </ul>
+        {actions.sessionError !== null && (
+          <pre className="copilot-panel__error">{actions.sessionError}</pre>
+        )}
+      </section>
+    )
   }
 
   return (
-    <section className="copilot-chat" aria-label="Copilot 聊天区">
-      <div className="copilot-chat__meta">
-        <span className="copilot-chat__meta-item">
-          <span className="copilot-chat__meta-label">当前 threadId</span>
-          <code className="copilot-chat__meta-value">{activeThreadId}</code>
-        </span>
-        <span
-          className={`copilot-chat__availability copilot-chat__availability--${isAvailable ? 'available' : 'pending'}`}
-        >
-          {isLoading ? '回复生成中' : isAvailable ? '聊天已连接' : '聊天连接中'}
-        </span>
-      </div>
-
-      <div className="copilot-chat__stream" data-testid="copilot-chat-stream">
-        {visibleMessages.length === 0 && !isLoading && bannerError === null && (
-          <div className="copilot-chat__empty">
-            <p className="copilot-chat__empty-title">最小聊天已挂载</p>
-            <p className="copilot-chat__empty-text">
-              当前会话已把工作台所选话题 ID 绑定为 threadId。发送第一条消息后，后端将以同一 thread_id 继续维护上下文。
-            </p>
-          </div>
-        )}
-
-        {visibleMessages.map((message, index) => {
-          const isUser = message.role === 'user'
-          const text = extractMessageText(message)
-
-          return (
-            <article
-              key={message.id ?? `${message.role}:${index}`}
-              className={`copilot-chat__message copilot-chat__message--${isUser ? 'user' : 'assistant'}`}
-            >
-              <p className="copilot-chat__message-label">{isUser ? 'You' : 'Assistant'}</p>
-              <p className="copilot-chat__message-text">{text}</p>
-            </article>
-          )
-        })}
-
-        {isLoading && (
-          <article className="copilot-chat__message copilot-chat__message--assistant copilot-chat__message--pending">
-            <p className="copilot-chat__message-label">Assistant</p>
-            <p className="copilot-chat__message-text">正在生成回复…</p>
-          </article>
-        )}
-
-        {bannerError !== null && (
-          <article className="copilot-chat__message copilot-chat__message--error" role="alert">
-            <p className="copilot-chat__message-label">运行时错误</p>
-            <p className="copilot-chat__message-text">{bannerError.message}</p>
-          </article>
-        )}
-      </div>
-
-      <form className="copilot-chat__composer" onSubmit={handleSubmit}>
-        <label className="copilot-chat__composer-label" htmlFor="copilot-chat-input">
-          发送消息
-        </label>
-        <textarea
-          id="copilot-chat-input"
-          className="copilot-chat__composer-input"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={isAvailable ? '输入要发送给 Copilot 的内容…' : '聊天运行时连接中，暂不可发送消息'}
-          rows={3}
-          disabled={isLoading || !isAvailable}
-        />
-        <div className="copilot-chat__composer-actions">
-          <span className="copilot-chat__composer-hint">
-            {bannerError !== null ? '错误已以内联红色消息显示；修复后可继续在当前线程重试。' : '当前仅支持最小纯文本聊天 MVP。'}
-          </span>
-          <button
-            type="submit"
-            className="copilot-panel__button"
-            disabled={isLoading || !isAvailable || draft.trim().length === 0}
-          >
-            {isLoading ? '回复生成中…' : '发送消息'}
-          </button>
+    <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite" data-testid="chat-session-shell-ready">
+      <p className="copilot-panel__eyebrow">Session Shell</p>
+      <h2 className="copilot-panel__title">当前会话已绑定智能体</h2>
+      <p className="copilot-panel__description">
+        会话已通过 [`session/create`](backend/app/copilot_runtime/contracts.py:15) 创建成功。该壳层当前只负责持有 `sessionId + boundAgent`，消息发送将在下一阶段接入。
+      </p>
+      <dl className="copilot-panel__details-grid">
+        <div>
+          <dt>Session ID</dt>
+          <dd>{actions.sessionShell.sessionId}</dd>
         </div>
-      </form>
+        <div>
+          <dt>Bound Agent</dt>
+          <dd>{actions.sessionShell.boundAgent.label}</dd>
+        </div>
+        <div>
+          <dt>默认模型偏好</dt>
+          <dd>{actions.sessionShell.defaultModelPreference ?? '未提供'}</dd>
+        </div>
+        <div>
+          <dt>推荐工具数</dt>
+          <dd>{String(actions.sessionShell.recommendedTools.length)}</dd>
+        </div>
+      </dl>
+      <div className="copilot-panel__details-block">
+        <p className="copilot-panel__details-heading">下一阶段占位</p>
+        <ul className="copilot-panel__list">
+          <li>下一阶段将在此处接入 [`message/send`](backend/app/copilot_runtime/contracts.py:17)。</li>
+          <li>本阶段不会渲染旧 `threadId`/旧 Provider 聊天表面。</li>
+          <li>当前不会出现“新会话 shell 外面继续包旧消息入口”的混合方案。</li>
+        </ul>
+      </div>
+      {actions.sessionError !== null && (
+        <pre className="copilot-panel__error">{actions.sessionError}</pre>
+      )}
     </section>
   )
-}
-
-function createUserTextMessage(content: string): CopilotMessage {
-  return {
-    id: createClientMessageId(),
-    role: 'user',
-    content,
-  } as CopilotMessage
-}
-
-function createClientMessageId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-
-  return `copilot-msg-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function extractMessageText(message: CopilotMessage): string {
-  const content = (message as { content?: unknown }).content
-
-  if (typeof content === 'string') {
-    return content
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === 'string') {
-          return part
-        }
-
-        if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') {
-          return part.text
-        }
-
-        return ''
-      })
-      .filter((part) => part.length > 0)
-      .join('\n')
-  }
-
-  if (content && typeof content === 'object') {
-    if ('text' in content && typeof content.text === 'string') {
-      return content.text
-    }
-
-    if ('content' in content && typeof content.content === 'string') {
-      return content.content
-    }
-  }
-
-  return '[暂不支持的消息内容]'
 }
 
 function buildSharedDetails(state: Exclude<CopilotConfigState, { status: 'error' }>): Array<{ label: string, value: string }> {
@@ -449,10 +349,6 @@ function buildSharedDetails(state: Exclude<CopilotConfigState, { status: 'error'
     {
       label: 'Runtime 来源',
       value: formatRuntimeSource(state.runtimeSource),
-    },
-    {
-      label: 'Agent 来源',
-      value: formatAgentNameSource(state.agentNameSource),
     },
   ]
 
@@ -519,19 +415,30 @@ function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string
   }
 }
 
-function formatAgentNameSource(source: 'config-center' | 'missing'): string {
-  switch (source) {
-    case 'config-center':
-      return '配置中心'
-    case 'missing':
-      return '未提供'
-  }
-}
-
 function formatModeSummary(diagnostics: CopilotDiagnosticsSummary): string {
   return `${diagnostics.mode}（${diagnostics.modeSource === 'resolved' ? '已解析' : '预期'}）`
 }
 
-function formatThrownError(error: Error): string {
-  return error.message || String(error)
+function formatDirectoryStatus(status: AssistantAgentDirectoryState['status']): string {
+  switch (status) {
+    case 'idle':
+      return '未开始'
+    case 'loading':
+      return '加载中'
+    case 'ready':
+      return '已就绪'
+    case 'error':
+      return '加载失败'
+  }
+}
+
+function formatSessionStatus(status: 'idle' | 'creating' | 'error'): string {
+  switch (status) {
+    case 'idle':
+      return '待创建'
+    case 'creating':
+      return '创建中'
+    case 'error':
+      return '创建失败'
+  }
 }

@@ -33,7 +33,7 @@ export type CopilotRendererRuntimeLoadResult = CopilotRuntimeLoadResult
 export type CopilotRendererRuntimeRetryResult = CopilotRuntimeRetryResult
 
 export type CopilotConfigStatus = 'empty' | 'incomplete' | 'starting' | 'ready' | 'failed' | 'degraded' | 'error'
-export type CopilotConfigMissingField = 'runtimeUrl' | 'agentName'
+export type CopilotConfigMissingField = 'runtimeUrl'
 export type CopilotRuntimeSource = 'hosted' | 'dev-override' | 'none'
 export type CopilotAgentNameSource = 'config-center' | 'missing'
 export type CopilotModeSource = 'resolved' | 'expected'
@@ -76,7 +76,6 @@ export interface CopilotConfigStartingState extends CopilotConfigResolvedStateBa
 export interface CopilotConfigReadyState extends CopilotConfigResolvedStateBase {
   status: 'ready'
   runtimeUrl: string
-  agentName: string
 }
 
 export interface CopilotConfigFailedState extends CopilotConfigResolvedStateBase {
@@ -86,7 +85,6 @@ export interface CopilotConfigFailedState extends CopilotConfigResolvedStateBase
 export interface CopilotConfigDegradedState extends CopilotConfigResolvedStateBase {
   status: 'degraded'
   runtimeUrl: string
-  agentName: string
 }
 
 export interface CopilotConfigErrorState {

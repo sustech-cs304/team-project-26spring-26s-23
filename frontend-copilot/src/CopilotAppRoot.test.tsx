@@ -12,78 +12,15 @@ vi.mock('./features/copilot/config', async () => {
   }
 })
 
-import {
-  refreshCopilotBootstrapStateFromPublicSnapshot,
-  shouldLoadCopilotProvider,
-} from './CopilotAppRoot'
+import { refreshCopilotBootstrapStateFromPublicSnapshot } from './CopilotAppRoot'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './features/copilot/types'
 
-describe('shouldLoadCopilotProvider', () => {
-  it('starts a provider load when a connectable runtime still has no provider instance', () => {
-    const configState = createReadyState()
-
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'idle' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(true)
-
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'loading' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(true)
-
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'ready' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: true,
-    })).toBe(false)
-
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'error', error: 'boom' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(false)
-  })
-
-  it('keeps waiting on an in-flight provider import during StrictMode remounts', () => {
-    expect(shouldLoadCopilotProvider({
-      configState: createReadyState(),
-      providerLoadState: { status: 'loading' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(true)
-  })
-
-  it('does not start another provider load after opting into workbench fallback', () => {
-    expect(shouldLoadCopilotProvider({
-      configState: createReadyState(),
-      providerLoadState: { status: 'idle' },
-      allowWorkbenchWithoutProvider: true,
-      providerLoaded: false,
-    })).toBe(false)
-  })
-
-  it('does not start another provider load after the provider module is already available', () => {
-    expect(shouldLoadCopilotProvider({
-      configState: createReadyState(),
-      providerLoadState: { status: 'loading' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: true,
-    })).toBe(false)
-  })
-})
-
 describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
-  it('applies the latest bootstrap state resolved from a public snapshot', async () => {
+  it('applies the latest bootstrap state resolved from a public snapshot without requiring a global agentName', async () => {
     const nextState = createReadyState({
       runtimeUrl: 'http://localhost:4400',
-      agentName: 'planner',
+      agentName: null,
+      agentNameSource: 'missing',
     })
     const applyState = vi.fn()
     configMocks.loadCopilotConfigStateFromPublicSnapshot.mockResolvedValueOnce(nextState)
@@ -97,7 +34,7 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
             animationsEnabled: true,
           },
           assistantBehavior: {
-            agentName: 'planner',
+            agentName: null,
           },
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
@@ -173,7 +110,7 @@ function createBaseResolvedState(
   return {
     bootstrapFields: {
       runtimeUrl: 'http://127.0.0.1:8765',
-      agentName: 'campus-agent',
+      agentName: null,
     },
     storageState: 'stored',
     runtime: {
@@ -186,8 +123,8 @@ function createBaseResolvedState(
     },
     runtimeUrl: 'http://127.0.0.1:8765',
     runtimeSource: 'hosted',
-    agentName: 'campus-agent',
-    agentNameSource: 'config-center',
+    agentName: null,
+    agentNameSource: 'missing',
     diagnostics: createDiagnosticsSummary(),
     devOverrideAllowed: true,
     devOverrideConfigured: false,

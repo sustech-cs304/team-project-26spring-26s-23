@@ -31,10 +31,6 @@ export function getMissingCopilotConfigFields(
     missingFields.push('runtimeUrl')
   }
 
-  if (fields.agentName === null) {
-    missingFields.push('agentName')
-  }
-
   return missingFields
 }
 
@@ -100,7 +96,6 @@ export function resolveCopilotConfigState(input: {
         ...baseState,
         status: 'ready',
         runtimeUrl: baseState.runtimeUrl!,
-        agentName: baseState.agentName!,
       }
     }
 
@@ -125,7 +120,6 @@ export function resolveCopilotConfigState(input: {
         ...baseState,
         status: 'degraded',
         runtimeUrl: baseState.runtimeUrl!,
-        agentName: baseState.agentName!,
       }
     }
 
@@ -145,7 +139,6 @@ export function resolveCopilotConfigState(input: {
           ...baseState,
           status: 'ready',
           runtimeUrl: baseState.runtimeUrl!,
-          agentName: baseState.agentName!,
         }
       }
 
@@ -170,13 +163,12 @@ export function resolveCopilotConfigState(input: {
           ...baseState,
           status: 'ready',
           runtimeUrl: baseState.runtimeUrl!,
-          agentName: baseState.agentName!,
         }
       }
 
       const missingFields = getMissingReadyStateFields(baseState)
 
-      if (missingFields.length === 2) {
+      if (missingFields.length === 1 && missingFields[0] === 'runtimeUrl') {
         return {
           ...baseState,
           status: 'empty',
@@ -255,7 +247,7 @@ export function loadBootstrapFieldsFromConfigCenterPublicSnapshot(
   return {
     ok: true,
     fields,
-    storageState: fields.runtimeUrl === null && fields.agentName === null ? 'empty' : 'stored',
+    storageState: fields.runtimeUrl === null ? 'empty' : 'stored',
   }
 }
 
@@ -307,16 +299,11 @@ function resolveRuntimeSelection(input: {
 
 function getMissingReadyStateFields(input: {
   runtimeUrl: string | null
-  agentName: string | null
 }): CopilotConfigMissingField[] {
   const missingFields: CopilotConfigMissingField[] = []
 
   if (input.runtimeUrl === null) {
     missingFields.push('runtimeUrl')
-  }
-
-  if (input.agentName === null) {
-    missingFields.push('agentName')
   }
 
   return missingFields

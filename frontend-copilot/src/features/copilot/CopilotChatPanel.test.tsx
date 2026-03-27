@@ -1,74 +1,52 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './types'
+import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
+import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import { CopilotChatPanel } from './CopilotChatPanel'
-
-const mockUseCopilotChatInternal = vi.fn()
-const mockUseCopilotContext = vi.fn()
-
-vi.mock('@copilotkit/react-core', () => ({
-  useCopilotChatInternal: () => mockUseCopilotChatInternal(),
-  useCopilotContext: () => mockUseCopilotContext(),
-}))
+import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './types'
 
 describe('CopilotChatPanel', () => {
-  beforeEach(() => {
-    mockUseCopilotChatInternal.mockReset()
-    mockUseCopilotContext.mockReset()
-
-    mockUseCopilotChatInternal.mockReturnValue({
-      messages: [],
-      sendMessage: vi.fn(),
-      isLoading: false,
-      isAvailable: true,
-      reset: vi.fn(),
-    })
-
-    mockUseCopilotContext.mockReturnValue({
-      bannerError: null,
-      setBannerError: vi.fn(),
-      setThreadId: vi.fn(),
-      threadId: 'general-project-sync',
-    })
-  })
-
-  it('renders the mounted chat surface in ready state instead of the old placeholder copy', () => {
+  it('renders the session-first placeholder when runtime is ready but no session has been created yet', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
         state={createReadyState()}
         retrying={false}
         retry={() => {}}
-        threadId="general-project-sync"
+        selectedAgent={createSelectedAgent()}
+        sessionShell={null}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
       />,
     )
 
-    expect(html).toContain('最小聊天已挂载')
-    expect(html).toContain('当前 threadId')
-    expect(html).toContain('copilot-chat__stream')
-    expect(html).not.toContain('后续接入占位')
+    expect(html).toContain('尚未创建会话')
+    expect(html).toContain('消息发送将在下一阶段接入')
+    expect(html).toContain('当前不会静默回落到旧 Provider 消息路径')
+    expect(html).not.toContain('当前 threadId')
+    expect(html).not.toContain('发送消息')
   })
 
-  it('renders runtime failures as inline red error messages inside the chat stream', () => {
-    mockUseCopilotContext.mockReturnValue({
-      bannerError: { message: 'agent_execution_failed: model crashed' },
-      setBannerError: vi.fn(),
-      setThreadId: vi.fn(),
-      threadId: 'general-project-sync',
-    })
-
+  it('renders bound session metadata once the new shell holds sessionId + boundAgent', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
         state={createReadyState()}
         retrying={false}
         retry={() => {}}
-        threadId="general-project-sync"
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
       />,
     )
 
-    expect(html).toContain('运行时错误')
-    expect(html).toContain('agent_execution_failed: model crashed')
-    expect(html).toContain('copilot-chat__message--error')
+    expect(html).toContain('当前会话已绑定智能体')
+    expect(html).toContain('session-1')
+    expect(html).toContain('通用助手')
+    expect(html).toContain('下一阶段将在此处接入')
+    expect(html).not.toContain('当前 threadId')
   })
 
   it('keeps the non-connected branch intact for empty state', () => {
@@ -77,13 +55,17 @@ describe('CopilotChatPanel', () => {
         state={createEmptyState()}
         retrying={false}
         retry={() => {}}
-        threadId="general-project-sync"
+        selectedAgent={null}
+        sessionShell={null}
+        directoryState={createIdleDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
       />,
     )
 
     expect(html).toContain('尚未获得可用运行时')
     expect(html).toContain('Runtime URL（仅开发态可手填）')
-    expect(html).not.toContain('copilot-chat__stream')
+    expect(html).not.toContain('session-1')
   })
 
   it('keeps the failed branch intact and does not swallow startup failures', () => {
@@ -92,14 +74,18 @@ describe('CopilotChatPanel', () => {
         state={createFailedState()}
         retrying={false}
         retry={() => {}}
-        threadId="general-project-sync"
+        selectedAgent={null}
+        sessionShell={null}
+        directoryState={createIdleDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
       />,
     )
 
     expect(html).toContain('宿主启动后端失败')
     expect(html).toContain('重试启动宿主后端')
     expect(html).toContain('spawn_failed')
-    expect(html).not.toContain('copilot-chat__stream')
+    expect(html).not.toContain('当前 threadId')
   })
 })
 
@@ -120,7 +106,7 @@ function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status
   return {
     bootstrapFields: {
       runtimeUrl: 'http://127.0.0.1:8765',
-      agentName: 'campus-agent',
+      agentName: null,
     },
     storageState: 'stored',
     runtime: {
@@ -133,8 +119,8 @@ function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status
     },
     runtimeUrl: 'http://127.0.0.1:8765',
     runtimeSource: 'hosted',
-    agentName: 'campus-agent',
-    agentNameSource: 'config-center',
+    agentName: null,
+    agentNameSource: 'missing',
     diagnostics: createDiagnosticsSummary(),
     devOverrideAllowed: true,
     devOverrideConfigured: false,
@@ -162,14 +148,12 @@ function createEmptyState(): CopilotBootstrapState {
     },
     runtimeUrl: null,
     runtimeSource: 'none',
-    agentName: null,
-    agentNameSource: 'missing',
     diagnostics: createDiagnosticsSummary({
       hostedStatus: 'stopped',
       modeSource: 'expected',
       runtimeSource: 'none',
     }),
-    missingFields: ['runtimeUrl', 'agentName'],
+    missingFields: ['runtimeUrl'],
   }
 }
 
@@ -209,5 +193,49 @@ function createFailedState(): CopilotBootstrapState {
       },
       runtimeSource: 'none',
     }),
+  }
+}
+
+function createSelectedAgent(): AgentType {
+  return {
+    id: 'general',
+    label: '通用助手',
+    shortLabel: '通用助手',
+    description: '默认通用智能体',
+    status: 'active',
+    icon: (() => null) as AgentType['icon'],
+    recommendedTools: ['tool.file-convert'],
+    defaultModelPreference: 'openai/gpt-4.1',
+  }
+}
+
+function createDirectoryState(): AssistantAgentDirectoryState {
+  return {
+    status: 'ready',
+    directoryVersion: 'agents-v1',
+    defaultAgentId: 'general',
+    agents: [createSelectedAgent()],
+    error: null,
+  }
+}
+
+function createIdleDirectoryState(): AssistantAgentDirectoryState {
+  return {
+    status: 'idle',
+    directoryVersion: null,
+    defaultAgentId: null,
+    agents: [],
+    error: null,
+  }
+}
+
+function createSessionShell(): AssistantSessionShell {
+  return {
+    sessionId: 'session-1',
+    boundAgent: createSelectedAgent(),
+    createdAt: '2026-03-27T10:00:00Z',
+    updatedAt: '2026-03-27T10:00:00Z',
+    recommendedTools: ['tool.file-convert'],
+    defaultModelPreference: 'openai/gpt-4.1',
   }
 }

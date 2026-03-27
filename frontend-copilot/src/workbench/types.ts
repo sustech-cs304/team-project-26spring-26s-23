@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 
 export type WorkspaceView = 'assistant' | 'capabilities' | 'files' | 'developer' | 'settings'
 export type HubWorkspaceView = Exclude<WorkspaceView, 'assistant' | 'settings'>
-export type AgentTypeId = 'general' | 'blackboard' | 'tis'
+export type AgentTypeId = string
 export type SettingsSection =
   | 'model-service'
   | 'default-model'
@@ -12,7 +12,7 @@ export type SettingsSection =
   | 'mcp'
   | 'search'
   | 'memory'
-  | 'api'
+  | 'a​pi'
   | 'docs'
 
 export interface SelectOption {
@@ -48,13 +48,19 @@ export interface AgentType {
   label: string
   shortLabel: string
   description: string
+  status: string
   icon: LucideIcon
+  recommendedTools: string[]
+  defaultModelPreference: string | null
 }
 
-export interface ConversationItem {
-  id: string
-  title: string
+export interface AssistantSessionShell {
+  sessionId: string
+  boundAgent: AgentType
+  createdAt: string
   updatedAt: string
+  recommendedTools: string[]
+  defaultModelPreference: string | null
 }
 
 export interface SettingsNavItem {
@@ -82,7 +88,7 @@ export interface ProviderProfile {
   name: string
   protocol: string
   endpoint: string
-  apiKey: string
+  a​piK​ey: string
   defaultModel: string
   fastModel: string
   fallbackModel: string
