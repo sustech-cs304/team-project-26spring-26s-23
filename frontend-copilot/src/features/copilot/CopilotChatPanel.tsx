@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type RefObject, type SetStateAction } from 'react'
+import { ArrowUp } from 'lucide-react'
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
@@ -10,6 +11,7 @@ import {
 import type { CopilotBootstrapState, CopilotConfigState, CopilotDiagnosticsSummary } from './types'
 import { ModelPicker } from './components/ModelPicker'
 import { NotConnectedNotice } from './components/NotConnectedNotice'
+import { ToolPicker } from './components/ToolPicker'
 import { getCopilotDefaultModel } from './model-picker'
 import './copilot.css'
 
@@ -70,6 +72,7 @@ interface RenderPanelActions {
   sendDisabledReason: string | null
   sendError: string | null
   conversation: CopilotConversationTurn[]
+  composerInputRef: RefObject<HTMLTextAreaElement>
 }
 
 interface RenderMessageShellActions {
@@ -82,6 +85,7 @@ interface RenderMessageShellActions {
   sendDisabledReason: string | null
   sendError: string | null
   conversation: CopilotConversationTurn[]
+  composerInputRef: RefObject<HTMLTextAreaElement>
 }
 
 export function CopilotChatPanel({
@@ -99,6 +103,7 @@ export function CopilotChatPanel({
   const [conversation, setConversation] = useState<CopilotConversationTurn[]>([])
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending'>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
 
   const sessionIdentity = sessionShell === null
     ? null
@@ -231,6 +236,13 @@ export function CopilotChatPanel({
 
     setSendStatus('sending')
     setSendError(null)
+    setComposerDraft((current) => ({
+      ...current,
+      messageText: '',
+    }))
+    if (composerInputRef.current !== null) {
+      composerInputRef.current.value = ''
+    }
 
     try {
       const response = await sendMessage(runtimeInput)
@@ -239,10 +251,6 @@ export function CopilotChatPanel({
         createUserTurn(trimmedMessage),
         createAssistantTurn(response),
       ])
-      setComposerDraft((current) => ({
-        ...current,
-        messageText: '',
-      }))
     } catch (error) {
       const formattedError = formatRuntimeMessageSendError(error)
       setSendError(formattedError)
@@ -253,18 +261,14 @@ export function CopilotChatPanel({
       ])
     } finally {
       setSendStatus('idle')
+      requestAnimationFrame(() => {
+        composerInputRef.current?.focus()
+      })
     }
   }
 
   return (
     <section className="copilot-panel" data-testid="copilot-chat-panel">
-      <header className="copilot-panel__header">
-        <div>
-          <p className="copilot-panel__eyebrow">Copilot Feature</p>
-          <h1 className="copilot-panel__heading">Session-First Chat Shell</h1>
-        </div>
-      </header>
-
       {renderCopilotPanelContent(state, {
         retrying,
         onRetry: retry,
@@ -280,6 +284,7 @@ export function CopilotChatPanel({
         sendDisabledReason,
         sendError,
         conversation,
+        composerInputRef,
       })}
     </section>
   )
@@ -459,6 +464,7 @@ function renderSessionContent(actions: RenderPanelActions) {
     sendDisabledReason: actions.sendDisabledReason,
     sendError: actions.sendError,
     conversation: actions.conversation,
+    composerInputRef: actions.composerInputRef,
   })
 }
 
@@ -467,7 +473,7 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
   const capabilities = sessionShell.capabilities
 
   return (
-    <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite" data-testid="chat-session-shell-ready">
+    <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
         <div className="copilot-chat__stream" data-testid="chat-message-scroll-region">
           {actions.conversation.length === 0
@@ -481,18 +487,42 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
                   key={turn.id}
                   className={`copilot-chat__message copilot-chat__message--${turn.kind}`}
                 >
-                  <p className="copilot-chat__message-label">{turn.title}</p>
+                  {turn.kind !== 'user' && <p className="copilot-chat__message-label">{turn.title}</p>}
                   <p className="copilot-chat__message-text">{turn.content}</p>
                 </article>
               ))}
       </div>
 
         <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={actions.onSend}>
-          <label className="copilot-panel__field-group">
-            <span className="copilot-chat__composer-label">消息内容</span>
+          <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
+            <ModelPicker
+              selectedModelId={actions.composerDraft.model}
+              onSelectModel={(model) => {
+                actions.onComposerDraftChange((current) => ({
+                  ...current,
+                  model: model.id,
+                }))
+              }}
+            />
+            <ToolPicker
+              tools={capabilities.allAvailableTools}
+              selectedToolIds={actions.composerDraft.enabledTools}
+              recommendedToolIds={capabilities.recommendedToolsForAgent}
+              onChangeToolIds={(enabledTools: string[]) => {
+                actions.onComposerDraftChange((current) => ({
+                  ...current,
+                  enabledTools,
+                }))
+              }}
+            />
+          </div>
+
+          <div className="copilot-panel__field-group">
             <textarea
+              ref={actions.composerInputRef}
               className="copilot-chat__composer-input"
               name="messageText"
+              aria-label="消息内容"
               value={actions.composerDraft.messageText}
               onChange={(event) => {
                 const nextValue = event.currentTarget.value
@@ -501,60 +531,38 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
                   messageText: nextValue,
                 }))
               }}
-              placeholder="输入当前会话中的用户消息内容"
-              disabled={actions.sendStatus === 'sending'}
-            />
-          </label>
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
+                  return
+                }
 
-          <div className="copilot-panel__form-grid copilot-chat__composer-grid">
-            <div className="copilot-panel__field-group">
-              <span className="copilot-chat__composer-label">消息级模型</span>
-              <ModelPicker
-                selectedModelId={actions.composerDraft.model}
-                onSelectModel={(model) => {
+                if (event.ctrlKey) {
+                  event.preventDefault()
+                  const textarea = event.currentTarget
+                  const { selectionStart, selectionEnd } = textarea
+                  const currentValue = actions.composerDraft.messageText
+                  const nextValue = `${currentValue.slice(0, selectionStart)}\n${currentValue.slice(selectionEnd)}`
+
                   actions.onComposerDraftChange((current) => ({
                     ...current,
-                    model: model.id,
+                    messageText: nextValue,
                   }))
-                }}
-                disabled={actions.sendStatus === 'sending'}
-              />
-            </div>
-          </div>
 
-          <div className="copilot-panel__details-block">
-            <p className="copilot-panel__details-heading">消息级 enabledTools</p>
-            <div className="copilot-panel__checkbox-list">
-              {capabilities.allAvailableTools.map((tool) => {
-                const checked = actions.composerDraft.enabledTools.includes(tool.toolId)
+                  requestAnimationFrame(() => {
+                    textarea.focus()
+                    const nextCaretPosition = selectionStart + 1
+                    textarea.setSelectionRange(nextCaretPosition, nextCaretPosition)
+                  })
+                  return
+                }
 
-                return (
-                  <label key={tool.toolId} className="copilot-panel__checkbox-item">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={actions.sendStatus === 'sending'}
-                      onChange={(event) => {
-                        const nextChecked = event.currentTarget.checked
-                        actions.onComposerDraftChange((current) => ({
-                          ...current,
-                          enabledTools: nextChecked
-                            ? [...current.enabledTools, tool.toolId]
-                            : current.enabledTools.filter((toolId) => toolId !== tool.toolId),
-                        }))
-                      }}
-                    />
-                    <span>
-                      <strong>{tool.toolId}</strong>
-                      {' · '}
-                      {tool.displayName ?? '未提供显示名'}
-                      {' · '}
-                      {tool.availability}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
+                event.preventDefault()
+                if (actions.sendDisabledReason === null) {
+                  event.currentTarget.form?.requestSubmit()
+                }
+              }}
+              placeholder="按 Enter 发送，按 Ctrl + Enter 换行"
+            />
           </div>
 
           {actions.sessionError !== null && (
@@ -566,11 +574,14 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
           <div className="copilot-chat__composer-actions">
             <button
               type="submit"
-              className="copilot-panel__button"
+              className="copilot-chat__send-button"
               disabled={actions.sendDisabledReason !== null}
               title={actions.sendDisabledReason ?? '发送消息'}
+              aria-label={actions.sendDisabledReason ?? '发送消息'}
             >
-              {actions.sendStatus === 'sending' ? '发送中…' : '发送消息'}
+              {actions.sendStatus === 'sending'
+                ? <span className="copilot-chat__send-button-spinner" aria-hidden="true">…</span>
+                : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
             </button>
           </div>
         </form>
@@ -692,7 +703,7 @@ function createUserTurn(content: string): CopilotConversationTurn {
   return {
     id: `user:${content}:${Math.random().toString(36).slice(2)}`,
     kind: 'user',
-    title: '用户消息',
+    title: '',
     content,
   }
 }

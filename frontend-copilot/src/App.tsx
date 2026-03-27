@@ -79,8 +79,8 @@ interface AppProps {
 
 function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
-  const [themeMode, setThemeMode] = useState<ThemeMode>('light')
-  const [animationsEnabled, setAnimationsEnabled] = useState(true)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode)
+  const [animationsEnabled, setAnimationsEnabled] = useState(resolveInitialAnimationsEnabled)
 
   const applyThemeMode = useCallback((nextThemeMode: ThemeMode) => {
     setThemeMode(nextThemeMode)
@@ -346,6 +346,22 @@ function resolveWorkspaceMeta(view: WorkspaceView): { label: string; loadingDesc
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function resolveInitialThemeMode(): ThemeMode {
+  if (typeof document === 'undefined') {
+    return 'light'
+  }
+
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+}
+
+function resolveInitialAnimationsEnabled(): boolean {
+  if (typeof document === 'undefined') {
+    return true
+  }
+
+  return document.documentElement.dataset.animations !== 'disabled'
 }
 
 export default App

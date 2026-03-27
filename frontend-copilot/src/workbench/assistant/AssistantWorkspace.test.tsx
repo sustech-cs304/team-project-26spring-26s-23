@@ -67,6 +67,9 @@ describe('AssistantWorkspace', () => {
     expect(html).not.toContain('<span>session-1</span>')
     expect(html).not.toContain('当前入口语义')
     expect(html).not.toContain('当前会话绑定')
+    expect(html).toContain('data-testid="assistant-chat-workspace"')
+    expect(html).toContain('workspace-main workspace-main--chat')
+    expect(html).not.toContain('workspace-chat-shell')
     expect(mockCopilotChatPanel).toHaveBeenCalled()
     expect(mockCopilotChatPanel.mock.calls[0][0]).toMatchObject({
       selectedAgent: expect.objectContaining({ id: 'general' }),

@@ -80,16 +80,16 @@ describe('CopilotChatPanel', () => {
 
     expect(html).toContain('data-testid="chat-message-scroll-region"')
     expect(html).toContain('data-testid="chat-composer-dock"')
-    expect(html).toContain('Copilot Feature')
-    expect(html).toContain('Session-First Chat Shell')
-    expect(html).toContain('消息内容')
-    expect(html).toContain('消息级模型')
-    expect(html).toContain('消息级 enabledTools')
-    expect(html).toContain('发送消息')
+    expect(html).toContain('data-testid="chat-composer-toolbar"')
+    expect(html).toContain('data-testid="chat-tool-picker-trigger"')
+    expect(html).toContain('按 Enter 发送，按 Ctrl + Enter 换行')
+    expect(html).toContain('copilot-chat__send-button')
+    expect(html).toContain('aria-label="请输入消息内容。"')
     expect(html).toContain('当前尚未发送消息')
     expect(html.indexOf('data-testid="chat-message-scroll-region"')).toBeLessThan(
       html.indexOf('data-testid="chat-composer-dock"'),
     )
+    expect(html).not.toContain('type="checkbox"')
     expect(html).not.toContain('requestOptions（JSON 对象）')
     expect(html).not.toContain('默认值来自当前 capabilities.defaultModelPreference')
     expect(html).not.toContain('下面的最小 UI 会直接走新的 message/send 契约')
@@ -214,6 +214,129 @@ describe('CopilotChatPanel', () => {
         content: '请总结刚才的内容',
       },
     })
+
+    rendered.unmount()
+  })
+
+  it('submits on Enter and keeps newline behavior for Ctrl + Enter in the message composer', async () => {
+    const sendMessage = vi.fn<(input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>>(async (input) => ({
+      ok: true,
+      sessionId: input.sessionId,
+      boundAgent: {
+        agentId: input.agent ?? 'general',
+        status: 'ready',
+        displayName: '通用智能体',
+        description: '默认通用智能体',
+        iconKey: null,
+      },
+      assistantMessage: {
+        role: 'assistant',
+        content: '已收到',
+      },
+      resolvedModelId: input.model,
+      resolvedToolIds: input.enabledTools,
+      requestOptions: input.requestOptions ?? {},
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+      />,
+    )
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '第一行')
+    messageInput.focus()
+    messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length)
+
+    await pressTextareaKey(messageInput, 'Enter', { ctrlKey: true })
+    expect(sendMessage).toHaveBeenCalledTimes(0)
+    expect(messageInput.value).toBe('第一行\n')
+
+    await pressTextareaKey(messageInput, 'Enter')
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      message: {
+        content: '第一行',
+      },
+    })
+    expect(messageInput.value).toBe('')
+    expect(document.activeElement).toBe(messageInput)
+
+    rendered.unmount()
+  })
+
+  it('supports searching and shortcut-updating message-level enabledTools through the tool picker', async () => {
+    const sendMessage = vi.fn<(input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>>(async (input) => ({
+      ok: true,
+      sessionId: input.sessionId,
+      boundAgent: {
+        agentId: input.agent ?? 'general',
+        status: 'ready',
+        displayName: '通用智能体',
+        description: '默认通用智能体',
+        iconKey: null,
+      },
+      assistantMessage: {
+        role: 'assistant',
+        content: '已收到',
+      },
+      resolvedModelId: input.model,
+      resolvedToolIds: input.enabledTools,
+      requestOptions: input.requestOptions ?? {},
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
+    await setFormControlValue(searchInput, '远程')
+    expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+
+    await setFormControlValue(searchInput, '')
+    await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
+    await clickElement(rendered.getByTestId('chat-tool-picker-invert'))
+    await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
+    await clickElement(rendered.getByTestId('chat-tool-option-tool.remote-search'))
+
+    expect(rendered.container.querySelector('input[type="checkbox"]')).toBeNull()
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请使用当前工具集执行摘要')
+
+    const form = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    await submitForm(form)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      enabledTools: ['tool.file-convert', 'tool.remote-search'],
+      message: {
+        content: '请使用当前工具集执行摘要',
+      },
+    })
+    expect(rendered.container.textContent).not.toContain('用户消息')
 
     rendered.unmount()
   })
@@ -504,6 +627,9 @@ function renderWithRoot(element: ReactElement) {
 
       return target
     },
+    queryByTestId(testId: string) {
+      return container.querySelector(`[data-testid="${testId}"]`)
+    },
     unmount() {
       act(() => {
         root.unmount()
@@ -544,5 +670,15 @@ async function setFormControlValue(element: HTMLInputElement | HTMLTextAreaEleme
 async function submitForm(form: HTMLFormElement) {
   await act(async () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+}
+
+async function pressTextareaKey(
+  element: HTMLTextAreaElement,
+  key: string,
+  options: Partial<KeyboardEventInit> = {},
+) {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, ...options }))
   })
 }

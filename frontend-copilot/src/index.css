@@ -5,6 +5,23 @@
   color-scheme: light;
   color: var(--text-primary);
   background-color: var(--app-bg);
+  --startup-shell-bg: var(--app-bg, #f3f5f8);
+  --startup-shell-text: var(--text-primary, #172033);
+  --startup-shell-muted: var(--text-secondary, #4a5870);
+  --startup-shell-card-bg: rgba(255, 255, 255, 0.94);
+  --startup-shell-card-border: rgba(23, 32, 51, 0.08);
+  --startup-shell-card-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+  --startup-shell-subtle-bg: #f8fafc;
+  --startup-shell-subtle-border: rgba(148, 163, 184, 0.24);
+  --startup-shell-primary-action-bg: var(--text-primary, #172033);
+  --startup-shell-primary-action-text: var(--app-bg, #ffffff);
+  --startup-shell-primary-action-border: var(--text-primary, #172033);
+  --startup-shell-secondary-action-bg: var(--surface-bg, #ffffff);
+  --startup-shell-secondary-action-text: var(--text-primary, #172033);
+  --startup-shell-secondary-action-border: rgba(148, 163, 184, 0.5);
+  --startup-shell-spinner-track: rgba(37, 99, 235, 0.16);
+  --startup-shell-spinner-accent: var(--accent, #2563eb);
+  --startup-shell-error-text: var(--danger-text, #b91c1c);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -13,6 +30,20 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+  --startup-shell-bg: var(--app-bg, #161b22);
+  --startup-shell-text: var(--text-primary, #e8edf5);
+  --startup-shell-muted: var(--text-secondary, #afb8c7);
+  --startup-shell-card-bg: rgba(31, 39, 50, 0.92);
+  --startup-shell-card-border: rgba(101, 113, 132, 0.34);
+  --startup-shell-card-shadow: 0 28px 72px rgba(0, 0, 0, 0.42);
+  --startup-shell-subtle-bg: rgba(35, 43, 55, 0.92);
+  --startup-shell-subtle-border: rgba(101, 113, 132, 0.28);
+  --startup-shell-secondary-action-bg: rgba(35, 43, 55, 0.92);
+  --startup-shell-secondary-action-text: var(--text-primary, #e8edf5);
+  --startup-shell-secondary-action-border: rgba(101, 113, 132, 0.34);
+  --startup-shell-spinner-track: rgba(117, 144, 205, 0.24);
+  --startup-shell-spinner-accent: var(--accent, #7590cd);
+  --startup-shell-error-text: var(--danger-text, #d7a9a7);
 }
 
 html,
@@ -40,8 +71,8 @@ body {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #f3f5f8;
-  color: #172033;
+  background: var(--startup-shell-bg);
+  color: var(--startup-shell-text);
 }
 
 .startup-shell--loading {
@@ -62,8 +93,8 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  border: 3px solid rgba(37, 99, 235, 0.16);
-  border-top-color: #2563eb;
+  border: 3px solid var(--startup-shell-spinner-track);
+  border-top-color: var(--startup-shell-spinner-accent);
   animation: startup-loading-spin 0.9s linear infinite;
 }
 
@@ -72,7 +103,7 @@ body {
   font-size: 15px;
   line-height: 1.6;
   font-weight: 500;
-  color: #4a5870;
+  color: var(--startup-shell-muted);
 }
 
 .startup-shell__card {
@@ -81,9 +112,9 @@ body {
   flex-direction: column;
   gap: 12px;
   border-radius: 20px;
-  border: 1px solid rgba(23, 32, 51, 0.08);
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--startup-shell-card-border);
+  background: var(--startup-shell-card-bg);
+  box-shadow: var(--startup-shell-card-shadow);
   padding: 28px;
 }
 
@@ -102,7 +133,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #5b6b83;
+  color: var(--startup-shell-muted);
 }
 
 .startup-shell__title {
@@ -115,15 +146,15 @@ body {
   margin: 0;
   font-size: 14px;
   line-height: 1.7;
-  color: #4a5870;
+  color: var(--startup-shell-muted);
 }
 
 .startup-shell__details {
   margin-top: 4px;
   padding: 14px 16px;
   border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: var(--startup-shell-subtle-bg);
+  border: 1px solid var(--startup-shell-subtle-border);
 }
 
 .startup-shell__actions {
@@ -139,10 +170,10 @@ body {
   justify-content: center;
   min-height: 40px;
   padding: 0 16px;
-  border: 1px solid #172033;
+  border: 1px solid var(--startup-shell-primary-action-border);
   border-radius: 999px;
-  background: #172033;
-  color: #ffffff;
+  background: var(--startup-shell-primary-action-bg);
+  color: var(--startup-shell-primary-action-text);
   font-size: 14px;
   font-weight: 600;
   transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
@@ -159,9 +190,9 @@ body {
 }
 
 .startup-shell__button--secondary {
-  background: #ffffff;
-  color: #172033;
-  border-color: rgba(148, 163, 184, 0.5);
+  background: var(--startup-shell-secondary-action-bg);
+  color: var(--startup-shell-secondary-action-text);
+  border-color: var(--startup-shell-secondary-action-border);
 }
 
 .startup-shell__pre {
@@ -170,7 +201,7 @@ body {
   word-break: break-word;
   font-size: 13px;
   line-height: 1.6;
-  color: #b91c1c;
+  color: var(--startup-shell-error-text);
   font-family: Consolas, 'Courier New', monospace;
 }
 

@@ -274,8 +274,8 @@ export function AssistantWorkspace({
         )}
       </aside>
 
-      <main className="workspace-main" aria-label="会话主内容区">
-        <section className="workspace-chat-shell">
+      <main className="workspace-main workspace-main--chat" aria-label="会话主内容区">
+        <div className="workspace-chat-layout" data-testid="assistant-chat-workspace">
           <CopilotChatPanel
             state={bootstrap.state}
             retrying={bootstrap.retrying}
@@ -286,7 +286,7 @@ export function AssistantWorkspace({
             sessionStatus={sessionStatus}
             sessionError={sessionError}
           />
-        </section>
+        </div>
       </main>
     </section>
   )

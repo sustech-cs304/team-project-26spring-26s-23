@@ -253,7 +253,7 @@ textarea {
 .workspace-panel,
 .workspace-main,
 .workspace-main__content,
-.workspace-chat-shell,
+.workspace-chat-layout,
 .settings-page,
 .settings-card,
 .settings-stack {
@@ -410,7 +410,7 @@ textarea {
 .provider-list--interactive,
 .hub-list,
 .workspace-main__content,
-.workspace-chat-shell,
+.workspace-chat-layout,
 .select-dropdown {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -422,7 +422,7 @@ textarea {
 .provider-list--interactive::-webkit-scrollbar,
 .hub-list::-webkit-scrollbar,
 .workspace-main__content::-webkit-scrollbar,
-.workspace-chat-shell::-webkit-scrollbar,
+.workspace-chat-layout::-webkit-scrollbar,
 .select-dropdown::-webkit-scrollbar {
   width: 0;
   height: 0;
@@ -480,6 +480,7 @@ textarea {
 .assistant-card {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
   gap: 0.72rem;
   padding: 0.84rem 0.9rem;
   text-align: left;
@@ -499,12 +500,15 @@ textarea {
 .assistant-card__body {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   align-items: flex-start;
   gap: 0.16rem;
   min-width: 0;
 }
 
 .assistant-card__title {
+  display: block;
+  line-height: 1.2;
   font-size: 0.97rem;
   font-weight: 700;
   color: var(--text-primary);
@@ -626,10 +630,15 @@ textarea {
   overflow: hidden;
 }
 
+.workspace-main--chat {
+  gap: 0;
+  padding: 0.8rem;
+}
+
 .workspace-main__header,
 .workspace-hero,
 .workspace-main__content,
-.workspace-chat-shell,
+.workspace-chat-layout,
 .hub-card {
   border: none;
   border-radius: 0;
@@ -728,18 +737,21 @@ textarea {
   color: var(--text-primary);
 }
 
-.workspace-chat-shell,
+.workspace-chat-layout,
 .workspace-main__content {
   min-height: 0;
   overflow: auto;
 }
 
-.conversation-workspace .workspace-chat-shell {
+.conversation-workspace .workspace-chat-layout {
   display: flex;
   flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
 }
 
-.conversation-workspace .workspace-chat-shell > .copilot-panel {
+.conversation-workspace .workspace-chat-layout > .copilot-panel {
   flex: 1 1 auto;
   min-height: 100%;
 }
