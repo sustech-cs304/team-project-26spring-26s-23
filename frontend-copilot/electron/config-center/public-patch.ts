@@ -11,6 +11,7 @@ export interface ConfigCenterPublicPatch {
   domains?: {
     frontendPreferences?: {
       theme?: 'light' | 'dark'
+      animationsEnabled?: boolean
     }
     assistantBehavior?: {
       agentName?: string | null
@@ -50,6 +51,7 @@ const CONFIG_CENTER_PUBLIC_PATCH_DOMAIN_REGISTRY: Record<string, ConfigCenterPub
   frontendPreferences: {
     fields: {
       theme: 'theme',
+      animationsEnabled: 'animationsEnabled',
     },
   },
   assistantBehavior: {

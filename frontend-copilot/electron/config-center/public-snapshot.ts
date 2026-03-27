@@ -12,6 +12,7 @@ export interface ConfigCenterPublicSnapshot {
   domains: {
     frontendPreferences: {
       theme: 'light' | 'dark'
+      animationsEnabled: boolean
     }
     assistantBehavior: {
       agentName: string | null
@@ -58,6 +59,7 @@ export function projectConfigCenterPublicSnapshot(
     domains: {
       frontendPreferences: {
         theme: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES].values.theme,
+        animationsEnabled: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES].values.animationsEnabled,
       },
       assistantBehavior: {
         agentName: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,

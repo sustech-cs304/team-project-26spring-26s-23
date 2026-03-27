@@ -11,6 +11,8 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        animationsEnabled={true}
+        onAnimationsEnabledChange={vi.fn()}
       />,
     )
 
@@ -25,6 +27,8 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        animationsEnabled={true}
+        onAnimationsEnabledChange={vi.fn()}
         initialSection="general"
       />,
     )
@@ -40,6 +44,8 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        animationsEnabled={true}
+        onAnimationsEnabledChange={vi.fn()}
         initialSection="default-model"
       />,
     )
@@ -58,6 +64,8 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="dark"
         onThemeModeChange={vi.fn()}
+        animationsEnabled={false}
+        onAnimationsEnabledChange={vi.fn()}
         initialSection="display"
       />,
     )
@@ -65,6 +73,7 @@ describe('SettingsWorkspace', () => {
     expect(html).toContain('显示设置')
     expect(html).toContain('主题')
     expect(html).toContain('class="select-trigger__value">深色</span>')
+    expect(html).toContain('aria-checked="false"')
   })
 
   it('wires the development runtime override card into the api section', () => {
@@ -73,6 +82,8 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        animationsEnabled={true}
+        onAnimationsEnabledChange={vi.fn()}
         initialSection="api"
       />,
     )

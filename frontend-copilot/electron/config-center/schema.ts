@@ -18,11 +18,12 @@ export const UNIFIED_CONFIG_DOMAIN_LIST = [
 
 export type UnifiedConfigEffectLevel = 'immediate' | 'restart-module' | 'restart-application'
 export type UnifiedConfigTheme = 'light' | 'dark'
-export type UnifiedConfigFieldValueType = 'optional-string' | 'theme-mode'
+export type UnifiedConfigFieldValueType = 'optional-string' | 'theme-mode' | 'boolean'
 export type UnifiedConfigUiSection = 'appearance' | 'assistant' | 'connection' | 'backend'
 
 export interface FrontendPreferencesConfigValues {
   theme: UnifiedConfigTheme
+  animationsEnabled: boolean
 }
 
 export interface AssistantBehaviorConfigValues {
@@ -59,10 +60,11 @@ export interface UnifiedConfigSnapshot {
   documents: UnifiedConfigSnapshotDocuments
 }
 
-export type UnifiedConfigFieldKey = 'theme' | 'agentName' | 'runtimeUrl' | 'model'
+export type UnifiedConfigFieldKey = 'theme' | 'animationsEnabled' | 'agentName' | 'runtimeUrl' | 'model'
 
 export interface UnifiedConfigFieldValueMap {
   theme: UnifiedConfigTheme
+  animationsEnabled: boolean
   agentName: string | null
   runtimeUrl: string | null
   model: string | null
@@ -128,6 +130,19 @@ export const UNIFIED_CONFIG_FIELD_REGISTRY: UnifiedConfigFieldRegistry = {
     normalize: normalizeThemeMode,
     parsePatchValue: parseThemeModePatchValue,
   },
+  animationsEnabled: {
+    key: 'animationsEnabled',
+    storageKey: 'animationsEnabled',
+    domain: UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
+    defaultValue: true,
+    valueType: 'boolean',
+    effectLevel: 'immediate',
+    rendererEditable: true,
+    runtimeProjectable: false,
+    uiSection: 'appearance',
+    normalize: normalizeBoolean,
+    parsePatchValue: parseBooleanPatchValue,
+  },
   agentName: {
     key: 'agentName',
     storageKey: 'agentName',
@@ -189,6 +204,7 @@ export function createDefaultUnifiedConfigDomainDocument<TDomain extends Unified
         UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
         {
           theme: UNIFIED_CONFIG_FIELD_REGISTRY.theme.defaultValue,
+          animationsEnabled: UNIFIED_CONFIG_FIELD_REGISTRY.animationsEnabled.defaultValue,
         },
       ) as UnifiedConfigDomainDocument<TDomain>
 
@@ -233,6 +249,7 @@ export function normalizeUnifiedConfigDomainDocument<TDomain extends UnifiedConf
         UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES,
         {
           theme: UNIFIED_CONFIG_FIELD_REGISTRY.theme.normalize(values.theme),
+          animationsEnabled: UNIFIED_CONFIG_FIELD_REGISTRY.animationsEnabled.normalize(values.animationsEnabled),
         },
       ) as UnifiedConfigDomainDocument<TDomain>
 
@@ -305,6 +322,10 @@ export function applyUnifiedConfigFieldPatch(
     nextFrontendValues.theme = UNIFIED_CONFIG_FIELD_REGISTRY.theme.normalize(patch.theme)
   }
 
+  if ('animationsEnabled' in patch) {
+    nextFrontendValues.animationsEnabled = UNIFIED_CONFIG_FIELD_REGISTRY.animationsEnabled.normalize(patch.animationsEnabled)
+  }
+
   if ('agentName' in patch) {
     nextAssistantValues.agentName = UNIFIED_CONFIG_FIELD_REGISTRY.agentName.normalize(patch.agentName)
   }
@@ -357,6 +378,18 @@ function parseThemeModePatchValue(value: unknown): UnifiedConfigTheme {
   }
 
   throw new Error('Expected "light" or "dark".')
+}
+
+function normalizeBoolean(value: unknown): boolean {
+  return typeof value === 'boolean' ? value : true
+}
+
+function parseBooleanPatchValue(value: unknown): boolean {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  throw new Error('Expected a boolean.')
 }
 
 function normalizeOptionalString(value: unknown): string | null {

@@ -46,6 +46,7 @@ describe('ConfigCenterPublicFieldCards', () => {
       domains: {
         frontendPreferences: {
           theme: 'light' as const,
+          animationsEnabled: true,
         },
         assistantBehavior: {
           agentName: 'campus-agent',

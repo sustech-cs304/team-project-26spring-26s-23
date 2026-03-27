@@ -24,6 +24,7 @@ describe('createElectronUnifiedConfigService', () => {
         domains: {
           frontendPreferences: {
             theme: 'light',
+            animationsEnabled: true,
           },
           assistantBehavior: {
             agentName: null,
@@ -48,6 +49,7 @@ describe('createElectronUnifiedConfigService', () => {
       domains: {
         frontendPreferences: {
           theme: 'dark',
+          animationsEnabled: false,
         },
         assistantBehavior: {
           agentName: '  planner  ',
@@ -68,6 +70,7 @@ describe('createElectronUnifiedConfigService', () => {
         domains: {
           frontendPreferences: {
             theme: 'dark',
+            animationsEnabled: false,
           },
           assistantBehavior: {
             agentName: 'planner',

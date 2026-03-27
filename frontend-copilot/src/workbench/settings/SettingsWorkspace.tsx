@@ -42,6 +42,8 @@ interface SettingsWorkspaceProps {
   bootstrap: CopilotBootstrapController
   themeMode: ThemeMode
   onThemeModeChange: (value: ThemeMode) => void
+  animationsEnabled: boolean
+  onAnimationsEnabledChange: (value: boolean) => void
   initialSection?: SettingsSection
 }
 
@@ -204,6 +206,8 @@ export function SettingsWorkspace({
   bootstrap,
   themeMode,
   onThemeModeChange,
+  animationsEnabled,
+  onAnimationsEnabledChange,
   initialSection,
 }: SettingsWorkspaceProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'model-service')
@@ -224,7 +228,6 @@ export function SettingsWorkspace({
 
   const [fontSize, setFontSize] = useState('medium')
   const [density, setDensity] = useState('compact')
-  const [animationsEnabled, setAnimationsEnabled] = useState(true)
 
   const [dataPath, setDataPath] = useState('D:/workspace/copilot-data')
   const [backupCycle, setBackupCycle] = useState('daily')
@@ -1088,7 +1091,7 @@ export function SettingsWorkspace({
                           label="启用微动画"
                           description="为开关、按钮与下拉选择保留轻量反馈动画"
                           checked={animationsEnabled}
-                          onChange={setAnimationsEnabled}
+                          onChange={onAnimationsEnabledChange}
                         />
                       </div>
                     </section>

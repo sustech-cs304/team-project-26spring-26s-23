@@ -157,6 +157,7 @@ function createPublicSnapshot(theme: ThemeMode): ConfigCenterPublicSnapshot {
     domains: {
       frontendPreferences: {
         theme,
+        animationsEnabled: true,
       },
       assistantBehavior: {
         agentName: 'planner',

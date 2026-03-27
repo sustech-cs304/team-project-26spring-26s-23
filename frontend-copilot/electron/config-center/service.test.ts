@@ -172,6 +172,7 @@ describe('createUnifiedConfigCenter', () => {
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
           theme: 'light',
+          animationsEnabled: true,
         }),
       )
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]).toEqual(
@@ -187,6 +188,7 @@ describe('createUnifiedConfigCenter', () => {
 
       const updated = await fixture.configCenter.applyFieldPatch({
         theme: 'dark',
+        animationsEnabled: false,
         agentName: 42,
         runtimeUrl: '  http://localhost:9100  ',
       })
@@ -194,6 +196,7 @@ describe('createUnifiedConfigCenter', () => {
       expect(updated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
           theme: 'dark',
+          animationsEnabled: false,
         }),
       )
       expect(updated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]).toEqual(
@@ -212,6 +215,7 @@ describe('createUnifiedConfigCenter', () => {
         ),
       ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
         theme: 'dark',
+        animationsEnabled: false,
       }))
       expect(
         await readJsonFile(
@@ -240,6 +244,7 @@ describe('createUnifiedConfigCenter', () => {
         domains: {
           frontendPreferences: {
             theme: 'dark',
+            animationsEnabled: false,
           },
           assistantBehavior: {
             agentName: '  planner  ',
@@ -258,6 +263,7 @@ describe('createUnifiedConfigCenter', () => {
         domains: {
           frontendPreferences: {
             theme: 'dark',
+            animationsEnabled: false,
           },
           assistantBehavior: {
             agentName: 'planner',
@@ -278,6 +284,7 @@ describe('createUnifiedConfigCenter', () => {
         ),
       ).toEqual(createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.FRONTEND_PREFERENCES, {
         theme: 'dark',
+        animationsEnabled: false,
       }))
       expect(
         await readJsonFile(
@@ -333,6 +340,7 @@ describe('createUnifiedConfigCenter', () => {
     try {
       const updated = await fixture.configCenter.applyFieldPatch({
         theme: 'dark',
+        animationsEnabled: false,
         runtimeUrl: '  http://localhost:4400  ',
         agentName: '  planner  ',
         model: '  qwen-plus  ',
@@ -344,6 +352,7 @@ describe('createUnifiedConfigCenter', () => {
         domains: {
           frontendPreferences: {
             theme: 'dark',
+            animationsEnabled: false,
           },
           assistantBehavior: {
             agentName: 'planner',

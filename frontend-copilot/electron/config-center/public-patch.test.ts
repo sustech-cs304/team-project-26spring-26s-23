@@ -9,6 +9,7 @@ describe('parseConfigCenterPublicPatch', () => {
       domains: {
         frontendPreferences: {
           theme: 'dark',
+          animationsEnabled: false,
         },
         assistantBehavior: {
           agentName: '  planner  ',
@@ -22,6 +23,7 @@ describe('parseConfigCenterPublicPatch', () => {
       },
     })).toEqual({
       theme: 'dark',
+      animationsEnabled: false,
       agentName: 'planner',
       runtimeUrl: 'http://127.0.0.1:4400',
       model: 'qwen-plus',
@@ -63,5 +65,15 @@ describe('parseConfigCenterPublicPatch', () => {
         },
       },
     })).toThrow('Invalid public config field "frontendPreferences.theme": Expected "light" or "dark".')
+  })
+
+  it('rejects invalid boolean values', () => {
+    expect(() => parseConfigCenterPublicPatch({
+      domains: {
+        frontendPreferences: {
+          animationsEnabled: 'nope',
+        },
+      },
+    })).toThrow('Invalid public config field "frontendPreferences.animationsEnabled": Expected a boolean.')
   })
 })

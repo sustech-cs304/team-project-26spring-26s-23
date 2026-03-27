@@ -210,6 +210,16 @@ body {
   overflow: hidden;
 }
 
+:root[data-animations='disabled'] *,
+:root[data-animations='disabled'] *::before,
+:root[data-animations='disabled'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
 button,
 input,
 textarea {

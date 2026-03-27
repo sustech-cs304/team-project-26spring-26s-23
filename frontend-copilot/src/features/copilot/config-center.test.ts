@@ -13,6 +13,7 @@ import type {
 import {
   applyConfigCenterPublicPatch,
   loadConfigCenterPublicSnapshot,
+  projectAnimationsEnabledFromConfigCenterPublicSnapshot,
   projectThemeModeFromConfigCenterPublicSnapshot,
   subscribeToConfigCenterPublicSnapshotUpdates,
 } from './config-center'
@@ -219,6 +220,7 @@ describe('config center public bridge', () => {
       domains: {
         frontendPreferences: {
           theme: 'dark',
+          animationsEnabled: true,
         },
         assistantBehavior: {
           agentName: 'planner',
@@ -231,6 +233,27 @@ describe('config center public bridge', () => {
         },
       },
     })).toBe('dark')
+  })
+
+  it('projects animations preference from the public snapshot shape', () => {
+    expect(projectAnimationsEnabledFromConfigCenterPublicSnapshot({
+      version: 1,
+      domains: {
+        frontendPreferences: {
+          theme: 'dark',
+          animationsEnabled: false,
+        },
+        assistantBehavior: {
+          agentName: 'planner',
+        },
+        hostConfig: {
+          runtimeUrl: 'http://localhost:4400',
+        },
+        backendExposed: {
+          model: null,
+        },
+      },
+    })).toBe(false)
   })
 
 })

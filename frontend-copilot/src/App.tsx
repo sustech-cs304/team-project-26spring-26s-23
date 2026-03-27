@@ -5,6 +5,11 @@ import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
 import type { CopilotBootstrapController } from './features/copilot/types'
 import { isHubWorkspaceView, railPrimaryItems, railSecondaryItems } from './workbench/config'
 import {
+  loadAnimationsEnabledPreference,
+  persistAnimationsEnabledPreference,
+  subscribeToAnimationsEnabledPreferenceUpdates,
+} from './workbench/animation-config'
+import {
   loadThemeModePreference,
   persistThemeModePreference,
   subscribeToThemeModePreferenceUpdates,
@@ -75,9 +80,14 @@ interface AppProps {
 function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
   const [themeMode, setThemeMode] = useState<ThemeMode>('light')
+  const [animationsEnabled, setAnimationsEnabled] = useState(true)
 
   const applyThemeMode = useCallback((nextThemeMode: ThemeMode) => {
     setThemeMode(nextThemeMode)
+  }, [])
+
+  const applyAnimationsEnabled = useCallback((nextAnimationsEnabled: boolean) => {
+    setAnimationsEnabled(nextAnimationsEnabled)
   }, [])
 
   const handleThemeModeChange = useCallback((nextThemeMode: ThemeMode) => {
@@ -91,6 +101,18 @@ function App({ bootstrap }: AppProps) {
       applyThemeMode,
     })
   }, [applyThemeMode, themeMode])
+
+  const handleAnimationsEnabledChange = useCallback((nextAnimationsEnabled: boolean) => {
+    if (nextAnimationsEnabled === animationsEnabled) {
+      return
+    }
+
+    void persistAnimationsEnabledPreference({
+      previousAnimationsEnabled: animationsEnabled,
+      animationsEnabled: nextAnimationsEnabled,
+      applyAnimationsEnabled,
+    })
+  }, [animationsEnabled, applyAnimationsEnabled])
 
   useEffect(() => {
     logStartupTrace('mounted')
@@ -126,8 +148,37 @@ function App({ bootstrap }: AppProps) {
   }, [applyThemeMode])
 
   useEffect(() => {
+    let disposed = false
+
+    void loadAnimationsEnabledPreference().then((result) => {
+      if (disposed || !result.ok) {
+        return
+      }
+
+      applyAnimationsEnabled(result.animationsEnabled)
+    })
+
+    const unsubscribe = subscribeToAnimationsEnabledPreferenceUpdates((nextAnimationsEnabled) => {
+      if (disposed) {
+        return
+      }
+
+      applyAnimationsEnabled(nextAnimationsEnabled)
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [applyAnimationsEnabled])
+
+  useEffect(() => {
     document.documentElement.dataset.theme = themeMode
   }, [themeMode])
+
+  useEffect(() => {
+    document.documentElement.dataset.animations = animationsEnabled ? 'enabled' : 'disabled'
+  }, [animationsEnabled])
 
   useEffect(() => {
     logStartupTrace('active-workspace', {
@@ -139,7 +190,11 @@ function App({ bootstrap }: AppProps) {
   const workspaceMeta = useMemo(() => resolveWorkspaceMeta(activeWorkspace), [activeWorkspace])
 
   return (
-    <div className="workbench-shell" data-theme={themeMode}>
+    <div
+      className="workbench-shell"
+      data-theme={themeMode}
+      data-animations={animationsEnabled ? 'enabled' : 'disabled'}
+    >
       <aside className="workbench-rail" aria-label="主图标栏">
         {railPrimaryItems.map((item) => {
           const Icon = item.icon
@@ -214,7 +269,14 @@ function App({ bootstrap }: AppProps) {
         <Suspense
           fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
         >
-          {renderActiveWorkspace(activeWorkspace, bootstrap, themeMode, handleThemeModeChange)}
+          {renderActiveWorkspace(
+            activeWorkspace,
+            bootstrap,
+            themeMode,
+            handleThemeModeChange,
+            animationsEnabled,
+            handleAnimationsEnabledChange,
+          )}
         </Suspense>
       </RecoverableErrorBoundary>
     </div>
@@ -226,6 +288,8 @@ function renderActiveWorkspace(
   bootstrap: CopilotBootstrapController,
   themeMode: ThemeMode,
   onThemeModeChange: (value: ThemeMode) => void,
+  animationsEnabled: boolean,
+  onAnimationsEnabledChange: (value: boolean) => void,
 ) {
   if (activeWorkspace === 'assistant') {
     return <AssistantWorkspace bootstrap={bootstrap} />
@@ -237,6 +301,8 @@ function renderActiveWorkspace(
         bootstrap={bootstrap}
         themeMode={themeMode}
         onThemeModeChange={onThemeModeChange}
+        animationsEnabled={animationsEnabled}
+        onAnimationsEnabledChange={onAnimationsEnabledChange}
       />
     )
   }

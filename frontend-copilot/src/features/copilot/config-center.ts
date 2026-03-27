@@ -81,3 +81,9 @@ export function projectThemeModeFromConfigCenterPublicSnapshot(
   return snapshot.domains.frontendPreferences.theme
 }
 
+export function projectAnimationsEnabledFromConfigCenterPublicSnapshot(
+  snapshot: ConfigCenterPublicSnapshot,
+): boolean {
+  return snapshot.domains.frontendPreferences.animationsEnabled
+}
+
