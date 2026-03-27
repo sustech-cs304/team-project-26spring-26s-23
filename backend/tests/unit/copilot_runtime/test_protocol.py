@@ -84,9 +84,59 @@ def test_extract_capabilities_get_request_requires_session_id() -> None:
 
     exc = exc_info.value
     assert exc.status_code == 400
-    assert exc.error.error.code == "invalid_runtime_request"
+    assert exc.error.error.code == "invalid_request"
     assert exc.error.error.requestedMethod == "capabilities/get"
     assert exc.error.error.details == {"field": "sessionId"}
+
+
+def test_extract_message_send_request_reads_request_scoped_fields() -> None:
+    parser = _build_parser()
+
+    request = parser.extract_message_send_request(
+        {
+            "method": "message/send",
+            "body": {
+                "sessionId": "session-123",
+                "agent": "default",
+                "message": {"role": "user", "content": "Hello"},
+                "model": "openai/gpt-4.1",
+                "enabledTools": ["tool.file-convert"],
+                "requestOptions": {"temperature": 0.2},
+            },
+        }
+    )
+
+    assert request.session_id == "session-123"
+    assert request.agent_id == "default"
+    assert request.message.role == "user"
+    assert request.message.content == "Hello"
+    assert request.policy.model == "openai/gpt-4.1"
+    assert request.policy.enabledTools == ("tool.file-convert",)
+    assert request.policy.requestOptions == {"temperature": 0.2}
+
+
+
+def test_extract_message_send_request_requires_user_text_message() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_message_send_request(
+            {
+                "method": "message/send",
+                "body": {
+                    "sessionId": "session-123",
+                    "message": {"role": "assistant", "content": "Nope"},
+                    "model": "openai/gpt-4.1",
+                },
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "unsupported_message_shape"
+    assert exc.error.error.requestedMethod == "message/send"
+    assert exc.error.error.details == {"field": "message.role", "role": "assistant"}
+
 
 
 def test_extract_run_request_normalizes_latest_user_message_text_parts() -> None:

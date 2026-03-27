@@ -7,10 +7,12 @@ from typing import Any
 
 from .contracts import RuntimeContract, RuntimeScaffold
 
-INVALID_REQUEST_CODE = "invalid_runtime_request"
+INVALID_REQUEST_CODE = "invalid_request"
 METHOD_NOT_IMPLEMENTED_CODE = "method_not_implemented"
+SESSION_NOT_FOUND_CODE = "session_not_found"
 AGENT_NOT_FOUND_CODE = "agent_not_found"
 AGENT_MISMATCH_CODE = "agent_mismatch"
+TOOL_NOT_FOUND_CODE = "tool_not_found"
 UNSUPPORTED_MESSAGE_SHAPE_CODE = "unsupported_message_shape"
 INVALID_MESSAGE_HISTORY_CODE = "invalid_message_history"
 MODEL_NOT_CONFIGURED_CODE = "model_not_configured"
@@ -47,6 +49,22 @@ def build_invalid_request_error(
         scaffold=scaffold,
         requested_method=requested_method,
         details=details,
+    )
+
+
+
+def build_session_not_found_error(
+    *,
+    session_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=SESSION_NOT_FOUND_CODE,
+        message=f"Unknown session '{session_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"sessionId": session_id},
     )
 
 
@@ -88,6 +106,22 @@ def build_agent_mismatch_error(
             "boundAgentId": bound_agent_id,
             "requestedAgentId": requested_agent_id,
         },
+    )
+
+
+
+def build_tool_not_found_error(
+    *,
+    tool_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=TOOL_NOT_FOUND_CODE,
+        message=f"Unknown tool '{tool_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"toolId": tool_id},
     )
 
 
@@ -168,7 +202,7 @@ def build_method_not_implemented_error(
         code=METHOD_NOT_IMPLEMENTED_CODE,
         message=(
             f"Runtime method '{requested_method}' is not implemented yet in the current scaffold. "
-            "Supported methods are info, agents/list, session/create, capabilities/get, agent/connect, and agent/run."
+            "Supported methods are info, agents/list, session/create, capabilities/get, message/send, agent/connect, and agent/run."
         ),
         scaffold=scaffold,
         requested_method=requested_method,

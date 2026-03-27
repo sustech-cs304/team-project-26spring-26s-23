@@ -14,6 +14,7 @@ INFO_METHOD = "info"
 AGENTS_LIST_METHOD = "agents/list"
 SESSION_CREATE_METHOD = "session/create"
 CAPABILITIES_GET_METHOD = "capabilities/get"
+MESSAGE_SEND_METHOD = "message/send"
 AGENT_CONNECT_METHOD = "agent/connect"
 AGENT_RUN_METHOD = "agent/run"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
@@ -115,6 +116,38 @@ class RuntimeCapabilitiesResponse(RuntimeContract):
     recommendedTools: tuple[str, ...] = ()
     toolSelectionMode: str = "recommendation-only"
     defaultModelPreference: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeMessagePayload(RuntimeContract):
+    role: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeMessageExecutionPolicy(RuntimeContract):
+    model: str
+    enabledTools: tuple[str, ...] = ()
+    requestOptions: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeMessageSendRequest(RuntimeContract):
+    session_id: str
+    message: RuntimeMessagePayload
+    policy: RuntimeMessageExecutionPolicy
+    agent_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeMessageSendResponse(RuntimeContract):
+    ok: bool
+    sessionId: str
+    boundAgent: RuntimeBoundAgent
+    assistantMessage: RuntimeMessagePayload
+    resolvedModelId: str
+    resolvedToolIds: tuple[str, ...] = ()
+    requestOptions: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,6 +320,50 @@ class RuntimeScaffold(RuntimeContract):
     def supports_agent(self, agent_name: str) -> bool:
         return agent_name in self.bound_agent_views
 
+    def build_message_send_response(
+        self,
+        *,
+        session: RuntimeSessionRecord,
+        assistant_text: str,
+        resolved_model_id: str,
+        resolved_tool_ids: tuple[str, ...],
+        request_options: dict[str, Any] | None = None,
+    ) -> RuntimeMessageSendResponse:
+        return RuntimeMessageSendResponse(
+            ok=True,
+            sessionId=session.session_id,
+            boundAgent=self._get_bound_agent_view(session.bound_agent_id),
+            assistantMessage=RuntimeMessagePayload(role="assistant", content=assistant_text),
+            resolvedModelId=resolved_model_id,
+            resolvedToolIds=resolved_tool_ids,
+            requestOptions=dict(request_options or {}),
+        )
+
+    def resolve_enabled_tool_ids(
+        self,
+        *,
+        agent_id: str,
+        enabled_tools: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        tool_catalog = self._get_tool_catalog(self._get_agent_toolset_name(agent_id))
+        tools_by_id = {entry.toolId: entry for entry in tool_catalog}
+
+        normalized_requested: list[str] = []
+        seen: set[str] = set()
+        for tool_id in enabled_tools:
+            if tool_id in seen:
+                continue
+            seen.add(tool_id)
+            if tool_id not in tools_by_id:
+                raise LookupError(f"Unknown tool '{tool_id}'.")
+            normalized_requested.append(tool_id)
+
+        return tuple(
+            tool_id
+            for tool_id in normalized_requested
+            if tools_by_id[tool_id].availability == "available"
+        )
+
     def build_session_descriptor(
         self,
         *,
@@ -411,6 +488,7 @@ class RuntimeScaffold(RuntimeContract):
             "current_stage_supports_agents_list": AGENTS_LIST_METHOD in self.supported_methods,
             "current_stage_supports_session_create": SESSION_CREATE_METHOD in self.supported_methods,
             "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD in self.supported_methods,
+            "current_stage_supports_message_send": MESSAGE_SEND_METHOD in self.supported_methods,
             "current_stage_supports_connect": AGENT_CONNECT_METHOD in self.supported_methods,
             "current_stage_supports_run": AGENT_RUN_METHOD in self.supported_methods,
             "model_configured": self.model_configured,
@@ -464,6 +542,7 @@ def build_runtime_scaffold(
             AGENTS_LIST_METHOD,
             SESSION_CREATE_METHOD,
             CAPABILITIES_GET_METHOD,
+            MESSAGE_SEND_METHOD,
             AGENT_CONNECT_METHOD,
             AGENT_RUN_METHOD,
         ),
