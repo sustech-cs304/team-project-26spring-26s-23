@@ -1,5 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 
+import type { RuntimeToolDirectoryEntry } from '../features/copilot/chat-contract'
+
 export type WorkspaceView = 'assistant' | 'capabilities' | 'files' | 'developer' | 'settings'
 export type HubWorkspaceView = Exclude<WorkspaceView, 'assistant' | 'settings'>
 export type AgentTypeId = string
@@ -54,13 +56,21 @@ export interface AgentType {
   defaultModelPreference: string | null
 }
 
+export interface AssistantSessionCapabilities {
+  capabilitiesVersion: string
+  allAvailableTools: RuntimeToolDirectoryEntry[]
+  recommendedToolsForAgent: string[]
+  defaultEnabledTools: string[]
+  toolSelectionMode: string
+  defaultModelPreference: string | null
+}
+
 export interface AssistantSessionShell {
   sessionId: string
   boundAgent: AgentType
   createdAt: string
   updatedAt: string
-  recommendedTools: string[]
-  defaultModelPreference: string | null
+  capabilities: AssistantSessionCapabilities
 }
 
 export interface SettingsNavItem {

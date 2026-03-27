@@ -34,6 +34,25 @@ export interface RuntimeSessionCreateResponse {
   capabilities: Record<string, unknown>
 }
 
+export interface RuntimeToolDirectoryEntry {
+  toolId: string
+  kind: string
+  availability: string
+  displayName: string | null
+  description: string | null
+}
+
+export interface RuntimeCapabilitiesGetResponse {
+  ok: true
+  sessionId: string
+  boundAgent: RuntimeBoundAgent
+  capabilitiesVersion: string
+  tools: RuntimeToolDirectoryEntry[]
+  recommendedTools: string[]
+  toolSelectionMode: string
+  defaultModelPreference: string | null
+}
+
 interface RuntimeErrorPayload {
   ok?: false
   error?: {
@@ -43,7 +62,7 @@ interface RuntimeErrorPayload {
 }
 
 interface RuntimeMethodRequest {
-  method: 'agents/list' | 'session/create'
+  method: 'agents/list' | 'session/create' | 'capabilities/get'
   body?: Record<string, unknown>
 }
 
@@ -70,6 +89,21 @@ export async function createRuntimeSession(input: {
     method: 'session/create',
     body: {
       agentId: input.agentId,
+    },
+    fetchFn: input.fetchFn,
+  })
+}
+
+export async function getRuntimeCapabilities(input: {
+  runtimeUrl: string
+  sessionId: string
+  fetchFn?: FetchLike
+}): Promise<RuntimeCapabilitiesGetResponse> {
+  return postRuntimeMethod<RuntimeCapabilitiesGetResponse>({
+    runtimeUrl: input.runtimeUrl,
+    method: 'capabilities/get',
+    body: {
+      sessionId: input.sessionId,
     },
     fetchFn: input.fetchFn,
   })

@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 
 import {
   createRuntimeSession,
+  getRuntimeCapabilities,
   listRuntimeAgents,
   type RuntimeAgentsListResponse,
+  type RuntimeCapabilitiesGetResponse,
   type RuntimeSessionCreateResponse,
 } from '../../features/copilot/chat-contract'
 import { CopilotChatPanel } from '../../features/copilot/CopilotChatPanel'
 import type { CopilotBootstrapController, CopilotConnectableState } from '../../features/copilot/types'
 import { enhanceRuntimeAgents, pickDefaultAgentId } from '../config'
-import type { AgentType, AssistantSessionShell } from '../types'
+import type { AgentType, AssistantSessionCapabilities, AssistantSessionShell } from '../types'
 
 console.info('[startup]', JSON.stringify({
   scope: 'AssistantWorkspace',
@@ -29,6 +31,7 @@ interface AssistantWorkspaceProps {
   bootstrap: CopilotBootstrapController
   listAgents?: typeof listRuntimeAgents
   createSession?: typeof createRuntimeSession
+  getCapabilities?: typeof getRuntimeCapabilities
   initialDirectoryState?: AssistantAgentDirectoryState
   initialSessionShell?: AssistantSessionShell | null
 }
@@ -45,6 +48,7 @@ export function AssistantWorkspace({
   bootstrap,
   listAgents: listAgentsImpl = listRuntimeAgents,
   createSession: createSessionImpl = createRuntimeSession,
+  getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
   initialDirectoryState = emptyDirectoryState,
   initialSessionShell = null,
 }: AssistantWorkspaceProps) {
@@ -138,14 +142,13 @@ export function AssistantWorkspace({
     setSessionError(null)
 
     try {
-      const response = await createSessionImpl({
+      const nextSessionShell = await createAssistantSessionShellForAgent({
         runtimeUrl: bootstrap.state.runtimeUrl,
-        agentId: selectedAgent.id,
-      })
-      setSessionShell(createAssistantSessionShell({
-        response,
         selectedAgent,
-      }))
+        createSession: createSessionImpl,
+        getCapabilities: getCapabilitiesImpl,
+      })
+      setSessionShell(nextSessionShell)
       setSessionStatus('idle')
     } catch (error) {
       setSessionStatus('error')
@@ -231,7 +234,7 @@ export function AssistantWorkspace({
           <p className="copilot-panel__details-heading">当前入口语义</p>
           <ul className="copilot-panel__list">
             <li>智能体目录以服务端 [`agents/list`](backend/app/copilot_runtime/contracts.py:14) 为真源。</li>
-            <li>创建会话时绑定智能体，并持有 `sessionId + boundAgent`。</li>
+            <li>创建会话后立即请求 [`capabilities/get`](backend/app/copilot_runtime/contracts.py:16)，建立会话级能力状态真源。</li>
             <li>本阶段不再回落到旧全局 agent/provider 消息路径。</li>
           </ul>
         </div>
@@ -247,6 +250,10 @@ export function AssistantWorkspace({
               <li>
                 <strong>Bound Agent：</strong>
                 {sessionShell.boundAgent.label}
+              </li>
+              <li>
+                <strong>Capabilities Version：</strong>
+                {sessionShell.capabilities.capabilitiesVersion}
               </li>
               <li>
                 <strong>创建时间：</strong>
@@ -291,18 +298,53 @@ export function createAssistantAgentDirectoryState(
   }
 }
 
+export function createAssistantSessionCapabilities(
+  response: RuntimeCapabilitiesGetResponse,
+): AssistantSessionCapabilities {
+  return {
+    capabilitiesVersion: response.capabilitiesVersion,
+    allAvailableTools: response.tools.map((tool) => ({ ...tool })),
+    recommendedToolsForAgent: [...response.recommendedTools],
+    defaultEnabledTools: [...response.recommendedTools],
+    toolSelectionMode: response.toolSelectionMode,
+    defaultModelPreference: response.defaultModelPreference,
+  }
+}
+
 export function createAssistantSessionShell(input: {
   response: RuntimeSessionCreateResponse
   selectedAgent: AgentType
+  capabilities: RuntimeCapabilitiesGetResponse
 }): AssistantSessionShell {
   return {
     sessionId: input.response.sessionId,
     boundAgent: input.selectedAgent,
     createdAt: input.response.createdAt,
     updatedAt: input.response.updatedAt,
-    recommendedTools: [...input.response.recommendedTools],
-    defaultModelPreference: input.response.defaultModelPreference,
+    capabilities: createAssistantSessionCapabilities(input.capabilities),
   }
+}
+
+export async function createAssistantSessionShellForAgent(input: {
+  runtimeUrl: string
+  selectedAgent: AgentType
+  createSession: typeof createRuntimeSession
+  getCapabilities: typeof getRuntimeCapabilities
+}): Promise<AssistantSessionShell> {
+  const sessionResponse = await input.createSession({
+    runtimeUrl: input.runtimeUrl,
+    agentId: input.selectedAgent.id,
+  })
+  const capabilitiesResponse = await input.getCapabilities({
+    runtimeUrl: input.runtimeUrl,
+    sessionId: sessionResponse.sessionId,
+  })
+
+  return createAssistantSessionShell({
+    response: sessionResponse,
+    selectedAgent: input.selectedAgent,
+    capabilities: capabilitiesResponse,
+  })
 }
 
 function isCopilotConnectableState(

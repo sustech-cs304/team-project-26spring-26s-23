@@ -22,13 +22,14 @@ describe('CopilotChatPanel', () => {
     )
 
     expect(html).toContain('尚未创建会话')
+    expect(html).toContain('会话创建成功后会立即拉取')
     expect(html).toContain('消息发送将在下一阶段接入')
     expect(html).toContain('当前不会静默回落到旧 Provider 消息路径')
     expect(html).not.toContain('当前 threadId')
     expect(html).not.toContain('发送消息')
   })
 
-  it('renders bound session metadata once the new shell holds sessionId + boundAgent', () => {
+  it('renders capability state for a bound session without mislabeling recommendations as allowlist', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
         state={createReadyState()}
@@ -42,10 +43,16 @@ describe('CopilotChatPanel', () => {
       />,
     )
 
-    expect(html).toContain('当前会话已绑定智能体')
+    expect(html).toContain('当前会话已绑定智能体并加载能力面')
     expect(html).toContain('session-1')
     expect(html).toContain('通用助手')
-    expect(html).toContain('下一阶段将在此处接入')
+    expect(html).toContain('cap-v12')
+    expect(html).toContain('总体可用工具集合（后端能力面真源）')
+    expect(html).toContain('tool.file-convert')
+    expect(html).toContain('tool.remote-search')
+    expect(html).toContain('当前智能体推荐工具子集（recommendation）')
+    expect(html).toContain('不是 allowlist，也不是硬限制')
+    expect(html).toContain('默认启用集合初始化自推荐工具子集，而不是前端硬编码')
     expect(html).not.toContain('当前 threadId')
   })
 
@@ -235,7 +242,28 @@ function createSessionShell(): AssistantSessionShell {
     boundAgent: createSelectedAgent(),
     createdAt: '2026-03-27T10:00:00Z',
     updatedAt: '2026-03-27T10:00:00Z',
-    recommendedTools: ['tool.file-convert'],
-    defaultModelPreference: 'openai/gpt-4.1',
+    capabilities: {
+      capabilitiesVersion: 'cap-v12',
+      allAvailableTools: [
+        {
+          toolId: 'tool.file-convert',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: '文件转换',
+          description: 'DOCX/PDF/PPTX 转换工具',
+        },
+        {
+          toolId: 'tool.remote-search',
+          kind: 'external',
+          availability: 'disabled-by-global-setting',
+          displayName: '远程搜索',
+          description: '访问外部搜索服务',
+        },
+      ],
+      recommendedToolsForAgent: ['tool.file-convert'],
+      defaultEnabledTools: ['tool.file-convert'],
+      toolSelectionMode: 'recommendation-only',
+      defaultModelPreference: 'openai/gpt-4.1',
+    },
   }
 }

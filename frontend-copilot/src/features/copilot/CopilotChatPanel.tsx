@@ -286,6 +286,7 @@ function renderSessionContent(actions: {
         <ul className="copilot-panel__list">
           <li>当前选择：{actions.selectedAgent.label}</li>
           <li>会话创建状态：{formatSessionStatus(actions.sessionStatus)}</li>
+          <li>会话创建成功后会立即拉取 [`capabilities/get`](backend/app/copilot_runtime/contracts.py:16) 能力面。</li>
           <li>消息发送将在下一阶段接入 [`message/send`](backend/app/copilot_runtime/contracts.py:17)。</li>
           <li>当前不会静默回落到旧 Provider 消息路径。</li>
         </ul>
@@ -296,12 +297,14 @@ function renderSessionContent(actions: {
     )
   }
 
+  const capabilities = actions.sessionShell.capabilities
+
   return (
     <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite" data-testid="chat-session-shell-ready">
       <p className="copilot-panel__eyebrow">Session Shell</p>
-      <h2 className="copilot-panel__title">当前会话已绑定智能体</h2>
+      <h2 className="copilot-panel__title">当前会话已绑定智能体并加载能力面</h2>
       <p className="copilot-panel__description">
-        会话已通过 [`session/create`](backend/app/copilot_runtime/contracts.py:15) 创建成功。该壳层当前只负责持有 `sessionId + boundAgent`，消息发送将在下一阶段接入。
+        会话已通过 [`session/create`](backend/app/copilot_runtime/contracts.py:15) 创建成功，并紧接着读取 [`capabilities/get`](backend/app/copilot_runtime/contracts.py:16)。本阶段建立的是“总体可用工具集合 + 当前智能体推荐工具子集 + 默认启用来源”，不是消息级最终执行开关。
       </p>
       <dl className="copilot-panel__details-grid">
         <div>
@@ -313,14 +316,49 @@ function renderSessionContent(actions: {
           <dd>{actions.sessionShell.boundAgent.label}</dd>
         </div>
         <div>
-          <dt>默认模型偏好</dt>
-          <dd>{actions.sessionShell.defaultModelPreference ?? '未提供'}</dd>
+          <dt>Capabilities Version</dt>
+          <dd>{capabilities.capabilitiesVersion}</dd>
         </div>
         <div>
-          <dt>推荐工具数</dt>
-          <dd>{String(actions.sessionShell.recommendedTools.length)}</dd>
+          <dt>默认模型偏好</dt>
+          <dd>{capabilities.defaultModelPreference ?? '未提供'}</dd>
         </div>
       </dl>
+      <div className="copilot-panel__details-block">
+        <p className="copilot-panel__details-heading">总体可用工具集合（后端能力面真源）</p>
+        <ul className="copilot-panel__list">
+          {capabilities.allAvailableTools.map((tool) => (
+            <li key={tool.toolId}>
+              <strong>{tool.toolId}</strong>
+              {' · '}
+              {tool.displayName ?? '未提供显示名'}
+              {' · '}
+              {tool.kind}
+              {' · '}
+              {tool.availability}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="copilot-panel__details-block">
+        <p className="copilot-panel__details-heading">当前智能体推荐工具子集（recommendation）</p>
+        <p className="copilot-panel__description">
+          这些 `toolId` 只是该智能体的推荐默认值来源，不是 allowlist，也不是硬限制。
+        </p>
+        <ul className="copilot-panel__list">
+          {capabilities.recommendedToolsForAgent.length === 0
+            ? <li>当前智能体未提供推荐工具。</li>
+            : capabilities.recommendedToolsForAgent.map((toolId) => <li key={toolId}>{toolId}</li>)}
+        </ul>
+      </div>
+      <div className="copilot-panel__details-block">
+        <p className="copilot-panel__details-heading">当前默认启用值来源</p>
+        <ul className="copilot-panel__list">
+          <li>默认启用集合初始化自推荐工具子集，而不是前端硬编码。</li>
+          <li>当前默认启用 toolId：{formatToolIdList(capabilities.defaultEnabledTools)}</li>
+          <li>工具选择模式：{capabilities.toolSelectionMode}</li>
+        </ul>
+      </div>
       <div className="copilot-panel__details-block">
         <p className="copilot-panel__details-heading">下一阶段占位</p>
         <ul className="copilot-panel__list">
@@ -417,6 +455,10 @@ function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string
 
 function formatModeSummary(diagnostics: CopilotDiagnosticsSummary): string {
   return `${diagnostics.mode}（${diagnostics.modeSource === 'resolved' ? '已解析' : '预期'}）`
+}
+
+function formatToolIdList(toolIds: string[]): string {
+  return toolIds.length === 0 ? '空集合' : toolIds.join(', ')
 }
 
 function formatDirectoryStatus(status: AssistantAgentDirectoryState['status']): string {

@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildRuntimeEndpoint,
   createRuntimeSession,
+  getRuntimeCapabilities,
   listRuntimeAgents,
+  type RuntimeCapabilitiesGetResponse,
   type RuntimeSessionCreateResponse,
 } from './chat-contract'
 
@@ -95,6 +97,70 @@ describe('chat-contract', () => {
     })
     expect(response.sessionId).toBe('session-1')
     expect(response.boundAgent.agentId).toBe('general')
+  })
+
+  it('posts capabilities/get and returns the backend capability snapshot fields', async () => {
+    const payload: RuntimeCapabilitiesGetResponse = {
+      ok: true,
+      sessionId: 'session-1',
+      boundAgent: {
+        agentId: 'general',
+        status: 'active',
+        displayName: '通用助手',
+        description: '默认通用智能体',
+        iconKey: 'sparkles',
+      },
+      capabilitiesVersion: 'cap-v12',
+      tools: [
+        {
+          toolId: 'tool.file-convert',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: '文件转换',
+          description: 'DOCX/PDF/PPTX 转换工具',
+        },
+        {
+          toolId: 'tool.remote-search',
+          kind: 'external',
+          availability: 'disabled-by-global-setting',
+          displayName: '远程搜索',
+          description: '访问外部搜索服务',
+        },
+      ],
+      recommendedTools: ['tool.file-convert'],
+      toolSelectionMode: 'recommendation-only',
+      defaultModelPreference: 'o​penai/gpt-4.1',
+    }
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    })
+
+    const response = await getRuntimeCapabilities({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionId: 'session-1',
+      fetchFn,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        method: 'capabilities/get',
+        body: {
+          sessionId: 'session-1',
+        },
+      }),
+    })
+    expect(response.capabilitiesVersion).toBe('cap-v12')
+    expect(response.tools.map((tool) => tool.toolId)).toEqual([
+      'tool.file-convert',
+      'tool.remote-search',
+    ])
+    expect(response.recommendedTools).toEqual(['tool.file-convert'])
   })
 
   it('normalizes runtime endpoint paths to the root slash', () => {
