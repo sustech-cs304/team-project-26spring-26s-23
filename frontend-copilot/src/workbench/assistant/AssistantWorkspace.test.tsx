@@ -59,8 +59,12 @@ describe('AssistantWorkspace', () => {
 
     expect(html).toContain('后端智能体目录')
     expect(html).toContain('通用智能体')
-    expect(html).toContain('默认使用所有工具')
+    expect(html).not.toContain('默认使用所有工具')
+    expect(html).not.toContain('Minimal default agent exposed by the Copilot runtime run bridge.')
     expect(html).toContain('Blackboard')
+    expect(html).not.toContain('当前会话')
+    expect(html).not.toContain('已创建')
+    expect(html).not.toContain('<span>session-1</span>')
     expect(html).not.toContain('当前入口语义')
     expect(html).not.toContain('当前会话绑定')
     expect(mockCopilotChatPanel).toHaveBeenCalled()

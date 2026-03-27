@@ -11,17 +11,6 @@ import type { CopilotBootstrapState, CopilotConfigState, CopilotDiagnosticsSumma
 import { NotConnectedNotice } from './components/NotConnectedNotice'
 import './copilot.css'
 
-const statusLabels: Record<CopilotBootstrapState['status'], string> = {
-  loading: '读取中',
-  empty: '未配置',
-  incomplete: '配置缺失',
-  starting: '启动中',
-  ready: '已连接',
-  failed: '启动失败',
-  degraded: '运行降级',
-  error: '读取失败',
-}
-
 export interface CopilotChatComposerDraft {
   messageText: string
   model: string
@@ -266,15 +255,12 @@ export function CopilotChatPanel({
   }
 
   return (
-    <section className="copilot-panel">
+    <section className="copilot-panel" data-testid="copilot-chat-panel">
       <header className="copilot-panel__header">
         <div>
           <p className="copilot-panel__eyebrow">Copilot Feature</p>
           <h1 className="copilot-panel__heading">Session-First Chat Shell</h1>
         </div>
-        <span className={`copilot-panel__status copilot-panel__status--${state.status}`}>
-          {statusLabels[state.status]}
-        </span>
       </header>
 
       {renderCopilotPanelContent(state, {
@@ -452,19 +438,8 @@ function renderSessionContent(actions: RenderPanelActions) {
 
   if (actions.sessionShell === null) {
     return (
-      <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite" data-testid="chat-session-placeholder">
-        <p className="copilot-panel__eyebrow">Session Shell</p>
-        <h2 className="copilot-panel__title">尚未创建会话</h2>
-        <p className="copilot-panel__description">
-          请选择智能体并创建会话。当前主聊天入口已经切到 session/create 语义，不再使用旧全局 agentName 自动进入聊天。
-        </p>
-        <ul className="copilot-panel__list">
-          <li>当前选择：{actions.selectedAgent.label}</li>
-          <li>会话创建状态：{formatSessionStatus(actions.sessionStatus)}</li>
-          <li>会话创建成功后会立即拉取 capabilities/get 能力面。</li>
-          <li>消息发送只会从新的 session-first message/send 路径进入。</li>
-          <li>当前不会静默回落到旧 Provider 消息路径。</li>
-        </ul>
+      <section className="copilot-panel__inline-placeholder" aria-live="polite" data-testid="chat-session-placeholder">
+        <p className="copilot-panel__inline-placeholder-text">可在左侧选择智能体与新建会话</p>
         {actions.sessionError !== null && (
           <pre className="copilot-panel__error">{actions.sessionError}</pre>
         )}
@@ -507,14 +482,11 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
           </div>
         </div>
 
-        <div className="copilot-chat__stream">
+        <div className="copilot-chat__stream" data-testid="chat-message-scroll-region">
           {actions.conversation.length === 0
             ? (
                 <div className="copilot-chat__empty">
                   <p className="copilot-chat__empty-title">当前尚未发送消息</p>
-                  <p className="copilot-chat__empty-text">
-                    下面的最小 UI 会直接走新的 message/send 契约，不会再接回旧 Provider 或旧全局 agentName 发送路径。
-                  </p>
                 </div>
               )
             : actions.conversation.map((turn) => (
@@ -524,18 +496,11 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
                 >
                   <p className="copilot-chat__message-label">{turn.title}</p>
                   <p className="copilot-chat__message-text">{turn.content}</p>
-                  {turn.kind === 'assistant' && (
-                    <ul className="copilot-panel__list copilot-chat__message-list">
-                      <li>resolvedModelId：{turn.resolvedModelId ?? '未返回'}</li>
-                      <li>resolvedToolIds：{formatToolIdList(turn.resolvedToolIds ?? [])}</li>
-                      <li>requestOptions：{formatRequestOptions(turn.requestOptions ?? {})}</li>
-                    </ul>
-                  )}
                 </article>
               ))}
-        </div>
+      </div>
 
-        <form className="copilot-chat__composer" onSubmit={actions.onSend}>
+        <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={actions.onSend}>
           <label className="copilot-panel__field-group">
             <span className="copilot-chat__composer-label">消息内容</span>
             <textarea
@@ -554,7 +519,7 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
             />
           </label>
 
-          <div className="copilot-panel__form-grid">
+          <div className="copilot-panel__form-grid copilot-chat__composer-grid">
             <label className="copilot-panel__field-group">
               <span className="copilot-chat__composer-label">消息级模型</span>
               <input
@@ -571,38 +536,11 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
                 placeholder={capabilities.defaultModelPreference ?? '例如 openai/gpt-4.1'}
                 disabled={actions.sendStatus === 'sending'}
               />
-              <span className="copilot-panel__field-hint">
-                默认值来自当前 capabilities.defaultModelPreference，而不是旧全局 backendExposed.model。
-              </span>
-            </label>
-
-            <label className="copilot-panel__field-group">
-              <span className="copilot-chat__composer-label">requestOptions（JSON 对象）</span>
-              <textarea
-                className="copilot-panel__field-input copilot-panel__field-input--code"
-                name="requestOptions"
-                value={actions.composerDraft.requestOptionsText}
-                onChange={(event) => {
-                  const nextValue = event.currentTarget.value
-                  actions.onComposerDraftChange((current) => ({
-                    ...current,
-                    requestOptionsText: nextValue,
-                  }))
-                }}
-                placeholder="{}"
-                disabled={actions.sendStatus === 'sending'}
-              />
-              <span className="copilot-panel__field-hint">
-                本阶段只保留最小透传结构；留空会按空对象发送。
-              </span>
             </label>
           </div>
 
           <div className="copilot-panel__details-block">
             <p className="copilot-panel__details-heading">消息级 enabledTools</p>
-            <p className="copilot-panel__description">
-              推荐工具只用于初始化默认勾选；你可以在当前消息前临时切换任意 toolId，后端会继续按稳定 toolId 校验。
-            </p>
             <div className="copilot-panel__checkbox-list">
               {capabilities.allAvailableTools.map((tool) => {
                 const checked = actions.composerDraft.enabledTools.includes(tool.toolId)
@@ -636,14 +574,13 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
             </div>
           </div>
 
-          {actions.sendError !== null && (
-            <p className="copilot-panel__error" role="alert">{actions.sendError}</p>
+          {actions.sessionError !== null && (
+            <p className="copilot-panel__error" role="alert">
+              {actions.sessionError}
+            </p>
           )}
 
           <div className="copilot-chat__composer-actions">
-            <p className="copilot-chat__composer-hint">
-              发送时会显式提交 sessionId、agent 校验值、message、model、enabledTools 与 requestOptions。
-            </p>
             <button
               type="submit"
               className="copilot-panel__button"
@@ -655,10 +592,6 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
           </div>
         </form>
       </section>
-
-      {actions.sessionError !== null && (
-        <pre className="copilot-panel__error">{actions.sessionError}</pre>
-      )}
     </section>
   )
 }
@@ -815,10 +748,6 @@ function dedupeToolIds(toolIds: string[]): string[] {
   return [...uniqueToolIds]
 }
 
-function formatRequestOptions(requestOptions: Record<string, unknown>): string {
-  return JSON.stringify(requestOptions)
-}
-
 function formatRequestOptionsError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -914,15 +843,4 @@ function formatModeSummary(diagnostics: CopilotDiagnosticsSummary): string {
 
 function formatToolIdList(toolIds: string[]): string {
   return toolIds.length === 0 ? '空集合' : toolIds.join(', ')
-}
-
-function formatSessionStatus(status: 'idle' | 'creating' | 'error'): string {
-  switch (status) {
-    case 'idle':
-      return '待创建'
-    case 'creating':
-      return '创建中'
-    case 'error':
-      return '创建失败'
-  }
 }

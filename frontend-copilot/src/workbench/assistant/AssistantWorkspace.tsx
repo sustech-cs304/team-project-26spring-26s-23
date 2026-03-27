@@ -213,8 +213,6 @@ export function AssistantWorkspace({
                     </span>
                     <span className="assistant-card__body">
                       <span className="assistant-card__title">{agent.label}</span>
-                      {agent.hint !== null && <span className="assistant-card__hint">{agent.hint}</span>}
-                      <span className="assistant-card__meta">{agent.description}</span>
                     </span>
                   </button>
                 </li>
@@ -263,10 +261,6 @@ export function AssistantWorkspace({
                   >
                     <span className="topic-card__title">{sessionEntry.boundAgent.label}</span>
                     <span className="topic-card__meta">
-                      <span className={`inline-badge ${active ? 'inline-badge--primary' : 'inline-badge--success'}`}>
-                        {active ? '当前会话' : '已创建'}
-                      </span>
-                      <span>{sessionEntry.sessionId}</span>
                     </span>
                   </button>
                 </li>
