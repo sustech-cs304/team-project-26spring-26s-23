@@ -150,9 +150,20 @@ describe('createSettingsWorkspaceStorage', () => {
       expect(secretStatuses.states).toEqual({
         openrouter: {
           hasApiKey: true,
+          apiKey: 'second-secret',
         },
         'ollama-local': {
           hasApiKey: false,
+          apiKey: '',
+        },
+      })
+
+      const reloadedStorage = createSettingsWorkspaceStorage({ paths: fixture.paths })
+      const reloadedSecretStatuses = await reloadedStorage.loadSecretStates(['openrouter'])
+      expect(reloadedSecretStatuses.states).toEqual({
+        openrouter: {
+          hasApiKey: true,
+          apiKey: 'second-secret',
         },
       })
 
@@ -183,6 +194,7 @@ describe('createSettingsWorkspaceStorage', () => {
       expect(clearedStatuses.states).toEqual({
         openrouter: {
           hasApiKey: false,
+          apiKey: '',
         },
       })
     } finally {

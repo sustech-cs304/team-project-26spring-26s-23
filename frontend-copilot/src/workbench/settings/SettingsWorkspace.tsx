@@ -33,6 +33,7 @@ import {
 } from './config'
 import {
   clearSettingsWorkspaceProviderApiKey,
+  loadSettingsWorkspaceSecretStatuses,
   loadSettingsWorkspaceState,
   saveSettingsWorkspaceProviderApiKey,
   saveSettingsWorkspaceState,
@@ -201,6 +202,16 @@ function syncTrackedModelValue(currentValue: string, previousModelId: string | n
   }
 
   return nextModelId ?? ''
+}
+
+function projectLoadedProviderSecretValues(
+  states: Record<string, { apiKey: string }>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(states).flatMap(([providerId, state]) => {
+      return state.apiKey ? [[providerId, state.apiKey]] : []
+    }),
+  )
 }
 
 export function SettingsWorkspace({
@@ -394,6 +405,17 @@ export function SettingsWorkspace({
 
     void (async () => {
       const result = await loadSettingsWorkspaceState()
+      let loadedProviderSecretValues: Record<string, string> = {}
+
+      if (result.ok) {
+        const secretStatusesResult = await loadSettingsWorkspaceSecretStatuses({
+          providerIds: result.state.providerProfiles.map((profile) => profile.id),
+        })
+
+        if (secretStatusesResult.ok) {
+          loadedProviderSecretValues = projectLoadedProviderSecretValues(secretStatusesResult.states)
+        }
+      }
 
       if (!cancelled && result.ok) {
         applyLoadedWorkspaceState(result.state, {
@@ -423,8 +445,8 @@ export function SettingsWorkspace({
           setOutputDirectory,
           setAutoFileNameEnabled,
         })
-        setProviderSecretDrafts({})
-        setProviderSecretSavedValues({})
+        setProviderSecretDrafts(loadedProviderSecretValues)
+        setProviderSecretSavedValues(loadedProviderSecretValues)
       }
 
       if (!cancelled) {
@@ -531,7 +553,7 @@ export function SettingsWorkspace({
 
   const handleCopyApiKey = async () => {
     if (!activeProviderApiKeyDraft.trim()) {
-      setApiKeyFeedback(activeProvider.hasApiKey ? '已保存密钥不会回填原文，请重新输入后再复制' : '当前没有可复制的 API 密钥')
+      setApiKeyFeedback('当前没有可复制的 API 密钥')
       return
     }
 
@@ -576,9 +598,13 @@ export function SettingsWorkspace({
           return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
         }),
       )
-      setProviderSecretSavedValues((previous) => ({
+      setProviderSecretDrafts((previous) => ({
         ...previous,
         [result.providerId]: '',
+      }))
+      setProviderSecretSavedValues((previous) => ({
+        ...previous,
+        [result.providerId]: result.state.apiKey,
       }))
       setApiKeyFeedback('已清除 API 密钥')
       return
@@ -599,9 +625,13 @@ export function SettingsWorkspace({
         return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
       }),
     )
+    setProviderSecretDrafts((previous) => ({
+      ...previous,
+      [result.providerId]: result.state.apiKey,
+    }))
     setProviderSecretSavedValues((previous) => ({
       ...previous,
-      [result.providerId]: normalizedDraft,
+      [result.providerId]: result.state.apiKey,
     }))
     setApiKeyFeedback('已自动保存 API 密钥')
   }
@@ -926,11 +956,6 @@ export function SettingsWorkspace({
                             <label className="form-field form-field--full" htmlFor="provider-api-key-input">
                               <span className="form-field__meta">
                                 <span className="form-field__label">API 密钥</span>
-                              </span>
-                              <span className="form-field__description" data-testid="provider-api-key-status">
-                                {activeProvider.hasApiKey
-                                  ? '当前 provider 已配置密钥；编辑后失焦会自动保存，清空后失焦可清除。原文仅由主进程持有。'
-                                  : '当前 provider 尚未配置密钥；输入后失焦会自动保存。'}
                               </span>
                               <span className="text-input-shell">
                                 <input

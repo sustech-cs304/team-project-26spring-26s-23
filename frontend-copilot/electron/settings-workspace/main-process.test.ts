@@ -81,6 +81,7 @@ describe('createElectronSettingsWorkspaceService', () => {
         providerId: loaded.state.providerProfiles[0]?.id ?? 'openrouter',
         state: {
           hasApiKey: true,
+          apiKey: 'main-process-secret',
         },
       })
 
@@ -92,6 +93,7 @@ describe('createElectronSettingsWorkspaceService', () => {
         states: {
           [loaded.state.providerProfiles[0]?.id ?? 'openrouter']: {
             hasApiKey: true,
+            apiKey: 'main-process-secret',
           },
         },
       })
@@ -104,6 +106,7 @@ describe('createElectronSettingsWorkspaceService', () => {
         providerId: loaded.state.providerProfiles[0]?.id ?? 'openrouter',
         state: {
           hasApiKey: false,
+          apiKey: '',
         },
       })
     } finally {

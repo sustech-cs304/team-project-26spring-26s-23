@@ -84,6 +84,7 @@ export interface SettingsWorkspaceSecretsDocument {
 
 export interface SettingsWorkspaceProviderSecretState {
   hasApiKey: boolean
+  apiKey: string
 }
 
 export type SettingsWorkspaceProviderSecretStateById = Record<string, SettingsWorkspaceProviderSecretState>
@@ -244,12 +245,16 @@ export function projectProviderSecretStateById(
   return Object.fromEntries(
     providerIds.map((providerId) => {
       const normalizedProviderId = normalizeNonEmptyString(providerId, '')
+      const apiKey =
+        normalizedProviderId === ''
+          ? ''
+          : normalizeNonEmptyString(secretsDocument.values.providerSecrets[normalizedProviderId]?.apiKey, '')
+
       return [
         providerId,
         {
-          hasApiKey:
-            normalizedProviderId !== ''
-            && normalizeNonEmptyString(secretsDocument.values.providerSecrets[normalizedProviderId]?.apiKey, '') !== '',
+          hasApiKey: apiKey !== '',
+          apiKey,
         },
       ]
     }),

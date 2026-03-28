@@ -178,13 +178,19 @@ describe('registerRendererIpcHandlers', () => {
       }),
       loadSettingsWorkspaceSecretStates: vi.fn().mockResolvedValue({
         ok: true,
-        states: {},
+        states: {
+          openrouter: {
+            hasApiKey: true,
+            apiKey: 'persisted-secret',
+          },
+        },
       }),
       saveSettingsWorkspaceProviderSecret: vi.fn().mockResolvedValue({
         ok: true,
         providerId: 'openrouter',
         state: {
           hasApiKey: true,
+          apiKey: 'persisted-secret',
         },
       }),
       clearSettingsWorkspaceProviderSecret: vi.fn().mockResolvedValue({
@@ -192,6 +198,7 @@ describe('registerRendererIpcHandlers', () => {
         providerId: 'openrouter',
         state: {
           hasApiKey: false,
+          apiKey: '',
         },
       }),
       loadCopilotRuntime: vi.fn().mockResolvedValue({

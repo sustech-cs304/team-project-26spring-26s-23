@@ -139,6 +139,7 @@ export function createSettingsWorkspaceStorage(
     return {
       state: {
         hasApiKey: true,
+        apiKey: normalizedApiKey,
       },
     }
   }
@@ -161,6 +162,7 @@ export function createSettingsWorkspaceStorage(
     return {
       state: {
         hasApiKey: false,
+        apiKey: '',
       },
     }
   }
