@@ -1,36 +1,85 @@
 ---
 title: 聊天运行时 HTTP 契约
-description: 整理 desktop runtime 控制面端点与单端点聊天 runtime 的当前 HTTP 契约。
+description: 说明 desktop runtime 的控制面端点，以及当前前端真正使用的 session-first 聊天契约。
 sidebar_position: 3
 sidebar_label: 聊天运行时契约
 ---
 
 # 聊天运行时 HTTP 契约
 
-本文档描述当前已实现的聊天运行时 HTTP 契约，包括 control-plane 端点、单端点聊天方法分发、请求/响应结构与错误语义。
+本文档回答四个问题：
 
-## 概述
+1. 本地 desktop runtime 现在对外暴露了哪些 HTTP 端点。
+2. 当前前端真正依赖的聊天方法是什么。
+3. 智能体、会话、能力面、消息发送现在分别怎么工作。
+4. 旧的 `agent/connect` / `agent/run` 还剩什么地位。
 
-Desktop runtime 提供两类 HTTP 端点：
+## 先看结论
 
-1. **Control-plane 端点**：健康检查、版本信息、诊断数据（GET 方法）
-2. **聊天 runtime 端点**：单根路径 POST 端点，通过 `method` 字段分发到不同聊天方法
+当前 desktop runtime 仍然是“**控制面端点 + 单根路径聊天端点**”的结构：
 
-当前实现阶段：`phase3-run-bridge`，支持最小聊天 MVP，包括 info 查询、session 连接与文本对话运行。
+- 控制面端点用于健康检查、版本和诊断。
+- 聊天端点统一走 `POST /`。
 
-**代码锚点**：
-- [`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py) - FastAPI 应用与端点注册
-- [`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py) - 单端点方法分发路由
-- [`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py) - 契约数据结构
-- [`backend/app/copilot_runtime/protocol.py`](../../backend/app/copilot_runtime/protocol.py) - 协议解析与验证
+但聊天主路径已经不是早期那套“先靠全局 agent，再走 `agent/run`”的理解方式了。
 
-## Control-Plane 端点
+当前前端正式主路径是 4 个方法：
 
-### GET /health
+1. `agents/list`：从后端拿智能体目录。
+2. `session/create`：按选中的智能体创建会话，并把该智能体绑定到会话。
+3. `capabilities/get`：读取这个会话对应的工具目录、推荐工具和模型偏好提示。
+4. `message/send`：发送一条用户消息，并在请求里显式给出本次使用的模型和工具。
 
-健康检查端点，返回服务基本状态。
+可以把它理解成一句话：
 
-**响应结构**（[`HealthContract`](../../backend/app/desktop_runtime/contracts.py#L17-L21)）：
+> **后端目录决定有哪些智能体；会话决定当前绑定的是哪个智能体；每次消息再决定本次要用哪个模型、哪些工具。**
+
+## 文档范围
+
+本文档覆盖：
+
+- `GET /health`、`GET /ready`、`GET /version`、`GET /build-info`、`GET /diagnostics`、`GET /diagnostics/runtime-info`
+- `POST /` 下当前可观察到的聊天方法
+- 当前前端主路径使用的请求体、响应体和错误语义
+- 仍然保留在 runtime 中的旧兼容方法
+
+本文档不展开：
+
+- Electron 如何启动 Python runtime（见系统运行时生命周期文档）
+- 配置中心如何把 `model` 投影为 `--model`（见后端运行与配置文档）
+- Blackboard / TIS 业务能力细节
+
+## 运行时的两类 HTTP 端点
+
+### 1. 控制面端点
+
+这些端点主要服务于宿主和诊断：
+
+| 端点 | 作用 | 当前说明 |
+| --- | --- | --- |
+| `GET /health` | 基础健康检查 | 始终返回 200，用 `ready` 表示当前是否可用 |
+| `GET /ready` | 启动完成度与最近错误 | 用于区分 `starting`、`ready`、`failed` |
+| `GET /version` | 版本信息 | 返回服务版本、Python 版本和运行模式 |
+| `GET /build-info` | 构建信息 | 当前与 `GET /version` 同形 |
+| `GET /diagnostics` | 运行时诊断 | 返回目录、配置摘要、能力摘要 |
+| `GET /diagnostics/runtime-info` | 诊断别名 | 当前与 `GET /diagnostics` 同形 |
+
+### 2. 聊天端点
+
+聊天端点只有一个：
+
+- `POST /`
+
+它通过请求体里的 `method` 字段分发到不同方法。
+
+## 控制面端点
+
+### `GET /health`
+
+用于最小健康检查。
+
+典型响应：
+
 ```json
 {
   "service": "sustech-copilot-desktop-runtime",
@@ -40,17 +89,17 @@ Desktop runtime 提供两类 HTTP 端点：
 }
 ```
 
-**语义**：
-- `ready`: 运行时是否完成启动并可接受请求
-- 始终返回 200 状态码（即使 `ready: false`）
+要点：
 
-**测试依据**：[`backend/tests/unit/desktop_runtime/test_server.py:116-232`](../../backend/tests/unit/desktop_runtime/test_server.py#L116-L232)
+- `ready` 才表示当前是否已经能处理请求。
+- 即使还没 ready，这个端点通常也会返回 200。
 
-### GET /ready
+### `GET /ready`
 
-就绪状态端点，返回详细的启动状态。
+用于回答“启动流程到底完成没有”。
 
-**响应结构**（[`ReadinessContract`](../../backend/app/desktop_runtime/contracts.py#L24-L30)）：
+典型响应：
+
 ```json
 {
   "service": "sustech-copilot-desktop-runtime",
@@ -61,16 +110,17 @@ Desktop runtime 提供两类 HTTP 端点：
 }
 ```
 
-**语义**：
-- `status`: 生命周期状态（`"starting"` | `"ready"` | `"stopped"` | `"failed"`）。当存在启动错误且尚未恢复时为 `"failed"`
-- `startup_complete`: 启动流程是否完成
-- `last_error`: 最近一次启动错误消息（如有）；当该字段非空时，`status` 通常为 `"failed"`
+要点：
 
-### GET /version 与 GET /build-info
+- `status` 当前会落在 `starting`、`ready`、`stopped`、`failed` 这些生命周期状态里。
+- `last_error` 用来说明最近一次启动失败摘要。
 
-版本信息端点（两个路径返回相同内容）。
+### `GET /version` 与 `GET /build-info`
 
-**响应结构**（[`VersionContract`](../../backend/app/desktop_runtime/contracts.py#L34-L40)）：
+当前两条路径返回同形数据。
+
+典型响应：
+
 ```json
 {
   "service": "sustech-copilot-desktop-runtime",
@@ -86,293 +136,283 @@ Desktop runtime 提供两类 HTTP 端点：
 }
 ```
 
-### GET /diagnostics 与 GET /diagnostics/runtime-info
+### `GET /diagnostics` 与 `GET /diagnostics/runtime-info`
 
-诊断信息端点（需要 local token 认证，如已配置）。
+这两条路径当前也返回同形数据，但会带上更多诊断信息。
 
-**认证**：
-- 如果配置了 `local_token`，必须在请求头 `X-Local-Token` 中提供
-- 认证失败返回 401，错误码 `invalid_local_token`
+它会概括：
 
-**响应结构**（[`DiagnosticsContract`](../../backend/app/desktop_runtime/contracts.py#L44-L50)）：
+- 运行目录和工作目录
+- 端口、模型、路径等配置摘要
+- 是否配置了 local token
+- 当前已注册的聊天能力
+- 可用智能体目录和工具目录摘要
+
+如果配置了 local token，需要在请求头里带：
+
+- `X-Local-Token`
+
+否则会返回 401。
+
+## 聊天根端点：`POST /`
+
+### 请求基本形状
+
+当前推荐使用这种基本结构：
+
 ```json
 {
-  "service": "sustech-copilot-desktop-runtime",
-  "status": "ready",
-  "runtime": {
-    "working_directory": "/path/to/backend",
-    "backend_dir": "/path/to/backend",
-    "base_url": "http://127.0.0.1:8765",
-    "started_at": "2026-03-25T09:00:00",
-    "stopped_at": null,
-    "initialized_directories": ["config", "logs", "database", "state"],
-    "ready": true
-  },
-  "configuration": {
-    "host": "127.0.0.1",
-    "port": 8765,
-    "model": "openai:gpt-4o",
-    "paths": { "config_dir": "...", "logs_dir": "..." }
-  },
-  "auth": {
-    "header_name": "X-Local-Token",
-    "token_configured": false,
-    "protected_paths": ["/diagnostics", "/diagnostics/runtime-info"]
-  },
-  "capabilities": {
-    "chat_runtime_registered": true,
-    "chat_protocol": "single-endpoint",
-    "chat_runtime_path": "/",
-    "supported_methods": ["info", "agent/connect", "agent/run"],
-    "chat_runtime_stage": "phase3-run-bridge",
-    "session_store_type": "in-memory",
-    "current_stage_supports_info_only": false,
-    "current_stage_supports_connect": true,
-    "current_stage_supports_run": true,
-    "model_configured": true,
-    "model_environment_keys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"],
-    "available_agents": ["default"],
-    "default_agent": "default",
-    "available_toolsets": ["default"],
-    "default_toolset": "default"
+  "method": "message/send",
+  "body": {
+    "...": "..."
   }
 }
 ```
 
-**代码锚点**：[`backend/app/desktop_runtime/health.py`](../../backend/app/desktop_runtime/health.py)
+其中：
 
-## 聊天 Runtime 单端点契约
+- `method` 必须是非空字符串。
+- `body` 应该是对象。
+- 少数方法在 `body` 缺省时也可直接把字段放在顶层，但新代码不建议继续这样写。
 
-### POST / - 方法分发根端点
+## 当前正式主路径：session-first
 
-聊天 runtime 使用单个 POST 端点，通过请求载荷中的 `method` 字段分发到不同方法。
+### 为什么叫 session-first
 
-**协议标识**：`"single-endpoint"`  
-**当前阶段**：`"phase3-run-bridge"`  
-**支持的方法**：`["info", "agent/connect", "agent/run"]`
+因为当前聊天不是“全局选一个 agent 然后所有请求都沿用它”。
 
-**方法分发逻辑**（[`RuntimeProtocolParser.extract_method`](../../backend/app/copilot_runtime/protocol.py#L86-L132)）：
+现在的顺序是：
 
-1. 空载荷或仅包含 `properties`/`frontendUrl` → `info`
-2. 显式 `method` 字段 → 使用该方法（`"run"` 规范化为 `"agent/run"`）
-3. 载荷包含 `threadId`/`runId`/`messages` 等字段 → 推断为 `agent/run`
-4. 无法推断 → 返回 400 错误
+1. 先从后端拉智能体目录。
+2. 用户选择一个智能体。
+3. 用该智能体创建会话。
+4. 会话创建成功后，再读取这个会话的能力面。
+5. 每次发消息时，再在请求里显式给出模型和工具选择。
 
-### 方法 1: info
+这意味着三件事：
 
-查询 runtime 能力与可用 agent 列表。
+- **智能体目录的真源在后端**，不是前端静态常量。
+- **智能体绑定发生在会话级**，不是全局级。
+- **模型和工具是请求级策略**，不是整个程序里一次选定后永久锁死。
 
-**请求示例**：
+## 方法一：`agents/list`
+
+### 作用
+
+读取当前 runtime 暴露的智能体目录。
+
+### 请求示例
+
 ```json
 {
-  "method": "info",
-  "properties": { "mode": "desktop" },
-  "frontendUrl": "http://localhost:5173"
+  "method": "agents/list"
 }
 ```
 
-或空载荷：`{}`
+### 响应示例
 
-**响应结构**（[`RuntimeInfoResponse`](../../backend/app/copilot_runtime/contracts.py#L36-L43)）：
 ```json
 {
-  "actions": [],
-  "agents": {
-    "default": {
-      "name": "default",
-      "description": "Minimal default agent exposed by the Copilot runtime run bridge."
+  "ok": true,
+  "directoryVersion": "agents-v1",
+  "defaultAgentId": "default",
+  "agents": [
+    {
+      "agentId": "default",
+      "status": "active",
+      "recommendedTools": ["tool.file-convert"],
+      "defaultModelPreference": null,
+      "displayName": "Default",
+      "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+      "iconKey": null
     }
+  ]
+}
+```
+
+### 读这份响应时最重要的点
+
+- `agents` 才是当前后端真正开放出来的智能体目录。
+- `defaultAgentId` 只是建议默认项，不代表前端必须无条件照用。
+- `recommendedTools` 是这个智能体的推荐工具集合。
+- `defaultModelPreference` 当前更像提示信息，不等于前端一定自动切换到它。
+
+## 方法二：`session/create`
+
+### 作用
+
+创建一个新会话，并把选中的智能体绑定到该会话。
+
+### 请求示例
+
+```json
+{
+  "method": "session/create",
+  "body": {
+    "agentId": "default"
+  }
+}
+```
+
+### 响应示例
+
+```json
+{
+  "ok": true,
+  "sessionId": "session-123",
+  "boundAgent": {
+    "agentId": "default",
+    "status": "active",
+    "displayName": "Default",
+    "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+    "iconKey": null
   },
-  "defaultAgent": "default",
-  "protocol": "single-endpoint",
-  "stage": "phase3-run-bridge",
-  "supportedMethods": ["info", "agent/connect", "agent/run"],
-  "transport": {
-    "root_path": "/",
-    "method": "POST"
+  "createdAt": "2026-03-27T18:00:00+00:00",
+  "updatedAt": "2026-03-27T18:00:00+00:00",
+  "recommendedTools": ["tool.file-convert"],
+  "defaultModelPreference": null,
+  "capabilities": {
+    "tools": {
+      "selectionMode": "recommendation-only",
+      "recommendedTools": ["tool.file-convert"]
+    }
   }
 }
 ```
 
-**语义边界**：
-- `actions`: 当前为空数组，预留给未来工具/操作元数据
-- `agents`: 当前仅包含 `default` agent，未来可扩展多 agent
-- 不返回完整 tool 定义，仅元数据
+### 语义说明
 
-**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py:15-34`](../../backend/tests/integration/test_copilot_runtime_http.py#L15-L34)
+- 会话一旦创建，就和 `boundAgent` 绑定。
+- 后续请求如果带了不一致的 `agent` 校验值，会触发 `agent_mismatch`。
+- 当前前端会把这个 `sessionId` 存在 renderer 内存里，用它作为会话切换的标识。
 
-### 方法 2: agent/connect
+## 方法三：`capabilities/get`
 
-建立或恢复 session，不执行 agent 运行。
+### 作用
 
-**请求结构**（[`RuntimeConnectRequest`](../../backend/app/copilot_runtime/contracts.py#L47-L67)）：
+读取某个已创建会话的能力面。
+
+### 请求示例
+
 ```json
 {
-  "method": "agent/connect",
-  "params": { "agentId": "default" },
+  "method": "capabilities/get",
   "body": {
-    "threadId": "thread-123",
-    "runId": "connect-1",
-    "messages": [],
-    "state": {},
-    "tools": [],
-    "context": [],
-    "forwardedProps": {}
+    "sessionId": "session-123"
   }
 }
 ```
 
-**必需字段**：
-- `threadId`: 会话线程 ID（非空字符串）
-- `runId`: 本次连接运行 ID（非空字符串）
-- `messages`: 消息数组（可为空）
+### 响应示例
 
-**可选字段**：
-- `state`: 状态对象（当前实现中可省略，缺省为 `{}`）
-- `tools`: 工具定义数组（当前未使用）
-- `context`: 上下文数组（当前未使用）
-- `forwardedProps`: 转发属性对象
-
-**响应格式**：Server-Sent Events (SSE)，`Content-Type: text/event-stream`
-
-**事件序列**（[`RuntimeScaffold.build_connect_events`](../../backend/app/copilot_runtime/contracts.py#L203-L229)）：
-```
-data: {"type":"RUN_STARTED","threadId":"thread-123","runId":"connect-1"}
-
-data: {"type":"STATE_SNAPSHOT","snapshot":{}}
-
-data: {"type":"MESSAGES_SNAPSHOT","messages":[]}
-
-data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"connect-1","result":{...}}
-```
-
-**最终 result 结构**（[`RuntimeConnectResult`](../../backend/app/copilot_runtime/contracts.py#L108-L114)）：
 ```json
 {
   "ok": true,
-  "threadId": "thread-123",
-  "runId": "connect-1",
-  "agentName": "default",
-  "session": {
-    "threadId": "thread-123",
-    "agentName": "default",
-    "createdAt": "2026-03-25T09:00:00",
-    "updatedAt": "2026-03-25T09:00:00",
-    "newlyCreated": true,
-    "metadata": { "last_connect_run_id": "connect-1" }
-  }
+  "sessionId": "session-123",
+  "boundAgent": {
+    "agentId": "default",
+    "status": "active",
+    "displayName": "Default",
+    "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+    "iconKey": null
+  },
+  "capabilitiesVersion": "capabilities:agents-v1:tools-v1",
+  "tools": [
+    {
+      "toolId": "tool.file-convert",
+      "kind": "builtin",
+      "availability": "available",
+      "displayName": "File Convert",
+      "description": "Convert DOCX, PDF, and PPTX files into text."
+    }
+  ],
+  "recommendedTools": ["tool.file-convert"],
+  "toolSelectionMode": "recommendation-only",
+  "defaultModelPreference": null
 }
 ```
 
-**语义**：
-- 如果 `threadId` 不存在，创建新 session（`newlyCreated: true`）
-- 如果 `threadId` 已存在，返回现有 session（`newlyCreated: false`）
-- 不执行 agent 推理，仅管理 session 生命周期
+### 语义说明
 
-**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py:36-59`](../../backend/tests/integration/test_copilot_runtime_http.py#L36-L59)
+- `tools` 是这个会话当前可见的工具目录。
+- `recommendedTools` 是推荐默认勾选项。
+- `toolSelectionMode` 当前是 `recommendation-only`，意思是后端给推荐，不是硬性替前端做唯一选择。
+- `capabilitiesVersion` 可以用来判断当前能力面是否过期。
 
-### 方法 3: agent/run
+## 方法四：`message/send`
 
-执行 agent 对话运行，返回 assistant 响应。
+### 作用
 
-**请求结构**（[`RuntimeRunRequest`](../../backend/app/copilot_runtime/contracts.py#L71-L94)）：
+发送一条用户消息，并显式给出本次请求要使用的模型、工具和可选请求参数。
+
+### 请求示例
+
 ```json
 {
-  "method": "agent/run",
-  "params": { "agentId": "default" },
+  "method": "message/send",
   "body": {
-    "threadId": "thread-123",
-    "runId": "run-1",
-    "messages": [
-      {
-        "id": "msg-1",
-        "role": "user",
-        "content": "Hello, how are you?"
-      }
-    ],
-    "state": {},
-    "actions": [],
-    "metaEvents": [],
-    "nodeName": null,
-    "forwardedProps": {}
+    "sessionId": "session-123",
+    "agent": "default",
+    "message": {
+      "role": "user",
+      "content": "帮我总结这份 PDF 的重点"
+    },
+    "model": "openrouter/gemini-2.5-pro-preview",
+    "enabledTools": ["tool.file-convert"],
+    "requestOptions": {}
   }
 }
 ```
 
-**必需字段**：
-- `threadId`: 会话线程 ID
-- `runId`: 本次运行 ID
-- `messages`: 消息数组，至少包含一条消息，最后一条必须是 `role: "user"` 的文本消息
+### 当前必填项
 
-**可选字段（未提供时使用默认值）**：
-- `state`: 运行时状态对象；当前实现中可省略，缺省为 `{}`
-- `actions`: agent 可用动作数组；未提供时等价于空数组 `[]`
-- `metaEvents`: 元事件数组；未提供时等价于空数组 `[]`
-- `nodeName`: 当前节点名称；未提供时为 `null`
-- `forwardedProps`: 透传属性对象；未提供时等价于空对象 `{}`
+| 字段 | 说明 |
+| --- | --- |
+| `sessionId` | 目标会话 ID |
+| `message.role` | 当前必须是 `user` |
+| `message.content` | 非空文本 |
+| `model` | 本次请求要使用的模型 ID |
 
-**消息格式约束**（[`RuntimeProtocolParser._validate_supported_message_shape`](../../backend/app/copilot_runtime/protocol.py#L469-L535)）：
-- 支持的 `role`: `"user"`, `"assistant"`, `"system"`, `"developer"`
-- `user` 消息 `content` 可以是字符串或 `[{"type":"text","text":"..."}]` 数组
-- `assistant` 消息 `content` 若提供必须为字符串（当前不支持 tool calls / 多段内容）
-- `system`/`developer` 消息 `content` 必须是非空字符串
-- 不支持 `toolCalls` 字段（MVP 限制）
+### 当前可选项
 
-**响应格式**：Server-Sent Events (SSE)
+| 字段 | 说明 |
+| --- | --- |
+| `agent` | 可选的防串会话校验值；如果传了且与会话绑定智能体不一致，会报错 |
+| `enabledTools` | 本次请求开启的工具 ID 列表 |
+| `requestOptions` | 本次请求附带的附加选项对象 |
 
-**事件序列**（[`RuntimeScaffold.build_run_events`](../../backend/app/copilot_runtime/contracts.py#L231-L268)）：
-```
-data: {"type":"RUN_STARTED","threadId":"thread-123","runId":"run-1"}
+### 响应示例
 
-data: {"type":"STATE_SNAPSHOT","snapshot":{}}
-
-data: {"type":"TEXT_MESSAGE_START","messageId":"run-1:assistant","role":"assistant"}
-
-data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-1:assistant","delta":"Hello! I'm doing well..."}
-
-data: {"type":"TEXT_MESSAGE_END","messageId":"run-1:assistant"}
-
-data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"run-1","result":{...}}
-```
-
-**最终 result 结构**（[`RuntimeRunResult`](../../backend/app/copilot_runtime/contracts.py#L117-L124)）：
 ```json
 {
   "ok": true,
-  "threadId": "thread-123",
-  "runId": "run-1",
-  "agentName": "default",
-  "output": "Hello! I'm doing well, thank you for asking.",
-  "session": {
-    "threadId": "thread-123",
-    "agentName": "default",
-    "createdAt": "2026-03-25T09:00:00",
-    "updatedAt": "2026-03-25T09:00:10",
-    "newlyCreated": false,
-    "metadata": { "last_run_id": "run-1" }
-  }
+  "sessionId": "session-123",
+  "boundAgent": {
+    "agentId": "default",
+    "status": "active",
+    "displayName": "Default",
+    "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
+    "iconKey": null
+  },
+  "assistantMessage": {
+    "role": "assistant",
+    "content": "这份 PDF 主要讲了三件事……"
+  },
+  "resolvedModelId": "openrouter/gemini-2.5-pro-preview",
+  "resolvedToolIds": ["tool.file-convert"],
+  "requestOptions": {}
 }
 ```
 
-**语义**：
-- 当前实现为**一次性完整响应**，`TEXT_MESSAGE_CONTENT` 事件包含完整 assistant 输出
-- 未来可能支持真正的流式 token 输出（多个 `TEXT_MESSAGE_CONTENT` 事件）
-- Session 自动持久化对话历史（user + assistant 消息对）
-- 同一 `threadId` 的后续请求会复用历史上下文
+### 这条方法体现了什么新语义
 
-**历史复用机制**（[`RuntimeBridge.run`](../../backend/app/copilot_runtime/bridge.py#L49-L72)）：
-- 从 session store 加载现有消息历史
-- 转换为 PydanticAI `ModelMessage` 格式
-- 传递给 agent executor 作为上下文
-- 执行成功后追加新的 user/assistant 消息对到 session
+- 会话绑定的是 **智能体**。
+- 但本次执行使用什么 **模型**、启用什么 **工具**，是消息请求自己决定的。
+- 返回值里的 `resolvedModelId` 和 `resolvedToolIds`，表示后端最终实际接受并使用了什么。
 
-**测试依据**：
-- 基本运行：[`backend/tests/integration/test_copilot_runtime_http.py:61-99`](../../backend/tests/integration/test_copilot_runtime_http.py#L61-L99)
-- 历史复用：[`backend/tests/integration/test_copilot_runtime_http.py:61-99`](../../backend/tests/integration/test_copilot_runtime_http.py#L61-L99)
+## 错误结构
 
-## 错误处理与结构化错误
-
-所有聊天 runtime 错误返回统一的 JSON 结构（[`RuntimeErrorResponse`](../../backend/app/copilot_runtime/errors.py#L29-L32)）：
+所有聊天错误当前都返回统一 JSON：
 
 ```json
 {
@@ -381,113 +421,122 @@ data: {"type":"RUN_FINISHED","threadId":"thread-123","runId":"run-1","result":{.
     "code": "error_code",
     "message": "Human-readable error message",
     "stage": "phase3-run-bridge",
-    "requestedMethod": "agent/run",
-    "supportedMethods": ["info", "agent/connect", "agent/run"],
+    "requestedMethod": "message/send",
+    "supportedMethods": [
+      "info",
+      "agents/list",
+      "session/create",
+      "capabilities/get",
+      "message/send",
+      "agent/connect",
+      "agent/run"
+    ],
     "details": {}
   }
 }
 ```
 
-### 错误码与 HTTP 状态码映射
+### 当前常见错误码
 
-| 错误码 | HTTP 状态 | 触发场景 | 代码锚点 |
-|--------|----------|---------|---------|
-| `invalid_runtime_request` | 400 | 请求载荷格式错误、缺少必需字段 | [`errors.py:35-48`](../../backend/app/copilot_runtime/errors.py#L35-L48) |
-| `unsupported_message_shape` | 400 | 消息格式不符合 MVP 约束（如包含 tool calls） | [`errors.py:66-79`](../../backend/app/copilot_runtime/errors.py#L66-L79) |
-| `agent_not_found` | 404 | 请求的 agent 不存在 | [`errors.py:51-63`](../../backend/app/copilot_runtime/errors.py#L51-L63) |
-| `invalid_message_history` | 409 | Session 历史消息序列损坏（如 assistant 后不是 user） | [`errors.py:82-95`](../../backend/app/copilot_runtime/errors.py#L82-L95) |
-| `agent_execution_failed` | 500 | Agent 执行过程中发生异常 | [`errors.py:113-126`](../../backend/app/copilot_runtime/errors.py#L113-L126) |
-| `method_not_implemented` | 501 | 请求的方法当前阶段不支持 | [`errors.py:129-143`](../../backend/app/copilot_runtime/errors.py#L129-L143) |
-| `model_not_configured` | 503 | 未配置 LLM 模型（缺少环境变量或 CLI 参数） | [`errors.py:98-110`](../../backend/app/copilot_runtime/errors.py#L98-L110) |
+| 错误码 | HTTP 状态 | 常见触发场景 |
+| --- | --- | --- |
+| `invalid_request` | 400 | `method`、`body`、`sessionId`、`message`、`model` 等字段格式不对 |
+| `session_not_found` | 404 | 请求的 `sessionId` 不存在 |
+| `agent_not_found` | 404 | 请求的 `agentId` 不在后端目录中 |
+| `agent_mismatch` | 409 | 消息请求携带的 `agent` 与会话绑定智能体不一致 |
+| `tool_not_found` | 400 | `enabledTools` 中存在后端不认识的工具 |
+| `model_not_configured` | 503 | 当前 runtime 没有可用模型配置 |
+| `invalid_message_history` | 409 | 会话历史损坏，无法继续拼装上下文 |
+| `agent_execution_failed` | 500 | 智能体执行时抛错 |
+| `method_not_implemented` | 501 | 调用了当前 scaffold 不支持的方法 |
+| `unsupported_message_shape` | 400 | 主要见于旧兼容方法中传入了不支持的消息结构 |
 
-### 错误示例
+## 仍然保留的旧兼容方法
 
-**未配置模型**（503）：
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "model_not_configured",
-    "message": "No runtime model is configured. Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL.",
-    "stage": "phase3-run-bridge",
-    "requestedMethod": "agent/run",
-    "supportedMethods": ["info", "agent/connect", "agent/run"],
-    "details": {
-      "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"]
-    }
-  }
-}
-```
+### `info`
 
-**Agent 不存在**（404）：
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "agent_not_found",
-    "message": "Unknown agent 'custom-agent'.",
-    "stage": "phase3-run-bridge",
-    "requestedMethod": "agent/run",
-    "supportedMethods": ["info", "agent/connect", "agent/run"],
-    "details": {
-      "agentName": "custom-agent"
-    }
-  }
-}
-```
+仍可用于返回 runtime 基本元数据，例如：
 
-**测试依据**：
-- 模型未配置：[`test_copilot_runtime_http.py:100-117`](../../backend/tests/integration/test_copilot_runtime_http.py#L100-L117)
-- Agent 不存在：[`test_copilot_runtime_http.py:120-144`](../../backend/tests/integration/test_copilot_runtime_http.py#L120-L144)
-- 历史损坏：[`test_copilot_runtime_http.py:147-173`](../../backend/tests/integration/test_copilot_runtime_http.py#L147-L173)
+- `protocol`
+- `stage`
+- `supportedMethods`
+- `agents`
+- `defaultAgent`
 
-## 当前边界与未来扩展
+它现在更适合诊断和兼容调用，不是前端主路径的权威入口。
 
-### 当前实现边界
+### `agent/connect`
 
-**已实现**：
-- 单 agent（`default`）、单 toolset（`default`，无实际工具）
-- 纯文本对话（user ↔ assistant）
-- In-memory session 存储（进程重启后丢失）
-- 完整响应流式输出（非真正 token 流）
-- 基本错误分类与结构化错误
+这是旧桥接时期保留的 SSE 会话方法。
 
-**明确不支持**（MVP 限制）：
-- Assistant tool calls（请求中包含会返回 400 错误）
-- 多模态消息（图片、文件等）
-- 多 agent 切换
-- Tool 动态注册与执行
-- Session 持久化到磁盘/数据库
-- 真正的 token 级流式输出
+它当前仍然：
 
-### 未来可能扩展
+- 接受 `threadId`、`runId`、`messages` 等字段
+- 返回 `RUN_STARTED`、`STATE_SNAPSHOT`、`MESSAGES_SNAPSHOT`、`RUN_FINISHED` 这类 SSE 事件
 
-以下功能在设计中预留了扩展点，但**当前未实现**：
+但当前前端正式主路径已经不用它来创建会话。
 
-1. **多 agent 支持**：`AgentRegistry` 已支持注册多个 agent，但当前仅有 `default`
-2. **Tool 执行**：`ToolRegistry` 与 `tools` 字段已预留，但当前为空
-3. **Actions 与 meta events**：请求/响应中已有字段，但当前未使用
-4. **真正流式输出**：事件结构已支持多个 `TEXT_MESSAGE_CONTENT`，但当前仅发送一次
-5. **Session 持久化**：`session_store_type` 字段已预留，但当前仅 `"in-memory"`
+### `agent/run`
 
-**重要**：文档描述的是**当前实现事实**，不应将未来扩展写成现状。
+这也是旧桥接时期保留的 SSE 运行方法。
 
-## 与其他文档的关系
+它当前仍然：
 
-- **运行时生命周期**：参见 [`runtime-lifecycle.md`](runtime-lifecycle.md)，了解启动、停止与状态管理
-- **架构概览**：参见 [`architecture-overview.md`](architecture-overview.md)，了解整体系统设计
-- **前端连接契约**：参见 [`docs/frontend/backend-connection-contract.md`](../frontend/backend-connection-contract.md)，了解 Electron 如何调用这些端点
+- 接受 `threadId`、`runId`、`messages`
+- 从最后一条 `user` 消息提取文本
+- 通过 SSE 返回 assistant 文本事件
 
-## 参考实现
+但它不再是当前前端主路径的权威契约。
 
-完整的契约实现分布在以下模块：
+### 应该怎样理解这三条旧方法
 
-- **端点注册**：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
-- **方法路由**：[`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py)
-- **协议解析**：[`backend/app/copilot_runtime/protocol.py`](../../backend/app/copilot_runtime/protocol.py)
-- **契约结构**：[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)
-- **错误定义**：[`backend/app/copilot_runtime/errors.py`](../../backend/app/copilot_runtime/errors.py)
-- **执行桥接**：[`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py)
+准确说法是：
 
-**集成测试**：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)  
-**单元测试**：[`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)
+- **它们还在 runtime 里存在**；
+- **可以继续服务旧测试、旧兼容调用和诊断**；
+- **但当前正式前端文档不再把它们写成主路径。**
+
+## 当前后端真源分别在哪里
+
+### 智能体目录真源
+
+后端智能体目录来自 runtime 的智能体注册表，而不是前端写死的列表。
+
+目录项当前会给出：
+
+- `agentId`
+- `status`
+- `recommendedTools`
+- `defaultModelPreference`
+- `displayName`
+- `description`
+- `iconKey`
+
+### 工具目录真源
+
+工具目录来自 runtime 的工具注册表。
+
+工具项当前会给出：
+
+- `toolId`
+- `kind`
+- `availability`
+- `displayName`
+- `description`
+
+## 当前不要再写成什么
+
+下面这些说法现在都不准确：
+
+- “前端主聊天契约还是 `agent/run`。”
+- “全局 agentName 决定当前聊天要连哪个智能体。”
+- “模型是程序级固定设置，消息请求里不用显式带。”
+- “工具开关只是一组前端装饰状态，后端不会真正解析。”
+- “前端仍以 `info -> agent/connect -> agent/run` 作为主流程。”
+
+## 相关文档
+
+- [系统架构总览](./architecture-overview.md)
+- [会话与状态模型](./session-and-state-model.md)
+- [后端运行与配置](../backend/run-and-config.md)
+- [当前可观察契约参考](../backend/reference-current-contracts.md)

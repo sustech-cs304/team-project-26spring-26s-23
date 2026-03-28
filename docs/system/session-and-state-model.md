@@ -1,83 +1,116 @@
 ---
 title: 会话与状态模型
-description: 解释统一配置中心公共快照、宿主运行时状态与后端会话模型如何协同工作。
+description: 解释统一配置中心、宿主运行态、前端会话壳与后端内存会话之间现在怎样协同工作。
 sidebar_position: 4
 ---
 
 # 会话与状态模型
 
-## 概述
+本文档专门回答一个很容易混淆的问题：
 
-本文档解释当前系统中的两类“状态”：
+> 现在系统里到底有哪些“状态”，分别放在哪里，又是谁负责更新它们？
 
-1. **前端 bootstrap / 连接状态**
-2. **后端 session / thread 状态**
+如果先不把这些层次分开，后面很容易把配置、运行态、会话和消息历史写成一团。
 
-它重点回答这些问题：
+## 先给结论
 
-- renderer 现在到底从哪里拿配置状态
-- 配置中心公共快照和 runtime 快照怎样合并
-- `threadId` 为什么可以维持多轮对话上下文
-- 哪些状态是宿主 runtime 的，哪些状态是 renderer 侧派生出来的
+当前系统里最重要的状态，不是只有一种，而是至少有四层：
 
-## 当前边界
+1. **统一配置中心状态**：稳定配置，放在 Electron 主进程管理的分域 JSON 文档里。
+2. **宿主运行态状态**：Python runtime 当前有没有启动、是否 ready、最近有没有失败，放在 hosted runtime 快照里。
+3. **前端助手工作区状态**：当前窗口里拉到的智能体目录、已创建会话列表、当前激活会话，主要放在 renderer 内存里。
+4. **后端会话状态**：runtime 里的内存态消息历史，放在 Python runtime 的 `InMemorySessionStore` 里。
 
-- 会话存储当前仍为内存态，Python runtime 重启后丢失
-- 当前默认仍是单 agent
-- renderer 当前真正参与聊天连接判断的 bootstrap fields 只有 `agentName` 和 `runtimeUrl`
-- 统一配置中心公共快照现在已经可以推送配置更新，但 runtime 运行事实本身还不是完整实时流
+当前正式聊天主路径已经是：
 
-## 前端状态层次
+- 后端目录决定可选智能体；
+- 会话决定当前绑定的智能体；
+- 每次消息请求决定本次使用的模型和工具。
 
-### Renderer 侧现在读的不是旧 settings 接口
+## 文档范围
 
-当前 renderer 不再以旧 renderer settings API 作为正式来源。
+本文档覆盖：
 
-现在它主要读取两类输入：
+- 配置中心公共快照与 hosted runtime 快照怎样参与前端状态装配。
+- `AssistantWorkspace` 里的目录、会话和聊天区域当前怎样分工。
+- Python runtime 里的会话存储现在怎样工作。
+- 当前哪些状态会自动更新，哪些还不会。
 
-1. **统一配置中心公共快照**
-2. **hosted runtime 快照**
+本文档不展开：
 
-然后由 renderer 自己把这两部分归并成最终的 bootstrap 状态。
+- desktop runtime 的完整 HTTP 契约细节
+- Electron 如何启动 Python runtime
+- 设置页里每个表单项的实现细节
 
-### 配置中心公共快照当前提供什么
+## 第一层：统一配置中心状态
 
-当前公共快照包含 4 个域：
+### 现在有哪些正式字段
 
-- `frontendPreferences`
-- `assistantBehavior`
-- `hostConfig`
-- `backendExposed`
+当前配置中心公共快照里已经有 4 个域、5 个正式字段：
 
-但它们在状态模型里的角色并不一样：
-
-| 域 | 当前字段 | 在状态模型中的角色 |
+| 域 | 字段 | 当前作用 |
 | --- | --- | --- |
-| `frontendPreferences` | `theme` | 前端显示偏好，不参与聊天连接判断 |
-| `assistantBehavior` | `agentName` | bootstrap field，直接影响聊天入口是否完整 |
-| `hostConfig` | `runtimeUrl` | bootstrap field，在开发态下作为 runtime override 候选 |
-| `backendExposed` | `model` | 当前由主进程读取并投影给 runtime，不参与 renderer bootstrap 判断 |
+| `frontendPreferences` | `theme` | 控制主题 |
+| `frontendPreferences` | `animationsEnabled` | 控制动画开关 |
+| `assistantBehavior` | `agentName` | assistant 行为偏好字段 |
+| `hostConfig` | `runtimeUrl` | 开发态运行时覆盖地址 |
+| `backendExposed` | `model` | 后端默认模型字段 |
 
-### Renderer 侧配置状态
+### 哪些字段会影响聊天入口
 
-renderer 当前通过 `resolveCopilotConfigState()` 把多来源状态归并为统一的 `CopilotConfigState`。
+当前要把两件事分开：
 
-### 当前状态来源
+- **会影响前端显示的字段**：`theme`、`animationsEnabled`
+- **会影响聊天连接判断的字段**：当前主要看 `runtimeUrl`
 
-1. **配置中心 bootstrap fields**
-   - `agentName`
-   - `runtimeUrl`
-2. **Hosted runtime 状态**
-   - `starting` / `ready` / `failed` / `stopped` / `degraded`
-3. **派生决策**
-   - `runtimeSource`（`hosted` / `dev-override` / `none`）
-   - `agentNameSource`
-   - 最终 `status`
+这里最重要的变化是：
 
-### 当前配置状态类型
+- `agentName` 仍然存在于配置中心里；
+- 但当前聊天 readiness 已经**不再**以它为硬门槛。
 
-renderer 当前会归并出这些状态：
+所以现在不能再把系统描述成“缺少全局 agentName 就无法进入聊天主路径”。
 
+## 第二层：宿主运行态状态
+
+这部分由 Electron 主进程维护，再通过 preload 暴露给 renderer。
+
+### 当前 hosted runtime 状态值
+
+当前宿主运行态至少会落在这些状态里：
+
+- `stopped`
+- `starting`
+- `ready`
+- `failed`
+- `degraded`
+
+### 这层状态回答什么问题
+
+它主要回答：
+
+- 本地 Python runtime 有没有启动。
+- 现在有没有可用的 runtime URL。
+- 最近一次失败是什么。
+- 当前运行模式是什么。
+
+这层状态是**运行事实**，不是用户配置。
+
+## 第三层：renderer 根装配状态
+
+### 根装配层现在会做什么
+
+应用启动后，根装配层会并行读取：
+
+1. 配置中心公共快照。
+2. hosted runtime 快照。
+
+然后把这两部分合并成当前 `CopilotBootstrapState`。
+
+### 当前 renderer 状态值
+
+renderer 现在会归并出这些状态：
+
+- `loading`
 - `empty`
 - `incomplete`
 - `starting`
@@ -86,247 +119,255 @@ renderer 当前会归并出这些状态：
 - `degraded`
 - `error`
 
-另外，根装配层还会在外层额外加一个：
+### 现在怎样理解这些状态
 
-- `loading`
-
-### 这些状态分别是什么意思
-
-| 状态 | 当前语义 |
+| 状态 | 当前含义 |
 | --- | --- |
-| `loading` | 根层还在读取配置中心公共快照和 runtime 快照 |
-| `empty` | `runtimeUrl` 和 `agentName` 都缺失 |
-| `incomplete` | 只读到部分连接信息 |
+| `loading` | 根装配层还在读取配置与运行态 |
+| `empty` | 当前没有可用 runtime URL，且宿主也没有提供可用地址 |
+| `incomplete` | 宿主状态允许继续判断，但当前仍缺少关键连接条件，主要还是 runtime URL |
 | `starting` | 宿主正在启动本地后端 |
-| `ready` | 最终连接信息完整，可以挂载聊天入口 |
-| `failed` | 宿主启动失败，且当前没有可用 dev override |
-| `degraded` | 宿主已降级，但当前仍保留可用 URL |
-| `error` | 读取链路本身失败 |
+| `ready` | 已有可用 runtime URL，可继续进入助手工作区主路径 |
+| `failed` | 宿主启动失败，且没有可用 dev override |
+| `degraded` | 宿主降级，但当前仍保留可用 URL |
+| `error` | 配置或运行态读取链路本身失败 |
 
-## Bootstrap fields 当前怎样参与判断
+### 当前真正的连接门槛是什么
 
-### `agentName`
+当前前端进入 connectable 状态，关键看的是：
 
-当前 `agentName` 来自：
-
-- `snapshot.domains.assistantBehavior.agentName`
-
-它现在仍然是进入 `ready` / `degraded` 的必需字段之一。
-
-这意味着：
-
-- 宿主 `ready` 并不自动代表聊天入口一定 `ready`
-- 如果 `agentName` 为空，前端仍会落到 `incomplete`
-
-### `runtimeUrl`
-
-当前 `runtimeUrl` 来自：
-
-- `snapshot.domains.hostConfig.runtimeUrl`
-
-但它并不是任何时候都直接拿来用。
-
-当前选择规则是：
-
-1. 如果 hosted runtime 已经提供 URL，则优先使用 hosted URL
-2. 只有当 hosted 状态为 `failed` / `stopped`，且当前处于开发态时，才允许把配置中心中的 `runtimeUrl` 当作 dev override
-3. 否则视为没有可用 URL
-
-所以当前 `runtimeUrl` 更准确的语义是：
-
-- **开发态 override 候选**
+- 是否有可用 runtime URL
 
 而不是：
 
-- **发布态总是由用户手填的正式服务地址**
+- 是否先拿到了一个全局 `agentName`
 
-## Hosted backend 运行时状态
+这也是当前文档必须更新的重点之一。
 
-宿主后端状态由 Electron 主进程维护。
+## 第四层：助手工作区状态
 
-### 当前状态字段
+助手工作区内部，现在还要再拆成三块来看。
 
-它当前至少包含：
+### 1. 智能体目录状态
 
+当前 `AssistantWorkspace` 会在 connectable 状态下调用后端目录接口，形成一份目录状态：
+
+- `idle`
+- `loading`
+- `ready`
+- `error`
+
+目录项当前来自后端，而不是前端静态真源。
+
+目录数据里会包含：
+
+- `agentId`
 - `status`
-- `mode`
-- `baseUrl`
-- `pid`
-- `startedAt` / `readyAt` / `stoppedAt`
-- `exitCode` / `signal`
-- `lastFailure`
+- `displayName`
+- `description`
+- `recommendedTools`
+- `defaultModelPreference`
+- `iconKey`
 
-### 当前状态转换
+前端只是在这份后端目录之上做展示增强，例如图标映射和中文标签收敛。
 
-- `stopped` → `starting`
-- `starting` → `ready`
-- `starting` / `ready` → `failed`
-- `ready` → `degraded`
+### 2. 会话列表状态
 
-这些状态通过 IPC 传给 renderer，成为 renderer 归并状态的重要输入。
+当前窗口内，前端还会维护一份会话列表状态：
 
-## 配置更新与状态更新时机
+- `sessions`
+- `activeSessionId`
 
-### 初始加载
+这里要特别注意：
 
-应用启动时，根装配层会：
+- 这份会话列表当前主要存在于 renderer 内存里。
+- 它不是统一配置中心的一部分。
+- 重新加载窗口后，这份列表本身不会自动恢复。
 
-1. 读取配置中心公共快照
-2. 读取 hosted runtime 快照
-3. 归并成初始 bootstrap 状态
-4. 缓存在根层
+### 3. 当前激活会话壳
 
-### 配置中心被动更新
+当用户点击“创建会话”时，前端会：
 
-这是当前和旧实现相比最重要的变化之一。
+1. 调用 `session/create`
+2. 拿到 `sessionId`
+3. 再调用 `capabilities/get`
+4. 把结果整理成一个 `AssistantSessionShell`
 
-现在配置中心公共快照已经支持订阅更新，所以：
+这个会话壳里当前主要包含：
 
-- 当 `theme` 更新时，App 可以同步主题
-- 当 `agentName` 或 `runtimeUrl` 更新时，根装配层会重新计算 bootstrap 状态
+- `sessionId`
+- `boundAgent`
+- `createdAt`
+- `updatedAt`
+- `capabilities`
 
-这意味着当前配置状态不再只是“启动时读一次”的模型。
+其中 `capabilities` 又会带出：
 
-### Runtime 状态更新
+- `capabilitiesVersion`
+- `allAvailableTools`
+- `recommendedToolsForAgent`
+- `defaultEnabledTools`
+- `toolSelectionMode`
+- `defaultModelPreference`
 
-但当前还要注意另一半边界：
+## 第五层：聊天面板本地状态
 
-- **配置中心公共快照更新可以推送**
-- **runtime 运行事实本身仍主要是快照式读取**
+聊天面板里还有一层更细的前端本地状态。
 
-所以当前不能把系统写成“所有运行态变化都会实时推送到 renderer”。
+### 当前本地维护什么
 
-## UI 展示状态
+聊天面板当前会维护：
 
-`CopilotChatPanel` 当前根据 `CopilotBootstrapState` 渲染不同 UI：
+- 输入框草稿
+- 当前选中的模型
+- 当前启用的工具列表
+- `requestOptions` 文本
+- 正在发送状态
+- 当前面板中的消息列表
 
-- `loading`：等待根层完成装配
-- `error`：读取失败
-- `empty` / `incomplete`：提示缺失字段
-- `starting`：提示宿主正在启动
-- `failed`：显示失败摘要与重试按钮
-- `degraded`：显示降级警告，但仍可连接
-- `ready`：连接入口已就绪，挂载聊天区域
+### 这层状态和后端会话状态有什么区别
 
-### 诊断信息现在主要解释什么
+这是当前很容易误写错的地方。
 
-当前 UI 里的诊断信息主要回答：
+- 后端会话状态保留在 runtime 的内存会话存储里。
+- 前端消息列表只是当前聊天面板中的可见消息状态。
 
-- 当前 hosted 状态是什么
-- 当前 runtime URL 来自哪里
-- 当前模式来自宿主已解析值，还是只拿到了 expected mode
-- 当前是否有可重试失败信息
+也就是说：
 
-## 后端会话存储
+- 前端会在本地追加用户消息、助手消息和错误消息。
+- 切换到另一个会话时，当前面板里的消息列表会清空并重新开始。
+- 当前前端**不会**在切换会话后主动从后端回放完整历史。
 
-### Session Store 设计
+所以现在不能把当前 UI 写成“已经具备完整历史回放能力”。
 
-后端当前使用 `InMemorySessionStore` 维护会话记录。
+## 后端会话状态现在放在哪里
 
-### 核心语义
+### 当前使用的会话存储
 
-- 以 `thread_id` 为 key 存储在内存中
-- 每个 session 保存完整消息历史
-- 会话记录包含：
-  - `thread_id`
-  - `agent_name`
-  - `metadata`
-  - `messages`
-  - `created_at` / `updated_at`
+后端当前使用的是内存态会话存储。
 
-### 当前限制
+它的核心特点是：
 
-- Python runtime 重启后会话丢失
-- 当前没有持久化记忆、长期记忆或摘要压缩机制
+- 以 `session_id` 为 key
+- 记录会话绑定的智能体
+- 保留 user / assistant 文本消息历史
+- 只存在于 Python runtime 进程内存中
 
-## `threadId` 传递链路
+### 当前每条会话记录至少包含什么
 
-### 前端侧
+后端会话记录当前至少包含：
 
-1. `AssistantWorkspace` 把当前选中的话题 ID 作为 `threadId` 传给聊天面板
-2. `CopilotChatPanel` 把它传给 CopilotKit
-3. CopilotKit 在请求体中携带该 `threadId`
+- `session_id`
+- `bound_agent_id`
+- `metadata`
+- `messages`
+- `created_at`
+- `updated_at`
 
-### 后端侧
+### 成功发送消息后会发生什么
 
-1. Copilot runtime 合约接收 `thread_id`
-2. `RuntimeBridge.run()` 读取该字段
-3. `session_store` 用它获取已有 session
-4. agent 执行成功后，把这一轮 user / assistant 消息追加回同一个 `thread_id`
+当 `message/send` 成功时，runtime 会：
 
-### 结果是什么
+1. 找到对应会话。
+2. 校验可选的 `agent` 是否和会话绑定智能体一致。
+3. 读取已有消息历史。
+4. 用当前请求里的模型、工具和请求选项执行一次消息。
+5. 成功后把 user / assistant 这一轮消息追加回会话。
 
-只要继续使用同一个 `threadId`，后端就会复用已有历史，于是多轮上下文能够延续。
+所以当前多轮上下文的真正持有者仍然是后端会话存储，而不是前端 textarea 或本地消息数组。
 
-## 多轮上下文当前怎样实现
+## `sessionId` 和 `threadId` 现在怎么理解
 
-### 历史加载
+当前系统里这两个名字同时存在，但地位不一样。
 
-运行时执行前：
+### 当前正式前端主路径
 
-- Bridge 从 session store 读取已有消息
-- 再把内部消息结构转换为模型上下文历史
+当前前端正式主路径使用的是：
 
-### 成功持久化
+- `sessionId`
 
-只有当 agent 执行成功后，系统才会：
+它来自：
 
-- 追加 user + assistant 消息对
-- 更新 session 的 `updated_at`
-- 记录最新 metadata
+- `session/create`
+- `capabilities/get`
+- `message/send`
 
-### 失败处理
+### 旧兼容路径
 
-如果 agent 执行失败：
+旧的 `agent/connect` / `agent/run` 仍然使用：
 
-- 当前不会把失败轮次写回 session store
-- 这样可以避免把损坏或不完整结果写进历史
+- `threadId`
 
-## 当前边界与限制
+在 runtime 内部，`threadId` 本质上仍然会映射到同一个会话标识语义上，只是这属于旧桥接方法留下的命名。
 
-### 1. 统一配置中心并不等于所有状态都进了配置中心
+因此当前文档里更准确的写法是：
 
-当前统一配置中心只承载**稳定配置**。
+- **当前前端主路径使用 `sessionId`**
+- **旧 SSE 兼容路径仍保留 `threadId` 命名**
 
-下面这些内容仍然不是配置中心的一部分：
+## 当前哪些状态会自动更新
 
-- hosted runtime 状态
-- runtime snapshot
-- last failure
-- session store
+### 会自动更新到 renderer 的
+
+配置中心公共快照现在已经支持订阅更新。
+
+因此这些字段变化后，前端可以自动同步：
+
+- `theme`
+- `animationsEnabled`
+- `agentName`
+- `runtimeUrl`
+- `model`
+
+不过它们影响的对象不同：
+
+- `theme`、`animationsEnabled` 主要影响显示。
+- `runtimeUrl` 会影响连接判断。
+- `model` 会影响后端下次启动时的默认模型投影。
+- `agentName` 当前更多是配置连续性，不再是聊天 readiness 的主门槛。
+
+### 当前还不会自动形成完整实时流的
+
+下面这些状态，当前还没有形成完整、持续、对称的实时推送：
+
+- hosted runtime 的所有变化
+- 后端会话历史回放
+- 当前窗口外创建的会话列表
+- 会话能力面变化后的自动失效刷新
+
+它们大多仍然是：
+
+- 启动时读取
+- 用户操作时再读
+- 或在局部范围内重算
+
+## 当前最容易误写错的几件事
+
+### 1. 不要把 `agentName` 继续写成聊天就绪硬门槛
+
+它现在仍然存在，但当前主路径已经不是“必须先有全局 agentName 才能聊天”。
+
+### 2. 不要把前端会话列表写成后端持久化能力
+
+当前前端会话列表主要还是 renderer 内存态状态。
+
+### 3. 不要把前端消息流写成完整历史视图
+
+当前消息区主要展示当前面板内累积的发送结果，不会自动重放后台已有历史。
+
+### 4. 不要把统一配置中心写成所有状态的总仓库
+
+统一配置中心现在只负责稳定配置，不负责：
+
+- 宿主运行快照
+- 会话列表
 - 消息历史
-
-### 2. `model` 当前不属于 renderer bootstrap 字段
-
-虽然 `backendExposed.model` 已进入统一配置中心，但它当前作用在：
-
-- 主进程读取
-- 宿主参数投影
-- Python `--model` 解析
-
-它现在不是 renderer 判断 `ready` / `incomplete` 的必需字段。
-
-### 3. 旧 `copilot-settings.json` 当前只剩 migration 语义
-
-当前 renderer 已不再把旧 settings 文件当作正式接口。
-
-它现在只在主进程内部承担：
-
-- legacy disk migration 输入来源
-
-### 4. 前端状态同步仍是不对称的
-
-当前系统里有一个容易忽略的不对称：
-
-- 配置更新：已经支持公共快照订阅更新
-- runtime 运行事实：仍主要依赖按需读取和重试
-
-这正是当前文档里需要如实说明的边界。
+- 最近消息流视图
 
 ## 相关文档
 
 - [系统架构总览](./architecture-overview.md)
-- [运行时生命周期](./runtime-lifecycle.md)
 - [聊天运行时契约](./chat-runtime-contract.md)
-- [前端现在怎样连接后端](../frontend/backend-connection-contract.md)
-- [当前生效字段参考](../frontend/reference-current-fields.md)
+- [前端运行时状态参考](../frontend/reference-runtime-states.md)
+- [前端当前 UI 状态说明](../frontend/ui-current-state.md)
+- [后端运行与配置](../backend/run-and-config.md)

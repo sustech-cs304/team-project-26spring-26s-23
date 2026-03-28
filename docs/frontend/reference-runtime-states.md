@@ -1,49 +1,39 @@
 ---
 title: 前端运行时状态参考
-description: 汇总统一配置中心 bootstrap 字段、hosted runtime 状态与 renderer 侧连接状态的关系。
+description: 汇总配置中心字段、hosted runtime 状态与 renderer 当前 bootstrap 状态之间的关系。
 sidebar_position: 4
 ---
 
 # 前端运行时状态参考
 
-## 文档用途
+这份文档专门回答一个问题：
 
-本文档是前端运行时状态的权威说明，帮助读者理解：
+> 前端现在看到的这些 `loading`、`empty`、`starting`、`ready`、`degraded`，到底是怎么来的？
 
-- renderer 现在怎样把配置中心公共快照和 hosted runtime 快照合并起来
-- 为什么会显示 `loading`、`empty`、`incomplete`、`starting`、`ready`、`failed`、`degraded`、`error`
-- 哪些字段真正决定聊天入口是否能挂起来
-- 配置改动以后，哪些状态会跟着更新，哪些还不会自动推送
-
-## 使用边界
-
-- 本文聚焦运行时与连接状态，不展开完整聊天协议。
-- 本文只写当前仓库里已经存在的状态与行为。
-- 本文不会把未来状态机或未来联动写成当前事实。
-
-如果你想先看字段范围，请先看 [当前生效字段参考](./reference-current-fields.md)。
+如果不把“配置状态”“宿主运行态”“助手工作区状态”分开，后面就很容易把问题写混。
 
 ## 先给结论
 
-当前前端运行时状态有两层：
+当前前端运行时状态至少分成两层：
 
-1. **主进程层**：hosted backend 的生命周期状态
-2. **renderer 层**：把 bootstrap fields 与 hosted runtime 快照归并后的连接状态
+1. **宿主层状态**：本地 Python runtime 现在是什么状态。
+2. **renderer 层状态**：把配置中心公共快照和宿主快照合并后得出的 bootstrap 状态。
 
-其中 renderer 当前真正用来判断聊天入口的 bootstrap fields 只有两个：
+当前 bootstrap 判断最重要的条件，是：
 
-- `assistantBehavior.agentName`
-- `hostConfig.runtimeUrl`
+- 有没有可用 `runtimeUrl`
 
-它们都来自统一配置中心公共快照，而不是旧 renderer settings API。
+而不是：
 
-## 状态层次概览
+- 有没有全局 `agentName`
 
-### 第一层：Hosted backend 状态
+这点和早期文档已经不同。
 
-这部分由 Electron 主进程维护，表示“本地 Python runtime 现在是什么状态”。
+## 第一层：hosted runtime 状态
 
-当前状态值为：
+这部分由 Electron 主进程维护，表示“宿主托管的本地后端现在如何”。
+
+### 当前状态值
 
 - `stopped`
 - `starting`
@@ -51,11 +41,28 @@ sidebar_position: 4
 - `failed`
 - `degraded`
 
-### 第二层：Renderer 连接状态
+### 这层状态回答什么问题
 
-这部分由 renderer 计算，表示“当前聊天入口能不能挂起来，以及应该怎么解释当前情况”。
+它主要回答：
 
-当前状态值为：
+- 后端有没有启动。
+- 当前有没有可用地址。
+- 当前运行模式是什么。
+- 最近一次失败是什么。
+- 当前是不是打包态。
+
+### `failed` 和 `degraded` 的区别
+
+这两个状态最容易混淆。
+
+- `failed`：宿主当前没有形成稳定可用的 hosted 入口。
+- `degraded`：宿主曾经 ready，后来出现异常，但当前仍保留了可继续尝试的地址。
+
+## 第二层：renderer bootstrap 状态
+
+这部分由 renderer 计算，表示“当前工作台接下来应该怎么走”。
+
+### 当前状态值
 
 - `loading`
 - `empty`
@@ -66,239 +73,257 @@ sidebar_position: 4
 - `degraded`
 - `error`
 
-## 数据流怎么走
+### 这些状态当前分别表示什么
 
-当前状态流转路径可以简单理解成：
+| 状态 | 当前含义 |
+| --- | --- |
+| `loading` | 根装配层还在读取配置中心公共快照和 hosted runtime 快照 |
+| `empty` | 当前没有可用 runtime URL，且宿主也没有提供可用地址 |
+| `incomplete` | 当前还缺继续进入主路径所需的关键连接条件，主要仍是 runtime URL |
+| `starting` | 宿主正在启动本地后端 |
+| `ready` | 已有可用 runtime URL，可继续进入助手工作区主路径 |
+| `failed` | 宿主启动失败，且当前没有可用开发态 override |
+| `degraded` | 宿主已降级，但仍保留可用 runtime URL |
+| `error` | 配置或运行态读取链路本身失败 |
 
+## 当前状态流怎么走
+
+可以用这张简图理解：
+
+```text
+配置中心公共快照
+  └─ 提供 theme / animationsEnabled / agentName / runtimeUrl / model
+
+hosted runtime 快照
+  └─ 提供 stopped / starting / ready / failed / degraded 以及 runtimeUrl
+
+Renderer 根装配层
+  └─ 合并上面两类输入
+       └─ 生成 CopilotBootstrapState
+            └─ 交给工作台和助手工作区继续使用
 ```
-Electron 主进程
-  └─> Hosted runtime 快照
-        └─> 通过 preload 暴露给 renderer
 
-配置中心主服务
-  └─> 公共快照
-        └─> 通过 preload 暴露给 renderer
+## 配置中心里哪些字段会进入状态装配
 
-Renderer
-  └─> 读取 bootstrap fields（agentName / runtimeUrl）
-        + hosted runtime 快照
-        └─> resolveCopilotConfigState()
-              └─> CopilotBootstrapState
-                    └─> UI 消费
-```
+### 当前公共快照字段
 
-## Bootstrap fields 当前来自哪里
-
-### 当前来源
-
-renderer 当前通过配置中心公共快照读取 bootstrap fields：
-
-- `snapshot.domains.assistantBehavior.agentName`
-- `snapshot.domains.hostConfig.runtimeUrl`
-
-然后由 `loadBootstrapFieldsFromConfigCenterPublicSnapshot()` 把这两个字段整理成统一结构。
-
-### 当前不参与聊天连接判断的公共字段
-
-公共快照里虽然还有：
+当前公共快照里有这些正式字段：
 
 - `frontendPreferences.theme`
+- `frontendPreferences.animationsEnabled`
+- `assistantBehavior.agentName`
+- `hostConfig.runtimeUrl`
 - `backendExposed.model`
 
-但它们当前**不参与聊天连接状态判断**：
+### 真正影响 bootstrap 连接判断的字段
 
-- `theme` 用于前端显示偏好
-- `model` 由主进程读取后参与 runtime 参数投影
+当前真正直接影响 bootstrap 连接判断的，是：
 
-## Hosted backend 状态语义
+- `hostConfig.runtimeUrl`
 
-### 状态定义
+### 当前不再作为 readiness 硬门槛的字段
 
-| 状态 | 当前语义 |
-| --- | --- |
-| `stopped` | 初始状态或已停止 |
-| `starting` | 子进程已启动，正在等待 `/ready` |
-| `ready` | 本地 runtime 已就绪，可提供 hosted 地址 |
-| `failed` | 启动失败或运行中遇到不可恢复错误 |
-| `degraded` | 曾经 ready，但后续异常退出；当前仍保留 base URL 供 renderer 继续尝试 |
+- `assistantBehavior.agentName`
 
-### `failed` 和 `degraded` 的区别
+它仍然会进入前端状态对象，也仍然有来源标记和配置入口，但当前不会再因为它缺失就阻止助手工作区继续走 session-first 主路径。
 
-这是最容易混淆的一组状态：
+### 不参与聊天连接判断、但仍然是正式字段的内容
 
-- **`failed`**：当前没有形成稳定可用的 hosted 入口
-- **`degraded`**：曾经形成过 hosted 入口，只是后续记录到了异常退出；当前可能仍能继续尝试连接
+- `theme`
+- `animationsEnabled`
+- `model`
 
-## Renderer 连接状态语义
+它们的作用分别是：
 
-### `loading`
+- `theme`：影响主题
+- `animationsEnabled`：影响动画开关
+- `model`：影响后端下次启动时的默认模型投影
 
-表示根装配层还在读取：
+## `runtimeUrl` 现在怎么选出来
 
-- 配置中心公共快照
-- hosted runtime 快照
+当前 renderer 不会无条件把配置中心里的 `runtimeUrl` 当成正式连接地址。
 
-这时还没有完成状态归并。
+### 情况 1：宿主状态为 `ready` / `starting` / `degraded`
 
-### `error`
+此时直接使用 hosted runtime 给出的地址。
 
-表示读取链路本身失败，例如：
-
-- 配置中心公共快照读取失败
-- hosted runtime 快照读取失败
-- preload 暴露接口不可用
-
-### `empty`
-
-表示当前两项 bootstrap fields 都缺失：
-
-- `runtimeUrl`
-- `agentName`
-
-并且宿主当前也没有提供可用 hosted 地址。
-
-### `incomplete`
-
-表示已经读到部分连接信息，但还缺少至少一个关键字段。
-
-最常见的情况是：
-
-- 宿主 ready，但 `agentName` 为空
-- 或开发态填写了 `runtimeUrl`，但 `agentName` 为空
-
-### `starting`
-
-表示宿主正在启动本地后端。
-
-### `ready`
-
-表示当前连接信息完整，可以挂载聊天入口。
-
-这时必须满足：
-
-- 最终选定的 `runtimeUrl` 不为空
-- `agentName` 不为空
-
-### `failed`
-
-表示宿主启动失败，并且当前没有可用的 dev override 可以回退。
-
-### `degraded`
-
-表示宿主运行态已经降级，但仍保留可用 URL，因此前端仍然允许挂载聊天入口。
-
-## Runtime URL 是怎么选出来的
-
-renderer 不会直接把配置中心里的 `runtimeUrl` 无脑当正式地址使用。
-
-当前选择规则是：
-
-### 宿主状态为 `ready` / `starting` / `degraded`
-
-直接使用 hosted runtime 提供的 `runtimeUrl`。
-
-此时来源标记为：
+来源记为：
 
 - `hosted`
 
-### 宿主状态为 `failed` / `stopped`
+### 情况 2：宿主状态为 `failed` / `stopped`
 
-只有在以下条件同时满足时，才允许使用配置中心中的 `hostConfig.runtimeUrl`：
+只有同时满足下面条件时，才允许使用配置中心中的 `hostConfig.runtimeUrl`：
 
-- 当前是开发模式
 - 当前不是打包态
+- 当前运行模式是 development
 - 配置中心里已经填写了 `runtimeUrl`
 
-此时来源标记为：
+来源记为：
 
 - `dev-override`
 
-### 其他情况
+### 情况 3：以上两条都不满足
 
-如果两条路径都拿不到地址，则：
+则当前没有可用地址：
 
 - `runtimeSource = 'none'`
 - `runtimeUrl = null`
 
-## 状态归并规则
+## 当前 bootstrap 状态归并规则
 
-当前归并逻辑可以概括成下面这张表：
+可以直接按这张表理解：
 
-| Hosted 状态 | bootstrap fields 是否完整 | 最终 renderer 状态 |
+| Hosted 状态 | 是否拿到可用 runtime URL | 最终 renderer 状态 |
 | --- | --- | --- |
-| `ready` | 完整 | `ready` |
-| `ready` | 不完整 | `incomplete` |
+| `ready` | 是 | `ready` |
+| `ready` | 否 | `incomplete` |
 | `starting` | 无论是否完整 | `starting` |
-| `degraded` | 完整 | `degraded` |
-| `degraded` | 不完整 | `incomplete` |
-| `failed` | 可用 dev override 且完整 | `ready` |
-| `failed` | 无可用 dev override | `failed` |
-| `stopped` | 可用 dev override 且完整 | `ready` |
-| `stopped` | 两项都缺失 | `empty` |
-| `stopped` | 只缺一部分 | `incomplete` |
+| `degraded` | 是 | `degraded` |
+| `degraded` | 否 | `incomplete` |
+| `failed` | 有 dev override | `ready` |
+| `failed` | 无 dev override | `failed` |
+| `stopped` | 有 dev override | `ready` |
+| `stopped` | 无 dev override | `empty` |
 
-## `ready` / `degraded` 为什么还要看 `agentName`
+这里最关键的是：
 
-这点很关键。
+- 当前 `missingFields` 实际只围绕 `runtimeUrl`
+- 不再把 `agentName` 缺失写成 readiness blocker
 
-当前聊天入口不是“只要有 URL 就能挂起来”，而是至少还要知道当前使用哪个 agent。
+## `loading`、`error`、`starting` 应该怎么区分
 
-所以现在：
+### `loading`
 
-- 宿主 `ready` 不等于聊天入口一定 `ready`
-- `agentName` 缺失时，前端仍会落到 `incomplete`
+表示根装配层还没完成第一次装配。
+
+这时候前端还在读取：
+
+- 配置中心公共快照
+- hosted runtime 快照
+
+### `error`
+
+表示读取链路本身出了问题。
+
+典型情况是：
+
+- preload 暴露接口不可用
+- 配置中心公共快照读取失败
+- hosted runtime 快照读取失败
+
+### `starting`
+
+表示读取链路本身没有坏，宿主只是还在启动本地后端。
+
+所以：
+
+- `error` 是“读不到”
+- `starting` 是“读到了，但后端还没 ready”
+
+## 当前状态对象里还有哪些辅助信息
+
+除了 `status` 本身，当前状态里还会带上：
+
+- `runtimeSource`
+- `runtimeUrl`
+- `agentName`
+- `agentNameSource`
+- `diagnostics`
+- `storageState`
+- `devOverrideAllowed`
+- `devOverrideConfigured`
+
+### 这些字段现在怎么理解
+
+#### `runtimeSource`
+
+表示当前实际使用的 runtime 地址来自哪里：
+
+- `hosted`
+- `dev-override`
+- `none`
+
+#### `agentNameSource`
+
+表示配置中心里当前是否有 `agentName`：
+
+- `config-center`
+- `missing`
+
+这个字段当前更适合做状态说明，而不是连接门槛判断。
+
+#### `storageState`
+
+当前主要区分：
+
+- `empty`
+- `stored`
+
+它现在主要反映 runtime override 这类连接字段是否有持久化值，不代表整个配置中心是否为空。
 
 ## 哪些更新会自动反映到界面
 
-### 会自动反映的
+### 配置中心更新：会自动同步
 
-配置中心公共快照现在已经有订阅更新机制。
+当前配置中心公共快照已经有订阅更新机制。
 
-因此这些字段变化后，根装配层会收到更新并重新计算 bootstrap 状态：
+因此这些字段变化后，根装配层会收到更新并重新计算状态：
 
+- `theme`
+- `animationsEnabled`
 - `agentName`
 - `runtimeUrl`
-- `theme`
+- `model`
 
 其中：
 
-- `agentName` / `runtimeUrl` 会影响连接状态
-- `theme` 会影响界面显示，但不影响聊天连接状态
+- `theme`、`animationsEnabled` 会影响工作台显示
+- `runtimeUrl` 会影响 bootstrap 连接判断
+- `model` 会更新配置，但要到下次完整启动才真正影响后端
+- `agentName` 会更新配置摘要，但当前不再阻止聊天主路径
 
-### 当前还不会主动推送的
+### runtime 运行事实：当前还不是完整持续推送
 
-hosted runtime 状态本身当前仍然主要是快照式读取。
+另一半边界也要记住：
 
-也就是说：
+- 配置中心更新已经可以推送到前端
+- 但 runtime 运行事实当前还主要是快照式读取
 
-- 配置中心字段更新现在可以推送到 renderer
-- 但 runtime 运行事实本身还没有形成完整的持续推送链路
+所以现在不能把系统写成“所有运行态变化都会自动实时流式推送到 renderer”。
 
-因此文档里不能写成“所有运行态变化都会实时推送到前端”。
-
-## UI 当前怎样消费这些状态
+## 这些状态在 UI 中怎么被消费
 
 ### 根装配层
 
 根装配层负责：
 
 - 首次读取 bootstrap 状态
-- 在配置中心公共快照更新后重新计算 bootstrap 状态
-- 决定是否加载 CopilotKit Provider
-- 统一提供 retry 动作
+- 在配置中心更新后重新计算 bootstrap 状态
+- 对工作台统一提供 retry 动作
+- 在根级失败时保持可解释的启动壳
+
+### 助手工作区
+
+助手工作区只会在 connectable 状态下继续：
+
+- 拉后端智能体目录
+- 创建会话
+- 获取能力面
+- 渲染消息发送壳
 
 ### 聊天面板
 
-聊天面板根据最终状态渲染：
+聊天面板会根据 bootstrap 状态渲染：
 
 - `loading`：等待装配
-- `error`：读取失败
-- `empty`：未获得可用运行时
-- `incomplete`：连接信息不完整
+- `empty`：还没有可用运行时
+- `incomplete`：当前连接信息仍不完整
 - `starting`：宿主正在启动
-- `failed`：宿主启动失败，可显示失败摘要与重试
-- `degraded`：显示降级警告，但仍可挂载聊天区
-- `ready`：显示连接详情并挂载聊天区
+- `failed`：宿主启动失败
+- `degraded`：宿主降级但仍可继续
+- `ready`：进入 session-first 聊天壳
+- `error`：读取链路失败
 
 ## 典型场景
 
@@ -306,66 +331,48 @@ hosted runtime 状态本身当前仍然主要是快照式读取。
 
 1. 主进程启动 Python runtime
 2. hosted 状态从 `starting` 进入 `ready`
-3. renderer 读到 hosted URL 和配置中心中的 `agentName`
-4. 最终状态为 `ready`
+3. renderer 拿到 hosted URL
+4. bootstrap 状态进入 `ready`
+5. 助手工作区开始拉智能体目录并允许用户创建会话
 
 ### 场景 2：宿主失败，但开发态 override 可用
 
 1. hosted 状态为 `failed`
-2. 配置中心里已填写开发态 `runtimeUrl`
-3. `agentName` 也存在
-4. 最终 renderer 状态仍可进入 `ready`
-5. 此时 `runtimeSource = 'dev-override'`
+2. 配置中心里已经填写开发态 `runtimeUrl`
+3. 当前环境允许 dev override
+4. bootstrap 仍可进入 `ready`
+5. 当前 `runtimeSource = 'dev-override'`
 
 ### 场景 3：宿主 ready，但 `agentName` 缺失
 
-1. hosted runtime 已就绪
-2. `assistantBehavior.agentName` 为空
-3. 最终状态不是 `ready`，而是 `incomplete`
+当前和旧文档最不一样的地方就在这里。
 
-### 场景 4：主题更新
+现在更准确的结果是：
 
-1. 设置页修改 `theme`
-2. 主进程写盘并广播公共快照
-3. App 收到更新后同步主题
-4. 但聊天连接状态本身不会因为 `theme` 改变而变化
+1. 宿主已经给出可用 runtime URL
+2. `agentName` 可以缺失
+3. bootstrap 仍可进入 `ready`
+4. 后续聊天智能体由后端目录选择和会话创建来决定
 
-## 常见误解
+### 场景 4：读取链路本身失败
 
-### 误解 1：`runtimeUrl` 现在总是来自配置中心
+1. 配置中心公共快照或 runtime 快照读取失败
+2. 根装配层进入 `error`
+3. 工作台不会继续误判成“只是后端没启动”
 
-不对。
+## 当前不要再写成这些说法
 
-当前优先级仍然是：
+下面这些说法现在都不准确：
 
-1. hosted runtime 提供的地址
-2. 开发态 override
-
-### 误解 2：公共快照里的所有字段都会影响聊天连接状态
-
-不对。
-
-当前真正参与聊天连接判断的只有：
-
-- `agentName`
-- `runtimeUrl`
-
-### 误解 3：配置中心接入以后，runtime 状态也变成实时推送了
-
-不对。
-
-当前有推送的是**配置中心公共快照更新**，不是完整的 runtime 状态流。
-
-### 误解 4：`model` 现在也是进入 `ready` 的必填项
-
-不对。
-
-`model` 当前属于主进程向 runtime 投影的样板字段，不属于 renderer bootstrap 判断字段。
+- “`agentName` 仍然是前端进入 `ready` 的硬条件。”
+- “只要 runtime ready 且有 `agentName`，就会直接进入聊天。”
+- “前端启动成功后主要是在等旧 Provider 注入。”
+- “聊天 readiness 现在仍主要围绕全局 agent 展开。”
 
 ## 相关文档
 
-- [当前生效字段参考](./reference-current-fields.md)
+- [前端分册入口](./README.md)
 - [前端现在怎样连接后端](./backend-connection-contract.md)
 - [前端当前 UI 状态说明](./ui-current-state.md)
+- [系统架构总览](../system/architecture-overview.md)
 - [会话与状态模型](../system/session-and-state-model.md)
-- [运行时生命周期](../system/runtime-lifecycle.md)

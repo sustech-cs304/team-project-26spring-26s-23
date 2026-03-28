@@ -1,302 +1,270 @@
 ---
 title: 前端分册入口
-description: 前端文档入口，汇总桌面前端职责、统一配置中心现状、页面成熟度与推荐阅读路径。
+description: 前端正式文档入口，帮助读者理解当前桌面前端、统一配置中心、session-first 聊天主路径和设置页现状。
 sidebar_position: 1
 sidebar_label: 总览
 ---
 
 # 前端分册入口
 
-## 文档目标
+如果你只打算先读一篇前端总览，建议先看这篇。
 
-本文档作为前端分册的权威入口，帮助读者快速回答下面几个问题：
+它主要回答这些问题：
 
-- 当前桌面前端到底负责什么
-- 统一配置中心现在已经做到哪一步
-- 设置页里哪些内容已经接上正式链路，哪些还只是前端交互
-- renderer、preload、main process 和 hosted runtime 现在怎样分工
+- 当前桌面前端到底负责什么。
+- 统一配置中心现在已经落到什么程度。
+- 聊天主路径为什么已经不再是早期的全局 agent 方案。
+- 设置页里哪些内容已经进入正式链路，哪些还只是页面交互。
+- 现在应该去哪里找相关实现。
 
-如果你只看一篇前端总览，建议先看这篇。
+## 先用一句话认识当前前端
 
-## 前端子系统定位
+当前前端不是通用浏览器里的网页，而是一个运行在 Electron 桌面宿主中的 React renderer。
 
-当前前端不是通用浏览器里的单页应用，而是一个运行在 Electron 桌面宿主中的 React renderer。
+它现在最重要的三条主线是：
 
-它当前主要负责：
+1. **统一配置中心**：前端偏好、宿主连接信息和后端默认模型已经进入一套正式持久化系统。
+2. **session-first 聊天壳**：聊天不再依赖“全局选一个 agent”，而是先看后端目录、再建会话、再按请求选择模型和工具。
+3. **工作台 UI 收敛**：启动页主题、聊天面板布局、模型选择器、工具选择器、设置页入口都已经形成当前外观。
 
-- 提供工作台界面和页面路由
-- 通过 preload 消费主进程暴露的最小 IPC 能力
-- 根据配置中心公共快照与 hosted runtime 快照，决定当前聊天入口是否可用
-- 在连接条件满足时，把 `runtimeUrl` 与 `agentName` 交给 CopilotKit 挂载最小聊天链路
-- 承载设置页，并逐步把真正需要长期生效的字段接入统一配置中心
+## 当前前端负责什么
 
-## 前端快速上手
+### 1. 承载桌面工作台
 
-### 安装依赖
+当前前端提供：
 
-在 `frontend-copilot/` 目录执行：
+- 左侧主图标栏
+- 助手工作区
+- 设置工作区
+- 能力、文件、开发三个扩展工作区
 
-```bash
-cd frontend-copilot
-npm install
-```
+其中，真正接近主路径的仍然是：
 
-### 启动开发环境
+- 助手工作区
+- 设置工作区
 
-常用开发命令：
+### 2. 消费主进程暴露的最小能力
 
-```bash
-cd frontend-copilot
-npm run dev
-npm run dev -- -- --runtime-model test
-npm run dev:hosted
-```
+renderer 现在不会自己直接读底层配置文件，也不会直接拿到 Python 启动参数、日志文件或任意文件系统访问能力。
 
-当前开发态会优先尝试由 Electron 主进程托管本地 Python desktop runtime。
+它当前主要通过 preload 消费：
 
-如果你要做最小联调，建议先记住这几个事实：
+- 配置中心公共快照
+- 配置中心公共补丁
+- 配置中心公共快照更新订阅
+- hosted runtime 快照
+- runtime retry 动作
 
-- 连接状态现在由“配置中心公共快照 + hosted runtime 快照”共同决定
-- `runtimeUrl` 在当前实现里主要表示**开发态运行时覆盖地址**
-- `agentName` 仍然是进入 `ready` / `degraded` 聊天入口的必需字段之一
-- renderer 已经不再直接读取旧 `copilot-settings` 接口
+### 3. 负责当前聊天 UI 主路径
 
-### 构建、测试与检查
+当前聊天主路径已经变成：
 
-```bash
-cd frontend-copilot
-npm run build
-npm run preview
-npm run test
-npm run lint
-npx tsc --noEmit
-```
+1. 先确认有可用 runtime URL。
+2. 从后端拉智能体目录。
+3. 选择一个智能体。
+4. 创建会话。
+5. 读取这个会话的能力面。
+6. 发送消息时，再显式给出本次模型和工具选择。
 
-如果你需要验证 bundled runtime staging，还可以执行：
+这和早期文档里常见的“全局 agentName + 直接开聊”已经不是一回事了。
 
-```bash
-cd frontend-copilot
-npm run stage:bundled-runtime
-```
+### 4. 承载已经正式接入的设置入口
 
-## 先看统一配置中心当前事实
+设置页现在已经不只是静态表单。
 
-### 当前已经正式落地了什么
+当前已进入正式链路的字段包括：
 
-当前前端已经有一套正式可用的统一配置中心主链路：
+- `theme`
+- `animationsEnabled`
+- `agentName`
+- `runtimeUrl`
+- `model`
 
-1. **主进程**按域读取和写回配置文档。
-2. **preload**向 renderer 暴露公共快照、公共补丁和公共快照订阅接口。
-3. **renderer**不再依赖旧 renderer settings API，而是统一消费配置中心公共快照。
-4. **设置页**已经接入一小部分真正生效的字段，而不是整页都还停留在占位阶段。
+但这些字段的作用并不一样：
 
-这条链路现在已经能支撑三类事实：
+- `theme` 和 `animationsEnabled` 直接影响前端显示。
+- `runtimeUrl` 是开发态运行时覆盖地址。
+- `model` 是宿主投影给后端 runtime 的默认模型字段。
+- `agentName` 仍然保留在配置中心里，但当前聊天 readiness 已不再以它为硬门槛。
 
-- 前端偏好持久化：`theme`
-- 聊天 bootstrap 字段：`agentName`、`runtimeUrl`
-- 一个最小的 runtime 投影样板：`model`
+## 现在系统是怎么工作的
 
-### 当前分域
+### 问题 1：配置现在从哪里来
 
-当前统一配置中心按 4 个稳定域组织：
+答案是：**从主进程统一配置中心来。**
 
-| 配置域 | 当前作用 | 当前字段 |
-| --- | --- | --- |
-| `frontend-preferences` | 前端显示偏好 | `theme` |
-| `assistant-behavior` | assistant 使用行为 | `agentName` |
-| `host-config` | 宿主持有的连接配置 | `runtimeUrl` |
-| `backend-exposed` | 允许宿主安全投影给 runtime 的字段样板 | `model` |
+当前已经不是 renderer 直接围着旧 `copilot settings` 语义读写，而是：
 
-这些域的重点不是“多拆几个文件”，而是把 owner、编辑权限和生效边界分开。
+1. 主进程读取按域拆分的 JSON 文档。
+2. 如新文档还不存在，再尝试从旧 `copilot-settings.json` 迁移可用字段。
+3. 主进程把可公开部分整理成公共快照。
+4. renderer 只消费这份公共快照。
 
-### 当前正式字段做到哪一步
+### 问题 2：聊天现在靠什么进入可用状态
 
-| 字段 | 当前状态 | 说明 |
-| --- | --- | --- |
-| `theme` | 已有 UI、已持久化、已即时生效 | 设置页切换后会立即更新工作台主题，并写入配置中心 |
-| `agentName` | 已有 UI、已持久化、已参与连接判断 | 缺失时 renderer 会落到 `incomplete` |
-| `runtimeUrl` | 已有 UI、已持久化、已参与连接判断 | 当前主要作为开发态 override，而不是发布态默认主来源 |
-| `model` | 已纳入配置中心与主进程投影逻辑，但暂无正式 UI | 不应写成“后端可暴露字段样板已经全面完成” |
+答案是：**先看有没有可用 runtime URL，再继续走 session-first 链路。**
 
-### 当前还没有做到什么
+当前前端根装配层会把：
 
-下面这些内容现在还不能写成“已经纳入统一配置中心”：
+- 配置中心公共快照
+- hosted runtime 快照
 
-- 设置页里大多数模型服务配置
-- 默认模型页里的模型路由 UI
-- 常规设置中的语言、代理、通知等字段
-- 显示设置中的字号、密度、动画等字段
-- 数据、MCP、搜索、记忆、文档处理页里的大多数表单项
-- API 服务器页里“后端地址”“重连策略”“健康检查轮询”等占位项
+合并成 bootstrap 状态。
 
-换句话说，**设置页已经开始接统一配置中心，但还远没有全部收编完成。**
+这里当前真正影响 connectable 的关键条件，是有没有可用的 runtime URL。`agentName` 虽然仍然存在于配置中心中，但不再阻止助手工作区继续进入“目录 → 会话 → 消息”的主路径。
 
-## 旧设置链路现在怎么理解
+### 问题 3：聊天为什么叫 session-first
 
-需要把下面两件事分开看：
+因为现在系统把三件事拆开了：
 
-1. **renderer 侧**：旧的 settings 读写 API 已经移除，renderer 现在只消费配置中心公共接口。
-2. **main process 内部**：仍保留从旧 `copilot-settings.json` 迁移 `runtimeUrl` / `agentName` 的语义。
+- **后端目录**告诉前端有哪些智能体。
+- **会话**决定当前绑定的是哪个智能体。
+- **消息请求**决定本次使用哪个模型、哪些工具。
 
-所以当前准确说法是：
+这样做的结果是：
 
-- 旧设置格式仍有 **legacy disk migration** 价值；
-- 但它已经不是 renderer 的正式接口，也不是未来长期配置外观。
+- 智能体目录以后台返回为准。
+- 会话切换有了明确的边界。
+- 模型选择器和工具选择器真正进入了消息级策略，而不是只停留在页面装饰层。
 
-## 现在设置页该怎么读
+## 现在应该怎么读设置页
 
 ### 已经接上正式链路的部分
 
-设置页当前最值得优先看的，是这三块：
+优先看这几块：
 
-1. **显示设置中的主题切换**
-   - 现在已经走统一配置中心
-   - 修改后会立即作用到工作台主题
-   - 失败时会回滚，而不是只改内存状态
+1. **显示设置**
+   - 主题切换已持久化并立即生效。
+   - 微动画开关已持久化并立即生效。
 
-2. **常规设置中的 Assistant 行为配置卡片**
-   - 当前提供 `agentName` 正式入口
-   - 会直接影响聊天入口的 bootstrap 状态
+2. **常规设置**
+   - `agentName` 已接入配置中心。
+   - 但它现在更适合作为 assistant 偏好字段理解，而不是聊天必填项。
 
-3. **API 服务器页中的宿主配置卡片**
-   - 当前提供 `runtimeUrl` 正式入口
-   - 该字段当前语义是开发态 override
-   - 同页还会显示根层 bootstrap 摘要和统一重试动作
+3. **默认模型**
+   - 已提供后端默认模型卡片，对应 `backendExposed.model`。
+   - 保存后需要重启整个程序，下一次后端启动才会吃到新的默认模型。
 
-### 仍然主要是前端本地交互的部分
+4. **API 服务器**
+   - 已提供开发态 `runtimeUrl` 正式入口。
+   - 同页会展示根装配层状态摘要和统一 retry 动作。
 
-其余大多数字段仍然主要是：
+### 仍然主要是本地交互的部分
 
-- 有页面结构
-- 能输入、切换、选择
-- 但还没有进入统一配置中心正式持久化闭环
-- 也没有形成稳定的后端连接契约
+设置页里大量表单目前还只是前端交互，例如：
 
-因此读设置页时不要按“页面外观很完整”来判断是否已经落地。
+- 模型服务商编辑器
+- 默认模型路由下的主助手模型 / 快速执行模型下拉框
+- 字号和界面密度
+- 数据、MCP、搜索、记忆、文档处理页面的大多数字段
+- API 页面中的后端地址、重连策略、健康检查轮询
 
-## renderer / preload / main process / runtime 现在怎样分工
+所以不能因为页面已经做得很完整，就把所有字段都写成正式配置事实。
 
-### 1. Main process
+## 当前 UI 已经发生了哪些关键变化
 
-**代码位置**：`frontend-copilot/electron/`
+### 1. 启动页主题已经先于 React 主界面生效
 
-主进程当前负责：
+启动时会先根据系统主题给出一个浅色或深色的兜底外观，然后再用配置中心里的正式主题覆盖。
 
-- 创建窗口、管理生命周期
-- 维护统一配置中心主服务
-- 维护 hosted runtime 启动、停止和重试
-- 读取 `backend-exposed.model` 这类可投影字段，并参与 Python 启动参数组装
-- 把配置中心公共快照更新广播给 renderer
+这意味着：
 
-### 2. Preload
+- 冷启动时不再总是固定白底。
+- 夜间模式现在已经进入正式启动体验，而不是工作台渲染完以后才切。
 
-**代码位置**：`frontend-copilot/electron/preload.ts`
+### 2. 助手工作区已经是 session-first 三栏布局
 
-preload 当前只暴露最小桥接面：
+当前三栏分别是：
 
-- 读取配置中心公共快照
-- 订阅配置中心公共快照更新
-- 发送配置中心公共补丁
-- 读取 hosted runtime 快照
-- 触发 runtime 重试
+- 左侧：后端智能体目录
+- 中间：当前窗口内存中的会话创建与切换列表
+- 右侧：聊天面板
 
-它不会把底层文件路径、spawn 参数或任意文件系统访问能力直接交给 renderer。
+这里和旧文档最不同的地方是：
 
-### 3. Renderer 根装配层
+- 智能体列表不再写成前端静态真源。
+- 中间列也不再是纯占位，它已经承担建会话和切换会话的动作。
 
-**代码位置**：`frontend-copilot/src/CopilotAppRoot.tsx`
+### 3. 聊天面板已经有现代化的消息区和输入区布局
 
-根装配层当前负责：
+当前聊天区已经包括：
 
-- 统一读取 bootstrap 状态
-- 在配置中心公共快照更新后重新计算 bootstrap 状态
-- 决定是否加载 CopilotKit Provider
-- 统一持有“重试读取运行态”的动作
+- 可滚动消息流
+- 空会话占位提示
+- 底部粘性输入区
+- 发送按钮
+- 模型选择器
+- 工具选择器
 
-这里的关键变化是：renderer 已不再自己维护一套旧设置读取入口，而是统一消费公共快照。
+### 4. 模型选择器与工具选择器都已经进入当前主界面
 
-### 4. Runtime
+但它们的语义不同：
 
-**代码位置**：`frontend-copilot/electron/runtime/` 与 `backend/app/desktop_runtime/`
+- **模型选择器**：当前是前端维护的请求级模型选择 UI，用于 `message/send`。
+- **工具选择器**：当前读取会话能力面返回的工具目录，用于 `message/send` 的 `enabledTools`。
 
-当前 runtime 仍保持原有 owner 分层：
+不要把它们和设置页里的 `backendExposed.model` 混为一谈。
 
-- Electron 负责把宿主条件和可投影字段翻译成 Python 启动参数
-- Python 侧继续负责解释运行参数并启动 HTTP 服务
-- Python runtime 当前不会直接读取配置中心分域文件
+## 当前最值得优先看的实现位置
 
-这也意味着：统一配置中心新增的是**字段治理与宿主聚合层**，不是改写 Electron → Python 的 owner 分层。
+### 前端入口与装配
 
-## 前端组成部分
+- `frontend-copilot/src/main.tsx`
+- `frontend-copilot/src/CopilotAppRoot.tsx`
+- `frontend-copilot/src/App.tsx`
 
-### 1. Electron 主进程层
+### 统一配置中心相关
 
-- `main.ts`：主进程入口、统一配置中心服务接入、runtime 启停、IPC handlers 注册
-- `renderer-ipc.ts`：注册 renderer 当前真正需要的 IPC 通道
-- `config-center/`：统一配置中心 schema、存储路径、主进程服务、公共快照与公共补丁解析
-- `runtime/`：hosted backend 启动配置、状态、诊断、日志与进程管理
+- `frontend-copilot/electron/config-center/`
+- `frontend-copilot/src/features/copilot/config-center.ts`
+- `frontend-copilot/src/workbench/theme-config.ts`
+- `frontend-copilot/src/workbench/animation-config.ts`
 
-### 2. Renderer 配置与聊天层
+### 运行时与连接状态相关
 
-- `src/features/copilot/config-center.ts`：renderer 侧配置中心公共 API 封装
-- `src/features/copilot/config.ts`：把 bootstrap fields 与 runtime 快照归并成最终连接状态
-- `src/features/copilot/runtime.ts`：runtime 快照读取与重试封装
-- `src/features/copilot/CopilotChatPanel.tsx`：按状态渲染聊天区域
+- `frontend-copilot/electron/runtime/`
+- `frontend-copilot/src/features/copilot/config.ts`
+- `frontend-copilot/src/features/copilot/runtime.ts`
 
-### 3. 工作台与设置层
+### 聊天主路径相关
 
-- `src/App.tsx`：工作台外壳与主题应用
-- `src/workbench/theme-config.ts`：主题读取、保存与订阅
-- `src/workbench/settings/ConfigCenterPublicFieldCards.tsx`：当前已接入统一配置中心的设置卡片
-- `src/workbench/settings/SettingsWorkspace.tsx`：设置页工作区与各分区页面
+- `frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`
+- `frontend-copilot/src/features/copilot/chat-contract.ts`
+- `frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`
+- `frontend-copilot/src/features/copilot/components/ModelPicker.tsx`
+- `frontend-copilot/src/features/copilot/components/ToolPicker.tsx`
 
-## 当前已实现什么
+### 设置页相关
 
-### 已落地能力
-
-- ✅ Electron 桌面工作台和多工作区结构
-- ✅ Hosted Python runtime 启停与状态读取
-- ✅ 配置中心分域存储与主进程聚合
-- ✅ 公共快照 / 公共补丁 / 公共订阅桥接
-- ✅ renderer 统一消费 bootstrap fields
-- ✅ `theme`、`agentName`、`runtimeUrl` 的正式接入
-- ✅ `model` 进入配置中心 schema 和主进程 runtime 投影链路
-- ✅ 主题即时生效与失败回滚
-- ✅ 配置变更后根装配层重新计算 bootstrap 状态
-
-### 当前边界
-
-- ⚠️ 不是完整配置管理产品：设置页大多数分区仍是本地交互
-- ⚠️ 不是完整聊天产品：当前仍聚焦最小聊天主路径
-- ⚠️ 不是“后端可暴露字段”完整落地：目前只有 `model` 一个样板字段接入到正式链路
-- ⚠️ 不是 runtime 直接读配置文件：宿主 owner 分层仍然存在
+- `frontend-copilot/src/workbench/settings/SettingsWorkspace.tsx`
+- `frontend-copilot/src/workbench/settings/ConfigCenterPublicFieldCards.tsx`
 
 ## 推荐阅读顺序
 
-### 如果你想先看统一配置中心做到哪一步
+### 如果你想先看配置中心现在到底做到哪一步
 
 1. [当前生效字段参考](./reference-current-fields.md)
 2. [前端现在怎样连接后端](./backend-connection-contract.md)
-3. [前端当前 UI 状态说明](./ui-current-state.md)
-4. [前端运行时状态参考](./reference-runtime-states.md)
+3. [前端运行时状态参考](./reference-runtime-states.md)
 
-### 如果你想理解跨层状态关系
+### 如果你想先看当前 UI 长什么样、哪些已经接上正式链路
 
-1. [会话与状态模型](../system/session-and-state-model.md)
-2. [运行时生命周期](../system/runtime-lifecycle.md)
-3. [后端运行与配置](../backend/run-and-config.md)
+1. [前端当前 UI 状态说明](./ui-current-state.md)
+2. [页面能力参考](./reference-page-capabilities.md)
+3. [已实现、占位与下一步](./roadmap-and-placeholders.md)
 
-### 如果你想评估还有哪些内容没接完
+### 如果你想跨层理解聊天和配置
 
-1. [页面能力参考](./reference-page-capabilities.md)
-2. [已实现、占位与下一步](./roadmap-and-placeholders.md)
+1. [系统架构总览](../system/architecture-overview.md)
+2. [聊天运行时契约](../system/chat-runtime-contract.md)
+3. [会话与状态模型](../system/session-and-state-model.md)
+4. [后端运行与配置](../backend/run-and-config.md)
 
-## 重要提醒
+## 阅读这组文档时的一个提醒
 
-阅读当前前端文档时，请优先按下面的顺序判断事实：
+当前最容易误判的地方有两个：
 
-1. 先看统一配置中心正式字段有没有接入
-2. 再看这些字段有没有真正进入运行行为或界面行为
-3. 最后再看设置页里还有哪些内容只是占位
+1. **不要把旧 renderer 侧 `copilot settings` 当成现行主入口。**
+2. **不要把设置页里所有看起来完整的表单都当成已经生效的正式配置。**
 
-这样最容易回答“现在这个配置系统到底做到哪一步了”。
+先看配置中心正式字段、再看聊天主路径、最后再看占位页面，最容易读清当前系统事实。
