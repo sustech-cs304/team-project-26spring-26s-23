@@ -9,51 +9,36 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import { ArrowUp } from 'lucide-react'
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
 import {
-  RuntimeRequestError,
   sendRuntimeMessage,
-  type RuntimeMessageSendResponse,
 } from './chat-contract'
+import { CopilotComposer } from './CopilotComposer'
+import { CopilotMessageList } from './CopilotMessageList'
+import {
+  DEFAULT_COPILOT_COMPOSER_HEIGHT,
+  buildRuntimeDebugSummary,
+  buildRuntimeMessageSendInput,
+  buildSessionDebugSummary,
+  clampComposerHeight,
+  createAssistantTurn,
+  createComposerDraftFromSession,
+  createEmptyComposerDraft,
+  createErrorTurn,
+  createUserTurn,
+  formatModeSummary,
+  formatRequestOptionsError,
+  formatRuntimeSource,
+  formatRuntimeMessageSendError,
+  parseRequestOptionsText,
+  type CopilotChatComposerDraft,
+  type CopilotConversationTurn,
+} from './copilot-chat-helpers'
 import type { CopilotBootstrapState, CopilotConfigState, CopilotDiagnosticsSummary } from './types'
-import { ModelPicker } from './components/ModelPicker'
 import { NotConnectedNotice } from './components/NotConnectedNotice'
-import { ToolPicker } from './components/ToolPicker'
-import { getCopilotDefaultModel } from './model-picker'
 import './copilot.css'
-
-export interface CopilotChatComposerDraft {
-  messageText: string
-  model: string
-  enabledTools: string[]
-  requestOptionsText: string
-}
-
-export interface RuntimeMessageSendInput {
-  runtimeUrl: string
-  sessionId: string
-  agent: string
-  message: {
-    role: 'user'
-    content: string
-  }
-  model: string
-  enabledTools: string[]
-  requestOptions: Record<string, unknown>
-}
-
-interface CopilotConversationTurn {
-  id: string
-  kind: 'user' | 'assistant' | 'error'
-  title: string
-  content: string
-  resolvedModelId?: string
-  resolvedToolIds?: string[]
-  requestOptions?: Record<string, unknown>
-}
 
 interface CopilotChatPanelProps {
   state: CopilotBootstrapState
@@ -80,31 +65,11 @@ interface RenderPanelActions {
   onSend: (event: FormEvent<HTMLFormElement>) => void
   sendStatus: 'idle' | 'sending'
   sendDisabledReason: string | null
-  sendError: string | null
   conversation: CopilotConversationTurn[]
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
-
-interface RenderMessageShellActions {
-  sessionShell: AssistantSessionShell
-  sessionError: string | null
-  composerDraft: CopilotChatComposerDraft
-  onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
-  onSend: (event: FormEvent<HTMLFormElement>) => void
-  sendStatus: 'idle' | 'sending'
-  sendDisabledReason: string | null
-  sendError: string | null
-  conversation: CopilotConversationTurn[]
-  composerInputRef: RefObject<HTMLTextAreaElement>
-  composerHeight: number
-  onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
-}
-
-const DEFAULT_COPILOT_COMPOSER_HEIGHT = 160
-const MIN_COPILOT_COMPOSER_HEIGHT = 120
-const MAX_COPILOT_COMPOSER_HEIGHT = 360
 
 export function CopilotChatPanel({
   state,
@@ -120,7 +85,7 @@ export function CopilotChatPanel({
   const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
   const [conversation, setConversation] = useState<CopilotConversationTurn[]>([])
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending'>('idle')
-  const [sendError, setSendError] = useState<string | null>(null)
+  const [, setSendError] = useState<string | null>(null)
   const [composerHeight, setComposerHeight] = useState(DEFAULT_COPILOT_COMPOSER_HEIGHT)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const composerHeightRef = useRef(DEFAULT_COPILOT_COMPOSER_HEIGHT)
@@ -344,7 +309,6 @@ export function CopilotChatPanel({
         onSend: handleSend,
         sendStatus,
         sendDisabledReason,
-        sendError,
         conversation,
         composerInputRef,
         composerHeight,
@@ -526,7 +490,6 @@ function renderSessionContent(actions: RenderPanelActions) {
     onSend: actions.onSend,
     sendStatus: actions.sendStatus,
     sendDisabledReason: actions.sendDisabledReason,
-    sendError: actions.sendError,
     conversation: actions.conversation,
     composerInputRef: actions.composerInputRef,
     composerHeight: actions.composerHeight,
@@ -534,304 +497,38 @@ function renderSessionContent(actions: RenderPanelActions) {
   })
 }
 
-function renderMessageSendShell(actions: RenderMessageShellActions) {
-  const sessionShell = actions.sessionShell
-  const capabilities = sessionShell.capabilities
-
+function renderMessageSendShell(actions: {
+  sessionShell: AssistantSessionShell
+  sessionError: string | null
+  composerDraft: CopilotChatComposerDraft
+  onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  onSend: (event: FormEvent<HTMLFormElement>) => void
+  sendStatus: 'idle' | 'sending'
+  sendDisabledReason: string | null
+  conversation: CopilotConversationTurn[]
+  composerInputRef: RefObject<HTMLTextAreaElement>
+  composerHeight: number
+  onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
+}) {
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
-        <div
-          className="copilot-chat__stream copilot-chat__stream--scrollbarless"
-          data-testid="chat-message-scroll-region"
-          data-scrollbar-visibility="hidden"
-        >
-          {actions.conversation.length === 0
-            ? (
-                <div className="copilot-chat__empty">
-                  <p className="copilot-chat__empty-title">当前尚未发送消息</p>
-                </div>
-              )
-            : actions.conversation.map((turn) => (
-                <article
-                  key={turn.id}
-                  className={`copilot-chat__message copilot-chat__message--${turn.kind}`}
-                >
-                  {turn.kind !== 'user' && <p className="copilot-chat__message-label">{turn.title}</p>}
-                  <p className="copilot-chat__message-text">{turn.content}</p>
-                </article>
-              ))}
-        </div>
-
-        <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={actions.onSend}>
-          <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
-            <ModelPicker
-              selectedModelId={actions.composerDraft.model}
-              onSelectModel={(model) => {
-                actions.onComposerDraftChange((current) => ({
-                  ...current,
-                  model: model.id,
-                }))
-              }}
-            />
-            <ToolPicker
-              tools={capabilities.allAvailableTools}
-              selectedToolIds={actions.composerDraft.enabledTools}
-              recommendedToolIds={capabilities.recommendedToolsForAgent}
-              onChangeToolIds={(enabledTools: string[]) => {
-                actions.onComposerDraftChange((current) => ({
-                  ...current,
-                  enabledTools,
-                }))
-              }}
-            />
-          </div>
-
-          <div
-            className="copilot-chat__composer-resize-handle"
-            data-testid="chat-composer-resize-handle"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="拖动以调整输入区高度"
-            onMouseDown={actions.onComposerResizeStart}
-          />
-
-          <div
-            className="copilot-chat__composer-surface"
-            data-testid="chat-composer-surface"
-            style={{ height: `${actions.composerHeight}px` }}
-          >
-            <div className="copilot-panel__field-group copilot-chat__composer-field">
-              <textarea
-                ref={actions.composerInputRef}
-                className="copilot-chat__composer-input"
-                name="messageText"
-                aria-label="消息内容"
-                value={actions.composerDraft.messageText}
-                onChange={(event) => {
-                  const nextValue = event.currentTarget.value
-                  actions.onComposerDraftChange((current) => ({
-                    ...current,
-                    messageText: nextValue,
-                  }))
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
-                    return
-                  }
-
-                  if (event.ctrlKey) {
-                    event.preventDefault()
-                    const textarea = event.currentTarget
-                    const { selectionStart, selectionEnd } = textarea
-                    const currentValue = actions.composerDraft.messageText
-                    const nextValue = `${currentValue.slice(0, selectionStart)}\n${currentValue.slice(selectionEnd)}`
-
-                    actions.onComposerDraftChange((current) => ({
-                      ...current,
-                      messageText: nextValue,
-                    }))
-
-                    requestAnimationFrame(() => {
-                      textarea.focus()
-                      const nextCaretPosition = selectionStart + 1
-                      textarea.setSelectionRange(nextCaretPosition, nextCaretPosition)
-                    })
-                    return
-                  }
-
-                  event.preventDefault()
-                  if (actions.sendDisabledReason === null) {
-                    event.currentTarget.form?.requestSubmit()
-                  }
-                }}
-                placeholder="按 Enter 发送，按 Ctrl + Enter 换行"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="copilot-chat__send-button"
-              data-testid="chat-composer-send-button"
-              disabled={actions.sendDisabledReason !== null}
-              title={actions.sendDisabledReason ?? '发送消息'}
-              aria-label={actions.sendDisabledReason ?? '发送消息'}
-            >
-              {actions.sendStatus === 'sending'
-                ? <span className="copilot-chat__send-button-spinner" aria-hidden="true">…</span>
-                : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
-            </button>
-          </div>
-
-          {actions.sessionError !== null && (
-            <p className="copilot-panel__error" role="alert">
-              {actions.sessionError}
-            </p>
-          )}
-        </form>
+        <CopilotMessageList conversation={actions.conversation} />
+        <CopilotComposer
+          capabilities={actions.sessionShell.capabilities}
+          draft={actions.composerDraft}
+          onDraftChange={actions.onComposerDraftChange}
+          onSubmit={actions.onSend}
+          sendStatus={actions.sendStatus}
+          sendDisabledReason={actions.sendDisabledReason}
+          sessionError={actions.sessionError}
+          composerInputRef={actions.composerInputRef}
+          composerHeight={actions.composerHeight}
+          onResizeStart={actions.onComposerResizeStart}
+        />
       </section>
     </section>
   )
-}
-
-export function createComposerDraftFromSession(sessionShell: AssistantSessionShell): CopilotChatComposerDraft {
-  return {
-    messageText: '',
-    model: getCopilotDefaultModel().id,
-    enabledTools: [...sessionShell.capabilities.defaultEnabledTools],
-    requestOptionsText: '{}',
-  }
-}
-
-export function buildRuntimeMessageSendInput(input: {
-  runtimeUrl: string
-  sessionShell: AssistantSessionShell
-  draft: CopilotChatComposerDraft
-  requestOptions: Record<string, unknown>
-}): RuntimeMessageSendInput {
-  return {
-    runtimeUrl: input.runtimeUrl,
-    sessionId: input.sessionShell.sessionId,
-    agent: input.sessionShell.boundAgent.id,
-    message: {
-      role: 'user',
-      content: input.draft.messageText.trim(),
-    },
-    model: input.draft.model.trim(),
-    enabledTools: dedupeToolIds(input.draft.enabledTools),
-    requestOptions: { ...input.requestOptions },
-  }
-}
-
-export function parseRequestOptionsText(requestOptionsText: string): Record<string, unknown> {
-  const trimmed = requestOptionsText.trim()
-  if (trimmed === '') {
-    return {}
-  }
-
-  const parsed = JSON.parse(trimmed) as unknown
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('requestOptions 必须是 JSON 对象。')
-  }
-
-  return { ...(parsed as Record<string, unknown>) }
-}
-
-export function formatRuntimeMessageSendError(error: unknown): string {
-  if (error instanceof RuntimeRequestError) {
-    switch (error.code) {
-      case 'agent_mismatch':
-        return `agent_mismatch：当前消息携带的 agent 校验值与会话绑定智能体不一致。${error.message}`
-      case 'tool_not_found':
-        return `tool_not_found：本次消息启用了后端未注册的 toolId。${error.message}`
-      case 'tool_unavailable':
-        return `tool_unavailable：本次消息请求的工具当前不可用。${error.message}`
-      case 'invalid_request':
-        return `invalid_request：消息请求结构无效。${error.message}`
-      case 'capabilities_version_stale':
-        return `capabilities_version_stale：当前能力面版本已过期，需要重新拉取 capabilities 后再发。${error.message}`
-      default:
-        return error.message
-    }
-  }
-
-  return error instanceof Error ? error.message : String(error)
-}
-
-export function buildRuntimeDebugSummary(input: {
-  state: Extract<CopilotBootstrapState, { status: 'ready' | 'degraded' }>
-  directoryState: AssistantAgentDirectoryState
-  selectedAgent: AgentType | null
-}) {
-  return {
-    runtimeSource: input.state.runtimeSource,
-    connectionSummary: `${formatRuntimeSource(input.state.runtimeSource)} · ${input.state.runtimeUrl} · ${formatModeSummary(input.state.diagnostics)}`,
-    runtimeUrl: input.state.runtimeUrl,
-    hostedStatus: input.state.diagnostics.hostedStatus,
-    directoryStatus: input.directoryState.status,
-    selectedAgent: input.selectedAgent === null
-      ? null
-      : {
-          id: input.selectedAgent.id,
-          label: input.selectedAgent.label,
-        },
-  }
-}
-
-export function buildSessionDebugSummary(sessionShell: AssistantSessionShell) {
-  return {
-    sessionId: sessionShell.sessionId,
-    boundAgent: sessionShell.boundAgent.id,
-    capabilitiesVersion: sessionShell.capabilities.capabilitiesVersion,
-    allAvailableTools: sessionShell.capabilities.allAvailableTools.map((tool) => tool.toolId),
-    recommendedTools: [...sessionShell.capabilities.recommendedToolsForAgent],
-    defaultEnabledTools: [...sessionShell.capabilities.defaultEnabledTools],
-    defaultEnabledSource: {
-      boundAgent: sessionShell.boundAgent.id,
-      defaultModelPreference: sessionShell.capabilities.defaultModelPreference,
-      toolSelectionMode: sessionShell.capabilities.toolSelectionMode,
-    },
-  }
-}
-
-function createEmptyComposerDraft(): CopilotChatComposerDraft {
-  return {
-    messageText: '',
-    model: getCopilotDefaultModel().id,
-    enabledTools: [],
-    requestOptionsText: '{}',
-  }
-}
-
-function createUserTurn(content: string): CopilotConversationTurn {
-  return {
-    id: `user:${content}:${Math.random().toString(36).slice(2)}`,
-    kind: 'user',
-    title: '',
-    content,
-  }
-}
-
-function createAssistantTurn(response: RuntimeMessageSendResponse): CopilotConversationTurn {
-  return {
-    id: `assistant:${response.sessionId}:${Math.random().toString(36).slice(2)}`,
-    kind: 'assistant',
-    title: '助手响应',
-    content: response.assistantMessage.content,
-    resolvedModelId: response.resolvedModelId,
-    resolvedToolIds: [...response.resolvedToolIds],
-    requestOptions: { ...response.requestOptions },
-  }
-}
-
-function createErrorTurn(content: string): CopilotConversationTurn {
-  return {
-    id: `error:${content}:${Math.random().toString(36).slice(2)}`,
-    kind: 'error',
-    title: '发送失败',
-    content,
-  }
-}
-
-function dedupeToolIds(toolIds: string[]): string[] {
-  const uniqueToolIds = new Set<string>()
-
-  for (const toolId of toolIds) {
-    const normalizedToolId = toolId.trim()
-    if (normalizedToolId !== '') {
-      uniqueToolIds.add(normalizedToolId)
-    }
-  }
-
-  return [...uniqueToolIds]
-}
-
-function clampComposerHeight(height: number): number {
-  return Math.min(MAX_COPILOT_COMPOSER_HEIGHT, Math.max(MIN_COPILOT_COMPOSER_HEIGHT, Math.round(height)))
-}
-
-function formatRequestOptionsError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function isCopilotConnectableState(
@@ -906,19 +603,4 @@ function canRetry(state: CopilotConfigState): boolean {
   return state.status === 'failed'
     && state.diagnostics.failure !== null
     && state.diagnostics.failure.retryable
-}
-
-function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string {
-  switch (source) {
-    case 'hosted':
-      return '宿主管理'
-    case 'dev-override':
-      return '开发态 override'
-    case 'none':
-      return '暂无有效来源'
-  }
-}
-
-function formatModeSummary(diagnostics: CopilotDiagnosticsSummary): string {
-  return `${diagnostics.mode}（${diagnostics.modeSource === 'resolved' ? '已解析' : '预期'}）`
 }
