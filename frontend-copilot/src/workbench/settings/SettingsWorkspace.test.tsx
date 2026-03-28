@@ -555,6 +555,172 @@ describe('SettingsWorkspace', () => {
     rendered.unmount()
   })
 
+  it('renders the active provider detail and supports duplicating a provider from the context menu', async () => {
+    const saveProviderApiKey = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: 'persisted-router-1',
+      state: {
+        hasApiKey: true,
+        apiKey: 'persisted-secret',
+      },
+    })
+
+    Object.assign(window, {
+      settingsWorkspaceState: {
+        load: vi.fn().mockResolvedValue({
+          ok: true,
+          source: 'stored',
+          state: createPersistedWorkspaceState(),
+        }),
+        save: vi.fn().mockResolvedValue({
+          ok: true,
+          state: createPersistedWorkspaceState(),
+        }),
+      },
+      settingsWorkspaceSecrets: {
+        loadStatuses: vi.fn().mockResolvedValue(createPersistedSecretStatesResult()),
+        loadSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
+        saveProviderApiKey,
+        clearProviderApiKey: vi.fn().mockResolvedValue({
+          ok: true,
+          providerId: 'openrouter',
+          state: {
+            hasApiKey: false,
+            apiKey: '',
+          },
+        }),
+        saveSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
+        clearSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <SettingsWorkspace
+        bootstrap={createBootstrapController()}
+        themeMode="light"
+        onThemeModeChange={vi.fn()}
+        initialSection="model-service"
+      />,
+    )
+
+    await flushAsyncEffects()
+
+    const providerNameInput = rendered.getByPlaceholder('输入服务商名称') as HTMLInputElement
+    expect(providerNameInput.value).toBe('Persisted Router')
+
+    await contextMenuElement(rendered.getByTestId('settings-provider-card-openrouter'))
+    await clickElement(rendered.getByText('复制服务商'))
+
+    expect(saveProviderApiKey).toHaveBeenCalledWith({
+      providerId: 'persisted-router-1',
+      apiKey: 'persisted-secret',
+    })
+
+    const copiedProviderCard = rendered.getByTestId('settings-provider-card-persisted-router-1')
+    expect(copiedProviderCard.textContent).toContain('Persisted Router 副本')
+    expect((rendered.getByPlaceholder('输入服务商名称') as HTMLInputElement).value).toBe('Persisted Router 副本')
+
+    rendered.unmount()
+  })
+
+  it('deletes the active provider and shows the empty state when no providers remain', async () => {
+    const clearProviderApiKey = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: 'openrouter',
+      state: {
+        hasApiKey: false,
+        apiKey: '',
+      },
+    })
+
+    Object.assign(window, {
+      settingsWorkspaceState: {
+        load: vi.fn().mockResolvedValue({
+          ok: true,
+          source: 'stored',
+          state: createSingleProviderWorkspaceState(),
+        }),
+        save: vi.fn().mockResolvedValue({
+          ok: true,
+          state: createSingleProviderWorkspaceState(),
+        }),
+      },
+      settingsWorkspaceSecrets: {
+        loadStatuses: vi.fn().mockResolvedValue(createPersistedSecretStatesResult()),
+        loadSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
+        saveProviderApiKey: vi.fn().mockResolvedValue({
+          ok: true,
+          providerId: 'openrouter',
+          state: {
+            hasApiKey: true,
+            apiKey: 'persisted-secret',
+          },
+        }),
+        clearProviderApiKey,
+        saveSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
+        clearSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <SettingsWorkspace
+        bootstrap={createBootstrapController()}
+        themeMode="light"
+        onThemeModeChange={vi.fn()}
+        initialSection="model-service"
+      />,
+    )
+
+    await flushAsyncEffects()
+
+    await contextMenuElement(rendered.getByTestId('settings-provider-card-openrouter'))
+    await clickElement(rendered.getByText('删除服务商'))
+
+    expect(clearProviderApiKey).toHaveBeenCalledWith({
+      providerId: 'openrouter',
+    })
+    expect(rendered.queryByTestId('settings-provider-card-openrouter')).toBeNull()
+    expect(rendered.container.textContent).toContain('可在左侧添加服务商信息')
+
+    rendered.unmount()
+  })
+
   it('wires the development runtime override card into the api section', () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace
@@ -688,6 +854,12 @@ async function clickElement(element: Element) {
   })
 }
 
+async function contextMenuElement(element: Element) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 64, clientY: 48 }))
+  })
+}
+
 async function focusElement(element: HTMLElement) {
   await act(async () => {
     element.focus()
@@ -811,6 +983,13 @@ function createPersistedWorkspaceState() {
     externalSource: {
       wakeupShareLink: '',
     },
+  }
+}
+
+function createSingleProviderWorkspaceState() {
+  return {
+    ...createPersistedWorkspaceState(),
+    providerProfiles: [createPersistedWorkspaceState().providerProfiles[0]],
   }
 }
 
