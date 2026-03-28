@@ -5,6 +5,7 @@ import type {
   ConfigCenterPublicSnapshotApi,
   ConfigCenterPublicSnapshotSubscriptionApi,
 } from './config-center/public-snapshot'
+import type { BootstrapWindowApi } from './bootstrap-window'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 
 declare namespace NodeJS {
@@ -35,6 +36,7 @@ declare global {
     configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
     configCenterPublicSnapshotSubscription: ConfigCenterPublicSnapshotSubscriptionApi
     configCenterPublicPatch: ConfigCenterPublicPatchApi
+    bootstrapWindow: BootstrapWindowApi
   }
 }
 

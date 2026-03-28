@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from './bootstrap-window'
 import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL, type ConfigCenterPublicPatchApi } from './config-center/public-patch'
 import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
@@ -47,6 +48,7 @@ describe('preload renderer bridge', () => {
       'configCenterPublicSnapshot',
       'configCenterPublicSnapshotSubscription',
       'configCenterPublicPatch',
+      'bootstrapWindow',
     ])
     expect(exposedKeys).not.toContain('copilotSettings')
   })
@@ -59,6 +61,7 @@ describe('preload renderer bridge', () => {
     const snapshotApi = getExposedApi<ConfigCenterPublicSnapshotApi>('configCenterPublicSnapshot')
     const subscriptionApi = getExposedApi<ConfigCenterPublicSnapshotSubscriptionApi>('configCenterPublicSnapshotSubscription')
     const patchApi = getExposedApi<ConfigCenterPublicPatchApi>('configCenterPublicPatch')
+    const bootstrapWindowApi = getExposedApi<BootstrapWindowApi>('bootstrapWindow')
 
     await runtimeApi.load()
     await runtimeApi.retry()
@@ -70,6 +73,7 @@ describe('preload renderer bridge', () => {
         },
       },
     })
+    await bootstrapWindowApi.signalBootstrapScreenReady()
 
     expect(preloadMocks.invoke.mock.calls).toEqual([
       [COPILOT_RUNTIME_LOAD_CHANNEL],
@@ -82,6 +86,7 @@ describe('preload renderer bridge', () => {
           },
         },
       }],
+      [BOOTSTRAP_WINDOW_READY_CHANNEL],
     ])
 
     const listener = vi.fn()

@@ -13,6 +13,7 @@ import {
   COPILOT_RUNTIME_RETRY_CHANNEL,
   type CopilotRuntimeLoadResult,
 } from './copilot-runtime'
+import { BOOTSTRAP_WINDOW_READY_CHANNEL } from './bootstrap-window'
 
 type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
 
@@ -21,6 +22,7 @@ export interface RendererIpcHandlers {
   applyConfigCenterPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
+  notifyBootstrapWindowReady: () => Promise<void>
 }
 
 export function registerRendererIpcHandlers(
@@ -31,6 +33,7 @@ export function registerRendererIpcHandlers(
   ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL)
   ipcMain.removeHandler(COPILOT_RUNTIME_LOAD_CHANNEL)
   ipcMain.removeHandler(COPILOT_RUNTIME_RETRY_CHANNEL)
+  ipcMain.removeHandler(BOOTSTRAP_WINDOW_READY_CHANNEL)
 
   ipcMain.handle(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL, async (): Promise<ConfigCenterPublicSnapshotLoadResult> => {
     return await handlers.loadConfigCenterPublicSnapshot()
@@ -49,5 +52,9 @@ export function registerRendererIpcHandlers(
 
   ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.retryCopilotRuntime()
+  })
+
+  ipcMain.handle(BOOTSTRAP_WINDOW_READY_CHANNEL, async (): Promise<void> => {
+    await handlers.notifyBootstrapWindowReady()
   })
 }

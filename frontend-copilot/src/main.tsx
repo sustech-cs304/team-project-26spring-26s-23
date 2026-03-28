@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 
+import { notifyBootstrapScreenReady, waitForNextPaint } from './bootstrap-window'
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
 import { primeStartupTheme } from './startup-theme'
 
@@ -13,6 +14,7 @@ if (rootElement === null) {
 const rootContainer: HTMLElement = rootElement
 
 let root: ReturnType<typeof ReactDOM.createRoot> | null = null
+let bootstrapWindowReadySignalSent = false
 
 function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
   console.info('[startup]', JSON.stringify({
@@ -42,6 +44,26 @@ function formatBootstrapError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function scheduleBootstrapWindowReadyNotification() {
+  if (bootstrapWindowReadySignalSent) {
+    return
+  }
+
+  bootstrapWindowReadySignalSent = true
+
+  void waitForNextPaint()
+    .then(async () => {
+      logStartupTrace('bootstrap-screen-ready:notify:start')
+      await notifyBootstrapScreenReady()
+      logStartupTrace('bootstrap-screen-ready:notify:resolved')
+    })
+    .catch((error: unknown) => {
+      logStartupTrace('bootstrap-screen-ready:notify:failed', {
+        error: formatBootstrapError(error),
+      })
+    })
+}
+
 async function bootstrapRenderer() {
   logStartupTrace('startup-theme:prime:start')
   const themeMode = await primeStartupTheme()
@@ -54,6 +76,7 @@ async function bootstrapRenderer() {
   )
 
   logStartupTrace('react-root-loading:rendered')
+  scheduleBootstrapWindowReadyNotification()
   logStartupTrace('copilot-root-import:start')
 
   void import('./CopilotAppRoot.tsx')

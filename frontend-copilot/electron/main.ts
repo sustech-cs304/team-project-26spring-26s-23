@@ -22,6 +22,7 @@ import {
 } from './config-center/main-process'
 import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/schema'
 import { registerRendererIpcHandlers } from './renderer-ipc'
+import { showWindowWhenBootstrapScreenIsReady } from './bootstrap-window-controller'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
 import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
@@ -136,6 +137,7 @@ function createWindow() {
     title: '赶渡 CanDue',
     width: 1440,
     height: 960,
+    show: false,
     autoHideMenuBar: true,
     backgroundColor: '#f3f5f8',
     webPreferences: {
@@ -229,6 +231,10 @@ function createWindow() {
     })
     win.loadFile(target)
   }
+}
+
+async function notifyBootstrapWindowReady(): Promise<void> {
+  showWindowWhenBootstrapScreenIsReady(win, logStartupTrace)
 }
 
 
@@ -601,6 +607,7 @@ void app.whenReady()
       applyConfigCenterPublicPatch,
       loadCopilotRuntime,
       retryCopilotRuntime,
+      notifyBootstrapWindowReady,
     })
     void startHostedBackend()
     createWindow()

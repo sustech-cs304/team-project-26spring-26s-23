@@ -13,6 +13,7 @@ import {
   COPILOT_RUNTIME_RETRY_CHANNEL,
 } from './copilot-runtime'
 import type { CopilotRuntimeApi } from './copilot-runtime'
+import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from './bootstrap-window'
 
 const copilotRuntimeApi: CopilotRuntimeApi = {
   load() {
@@ -37,7 +38,14 @@ const configCenterPublicPatchApi: ConfigCenterPublicPatchApi = {
   },
 }
 
+const bootstrapWindowApi: BootstrapWindowApi = {
+  signalBootstrapScreenReady() {
+    return ipcRenderer.invoke(BOOTSTRAP_WINDOW_READY_CHANNEL)
+  },
+}
+
 contextBridge.exposeInMainWorld('copilotRuntime', copilotRuntimeApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshot', configCenterPublicSnapshotApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshotSubscription', configCenterPublicSnapshotSubscriptionApi)
 contextBridge.exposeInMainWorld('configCenterPublicPatch', configCenterPublicPatchApi)
+contextBridge.exposeInMainWorld('bootstrapWindow', bootstrapWindowApi)
