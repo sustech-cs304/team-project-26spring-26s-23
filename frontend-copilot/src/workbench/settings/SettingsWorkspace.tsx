@@ -214,6 +214,7 @@ export function SettingsWorkspace({
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
   const [providerQuery, setProviderQuery] = useState('')
   const [providerSecretDrafts, setProviderSecretDrafts] = useState<Record<string, string>>({})
+  const [providerSecretSavedValues, setProviderSecretSavedValues] = useState<Record<string, string>>({})
   const [modelEditorState, setModelEditorState] = useState<ModelEditorState | null>(null)
   const [modelEditorError, setModelEditorError] = useState<string | null>(null)
   const modelEditorDialogRef = useRef<HTMLElement | null>(null)
@@ -423,6 +424,7 @@ export function SettingsWorkspace({
           setAutoFileNameEnabled,
         })
         setProviderSecretDrafts({})
+        setProviderSecretSavedValues({})
       }
 
       if (!cancelled) {
@@ -545,17 +547,46 @@ export function SettingsWorkspace({
     }
   }
 
-  const handleSaveActiveProviderApiKey = async () => {
-    const nextApiKey = activeProviderApiKeyDraft.trim()
+  const handlePersistProviderApiKeyDraft = async (providerId: string) => {
+    const activeDraft = providerSecretDrafts[providerId]
 
-    if (!nextApiKey) {
-      setApiKeyFeedback(activeProvider.hasApiKey ? '请输入新密钥后再替换当前配置' : '请输入 API 密钥后再保存')
+    if (activeDraft === undefined) {
+      return
+    }
+
+    const normalizedDraft = activeDraft.trim()
+    const savedValue = providerSecretSavedValues[providerId] ?? ''
+
+    if (normalizedDraft === savedValue) {
+      return
+    }
+
+    if (!normalizedDraft) {
+      const result = await clearSettingsWorkspaceProviderApiKey({
+        providerId,
+      })
+
+      if (!result.ok) {
+        setApiKeyFeedback('清除失败，请稍后重试')
+        return
+      }
+
+      setProviderProfiles((previous) =>
+        previous.map((profile) => {
+          return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
+        }),
+      )
+      setProviderSecretSavedValues((previous) => ({
+        ...previous,
+        [result.providerId]: '',
+      }))
+      setApiKeyFeedback('已清除 API 密钥')
       return
     }
 
     const result = await saveSettingsWorkspaceProviderApiKey({
-      providerId: activeProvider.id,
-      apiKey: nextApiKey,
+      providerId,
+      apiKey: normalizedDraft,
     })
 
     if (!result.ok) {
@@ -568,35 +599,11 @@ export function SettingsWorkspace({
         return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
       }),
     )
-    setProviderSecretDrafts((previous) => ({
+    setProviderSecretSavedValues((previous) => ({
       ...previous,
-      [result.providerId]: '',
+      [result.providerId]: normalizedDraft,
     }))
-    setApiKeyVisible(false)
-    setApiKeyFeedback('已保存 API 密钥')
-  }
-
-  const handleClearActiveProviderApiKey = async () => {
-    const result = await clearSettingsWorkspaceProviderApiKey({
-      providerId: activeProvider.id,
-    })
-
-    if (!result.ok) {
-      setApiKeyFeedback('清除失败，请稍后重试')
-      return
-    }
-
-    setProviderProfiles((previous) =>
-      previous.map((profile) => {
-        return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
-      }),
-    )
-    setProviderSecretDrafts((previous) => ({
-      ...previous,
-      [result.providerId]: '',
-    }))
-    setApiKeyVisible(false)
-    setApiKeyFeedback('已清除 API 密钥')
+    setApiKeyFeedback('已自动保存 API 密钥')
   }
 
   const commitActiveProviderModels = (
@@ -922,8 +929,8 @@ export function SettingsWorkspace({
                               </span>
                               <span className="form-field__description" data-testid="provider-api-key-status">
                                 {activeProvider.hasApiKey
-                                  ? '当前 provider 已配置密钥，原文仅由主进程持有；输入新值可替换。'
-                                  : '当前 provider 尚未配置密钥。'}
+                                  ? '当前 provider 已配置密钥；编辑后失焦会自动保存，清空后失焦可清除。原文仅由主进程持有。'
+                                  : '当前 provider 尚未配置密钥；输入后失焦会自动保存。'}
                               </span>
                               <span className="text-input-shell">
                                 <input
@@ -939,6 +946,9 @@ export function SettingsWorkspace({
                                       ...previous,
                                       [activeProvider.id]: nextValue,
                                     }))
+                                  }}
+                                  onBlur={() => {
+                                    void handlePersistProviderApiKeyDraft(activeProvider.id)
                                   }}
                                 />
                                 <span className="text-input-shell__actions">
@@ -963,30 +973,6 @@ export function SettingsWorkspace({
                                     }}
                                   >
                                     <Copy size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="icon-button icon-button--compact"
-                                    title="保存 API 密钥"
-                                    aria-label="保存 API 密钥"
-                                    data-testid="provider-api-key-save"
-                                    onClick={() => {
-                                      void handleSaveActiveProviderApiKey()
-                                    }}
-                                  >
-                                    保存
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="icon-button icon-button--compact"
-                                    title="清除已保存的 API 密钥"
-                                    aria-label="清除已保存的 API 密钥"
-                                    data-testid="provider-api-key-clear"
-                                    onClick={() => {
-                                      void handleClearActiveProviderApiKey()
-                                    }}
-                                  >
-                                    清除
                                   </button>
                                 </span>
                               </span>

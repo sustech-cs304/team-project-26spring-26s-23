@@ -157,7 +157,7 @@ describe('SettingsWorkspace', () => {
     rendered.unmount()
   })
 
-  it('loads values from the settings workspace source, persists normal edits, and routes provider secret mutations through the dedicated bridge', async () => {
+  it('loads values from the settings workspace source, persists normal edits, and auto-saves provider secrets on blur', async () => {
     vi.useFakeTimers()
 
     const loadState = vi.fn().mockResolvedValue({
@@ -224,16 +224,143 @@ describe('SettingsWorkspace', () => {
 
     const apiKeyInput = rendered.getByTestId('provider-api-key-input') as HTMLInputElement
     await setFormControlValue(apiKeyInput, 'rotated-secret')
-    await clickElement(rendered.getByTestId('provider-api-key-save'))
+    await blurElement(apiKeyInput)
     expect(saveProviderApiKey).toHaveBeenCalledWith({
       providerId: 'openrouter',
       apiKey: 'rotated-secret',
     })
+    expect(apiKeyInput.value).toBe('rotated-secret')
+    expect(rendered.getByTestId('provider-api-key-feedback').textContent).toBe('已自动保存 API 密钥')
+    expect(rendered.queryByTestId('provider-api-key-save')).toBeNull()
+    expect(rendered.queryByTestId('provider-api-key-clear')).toBeNull()
 
-    await clickElement(rendered.getByTestId('provider-api-key-clear'))
+    await setFormControlValue(apiKeyInput, '')
+    await blurElement(apiKeyInput)
     expect(clearProviderApiKey).toHaveBeenCalledWith({
       providerId: 'openrouter',
     })
+    expect(apiKeyInput.value).toBe('')
+    expect(rendered.getByTestId('provider-api-key-feedback').textContent).toBe('已清除 API 密钥')
+
+    rendered.unmount()
+  })
+
+  it('keeps provider api key drafts visible after auto-save and preserves show hide toggle behavior', async () => {
+    const saveProviderApiKey = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: 'openrouter',
+      state: {
+        hasApiKey: true,
+      },
+    })
+
+    Object.assign(window, {
+      settingsWorkspaceState: {
+        load: vi.fn().mockResolvedValue({
+          ok: true,
+          source: 'stored',
+          state: createPersistedWorkspaceState(),
+        }),
+        save: vi.fn().mockResolvedValue({
+          ok: true,
+          state: createPersistedWorkspaceState(),
+        }),
+      },
+      settingsWorkspaceSecrets: {
+        loadStatuses: vi.fn().mockResolvedValue({ ok: true, states: {} }),
+        saveProviderApiKey,
+        clearProviderApiKey: vi.fn().mockResolvedValue({
+          ok: true,
+          providerId: 'openrouter',
+          state: {
+            hasApiKey: false,
+          },
+        }),
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <SettingsWorkspace
+        bootstrap={createBootstrapController()}
+        themeMode="light"
+        onThemeModeChange={vi.fn()}
+      />,
+    )
+
+    await flushAsyncEffects()
+
+    const apiKeyInput = rendered.getByTestId('provider-api-key-input') as HTMLInputElement
+    expect(apiKeyInput.type).toBe('password')
+
+    await setFormControlValue(apiKeyInput, 'secret-after-blur')
+    await blurElement(apiKeyInput)
+
+    expect(saveProviderApiKey).toHaveBeenCalledWith({
+      providerId: 'openrouter',
+      apiKey: 'secret-after-blur',
+    })
+    expect(apiKeyInput.value).toBe('secret-after-blur')
+
+    await clickElement(rendered.getByTestId('provider-api-key-visibility-toggle'))
+    expect((rendered.getByTestId('provider-api-key-input') as HTMLInputElement).type).toBe('text')
+
+    await clickElement(rendered.getByTestId('provider-api-key-visibility-toggle'))
+    expect((rendered.getByTestId('provider-api-key-input') as HTMLInputElement).type).toBe('password')
+
+    rendered.unmount()
+  })
+
+  it('keeps provider api key drafts and shows feedback when auto-save fails', async () => {
+    const saveProviderApiKey = vi.fn().mockResolvedValue({
+      ok: false,
+      error: 'save failed',
+    })
+
+    Object.assign(window, {
+      settingsWorkspaceState: {
+        load: vi.fn().mockResolvedValue({
+          ok: true,
+          source: 'stored',
+          state: createPersistedWorkspaceState(),
+        }),
+        save: vi.fn().mockResolvedValue({
+          ok: true,
+          state: createPersistedWorkspaceState(),
+        }),
+      },
+      settingsWorkspaceSecrets: {
+        loadStatuses: vi.fn().mockResolvedValue({ ok: true, states: {} }),
+        saveProviderApiKey,
+        clearProviderApiKey: vi.fn().mockResolvedValue({
+          ok: true,
+          providerId: 'openrouter',
+          state: {
+            hasApiKey: false,
+          },
+        }),
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <SettingsWorkspace
+        bootstrap={createBootstrapController()}
+        themeMode="light"
+        onThemeModeChange={vi.fn()}
+      />,
+    )
+
+    await flushAsyncEffects()
+
+    const apiKeyInput = rendered.getByTestId('provider-api-key-input') as HTMLInputElement
+    await setFormControlValue(apiKeyInput, 'failed-secret')
+    await blurElement(apiKeyInput)
+
+    expect(saveProviderApiKey).toHaveBeenCalledWith({
+      providerId: 'openrouter',
+      apiKey: 'failed-secret',
+    })
+    expect(apiKeyInput.value).toBe('failed-secret')
+    expect(rendered.getByTestId('provider-api-key-feedback').textContent).toBe('保存失败，请稍后重试')
 
     rendered.unmount()
   })
@@ -357,6 +484,9 @@ function renderWithRoot(element: ReactElement) {
 
       return target
     },
+    queryByTestId(testId: string) {
+      return container.querySelector(`[data-testid="${testId}"]`)
+    },
     getByText(text: string) {
       const target = Array.from(container.querySelectorAll<HTMLElement>('*')).find((element) => {
         return element.textContent?.trim() === text
@@ -394,6 +524,14 @@ async function clickElement(element: Element) {
 async function focusElement(element: HTMLElement) {
   await act(async () => {
     element.focus()
+  })
+}
+
+async function blurElement(element: HTMLElement) {
+  await act(async () => {
+    element.focus()
+    element.blur()
+    element.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
   })
 }
 
