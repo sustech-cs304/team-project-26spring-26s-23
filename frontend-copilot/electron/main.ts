@@ -27,7 +27,10 @@ import {
 import type {
   SettingsWorkspaceClearProviderApiKeyRequest,
   SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceSaveSustechCasPasswordRequest,
   SettingsWorkspaceSaveProviderApiKeyRequest,
+  SettingsWorkspaceSustechCasSecretLoadResult,
+  SettingsWorkspaceSustechCasSecretMutationResult,
   SettingsWorkspaceSecretsLoadStatusesRequest,
   SettingsWorkspaceSecretsLoadStatusesResult,
   SettingsWorkspaceStateLoadResult,
@@ -334,6 +337,10 @@ async function loadSettingsWorkspaceSecretStates(
   return await getSettingsWorkspaceService().loadSecretStates(request)
 }
 
+async function loadSettingsWorkspaceSustechCasSecret(): Promise<SettingsWorkspaceSustechCasSecretLoadResult> {
+  return await getSettingsWorkspaceService().loadSustechCasSecret()
+}
+
 async function saveSettingsWorkspaceProviderSecret(
   request: SettingsWorkspaceSaveProviderApiKeyRequest,
 ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
@@ -344,6 +351,16 @@ async function clearSettingsWorkspaceProviderSecret(
   request: SettingsWorkspaceClearProviderApiKeyRequest,
 ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
   return await getSettingsWorkspaceService().clearProviderSecret(request)
+}
+
+async function saveSettingsWorkspaceSustechCasSecret(
+  request: SettingsWorkspaceSaveSustechCasPasswordRequest,
+): Promise<SettingsWorkspaceSustechCasSecretMutationResult> {
+  return await getSettingsWorkspaceService().saveSustechCasSecret(request)
+}
+
+async function clearSettingsWorkspaceSustechCasSecret(): Promise<SettingsWorkspaceSustechCasSecretMutationResult> {
+  return await getSettingsWorkspaceService().clearSustechCasSecret()
 }
 
 async function ensureHostedBackendService(): Promise<HostedBackendService> {
@@ -740,8 +757,11 @@ void app.whenReady()
       loadSettingsWorkspaceState,
       saveSettingsWorkspaceState,
       loadSettingsWorkspaceSecretStates,
+      loadSettingsWorkspaceSustechCasSecret,
       saveSettingsWorkspaceProviderSecret,
       clearSettingsWorkspaceProviderSecret,
+      saveSettingsWorkspaceSustechCasSecret,
+      clearSettingsWorkspaceSustechCasSecret,
       loadCopilotRuntime,
       retryCopilotRuntime,
       notifyBootstrapWindowReady,

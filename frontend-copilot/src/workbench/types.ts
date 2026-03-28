@@ -6,6 +6,7 @@ export type WorkspaceView = 'assistant' | 'capabilities' | 'files' | 'developer'
 export type HubWorkspaceView = Exclude<WorkspaceView, 'assistant' | 'settings'>
 export type AgentTypeId = string
 export type SettingsSection =
+  | 'sustech-info'
   | 'model-service'
   | 'default-model'
   | 'general'
@@ -16,6 +17,7 @@ export type SettingsSection =
   | 'memory'
   | 'api'
   | 'docs'
+  | 'external-source'
 
 export interface SelectOption {
   value: string

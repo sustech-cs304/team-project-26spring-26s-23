@@ -4,7 +4,10 @@ import { createSettingsWorkspaceStorage } from './service'
 import type {
   SettingsWorkspaceClearProviderApiKeyRequest,
   SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceSaveSustechCasPasswordRequest,
   SettingsWorkspaceSaveProviderApiKeyRequest,
+  SettingsWorkspaceSustechCasSecretLoadResult,
+  SettingsWorkspaceSustechCasSecretMutationResult,
   SettingsWorkspaceSecretsLoadStatusesRequest,
   SettingsWorkspaceSecretsLoadStatusesResult,
   SettingsWorkspaceStateLoadResult,
@@ -31,12 +34,17 @@ export interface ElectronSettingsWorkspaceService {
   loadSecretStates: (
     request?: SettingsWorkspaceSecretsLoadStatusesRequest,
   ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
+  loadSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretLoadResult>
   saveProviderSecret: (
     request: SettingsWorkspaceSaveProviderApiKeyRequest,
   ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
   clearProviderSecret: (
     request: SettingsWorkspaceClearProviderApiKeyRequest,
   ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  saveSustechCasSecret: (
+    request: SettingsWorkspaceSaveSustechCasPasswordRequest,
+  ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  clearSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
 }
 
 export function createElectronSettingsWorkspaceService(
@@ -100,6 +108,23 @@ export function createElectronSettingsWorkspaceService(
     }
   }
 
+  const loadSustechCasSecret = async (): Promise<SettingsWorkspaceSustechCasSecretLoadResult> => {
+    try {
+      const storage = await createStorage(options)
+      const result = await storage.loadSustechCasSecret()
+
+      return {
+        ok: true,
+        state: result.state,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Failed to load settings workspace sustech CAS secret: ${formatUnknownError(error)}`,
+      }
+    }
+  }
+
   const saveProviderSecret = async (
     request: SettingsWorkspaceSaveProviderApiKeyRequest,
   ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
@@ -140,12 +165,51 @@ export function createElectronSettingsWorkspaceService(
     }
   }
 
+  const saveSustechCasSecret = async (
+    request: SettingsWorkspaceSaveSustechCasPasswordRequest,
+  ): Promise<SettingsWorkspaceSustechCasSecretMutationResult> => {
+    try {
+      const storage = await createStorage(options)
+      const result = await storage.saveSustechCasSecret(request.password)
+
+      return {
+        ok: true,
+        state: result.state,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Failed to save settings workspace sustech CAS secret: ${formatUnknownError(error)}`,
+      }
+    }
+  }
+
+  const clearSustechCasSecret = async (): Promise<SettingsWorkspaceSustechCasSecretMutationResult> => {
+    try {
+      const storage = await createStorage(options)
+      const result = await storage.clearSustechCasSecret()
+
+      return {
+        ok: true,
+        state: result.state,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Failed to clear settings workspace sustech CAS secret: ${formatUnknownError(error)}`,
+      }
+    }
+  }
+
   return {
     loadState,
     saveState,
     loadSecretStates,
+    loadSustechCasSecret,
     saveProviderSecret,
     clearProviderSecret,
+    saveSustechCasSecret,
+    clearSustechCasSecret,
   }
 }
 

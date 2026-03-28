@@ -39,7 +39,8 @@ describe('SettingsWorkspace', () => {
     )
 
     expect(html).toContain('全局设置目录')
-    expect(html).toContain('模型服务商')
+    expect(html).toContain('SUSTech 信息')
+    expect(html).toContain('基本信息')
     expect(html).toContain('设置工作区')
     expect(html).not.toContain('当前设置页')
     expect(html).not.toContain('设置布局')
@@ -103,6 +104,7 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        initialSection="model-service"
       />,
     )
 
@@ -135,6 +137,7 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        initialSection="model-service"
       />,
     )
 
@@ -193,8 +196,29 @@ describe('SettingsWorkspace', () => {
       },
       settingsWorkspaceSecrets: {
         loadStatuses: vi.fn().mockResolvedValue(createPersistedSecretStatesResult()),
+        loadSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
         saveProviderApiKey,
         clearProviderApiKey,
+        saveSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: true,
+            password: 'persisted-cas-secret',
+          },
+        }),
+        clearSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
       },
     })
 
@@ -203,6 +227,7 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        initialSection="model-service"
       />,
     )
 
@@ -270,6 +295,13 @@ describe('SettingsWorkspace', () => {
       },
       settingsWorkspaceSecrets: {
         loadStatuses: vi.fn().mockResolvedValue(createPersistedSecretStatesResult()),
+        loadSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
         saveProviderApiKey: vi.fn().mockResolvedValue({
           ok: true,
           providerId: 'openrouter',
@@ -286,6 +318,20 @@ describe('SettingsWorkspace', () => {
             apiKey: '',
           },
         }),
+        saveSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: true,
+            password: 'persisted-cas-secret',
+          },
+        }),
+        clearSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
       },
     })
 
@@ -294,6 +340,7 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        initialSection="model-service"
       />,
     )
 
@@ -341,6 +388,13 @@ describe('SettingsWorkspace', () => {
       },
       settingsWorkspaceSecrets: {
         loadStatuses: vi.fn().mockResolvedValue(createPersistedSecretStatesResult()),
+        loadSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
         saveProviderApiKey,
         clearProviderApiKey: vi.fn().mockResolvedValue({
           ok: true,
@@ -348,6 +402,20 @@ describe('SettingsWorkspace', () => {
           state: {
             hasApiKey: false,
             apiKey: '',
+          },
+        }),
+        saveSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: true,
+            password: 'persisted-cas-secret',
+          },
+        }),
+        clearSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
           },
         }),
       },
@@ -358,6 +426,7 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        initialSection="model-service"
       />,
     )
 
@@ -404,6 +473,13 @@ describe('SettingsWorkspace', () => {
       },
       settingsWorkspaceSecrets: {
         loadStatuses: vi.fn().mockResolvedValue(createPersistedSecretStatesResult()),
+        loadSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
+          },
+        }),
         saveProviderApiKey,
         clearProviderApiKey: vi.fn().mockResolvedValue({
           ok: true,
@@ -411,6 +487,20 @@ describe('SettingsWorkspace', () => {
           state: {
             hasApiKey: false,
             apiKey: '',
+          },
+        }),
+        saveSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: true,
+            password: 'persisted-cas-secret',
+          },
+        }),
+        clearSustechCasPassword: vi.fn().mockResolvedValue({
+          ok: true,
+          state: {
+            hasPassword: false,
+            password: '',
           },
         }),
       },
@@ -421,6 +511,7 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        initialSection="model-service"
       />,
     )
 
@@ -446,6 +537,7 @@ describe('SettingsWorkspace', () => {
         bootstrap={createBootstrapController()}
         themeMode="light"
         onThemeModeChange={vi.fn()}
+        initialSection="model-service"
       />,
     )
 
@@ -644,6 +736,12 @@ async function flushAsyncEffects() {
 
 function createPersistedWorkspaceState() {
   return {
+    sustech: {
+      studentId: '',
+      email: '',
+      blackboardAutoDownloadEnabled: false,
+      blackboardDownloadLimitMb: '0',
+    },
     providerProfiles: [
       {
         id: 'openrouter',
@@ -709,6 +807,9 @@ function createPersistedWorkspaceState() {
       docsFormat: 'markdown',
       outputDirectory: 'D:/workspace/exports',
       autoFileNameEnabled: true,
+    },
+    externalSource: {
+      wakeupShareLink: '',
     },
   }
 }

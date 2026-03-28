@@ -91,6 +91,12 @@ describe('registerRendererIpcHandlers', () => {
         ok: true,
         source: 'stored',
         state: {
+          sustech: {
+            studentId: '',
+            email: '',
+            blackboardAutoDownloadEnabled: false,
+            blackboardDownloadLimitMb: '0',
+          },
           providerProfiles: [],
           defaultModelRouting: {
             primaryAssistantModel: '',
@@ -129,12 +135,21 @@ describe('registerRendererIpcHandlers', () => {
             docsFormat: 'markdown',
             outputDirectory: 'D:/workspace/exports',
             autoFileNameEnabled: true,
+          },
+          externalSource: {
+            wakeupShareLink: '',
           },
         },
       }),
       saveSettingsWorkspaceState: vi.fn().mockResolvedValue({
         ok: true,
         state: {
+          sustech: {
+            studentId: '',
+            email: '',
+            blackboardAutoDownloadEnabled: false,
+            blackboardDownloadLimitMb: '0',
+          },
           providerProfiles: [],
           defaultModelRouting: {
             primaryAssistantModel: '',
@@ -173,6 +188,9 @@ describe('registerRendererIpcHandlers', () => {
             docsFormat: 'markdown',
             outputDirectory: 'D:/workspace/exports',
             autoFileNameEnabled: true,
+          },
+          externalSource: {
+            wakeupShareLink: '',
           },
         },
       }),
@@ -183,6 +201,13 @@ describe('registerRendererIpcHandlers', () => {
             hasApiKey: true,
             apiKey: 'persisted-secret',
           },
+        },
+      }),
+      loadSettingsWorkspaceSustechCasSecret: vi.fn().mockResolvedValue({
+        ok: true,
+        state: {
+          hasPassword: true,
+          password: 'persisted-cas-secret',
         },
       }),
       saveSettingsWorkspaceProviderSecret: vi.fn().mockResolvedValue({
@@ -199,6 +224,20 @@ describe('registerRendererIpcHandlers', () => {
         state: {
           hasApiKey: false,
           apiKey: '',
+        },
+      }),
+      saveSettingsWorkspaceSustechCasSecret: vi.fn().mockResolvedValue({
+        ok: true,
+        state: {
+          hasPassword: true,
+          password: 'persisted-cas-secret',
+        },
+      }),
+      clearSettingsWorkspaceSustechCasSecret: vi.fn().mockResolvedValue({
+        ok: true,
+        state: {
+          hasPassword: false,
+          password: '',
         },
       }),
       loadCopilotRuntime: vi.fn().mockResolvedValue({
@@ -238,8 +277,11 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-state:load',
       'settings-workspace-state:save',
       'settings-workspace-secrets:load-statuses',
+      'settings-workspace-secrets:load-sustech-cas',
       'settings-workspace-secrets:save-provider-api-key',
       'settings-workspace-secrets:clear-provider-api-key',
+      'settings-workspace-secrets:save-sustech-cas',
+      'settings-workspace-secrets:clear-sustech-cas',
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
@@ -250,8 +292,11 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-state:load',
       'settings-workspace-state:save',
       'settings-workspace-secrets:load-statuses',
+      'settings-workspace-secrets:load-sustech-cas',
       'settings-workspace-secrets:save-provider-api-key',
       'settings-workspace-secrets:clear-provider-api-key',
+      'settings-workspace-secrets:save-sustech-cas',
+      'settings-workspace-secrets:clear-sustech-cas',
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,

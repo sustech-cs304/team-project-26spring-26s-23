@@ -10,8 +10,11 @@ import {
 import { createConfigCenterPublicSnapshotSubscriptionApi } from './config-center/public-snapshot-subscription'
 import {
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL,
   SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
   type SettingsWorkspaceSecretsApi,
@@ -61,11 +64,20 @@ const settingsWorkspaceSecretsApi: SettingsWorkspaceSecretsApi = {
   loadStatuses(request) {
     return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL, request)
   },
+  loadSustechCasPassword() {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL)
+  },
   saveProviderApiKey(request) {
     return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL, request)
   },
   clearProviderApiKey(request) {
     return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL, request)
+  },
+  saveSustechCasPassword(request) {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL, request)
+  },
+  clearSustechCasPassword() {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
   },
 }
 

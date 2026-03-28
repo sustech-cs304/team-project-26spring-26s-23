@@ -4,11 +4,13 @@ import {
   Database,
   FileText,
   FolderOpen,
+  Link2,
   MemoryStick,
   MessageSquare,
   Monitor,
   PlugZap,
   Search,
+  School,
   ServerCog,
   Settings,
   SlidersHorizontal,
@@ -145,6 +147,7 @@ function buildAgentShortLabel(agent: RuntimeAgentDirectoryEntry): string {
 }
 
 export const settingsItems: SettingsNavItem[] = [
+  { id: 'sustech-info', label: 'SUSTech 信息', icon: School },
   { id: 'model-service', label: '模型服务', icon: ServerCog },
   { id: 'default-model', label: '默认模型', icon: Brain },
   { id: 'general', label: '常规设置', icon: SlidersHorizontal },
@@ -155,6 +158,7 @@ export const settingsItems: SettingsNavItem[] = [
   { id: 'memory', label: '全局记忆', icon: MemoryStick },
   { id: 'api', label: 'API 服务器', icon: Workflow },
   { id: 'docs', label: '文档处理', icon: FileText },
+  { id: 'external-source', label: '外部源', icon: Link2 },
 ]
 
 export const hubWorkspaceContent: Record<HubWorkspaceView, HubWorkspaceContent> = {

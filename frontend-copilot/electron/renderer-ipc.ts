@@ -10,13 +10,19 @@ import {
 } from './config-center/public-snapshot'
 import {
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL,
   SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
   type SettingsWorkspaceClearProviderApiKeyRequest,
   type SettingsWorkspaceProviderSecretMutationResult,
+  type SettingsWorkspaceSaveSustechCasPasswordRequest,
   type SettingsWorkspaceSaveProviderApiKeyRequest,
+  type SettingsWorkspaceSustechCasSecretLoadResult,
+  type SettingsWorkspaceSustechCasSecretMutationResult,
   type SettingsWorkspaceSecretsLoadStatusesRequest,
   type SettingsWorkspaceSecretsLoadStatusesResult,
   type SettingsWorkspaceStateLoadResult,
@@ -54,12 +60,17 @@ export interface RendererIpcHandlers {
   loadSettingsWorkspaceSecretStates: (
     request?: SettingsWorkspaceSecretsLoadStatusesRequest,
   ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
+  loadSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretLoadResult>
   saveSettingsWorkspaceProviderSecret: (
     request: SettingsWorkspaceSaveProviderApiKeyRequest,
   ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
   clearSettingsWorkspaceProviderSecret: (
     request: SettingsWorkspaceClearProviderApiKeyRequest,
   ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  saveSettingsWorkspaceSustechCasSecret: (
+    request: SettingsWorkspaceSaveSustechCasPasswordRequest,
+  ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyBootstrapWindowReady: () => Promise<void>
@@ -113,8 +124,11 @@ export function registerRendererIpcHandlers(
   ipcMain.removeHandler(SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL)
   ipcMain.removeHandler(SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL)
   ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL)
   ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL)
   ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
   ipcMain.removeHandler(COPILOT_RUNTIME_LOAD_CHANNEL)
   ipcMain.removeHandler(COPILOT_RUNTIME_RETRY_CHANNEL)
   ipcMain.removeHandler(BOOTSTRAP_WINDOW_READY_CHANNEL)
@@ -149,6 +163,13 @@ export function registerRendererIpcHandlers(
   )
 
   ipcMain.handle(
+    SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL,
+    async (): Promise<SettingsWorkspaceSustechCasSecretLoadResult> => {
+      return await handlers.loadSettingsWorkspaceSustechCasSecret()
+    },
+  )
+
+  ipcMain.handle(
     SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
     async (
       _event,
@@ -165,6 +186,23 @@ export function registerRendererIpcHandlers(
       request: SettingsWorkspaceClearProviderApiKeyRequest,
     ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
       return await handlers.clearSettingsWorkspaceProviderSecret(request)
+    },
+  )
+
+  ipcMain.handle(
+    SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
+    async (
+      _event,
+      request: SettingsWorkspaceSaveSustechCasPasswordRequest,
+    ): Promise<SettingsWorkspaceSustechCasSecretMutationResult> => {
+      return await handlers.saveSettingsWorkspaceSustechCasSecret(request)
+    },
+  )
+
+  ipcMain.handle(
+    SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+    async (): Promise<SettingsWorkspaceSustechCasSecretMutationResult> => {
+      return await handlers.clearSettingsWorkspaceSustechCasSecret()
     },
   )
 

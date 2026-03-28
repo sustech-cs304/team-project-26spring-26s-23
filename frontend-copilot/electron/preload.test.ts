@@ -13,8 +13,11 @@ import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL, type Copil
 import { MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, type RuntimeConsoleEntry } from './renderer-ipc'
 import {
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL,
   SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
   type SettingsWorkspaceSecretsApi,
@@ -92,6 +95,12 @@ describe('preload renderer bridge', () => {
     })
     await settingsWorkspaceStateApi.load()
     await settingsWorkspaceStateApi.save({
+      sustech: {
+        studentId: '',
+        email: '',
+        blackboardAutoDownloadEnabled: false,
+        blackboardDownloadLimitMb: '0',
+      },
       providerProfiles: [],
       defaultModelRouting: {
         primaryAssistantModel: '',
@@ -131,10 +140,16 @@ describe('preload renderer bridge', () => {
         outputDirectory: 'D:/workspace/exports',
         autoFileNameEnabled: true,
       },
+      externalSource: {
+        wakeupShareLink: '',
+      },
     })
     await settingsWorkspaceSecretsApi.loadStatuses({ providerIds: ['openrouter'] })
+    await settingsWorkspaceSecretsApi.loadSustechCasPassword()
     await settingsWorkspaceSecretsApi.saveProviderApiKey({ providerId: 'openrouter', apiKey: 'draft-secret' })
     await settingsWorkspaceSecretsApi.clearProviderApiKey({ providerId: 'openrouter' })
+    await settingsWorkspaceSecretsApi.saveSustechCasPassword({ password: 'cas-secret' })
+    await settingsWorkspaceSecretsApi.clearSustechCasPassword()
     await bootstrapWindowApi.signalBootstrapScreenReady()
 
     expect(preloadMocks.invoke.mock.calls).toEqual([
@@ -150,6 +165,12 @@ describe('preload renderer bridge', () => {
       }],
       [SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL],
       [SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL, {
+        sustech: {
+          studentId: '',
+          email: '',
+          blackboardAutoDownloadEnabled: false,
+          blackboardDownloadLimitMb: '0',
+        },
         providerProfiles: [],
         defaultModelRouting: {
           primaryAssistantModel: '',
@@ -189,10 +210,16 @@ describe('preload renderer bridge', () => {
           outputDirectory: 'D:/workspace/exports',
           autoFileNameEnabled: true,
         },
+        externalSource: {
+          wakeupShareLink: '',
+        },
       }],
       [SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL, { providerIds: ['openrouter'] }],
+      [SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL],
       [SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL, { providerId: 'openrouter', apiKey: 'draft-secret' }],
       [SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL, { providerId: 'openrouter' }],
+      [SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL, { password: 'cas-secret' }],
+      [SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL],
       [BOOTSTRAP_WINDOW_READY_CHANNEL],
     ])
 

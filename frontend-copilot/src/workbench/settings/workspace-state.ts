@@ -2,7 +2,10 @@ import type {
   SettingsWorkspaceApiFailure,
   SettingsWorkspaceClearProviderApiKeyRequest,
   SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceSaveSustechCasPasswordRequest,
   SettingsWorkspaceSaveProviderApiKeyRequest,
+  SettingsWorkspaceSustechCasSecretLoadResult,
+  SettingsWorkspaceSustechCasSecretMutationResult,
   SettingsWorkspaceSecretsApi,
   SettingsWorkspaceSecretsLoadStatusesRequest,
   SettingsWorkspaceSecretsLoadStatusesResult,
@@ -50,6 +53,11 @@ export async function loadSettingsWorkspaceSecretStatuses(
   return api ? api.loadStatuses(request) : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
 }
 
+export async function loadSettingsWorkspaceSustechCasPassword(): Promise<SettingsWorkspaceSustechCasSecretLoadResult> {
+  const api = getSettingsWorkspaceSecretsApi()
+  return api ? api.loadSustechCasPassword() : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
+}
+
 export async function saveSettingsWorkspaceProviderApiKey(
   request: SettingsWorkspaceSaveProviderApiKeyRequest,
 ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
@@ -62,6 +70,18 @@ export async function clearSettingsWorkspaceProviderApiKey(
 ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
   const api = getSettingsWorkspaceSecretsApi()
   return api ? api.clearProviderApiKey(request) : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
+}
+
+export async function saveSettingsWorkspaceSustechCasPassword(
+  request: SettingsWorkspaceSaveSustechCasPasswordRequest,
+): Promise<SettingsWorkspaceSustechCasSecretMutationResult> {
+  const api = getSettingsWorkspaceSecretsApi()
+  return api ? api.saveSustechCasPassword(request) : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
+}
+
+export async function clearSettingsWorkspaceSustechCasPassword(): Promise<SettingsWorkspaceSustechCasSecretMutationResult> {
+  const api = getSettingsWorkspaceSecretsApi()
+  return api ? api.clearSustechCasPassword() : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
 }
 
 function createFailureResult<TResult extends SettingsWorkspaceApiFailure>(error: string): TResult {

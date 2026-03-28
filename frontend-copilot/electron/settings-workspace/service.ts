@@ -10,9 +10,11 @@ import {
   normalizeSettingsWorkspaceStateValues,
   projectProviderSecretStateById,
   projectSettingsWorkspaceEditableState,
+  projectSustechCasSecretState,
   type SettingsWorkspaceEditableState,
   type SettingsWorkspaceProviderSecretState,
   type SettingsWorkspaceProviderSecretStateById,
+  type SettingsWorkspaceSustechCasSecretState,
   type SettingsWorkspaceSecretsDocument,
   type SettingsWorkspaceStateDocument,
   type SettingsWorkspaceStateSaveInput,
@@ -30,11 +32,20 @@ export interface SettingsWorkspaceStorage {
   loadSecretStates: (providerIds?: readonly string[]) => Promise<{
     states: SettingsWorkspaceProviderSecretStateById
   }>
+  loadSustechCasSecret: () => Promise<{
+    state: SettingsWorkspaceSustechCasSecretState
+  }>
   saveProviderSecret: (providerId: string, apiKey: string) => Promise<{
     state: SettingsWorkspaceProviderSecretState
   }>
   clearProviderSecret: (providerId: string) => Promise<{
     state: SettingsWorkspaceProviderSecretState
+  }>
+  saveSustechCasSecret: (password: string) => Promise<{
+    state: SettingsWorkspaceSustechCasSecretState
+  }>
+  clearSustechCasSecret: () => Promise<{
+    state: SettingsWorkspaceSustechCasSecretState
   }>
 }
 
@@ -116,6 +127,14 @@ export function createSettingsWorkspaceStorage(
     }
   }
 
+  const loadSustechCasSecret = async () => {
+    const secretsDocument = (await readSecretsDocument(options.paths, fileSystem)).document
+
+    return {
+      state: projectSustechCasSecretState(secretsDocument),
+    }
+  }
+
   const saveProviderSecret = async (providerId: string, apiKey: string) => {
     const normalizedProviderId = normalizeIdentifier(providerId, 'providerId')
     const normalizedApiKey = normalizeIdentifier(apiKey, 'apiKey')
@@ -127,6 +146,7 @@ export function createSettingsWorkspaceStorage(
           apiKey: normalizedApiKey,
         },
       },
+      sustech: secretsDocument.values.sustech,
     })
 
     await writeDocuments(
@@ -150,6 +170,7 @@ export function createSettingsWorkspaceStorage(
     const { [normalizedProviderId]: _removedSecret, ...remainingProviderSecrets } = secretsDocument.values.providerSecrets
     const nextSecretsDocument = createSettingsWorkspaceSecretsDocument({
       providerSecrets: remainingProviderSecrets,
+      sustech: secretsDocument.values.sustech,
     })
 
     await writeDocuments(
@@ -167,12 +188,64 @@ export function createSettingsWorkspaceStorage(
     }
   }
 
+  const saveSustechCasSecret = async (password: string) => {
+    const normalizedPassword = normalizeIdentifier(password, 'password')
+    const secretsDocument = (await readSecretsDocument(options.paths, fileSystem)).document
+    const nextSecretsDocument = createSettingsWorkspaceSecretsDocument({
+      providerSecrets: secretsDocument.values.providerSecrets,
+      sustech: {
+        casPassword: normalizedPassword,
+      },
+    })
+
+    await writeDocuments(
+      options.paths,
+      (await readStateDocument(options.paths, fileSystem)).document,
+      nextSecretsDocument,
+      fileSystem,
+    )
+
+    return {
+      state: {
+        hasPassword: true,
+        password: normalizedPassword,
+      },
+    }
+  }
+
+  const clearSustechCasSecret = async () => {
+    const secretsDocument = (await readSecretsDocument(options.paths, fileSystem)).document
+    const nextSecretsDocument = createSettingsWorkspaceSecretsDocument({
+      providerSecrets: secretsDocument.values.providerSecrets,
+      sustech: {
+        casPassword: '',
+      },
+    })
+
+    await writeDocuments(
+      options.paths,
+      (await readStateDocument(options.paths, fileSystem)).document,
+      nextSecretsDocument,
+      fileSystem,
+    )
+
+    return {
+      state: {
+        hasPassword: false,
+        password: '',
+      },
+    }
+  }
+
   return {
     loadState,
     saveState,
     loadSecretStates,
+    loadSustechCasSecret,
     saveProviderSecret,
     clearProviderSecret,
+    saveSustechCasSecret,
+    clearSustechCasSecret,
   }
 }
 
@@ -258,6 +331,7 @@ function pruneSecretsDocument(
     providerSecrets: Object.fromEntries(
       Object.entries(document.values.providerSecrets).filter(([providerId]) => validProviderIds.has(providerId)),
     ),
+    sustech: document.values.sustech,
   })
 }
 

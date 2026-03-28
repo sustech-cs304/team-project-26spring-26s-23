@@ -52,6 +52,9 @@ describe('createSettingsWorkspaceStorage', () => {
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {},
+          sustech: {
+            casPassword: '',
+          },
         },
       })
     } finally {
@@ -127,6 +130,9 @@ describe('createSettingsWorkspaceStorage', () => {
               apiKey: 'first-secret',
             },
           },
+          sustech: {
+            casPassword: '',
+          },
         },
       })
 
@@ -139,6 +145,9 @@ describe('createSettingsWorkspaceStorage', () => {
             openrouter: {
               apiKey: 'second-secret',
             },
+          },
+          sustech: {
+            casPassword: '',
           },
         },
       })
@@ -187,6 +196,9 @@ describe('createSettingsWorkspaceStorage', () => {
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {},
+          sustech: {
+            casPassword: '',
+          },
         },
       })
 

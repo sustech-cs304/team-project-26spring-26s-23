@@ -1,5 +1,5 @@
-import { Copy, Eye, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Copy, Eye, EyeOff, Link2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import type { CopilotBootstrapController, CopilotBootstrapState } from '../../features/copilot/types'
 import { settingsItems } from '../config'
@@ -33,9 +33,12 @@ import {
 } from './config'
 import {
   clearSettingsWorkspaceProviderApiKey,
+  clearSettingsWorkspaceSustechCasPassword,
   loadSettingsWorkspaceSecretStatuses,
+  loadSettingsWorkspaceSustechCasPassword,
   loadSettingsWorkspaceState,
   saveSettingsWorkspaceProviderApiKey,
+  saveSettingsWorkspaceSustechCasPassword,
   saveSettingsWorkspaceState,
 } from './workspace-state'
 import {
@@ -54,6 +57,25 @@ type ModelEditorState = ProviderModelProfile & {
   advancedOpen: boolean
   isNew: boolean
 }
+
+type WakeupDialogState =
+  | { status: 'failure' }
+  | { status: 'success' }
+  | null
+
+interface ProviderContextMenuState {
+  providerId: string
+  providerName: string
+  x: number
+  y: number
+}
+
+interface ProviderDragState {
+  draggingProviderId: string
+  previewIndex: number
+}
+
+let nextProviderSequence = 0
 
 const focusableElementSelector = [
   'a[href]',
@@ -220,9 +242,19 @@ export function SettingsWorkspace({
   onThemeModeChange,
   initialSection,
 }: SettingsWorkspaceProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'model-service')
+  const [studentId, setStudentId] = useState('')
+  const [sustechEmail, setSustechEmail] = useState('')
+  const [sustechEmailFocused, setSustechEmailFocused] = useState(false)
+  const [casPasswordDraft, setCasPasswordDraft] = useState('')
+  const [casPasswordSavedValue, setCasPasswordSavedValue] = useState('')
+  const [casPasswordFeedback, setCasPasswordFeedback] = useState<string | null>(null)
+  const [blackboardAutoDownloadEnabled, setBlackboardAutoDownloadEnabled] = useState(false)
+  const [blackboardDownloadLimitMb, setBlackboardDownloadLimitMb] = useState('0')
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? settingsItems[0]?.id ?? 'sustech-info')
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
+  const [providerContextMenu, setProviderContextMenu] = useState<ProviderContextMenuState | null>(null)
+  const [providerDragState, setProviderDragState] = useState<ProviderDragState | null>(null)
   const [providerQuery, setProviderQuery] = useState('')
   const [providerSecretDrafts, setProviderSecretDrafts] = useState<Record<string, string>>({})
   const [providerSecretSavedValues, setProviderSecretSavedValues] = useState<Record<string, string>>({})
@@ -260,14 +292,29 @@ export function SettingsWorkspace({
   const [docsFormat, setDocsFormat] = useState('markdown')
   const [outputDirectory, setOutputDirectory] = useState('D:/workspace/exports')
   const [autoFileNameEnabled, setAutoFileNameEnabled] = useState(true)
+  const [wakeupShareLink, setWakeupShareLink] = useState('')
+  const [wakeupDialogState, setWakeupDialogState] = useState<WakeupDialogState>(null)
+  const providerListRef = useRef<HTMLUListElement | null>(null)
+  const providerDragGhostRef = useRef<HTMLDivElement | null>(null)
+  const providerDragStateRef = useRef<ProviderDragState | null>(null)
+  const pendingProviderPointerRef = useRef<{
+    providerId: string
+    startX: number
+    startY: number
+    pointerOffsetX: number
+    pointerOffsetY: number
+  } | null>(null)
+  const providerPointerCleanupRef = useRef<(() => void) | null>(null)
+  const providerDragGhostFrameRef = useRef<number | null>(null)
+  const suppressProviderClickRef = useRef(false)
 
   const activeSettingsItem = useMemo(
     () => settingsItems.find((item) => item.id === activeSection) ?? settingsItems[0],
     [activeSection],
   )
 
-  const activeProvider = useMemo(
-    () => providerProfiles.find((profile) => profile.id === activeProviderId) ?? providerProfiles[0],
+  const activeProvider = useMemo<ProviderProfile | null>(
+    () => providerProfiles.find((profile) => profile.id === activeProviderId) ?? providerProfiles[0] ?? null,
     [activeProviderId, providerProfiles],
   )
 
@@ -292,6 +339,22 @@ export function SettingsWorkspace({
       )
     })
   }, [providerProfiles, providerQuery])
+  const draggingProvider = useMemo(
+    () => providerDragState === null
+      ? null
+      : providerProfiles.find((profile) => profile.id === providerDragState.draggingProviderId) ?? null,
+    [providerDragState, providerProfiles],
+  )
+  const draggedProviderId = providerDragState?.draggingProviderId ?? null
+  const renderedProviderProfiles = useMemo(
+    () => draggedProviderId === null
+      ? filteredProviderProfiles
+      : filteredProviderProfiles.filter((profile) => profile.id !== draggedProviderId),
+    [draggedProviderId, filteredProviderProfiles],
+  )
+  const providerDragPreviewIndex = providerDragState === null
+    ? null
+    : Math.max(0, Math.min(providerDragState.previewIndex, renderedProviderProfiles.length))
 
   const allModelOptions = useMemo<SelectOption[]>(() => {
     const modelsById = new Map<string, ProviderModelProfile>()
@@ -318,10 +381,27 @@ export function SettingsWorkspace({
   const [apiKeyFeedback, setApiKeyFeedback] = useState<string | null>(null)
   const modelEditorOpen = modelEditorState !== null
   const modelEditorAdvancedSectionId = 'settings-model-editor-advanced-panel'
-  const activeProviderApiKeyDraft = providerSecretDrafts[activeProviderId] ?? ''
+  const activeProviderApiKeyDraft = activeProvider ? (providerSecretDrafts[activeProvider.id] ?? '') : ''
+  const activeProviderDetail = activeProvider ?? createPlaceholderProviderProfile()
+  const derivedSustechEmail = useMemo(() => {
+    const normalizedStudentId = studentId.trim()
+
+    if (!normalizedStudentId) {
+      return ''
+    }
+
+    return `${normalizedStudentId}@sustech.edu.cn`
+  }, [studentId])
+  const displayedSustechEmail = sustechEmail.trim() || (!sustechEmailFocused ? derivedSustechEmail : '')
 
   const workspaceStateInput = useMemo<SettingsWorkspaceStateSaveInput>(() => {
     return {
+      sustech: {
+        studentId,
+        email: sustechEmail,
+        blackboardAutoDownloadEnabled,
+        blackboardDownloadLimitMb,
+      },
       providerProfiles: providerProfiles.map(({ hasApiKey: _hasApiKey, ...profile }) => ({
         ...profile,
         availableModels: profile.availableModels.map((model) => ({
@@ -367,6 +447,9 @@ export function SettingsWorkspace({
         outputDirectory,
         autoFileNameEnabled,
       },
+      externalSource: {
+        wakeupShareLink,
+      },
     }
   }, [
     apiBaseUrl,
@@ -375,6 +458,8 @@ export function SettingsWorkspace({
     autoFileNameEnabled,
     backupCycle,
     backupEnabled,
+    blackboardAutoDownloadEnabled,
+    blackboardDownloadLimitMb,
     compressionMode,
     dataPath,
     docsFormat,
@@ -391,7 +476,10 @@ export function SettingsWorkspace({
     proxyMode,
     searchEngine,
     searchResultCount,
+    studentId,
+    sustechEmail,
     toolPermissionMode,
+    wakeupShareLink,
   ])
 
   useEffect(() => {
@@ -406,14 +494,20 @@ export function SettingsWorkspace({
     void (async () => {
       const result = await loadSettingsWorkspaceState()
       let loadedProviderSecretValues: Record<string, string> = {}
+      let loadedCasPasswordValue = ''
 
       if (result.ok) {
         const secretStatusesResult = await loadSettingsWorkspaceSecretStatuses({
           providerIds: result.state.providerProfiles.map((profile) => profile.id),
         })
+        const sustechCasPasswordResult = await loadSettingsWorkspaceSustechCasPassword()
 
         if (secretStatusesResult.ok) {
           loadedProviderSecretValues = projectLoadedProviderSecretValues(secretStatusesResult.states)
+        }
+
+        if (sustechCasPasswordResult.ok) {
+          loadedCasPasswordValue = sustechCasPasswordResult.state.password
         }
       }
 
@@ -436,6 +530,10 @@ export function SettingsWorkspace({
           setSearchEngine,
           setSearchResultCount,
           setCompressionMode,
+          setStudentId,
+          setSustechEmail,
+          setBlackboardAutoDownloadEnabled,
+          setBlackboardDownloadLimitMb,
           setMemoryStrategy,
           setMemoryCleanupEnabled,
           setApiReconnectMode,
@@ -444,9 +542,12 @@ export function SettingsWorkspace({
           setDocsFormat,
           setOutputDirectory,
           setAutoFileNameEnabled,
+          setWakeupShareLink,
         })
         setProviderSecretDrafts(loadedProviderSecretValues)
         setProviderSecretSavedValues(loadedProviderSecretValues)
+        setCasPasswordDraft(loadedCasPasswordValue)
+        setCasPasswordSavedValue(loadedCasPasswordValue)
       }
 
       if (!cancelled) {
@@ -503,6 +604,70 @@ export function SettingsWorkspace({
   }, [apiKeyFeedback])
 
   useEffect(() => {
+    if (!casPasswordFeedback) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCasPasswordFeedback(null)
+    }, 2000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [casPasswordFeedback])
+
+  useEffect(() => {
+    if (providerContextMenu === null) {
+      return undefined
+    }
+
+    const handleWindowMouseDown = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest('[data-testid="provider-context-menu"]') !== null) {
+        return
+      }
+
+      setProviderContextMenu(null)
+    }
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProviderContextMenu(null)
+        setProviderDragState(null)
+        pendingProviderPointerRef.current = null
+      }
+    }
+
+    const handleWindowBlur = () => {
+      setProviderDragState(null)
+      pendingProviderPointerRef.current = null
+    }
+
+    window.addEventListener('mousedown', handleWindowMouseDown)
+    window.addEventListener('keydown', handleWindowKeyDown)
+    window.addEventListener('blur', handleWindowBlur)
+
+    return () => {
+      window.removeEventListener('mousedown', handleWindowMouseDown)
+      window.removeEventListener('keydown', handleWindowKeyDown)
+      window.removeEventListener('blur', handleWindowBlur)
+    }
+  }, [providerContextMenu])
+
+  useEffect(() => {
+    providerDragStateRef.current = providerDragState
+  }, [providerDragState])
+
+  useEffect(() => {
+    return () => {
+      providerPointerCleanupRef.current?.()
+      if (providerDragGhostFrameRef.current !== null) {
+        cancelAnimationFrame(providerDragGhostFrameRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     if (!modelEditorOpen) {
       const previousFocusedElement = previouslyFocusedElementRef.current
       previouslyFocusedElementRef.current = null
@@ -540,6 +705,10 @@ export function SettingsWorkspace({
   }, [modelEditorOpen])
 
   const updateActiveProvider = (patch: Partial<ProviderProfile>) => {
+    if (!activeProvider) {
+      return
+    }
+
     setProviderProfiles((previous) =>
       previous.map((profile) => {
         if (profile.id === activeProviderId) {
@@ -552,6 +721,10 @@ export function SettingsWorkspace({
   }
 
   const handleCopyApiKey = async () => {
+    if (!activeProvider) {
+      return
+    }
+
     if (!activeProviderApiKeyDraft.trim()) {
       setApiKeyFeedback('当前没有可复制的 API 密钥')
       return
@@ -636,6 +809,41 @@ export function SettingsWorkspace({
     setApiKeyFeedback('已自动保存 API 密钥')
   }
 
+  const handlePersistCasPasswordDraft = async () => {
+    const normalizedDraft = casPasswordDraft.trim()
+
+    if (normalizedDraft === casPasswordSavedValue) {
+      return
+    }
+
+    if (!normalizedDraft) {
+      const result = await clearSettingsWorkspaceSustechCasPassword()
+
+      if (!result.ok) {
+        setCasPasswordFeedback('保存失败，请稍后重试')
+        return
+      }
+
+      setCasPasswordDraft('')
+      setCasPasswordSavedValue('')
+      setCasPasswordFeedback('已清除 CAS 密码')
+      return
+    }
+
+    const result = await saveSettingsWorkspaceSustechCasPassword({
+      password: normalizedDraft,
+    })
+
+    if (!result.ok) {
+      setCasPasswordFeedback('保存失败，请稍后重试')
+      return
+    }
+
+    setCasPasswordDraft(result.state.password)
+    setCasPasswordSavedValue(result.state.password)
+    setCasPasswordFeedback('已自动保存 CAS 密码')
+  }
+
   const commitActiveProviderModels = (
     nextModels: ProviderModelProfile[],
     options?: { previousModelId?: string | null; nextModelId?: string | null },
@@ -670,14 +878,244 @@ export function SettingsWorkspace({
     setProviderQuery('')
     setActiveProviderId(nextProvider.id)
     setModelEditorState(null)
+    setProviderContextMenu(null)
+  }
+
+  const moveProviderToIndex = (draggingProviderId: string, nextIndex: number) => {
+    setProviderProfiles((previous) => {
+      const draggingIndex = previous.findIndex((profile) => profile.id === draggingProviderId)
+
+      if (draggingIndex === -1) {
+        return previous
+      }
+
+      const clampedIndex = Math.max(0, Math.min(nextIndex, previous.length - 1))
+      const nextProfiles = [...previous]
+      const [draggingProvider] = nextProfiles.splice(draggingIndex, 1)
+      nextProfiles.splice(clampedIndex, 0, draggingProvider)
+      return nextProfiles
+    })
+  }
+
+  const handleOpenProviderContextMenu = (providerId: string, x: number, y: number) => {
+    const provider = providerProfiles.find((profile) => profile.id === providerId)
+
+    if (!provider) {
+      return
+    }
+
+    setProviderContextMenu({
+      providerId,
+      providerName: provider.name,
+      x,
+      y,
+    })
+  }
+
+  const scheduleProviderDragGhostPosition = (
+    pointerX: number,
+    pointerY: number,
+    pointerOffsetX: number,
+    pointerOffsetY: number,
+  ) => {
+    if (providerDragGhostFrameRef.current !== null) {
+      cancelAnimationFrame(providerDragGhostFrameRef.current)
+    }
+
+    providerDragGhostFrameRef.current = requestAnimationFrame(() => {
+      if (providerDragGhostRef.current !== null) {
+        providerDragGhostRef.current.style.transform = `translate3d(${pointerX - pointerOffsetX}px, ${pointerY - pointerOffsetY}px, 0)`
+      }
+      providerDragGhostFrameRef.current = null
+    })
+  }
+
+  const handleProviderPointerDown = (event: React.PointerEvent<HTMLButtonElement>, providerId: string) => {
+    if (event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+    setProviderContextMenu(null)
+    providerPointerCleanupRef.current?.()
+
+    const previousUserSelect = document.body.style.userSelect
+    const currentTargetRect = event.currentTarget.getBoundingClientRect()
+    pendingProviderPointerRef.current = {
+      providerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      pointerOffsetX: event.clientX - currentTargetRect.left,
+      pointerOffsetY: event.clientY - currentTargetRect.top,
+    }
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+      document.body.style.userSelect = previousUserSelect
+      pendingProviderPointerRef.current = null
+      providerPointerCleanupRef.current = null
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const pending = pendingProviderPointerRef.current
+      if (pending === null) {
+        return
+      }
+
+      const pointerTravel = Math.abs(moveEvent.clientX - pending.startX) + Math.abs(moveEvent.clientY - pending.startY)
+      if (pointerTravel < 4 && providerDragStateRef.current === null) {
+        return
+      }
+
+      suppressProviderClickRef.current = true
+      document.body.style.userSelect = 'none'
+      scheduleProviderDragGhostPosition(
+        moveEvent.clientX,
+        moveEvent.clientY,
+        pending.pointerOffsetX,
+        pending.pointerOffsetY,
+      )
+
+      const listElement = providerListRef.current
+      const nextPreviewIndex = listElement === null
+        ? 0
+        : computeProviderPreviewIndex(listElement, moveEvent.clientY - pending.pointerOffsetY + (currentTargetRect.height / 2))
+
+      setProviderDragState({
+        draggingProviderId: pending.providerId,
+        previewIndex: nextPreviewIndex,
+      })
+    }
+
+    const handlePointerUp = () => {
+      const dragSnapshot = providerDragStateRef.current
+      if (dragSnapshot !== null) {
+        moveProviderToIndex(dragSnapshot.draggingProviderId, dragSnapshot.previewIndex)
+        setProviderDragState(null)
+        requestAnimationFrame(() => {
+          suppressProviderClickRef.current = false
+        })
+      }
+
+      cleanup()
+    }
+
+    providerPointerCleanupRef.current = cleanup
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+  }
+
+  const handleCopyProvider = async (providerId: string) => {
+    const sourceProvider = providerProfiles.find((profile) => profile.id === providerId)
+
+    if (!sourceProvider) {
+      return
+    }
+
+    const nextProviderId = createProviderId(sourceProvider.name)
+    const nextProviderName = `${sourceProvider.name} 副本`
+    const copiedSecret = providerSecretSavedValues[providerId] ?? providerSecretDrafts[providerId] ?? ''
+    const nextProvider: ProviderProfile = {
+      ...sourceProvider,
+      id: nextProviderId,
+      name: nextProviderName,
+      hasApiKey: copiedSecret !== '',
+      availableModels: sourceProvider.availableModels.map((model) => ({
+        ...model,
+        id: createModelProfileId(nextProviderId, model.modelId),
+        capabilities: [...model.capabilities],
+      })),
+    }
+
+    setProviderProfiles((previous) => {
+      const sourceIndex = previous.findIndex((profile) => profile.id === providerId)
+      const nextProfiles = [...previous]
+      nextProfiles.splice(sourceIndex + 1, 0, nextProvider)
+      return nextProfiles
+    })
+    setActiveProviderId(nextProviderId)
+    setProviderContextMenu(null)
+
+    if (!copiedSecret) {
+      return
+    }
+
+    const result = await saveSettingsWorkspaceProviderApiKey({
+      providerId: nextProviderId,
+      apiKey: copiedSecret,
+    })
+
+    if (!result.ok) {
+      setApiKeyFeedback('复制服务商后未能同步 API 密钥')
+      return
+    }
+
+    setProviderSecretDrafts((previous) => ({
+      ...previous,
+      [nextProviderId]: result.state.apiKey,
+    }))
+    setProviderSecretSavedValues((previous) => ({
+      ...previous,
+      [nextProviderId]: result.state.apiKey,
+    }))
+  }
+
+  const handleDeleteProvider = async (providerId: string) => {
+    const currentIndex = providerProfiles.findIndex((profile) => profile.id === providerId)
+
+    if (currentIndex === -1) {
+      return
+    }
+
+    const nextActiveProviderId = providerProfiles[currentIndex + 1]?.id
+      ?? providerProfiles[currentIndex - 1]?.id
+      ?? ''
+    const savedSecret = providerSecretSavedValues[providerId] ?? ''
+
+    setProviderProfiles((previous) => previous.filter((profile) => profile.id !== providerId))
+    setProviderSecretDrafts((previous) => {
+      const { [providerId]: _removedDraft, ...remainingDrafts } = previous
+      return remainingDrafts
+    })
+    setProviderSecretSavedValues((previous) => {
+      const { [providerId]: _removedSavedValue, ...remainingSavedValues } = previous
+      return remainingSavedValues
+    })
+    setProviderContextMenu(null)
+    setModelEditorState(null)
+
+    if (providerId === activeProviderId) {
+      setActiveProviderId(nextActiveProviderId)
+    }
+
+    if (!savedSecret) {
+      return
+    }
+
+    const result = await clearSettingsWorkspaceProviderApiKey({ providerId })
+
+    if (!result.ok) {
+      setApiKeyFeedback('删除服务商后未能清除 API 密钥')
+    }
   }
 
   const handleOpenCreateModelEditor = () => {
+    if (!activeProvider) {
+      return
+    }
+
     setModelEditorError(null)
     setModelEditorState(createEmptyModelEditorState(activeProvider.name, activeProvider.availableModels.length))
   }
 
   const handleOpenModelEditor = (index: number) => {
+    if (!activeProvider) {
+      return
+    }
+
     const currentModel = activeProvider.availableModels[index]
 
     if (!currentModel) {
@@ -766,7 +1204,7 @@ export function SettingsWorkspace({
   }
 
   const handleSaveModel = () => {
-    if (!modelEditorState) {
+    if (!modelEditorState || !activeProvider) {
       return
     }
 
@@ -812,6 +1250,10 @@ export function SettingsWorkspace({
   }
 
   const handleRemoveModel = (index: number) => {
+    if (!activeProvider) {
+      return
+    }
+
     const previousModelId = activeProvider.availableModels[index]?.modelId ?? null
     const nextModels = activeProvider.availableModels.filter((_, modelIndex) => modelIndex !== index)
 
@@ -820,6 +1262,19 @@ export function SettingsWorkspace({
       nextModelId: nextModels[0]?.modelId ?? null,
     })
     setModelEditorState(null)
+  }
+
+  const handleWakeupLinkParse = async () => {
+    const parseStatus = await resolveWakeupShareLinkParseStatus(wakeupShareLink)
+    setWakeupDialogState(parseStatus === 'success' ? { status: 'success' } : { status: 'failure' })
+  }
+
+  const handleWakeupDialogClose = () => {
+    setWakeupDialogState(null)
+  }
+
+  const handleWakeupConflictChoice = () => {
+    setWakeupDialogState(null)
   }
 
   return (
@@ -861,6 +1316,107 @@ export function SettingsWorkspace({
         <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">
           {(() => {
             switch (activeSection) {
+              case 'sustech-info':
+                return (
+                  <div className="settings-page settings-page--split settings-page--balanced">
+                    <section className="settings-card settings-card--form">
+                      <div className="settings-card__header">
+                        <div>
+                          <h3 className="settings-card__title">基本信息</h3>
+                        </div>
+                      </div>
+
+                      <div className="settings-stack">
+                        <div className="form-grid form-grid--two">
+                          <TextField
+                            label="学号"
+                            value={studentId}
+                            onChange={setStudentId}
+                            placeholder="输入学号"
+                          />
+                          <label className="form-field">
+                            <span className="form-field__meta">
+                              <span className="form-field__label">邮箱</span>
+                            </span>
+                            <input
+                              className="text-input"
+                              type="text"
+                              value={displayedSustechEmail}
+                              placeholder="输入邮箱"
+                              onFocus={() => setSustechEmailFocused(true)}
+                              onBlur={() => setSustechEmailFocused(false)}
+                              onChange={(event) => setSustechEmail(event.target.value)}
+                            />
+                          </label>
+                          <label className="form-field form-field--full" htmlFor="sustech-cas-password-input">
+                            <span className="form-field__meta">
+                              <span className="form-field__label">CAS 密码</span>
+                            </span>
+                            <input
+                              id="sustech-cas-password-input"
+                              data-testid="sustech-cas-password-input"
+                              className="text-input"
+                              type="password"
+                              value={casPasswordDraft}
+                              placeholder="输入 CAS 密码"
+                              onChange={(event) => setCasPasswordDraft(event.target.value)}
+                              onBlur={() => {
+                                void handlePersistCasPasswordDraft()
+                              }}
+                            />
+                            {casPasswordFeedback ? (
+                              <span className="form-field__feedback form-field__feedback--success" role="status">
+                                {casPasswordFeedback}
+                              </span>
+                            ) : null}
+                          </label>
+                        </div>
+                      </div>
+                    </section>
+
+                    <div className="settings-detail-column">
+                      <section className="settings-card settings-card--form">
+                        <div className="settings-card__header">
+                          <div>
+                            <h3 className="settings-card__title">Blackboard 信息</h3>
+                          </div>
+                        </div>
+
+                        <div className="settings-stack">
+                          <ToggleSwitch
+                            label="自动下载 Blackboard 文件"
+                            checked={blackboardAutoDownloadEnabled}
+                            onChange={setBlackboardAutoDownloadEnabled}
+                          />
+                          <TextField
+                            label="下载文件大小限制（MB）"
+                            value={blackboardDownloadLimitMb}
+                            onChange={(value) => {
+                              if (/^\d*$/.test(value)) {
+                                setBlackboardDownloadLimitMb(value === '' ? '' : String(Number.parseInt(value, 10) || 0))
+                              }
+                            }}
+                            placeholder="0"
+                          />
+                          <p className="form-field__description">0为不限制</p>
+                        </div>
+                      </section>
+
+                      <section className="settings-card settings-card--form">
+                        <div className="settings-card__header">
+                          <div>
+                            <h3 className="settings-card__title">TIS 信息</h3>
+                          </div>
+                        </div>
+
+                        <div className="settings-stack">
+                          <p className="settings-empty-hint">敬请期待</p>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                )
+
               case 'model-service':
                 return (
                   <div className="settings-page settings-page--split">
@@ -885,40 +1441,127 @@ export function SettingsWorkspace({
                         />
                       </div>
 
-                      <ul className="provider-list provider-list--interactive">
-                        {filteredProviderProfiles.map((profile) => {
-                          const active = profile.id === activeProvider.id
+                      <ul
+                        ref={providerListRef}
+                        className="provider-list provider-list--interactive"
+                        data-testid="settings-provider-list"
+                      >
+                        {renderedProviderProfiles.map((profile, visualIndex) => {
+                          const active = profile.id === activeProvider?.id
 
                           return (
-                            <li key={profile.id}>
-                              <button
-                                type="button"
-                                className={`provider-card${active ? ' provider-card--active' : ''}`}
-                                onClick={() => setActiveProviderId(profile.id)}
+                            <Fragment key={profile.id}>
+                              {providerDragPreviewIndex === visualIndex ? (
+                                <li className="topic-list__drop-gap" aria-hidden="true" />
+                              ) : null}
+                              <li
+                                className="provider-list__item"
+                                data-provider-order-index={visualIndex}
+                                data-testid={`settings-provider-list-item-${profile.id}`}
                               >
-                                <span className="provider-card__title-row">
-                                  <span className="provider-card__title">{profile.name}</span>
-                                </span>
-                                <span className="provider-card__meta-row">
-                                 <span className="provider-card__meta">
-                                    {
-                                      protocolOptions.find((option) => option.value === profile.protocol)?.label
-                                      ?? profile.protocol
+                                <button
+                                  type="button"
+                                  className={`provider-card${active ? ' provider-card--active' : ''}`}
+                                  data-testid={`settings-provider-card-${profile.id}`}
+                                  onPointerDown={(event) => handleProviderPointerDown(event, profile.id)}
+                                  onClick={(event) => {
+                                    if (suppressProviderClickRef.current) {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      suppressProviderClickRef.current = false
+                                      return
                                     }
+
+                                    setProviderContextMenu(null)
+                                    setActiveProviderId(profile.id)
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault()
+                                    setActiveProviderId(profile.id)
+                                    handleOpenProviderContextMenu(profile.id, event.clientX, event.clientY)
+                                  }}
+                                >
+                                  <span className="provider-card__title-row">
+                                    <span className="provider-card__title">{profile.name}</span>
                                   </span>
-                                  <span className="provider-card__meta">
-                                    {profile.hasApiKey ? '已配置密钥' : '未配置密钥'}
+                                  <span className="provider-card__meta-row">
+                                    <span className="provider-card__meta">
+                                      {
+                                        protocolOptions.find((option) => option.value === profile.protocol)?.label
+                                        ?? profile.protocol
+                                      }
+                                    </span>
+                                    <span className="provider-card__meta">
+                                      {profile.hasApiKey ? '已配置密钥' : '未配置密钥'}
+                                    </span>
                                   </span>
-                                </span>
-                                <span className="provider-card__description">{profile.endpoint}</span>
-                              </button>
-                            </li>
+                                  <span className="provider-card__description">{profile.endpoint}</span>
+                                </button>
+                              </li>
+                            </Fragment>
                           )
                         })}
+                        {providerDragPreviewIndex === renderedProviderProfiles.length ? (
+                          <li className="topic-list__drop-gap" aria-hidden="true" />
+                        ) : null}
                       </ul>
+
+                      {providerDragState !== null && draggingProvider !== null ? (
+                        <div
+                          ref={providerDragGhostRef}
+                          className="provider-card provider-card--drag-ghost"
+                          data-testid="settings-provider-drag-ghost"
+                          aria-hidden="true"
+                        >
+                          <span className="provider-card__title-row">
+                            <span className="provider-card__title">{draggingProvider.name}</span>
+                          </span>
+                          <span className="provider-card__meta-row">
+                            <span className="provider-card__meta">
+                              {protocolOptions.find((option) => option.value === draggingProvider.protocol)?.label ?? draggingProvider.protocol}
+                            </span>
+                          </span>
+                        </div>
+                      ) : null}
+
+                      {providerContextMenu !== null ? (
+                        <div
+                          className="session-context-menu provider-context-menu"
+                          data-testid="provider-context-menu"
+                          role="menu"
+                          aria-label={`${providerContextMenu.providerName} 服务商菜单`}
+                          style={{ left: `${providerContextMenu.x}px`, top: `${providerContextMenu.y}px` }}
+                        >
+                          <p className="session-context-menu__title">{providerContextMenu.providerName}</p>
+                          <div className="session-context-menu__group">
+                            <button
+                              type="button"
+                              className="session-context-menu__item"
+                              role="menuitem"
+                              onClick={() => {
+                                void handleCopyProvider(providerContextMenu.providerId)
+                              }}
+                            >
+                              复制服务商
+                            </button>
+                            <button
+                              type="button"
+                              className="session-context-menu__item session-context-menu__item--danger"
+                              role="menuitem"
+                              onClick={() => {
+                                void handleDeleteProvider(providerContextMenu.providerId)
+                              }}
+                            >
+                              删除服务商
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </section>
 
                     <div className="settings-detail-column">
+                      {activeProvider ? (
+                        <>
                       <section className="settings-card settings-card--form">
                         <div className="settings-card__header">
                           <div>
@@ -930,26 +1573,26 @@ export function SettingsWorkspace({
                           <div className="form-grid form-grid--two">
                             <TextField
                               label="服务商名称"
-                              value={activeProvider.name}
+                              value={activeProviderDetail.name}
                               onChange={(value) => updateActiveProvider({ name: value })}
                               placeholder="输入服务商名称"
                             />
                             <SelectField
                               label="端点类型"
-                              value={activeProvider.protocol}
+                              value={activeProviderDetail.protocol}
                               options={protocolOptions}
                               onChange={(value) => updateActiveProvider({ protocol: value })}
                             />
                             <TextField
                               label="API 地址"
-                              value={activeProvider.endpoint}
+                              value={activeProviderDetail.endpoint}
                               onChange={(value) => updateActiveProvider({ endpoint: value })}
                               placeholder="https://api.example.com/v1"
                               type="url"
                             />
                             <TextField
                               label="默认模型 ID"
-                              value={activeProvider.defaultModel}
+                              value={activeProviderDetail.defaultModel}
                               onChange={(value) => updateActiveProvider({ defaultModel: value })}
                               placeholder="例如 openai/gpt-4.1"
                             />
@@ -964,16 +1607,16 @@ export function SettingsWorkspace({
                                   className="text-input text-input-shell__input"
                                   type={apiKeyVisible ? 'text' : 'password'}
                                   value={activeProviderApiKeyDraft}
-                                  placeholder={activeProvider.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥'}
+                                  placeholder={activeProviderDetail.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥'}
                                   onChange={(event) => {
                                     const nextValue = event.target.value
                                     setProviderSecretDrafts((previous) => ({
                                       ...previous,
-                                      [activeProvider.id]: nextValue,
+                                      [activeProviderDetail.id]: nextValue,
                                     }))
                                   }}
                                   onBlur={() => {
-                                    void handlePersistProviderApiKeyDraft(activeProvider.id)
+                                    void handlePersistProviderApiKeyDraft(activeProviderDetail.id)
                                   }}
                                 />
                                 <span className="text-input-shell__actions">
@@ -1015,7 +1658,7 @@ export function SettingsWorkspace({
 
                           <TextareaField
                             label="备注与扩展配置"
-                            value={activeProvider.notes}
+                            value={activeProviderDetail.notes}
                             onChange={(value) => updateActiveProvider({ notes: value })}
                             placeholder="输入补充说明"
                           />
@@ -1027,13 +1670,13 @@ export function SettingsWorkspace({
                           <div>
                             <h3 className="settings-card__title">模型列表管理</h3>
                           </div>
-                          <span className="inline-badge">{activeProvider.availableModels.length} 个模型</span>
+                          <span className="inline-badge">{activeProviderDetail.availableModels.length} 个模型</span>
                         </div>
 
                         <div className="settings-stack">
                           <div className="model-list-shell">
-                            {activeProvider.availableModels.length > 0 ? (
-                              activeProvider.availableModels.map((model, index) => {
+                            {activeProviderDetail.availableModels.length > 0 ? (
+                              activeProviderDetail.availableModels.map((model: ProviderModelProfile, index: number) => {
                                 const modelDisplayName = model.displayName || '未命名模型'
                                 const modelIdentifier = model.modelId || '未填写模型 ID'
 
@@ -1048,7 +1691,7 @@ export function SettingsWorkspace({
                                       </span>
                                       <div className="model-capability-list model-capability-list--compact" aria-label="支持特性">
                                         {model.capabilities.length > 0 ? (
-                                          model.capabilities.map((capability) => {
+                                          model.capabilities.map((capability: ModelCapability) => {
                                             const option = modelCapabilityOptions.find((item) => item.value === capability)
 
                                             return (
@@ -1236,6 +1879,12 @@ export function SettingsWorkspace({
                           </section>
                         </div>
                       ) : null}
+                        </>
+                      ) : (
+                        <section className="settings-card settings-card--empty">
+                          <p className="settings-empty-hint">可在左侧添加服务商信息</p>
+                        </section>
+                      )}
                     </div>
                   </div>
                 )
@@ -1593,6 +2242,89 @@ export function SettingsWorkspace({
                     </section>
                   </div>
                 )
+
+              case 'external-source':
+                return (
+                  <div className="settings-page">
+                    <section className="settings-card settings-card--form">
+                      <div className="settings-card__header">
+                        <div>
+                          <h3 className="settings-card__title">WakeUP 课程群同步</h3>
+                        </div>
+                      </div>
+
+                      <div className="settings-stack">
+                        <label className="form-field form-field--full">
+                          <span className="form-field__meta">
+                            <span className="form-field__label">WakeUP 分享链接</span>
+                          </span>
+                          <span className="text-input-shell">
+                            <input
+                              data-testid="wakeup-share-link-input"
+                              className="text-input text-input-shell__input"
+                              type="text"
+                              value={wakeupShareLink}
+                              placeholder="输入 WakeUP 分享链接"
+                              onChange={(event) => setWakeupShareLink(event.target.value)}
+                            />
+                            <span className="text-input-shell__actions">
+                              <button
+                                type="button"
+                                className="icon-button icon-button--compact"
+                                data-testid="wakeup-parse-button"
+                                aria-label="解析链接"
+                                onClick={() => {
+                                  void handleWakeupLinkParse()
+                                }}
+                              >
+                                <Link2 size={14} />
+                              </button>
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    </section>
+
+                    {wakeupDialogState ? (
+                      <div className="model-editor-backdrop" role="presentation" onClick={handleWakeupDialogClose}>
+                        <section
+                          className="model-editor-modal model-editor-modal--compact"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-label="WakeUP 链接解析"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="model-editor-modal__header">
+                            <div>
+                              <h3 className="settings-card__title">解析链接</h3>
+                            </div>
+                            <button
+                              type="button"
+                              className="model-editor-modal__close"
+                              aria-label="关闭解析弹窗"
+                              onClick={handleWakeupDialogClose}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+
+                          <div className="model-editor-modal__body">
+                            {wakeupDialogState.status === 'failure' ? (
+                              <p data-testid="wakeup-parse-failure">解析未成功</p>
+                            ) : (
+                              <div className="settings-stack" data-testid="wakeup-parse-success">
+                                <button type="button" className="secondary-button" onClick={handleWakeupConflictChoice}>保留 WakeUP版本</button>
+                                <button type="button" className="secondary-button" onClick={handleWakeupConflictChoice}>保留 TIS 版本</button>
+                                <button type="button" className="primary-button" onClick={handleWakeupConflictChoice}>尝试智能解析</button>
+                                <button type="button" className="ghost-button" onClick={handleWakeupDialogClose}>取消</button>
+                              </div>
+                            )}
+                          </div>
+                        </section>
+                      </div>
+                    ) : null}
+                  </div>
+                )
             }
           })()}
         </section>
@@ -1625,10 +2357,75 @@ function createCustomProvider(index: number): ProviderProfile {
   }
 }
 
+function createPlaceholderProviderProfile(): ProviderProfile {
+  return {
+    id: '',
+    name: '',
+    protocol: 'openai',
+    endpoint: '',
+    hasApiKey: false,
+    defaultModel: '',
+    fastModel: '',
+    fallbackModel: '',
+    organization: '',
+    region: '',
+    notes: '',
+    availableModels: [],
+  }
+}
+
+function createProviderId(baseName: string): string {
+  const normalizedBaseName = baseName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  nextProviderSequence += 1
+
+  return `${normalizedBaseName || 'provider'}-${nextProviderSequence}`
+}
+
+async function resolveWakeupShareLinkParseStatus(value: string): Promise<'success' | 'failure'> {
+  const normalizedValue = value.trim()
+
+  if (!normalizedValue) {
+    return 'failure'
+  }
+
+  return normalizedValue.includes('success') || normalizedValue.includes('wakeup') ? 'success' : 'failure'
+}
+
+function computeProviderPreviewIndex(listElement: HTMLUListElement, clientY: number): number {
+  const orderedItems = Array.from(
+    listElement.querySelectorAll<HTMLElement>('[data-provider-order-index]'),
+  )
+  let nextPreviewIndex = orderedItems.length
+
+  for (const orderedItem of orderedItems) {
+    const itemIndex = Number(orderedItem.dataset.providerOrderIndex)
+    if (Number.isNaN(itemIndex)) {
+      continue
+    }
+
+    const { top, height } = orderedItem.getBoundingClientRect()
+    if (clientY < top + (height / 2)) {
+      nextPreviewIndex = itemIndex
+      break
+    }
+  }
+
+  return nextPreviewIndex
+}
+
 function applyLoadedWorkspaceState(
   state: SettingsWorkspaceEditableState,
   setters: {
     activeProviderId: string
+    setStudentId: (value: string) => void
+    setSustechEmail: (value: string) => void
+    setBlackboardAutoDownloadEnabled: (value: boolean) => void
+    setBlackboardDownloadLimitMb: (value: string) => void
     setProviderProfiles: (value: ProviderProfile[]) => void
     setActiveProviderId: (value: string) => void
     setPrimaryAssistantModel: (value: string) => void
@@ -1653,8 +2450,13 @@ function applyLoadedWorkspaceState(
     setDocsFormat: (value: string) => void
     setOutputDirectory: (value: string) => void
     setAutoFileNameEnabled: (value: boolean) => void
+    setWakeupShareLink: (value: string) => void
   },
 ): void {
+  setters.setStudentId(state.sustech.studentId)
+  setters.setSustechEmail(state.sustech.email)
+  setters.setBlackboardAutoDownloadEnabled(state.sustech.blackboardAutoDownloadEnabled)
+  setters.setBlackboardDownloadLimitMb(state.sustech.blackboardDownloadLimitMb)
   setters.setProviderProfiles(state.providerProfiles)
   setters.setActiveProviderId(
     state.providerProfiles.some((profile) => profile.id === setters.activeProviderId)
@@ -1683,6 +2485,7 @@ function applyLoadedWorkspaceState(
   setters.setDocsFormat(state.docs.docsFormat)
   setters.setOutputDirectory(state.docs.outputDirectory)
   setters.setAutoFileNameEnabled(state.docs.autoFileNameEnabled)
+  setters.setWakeupShareLink(state.externalSource.wakeupShareLink)
 }
 
 function formatBootstrapStatusLabel(state: CopilotBootstrapState): string {

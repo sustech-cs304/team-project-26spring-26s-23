@@ -21,6 +21,12 @@ export interface SettingsWorkspaceStoredProviderProfile {
 }
 
 export interface SettingsWorkspaceStateValues {
+  sustech: {
+    studentId: string
+    email: string
+    blackboardAutoDownloadEnabled: boolean
+    blackboardDownloadLimitMb: string
+  }
   providerProfiles: SettingsWorkspaceStoredProviderProfile[]
   defaultModelRouting: {
     primaryAssistantModel: string
@@ -60,6 +66,9 @@ export interface SettingsWorkspaceStateValues {
     outputDirectory: string
     autoFileNameEnabled: boolean
   }
+  externalSource: {
+    wakeupShareLink: string
+  }
 }
 
 export interface SettingsWorkspaceStateDocument {
@@ -72,8 +81,13 @@ export interface SettingsWorkspaceSecretRecord {
   apiKey: string
 }
 
+export interface SettingsWorkspaceSustechSecretsRecord {
+  casPassword: string
+}
+
 export interface SettingsWorkspaceSecretsValues {
   providerSecrets: Record<string, SettingsWorkspaceSecretRecord>
+  sustech: SettingsWorkspaceSustechSecretsRecord
 }
 
 export interface SettingsWorkspaceSecretsDocument {
@@ -89,6 +103,11 @@ export interface SettingsWorkspaceProviderSecretState {
 
 export type SettingsWorkspaceProviderSecretStateById = Record<string, SettingsWorkspaceProviderSecretState>
 
+export interface SettingsWorkspaceSustechCasSecretState {
+  hasPassword: boolean
+  password: string
+}
+
 export interface SettingsWorkspaceEditableState extends Omit<SettingsWorkspaceStateValues, 'providerProfiles'> {
   providerProfiles: ProviderProfile[]
 }
@@ -96,6 +115,12 @@ export interface SettingsWorkspaceEditableState extends Omit<SettingsWorkspaceSt
 export type SettingsWorkspaceStateSaveInput = SettingsWorkspaceStateValues
 
 const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
+  sustech: {
+    studentId: '',
+    email: '',
+    blackboardAutoDownloadEnabled: false,
+    blackboardDownloadLimitMb: '0',
+  },
   providerProfiles: createDefaultStoredProviderProfiles(),
   defaultModelRouting: {
     primaryAssistantModel: initialProviderProfiles[0]?.defaultModel ?? '',
@@ -135,6 +160,9 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
     outputDirectory: 'D:/workspace/exports',
     autoFileNameEnabled: true,
   },
+  externalSource: {
+    wakeupShareLink: '',
+  },
 }
 
 export function createDefaultSettingsWorkspaceStateValues(): SettingsWorkspaceStateValues {
@@ -160,6 +188,7 @@ export function normalizeSettingsWorkspaceStateValues(input: unknown): SettingsW
   const defaults = DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES
 
   return {
+    sustech: normalizeBooleanStringGroup(record.sustech, defaults.sustech),
     providerProfiles: normalizeStoredProviderProfiles(record.providerProfiles),
     defaultModelRouting: normalizeStringGroup(record.defaultModelRouting, defaults.defaultModelRouting),
     general: normalizeBooleanStringGroup(record.general, defaults.general),
@@ -169,6 +198,7 @@ export function normalizeSettingsWorkspaceStateValues(input: unknown): SettingsW
     memory: normalizeBooleanStringGroup(record.memory, defaults.memory),
     api: normalizeBooleanStringGroup(record.api, defaults.api),
     docs: normalizeBooleanStringGroup(record.docs, defaults.docs),
+    externalSource: normalizeStringGroup(record.externalSource, defaults.externalSource),
   }
 }
 
@@ -178,7 +208,12 @@ export function normalizeSettingsWorkspaceStateDocument(input: unknown): Setting
 }
 
 export function createDefaultSettingsWorkspaceSecretsDocument(): SettingsWorkspaceSecretsDocument {
-  return createSettingsWorkspaceSecretsDocument({ providerSecrets: {} })
+  return createSettingsWorkspaceSecretsDocument({
+    providerSecrets: {},
+    sustech: {
+      casPassword: '',
+    },
+  })
 }
 
 export function createSettingsWorkspaceSecretsDocument(
@@ -200,6 +235,9 @@ export function createSettingsWorkspaceSecretsDocument(
           return [[normalizedProviderId, { apiKey: normalizedApiKey }]]
         }),
       ),
+      sustech: {
+        casPassword: normalizeString(values.sustech.casPassword, ''),
+      },
     },
   }
 }
@@ -208,6 +246,7 @@ export function normalizeSettingsWorkspaceSecretsDocument(input: unknown): Setti
   const record = asRecord(input)
   const values = asRecord(record.values)
   const providerSecrets = asRecord(values.providerSecrets)
+  const sustech = asRecord(values.sustech)
 
   return createSettingsWorkspaceSecretsDocument({
     providerSecrets: Object.fromEntries(
@@ -222,6 +261,9 @@ export function normalizeSettingsWorkspaceSecretsDocument(input: unknown): Setti
         return [[normalizedProviderId, { apiKey: normalizedApiKey }]]
       }),
     ),
+    sustech: {
+      casPassword: normalizeString(sustech.casPassword, ''),
+    },
   })
 }
 
@@ -261,6 +303,17 @@ export function projectProviderSecretStateById(
   )
 }
 
+export function projectSustechCasSecretState(
+  secretsDocument: SettingsWorkspaceSecretsDocument,
+): SettingsWorkspaceSustechCasSecretState {
+  const password = normalizeString(secretsDocument.values.sustech.casPassword, '')
+
+  return {
+    hasPassword: password !== '',
+    password,
+  }
+}
+
 export function projectStoredProviderProfile(profile: ProviderProfile): SettingsWorkspaceStoredProviderProfile {
   return {
     id: profile.id,
@@ -279,6 +332,7 @@ export function projectStoredProviderProfile(profile: ProviderProfile): Settings
 
 function cloneSettingsWorkspaceStateValues(values: SettingsWorkspaceStateValues): SettingsWorkspaceStateValues {
   return {
+    sustech: { ...values.sustech },
     providerProfiles: values.providerProfiles.map(cloneStoredProviderProfile),
     defaultModelRouting: { ...values.defaultModelRouting },
     general: { ...values.general },
@@ -288,6 +342,7 @@ function cloneSettingsWorkspaceStateValues(values: SettingsWorkspaceStateValues)
     memory: { ...values.memory },
     api: { ...values.api },
     docs: { ...values.docs },
+    externalSource: { ...values.externalSource },
   }
 }
 
