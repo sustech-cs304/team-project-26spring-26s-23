@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import type { CopilotBootstrapController, CopilotBootstrapState } from '../../features/copilot/types'
 import { settingsItems } from '../config'
 import { SelectField, TextareaField, TextField, ToggleSwitch } from '../components/FormFields'
+import type { SettingsWorkspaceEditableState, SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import type {
   ModelCapability,
   ProviderModelProfile,
@@ -30,6 +31,12 @@ import {
   themeOptions,
   toolPermissionOptions,
 } from './config'
+import {
+  clearSettingsWorkspaceProviderApiKey,
+  loadSettingsWorkspaceState,
+  saveSettingsWorkspaceProviderApiKey,
+  saveSettingsWorkspaceState,
+} from './workspace-state'
 import {
   HostConfigRuntimeOverrideCard,
 } from './ConfigCenterPublicFieldCards'
@@ -206,11 +213,14 @@ export function SettingsWorkspace({
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
   const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
   const [providerQuery, setProviderQuery] = useState('')
+  const [providerSecretDrafts, setProviderSecretDrafts] = useState<Record<string, string>>({})
   const [modelEditorState, setModelEditorState] = useState<ModelEditorState | null>(null)
   const [modelEditorError, setModelEditorError] = useState<string | null>(null)
   const modelEditorDialogRef = useRef<HTMLElement | null>(null)
   const modelEditorInitialFocusRef = useRef<HTMLInputElement | null>(null)
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false)
+  const skipNextWorkspaceSaveRef = useRef(true)
 
   const [language, setLanguage] = useState('zh-CN')
   const [proxyMode, setProxyMode] = useState('system')
@@ -296,12 +306,163 @@ export function SettingsWorkspace({
   const [apiKeyFeedback, setApiKeyFeedback] = useState<string | null>(null)
   const modelEditorOpen = modelEditorState !== null
   const modelEditorAdvancedSectionId = 'settings-model-editor-advanced-panel'
+  const activeProviderApiKeyDraft = providerSecretDrafts[activeProviderId] ?? ''
+
+  const workspaceStateInput = useMemo<SettingsWorkspaceStateSaveInput>(() => {
+    return {
+      providerProfiles: providerProfiles.map(({ hasApiKey: _hasApiKey, ...profile }) => ({
+        ...profile,
+        availableModels: profile.availableModels.map((model) => ({
+          ...model,
+          capabilities: [...model.capabilities],
+        })),
+      })),
+      defaultModelRouting: {
+        primaryAssistantModel,
+        fastAssistantModel,
+      },
+      general: {
+        language,
+        proxyMode,
+        assistantNotificationsEnabled,
+        backupEnabled,
+      },
+      data: {
+        dataPath,
+        backupCycle,
+        launchSyncEnabled,
+      },
+      mcp: {
+        mcpAutoDiscoveryEnabled,
+        toolPermissionMode,
+      },
+      search: {
+        searchEngine,
+        searchResultCount,
+        compressionMode,
+      },
+      memory: {
+        memoryStrategy,
+        memoryCleanupEnabled,
+      },
+      api: {
+        apiReconnectMode,
+        healthPollingEnabled,
+        apiBaseUrl,
+      },
+      docs: {
+        docsFormat,
+        outputDirectory,
+        autoFileNameEnabled,
+      },
+    }
+  }, [
+    apiBaseUrl,
+    apiReconnectMode,
+    assistantNotificationsEnabled,
+    autoFileNameEnabled,
+    backupCycle,
+    backupEnabled,
+    compressionMode,
+    dataPath,
+    docsFormat,
+    fastAssistantModel,
+    healthPollingEnabled,
+    language,
+    launchSyncEnabled,
+    mcpAutoDiscoveryEnabled,
+    memoryCleanupEnabled,
+    memoryStrategy,
+    outputDirectory,
+    primaryAssistantModel,
+    providerProfiles,
+    proxyMode,
+    searchEngine,
+    searchResultCount,
+    toolPermissionMode,
+  ])
 
   useEffect(() => {
     setModelEditorState(null)
     setApiKeyVisible(false)
     setApiKeyFeedback(null)
   }, [activeProviderId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      const result = await loadSettingsWorkspaceState()
+
+      if (!cancelled && result.ok) {
+        applyLoadedWorkspaceState(result.state, {
+          activeProviderId,
+          setProviderProfiles,
+          setActiveProviderId,
+          setPrimaryAssistantModel,
+          setFastAssistantModel,
+          setLanguage,
+          setProxyMode,
+          setAssistantNotificationsEnabled,
+          setBackupEnabled,
+          setDataPath,
+          setBackupCycle,
+          setLaunchSyncEnabled,
+          setMcpAutoDiscoveryEnabled,
+          setToolPermissionMode,
+          setSearchEngine,
+          setSearchResultCount,
+          setCompressionMode,
+          setMemoryStrategy,
+          setMemoryCleanupEnabled,
+          setApiReconnectMode,
+          setHealthPollingEnabled,
+          setApiBaseUrl,
+          setDocsFormat,
+          setOutputDirectory,
+          setAutoFileNameEnabled,
+        })
+        setProviderSecretDrafts({})
+      }
+
+      if (!cancelled) {
+        setWorkspaceHydrated(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!workspaceHydrated) {
+      return
+    }
+
+    if (skipNextWorkspaceSaveRef.current) {
+      skipNextWorkspaceSaveRef.current = false
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void saveSettingsWorkspaceState(workspaceStateInput)
+    }, 200)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [workspaceHydrated, workspaceStateInput])
+
+  useEffect(() => {
+    if (providerProfiles.length === 0) {
+      return
+    }
+
+    if (!providerProfiles.some((profile) => profile.id === activeProviderId)) {
+      setActiveProviderId(providerProfiles[0]?.id ?? '')
+    }
+  }, [activeProviderId, providerProfiles])
 
   useEffect(() => {
     if (!apiKeyFeedback) {
@@ -367,8 +528,8 @@ export function SettingsWorkspace({
   }
 
   const handleCopyApiKey = async () => {
-    if (!activeProvider.apiKey.trim()) {
-      setApiKeyFeedback('当前没有可复制的 API 密钥')
+    if (!activeProviderApiKeyDraft.trim()) {
+      setApiKeyFeedback(activeProvider.hasApiKey ? '已保存密钥不会回填原文，请重新输入后再复制' : '当前没有可复制的 API 密钥')
       return
     }
 
@@ -377,11 +538,65 @@ export function SettingsWorkspace({
         throw new Error('clipboard-unavailable')
       }
 
-      await navigator.clipboard.writeText(activeProvider.apiKey)
+      await navigator.clipboard.writeText(activeProviderApiKeyDraft)
       setApiKeyFeedback('已复制 API 密钥')
     } catch {
       setApiKeyFeedback('复制失败，请手动复制')
     }
+  }
+
+  const handleSaveActiveProviderApiKey = async () => {
+    const nextApiKey = activeProviderApiKeyDraft.trim()
+
+    if (!nextApiKey) {
+      setApiKeyFeedback(activeProvider.hasApiKey ? '请输入新密钥后再替换当前配置' : '请输入 API 密钥后再保存')
+      return
+    }
+
+    const result = await saveSettingsWorkspaceProviderApiKey({
+      providerId: activeProvider.id,
+      apiKey: nextApiKey,
+    })
+
+    if (!result.ok) {
+      setApiKeyFeedback('保存失败，请稍后重试')
+      return
+    }
+
+    setProviderProfiles((previous) =>
+      previous.map((profile) => {
+        return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
+      }),
+    )
+    setProviderSecretDrafts((previous) => ({
+      ...previous,
+      [result.providerId]: '',
+    }))
+    setApiKeyVisible(false)
+    setApiKeyFeedback('已保存 API 密钥')
+  }
+
+  const handleClearActiveProviderApiKey = async () => {
+    const result = await clearSettingsWorkspaceProviderApiKey({
+      providerId: activeProvider.id,
+    })
+
+    if (!result.ok) {
+      setApiKeyFeedback('清除失败，请稍后重试')
+      return
+    }
+
+    setProviderProfiles((previous) =>
+      previous.map((profile) => {
+        return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
+      }),
+    )
+    setProviderSecretDrafts((previous) => ({
+      ...previous,
+      [result.providerId]: '',
+    }))
+    setApiKeyVisible(false)
+    setApiKeyFeedback('已清除 API 密钥')
   }
 
   const commitActiveProviderModels = (
@@ -648,11 +863,14 @@ export function SettingsWorkspace({
                                   <span className="provider-card__title">{profile.name}</span>
                                 </span>
                                 <span className="provider-card__meta-row">
-                                  <span className="provider-card__meta">
+                                 <span className="provider-card__meta">
                                     {
                                       protocolOptions.find((option) => option.value === profile.protocol)?.label
                                       ?? profile.protocol
                                     }
+                                  </span>
+                                  <span className="provider-card__meta">
+                                    {profile.hasApiKey ? '已配置密钥' : '未配置密钥'}
                                   </span>
                                 </span>
                                 <span className="provider-card__description">{profile.endpoint}</span>
@@ -702,15 +920,26 @@ export function SettingsWorkspace({
                               <span className="form-field__meta">
                                 <span className="form-field__label">API 密钥</span>
                               </span>
+                              <span className="form-field__description" data-testid="provider-api-key-status">
+                                {activeProvider.hasApiKey
+                                  ? '当前 provider 已配置密钥，原文仅由主进程持有；输入新值可替换。'
+                                  : '当前 provider 尚未配置密钥。'}
+                              </span>
                               <span className="text-input-shell">
                                 <input
                                   id="provider-api-key-input"
                                   data-testid="provider-api-key-input"
                                   className="text-input text-input-shell__input"
                                   type={apiKeyVisible ? 'text' : 'password'}
-                                  value={activeProvider.apiKey}
-                                  placeholder="输入访问密钥"
-                                  onChange={(event) => updateActiveProvider({ apiKey: event.target.value })}
+                                  value={activeProviderApiKeyDraft}
+                                  placeholder={activeProvider.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥'}
+                                  onChange={(event) => {
+                                    const nextValue = event.target.value
+                                    setProviderSecretDrafts((previous) => ({
+                                      ...previous,
+                                      [activeProvider.id]: nextValue,
+                                    }))
+                                  }}
                                 />
                                 <span className="text-input-shell__actions">
                                   <button
@@ -734,6 +963,30 @@ export function SettingsWorkspace({
                                     }}
                                   >
                                     <Copy size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-button icon-button--compact"
+                                    title="保存 API 密钥"
+                                    aria-label="保存 API 密钥"
+                                    data-testid="provider-api-key-save"
+                                    onClick={() => {
+                                      void handleSaveActiveProviderApiKey()
+                                    }}
+                                  >
+                                    保存
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-button icon-button--compact"
+                                    title="清除已保存的 API 密钥"
+                                    aria-label="清除已保存的 API 密钥"
+                                    data-testid="provider-api-key-clear"
+                                    onClick={() => {
+                                      void handleClearActiveProviderApiKey()
+                                    }}
+                                  >
+                                    清除
                                   </button>
                                 </span>
                               </span>
@@ -1346,7 +1599,7 @@ function createCustomProvider(index: number): ProviderProfile {
     name: providerName,
     protocol: 'openai',
     endpoint: 'https://api.example.com/v1',
-    apiKey: '',
+    hasApiKey: false,
     defaultModel: 'custom-model',
     fastModel: 'custom-model-fast',
     fallbackModel: 'custom-model-fallback',
@@ -1359,6 +1612,66 @@ function createCustomProvider(index: number): ProviderProfile {
       createProviderModelProfile(providerId, 'custom-model-fallback', providerName),
     ],
   }
+}
+
+function applyLoadedWorkspaceState(
+  state: SettingsWorkspaceEditableState,
+  setters: {
+    activeProviderId: string
+    setProviderProfiles: (value: ProviderProfile[]) => void
+    setActiveProviderId: (value: string) => void
+    setPrimaryAssistantModel: (value: string) => void
+    setFastAssistantModel: (value: string) => void
+    setLanguage: (value: string) => void
+    setProxyMode: (value: string) => void
+    setAssistantNotificationsEnabled: (value: boolean) => void
+    setBackupEnabled: (value: boolean) => void
+    setDataPath: (value: string) => void
+    setBackupCycle: (value: string) => void
+    setLaunchSyncEnabled: (value: boolean) => void
+    setMcpAutoDiscoveryEnabled: (value: boolean) => void
+    setToolPermissionMode: (value: string) => void
+    setSearchEngine: (value: string) => void
+    setSearchResultCount: (value: string) => void
+    setCompressionMode: (value: string) => void
+    setMemoryStrategy: (value: string) => void
+    setMemoryCleanupEnabled: (value: boolean) => void
+    setApiReconnectMode: (value: string) => void
+    setHealthPollingEnabled: (value: boolean) => void
+    setApiBaseUrl: (value: string) => void
+    setDocsFormat: (value: string) => void
+    setOutputDirectory: (value: string) => void
+    setAutoFileNameEnabled: (value: boolean) => void
+  },
+): void {
+  setters.setProviderProfiles(state.providerProfiles)
+  setters.setActiveProviderId(
+    state.providerProfiles.some((profile) => profile.id === setters.activeProviderId)
+      ? setters.activeProviderId
+      : state.providerProfiles[0]?.id ?? '',
+  )
+  setters.setPrimaryAssistantModel(state.defaultModelRouting.primaryAssistantModel)
+  setters.setFastAssistantModel(state.defaultModelRouting.fastAssistantModel)
+  setters.setLanguage(state.general.language)
+  setters.setProxyMode(state.general.proxyMode)
+  setters.setAssistantNotificationsEnabled(state.general.assistantNotificationsEnabled)
+  setters.setBackupEnabled(state.general.backupEnabled)
+  setters.setDataPath(state.data.dataPath)
+  setters.setBackupCycle(state.data.backupCycle)
+  setters.setLaunchSyncEnabled(state.data.launchSyncEnabled)
+  setters.setMcpAutoDiscoveryEnabled(state.mcp.mcpAutoDiscoveryEnabled)
+  setters.setToolPermissionMode(state.mcp.toolPermissionMode)
+  setters.setSearchEngine(state.search.searchEngine)
+  setters.setSearchResultCount(state.search.searchResultCount)
+  setters.setCompressionMode(state.search.compressionMode)
+  setters.setMemoryStrategy(state.memory.memoryStrategy)
+  setters.setMemoryCleanupEnabled(state.memory.memoryCleanupEnabled)
+  setters.setApiReconnectMode(state.api.apiReconnectMode)
+  setters.setHealthPollingEnabled(state.api.healthPollingEnabled)
+  setters.setApiBaseUrl(state.api.apiBaseUrl)
+  setters.setDocsFormat(state.docs.docsFormat)
+  setters.setOutputDirectory(state.docs.outputDirectory)
+  setters.setAutoFileNameEnabled(state.docs.autoFileNameEnabled)
 }
 
 function formatBootstrapStatusLabel(state: CopilotBootstrapState): string {

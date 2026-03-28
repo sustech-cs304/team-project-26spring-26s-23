@@ -4,7 +4,7 @@ import type { ReactElement } from 'react'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { SettingsWorkspace } from './SettingsWorkspace'
@@ -20,6 +20,12 @@ beforeAll(() => {
 
 afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  delete (window as Partial<Window>).settingsWorkspaceState
+  delete (window as Partial<Window>).settingsWorkspaceSecrets
 })
 
 describe('SettingsWorkspace', () => {
@@ -147,6 +153,87 @@ describe('SettingsWorkspace', () => {
     await clickElement(rendered.getByTestId('provider-api-key-copy'))
     expect(clipboardWriteText).toHaveBeenCalledWith('secret-api-key')
     expect(rendered.getByTestId('provider-api-key-feedback').textContent).toBe('已复制 API 密钥')
+
+    rendered.unmount()
+  })
+
+  it('loads values from the settings workspace source, persists normal edits, and routes provider secret mutations through the dedicated bridge', async () => {
+    vi.useFakeTimers()
+
+    const loadState = vi.fn().mockResolvedValue({
+      ok: true,
+      source: 'stored',
+      state: createPersistedWorkspaceState(),
+    })
+    const saveState = vi.fn().mockResolvedValue({
+      ok: true,
+      state: createPersistedWorkspaceState(),
+    })
+    const saveProviderApiKey = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: 'openrouter',
+      state: {
+        hasApiKey: true,
+      },
+    })
+    const clearProviderApiKey = vi.fn().mockResolvedValue({
+      ok: true,
+      providerId: 'openrouter',
+      state: {
+        hasApiKey: false,
+      },
+    })
+
+    Object.assign(window, {
+      settingsWorkspaceState: {
+        load: loadState,
+        save: saveState,
+      },
+      settingsWorkspaceSecrets: {
+        loadStatuses: vi.fn().mockResolvedValue({ ok: true, states: {} }),
+        saveProviderApiKey,
+        clearProviderApiKey,
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <SettingsWorkspace
+        bootstrap={createBootstrapController()}
+        themeMode="light"
+        onThemeModeChange={vi.fn()}
+      />,
+    )
+
+    await flushAsyncEffects()
+
+    expect(loadState).toHaveBeenCalledOnce()
+
+    const providerNameInput = rendered.getByPlaceholder('输入服务商名称') as HTMLInputElement
+    expect(providerNameInput.value).toBe('Persisted Router')
+    expect(rendered.getByTestId('provider-api-key-status').textContent).toContain('当前 provider 已配置密钥')
+
+    await setFormControlValue(providerNameInput, 'Renamed Router')
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+    })
+
+    expect(saveState).toHaveBeenCalled()
+    const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
+    expect(lastSaveCall?.providerProfiles[0]?.name).toBe('Renamed Router')
+    expect(lastSaveCall?.providerProfiles[0]).not.toHaveProperty('hasApiKey')
+
+    const apiKeyInput = rendered.getByTestId('provider-api-key-input') as HTMLInputElement
+    await setFormControlValue(apiKeyInput, 'rotated-secret')
+    await clickElement(rendered.getByTestId('provider-api-key-save'))
+    expect(saveProviderApiKey).toHaveBeenCalledWith({
+      providerId: 'openrouter',
+      apiKey: 'rotated-secret',
+    })
+
+    await clickElement(rendered.getByTestId('provider-api-key-clear'))
+    expect(clearProviderApiKey).toHaveBeenCalledWith({
+      providerId: 'openrouter',
+    })
 
     rendered.unmount()
   })
@@ -333,4 +420,82 @@ async function waitForNextFrame() {
       window.requestAnimationFrame(() => resolve())
     })
   })
+}
+
+async function flushAsyncEffects() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
+function createPersistedWorkspaceState() {
+  return {
+    providerProfiles: [
+      {
+        id: 'openrouter',
+        name: 'Persisted Router',
+        protocol: 'openai',
+        endpoint: 'https://persisted.example.com/v1',
+        hasApiKey: true,
+        defaultModel: 'openai/gpt-4.1',
+        fastModel: 'openai/gpt-4.1-mini',
+        fallbackModel: 'anthropic/claude-3.7-sonnet',
+        organization: 'persisted-org',
+        region: 'Global',
+        notes: 'persisted provider note',
+        availableModels: [
+          {
+            id: 'openrouter-gpt-4-1-1',
+            modelId: 'openai/gpt-4.1',
+            displayName: 'GPT-4.1',
+            groupName: 'OpenAI',
+            capabilities: ['vision', 'reasoning', 'tools'],
+            supportsStreaming: true,
+            currency: 'usd',
+            inputPrice: '0.50',
+            outputPrice: '3.00',
+          },
+        ],
+      },
+    ],
+    defaultModelRouting: {
+      primaryAssistantModel: 'openai/gpt-4.1',
+      fastAssistantModel: 'openai/gpt-4.1-mini',
+    },
+    general: {
+      language: 'zh-CN',
+      proxyMode: 'system',
+      assistantNotificationsEnabled: true,
+      backupEnabled: false,
+    },
+    data: {
+      dataPath: 'D:/workspace/persisted-data',
+      backupCycle: 'daily',
+      launchSyncEnabled: true,
+    },
+    mcp: {
+      mcpAutoDiscoveryEnabled: true,
+      toolPermissionMode: 'manual',
+    },
+    search: {
+      searchEngine: 'google',
+      searchResultCount: '8',
+      compressionMode: 'summary',
+    },
+    memory: {
+      memoryStrategy: 'session-longterm',
+      memoryCleanupEnabled: true,
+    },
+    api: {
+      apiReconnectMode: 'exponential',
+      healthPollingEnabled: true,
+      apiBaseUrl: 'http://127.0.0.1:8000',
+    },
+    docs: {
+      docsFormat: 'markdown',
+      outputDirectory: 'D:/workspace/exports',
+      autoFileNameEnabled: true,
+    },
+  }
 }

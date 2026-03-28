@@ -99,7 +99,7 @@ export interface ProviderProfile {
   name: string
   protocol: string
   endpoint: string
-  apiKey: string
+  hasApiKey: boolean
   defaultModel: string
   fastModel: string
   fallbackModel: string

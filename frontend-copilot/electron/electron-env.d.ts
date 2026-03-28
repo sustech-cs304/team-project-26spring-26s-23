@@ -7,6 +7,7 @@ import type {
 } from './config-center/public-snapshot'
 import type { BootstrapWindowApi } from './bootstrap-window'
 import type { CopilotRuntimeApi } from './copilot-runtime'
+import type { SettingsWorkspaceSecretsApi, SettingsWorkspaceStateApi } from './settings-workspace/ipc'
 
 declare namespace NodeJS {
   interface ProcessEnv {
@@ -36,6 +37,8 @@ declare global {
     configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
     configCenterPublicSnapshotSubscription: ConfigCenterPublicSnapshotSubscriptionApi
     configCenterPublicPatch: ConfigCenterPublicPatchApi
+    settingsWorkspaceState: SettingsWorkspaceStateApi
+    settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
     bootstrapWindow: BootstrapWindowApi
   }
 }

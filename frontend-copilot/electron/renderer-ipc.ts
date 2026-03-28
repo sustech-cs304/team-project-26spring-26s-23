@@ -9,6 +9,21 @@ import {
   type ConfigCenterPublicSnapshotLoadResult,
 } from './config-center/public-snapshot'
 import {
+  SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL,
+  SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
+  type SettingsWorkspaceClearProviderApiKeyRequest,
+  type SettingsWorkspaceProviderSecretMutationResult,
+  type SettingsWorkspaceSaveProviderApiKeyRequest,
+  type SettingsWorkspaceSecretsLoadStatusesRequest,
+  type SettingsWorkspaceSecretsLoadStatusesResult,
+  type SettingsWorkspaceStateLoadResult,
+  type SettingsWorkspaceStateSaveResult,
+} from './settings-workspace/ipc'
+import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/schema'
+import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   type CopilotRuntimeLoadResult,
@@ -34,6 +49,17 @@ export interface RuntimeConsoleEntry {
 export interface RendererIpcHandlers {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
   applyConfigCenterPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
+  loadSettingsWorkspaceState: () => Promise<SettingsWorkspaceStateLoadResult>
+  saveSettingsWorkspaceState: (input: SettingsWorkspaceStateSaveInput) => Promise<SettingsWorkspaceStateSaveResult>
+  loadSettingsWorkspaceSecretStates: (
+    request?: SettingsWorkspaceSecretsLoadStatusesRequest,
+  ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
+  saveSettingsWorkspaceProviderSecret: (
+    request: SettingsWorkspaceSaveProviderApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  clearSettingsWorkspaceProviderSecret: (
+    request: SettingsWorkspaceClearProviderApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyBootstrapWindowReady: () => Promise<void>
@@ -84,6 +110,11 @@ export function registerRendererIpcHandlers(
 ): void {
   ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
   ipcMain.removeHandler(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL)
+  ipcMain.removeHandler(SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL)
   ipcMain.removeHandler(COPILOT_RUNTIME_LOAD_CHANNEL)
   ipcMain.removeHandler(COPILOT_RUNTIME_RETRY_CHANNEL)
   ipcMain.removeHandler(BOOTSTRAP_WINDOW_READY_CHANNEL)
@@ -96,6 +127,44 @@ export function registerRendererIpcHandlers(
     CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
     async (_event, patch: ConfigCenterPublicPatch): Promise<ConfigCenterPublicPatchResult> => {
       return await handlers.applyConfigCenterPublicPatch(patch)
+    },
+  )
+
+  ipcMain.handle(SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL, async (): Promise<SettingsWorkspaceStateLoadResult> => {
+    return await handlers.loadSettingsWorkspaceState()
+  })
+
+  ipcMain.handle(
+    SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
+    async (_event, input: SettingsWorkspaceStateSaveInput): Promise<SettingsWorkspaceStateSaveResult> => {
+    return await handlers.saveSettingsWorkspaceState(input)
+    },
+  )
+
+  ipcMain.handle(
+    SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL,
+    async (_event, request?: SettingsWorkspaceSecretsLoadStatusesRequest): Promise<SettingsWorkspaceSecretsLoadStatusesResult> => {
+      return await handlers.loadSettingsWorkspaceSecretStates(request)
+    },
+  )
+
+  ipcMain.handle(
+    SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
+    async (
+      _event,
+      request: SettingsWorkspaceSaveProviderApiKeyRequest,
+    ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
+      return await handlers.saveSettingsWorkspaceProviderSecret(request)
+    },
+  )
+
+  ipcMain.handle(
+    SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
+    async (
+      _event,
+      request: SettingsWorkspaceClearProviderApiKeyRequest,
+    ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
+      return await handlers.clearSettingsWorkspaceProviderSecret(request)
     },
   )
 

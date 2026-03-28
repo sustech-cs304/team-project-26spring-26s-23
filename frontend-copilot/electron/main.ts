@@ -20,6 +20,20 @@ import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
+import {
+  createElectronSettingsWorkspaceService,
+  type ElectronSettingsWorkspaceService,
+} from './settings-workspace/main-process'
+import type {
+  SettingsWorkspaceClearProviderApiKeyRequest,
+  SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceSaveProviderApiKeyRequest,
+  SettingsWorkspaceSecretsLoadStatusesRequest,
+  SettingsWorkspaceSecretsLoadStatusesResult,
+  SettingsWorkspaceStateLoadResult,
+  SettingsWorkspaceStateSaveResult,
+} from './settings-workspace/ipc'
+import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/schema'
 import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/schema'
 import {
   MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL,
@@ -62,6 +76,7 @@ let hostedBackendService: HostedBackendService | null = null
 let hostedBackendServicePromise: Promise<HostedBackendService> | null = null
 let runtimePaths: HostedRuntimePaths | null = null
 let unifiedConfigService: ElectronUnifiedConfigService | null = null
+let settingsWorkspaceService: ElectronSettingsWorkspaceService | null = null
 let quitSequenceStarted = false
 let hostedBackendStartupInFlight = false
 const electronStartupStartedAt = Date.now()
@@ -303,6 +318,34 @@ async function applyConfigCenterPublicPatch(
   return await getUnifiedConfigService().applyPublicPatch(patch)
 }
 
+async function loadSettingsWorkspaceState(): Promise<SettingsWorkspaceStateLoadResult> {
+  return await getSettingsWorkspaceService().loadState()
+}
+
+async function saveSettingsWorkspaceState(
+  input: SettingsWorkspaceStateSaveInput,
+): Promise<SettingsWorkspaceStateSaveResult> {
+  return await getSettingsWorkspaceService().saveState(input)
+}
+
+async function loadSettingsWorkspaceSecretStates(
+  request?: SettingsWorkspaceSecretsLoadStatusesRequest,
+): Promise<SettingsWorkspaceSecretsLoadStatusesResult> {
+  return await getSettingsWorkspaceService().loadSecretStates(request)
+}
+
+async function saveSettingsWorkspaceProviderSecret(
+  request: SettingsWorkspaceSaveProviderApiKeyRequest,
+): Promise<SettingsWorkspaceProviderSecretMutationResult> {
+  return await getSettingsWorkspaceService().saveProviderSecret(request)
+}
+
+async function clearSettingsWorkspaceProviderSecret(
+  request: SettingsWorkspaceClearProviderApiKeyRequest,
+): Promise<SettingsWorkspaceProviderSecretMutationResult> {
+  return await getSettingsWorkspaceService().clearProviderSecret(request)
+}
+
 async function ensureHostedBackendService(): Promise<HostedBackendService> {
   if (hostedBackendService !== null) {
     return hostedBackendService
@@ -490,6 +533,17 @@ function getUnifiedConfigService(): ElectronUnifiedConfigService {
   })
 
   return unifiedConfigService
+}
+
+function getSettingsWorkspaceService(): ElectronSettingsWorkspaceService {
+  settingsWorkspaceService ??= createElectronSettingsWorkspaceService({
+    prepareRuntimePaths: prepareApplicationRuntimePaths,
+    appendLog(level, message, context) {
+      void appendMainRuntimeLog(level, message, context)
+    },
+  })
+
+  return settingsWorkspaceService
 }
 
 async function prepareApplicationRuntimePaths(): Promise<HostedRuntimePaths> {
@@ -683,6 +737,11 @@ void app.whenReady()
     registerRendererIpcHandlers(ipcMain, {
       loadConfigCenterPublicSnapshot,
       applyConfigCenterPublicPatch,
+      loadSettingsWorkspaceState,
+      saveSettingsWorkspaceState,
+      loadSettingsWorkspaceSecretStates,
+      saveSettingsWorkspaceProviderSecret,
+      clearSettingsWorkspaceProviderSecret,
       loadCopilotRuntime,
       retryCopilotRuntime,
       notifyBootstrapWindowReady,

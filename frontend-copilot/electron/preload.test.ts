@@ -11,6 +11,15 @@ import {
 } from './config-center/public-snapshot'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL, type CopilotRuntimeApi } from './copilot-runtime'
 import { MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, type RuntimeConsoleEntry } from './renderer-ipc'
+import {
+  SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL,
+  SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
+  type SettingsWorkspaceSecretsApi,
+  type SettingsWorkspaceStateApi,
+} from './settings-workspace/ipc'
 
 const preloadMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
@@ -49,6 +58,8 @@ describe('preload renderer bridge', () => {
       'configCenterPublicSnapshot',
       'configCenterPublicSnapshotSubscription',
       'configCenterPublicPatch',
+      'settingsWorkspaceState',
+      'settingsWorkspaceSecrets',
       'bootstrapWindow',
     ])
     expect(exposedKeys).not.toContain('copilotSettings')
@@ -65,6 +76,8 @@ describe('preload renderer bridge', () => {
     const snapshotApi = getExposedApi<ConfigCenterPublicSnapshotApi>('configCenterPublicSnapshot')
     const subscriptionApi = getExposedApi<ConfigCenterPublicSnapshotSubscriptionApi>('configCenterPublicSnapshotSubscription')
     const patchApi = getExposedApi<ConfigCenterPublicPatchApi>('configCenterPublicPatch')
+    const settingsWorkspaceStateApi = getExposedApi<SettingsWorkspaceStateApi>('settingsWorkspaceState')
+    const settingsWorkspaceSecretsApi = getExposedApi<SettingsWorkspaceSecretsApi>('settingsWorkspaceSecrets')
     const bootstrapWindowApi = getExposedApi<BootstrapWindowApi>('bootstrapWindow')
 
     await runtimeApi.load()
@@ -77,6 +90,51 @@ describe('preload renderer bridge', () => {
         },
       },
     })
+    await settingsWorkspaceStateApi.load()
+    await settingsWorkspaceStateApi.save({
+      providerProfiles: [],
+      defaultModelRouting: {
+        primaryAssistantModel: '',
+        fastAssistantModel: '',
+      },
+      general: {
+        language: 'zh-CN',
+        proxyMode: 'system',
+        assistantNotificationsEnabled: false,
+        backupEnabled: true,
+      },
+      data: {
+        dataPath: 'D:/workspace/copilot-data',
+        backupCycle: 'daily',
+        launchSyncEnabled: true,
+      },
+      mcp: {
+        mcpAutoDiscoveryEnabled: true,
+        toolPermissionMode: 'manual',
+      },
+      search: {
+        searchEngine: 'google',
+        searchResultCount: '8',
+        compressionMode: 'summary',
+      },
+      memory: {
+        memoryStrategy: 'session-longterm',
+        memoryCleanupEnabled: true,
+      },
+      api: {
+        apiReconnectMode: 'exponential',
+        healthPollingEnabled: true,
+        apiBaseUrl: 'http://127.0.0.1:8000',
+      },
+      docs: {
+        docsFormat: 'markdown',
+        outputDirectory: 'D:/workspace/exports',
+        autoFileNameEnabled: true,
+      },
+    })
+    await settingsWorkspaceSecretsApi.loadStatuses({ providerIds: ['openrouter'] })
+    await settingsWorkspaceSecretsApi.saveProviderApiKey({ providerId: 'openrouter', apiKey: 'draft-secret' })
+    await settingsWorkspaceSecretsApi.clearProviderApiKey({ providerId: 'openrouter' })
     await bootstrapWindowApi.signalBootstrapScreenReady()
 
     expect(preloadMocks.invoke.mock.calls).toEqual([
@@ -90,6 +148,51 @@ describe('preload renderer bridge', () => {
           },
         },
       }],
+      [SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL],
+      [SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL, {
+        providerProfiles: [],
+        defaultModelRouting: {
+          primaryAssistantModel: '',
+          fastAssistantModel: '',
+        },
+        general: {
+          language: 'zh-CN',
+          proxyMode: 'system',
+          assistantNotificationsEnabled: false,
+          backupEnabled: true,
+        },
+        data: {
+          dataPath: 'D:/workspace/copilot-data',
+          backupCycle: 'daily',
+          launchSyncEnabled: true,
+        },
+        mcp: {
+          mcpAutoDiscoveryEnabled: true,
+          toolPermissionMode: 'manual',
+        },
+        search: {
+          searchEngine: 'google',
+          searchResultCount: '8',
+          compressionMode: 'summary',
+        },
+        memory: {
+          memoryStrategy: 'session-longterm',
+          memoryCleanupEnabled: true,
+        },
+        api: {
+          apiReconnectMode: 'exponential',
+          healthPollingEnabled: true,
+          apiBaseUrl: 'http://127.0.0.1:8000',
+        },
+        docs: {
+          docsFormat: 'markdown',
+          outputDirectory: 'D:/workspace/exports',
+          autoFileNameEnabled: true,
+        },
+      }],
+      [SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL, { providerIds: ['openrouter'] }],
+      [SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL, { providerId: 'openrouter', apiKey: 'draft-secret' }],
+      [SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL, { providerId: 'openrouter' }],
       [BOOTSTRAP_WINDOW_READY_CHANNEL],
     ])
 

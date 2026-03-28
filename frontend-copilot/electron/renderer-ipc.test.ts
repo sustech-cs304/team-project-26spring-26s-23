@@ -87,6 +87,113 @@ describe('registerRendererIpcHandlers', () => {
           },
         },
       }),
+      loadSettingsWorkspaceState: vi.fn().mockResolvedValue({
+        ok: true,
+        source: 'stored',
+        state: {
+          providerProfiles: [],
+          defaultModelRouting: {
+            primaryAssistantModel: '',
+            fastAssistantModel: '',
+          },
+          general: {
+            language: 'zh-CN',
+            proxyMode: 'system',
+            assistantNotificationsEnabled: false,
+            backupEnabled: true,
+          },
+          data: {
+            dataPath: 'D:/workspace/copilot-data',
+            backupCycle: 'daily',
+            launchSyncEnabled: true,
+          },
+          mcp: {
+            mcpAutoDiscoveryEnabled: true,
+            toolPermissionMode: 'manual',
+          },
+          search: {
+            searchEngine: 'google',
+            searchResultCount: '8',
+            compressionMode: 'summary',
+          },
+          memory: {
+            memoryStrategy: 'session-longterm',
+            memoryCleanupEnabled: true,
+          },
+          api: {
+            apiReconnectMode: 'exponential',
+            healthPollingEnabled: true,
+            apiBaseUrl: 'http://127.0.0.1:8000',
+          },
+          docs: {
+            docsFormat: 'markdown',
+            outputDirectory: 'D:/workspace/exports',
+            autoFileNameEnabled: true,
+          },
+        },
+      }),
+      saveSettingsWorkspaceState: vi.fn().mockResolvedValue({
+        ok: true,
+        state: {
+          providerProfiles: [],
+          defaultModelRouting: {
+            primaryAssistantModel: '',
+            fastAssistantModel: '',
+          },
+          general: {
+            language: 'zh-CN',
+            proxyMode: 'system',
+            assistantNotificationsEnabled: false,
+            backupEnabled: true,
+          },
+          data: {
+            dataPath: 'D:/workspace/copilot-data',
+            backupCycle: 'daily',
+            launchSyncEnabled: true,
+          },
+          mcp: {
+            mcpAutoDiscoveryEnabled: true,
+            toolPermissionMode: 'manual',
+          },
+          search: {
+            searchEngine: 'google',
+            searchResultCount: '8',
+            compressionMode: 'summary',
+          },
+          memory: {
+            memoryStrategy: 'session-longterm',
+            memoryCleanupEnabled: true,
+          },
+          api: {
+            apiReconnectMode: 'exponential',
+            healthPollingEnabled: true,
+            apiBaseUrl: 'http://127.0.0.1:8000',
+          },
+          docs: {
+            docsFormat: 'markdown',
+            outputDirectory: 'D:/workspace/exports',
+            autoFileNameEnabled: true,
+          },
+        },
+      }),
+      loadSettingsWorkspaceSecretStates: vi.fn().mockResolvedValue({
+        ok: true,
+        states: {},
+      }),
+      saveSettingsWorkspaceProviderSecret: vi.fn().mockResolvedValue({
+        ok: true,
+        providerId: 'openrouter',
+        state: {
+          hasApiKey: true,
+        },
+      }),
+      clearSettingsWorkspaceProviderSecret: vi.fn().mockResolvedValue({
+        ok: true,
+        providerId: 'openrouter',
+        state: {
+          hasApiKey: false,
+        },
+      }),
       loadCopilotRuntime: vi.fn().mockResolvedValue({
         ok: true,
         snapshot: {
@@ -121,6 +228,11 @@ describe('registerRendererIpcHandlers', () => {
     expect(ipcMain.removeHandler.mock.calls.map(([channel]) => channel)).toEqual([
       CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
       CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
+      'settings-workspace-state:load',
+      'settings-workspace-state:save',
+      'settings-workspace-secrets:load-statuses',
+      'settings-workspace-secrets:save-provider-api-key',
+      'settings-workspace-secrets:clear-provider-api-key',
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
@@ -128,6 +240,11 @@ describe('registerRendererIpcHandlers', () => {
     expect([...registeredHandlers.keys()]).toEqual([
       CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
       CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
+      'settings-workspace-state:load',
+      'settings-workspace-state:save',
+      'settings-workspace-secrets:load-statuses',
+      'settings-workspace-secrets:save-provider-api-key',
+      'settings-workspace-secrets:clear-provider-api-key',
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,

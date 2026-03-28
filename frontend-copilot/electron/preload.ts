@@ -9,6 +9,15 @@ import {
 } from './config-center/public-snapshot'
 import { createConfigCenterPublicSnapshotSubscriptionApi } from './config-center/public-snapshot-subscription'
 import {
+  SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL,
+  SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
+  SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL,
+  SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
+  type SettingsWorkspaceSecretsApi,
+  type SettingsWorkspaceStateApi,
+} from './settings-workspace/ipc'
+import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
 } from './copilot-runtime'
@@ -39,6 +48,27 @@ const configCenterPublicPatchApi: ConfigCenterPublicPatchApi = {
   },
 }
 
+const settingsWorkspaceStateApi: SettingsWorkspaceStateApi = {
+  load() {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL)
+  },
+  save(input) {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL, input)
+  },
+}
+
+const settingsWorkspaceSecretsApi: SettingsWorkspaceSecretsApi = {
+  loadStatuses(request) {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL, request)
+  },
+  saveProviderApiKey(request) {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL, request)
+  },
+  clearProviderApiKey(request) {
+    return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL, request)
+  },
+}
+
 const bootstrapWindowApi: BootstrapWindowApi = {
   signalBootstrapScreenReady() {
     return ipcRenderer.invoke(BOOTSTRAP_WINDOW_READY_CHANNEL)
@@ -51,4 +81,6 @@ contextBridge.exposeInMainWorld('copilotRuntime', copilotRuntimeApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshot', configCenterPublicSnapshotApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshotSubscription', configCenterPublicSnapshotSubscriptionApi)
 contextBridge.exposeInMainWorld('configCenterPublicPatch', configCenterPublicPatchApi)
+contextBridge.exposeInMainWorld('settingsWorkspaceState', settingsWorkspaceStateApi)
+contextBridge.exposeInMainWorld('settingsWorkspaceSecrets', settingsWorkspaceSecretsApi)
 contextBridge.exposeInMainWorld('bootstrapWindow', bootstrapWindowApi)
