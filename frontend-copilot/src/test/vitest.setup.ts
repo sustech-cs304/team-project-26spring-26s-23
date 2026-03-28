@@ -1,0 +1,10 @@
+declare global {
+  // eslint-disable-next-line no-var
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+}
+
+export {}
