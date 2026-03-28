@@ -32,7 +32,7 @@ interface TextareaFieldProps {
 
 interface ToggleSwitchProps {
   label: string
-  description: string
+  description?: string
   checked: boolean
   onChange: (checked: boolean) => void
 }
@@ -190,7 +190,7 @@ export function ToggleSwitch({ label, description, checked, onChange }: ToggleSw
     >
       <span className="toggle-row__copy">
         <span className="toggle-row__label">{label}</span>
-        <span className="toggle-row__description">{description}</span>
+        {description ? <span className="toggle-row__description">{description}</span> : null}
       </span>
       <span className="toggle-row__track">
         <span className="toggle-row__thumb" />

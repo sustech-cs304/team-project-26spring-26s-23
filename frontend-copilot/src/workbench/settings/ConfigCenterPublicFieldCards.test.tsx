@@ -6,68 +6,24 @@ import {
   applyConfigCenterPublicTextFieldSaveSuccess,
   applyDraftValueToConfigCenterPublicTextField,
   applyExternalSnapshotToConfigCenterPublicTextField,
-  AssistantBehaviorConfigCard,
-  BackendExposedModelConfigCard,
-  createBackendExposedModelConfigCenterPublicPatch,
   createConfigCenterPublicTextFieldState,
   createLoadingConfigCenterPublicTextFieldState,
   getConfigCenterPublicTextFieldStatusView,
   HostConfigRuntimeOverrideCard,
   normalizeConfigCenterPublicTextFieldValue,
-  readBackendExposedModelFromPublicSnapshot,
   shouldCommitConfigCenterPublicTextField,
   startSavingConfigCenterPublicTextField,
 } from './ConfigCenterPublicFieldCards'
 
 describe('ConfigCenterPublicFieldCards', () => {
-  it('renders assistant behavior, backend model, and development runtime override cards with explicit semantics', () => {
+  it('renders the development runtime override card with explicit semantics', () => {
     const html = renderToStaticMarkup(
-      <>
-        <AssistantBehaviorConfigCard />
-        <BackendExposedModelConfigCard />
-        <HostConfigRuntimeOverrideCard />
-      </>,
+      <HostConfigRuntimeOverrideCard />,
     )
 
-    expect(html).toContain('Assistant 行为配置')
-    expect(html).toContain('默认 Agent 名称')
-    expect(html).toContain('后端模型')
-    expect(html).toContain('后端默认模型 ID')
-    expect(html).toContain('保存后需重启整个程序生效')
-    expect(html).toContain('需要重启整个程序')
     expect(html).toContain('宿主配置（开发态）')
     expect(html).toContain('开发态运行时覆盖地址')
-    expect(html).toContain('不表示普通用户后端地址')
-  })
-
-  it('reads and writes backend model through the public snapshot and patch contract', () => {
-    const snapshot = {
-      version: 1 as const,
-      domains: {
-        frontendPreferences: {
-          theme: 'light' as const,
-          animationsEnabled: true,
-        },
-        assistantBehavior: {
-          agentName: 'campus-agent',
-        },
-        hostConfig: {
-          runtimeUrl: 'http://127.0.0.1:8765',
-        },
-        backendExposed: {
-          model: 'openai/gpt-4.1',
-        },
-      },
-    }
-
-    expect(readBackendExposedModelFromPublicSnapshot(snapshot)).toBe('openai/gpt-4.1')
-    expect(createBackendExposedModelConfigCenterPublicPatch('openai/gpt-4.1-mini')).toEqual({
-      domains: {
-        backendExposed: {
-          model: 'openai/gpt-4.1-mini',
-        },
-      },
-    })
+    expect(html).not.toContain('不表示普通用户后端地址')
   })
 
   it('hydrates a loading field state from a loaded public snapshot value', () => {

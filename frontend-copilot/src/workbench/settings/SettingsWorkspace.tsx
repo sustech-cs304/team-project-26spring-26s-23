@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, Eye, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import type { CopilotBootstrapController, CopilotBootstrapState } from '../../features/copilot/types'
@@ -18,9 +18,7 @@ import {
   compressionOptions,
   createModelProfileId,
   currencyOptions,
-  densityOptions,
   docsFormatOptions,
-  fontSizeOptions,
   initialProviderProfiles,
   languageOptions,
   memoryStrategyOptions,
@@ -33,8 +31,6 @@ import {
   toolPermissionOptions,
 } from './config'
 import {
-  AssistantBehaviorConfigCard,
-  BackendExposedModelConfigCard,
   HostConfigRuntimeOverrideCard,
 } from './ConfigCenterPublicFieldCards'
 
@@ -42,8 +38,6 @@ interface SettingsWorkspaceProps {
   bootstrap: CopilotBootstrapController
   themeMode: ThemeMode
   onThemeModeChange: (value: ThemeMode) => void
-  animationsEnabled: boolean
-  onAnimationsEnabledChange: (value: boolean) => void
   initialSection?: SettingsSection
 }
 
@@ -206,8 +200,6 @@ export function SettingsWorkspace({
   bootstrap,
   themeMode,
   onThemeModeChange,
-  animationsEnabled,
-  onAnimationsEnabledChange,
   initialSection,
 }: SettingsWorkspaceProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'model-service')
@@ -222,12 +214,8 @@ export function SettingsWorkspace({
 
   const [language, setLanguage] = useState('zh-CN')
   const [proxyMode, setProxyMode] = useState('system')
-  const [spellCheckEnabled, setSpellCheckEnabled] = useState(true)
   const [assistantNotificationsEnabled, setAssistantNotificationsEnabled] = useState(false)
   const [backupEnabled, setBackupEnabled] = useState(true)
-
-  const [fontSize, setFontSize] = useState('medium')
-  const [density, setDensity] = useState('compact')
 
   const [dataPath, setDataPath] = useState('D:/workspace/copilot-data')
   const [backupCycle, setBackupCycle] = useState('daily')
@@ -236,14 +224,12 @@ export function SettingsWorkspace({
   const [searchEngine, setSearchEngine] = useState('google')
   const [searchResultCount, setSearchResultCount] = useState('8')
   const [compressionMode, setCompressionMode] = useState('summary')
-  const [safeSearchEnabled, setSafeSearchEnabled] = useState(true)
 
   const [memoryStrategy, setMemoryStrategy] = useState('session-longterm')
   const [memoryCleanupEnabled, setMemoryCleanupEnabled] = useState(true)
 
   const [mcpAutoDiscoveryEnabled, setMcpAutoDiscoveryEnabled] = useState(true)
   const [toolPermissionMode, setToolPermissionMode] = useState('manual')
-  const [mcpSandboxEnabled, setMcpSandboxEnabled] = useState(false)
 
   const [apiReconnectMode, setApiReconnectMode] = useState('exponential')
   const [healthPollingEnabled, setHealthPollingEnabled] = useState(true)
@@ -299,10 +285,6 @@ export function SettingsWorkspace({
     return Array.from(modelsById.values()).map((model) => ({
       value: model.modelId,
       label: model.displayName || model.modelId,
-      hint:
-        model.displayName && model.displayName !== model.modelId
-          ? model.modelId
-          : model.groupName || '模型候选项',
     }))
   }, [providerProfiles])
 
@@ -310,14 +292,33 @@ export function SettingsWorkspace({
     initialProviderProfiles[0]?.defaultModel ?? '',
   )
   const [fastAssistantModel, setFastAssistantModel] = useState(initialProviderProfiles[0]?.fastModel ?? '')
+  const [apiKeyVisible, setApiKeyVisible] = useState(false)
+  const [apiKeyFeedback, setApiKeyFeedback] = useState<string | null>(null)
+  const modelEditorOpen = modelEditorState !== null
   const modelEditorAdvancedSectionId = 'settings-model-editor-advanced-panel'
 
   useEffect(() => {
     setModelEditorState(null)
+    setApiKeyVisible(false)
+    setApiKeyFeedback(null)
   }, [activeProviderId])
 
   useEffect(() => {
-    if (!modelEditorState) {
+    if (!apiKeyFeedback) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setApiKeyFeedback(null)
+    }, 2000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [apiKeyFeedback])
+
+  useEffect(() => {
+    if (!modelEditorOpen) {
       const previousFocusedElement = previouslyFocusedElementRef.current
       previouslyFocusedElementRef.current = null
 
@@ -338,6 +339,12 @@ export function SettingsWorkspace({
         return
       }
 
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+      if (activeElement && dialog.contains(activeElement) && activeElement !== dialog) {
+        return
+      }
+
       const focusTarget = modelEditorInitialFocusRef.current ?? getFocusableElements(dialog)[0] ?? dialog
       focusTarget.focus()
     })
@@ -345,7 +352,7 @@ export function SettingsWorkspace({
     return () => {
       window.cancelAnimationFrame(focusTimer)
     }
-  }, [modelEditorState])
+  }, [modelEditorOpen])
 
   const updateActiveProvider = (patch: Partial<ProviderProfile>) => {
     setProviderProfiles((previous) =>
@@ -354,13 +361,27 @@ export function SettingsWorkspace({
           return { ...profile, ...patch }
         }
 
-        if (patch.isDefault === true) {
-          return { ...profile, isDefault: false }
-        }
-
         return profile
       }),
     )
+  }
+
+  const handleCopyApiKey = async () => {
+    if (!activeProvider.apiKey.trim()) {
+      setApiKeyFeedback('当前没有可复制的 API 密钥')
+      return
+    }
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('clipboard-unavailable')
+      }
+
+      await navigator.clipboard.writeText(activeProvider.apiKey)
+      setApiKeyFeedback('已复制 API 密钥')
+    } catch {
+      setApiKeyFeedback('复制失败，请手动复制')
+    }
   }
 
   const commitActiveProviderModels = (
@@ -582,11 +603,7 @@ export function SettingsWorkspace({
 
       <main className="workspace-main" aria-label="设置主内容区">
         <header className="workspace-main__header">
-          <div>
-            <p className="workspace-main__eyebrow">当前设置页</p>
-            <h2 className="workspace-main__title">{activeSettingsItem.label}</h2>
-          </div>
-          <span className="workspace-badge">设置布局</span>
+          <h2 className="workspace-main__title">{activeSettingsItem.label}</h2>
         </header>
 
         <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">
@@ -599,7 +616,6 @@ export function SettingsWorkspace({
                       <div className="settings-card__header settings-card__header--spaced">
                         <div>
                           <h3 className="settings-card__title">模型服务商</h3>
-                          <p className="settings-card__subtitle">左侧选择服务商，右侧查看基础信息与模型列表。</p>
                         </div>
                         <button type="button" className="secondary-button" onClick={handleAddProvider}>
                           <Plus size={14} />
@@ -630,16 +646,8 @@ export function SettingsWorkspace({
                               >
                                 <span className="provider-card__title-row">
                                   <span className="provider-card__title">{profile.name}</span>
-                                  <span
-                                    className={`inline-badge${profile.enabled ? ' inline-badge--success' : ''}`}
-                                  >
-                                    {profile.enabled ? '启用中' : '已停用'}
-                                  </span>
                                 </span>
                                 <span className="provider-card__meta-row">
-                                  {profile.isDefault ? (
-                                    <span className="inline-badge inline-badge--primary">默认</span>
-                                  ) : null}
                                   <span className="provider-card__meta">
                                     {
                                       protocolOptions.find((option) => option.value === profile.protocol)?.label
@@ -660,7 +668,6 @@ export function SettingsWorkspace({
                         <div className="settings-card__header">
                           <div>
                             <h3 className="settings-card__title">服务商基础信息</h3>
-                            <p className="settings-card__subtitle">编辑当前服务商的接入信息、默认模型与备注。</p>
                           </div>
                         </div>
 
@@ -668,21 +675,18 @@ export function SettingsWorkspace({
                           <div className="form-grid form-grid--two">
                             <TextField
                               label="服务商名称"
-                              description="显示在左侧列表中的名称"
                               value={activeProvider.name}
                               onChange={(value) => updateActiveProvider({ name: value })}
                               placeholder="输入服务商名称"
                             />
                             <SelectField
-                              label="协议类型"
-                              description="控制请求的接口风格与参数格式"
+                              label="端点类型"
                               value={activeProvider.protocol}
                               options={protocolOptions}
                               onChange={(value) => updateActiveProvider({ protocol: value })}
                             />
                             <TextField
                               label="API 地址"
-                              description="填写服务商接口地址或代理网关地址"
                               value={activeProvider.endpoint}
                               onChange={(value) => updateActiveProvider({ endpoint: value })}
                               placeholder="https://api.example.com/v1"
@@ -690,43 +694,67 @@ export function SettingsWorkspace({
                             />
                             <TextField
                               label="默认模型 ID"
-                              description="填写该服务商默认使用的模型 ID"
                               value={activeProvider.defaultModel}
                               onChange={(value) => updateActiveProvider({ defaultModel: value })}
                               placeholder="例如 openai/gpt-4.1"
                             />
-                            <TextField
-                              label="API 密钥"
-                              description="填写对应服务商提供的访问密钥"
-                              value={activeProvider.apiKey}
-                              onChange={(value) => updateActiveProvider({ apiKey: value })}
-                              placeholder="输入访问密钥"
-                              type="password"
-                            />
+                            <label className="form-field form-field--full" htmlFor="provider-api-key-input">
+                              <span className="form-field__meta">
+                                <span className="form-field__label">API 密钥</span>
+                              </span>
+                              <span className="text-input-shell">
+                                <input
+                                  id="provider-api-key-input"
+                                  data-testid="provider-api-key-input"
+                                  className="text-input text-input-shell__input"
+                                  type={apiKeyVisible ? 'text' : 'password'}
+                                  value={activeProvider.apiKey}
+                                  placeholder="输入访问密钥"
+                                  onChange={(event) => updateActiveProvider({ apiKey: event.target.value })}
+                                />
+                                <span className="text-input-shell__actions">
+                                  <button
+                                    type="button"
+                                    className="icon-button icon-button--compact"
+                                    aria-label={apiKeyVisible ? '隐藏 API 密钥' : '查看 API 密钥原文'}
+                                    title={apiKeyVisible ? '隐藏 API 密钥' : '查看 API 密钥原文'}
+                                    data-testid="provider-api-key-visibility-toggle"
+                                    onClick={() => setApiKeyVisible((previous) => !previous)}
+                                  >
+                                    {apiKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-button icon-button--compact"
+                                    aria-label="复制 API 密钥原文"
+                                    title="复制 API 密钥原文"
+                                    data-testid="provider-api-key-copy"
+                                    onClick={() => {
+                                      void handleCopyApiKey()
+                                    }}
+                                  >
+                                    <Copy size={14} />
+                                  </button>
+                                </span>
+                              </span>
+                              {apiKeyFeedback ? (
+                                <span
+                                  className={`form-field__feedback${apiKeyFeedback.startsWith('已复制') ? ' form-field__feedback--success' : ' form-field__feedback--warning'}`}
+                                  data-testid="provider-api-key-feedback"
+                                  role="status"
+                                >
+                                  {apiKeyFeedback}
+                                </span>
+                              ) : null}
+                            </label>
                           </div>
 
                           <TextareaField
                             label="备注与扩展配置"
-                            description="补充自定义请求头、路由说明或使用备注"
                             value={activeProvider.notes}
                             onChange={(value) => updateActiveProvider({ notes: value })}
                             placeholder="输入补充说明"
                           />
-
-                          <div className="toggle-grid">
-                            <ToggleSwitch
-                              label="启用当前服务商"
-                              description="关闭后保留配置，但不参与模型路由"
-                              checked={activeProvider.enabled}
-                              onChange={(checked) => updateActiveProvider({ enabled: checked })}
-                            />
-                            <ToggleSwitch
-                              label="设为默认服务商"
-                              description="置顶为全局默认模型服务入口"
-                              checked={activeProvider.isDefault}
-                              onChange={(checked) => updateActiveProvider({ isDefault: checked })}
-                            />
-                          </div>
                         </div>
                       </section>
 
@@ -734,7 +762,6 @@ export function SettingsWorkspace({
                         <div className="settings-card__header settings-card__header--spaced">
                           <div>
                             <h3 className="settings-card__title">模型列表管理</h3>
-                            <p className="settings-card__subtitle">集中查看当前服务商模型，并通过图标快速编辑或删除。</p>
                           </div>
                           <span className="inline-badge">{activeProvider.availableModels.length} 个模型</span>
                         </div>
@@ -828,7 +855,6 @@ export function SettingsWorkspace({
                             <div className="model-editor-modal__header">
                               <div>
                                 <h3 className="settings-card__title">{modelEditorState.isNew ? '添加模型' : '编辑模型'}</h3>
-                                <p className="settings-card__subtitle">填写模型名称、特性与价格信息。</p>
                               </div>
                               <button
                                 type="button"
@@ -844,7 +870,6 @@ export function SettingsWorkspace({
                               <div className="form-grid form-grid--two">
                                 <TextField
                                   label="模型 ID"
-                                  description="用于请求路由与默认模型引用"
                                   value={modelEditorState.modelId}
                                   onChange={(value) => {
                                     setModelEditorError(null)
@@ -855,7 +880,6 @@ export function SettingsWorkspace({
                                 />
                                 <TextField
                                   label="模型名称"
-                                  description="显示在模型列表中的名称"
                                   value={modelEditorState.displayName}
                                   onChange={(value) => updateModelEditorState({ displayName: value })}
                                   placeholder="例如 Gemini 2.5 Pro"
@@ -871,7 +895,6 @@ export function SettingsWorkspace({
                               <div className="model-editor-section">
                                 <div className="model-editor-section__header">
                                   <span className="form-field__label">模型类型</span>
-                                  <p className="form-field__description">选择需要展示在列表中的能力标签。</p>
                                 </div>
 
                                 <div className="model-capability-picker">
@@ -910,21 +933,18 @@ export function SettingsWorkspace({
                                       <div className="form-grid form-grid--pricing">
                                         <SelectField
                                           label="币种"
-                                          description="用于标记价格信息的计价币种"
                                           value={modelEditorState.currency}
                                           options={currencyOptions}
                                           onChange={(value) => updateModelEditorState({ currency: value })}
                                         />
                                         <TextField
                                           label="输入价格"
-                                          description="按每百万 Token 估算"
                                           value={modelEditorState.inputPrice}
                                           onChange={(value) => updateModelEditorState({ inputPrice: value })}
                                           placeholder="0.50"
                                         />
                                         <TextField
                                           label="输出价格"
-                                          description="按每百万 Token 估算"
                                           value={modelEditorState.outputPrice}
                                           onChange={(value) => updateModelEditorState({ outputPrice: value })}
                                           placeholder="3.00"
@@ -959,13 +979,10 @@ export function SettingsWorkspace({
               case 'default-model':
                 return (
                   <div className="settings-page">
-                    <BackendExposedModelConfigCard />
-
                     <section className="settings-card settings-card--form">
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">默认模型路由</h3>
-                          <p className="settings-card__subtitle">为常用任务选择默认模型。</p>
                         </div>
                       </div>
 
@@ -973,14 +990,12 @@ export function SettingsWorkspace({
                         <div className="form-grid form-grid--two">
                           <SelectField
                             label="主助手模型"
-                            description="用于大多数正式对话与推理任务"
                             value={primaryAssistantModel}
                             options={allModelOptions}
                             onChange={setPrimaryAssistantModel}
                           />
                           <SelectField
                             label="快速执行模型"
-                            description="用于轻量生成或预检查"
                             value={fastAssistantModel}
                             options={allModelOptions}
                             onChange={setFastAssistantModel}
@@ -994,13 +1009,10 @@ export function SettingsWorkspace({
               case 'general':
                 return (
                   <div className="settings-page">
-                    <AssistantBehaviorConfigCard />
-
                     <section className="settings-card settings-card--form">
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">常规设置</h3>
-                          <p className="settings-card__subtitle">使用真实可交互的开关与下拉框，模拟后续可持久化的设置体验。</p>
                         </div>
                       </div>
 
@@ -1008,14 +1020,12 @@ export function SettingsWorkspace({
                         <div className="form-grid form-grid--two">
                           <SelectField
                             label="界面语言"
-                            description="控制 UI 文案语言"
                             value={language}
                             options={languageOptions}
                             onChange={setLanguage}
                           />
                           <SelectField
                             label="代理模式"
-                            description="控制联网请求的网络出口策略"
                             value={proxyMode}
                             options={proxyModeOptions}
                             onChange={setProxyMode}
@@ -1024,20 +1034,12 @@ export function SettingsWorkspace({
 
                         <div className="toggle-grid">
                           <ToggleSwitch
-                            label="拼写检查"
-                            description="输入时即时提示拼写错误"
-                            checked={spellCheckEnabled}
-                            onChange={setSpellCheckEnabled}
-                          />
-                          <ToggleSwitch
                             label="助手消息通知"
-                            description="任务完成或需要关注时显示提醒"
                             checked={assistantNotificationsEnabled}
                             onChange={setAssistantNotificationsEnabled}
                           />
                           <ToggleSwitch
                             label="自动备份"
-                            description="定期保存核心设置与工作区状态"
                             checked={backupEnabled}
                             onChange={setBackupEnabled}
                           />
@@ -1054,15 +1056,13 @@ export function SettingsWorkspace({
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">显示设置</h3>
-                          <p className="settings-card__subtitle">默认切换到浅色风格，同时保留主题、字号与动画等显示选项。</p>
                         </div>
                       </div>
 
                       <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
+                        <div className="form-grid">
                           <SelectField
                             label="主题"
-                            description="控制整体配色模式"
                             value={themeMode}
                             options={themeOptions}
                             onChange={(value) => {
@@ -1071,28 +1071,7 @@ export function SettingsWorkspace({
                               }
                             }}
                           />
-                          <SelectField
-                            label="字号"
-                            description="调整整体阅读尺寸"
-                            value={fontSize}
-                            options={fontSizeOptions}
-                            onChange={setFontSize}
-                          />
-                          <SelectField
-                            label="界面密度"
-                            description="紧凑或舒适的布局间距"
-                            value={density}
-                            options={densityOptions}
-                            onChange={setDensity}
-                          />
                         </div>
-
-                        <ToggleSwitch
-                          label="启用微动画"
-                          description="为开关、按钮与下拉选择保留轻量反馈动画"
-                          checked={animationsEnabled}
-                          onChange={onAnimationsEnabledChange}
-                        />
                       </div>
                     </section>
                   </div>
@@ -1105,7 +1084,6 @@ export function SettingsWorkspace({
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">数据设置</h3>
-                          <p className="settings-card__subtitle">用于展示本地存储目录、备份周期与启动同步策略。</p>
                         </div>
                       </div>
 
@@ -1113,14 +1091,12 @@ export function SettingsWorkspace({
                         <div className="form-grid form-grid--two">
                           <TextField
                             label="数据目录"
-                            description="保存会话缓存、索引与设置文件"
                             value={dataPath}
                             onChange={setDataPath}
                             placeholder="输入本地目录"
                           />
                           <SelectField
                             label="备份周期"
-                            description="控制自动备份的执行频率"
                             value={backupCycle}
                             options={backupCycleOptions}
                             onChange={setBackupCycle}
@@ -1130,13 +1106,11 @@ export function SettingsWorkspace({
                         <div className="toggle-grid">
                           <ToggleSwitch
                             label="启用自动备份"
-                            description="到期后自动生成新的备份快照"
                             checked={backupEnabled}
                             onChange={setBackupEnabled}
                           />
                           <ToggleSwitch
                             label="启动时同步"
-                            description="应用启动后自动刷新本地缓存与索引"
                             checked={launchSyncEnabled}
                             onChange={setLaunchSyncEnabled}
                           />
@@ -1153,7 +1127,6 @@ export function SettingsWorkspace({
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">MCP 服务器</h3>
-                          <p className="settings-card__subtitle">管理工具发现、调用权限与沙箱策略。</p>
                         </div>
                       </div>
 
@@ -1161,7 +1134,6 @@ export function SettingsWorkspace({
                         <div className="form-grid form-grid--two">
                           <SelectField
                             label="工具权限策略"
-                            description="控制外部能力调用前的确认方式"
                             value={toolPermissionMode}
                             options={toolPermissionOptions}
                             onChange={setToolPermissionMode}
@@ -1171,15 +1143,8 @@ export function SettingsWorkspace({
                         <div className="toggle-grid">
                           <ToggleSwitch
                             label="自动发现 MCP 服务"
-                            description="在启动时主动扫描已注册的服务端"
                             checked={mcpAutoDiscoveryEnabled}
                             onChange={setMcpAutoDiscoveryEnabled}
-                          />
-                          <ToggleSwitch
-                            label="启用沙箱保护"
-                            description="对高风险能力启用更严格的隔离策略"
-                            checked={mcpSandboxEnabled}
-                            onChange={setMcpSandboxEnabled}
                           />
                         </div>
                       </div>
@@ -1194,21 +1159,18 @@ export function SettingsWorkspace({
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">搜索服务商</h3>
-                          <p className="settings-card__subtitle">使用下拉选择默认搜索引擎与结果规模。</p>
                         </div>
                       </div>
 
                       <div className="settings-stack">
                         <SelectField
                           label="默认搜索引擎"
-                          description="优先使用的联网搜索服务"
                           value={searchEngine}
                           options={searchEngineOptions}
                           onChange={setSearchEngine}
                         />
                         <SelectField
                           label="结果数量"
-                          description="控制默认返回结果条数"
                           value={searchResultCount}
                           options={resultCountOptions}
                           onChange={setSearchResultCount}
@@ -1220,23 +1182,15 @@ export function SettingsWorkspace({
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">网络搜索配置</h3>
-                          <p className="settings-card__subtitle">控制内容压缩方式与安全搜索策略。</p>
                         </div>
                       </div>
 
                       <div className="settings-stack">
                         <SelectField
                           label="压缩方式"
-                          description="决定搜索结果进入上下文前的压缩规则"
                           value={compressionMode}
                           options={compressionOptions}
                           onChange={setCompressionMode}
-                        />
-                        <ToggleSwitch
-                          label="启用安全搜索"
-                          description="尽量过滤明显不合适的搜索结果"
-                          checked={safeSearchEnabled}
-                          onChange={setSafeSearchEnabled}
                         />
                       </div>
                     </section>
@@ -1250,21 +1204,18 @@ export function SettingsWorkspace({
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">全局记忆</h3>
-                          <p className="settings-card__subtitle">配置长期记忆范围与自动清理行为。</p>
                         </div>
                       </div>
 
                       <div className="settings-stack">
                         <SelectField
                           label="记忆策略"
-                          description="决定哪些上下文会被长期保留"
                           value={memoryStrategy}
                           options={memoryStrategyOptions}
                           onChange={setMemoryStrategy}
                         />
                         <ToggleSwitch
                           label="自动清理陈旧记忆"
-                          description="定期清理长时间未使用的记忆条目"
                           checked={memoryCleanupEnabled}
                           onChange={setMemoryCleanupEnabled}
                         />
@@ -1282,7 +1233,6 @@ export function SettingsWorkspace({
                       <div className="settings-card__header settings-card__header--spaced">
                         <div>
                           <h3 className="settings-card__title">API 服务器</h3>
-                          <p className="settings-card__subtitle">展示基础后端地址、健康检查与自动重连配置，并显示根层启动状态摘要。</p>
                         </div>
                         <span className={`inline-badge ${resolveBootstrapBadgeClass(bootstrap.state)}`}>
                           {formatBootstrapStatusLabel(bootstrap.state)}
@@ -1293,9 +1243,6 @@ export function SettingsWorkspace({
                         <div className="settings-card__header">
                           <div>
                             <h4 className="settings-card__title">根层启动摘要</h4>
-                            <p className="settings-card__subtitle">
-                              当前设置工作区直接消费来自根装配层的状态，不再各自重复读取运行态。
-                            </p>
                           </div>
                         </div>
 
@@ -1324,7 +1271,6 @@ export function SettingsWorkspace({
                         <div className="form-grid form-grid--two">
                           <TextField
                             label="后端地址"
-                            description="未来可对接实际 Pydantic AI 或代理网关"
                             value={apiBaseUrl}
                             onChange={setApiBaseUrl}
                             placeholder="http://127.0.0.1:8000"
@@ -1332,7 +1278,6 @@ export function SettingsWorkspace({
                           />
                           <SelectField
                             label="重连策略"
-                            description="控制异常断开后的重试节奏"
                             value={apiReconnectMode}
                             options={apiReconnectOptions}
                             onChange={setApiReconnectMode}
@@ -1341,7 +1286,6 @@ export function SettingsWorkspace({
 
                         <ToggleSwitch
                           label="启用健康检查轮询"
-                          description="后台定时检查运行时连接状态"
                           checked={healthPollingEnabled}
                           onChange={setHealthPollingEnabled}
                         />
@@ -1357,7 +1301,6 @@ export function SettingsWorkspace({
                       <div className="settings-card__header">
                         <div>
                           <h3 className="settings-card__title">文档处理</h3>
-                          <p className="settings-card__subtitle">控制导出格式、输出目录与文件命名规则。</p>
                         </div>
                       </div>
 
@@ -1365,14 +1308,12 @@ export function SettingsWorkspace({
                         <div className="form-grid form-grid--two">
                           <SelectField
                             label="默认导出格式"
-                            description="文档生成后的默认格式"
                             value={docsFormat}
                             options={docsFormatOptions}
                             onChange={setDocsFormat}
                           />
                           <TextField
                             label="输出目录"
-                            description="文档导出时的默认落盘目录"
                             value={outputDirectory}
                             onChange={setOutputDirectory}
                             placeholder="输入导出目录"
@@ -1381,7 +1322,6 @@ export function SettingsWorkspace({
 
                         <ToggleSwitch
                           label="自动生成文件名"
-                          description="导出时自动附带日期与标题摘要"
                           checked={autoFileNameEnabled}
                           onChange={setAutoFileNameEnabled}
                         />
@@ -1404,7 +1344,7 @@ function createCustomProvider(index: number): ProviderProfile {
   return {
     id: providerId,
     name: providerName,
-    protocol: 'custom-rest',
+    protocol: 'openai',
     endpoint: 'https://api.example.com/v1',
     apiKey: '',
     defaultModel: 'custom-model',
@@ -1413,8 +1353,6 @@ function createCustomProvider(index: number): ProviderProfile {
     organization: '',
     region: 'Custom',
     notes: '',
-    enabled: true,
-    isDefault: false,
     availableModels: [
       createProviderModelProfile(providerId, 'custom-model', providerName),
       createProviderModelProfile(providerId, 'custom-model-fast', providerName),

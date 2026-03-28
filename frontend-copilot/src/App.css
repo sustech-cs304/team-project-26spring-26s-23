@@ -898,20 +898,6 @@ textarea {
   line-height: 1.6;
 }
 
-.workspace-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.35rem 0.72rem;
-  border-radius: 999px;
-  border: 1px solid var(--accent-soft);
-  background: var(--badge-bg);
-  color: var(--accent-strong);
-  font-size: 0.8rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
 .workspace-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.9fr);
@@ -1043,6 +1029,38 @@ textarea {
   font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.settings-workspace .panel-head,
+.settings-workspace .workspace-main__header,
+.settings-workspace .settings-nav-item,
+.settings-workspace .settings-card__header,
+.settings-workspace .form-field__meta,
+.settings-workspace .toggle-row,
+.settings-workspace .select-trigger,
+.settings-workspace .select-option,
+.settings-workspace .inline-badge,
+.settings-workspace .toolbar-actions,
+.settings-workspace .workspace-fact,
+.settings-workspace .model-capability-picker,
+.settings-workspace .model-editor-advanced__toggle,
+.settings-workspace .secondary-button,
+.settings-workspace .primary-button,
+.settings-workspace .ghost-button,
+.settings-workspace .icon-button {
+  user-select: none;
+}
+
+.settings-workspace .provider-card__title,
+.settings-workspace .provider-card__meta,
+.settings-workspace .provider-card__description,
+.settings-workspace .model-list-row__name,
+.settings-workspace .model-list-row__id,
+.settings-workspace .workspace-fact strong,
+.settings-workspace .workspace-fact span,
+.settings-workspace input,
+.settings-workspace textarea {
+  user-select: text;
 }
 
 .settings-card__subtitle {
@@ -1277,6 +1295,11 @@ textarea {
   color: var(--text-primary);
 }
 
+.icon-button--compact {
+  width: 44px;
+  height: 44px;
+}
+
 .icon-button--danger {
   color: var(--danger-action);
 }
@@ -1498,6 +1521,11 @@ textarea {
   grid-template-columns: minmax(160px, 0.7fr) repeat(2, minmax(0, 1fr));
 }
 
+.form-grid--pricing .text-input,
+.form-grid--pricing .select-trigger {
+  min-height: 56px;
+}
+
 .model-editor-modal__footer {
   display: flex;
   justify-content: flex-end;
@@ -1530,6 +1558,10 @@ textarea {
   gap: 0.5rem;
 }
 
+.form-field--full {
+  grid-column: 1 / -1;
+}
+
 .form-field__meta {
   display: flex;
   flex-direction: column;
@@ -1549,6 +1581,19 @@ textarea {
   font-size: 0.8rem;
   line-height: 1.5;
   color: var(--text-secondary);
+}
+
+.form-field__feedback {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.form-field__feedback--success {
+  color: var(--success-strong);
+}
+
+.form-field__feedback--warning {
+  color: var(--warning-strong);
 }
 
 .text-input,
@@ -1583,6 +1628,23 @@ textarea {
 .text-input--textarea {
   min-height: 112px;
   resize: vertical;
+}
+
+.text-input-shell {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.text-input-shell__input {
+  flex: 1 1 auto;
+}
+
+.text-input-shell__actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .select-trigger {

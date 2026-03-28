@@ -6,7 +6,6 @@ import type { CopilotBootstrapController } from './features/copilot/types'
 import { isHubWorkspaceView, railPrimaryItems, railSecondaryItems } from './workbench/config'
 import {
   loadAnimationsEnabledPreference,
-  persistAnimationsEnabledPreference,
   subscribeToAnimationsEnabledPreferenceUpdates,
 } from './workbench/animation-config'
 import {
@@ -101,18 +100,6 @@ function App({ bootstrap }: AppProps) {
       applyThemeMode,
     })
   }, [applyThemeMode, themeMode])
-
-  const handleAnimationsEnabledChange = useCallback((nextAnimationsEnabled: boolean) => {
-    if (nextAnimationsEnabled === animationsEnabled) {
-      return
-    }
-
-    void persistAnimationsEnabledPreference({
-      previousAnimationsEnabled: animationsEnabled,
-      animationsEnabled: nextAnimationsEnabled,
-      applyAnimationsEnabled,
-    })
-  }, [animationsEnabled, applyAnimationsEnabled])
 
   useEffect(() => {
     logStartupTrace('mounted')
@@ -274,8 +261,6 @@ function App({ bootstrap }: AppProps) {
             bootstrap,
             themeMode,
             handleThemeModeChange,
-            animationsEnabled,
-            handleAnimationsEnabledChange,
           )}
         </Suspense>
       </RecoverableErrorBoundary>
@@ -288,8 +273,6 @@ function renderActiveWorkspace(
   bootstrap: CopilotBootstrapController,
   themeMode: ThemeMode,
   onThemeModeChange: (value: ThemeMode) => void,
-  animationsEnabled: boolean,
-  onAnimationsEnabledChange: (value: boolean) => void,
 ) {
   if (activeWorkspace === 'assistant') {
     return <AssistantWorkspace bootstrap={bootstrap} />
@@ -301,8 +284,6 @@ function renderActiveWorkspace(
         bootstrap={bootstrap}
         themeMode={themeMode}
         onThemeModeChange={onThemeModeChange}
-        animationsEnabled={animationsEnabled}
-        onAnimationsEnabledChange={onAnimationsEnabledChange}
       />
     )
   }

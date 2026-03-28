@@ -106,7 +106,5 @@ export interface ProviderProfile {
   organization: string
   region: string
   notes: string
-  enabled: boolean
-  isDefault: boolean
   availableModels: ProviderModelProfile[]
 }
