@@ -13,7 +13,7 @@ import type {
   SettingsWorkspaceStateLoadResult,
   SettingsWorkspaceStateSaveResult,
 } from '../../../electron/settings-workspace/ipc'
-import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
+import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/state-schema'
 
 const STATE_API_UNAVAILABLE_ERROR = 'window.settingsWorkspaceState is unavailable in the renderer process.'
 const SECRETS_API_UNAVAILABLE_ERROR = 'window.settingsWorkspaceSecrets is unavailable in the renderer process.'

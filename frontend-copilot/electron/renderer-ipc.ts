@@ -28,7 +28,7 @@ import {
   type SettingsWorkspaceStateLoadResult,
   type SettingsWorkspaceStateSaveResult,
 } from './settings-workspace/ipc'
-import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/schema'
+import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/state-schema'
 import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,

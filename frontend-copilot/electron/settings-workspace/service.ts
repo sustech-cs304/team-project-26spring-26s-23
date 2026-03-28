@@ -1,25 +1,27 @@
 import { mkdir as fsMkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
 import type { SettingsWorkspacePaths } from './paths'
 import {
-  createDefaultSettingsWorkspaceSecretsDocument,
   createDefaultSettingsWorkspaceStateDocument,
-  createSettingsWorkspaceSecretsDocument,
   createSettingsWorkspaceStateDocument,
-  normalizeSettingsWorkspaceSecretsDocument,
   normalizeSettingsWorkspaceStateDocument,
   normalizeSettingsWorkspaceStateValues,
-  projectProviderSecretStateById,
   projectSettingsWorkspaceEditableState,
-  projectSustechCasSecretState,
   type SettingsWorkspaceEditableState,
+  type SettingsWorkspaceStateDocument,
+  type SettingsWorkspaceStateSaveInput,
+  type SettingsWorkspaceStateSource,
+} from './state-schema'
+import {
+  createDefaultSettingsWorkspaceSecretsDocument,
+  createSettingsWorkspaceSecretsDocument,
+  normalizeSettingsWorkspaceSecretsDocument,
+  projectProviderSecretStateById,
+  projectSustechCasSecretState,
   type SettingsWorkspaceProviderSecretState,
   type SettingsWorkspaceProviderSecretStateById,
   type SettingsWorkspaceSustechCasSecretState,
   type SettingsWorkspaceSecretsDocument,
-  type SettingsWorkspaceStateDocument,
-  type SettingsWorkspaceStateSaveInput,
-  type SettingsWorkspaceStateSource,
-} from './schema'
+} from './secret-schema'
 
 export interface SettingsWorkspaceStorage {
   loadState: () => Promise<{

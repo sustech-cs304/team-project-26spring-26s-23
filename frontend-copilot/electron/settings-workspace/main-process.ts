@@ -13,7 +13,7 @@ import type {
   SettingsWorkspaceStateLoadResult,
   SettingsWorkspaceStateSaveResult,
 } from './ipc'
-import type { SettingsWorkspaceStateSaveInput } from './schema'
+import type { SettingsWorkspaceStateSaveInput } from './state-schema'
 
 export interface ElectronSettingsWorkspaceLogger {
   (

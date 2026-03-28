@@ -1,11 +1,13 @@
 import type {
   SettingsWorkspaceEditableState,
+  SettingsWorkspaceStateSaveInput,
+  SettingsWorkspaceStateSource,
+} from './state-schema'
+import type {
   SettingsWorkspaceProviderSecretState,
   SettingsWorkspaceProviderSecretStateById,
   SettingsWorkspaceSustechCasSecretState,
-  SettingsWorkspaceStateSaveInput,
-  SettingsWorkspaceStateSource,
-} from './schema'
+} from './secret-schema'
 
 export const SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL = 'settings-workspace-state:load'
 export const SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL = 'settings-workspace-state:save'

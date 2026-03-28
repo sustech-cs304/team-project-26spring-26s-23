@@ -36,7 +36,7 @@ import type {
   SettingsWorkspaceStateLoadResult,
   SettingsWorkspaceStateSaveResult,
 } from './settings-workspace/ipc'
-import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/schema'
+import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/state-schema'
 import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/schema'
 import {
   MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL,
