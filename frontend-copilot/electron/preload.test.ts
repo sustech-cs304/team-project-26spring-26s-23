@@ -10,6 +10,7 @@ import {
   type ConfigCenterPublicSnapshotSubscriptionApi,
 } from './config-center/public-snapshot'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL, type CopilotRuntimeApi } from './copilot-runtime'
+import { MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, type RuntimeConsoleEntry } from './renderer-ipc'
 
 const preloadMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
@@ -57,6 +58,9 @@ describe('preload renderer bridge', () => {
     preloadMocks.invoke.mockResolvedValue(undefined)
     await import('./preload')
 
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
     const runtimeApi = getExposedApi<CopilotRuntimeApi>('copilotRuntime')
     const snapshotApi = getExposedApi<ConfigCenterPublicSnapshotApi>('configCenterPublicSnapshot')
     const subscriptionApi = getExposedApi<ConfigCenterPublicSnapshotSubscriptionApi>('configCenterPublicSnapshotSubscription')
@@ -89,11 +93,39 @@ describe('preload renderer bridge', () => {
       [BOOTSTRAP_WINDOW_READY_CHANNEL],
     ])
 
+    const runtimeConsoleOnCall = preloadMocks.on.mock.calls.find(([channel]) => channel === MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL)
+    expect(runtimeConsoleOnCall?.[1]).toBeTypeOf('function')
+
+    const runtimeConsoleEntry: RuntimeConsoleEntry = {
+      source: 'electron-main',
+      level: 'debug',
+      message: '[startup] app:ready',
+      context: {
+        sinceMainMs: 12,
+      },
+    }
+    const runtimeConsoleWarningEntry: RuntimeConsoleEntry = {
+      source: 'electron-main',
+      level: 'warn',
+      message: '[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.',
+    }
+
+    const runtimeConsoleListener = runtimeConsoleOnCall?.[1] as ((event: unknown, payload: RuntimeConsoleEntry) => void) | undefined
+    runtimeConsoleListener?.(undefined, runtimeConsoleEntry)
+    runtimeConsoleListener?.(undefined, runtimeConsoleWarningEntry)
+
+    expect(debugSpy).toHaveBeenCalledWith('[electron-main]', '[startup] app:ready', {
+      sinceMainMs: 12,
+    })
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[electron-main]',
+      '[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.',
+    )
+
     const listener = vi.fn()
     const stop = subscriptionApi.subscribe(listener)
-    const onCall = preloadMocks.on.mock.calls[0]
-    expect(onCall?.[0]).toBe(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL)
-    expect(onCall?.[1]).toBeTypeOf('function')
+    const snapshotOnCall = preloadMocks.on.mock.calls.find(([channel]) => channel === CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL)
+    expect(snapshotOnCall?.[1]).toBeTypeOf('function')
 
     const snapshot: ConfigCenterPublicSnapshot = {
       version: 1,
@@ -114,14 +146,17 @@ describe('preload renderer bridge', () => {
       },
     }
 
-    const registeredListener = onCall?.[1] as ((event: unknown, payload: ConfigCenterPublicSnapshot) => void) | undefined
+    const registeredListener = snapshotOnCall?.[1] as ((event: unknown, payload: ConfigCenterPublicSnapshot) => void) | undefined
     registeredListener?.(undefined, snapshot)
     expect(listener).toHaveBeenCalledOnce()
     expect(listener).toHaveBeenCalledWith(snapshot)
 
     stop()
     expect(preloadMocks.off).toHaveBeenCalledOnce()
-    expect(preloadMocks.off).toHaveBeenCalledWith(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL, onCall?.[1])
+    expect(preloadMocks.off).toHaveBeenCalledWith(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL, snapshotOnCall?.[1])
+
+    debugSpy.mockRestore()
+    warnSpy.mockRestore()
   })
 })
 

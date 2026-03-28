@@ -21,7 +21,12 @@ import {
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
 import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/schema'
-import { registerRendererIpcHandlers } from './renderer-ipc'
+import {
+  MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL,
+  registerRendererIpcHandlers,
+  writeRuntimeConsoleEntryToTerminal,
+  type RuntimeConsoleEntry,
+} from './renderer-ipc'
 import { showWindowWhenBootstrapScreenIsReady } from './bootstrap-window-controller'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
@@ -60,6 +65,7 @@ let unifiedConfigService: ElectronUnifiedConfigService | null = null
 let quitSequenceStarted = false
 let hostedBackendStartupInFlight = false
 const electronStartupStartedAt = Date.now()
+const pendingRendererRuntimeConsoleEntries: RuntimeConsoleEntry[] = []
 
 function logStartupTrace(stage: string, context: Record<string, unknown> = {}): void {
   const payload = {
@@ -67,8 +73,7 @@ function logStartupTrace(stage: string, context: Record<string, unknown> = {}): 
     ...context,
   }
 
-  console.info(`[startup] ${stage}`, JSON.stringify(payload))
-  void appendMainRuntimeLog('info', `[startup] ${stage}`, payload)
+  void appendMainRuntimeLog('debug', `[startup] ${stage}`, payload)
 }
 
 function openDetachedDevTools(targetWindow: BrowserWindow): boolean {
@@ -145,28 +150,31 @@ function createWindow() {
     },
   })
 
-  win.setMenuBarVisibility(false)
-  registerDeveloperShortcuts(win)
+  const targetWindow = win
 
-  win.webContents.on('did-start-loading', () => {
+  targetWindow.setMenuBarVisibility(false)
+  registerDeveloperShortcuts(targetWindow)
+
+  targetWindow.webContents.on('did-start-loading', () => {
     logStartupTrace('webContents:did-start-loading', {
       sinceWindowMs: Date.now() - windowCreatedAt,
     })
   })
 
-  win.webContents.on('dom-ready', () => {
+  targetWindow.webContents.on('dom-ready', () => {
     logStartupTrace('webContents:dom-ready', {
       sinceWindowMs: Date.now() - windowCreatedAt,
     })
   })
 
-  win.webContents.on('did-finish-load', () => {
+  targetWindow.webContents.on('did-finish-load', () => {
     logStartupTrace('webContents:did-finish-load', {
       sinceWindowMs: Date.now() - windowCreatedAt,
     })
+    flushPendingRendererRuntimeConsoleEntries(targetWindow)
   })
 
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+  targetWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     logStartupTrace('webContents:did-fail-load', {
       sinceWindowMs: Date.now() - windowCreatedAt,
       errorCode,
@@ -175,27 +183,24 @@ function createWindow() {
     })
   })
 
-  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    const rendererLogLevel = normalizeRendererConsoleLogLevel(level)
+  targetWindow.webContents.on('console-message', (details) => {
+    const rendererLogLevel = normalizeRendererConsoleLogLevel(details.level)
     const payload = {
       sinceWindowMs: Date.now() - windowCreatedAt,
-      level,
-      line,
-      sourceId,
-      message,
+      level: details.level,
+      line: details.lineNumber,
+      sourceId: details.sourceId,
+      message: details.message,
     }
 
-    if (message.startsWith('[startup]')) {
-      void appendMainRuntimeLog('info', '[startup] renderer-console', payload)
-      return
-    }
-
-    if (rendererLogLevel === 'warn' || rendererLogLevel === 'error' || message.startsWith('[renderer]')) {
-      void appendMainRuntimeLog(rendererLogLevel, 'renderer-console', payload)
+    if (rendererLogLevel === 'warn' || rendererLogLevel === 'error' || details.message.startsWith('[renderer]')) {
+      void appendMainRuntimeLog(rendererLogLevel, 'renderer-console', payload, {
+        relayToRenderer: false,
+      })
     }
   })
 
-  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+  targetWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
     void appendMainRuntimeLog('error', 'Renderer preload script failed.', {
       sinceWindowMs: Date.now() - windowCreatedAt,
       preloadPath,
@@ -203,7 +208,7 @@ function createWindow() {
     })
   })
 
-  win.webContents.on('render-process-gone', (_event, details) => {
+  targetWindow.webContents.on('render-process-gone', (_event, details) => {
     void appendMainRuntimeLog('error', 'Renderer process exited unexpectedly.', {
       sinceWindowMs: Date.now() - windowCreatedAt,
       reason: details.reason,
@@ -211,7 +216,7 @@ function createWindow() {
     })
   })
 
-  win.webContents.on('unresponsive', () => {
+  targetWindow.webContents.on('unresponsive', () => {
     logStartupTrace('webContents:unresponsive', {
       sinceWindowMs: Date.now() - windowCreatedAt,
     })
@@ -222,14 +227,14 @@ function createWindow() {
       kind: 'url',
       target: VITE_DEV_SERVER_URL,
     })
-    win.loadURL(VITE_DEV_SERVER_URL)
+    targetWindow.loadURL(VITE_DEV_SERVER_URL)
   } else {
     const target = path.join(RENDERER_DIST, 'index.html')
     logStartupTrace('window-load:start', {
       kind: 'file',
       target,
     })
-    win.loadFile(target)
+    targetWindow.loadFile(target)
   }
 }
 
@@ -349,7 +354,7 @@ async function startHostedBackend(): Promise<void> {
     const service = await ensureHostedBackendService()
     const paths = getHostedRuntimePaths()
 
-    void appendMainRuntimeLog('info', 'Starting hosted desktop backend.', {
+    void appendMainRuntimeLog('info', '[desktop-runtime] Starting hosted desktop backend.', {
       isPackaged: app.isPackaged,
       userDataPath: paths.userDataDir,
       runtimeRootDir: paths.runtimeRootDir,
@@ -415,7 +420,7 @@ function registerApplicationLifecycleHandlers() {
 
     quitSequenceStarted = true
     event.preventDefault()
-    void appendMainRuntimeLog('info', 'Electron main process entered before-quit cleanup.', null)
+    void appendMainRuntimeLog('info', '[desktop-runtime] Electron main process entered before-quit cleanup.', null)
 
     void stopHostedBackend()
       .catch((error) => {
@@ -431,8 +436,8 @@ function resolveHostedRuntimeCommandLineOptions() {
   const { options, warning } = parseHostedRuntimeCommandLineArgumentsSafely(process.argv)
 
   if (warning !== null) {
-    console.warn('[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.', JSON.stringify(warning))
-    void appendMainRuntimeLog('warn', 'Ignoring invalid hosted runtime command-line arguments.', { ...warning })
+    const message = '[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.'
+    void appendMainRuntimeLog('warn', message, { ...warning })
   }
 
   return options
@@ -440,8 +445,7 @@ function resolveHostedRuntimeCommandLineOptions() {
 
 function logHostedBackendState(message: string, state: HostedBackendState): void {
   const summary = summarizeHostedBackendState(state)
-  console.info(`[desktop-runtime] ${message}`, JSON.stringify(summary))
-  void appendMainRuntimeLog('info', message, summary)
+  void appendMainRuntimeLog('info', `[desktop-runtime] ${message}`, summary)
 }
 
 function logHostedBackendFailure(
@@ -449,16 +453,16 @@ function logHostedBackendFailure(
   failure: HostedBackendFailure | null,
   error?: unknown,
 ): void {
+  const runtimeMessage = `[desktop-runtime] ${message}`
+
   if (failure !== null) {
     const summary = summarizeHostedBackendFailure(failure)
-    console.error(`[desktop-runtime] ${message}`, JSON.stringify(summary))
-    void appendMainRuntimeLog('error', message, summary)
+    void appendMainRuntimeLog('error', runtimeMessage, summary)
     return
   }
 
   const detail = formatUnknownError(error)
-  console.error(`[desktop-runtime] ${message}`, detail)
-  void appendMainRuntimeLog('error', message, { detail })
+  void appendMainRuntimeLog('error', runtimeMessage, { detail })
 }
 
 function getHostedRuntimePaths(): HostedRuntimePaths {
@@ -498,7 +502,20 @@ async function appendMainRuntimeLog(
   level: RuntimeLogLevel,
   message: string,
   context: Record<string, unknown> | null,
+  options: {
+    relayToRenderer?: boolean
+  } = {},
 ): Promise<void> {
+  const entry = createMainRuntimeConsoleEntry(level, message, context)
+
+  if (options.relayToRenderer ?? true) {
+    publishMainRuntimeConsoleEntry(entry)
+  }
+
+  if (writeRuntimeConsoleEntryToTerminal(entry)) {
+    // Terminal emission is intentionally limited to warning-and-above entries.
+  }
+
   try {
     const paths = await prepareApplicationRuntimePaths()
     await appendRuntimeLog(paths.hostLogFile, {
@@ -509,6 +526,49 @@ async function appendMainRuntimeLog(
     })
   } catch (error) {
     console.error('[desktop-runtime] Failed to append Electron main log entry.', formatUnknownError(error))
+  }
+}
+
+function publishMainRuntimeConsoleEntry(entry: RuntimeConsoleEntry): void {
+  const liveWindows = BrowserWindow.getAllWindows().filter((browserWindow) => !browserWindow.isDestroyed())
+
+  if (liveWindows.length === 0) {
+    pendingRendererRuntimeConsoleEntries.push(entry)
+    return
+  }
+
+  for (const browserWindow of liveWindows) {
+    browserWindow.webContents.send(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, entry)
+  }
+}
+
+function flushPendingRendererRuntimeConsoleEntries(targetWindow: BrowserWindow): void {
+  if (targetWindow.isDestroyed() || pendingRendererRuntimeConsoleEntries.length === 0) {
+    return
+  }
+
+  for (const entry of pendingRendererRuntimeConsoleEntries) {
+    if (targetWindow.isDestroyed()) {
+      return
+    }
+
+    targetWindow.webContents.send(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, entry)
+  }
+
+  pendingRendererRuntimeConsoleEntries.length = 0
+}
+
+function createMainRuntimeConsoleEntry(
+  level: RuntimeLogLevel,
+  message: string,
+  context: Record<string, unknown> | null,
+): RuntimeConsoleEntry {
+  return {
+    source: 'electron-main',
+    level,
+    message,
+    context: context ?? undefined,
+    timestamp: new Date().toISOString(),
   }
 }
 
@@ -584,13 +644,31 @@ function formatUnknownError(error: unknown): string {
   return String(error)
 }
 
-function normalizeRendererConsoleLogLevel(level: number): RuntimeLogLevel {
-  if (level >= 3) {
+function normalizeRendererConsoleLogLevel(level: number | 'info' | 'warning' | 'error' | 'debug'): RuntimeLogLevel {
+  if (level === 'debug') {
+    return 'debug'
+  }
+
+  if (level === 'error') {
     return 'error'
   }
 
-  if (level === 2) {
+  if (level === 'warning') {
     return 'warn'
+  }
+
+  if (typeof level === 'number') {
+    if (level <= 0) {
+      return 'debug'
+    }
+
+    if (level >= 3) {
+      return 'error'
+    }
+
+    if (level === 2) {
+      return 'warn'
+    }
   }
 
   return 'info'
@@ -613,9 +691,10 @@ void app.whenReady()
     createWindow()
   })
   .catch((error) => {
-    console.error('[desktop-runtime] Failed to bootstrap the Electron main process.', formatUnknownError(error))
-    void appendMainRuntimeLog('error', 'Failed to bootstrap the Electron main process.', {
-      detail: formatUnknownError(error),
+    const message = '[desktop-runtime] Failed to bootstrap the Electron main process.'
+    const detail = formatUnknownError(error)
+    void appendMainRuntimeLog('error', message, {
+      detail,
     })
     app.quit()
   })

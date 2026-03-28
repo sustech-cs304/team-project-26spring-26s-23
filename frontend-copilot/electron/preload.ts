@@ -14,6 +14,7 @@ import {
 } from './copilot-runtime'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from './bootstrap-window'
+import { registerRuntimeConsoleForwarding } from './renderer-ipc'
 
 const copilotRuntimeApi: CopilotRuntimeApi = {
   load() {
@@ -43,6 +44,8 @@ const bootstrapWindowApi: BootstrapWindowApi = {
     return ipcRenderer.invoke(BOOTSTRAP_WINDOW_READY_CHANNEL)
   },
 }
+
+registerRuntimeConsoleForwarding(ipcRenderer)
 
 contextBridge.exposeInMainWorld('copilotRuntime', copilotRuntimeApi)
 contextBridge.exposeInMainWorld('configCenterPublicSnapshot', configCenterPublicSnapshotApi)

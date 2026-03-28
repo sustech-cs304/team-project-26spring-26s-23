@@ -4,7 +4,15 @@ import { BOOTSTRAP_WINDOW_READY_CHANNEL } from './bootstrap-window'
 import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL } from './config-center/public-patch'
 import { CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL } from './config-center/public-snapshot'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
-import { registerRendererIpcHandlers, type RendererIpcHandlers } from './renderer-ipc'
+import {
+  MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL,
+  registerRendererIpcHandlers,
+  registerRuntimeConsoleForwarding,
+  shouldWriteRuntimeConsoleEntryToTerminal,
+  writeRuntimeConsoleEntryToTerminal,
+  type RendererIpcHandlers,
+  type RuntimeConsoleEntry,
+} from './renderer-ipc'
 
 function createFakeIpcMain() {
   const registeredHandlers = new Map<string, (...args: unknown[]) => Promise<unknown> | unknown>()
@@ -17,6 +25,19 @@ function createFakeIpcMain() {
       }),
       handle: vi.fn((channel: string, handler: (...args: unknown[]) => Promise<unknown> | unknown) => {
         registeredHandlers.set(channel, handler)
+      }),
+    },
+  }
+}
+
+function createFakeIpcRenderer() {
+  const registeredListeners = new Map<string, (...args: unknown[]) => void>()
+
+  return {
+    registeredListeners,
+    ipcRenderer: {
+      on: vi.fn((channel: string, listener: (...args: unknown[]) => void) => {
+        registeredListeners.set(channel, listener)
       }),
     },
   }
@@ -138,6 +159,110 @@ describe('registerRendererIpcHandlers', () => {
     await expect(retryRuntimeHandler()).resolves.toEqual(await handlers.retryCopilotRuntime())
     await expect(notifyBootstrapWindowReadyHandler()).resolves.toBeUndefined()
     expect(handlers.notifyBootstrapWindowReady).toHaveBeenCalledOnce()
+  })
+
+  it('keeps only warning and error runtime console entries on the terminal path', () => {
+    const targetConsole = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }
+
+    const infoEntry: RuntimeConsoleEntry = {
+      source: 'electron-main',
+      level: 'info',
+      message: '[desktop-runtime] Hosted backend is ready.',
+    }
+    const debugEntry: RuntimeConsoleEntry = {
+      source: 'electron-main',
+      level: 'debug',
+      message: '[startup] app:ready',
+      context: {
+        sinceMainMs: 9,
+      },
+    }
+    const warnEntry: RuntimeConsoleEntry = {
+      source: 'electron-main',
+      level: 'warn',
+      message: '[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.',
+      timestamp: '2026-03-28T09:40:52.123Z',
+    }
+    const errorEntry: RuntimeConsoleEntry = {
+      source: 'electron-main',
+      level: 'error',
+      message: '[desktop-runtime] Hosted backend startup failed.',
+      context: {
+        code: 'startup_timeout',
+      },
+      timestamp: '2026-03-28T09:40:53.456Z',
+    }
+
+    expect(shouldWriteRuntimeConsoleEntryToTerminal(infoEntry)).toBe(false)
+    expect(shouldWriteRuntimeConsoleEntryToTerminal(debugEntry)).toBe(false)
+    expect(writeRuntimeConsoleEntryToTerminal(infoEntry, targetConsole)).toBe(false)
+    expect(writeRuntimeConsoleEntryToTerminal(debugEntry, targetConsole)).toBe(false)
+    expect(targetConsole.info).not.toHaveBeenCalled()
+    expect(targetConsole.debug).not.toHaveBeenCalled()
+
+    expect(shouldWriteRuntimeConsoleEntryToTerminal(warnEntry)).toBe(true)
+    expect(shouldWriteRuntimeConsoleEntryToTerminal(errorEntry)).toBe(true)
+    expect(writeRuntimeConsoleEntryToTerminal(warnEntry, targetConsole)).toBe(true)
+    expect(writeRuntimeConsoleEntryToTerminal(errorEntry, targetConsole)).toBe(true)
+    expect(targetConsole.warn).toHaveBeenCalledWith(expect.stringMatching(/\u001B\[90m\d{2}:40:52\.123\u001B\[0m .*\u001B\[36m\[desktop-runtime\]\u001B\[0m \[desktop-runtime\] Ignoring invalid hosted runtime command-line arguments\.$/))
+    expect(targetConsole.error).toHaveBeenCalledWith(expect.stringMatching(/\u001B\[90m\d{2}:40:53\.456\u001B\[0m .*\u001B\[36m\[desktop-runtime\]\u001B\[0m \[desktop-runtime\] Hosted backend startup failed\. code=startup_timeout$/))
+  })
+
+  it('formats renderer warning entries into compact terminal output', () => {
+    const targetConsole = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }
+
+    expect(writeRuntimeConsoleEntryToTerminal({
+      source: 'electron-main',
+      level: 'warn',
+      message: 'renderer-console',
+      timestamp: '2026-03-28T09:40:54.789Z',
+      context: {
+        level: 'warning',
+        line: 2,
+        sourceId: 'node:electron/js2c/sandbox_bundle',
+        message: '%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with "unsafe-eval" enabled.',
+      },
+    }, targetConsole)).toBe(true)
+
+    expect(targetConsole.warn).toHaveBeenCalledWith(expect.stringMatching(/\u001B\[90m\d{2}:40:54\.789\u001B\[0m .*\u001B\[36m\[renderer-console\]\u001B\[0m \u001B\[33mWARNING\u001B\[0m Electron Security Warning \(Insecure Content-Security-Policy\).*\u001B\[90m\(node:electron\/js2c\/sandbox_bundle:2\)\u001B\[0m$/))
+  })
+
+  it('registers runtime console forwarding for browser-side debug output', () => {
+    const { registeredListeners, ipcRenderer } = createFakeIpcRenderer()
+    const targetConsole = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }
+
+    registerRuntimeConsoleForwarding(ipcRenderer as never, targetConsole)
+
+    expect(ipcRenderer.on).toHaveBeenCalledWith(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, expect.any(Function))
+
+    const listener = registeredListeners.get(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL)
+    listener?.(undefined, {
+      source: 'electron-main',
+      level: 'debug',
+      message: '[startup] webContents:dom-ready',
+      context: {
+        sinceWindowMs: 18,
+      },
+    } satisfies RuntimeConsoleEntry)
+
+    expect(targetConsole.debug).toHaveBeenCalledWith('[electron-main]', '[startup] webContents:dom-ready', {
+      sinceWindowMs: 18,
+    })
   })
 })
 

@@ -6,7 +6,7 @@ import { redactSensitiveText, redactSensitiveValue } from './runtime-redaction'
 import { sanitizeHostedRuntimePaths, type HostedRuntimePaths } from './runtime-paths'
 import type { HostedBackendState } from './runtime-state'
 
-export type RuntimeLogLevel = 'info' | 'warn' | 'error'
+export type RuntimeLogLevel = 'debug' | 'info' | 'warn' | 'error'
 export type RuntimeLogSource = 'electron-main' | 'python-runtime-manager'
 
 export interface RuntimeLogEntryInput {
