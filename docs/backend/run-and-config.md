@@ -163,7 +163,9 @@ backend/data/
     │   │   ├── frontend-preferences.json
     │   │   ├── assistant-behavior.json
     │   │   ├── host-config.json
-    │   │   └── backend-exposed.json
+    │   │   ├── backend-exposed.json
+    │   │   ├── settings-workspace-state.json
+    │   │   └── settings-workspace-secrets.json
     │   └── copilot-settings.json
     ├── logs/
     │   ├── electron-host.log
@@ -180,6 +182,8 @@ backend/data/
 | 路径 | 当前角色 |
 | --- | --- |
 | `config-center/*.json` | 正式统一配置中心分域文档 |
+| `config-center/settings-workspace-state.json` | 设置页工作区的状态持久化文档，由 Electron 主进程 owner |
+| `config-center/settings-workspace-secrets.json` | 设置页 secrets 持久化文档，由 Electron 主进程 owner |
 | `copilot-settings.json` | legacy 设置文件路径，主要作为迁移输入 |
 | `logs/*` | Electron 主进程与 Python 子进程日志 |
 | `runtime-snapshot.json` | 宿主运行态快照 |
@@ -198,12 +202,26 @@ backend/data/
 当前系统里：
 
 - Electron 主进程负责统一配置中心
+- Electron 主进程也负责 settings workspace 的状态文档与 secrets 文档
 - renderer 通过 preload 消费公共快照与公共补丁
 - Python runtime 继续只解释 CLI 参数、环境变量和默认值
 
 因此现在不能写成：
 
 - “Python runtime 直接读取统一配置中心分域文件”
+- “Python runtime 直接读取 settings workspace 持久化文档”
+
+### settings workspace 在这条边界里的位置
+
+settings workspace 已经为设置页提供了大范围持久化层，但这层当前仍然属于 Electron 主进程 owner。
+
+这意味着：
+
+- renderer 可以通过 preload 读写这些设置页状态与 secret 状态
+- 主进程负责把它们保存到 `config-center/settings-workspace-state.json` 和 `config-center/settings-workspace-secrets.json`
+- Python runtime 当前不会自己读取这些文档来决定运行参数
+
+因此现在不能把“设置页很多字段已经能保存”直接写成“后端运行时已经直接采用这些字段”。
 
 ### `copilot-settings.json` 现在还剩什么作用
 
@@ -233,6 +251,16 @@ backend/data/
 不是：
 
 - **runtime 自己去读配置文件层**
+
+### secrets 当前仍然属于主进程 owner 范围
+
+provider API key 和 SUSTech CAS password 当前都保存在 settings workspace secrets 文档里。
+
+这层边界需要继续写清楚：
+
+- secret 当前由 Electron 主进程读写和保管
+- secret 不进入公开配置快照
+- secret 也不是当前 Python runtime 诊断响应里的公开配置来源
 
 ## 当前聊天主路径对后端意味着什么
 
@@ -315,7 +343,10 @@ uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port
 下面这些说法当前都不准确：
 
 - “Python runtime 会直接读取统一配置中心文件。”
+- “Python runtime 会直接读取 settings workspace state / secrets 文档。”
 - “`copilot-settings.json` 仍然是现行正式配置文件。”
+- “所有前端设置都已经进入后端运行时配置。”
+- “provider API key 和 CAS password 会出现在公开配置快照里。”
 - “前端每次消息使用的模型等同于 runtime 启动时的 `--model`。”
 - “当前聊天主路径仍然主要是旧 `agent/run`。”
 
@@ -324,4 +355,5 @@ uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port
 - [聊天运行时契约](../system/chat-runtime-contract.md)
 - [系统架构总览](../system/architecture-overview.md)
 - [会话与状态模型](../system/session-and-state-model.md)
+- [前端路线图与占位说明](../frontend/roadmap-and-placeholders.md)
 - [当前可观察契约参考](./reference-current-contracts.md)

@@ -195,6 +195,19 @@ sidebar_label: 聊天运行时契约
 - **智能体绑定发生在会话级**，不是全局级。
 - **模型和工具是请求级策略**，不是整个程序里一次选定后永久锁死。
 
+### 这层契约和设置页持久化不是同一件事
+
+聊天主契约描述的是会话和消息怎样执行；设置页持久化描述的是前端怎样保存设置资产。这两层现在已经同时存在，但 owner 和语义并不相同。
+
+当前可以这样理解：
+
+- `session/create`、`capabilities/get`、`message/send` 负责聊天执行语义
+- settings workspace 负责保存 provider profiles、默认模型路由、API 页面字段、SUSTech 信息等设置页状态
+- provider API key 与 CAS password 由 settings workspace secrets 保存，但它们不属于聊天根端点的公开请求契约
+- 设置页里保存了模型默认值或 provider 配置，并不表示这些值已经直接成为每次聊天请求的真源
+
+当前聊天发送时，前端仍然会在 `message/send` 请求里显式带上 `model` 和 `enabledTools`；而宿主侧把公开配置中心中的默认模型投影为 runtime `--model`，仍然属于另一层启动配置问题。
+
 ## 方法一：`agents/list`
 
 ### 作用
@@ -533,10 +546,12 @@ sidebar_label: 聊天运行时契约
 - “模型是程序级固定设置，消息请求里不用显式带。”
 - “工具开关只是一组前端装饰状态，后端不会真正解析。”
 - “前端仍以 `info -> agent/connect -> agent/run` 作为主流程。”
+- “settings workspace 里保存的 provider 配置或默认模型，已经直接等同于聊天请求真源。”
 
 ## 相关文档
 
 - [系统架构总览](./architecture-overview.md)
 - [会话与状态模型](./session-and-state-model.md)
 - [后端运行与配置](../backend/run-and-config.md)
+- [前端路线图与占位说明](../frontend/roadmap-and-placeholders.md)
 - [当前可观察契约参考](../backend/reference-current-contracts.md)
