@@ -1,4 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type RefObject, type SetStateAction } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+  type SetStateAction,
+} from 'react'
 import { ArrowUp } from 'lucide-react'
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
@@ -73,6 +83,8 @@ interface RenderPanelActions {
   sendError: string | null
   conversation: CopilotConversationTurn[]
   composerInputRef: RefObject<HTMLTextAreaElement>
+  composerHeight: number
+  onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
 interface RenderMessageShellActions {
@@ -86,7 +98,13 @@ interface RenderMessageShellActions {
   sendError: string | null
   conversation: CopilotConversationTurn[]
   composerInputRef: RefObject<HTMLTextAreaElement>
+  composerHeight: number
+  onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
+
+const DEFAULT_COPILOT_COMPOSER_HEIGHT = 160
+const MIN_COPILOT_COMPOSER_HEIGHT = 120
+const MAX_COPILOT_COMPOSER_HEIGHT = 360
 
 export function CopilotChatPanel({
   state,
@@ -103,7 +121,10 @@ export function CopilotChatPanel({
   const [conversation, setConversation] = useState<CopilotConversationTurn[]>([])
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending'>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
+  const [composerHeight, setComposerHeight] = useState(DEFAULT_COPILOT_COMPOSER_HEIGHT)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
+  const composerHeightRef = useRef(DEFAULT_COPILOT_COMPOSER_HEIGHT)
+  const composerResizeCleanupRef = useRef<(() => void) | null>(null)
 
   const sessionIdentity = sessionShell === null
     ? null
@@ -173,6 +194,16 @@ export function CopilotChatPanel({
       console.debug('[copilot-chat-shell] session-summary', sessionDebugSummary)
     }
   }, [sessionDebugSummary])
+
+  useEffect(() => {
+    composerHeightRef.current = composerHeight
+  }, [composerHeight])
+
+  useEffect(() => {
+    return () => {
+      composerResizeCleanupRef.current?.()
+    }
+  }, [])
 
   const sendDisabledReason = useMemo(() => {
     if (!isCopilotConnectableState(state)) {
@@ -267,6 +298,37 @@ export function CopilotChatPanel({
     }
   }
 
+  const handleComposerResizeStart = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+    composerResizeCleanupRef.current?.()
+
+    const startY = event.clientY
+    const startHeight = composerHeightRef.current
+    const previousUserSelect = document.body.style.userSelect
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const nextHeight = clampComposerHeight(startHeight + (startY - moveEvent.clientY))
+      composerHeightRef.current = nextHeight
+      setComposerHeight(nextHeight)
+    }
+
+    const stopResize = () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', stopResize)
+      document.body.style.userSelect = previousUserSelect
+      composerResizeCleanupRef.current = null
+    }
+
+    composerResizeCleanupRef.current = stopResize
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', stopResize)
+  }
+
   return (
     <section className="copilot-panel" data-testid="copilot-chat-panel">
       {renderCopilotPanelContent(state, {
@@ -285,6 +347,8 @@ export function CopilotChatPanel({
         sendError,
         conversation,
         composerInputRef,
+        composerHeight,
+        onComposerResizeStart: handleComposerResizeStart,
       })}
     </section>
   )
@@ -465,6 +529,8 @@ function renderSessionContent(actions: RenderPanelActions) {
     sendError: actions.sendError,
     conversation: actions.conversation,
     composerInputRef: actions.composerInputRef,
+    composerHeight: actions.composerHeight,
+    onComposerResizeStart: actions.onComposerResizeStart,
   })
 }
 
@@ -475,7 +541,11 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
-        <div className="copilot-chat__stream" data-testid="chat-message-scroll-region">
+        <div
+          className="copilot-chat__stream copilot-chat__stream--scrollbarless"
+          data-testid="chat-message-scroll-region"
+          data-scrollbar-visibility="hidden"
+        >
           {actions.conversation.length === 0
             ? (
                 <div className="copilot-chat__empty">
@@ -491,7 +561,7 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
                   <p className="copilot-chat__message-text">{turn.content}</p>
                 </article>
               ))}
-      </div>
+        </div>
 
         <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={actions.onSend}>
           <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
@@ -517,64 +587,72 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
             />
           </div>
 
-          <div className="copilot-panel__field-group">
-            <textarea
-              ref={actions.composerInputRef}
-              className="copilot-chat__composer-input"
-              name="messageText"
-              aria-label="消息内容"
-              value={actions.composerDraft.messageText}
-              onChange={(event) => {
-                const nextValue = event.currentTarget.value
-                actions.onComposerDraftChange((current) => ({
-                  ...current,
-                  messageText: nextValue,
-                }))
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
-                  return
-                }
+          <div
+            className="copilot-chat__composer-resize-handle"
+            data-testid="chat-composer-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="拖动以调整输入区高度"
+            onMouseDown={actions.onComposerResizeStart}
+          />
 
-                if (event.ctrlKey) {
-                  event.preventDefault()
-                  const textarea = event.currentTarget
-                  const { selectionStart, selectionEnd } = textarea
-                  const currentValue = actions.composerDraft.messageText
-                  const nextValue = `${currentValue.slice(0, selectionStart)}\n${currentValue.slice(selectionEnd)}`
-
+          <div
+            className="copilot-chat__composer-surface"
+            data-testid="chat-composer-surface"
+            style={{ height: `${actions.composerHeight}px` }}
+          >
+            <div className="copilot-panel__field-group copilot-chat__composer-field">
+              <textarea
+                ref={actions.composerInputRef}
+                className="copilot-chat__composer-input"
+                name="messageText"
+                aria-label="消息内容"
+                value={actions.composerDraft.messageText}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value
                   actions.onComposerDraftChange((current) => ({
                     ...current,
                     messageText: nextValue,
                   }))
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
+                    return
+                  }
 
-                  requestAnimationFrame(() => {
-                    textarea.focus()
-                    const nextCaretPosition = selectionStart + 1
-                    textarea.setSelectionRange(nextCaretPosition, nextCaretPosition)
-                  })
-                  return
-                }
+                  if (event.ctrlKey) {
+                    event.preventDefault()
+                    const textarea = event.currentTarget
+                    const { selectionStart, selectionEnd } = textarea
+                    const currentValue = actions.composerDraft.messageText
+                    const nextValue = `${currentValue.slice(0, selectionStart)}\n${currentValue.slice(selectionEnd)}`
 
-                event.preventDefault()
-                if (actions.sendDisabledReason === null) {
-                  event.currentTarget.form?.requestSubmit()
-                }
-              }}
-              placeholder="按 Enter 发送，按 Ctrl + Enter 换行"
-            />
-          </div>
+                    actions.onComposerDraftChange((current) => ({
+                      ...current,
+                      messageText: nextValue,
+                    }))
 
-          {actions.sessionError !== null && (
-            <p className="copilot-panel__error" role="alert">
-              {actions.sessionError}
-            </p>
-          )}
+                    requestAnimationFrame(() => {
+                      textarea.focus()
+                      const nextCaretPosition = selectionStart + 1
+                      textarea.setSelectionRange(nextCaretPosition, nextCaretPosition)
+                    })
+                    return
+                  }
 
-          <div className="copilot-chat__composer-actions">
+                  event.preventDefault()
+                  if (actions.sendDisabledReason === null) {
+                    event.currentTarget.form?.requestSubmit()
+                  }
+                }}
+                placeholder="按 Enter 发送，按 Ctrl + Enter 换行"
+              />
+            </div>
+
             <button
               type="submit"
               className="copilot-chat__send-button"
+              data-testid="chat-composer-send-button"
               disabled={actions.sendDisabledReason !== null}
               title={actions.sendDisabledReason ?? '发送消息'}
               aria-label={actions.sendDisabledReason ?? '发送消息'}
@@ -584,6 +662,12 @@ function renderMessageSendShell(actions: RenderMessageShellActions) {
                 : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
             </button>
           </div>
+
+          {actions.sessionError !== null && (
+            <p className="copilot-panel__error" role="alert">
+              {actions.sessionError}
+            </p>
+          )}
         </form>
       </section>
     </section>
@@ -740,6 +824,10 @@ function dedupeToolIds(toolIds: string[]): string[] {
   }
 
   return [...uniqueToolIds]
+}
+
+function clampComposerHeight(height: number): number {
+  return Math.min(MAX_COPILOT_COMPOSER_HEIGHT, Math.max(MIN_COPILOT_COMPOSER_HEIGHT, Math.round(height)))
 }
 
 function formatRequestOptionsError(error: unknown): string {

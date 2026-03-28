@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 
 import {
   createRuntimeSession,
@@ -30,6 +37,19 @@ export interface AssistantAgentDirectoryState {
 export interface AssistantSessionListState {
   sessions: AssistantSessionShell[]
   activeSessionId: string | null
+}
+
+interface AssistantSessionContextMenuState {
+  sessionId: string
+  sessionLabel: string
+  x: number
+  y: number
+  activeSubmenu: 'copy' | 'export' | null
+}
+
+interface AssistantSessionDragState {
+  draggingSessionId: string
+  previewIndex: number
 }
 
 interface AssistantWorkspaceProps {
@@ -69,6 +89,21 @@ export function AssistantWorkspace({
   ))
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'creating' | 'error'>('idle')
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const [sessionContextMenu, setSessionContextMenu] = useState<AssistantSessionContextMenuState | null>(null)
+  const [sessionDragState, setSessionDragState] = useState<AssistantSessionDragState | null>(null)
+  const sessionListRef = useRef<HTMLUListElement | null>(null)
+  const sessionDragGhostRef = useRef<HTMLDivElement | null>(null)
+  const sessionDragStateRef = useRef<AssistantSessionDragState | null>(null)
+  const pendingSessionPointerRef = useRef<{
+    sessionId: string
+    startX: number
+    startY: number
+    pointerOffsetX: number
+    pointerOffsetY: number
+  } | null>(null)
+  const sessionPointerCleanupRef = useRef<(() => void) | null>(null)
+  const sessionDragGhostFrameRef = useRef<number | null>(null)
+  const suppressSessionClickRef = useRef(false)
 
   useEffect(() => {
     console.info('[startup]', JSON.stringify({
@@ -144,12 +179,79 @@ export function AssistantWorkspace({
     () => resolveActiveAssistantSessionShell(sessionListState),
     [sessionListState],
   )
+  const draggingSessionShell = useMemo(
+    () => sessionDragState === null
+      ? null
+      : sessionListState.sessions.find((sessionEntry) => sessionEntry.sessionId === sessionDragState.draggingSessionId) ?? null,
+    [sessionDragState, sessionListState.sessions],
+  )
+  const draggedSessionId = sessionDragState?.draggingSessionId ?? null
+  const renderedSessions = useMemo(
+    () => draggedSessionId === null
+      ? sessionListState.sessions
+      : sessionListState.sessions.filter((sessionEntry) => sessionEntry.sessionId !== draggedSessionId),
+    [draggedSessionId, sessionListState.sessions],
+  )
+  const dragPreviewIndex = sessionDragState === null
+    ? null
+    : Math.max(0, Math.min(sessionDragState.previewIndex, renderedSessions.length))
+
+  useEffect(() => {
+    if (sessionContextMenu === null) {
+      return undefined
+    }
+
+    const handleWindowMouseDown = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest('[data-testid="assistant-session-context-menu"]') !== null) {
+        return
+      }
+
+      setSessionContextMenu(null)
+    }
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSessionContextMenu(null)
+        setSessionDragState(null)
+        pendingSessionPointerRef.current = null
+      }
+    }
+
+    const handleWindowBlur = () => {
+      setSessionDragState(null)
+      pendingSessionPointerRef.current = null
+    }
+
+    window.addEventListener('mousedown', handleWindowMouseDown)
+    window.addEventListener('keydown', handleWindowKeyDown)
+    window.addEventListener('blur', handleWindowBlur)
+
+    return () => {
+      window.removeEventListener('mousedown', handleWindowMouseDown)
+      window.removeEventListener('keydown', handleWindowKeyDown)
+      window.removeEventListener('blur', handleWindowBlur)
+    }
+  }, [sessionContextMenu])
+
+  useEffect(() => {
+    sessionDragStateRef.current = sessionDragState
+  }, [sessionDragState])
+
+  useEffect(() => {
+    return () => {
+      sessionPointerCleanupRef.current?.()
+      if (sessionDragGhostFrameRef.current !== null) {
+        cancelAnimationFrame(sessionDragGhostFrameRef.current)
+      }
+    }
+  }, [])
 
   const handleCreateSession = async () => {
     if (!isCopilotConnectableState(bootstrap.state) || selectedAgent === null || sessionStatus === 'creating') {
       return
     }
 
+    setSessionContextMenu(null)
     setSessionStatus('creating')
     setSessionError(null)
 
@@ -179,6 +281,112 @@ export function AssistantWorkspace({
 
     return `为 ${selectedAgent.label} 创建会话`
   }, [selectedAgent, sessionShell])
+
+  const createSessionButtonDisabled = !isCopilotConnectableState(bootstrap.state)
+    || selectedAgent === null
+    || sessionStatus === 'creating'
+
+  const scheduleSessionDragGhostPosition = (
+    pointerX: number,
+    pointerY: number,
+    pointerOffsetX: number,
+    pointerOffsetY: number,
+  ) => {
+    if (sessionDragGhostFrameRef.current !== null) {
+      cancelAnimationFrame(sessionDragGhostFrameRef.current)
+    }
+
+    sessionDragGhostFrameRef.current = requestAnimationFrame(() => {
+      if (sessionDragGhostRef.current !== null) {
+        sessionDragGhostRef.current.style.transform = `translate3d(${pointerX - pointerOffsetX}px, ${pointerY - pointerOffsetY}px, 0)`
+      }
+      sessionDragGhostFrameRef.current = null
+    })
+  }
+
+  const handleSessionPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => {
+    if (event.button !== 0) {
+      return
+    }
+
+    setSessionContextMenu(null)
+    sessionPointerCleanupRef.current?.()
+
+    const previousUserSelect = document.body.style.userSelect
+    const currentTargetRect = event.currentTarget.getBoundingClientRect()
+    pendingSessionPointerRef.current = {
+      sessionId,
+      startX: event.clientX,
+      startY: event.clientY,
+      pointerOffsetX: event.clientX - currentTargetRect.left,
+      pointerOffsetY: event.clientY - currentTargetRect.top,
+    }
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+      document.body.style.userSelect = previousUserSelect
+      pendingSessionPointerRef.current = null
+      sessionPointerCleanupRef.current = null
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const pending = pendingSessionPointerRef.current
+      if (pending === null) {
+        return
+      }
+
+      const pointerTravel = Math.abs(moveEvent.clientX - pending.startX) + Math.abs(moveEvent.clientY - pending.startY)
+      if (pointerTravel < 4 && sessionDragStateRef.current === null) {
+        return
+      }
+
+      suppressSessionClickRef.current = true
+      document.body.style.userSelect = 'none'
+      scheduleSessionDragGhostPosition(
+        moveEvent.clientX,
+        moveEvent.clientY,
+        pending.pointerOffsetX,
+        pending.pointerOffsetY,
+      )
+
+      const listElement = sessionListRef.current
+      const nextPreviewIndex = listElement === null
+        ? 0
+        : computeAssistantSessionPreviewIndex(
+            listElement,
+            moveEvent.clientY - pending.pointerOffsetY + (currentTargetRect.height / 2),
+          )
+
+      setSessionDragState({
+        draggingSessionId: pending.sessionId,
+        previewIndex: nextPreviewIndex,
+      })
+    }
+
+    const handlePointerUp = () => {
+      const dragSnapshot = sessionDragStateRef.current
+      if (dragSnapshot !== null) {
+        setSessionListState((current) => moveAssistantSessionShellToIndex(
+          current,
+          dragSnapshot.draggingSessionId,
+          dragSnapshot.previewIndex,
+        ))
+        setSessionDragState(null)
+        requestAnimationFrame(() => {
+          suppressSessionClickRef.current = false
+        })
+      }
+
+      cleanup()
+    }
+
+    sessionPointerCleanupRef.current = cleanup
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+  }
 
   return (
     <section className="workspace-stage conversation-workspace" aria-label="助手工作区">
@@ -232,41 +440,318 @@ export function AssistantWorkspace({
         <button
           type="button"
           className="new-thread-button"
+          data-testid="assistant-create-session-button"
           onClick={() => {
             void handleCreateSession()
           }}
-          disabled={!isCopilotConnectableState(bootstrap.state) || selectedAgent === null || sessionStatus === 'creating'}
+          disabled={createSessionButtonDisabled}
+          aria-busy={sessionStatus === 'creating'}
+          aria-label={createSessionLabel}
         >
           <span>＋</span>
-          <span>{sessionStatus === 'creating' ? '正在创建会话…' : createSessionLabel}</span>
+          <span>{createSessionLabel}</span>
         </button>
 
         {sessionListState.sessions.length > 0 && (
-          <ul className="topic-list topic-list--detailed" data-testid="assistant-session-list">
-            {sessionListState.sessions.map((sessionEntry) => {
+          <ul
+            ref={sessionListRef}
+            className="topic-list topic-list--detailed"
+            data-testid="assistant-session-list"
+          >
+            {renderedSessions.map((sessionEntry, visualIndex) => {
               const active = sessionEntry.sessionId === sessionListState.activeSessionId
 
               return (
-                <li key={sessionEntry.sessionId}>
-                  <button
-                    type="button"
-                    className={`topic-card${active ? ' topic-card--active' : ''}`}
-                    onClick={() => {
-                      setSessionListState((current) => ({
-                        ...current,
-                        activeSessionId: sessionEntry.sessionId,
-                      }))
-                      setSelectedAgentId(sessionEntry.boundAgent.id)
-                    }}
+                <Fragment key={sessionEntry.sessionId}>
+                  {dragPreviewIndex === visualIndex && (
+                    <li
+                      className="topic-list__drop-gap"
+                      data-testid={`assistant-session-drop-gap-${visualIndex}`}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <li
+                    className="topic-list__item"
+                    data-testid={`assistant-session-list-item-${sessionEntry.sessionId}`}
+                    data-session-order-index={visualIndex}
                   >
-                    <span className="topic-card__title">{sessionEntry.boundAgent.label}</span>
-                    <span className="topic-card__meta">
-                    </span>
-                  </button>
-                </li>
+                    <button
+                      type="button"
+                      className={`topic-card${active ? ' topic-card--active' : ''}`}
+                      data-testid={`assistant-session-card-${sessionEntry.sessionId}`}
+                      onPointerDown={(event) => handleSessionPointerDown(event, sessionEntry.sessionId)}
+                      onClick={(event) => {
+                        if (suppressSessionClickRef.current) {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          suppressSessionClickRef.current = false
+                          return
+                        }
+
+                        setSessionContextMenu(null)
+                        setSessionListState((current) => ({
+                          ...current,
+                          activeSessionId: sessionEntry.sessionId,
+                        }))
+                        setSelectedAgentId(sessionEntry.boundAgent.id)
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        setSessionListState((current) => ({
+                          ...current,
+                          activeSessionId: sessionEntry.sessionId,
+                        }))
+                        setSelectedAgentId(sessionEntry.boundAgent.id)
+                        setSessionContextMenu({
+                          sessionId: sessionEntry.sessionId,
+                          sessionLabel: sessionEntry.boundAgent.label,
+                          x: event.clientX,
+                          y: event.clientY,
+                          activeSubmenu: null,
+                        })
+                      }}
+                    >
+                      <span className="topic-card__title">{sessionEntry.boundAgent.label}</span>
+                      <span className="topic-card__meta">
+                      </span>
+                    </button>
+                  </li>
+                </Fragment>
               )
             })}
+            {dragPreviewIndex === renderedSessions.length && (
+              <li
+                className="topic-list__drop-gap"
+                data-testid={`assistant-session-drop-gap-${renderedSessions.length}`}
+                aria-hidden="true"
+              />
+            )}
           </ul>
+        )}
+
+        {sessionDragState !== null && draggingSessionShell !== null && (
+          <div
+            ref={sessionDragGhostRef}
+            className="topic-card topic-card--drag-ghost"
+            data-testid="assistant-session-drag-ghost"
+            aria-hidden="true"
+          >
+            <span className="topic-card__title">{draggingSessionShell.boundAgent.label}</span>
+            <span className="topic-card__meta">
+            </span>
+          </div>
+        )}
+
+        {sessionContextMenu !== null && (
+          <div
+            className="session-context-menu"
+            data-testid="assistant-session-context-menu"
+            role="menu"
+            aria-label={`${sessionContextMenu.sessionLabel} 会话菜单`}
+            style={{ left: `${sessionContextMenu.x}px`, top: `${sessionContextMenu.y}px` }}
+          >
+            <p className="session-context-menu__title">{sessionContextMenu.sessionLabel}</p>
+
+            <div className="session-context-menu__group">
+              <button
+                type="button"
+                className="session-context-menu__item"
+                data-testid="assistant-session-context-action-rename"
+                role="menuitem"
+                onClick={() => setSessionContextMenu(null)}
+              >
+                重命名会话
+              </button>
+              <button
+                type="button"
+                className="session-context-menu__item"
+                data-testid="assistant-session-context-action-delete"
+                role="menuitem"
+                onClick={() => setSessionContextMenu(null)}
+              >
+                删除会话
+              </button>
+              <button
+                type="button"
+                className="session-context-menu__item"
+                data-testid="assistant-session-context-action-generate-title"
+                role="menuitem"
+                onClick={() => setSessionContextMenu(null)}
+              >
+                生成会话名
+              </button>
+
+              <div
+                className="session-context-menu__submenu"
+                onMouseEnter={() => {
+                  setSessionContextMenu((current) => current === null
+                    ? current
+                    : {
+                        ...current,
+                        activeSubmenu: 'copy',
+                      })
+                }}
+                onMouseLeave={() => {
+                  setSessionContextMenu((current) => current === null
+                    ? current
+                    : {
+                        ...current,
+                        activeSubmenu: current.activeSubmenu === 'copy' ? null : current.activeSubmenu,
+                      })
+                }}
+              >
+                <button
+                  type="button"
+                  className="session-context-menu__item session-context-menu__item--submenu"
+                  data-testid="assistant-session-context-submenu-copy"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={sessionContextMenu.activeSubmenu === 'copy'}
+                  onFocus={() => {
+                    setSessionContextMenu((current) => current === null
+                      ? current
+                      : {
+                          ...current,
+                          activeSubmenu: 'copy',
+                        })
+                  }}
+                  onClick={() => {
+                    setSessionContextMenu((current) => current === null
+                      ? current
+                      : {
+                          ...current,
+                          activeSubmenu: current.activeSubmenu === 'copy' ? null : 'copy',
+                        })
+                  }}
+                >
+                  <span>复制会话</span>
+                  <span className="session-context-menu__submenu-caret" aria-hidden="true">›</span>
+                </button>
+
+                {sessionContextMenu.activeSubmenu === 'copy' && (
+                  <div
+                    className="session-context-submenu"
+                    data-testid="assistant-session-context-submenu-panel-copy"
+                    role="menu"
+                    aria-label="复制会话子菜单"
+                  >
+                    <button
+                      type="button"
+                      className="session-context-menu__item"
+                      data-testid="assistant-session-context-action-copy-session"
+                      role="menuitem"
+                      onClick={() => setSessionContextMenu(null)}
+                    >
+                      复制为新会话
+                    </button>
+                    <button
+                      type="button"
+                      className="session-context-menu__item"
+                      data-testid="assistant-session-context-action-copy-markdown"
+                      role="menuitem"
+                      onClick={() => setSessionContextMenu(null)}
+                    >
+                      复制为 Markdown
+                    </button>
+                    <button
+                      type="button"
+                      className="session-context-menu__item"
+                      data-testid="assistant-session-context-action-copy-text"
+                      role="menuitem"
+                      onClick={() => setSessionContextMenu(null)}
+                    >
+                      复制为纯文本
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div
+                className="session-context-menu__submenu"
+                onMouseEnter={() => {
+                  setSessionContextMenu((current) => current === null
+                    ? current
+                    : {
+                        ...current,
+                        activeSubmenu: 'export',
+                      })
+                }}
+                onMouseLeave={() => {
+                  setSessionContextMenu((current) => current === null
+                    ? current
+                    : {
+                        ...current,
+                        activeSubmenu: current.activeSubmenu === 'export' ? null : current.activeSubmenu,
+                      })
+                }}
+              >
+                <button
+                  type="button"
+                  className="session-context-menu__item session-context-menu__item--submenu"
+                  data-testid="assistant-session-context-submenu-export"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={sessionContextMenu.activeSubmenu === 'export'}
+                  onFocus={() => {
+                    setSessionContextMenu((current) => current === null
+                      ? current
+                      : {
+                          ...current,
+                          activeSubmenu: 'export',
+                        })
+                  }}
+                  onClick={() => {
+                    setSessionContextMenu((current) => current === null
+                      ? current
+                      : {
+                          ...current,
+                          activeSubmenu: current.activeSubmenu === 'export' ? null : 'export',
+                        })
+                  }}
+                >
+                  <span>导出会话</span>
+                  <span className="session-context-menu__submenu-caret" aria-hidden="true">›</span>
+                </button>
+
+                {sessionContextMenu.activeSubmenu === 'export' && (
+                  <div
+                    className="session-context-submenu"
+                    data-testid="assistant-session-context-submenu-panel-export"
+                    role="menu"
+                    aria-label="导出会话子菜单"
+                  >
+                    <button
+                      type="button"
+                      className="session-context-menu__item"
+                      data-testid="assistant-session-context-action-export-markdown"
+                      role="menuitem"
+                      onClick={() => setSessionContextMenu(null)}
+                    >
+                      导出到 Markdown
+                    </button>
+                    <button
+                      type="button"
+                      className="session-context-menu__item"
+                      data-testid="assistant-session-context-action-export-json"
+                      role="menuitem"
+                      onClick={() => setSessionContextMenu(null)}
+                    >
+                      导出到 JSON
+                    </button>
+                    <button
+                      type="button"
+                      className="session-context-menu__item"
+                      data-testid="assistant-session-context-action-export-text"
+                      role="menuitem"
+                      onClick={() => setSessionContextMenu(null)}
+                    >
+                      导出为纯文本
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {sessionError !== null && (
@@ -376,9 +861,56 @@ export function appendAssistantSessionShell(
   const remainingSessions = state.sessions.filter((sessionEntry) => sessionEntry.sessionId !== nextSessionShell.sessionId)
 
   return {
-    sessions: [...remainingSessions, nextSessionShell],
+    sessions: [nextSessionShell, ...remainingSessions],
     activeSessionId: nextSessionShell.sessionId,
   }
+}
+
+export function moveAssistantSessionShellToIndex(
+  state: AssistantSessionListState,
+  draggingSessionId: string,
+  nextIndex: number,
+): AssistantSessionListState {
+  const draggingIndex = state.sessions.findIndex((sessionEntry) => sessionEntry.sessionId === draggingSessionId)
+
+  if (draggingIndex === -1) {
+    return state
+  }
+
+  const nextSessions = [...state.sessions]
+  const [draggingSession] = nextSessions.splice(draggingIndex, 1)
+
+  if (draggingSession === undefined) {
+    return state
+  }
+
+  const normalizedIndex = Math.max(0, Math.min(nextIndex, nextSessions.length))
+  nextSessions.splice(normalizedIndex, 0, draggingSession)
+
+  return {
+    ...state,
+    sessions: nextSessions,
+  }
+}
+
+export function reorderAssistantSessionShells(
+  state: AssistantSessionListState,
+  draggingSessionId: string,
+  targetSessionId: string,
+): AssistantSessionListState {
+  if (draggingSessionId === targetSessionId) {
+    return state
+  }
+
+  const draggingIndex = state.sessions.findIndex((sessionEntry) => sessionEntry.sessionId === draggingSessionId)
+  const targetIndex = state.sessions.findIndex((sessionEntry) => sessionEntry.sessionId === targetSessionId)
+
+  if (draggingIndex === -1 || targetIndex === -1) {
+    return state
+  }
+
+  const nextIndex = draggingIndex < targetIndex ? targetIndex - 1 : targetIndex
+  return moveAssistantSessionShellToIndex(state, draggingSessionId, nextIndex)
 }
 
 export function resolveActiveAssistantSessionShell(
@@ -399,4 +931,26 @@ function isCopilotConnectableState(
 
 function formatAssistantWorkspaceError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function computeAssistantSessionPreviewIndex(listElement: HTMLUListElement, clientY: number): number {
+  const orderedItems = Array.from(
+    listElement.querySelectorAll<HTMLElement>('[data-session-order-index]'),
+  )
+  let nextPreviewIndex = orderedItems.length
+
+  for (const orderedItem of orderedItems) {
+    const itemIndex = Number(orderedItem.dataset.sessionOrderIndex)
+    if (Number.isNaN(itemIndex)) {
+      continue
+    }
+
+    const { top, height } = orderedItem.getBoundingClientRect()
+    if (clientY < top + (height / 2)) {
+      nextPreviewIndex = itemIndex
+      break
+    }
+  }
+
+  return nextPreviewIndex
 }

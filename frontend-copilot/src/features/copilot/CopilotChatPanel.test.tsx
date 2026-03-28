@@ -81,13 +81,23 @@ describe('CopilotChatPanel', () => {
     expect(html).toContain('data-testid="chat-message-scroll-region"')
     expect(html).toContain('data-testid="chat-composer-dock"')
     expect(html).toContain('data-testid="chat-composer-toolbar"')
+    expect(html).toContain('data-testid="chat-composer-resize-handle"')
+    expect(html).toContain('data-testid="chat-composer-surface"')
+    expect(html).toContain('data-testid="chat-composer-send-button"')
     expect(html).toContain('data-testid="chat-tool-picker-trigger"')
     expect(html).toContain('按 Enter 发送，按 Ctrl + Enter 换行')
     expect(html).toContain('copilot-chat__send-button')
+    expect(html).toContain('copilot-chat__stream--scrollbarless')
     expect(html).toContain('aria-label="请输入消息内容。"')
     expect(html).toContain('当前尚未发送消息')
     expect(html.indexOf('data-testid="chat-message-scroll-region"')).toBeLessThan(
       html.indexOf('data-testid="chat-composer-dock"'),
+    )
+    expect(html.indexOf('data-testid="chat-composer-toolbar"')).toBeLessThan(
+      html.indexOf('data-testid="chat-composer-resize-handle"'),
+    )
+    expect(html.indexOf('data-testid="chat-composer-resize-handle"')).toBeLessThan(
+      html.indexOf('data-testid="chat-composer-surface"'),
     )
     expect(html).not.toContain('type="checkbox"')
     expect(html).not.toContain('requestOptions（JSON 对象）')
@@ -270,6 +280,39 @@ describe('CopilotChatPanel', () => {
     })
     expect(messageInput.value).toBe('')
     expect(document.activeElement).toBe(messageInput)
+
+    rendered.unmount()
+  })
+
+  it('renders the bottom-anchored composer surface and updates height when the resize handle is dragged', async () => {
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+      />,
+    )
+
+    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
+    const resizeHandle = rendered.getByTestId('chat-composer-resize-handle') as HTMLDivElement
+    const composerSurface = rendered.getByTestId('chat-composer-surface') as HTMLDivElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+
+    expect(scrollRegion.dataset.scrollbarVisibility).toBe('hidden')
+    expect(scrollRegion.className).toContain('copilot-chat__stream--scrollbarless')
+    expect(sendButton.parentElement).toBe(composerSurface)
+    expect(composerSurface.style.height).toBe('160px')
+
+    await dragComposerResizeHandle(resizeHandle, 420, 340)
+    expect(composerSurface.style.height).toBe('240px')
+
+    await dragComposerResizeHandle(resizeHandle, 340, 900)
+    expect(composerSurface.style.height).toBe('120px')
 
     rendered.unmount()
   })
@@ -680,5 +723,13 @@ async function pressTextareaKey(
 ) {
   await act(async () => {
     element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, ...options }))
+  })
+}
+
+async function dragComposerResizeHandle(element: HTMLDivElement, startY: number, endY: number) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientY: startY }))
+    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, button: 0, clientY: endY }))
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, clientY: endY }))
   })
 }

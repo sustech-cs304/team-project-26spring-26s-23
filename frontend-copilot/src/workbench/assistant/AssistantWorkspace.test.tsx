@@ -1,3 +1,8 @@
+/** @vitest-environment jsdom */
+
+import type { ReactElement } from 'react'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -16,6 +21,8 @@ import {
   createAssistantSessionCapabilities,
   createAssistantSessionShell,
   createAssistantSessionShellForAgent,
+  moveAssistantSessionShellToIndex,
+  reorderAssistantSessionShells,
   resolveActiveAssistantSessionShell,
 } from './AssistantWorkspace'
 
@@ -222,9 +229,172 @@ describe('AssistantWorkspace', () => {
       nextSession,
     )
 
-    expect(nextState.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-1', 'session-2'])
+    expect(nextState.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-2', 'session-1'])
     expect(nextState.activeSessionId).toBe('session-2')
     expect(resolveActiveAssistantSessionShell(nextState)?.sessionId).toBe('session-2')
+  })
+
+  it('reorders sessions when a dragged session moves onto another session slot', () => {
+    const selectedAgent = enhanceRuntimeAgents(createDirectoryResponse().agents)[0]
+
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent.')
+    }
+
+    const firstSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-1' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-1' }),
+    })
+    const secondSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-2' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-2' }),
+    })
+    const thirdSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-3' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-3' }),
+    })
+
+    const reordered = reorderAssistantSessionShells({
+      sessions: [thirdSession, secondSession, firstSession],
+      activeSessionId: 'session-2',
+    }, 'session-1', 'session-3')
+
+    expect(reordered.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-1', 'session-3', 'session-2'])
+    expect(reordered.activeSessionId).toBe('session-2')
+  })
+
+  it('supports moving a dragged session to the top and bottom insertion indexes', () => {
+    const selectedAgent = enhanceRuntimeAgents(createDirectoryResponse().agents)[0]
+
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent.')
+    }
+
+    const firstSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-1' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-1' }),
+    })
+    const secondSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-2' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-2' }),
+    })
+    const thirdSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-3' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-3' }),
+    })
+
+    const initialState = {
+      sessions: [thirdSession, secondSession, firstSession],
+      activeSessionId: 'session-2',
+    }
+
+    const movedToTop = moveAssistantSessionShellToIndex(initialState, 'session-1', 0)
+    expect(movedToTop.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-1', 'session-3', 'session-2'])
+
+    const movedToBottom = moveAssistantSessionShellToIndex(initialState, 'session-3', 3)
+    expect(movedToBottom.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-2', 'session-1', 'session-3'])
+    expect(movedToBottom.activeSessionId).toBe('session-2')
+  })
+
+  it('keeps the create-session button label stable while creation is pending', async () => {
+    const directoryState = createAssistantAgentDirectoryState(createDirectoryResponse())
+    const createSessionDeferred = createDeferred<RuntimeSessionCreateResponse>()
+    const createSession = vi.fn().mockReturnValue(createSessionDeferred.promise)
+    const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse())
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={vi.fn().mockResolvedValue(createDirectoryResponse())}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    const createButton = rendered.getByTestId('assistant-create-session-button') as HTMLButtonElement
+
+    expect(createButton.textContent).toContain('为 通用智能体 创建会话')
+
+    await clickElement(createButton)
+
+    expect(createButton.textContent).toContain('为 通用智能体 创建会话')
+    expect(createButton.textContent).not.toContain('正在创建会话')
+    expect(createButton.getAttribute('aria-busy')).toBe('true')
+    expect(createButton.disabled).toBe(true)
+
+    await act(async () => {
+      createSessionDeferred.resolve(createSessionResponse())
+      await createSessionDeferred.promise
+      await Promise.resolve()
+    })
+
+    rendered.unmount()
+  })
+
+  it('opens a session context menu with secondary submenus for copy and export on right click', async () => {
+    const directoryState = createAssistantAgentDirectoryState(createDirectoryResponse())
+    const selectedAgent = directoryState.agents[0]
+
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent directory.')
+    }
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={vi.fn().mockResolvedValue(createDirectoryResponse())}
+        initialDirectoryState={directoryState}
+        initialSessionShell={createAssistantSessionShell({
+          response: createSessionResponse(),
+          selectedAgent,
+          capabilities: createCapabilitiesResponse(),
+        })}
+      />,
+    )
+
+    const sessionCard = rendered.getByTestId('assistant-session-card-session-1') as HTMLButtonElement
+
+    await openContextMenu(sessionCard, 320, 240)
+
+    const contextMenu = rendered.getByTestId('assistant-session-context-menu') as HTMLDivElement
+    expect(contextMenu.style.left).toBe('320px')
+    expect(contextMenu.style.top).toBe('240px')
+    expect(contextMenu.textContent).toContain('重命名会话')
+    expect(contextMenu.textContent).toContain('删除会话')
+    expect(contextMenu.textContent).toContain('生成会话名')
+    expect(contextMenu.textContent).toContain('复制会话')
+    expect(contextMenu.textContent).toContain('导出会话')
+
+    const copySubmenuTrigger = rendered.getByTestId('assistant-session-context-submenu-copy') as HTMLButtonElement
+    const exportSubmenuTrigger = rendered.getByTestId('assistant-session-context-submenu-export') as HTMLButtonElement
+
+    expect(rendered.queryByTestId('assistant-session-context-submenu-panel-copy')).toBeNull()
+    expect(rendered.queryByTestId('assistant-session-context-submenu-panel-export')).toBeNull()
+
+    await hoverElement(copySubmenuTrigger)
+    const copySubmenu = rendered.getByTestId('assistant-session-context-submenu-panel-copy') as HTMLDivElement
+    expect(copySubmenu.textContent).toContain('复制为新会话')
+    expect(copySubmenu.textContent).toContain('复制为 Markdown')
+    expect(copySubmenu.textContent).toContain('复制为纯文本')
+    expect(copySubmenuTrigger.getAttribute('aria-expanded')).toBe('true')
+
+    await hoverElement(exportSubmenuTrigger)
+    expect(rendered.queryByTestId('assistant-session-context-submenu-panel-copy')).toBeNull()
+
+    const exportSubmenu = rendered.getByTestId('assistant-session-context-submenu-panel-export') as HTMLDivElement
+    expect(exportSubmenu.textContent).toContain('导出到 Markdown')
+    expect(exportSubmenu.textContent).toContain('导出到 JSON')
+    expect(exportSubmenu.textContent).toContain('导出为纯文本')
+    expect(exportSubmenuTrigger.getAttribute('aria-expanded')).toBe('true')
+
+    rendered.unmount()
   })
 
   it('does not append to the existing session list when creating a new session fails', async () => {
@@ -377,4 +547,65 @@ function createBootstrapController(): CopilotBootstrapController {
       devOverrideConfigured: false,
     },
   }
+}
+
+function renderWithRoot(element: ReactElement) {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  act(() => {
+    root.render(element)
+  })
+
+  return {
+    container,
+    getByTestId(testId: string) {
+      const target = container.querySelector(`[data-testid="${testId}"]`)
+      if (target === null) {
+        throw new Error(`Missing element for data-testid=${testId}`)
+      }
+
+      return target
+    },
+    queryByTestId(testId: string) {
+      return container.querySelector(`[data-testid="${testId}"]`)
+    },
+    unmount() {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    },
+  }
+}
+
+async function clickElement(element: Element) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
+}
+
+async function openContextMenu(element: Element, clientX: number, clientY: number) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY }))
+  })
+}
+
+async function hoverElement(element: Element) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }))
+  })
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+
+  return { promise, resolve, reject }
 }
