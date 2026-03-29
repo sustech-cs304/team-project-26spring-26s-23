@@ -1,9 +1,7 @@
-import { Link2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { CopilotBootstrapController, CopilotBootstrapState } from '../../features/copilot/types'
+import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { settingsItems } from '../config'
-import { SelectField, TextField, ToggleSwitch } from '../components/FormFields'
 import type { SettingsWorkspaceEditableState, SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import type {
   ModelCapability,
@@ -14,19 +12,8 @@ import type {
   ThemeMode,
 } from '../types'
 import {
-  apiReconnectOptions,
-  backupCycleOptions,
-  compressionOptions,
   createModelProfileId,
-  docsFormatOptions,
   initialProviderProfiles,
-  languageOptions,
-  memoryStrategyOptions,
-  proxyModeOptions,
-  resultCountOptions,
-  searchEngineOptions,
-  themeOptions,
-  toolPermissionOptions,
 } from './config'
 import {
   clearSettingsWorkspaceProviderApiKey,
@@ -38,10 +25,7 @@ import {
   saveSettingsWorkspaceSustechCasPassword,
   saveSettingsWorkspaceState,
 } from './workspace-state'
-import {
-  HostConfigRuntimeOverrideCard,
-} from './ConfigCenterPublicFieldCards'
-import { ProviderProfilesSection } from './ProviderProfilesSection'
+import { SettingsWorkspaceSections } from './SettingsWorkspaceSections'
 import {
   createCustomProvider,
   createEmptyModelEditorState,
@@ -51,6 +35,7 @@ import {
   formatModelGroupName,
   syncTrackedModelValue,
 } from './provider-profiles'
+import type { WakeupDialogState } from './ExternalSourcesSection'
 import type { ModelEditorState } from './provider-profiles'
 
 interface SettingsWorkspaceProps {
@@ -58,15 +43,6 @@ interface SettingsWorkspaceProps {
   themeMode: ThemeMode
   onThemeModeChange: (value: ThemeMode) => void
   initialSection?: SettingsSection
-}
-
-type WakeupDialogState =
-  | { status: 'failure' }
-  | { status: 'success' }
-  | null
-
-function isThemeMode(value: string): value is ThemeMode {
-  return value === 'light' || value === 'dark'
 }
 
 function projectLoadedProviderSecretValues(
@@ -852,587 +828,110 @@ export function SettingsWorkspace({
         </header>
 
         <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">
-          {(() => {
-            switch (activeSection) {
-              case 'sustech-info':
-                return (
-                  <div className="settings-page settings-page--split settings-page--balanced">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">基本信息</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
-                          <TextField
-                            label="学号"
-                            value={studentId}
-                            onChange={setStudentId}
-                            placeholder="输入学号"
-                          />
-                          <label className="form-field">
-                            <span className="form-field__meta">
-                              <span className="form-field__label">邮箱</span>
-                            </span>
-                            <input
-                              className="text-input"
-                              type="text"
-                              value={displayedSustechEmail}
-                              placeholder="输入邮箱"
-                              onFocus={() => setSustechEmailFocused(true)}
-                              onBlur={() => setSustechEmailFocused(false)}
-                              onChange={(event) => setSustechEmail(event.target.value)}
-                            />
-                          </label>
-                          <label className="form-field form-field--full" htmlFor="sustech-cas-password-input">
-                            <span className="form-field__meta">
-                              <span className="form-field__label">CAS 密码</span>
-                            </span>
-                            <input
-                              id="sustech-cas-password-input"
-                              data-testid="sustech-cas-password-input"
-                              className="text-input"
-                              type="password"
-                              value={casPasswordDraft}
-                              placeholder="输入 CAS 密码"
-                              onChange={(event) => setCasPasswordDraft(event.target.value)}
-                              onBlur={() => {
-                                void handlePersistCasPasswordDraft()
-                              }}
-                            />
-                            {casPasswordFeedback ? (
-                              <span className="form-field__feedback form-field__feedback--success" role="status">
-                                {casPasswordFeedback}
-                              </span>
-                            ) : null}
-                          </label>
-                        </div>
-                      </div>
-                    </section>
-
-                    <div className="settings-detail-column">
-                      <section className="settings-card settings-card--form">
-                        <div className="settings-card__header">
-                          <div>
-                            <h3 className="settings-card__title">Blackboard 信息</h3>
-                          </div>
-                        </div>
-
-                        <div className="settings-stack">
-                          <ToggleSwitch
-                            label="自动下载 Blackboard 文件"
-                            checked={blackboardAutoDownloadEnabled}
-                            onChange={setBlackboardAutoDownloadEnabled}
-                          />
-                          <TextField
-                            label="下载文件大小限制（MB）"
-                            value={blackboardDownloadLimitMb}
-                            onChange={(value) => {
-                              if (/^\d*$/.test(value)) {
-                                setBlackboardDownloadLimitMb(value === '' ? '' : String(Number.parseInt(value, 10) || 0))
-                              }
-                            }}
-                            placeholder="0"
-                          />
-                          <p className="form-field__description">0为不限制</p>
-                        </div>
-                      </section>
-
-                      <section className="settings-card settings-card--form">
-                        <div className="settings-card__header">
-                          <div>
-                            <h3 className="settings-card__title">TIS 信息</h3>
-                          </div>
-                        </div>
-
-                        <div className="settings-stack">
-                          <p className="settings-empty-hint">敬请期待</p>
-                        </div>
-                      </section>
-                    </div>
-                  </div>
-                )
-
-              case 'model-service':
-                return (
-                  <ProviderProfilesSection
-                    providerProfiles={providerProfiles}
-                    activeProviderId={activeProviderId}
-                    activeProvider={activeProvider}
-                    activeProviderDetail={activeProviderDetail}
-                    providerQuery={providerQuery}
-                    activeProviderApiKeyDraft={activeProviderApiKeyDraft}
-                    apiKeyVisible={apiKeyVisible}
-                    apiKeyFeedback={apiKeyFeedback}
-                    modelEditorState={modelEditorState}
-                    modelEditorError={modelEditorError}
-                    onProviderQueryChange={setProviderQuery}
-                    onActiveProviderChange={setActiveProviderId}
-                    onAddProvider={handleAddProvider}
-                    onReorderProviders={moveProviderToIndex}
-                    onCopyProvider={handleCopyProvider}
-                    onDeleteProvider={handleDeleteProvider}
-                    onUpdateActiveProvider={updateActiveProvider}
-                    onProviderApiKeyDraftChange={(providerId, value) => {
-                      setProviderSecretDrafts((previous) => ({
-                        ...previous,
-                        [providerId]: value,
-                      }))
-                    }}
-                    onPersistProviderApiKeyDraft={handlePersistProviderApiKeyDraft}
-                    onToggleApiKeyVisibility={() => setApiKeyVisible((previous) => !previous)}
-                    onCopyApiKey={handleCopyApiKey}
-                    onOpenCreateModelEditor={handleOpenCreateModelEditor}
-                    onOpenModelEditor={handleOpenModelEditor}
-                    onRemoveModel={handleRemoveModel}
-                    onCloseModelEditor={handleCloseModelEditor}
-                    onModelEditorSave={handleSaveModel}
-                    onModelEditorStateChange={updateModelEditorState}
-                    onToggleModelCapability={handleToggleModelCapability}
-                    onClearModelEditorError={() => setModelEditorError(null)}
-                  />
-                )
-
-              case 'default-model':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">默认模型路由</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
-                          <SelectField
-                            label="主助手模型"
-                            value={primaryAssistantModel}
-                            options={allModelOptions}
-                            onChange={setPrimaryAssistantModel}
-                          />
-                          <SelectField
-                            label="快速执行模型"
-                            value={fastAssistantModel}
-                            options={allModelOptions}
-                            onChange={setFastAssistantModel}
-                          />
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'general':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">常规设置</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
-                          <SelectField
-                            label="界面语言"
-                            value={language}
-                            options={languageOptions}
-                            onChange={setLanguage}
-                          />
-                          <SelectField
-                            label="代理模式"
-                            value={proxyMode}
-                            options={proxyModeOptions}
-                            onChange={setProxyMode}
-                          />
-                        </div>
-
-                        <div className="toggle-grid">
-                          <ToggleSwitch
-                            label="助手消息通知"
-                            checked={assistantNotificationsEnabled}
-                            onChange={setAssistantNotificationsEnabled}
-                          />
-                          <ToggleSwitch
-                            label="自动备份"
-                            checked={backupEnabled}
-                            onChange={setBackupEnabled}
-                          />
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'display':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">显示设置</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="form-grid">
-                          <SelectField
-                            label="主题"
-                            value={themeMode}
-                            options={themeOptions}
-                            onChange={(value) => {
-                              if (isThemeMode(value)) {
-                                onThemeModeChange(value)
-                              }
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'data':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">数据设置</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
-                          <TextField
-                            label="数据目录"
-                            value={dataPath}
-                            onChange={setDataPath}
-                            placeholder="输入本地目录"
-                          />
-                          <SelectField
-                            label="备份周期"
-                            value={backupCycle}
-                            options={backupCycleOptions}
-                            onChange={setBackupCycle}
-                          />
-                        </div>
-
-                        <div className="toggle-grid">
-                          <ToggleSwitch
-                            label="启用自动备份"
-                            checked={backupEnabled}
-                            onChange={setBackupEnabled}
-                          />
-                          <ToggleSwitch
-                            label="启动时同步"
-                            checked={launchSyncEnabled}
-                            onChange={setLaunchSyncEnabled}
-                          />
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'mcp':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">MCP 服务器</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
-                          <SelectField
-                            label="工具权限策略"
-                            value={toolPermissionMode}
-                            options={toolPermissionOptions}
-                            onChange={setToolPermissionMode}
-                          />
-                        </div>
-
-                        <div className="toggle-grid">
-                          <ToggleSwitch
-                            label="自动发现 MCP 服务"
-                            checked={mcpAutoDiscoveryEnabled}
-                            onChange={setMcpAutoDiscoveryEnabled}
-                          />
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'search':
-                return (
-                  <div className="settings-page settings-page--split settings-page--balanced">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">搜索服务商</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <SelectField
-                          label="默认搜索引擎"
-                          value={searchEngine}
-                          options={searchEngineOptions}
-                          onChange={setSearchEngine}
-                        />
-                        <SelectField
-                          label="结果数量"
-                          value={searchResultCount}
-                          options={resultCountOptions}
-                          onChange={setSearchResultCount}
-                        />
-                      </div>
-                    </section>
-
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">网络搜索配置</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <SelectField
-                          label="压缩方式"
-                          value={compressionMode}
-                          options={compressionOptions}
-                          onChange={setCompressionMode}
-                        />
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'memory':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">全局记忆</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <SelectField
-                          label="记忆策略"
-                          value={memoryStrategy}
-                          options={memoryStrategyOptions}
-                          onChange={setMemoryStrategy}
-                        />
-                        <ToggleSwitch
-                          label="自动清理陈旧记忆"
-                          checked={memoryCleanupEnabled}
-                          onChange={setMemoryCleanupEnabled}
-                        />
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'api':
-                return (
-                  <div className="settings-page">
-                    <HostConfigRuntimeOverrideCard />
-
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header settings-card__header--spaced">
-                        <div>
-                          <h3 className="settings-card__title">API 服务器</h3>
-                        </div>
-                        <span className={`inline-badge ${resolveBootstrapBadgeClass(bootstrap.state)}`}>
-                          {formatBootstrapStatusLabel(bootstrap.state)}
-                        </span>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="settings-card__header">
-                          <div>
-                            <h4 className="settings-card__title">根层启动摘要</h4>
-                          </div>
-                        </div>
-
-                        <div className="workspace-facts">
-                          <article className="workspace-fact">
-                            <span>当前状态</span>
-                            <strong>{formatBootstrapStatusLabel(bootstrap.state)}</strong>
-                          </article>
-                          <article className="workspace-fact">
-                            <span>重试动作</span>
-                            <strong>{bootstrap.retrying ? '根层重试中' : '由根层统一持有'}</strong>
-                          </article>
-                        </div>
-
-                        <div className="toolbar-actions">
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={bootstrap.retry}
-                            disabled={bootstrap.retrying}
-                          >
-                            {bootstrap.retrying ? '正在重试…' : '重试读取运行态'}
-                          </button>
-                        </div>
-
-                        <div className="form-grid form-grid--two">
-                          <TextField
-                            label="后端地址"
-                            value={apiBaseUrl}
-                            onChange={setApiBaseUrl}
-                            placeholder="http://127.0.0.1:8000"
-                            type="url"
-                          />
-                          <SelectField
-                            label="重连策略"
-                            value={apiReconnectMode}
-                            options={apiReconnectOptions}
-                            onChange={setApiReconnectMode}
-                          />
-                        </div>
-
-                        <ToggleSwitch
-                          label="启用健康检查轮询"
-                          checked={healthPollingEnabled}
-                          onChange={setHealthPollingEnabled}
-                        />
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'docs':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">文档处理</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <div className="form-grid form-grid--two">
-                          <SelectField
-                            label="默认导出格式"
-                            value={docsFormat}
-                            options={docsFormatOptions}
-                            onChange={setDocsFormat}
-                          />
-                          <TextField
-                            label="输出目录"
-                            value={outputDirectory}
-                            onChange={setOutputDirectory}
-                            placeholder="输入导出目录"
-                          />
-                        </div>
-
-                        <ToggleSwitch
-                          label="自动生成文件名"
-                          checked={autoFileNameEnabled}
-                          onChange={setAutoFileNameEnabled}
-                        />
-                      </div>
-                    </section>
-                  </div>
-                )
-
-              case 'external-source':
-                return (
-                  <div className="settings-page">
-                    <section className="settings-card settings-card--form">
-                      <div className="settings-card__header">
-                        <div>
-                          <h3 className="settings-card__title">WakeUP 课程群同步</h3>
-                        </div>
-                      </div>
-
-                      <div className="settings-stack">
-                        <label className="form-field form-field--full">
-                          <span className="form-field__meta">
-                            <span className="form-field__label">WakeUP 分享链接</span>
-                          </span>
-                          <span className="text-input-shell">
-                            <input
-                              data-testid="wakeup-share-link-input"
-                              className="text-input text-input-shell__input"
-                              type="text"
-                              value={wakeupShareLink}
-                              placeholder="输入 WakeUP 分享链接"
-                              onChange={(event) => setWakeupShareLink(event.target.value)}
-                            />
-                            <span className="text-input-shell__actions">
-                              <button
-                                type="button"
-                                className="icon-button icon-button--compact"
-                                data-testid="wakeup-parse-button"
-                                aria-label="解析链接"
-                                onClick={() => {
-                                  void handleWakeupLinkParse()
-                                }}
-                              >
-                                <Link2 size={14} />
-                              </button>
-                            </span>
-                          </span>
-                        </label>
-                      </div>
-                    </section>
-
-                    {wakeupDialogState ? (
-                      <div className="model-editor-backdrop" role="presentation" onClick={handleWakeupDialogClose}>
-                        <section
-                          className="model-editor-modal model-editor-modal--compact"
-                          role="dialog"
-                          aria-modal="true"
-                          aria-label="WakeUP 链接解析"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <div className="model-editor-modal__header">
-                            <div>
-                              <h3 className="settings-card__title">解析链接</h3>
-                            </div>
-                            <button
-                              type="button"
-                              className="model-editor-modal__close"
-                              aria-label="关闭解析弹窗"
-                              onClick={handleWakeupDialogClose}
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-
-                          <div className="model-editor-modal__body">
-                            {wakeupDialogState.status === 'failure' ? (
-                              <p data-testid="wakeup-parse-failure">解析未成功</p>
-                            ) : (
-                              <div className="settings-stack" data-testid="wakeup-parse-success">
-                                <button type="button" className="secondary-button" onClick={handleWakeupConflictChoice}>保留 WakeUP版本</button>
-                                <button type="button" className="secondary-button" onClick={handleWakeupConflictChoice}>保留 TIS 版本</button>
-                                <button type="button" className="primary-button" onClick={handleWakeupConflictChoice}>尝试智能解析</button>
-                                <button type="button" className="ghost-button" onClick={handleWakeupDialogClose}>取消</button>
-                              </div>
-                            )}
-                          </div>
-                        </section>
-                      </div>
-                    ) : null}
-                  </div>
-                )
-            }
-          })()}
+          <SettingsWorkspaceSections
+            activeSection={activeSection}
+            bootstrap={bootstrap}
+            themeMode={themeMode}
+            onThemeModeChange={onThemeModeChange}
+            providerProfiles={providerProfiles}
+            activeProviderId={activeProviderId}
+            activeProvider={activeProvider}
+            activeProviderDetail={activeProviderDetail}
+            providerQuery={providerQuery}
+            activeProviderApiKeyDraft={activeProviderApiKeyDraft}
+            apiKeyVisible={apiKeyVisible}
+            apiKeyFeedback={apiKeyFeedback}
+            modelEditorState={modelEditorState}
+            modelEditorError={modelEditorError}
+            onProviderQueryChange={setProviderQuery}
+            onActiveProviderChange={setActiveProviderId}
+            onAddProvider={handleAddProvider}
+            onReorderProviders={moveProviderToIndex}
+            onCopyProvider={handleCopyProvider}
+            onDeleteProvider={handleDeleteProvider}
+            onUpdateActiveProvider={updateActiveProvider}
+            onProviderApiKeyDraftChange={(providerId, value) => {
+              setProviderSecretDrafts((previous) => ({
+                ...previous,
+                [providerId]: value,
+              }))
+            }}
+            onPersistProviderApiKeyDraft={handlePersistProviderApiKeyDraft}
+            onToggleApiKeyVisibility={() => setApiKeyVisible((previous) => !previous)}
+            onCopyApiKey={handleCopyApiKey}
+            onOpenCreateModelEditor={handleOpenCreateModelEditor}
+            onOpenModelEditor={handleOpenModelEditor}
+            onRemoveModel={handleRemoveModel}
+            onCloseModelEditor={handleCloseModelEditor}
+            onModelEditorSave={handleSaveModel}
+            onModelEditorStateChange={updateModelEditorState}
+            onToggleModelCapability={handleToggleModelCapability}
+            onClearModelEditorError={() => setModelEditorError(null)}
+            allModelOptions={allModelOptions}
+            primaryAssistantModel={primaryAssistantModel}
+            fastAssistantModel={fastAssistantModel}
+            onPrimaryAssistantModelChange={setPrimaryAssistantModel}
+            onFastAssistantModelChange={setFastAssistantModel}
+            studentId={studentId}
+            displayedSustechEmail={displayedSustechEmail}
+            casPasswordDraft={casPasswordDraft}
+            casPasswordFeedback={casPasswordFeedback}
+            blackboardAutoDownloadEnabled={blackboardAutoDownloadEnabled}
+            blackboardDownloadLimitMb={blackboardDownloadLimitMb}
+            onStudentIdChange={setStudentId}
+            onSustechEmailChange={setSustechEmail}
+            onSustechEmailFocusChange={setSustechEmailFocused}
+            onCasPasswordDraftChange={setCasPasswordDraft}
+            onPersistCasPasswordDraft={handlePersistCasPasswordDraft}
+            onBlackboardAutoDownloadEnabledChange={setBlackboardAutoDownloadEnabled}
+            onBlackboardDownloadLimitMbChange={setBlackboardDownloadLimitMb}
+            language={language}
+            proxyMode={proxyMode}
+            assistantNotificationsEnabled={assistantNotificationsEnabled}
+            backupEnabled={backupEnabled}
+            onLanguageChange={setLanguage}
+            onProxyModeChange={setProxyMode}
+            onAssistantNotificationsEnabledChange={setAssistantNotificationsEnabled}
+            onBackupEnabledChange={setBackupEnabled}
+            dataPath={dataPath}
+            backupCycle={backupCycle}
+            launchSyncEnabled={launchSyncEnabled}
+            onDataPathChange={setDataPath}
+            onBackupCycleChange={setBackupCycle}
+            onLaunchSyncEnabledChange={setLaunchSyncEnabled}
+            toolPermissionMode={toolPermissionMode}
+            mcpAutoDiscoveryEnabled={mcpAutoDiscoveryEnabled}
+            onToolPermissionModeChange={setToolPermissionMode}
+            onMcpAutoDiscoveryEnabledChange={setMcpAutoDiscoveryEnabled}
+            searchEngine={searchEngine}
+            searchResultCount={searchResultCount}
+            compressionMode={compressionMode}
+            onSearchEngineChange={setSearchEngine}
+            onSearchResultCountChange={setSearchResultCount}
+            onCompressionModeChange={setCompressionMode}
+            memoryStrategy={memoryStrategy}
+            memoryCleanupEnabled={memoryCleanupEnabled}
+            onMemoryStrategyChange={setMemoryStrategy}
+            onMemoryCleanupEnabledChange={setMemoryCleanupEnabled}
+            apiBaseUrl={apiBaseUrl}
+            apiReconnectMode={apiReconnectMode}
+            healthPollingEnabled={healthPollingEnabled}
+            onApiBaseUrlChange={setApiBaseUrl}
+            onApiReconnectModeChange={setApiReconnectMode}
+            onHealthPollingEnabledChange={setHealthPollingEnabled}
+            docsFormat={docsFormat}
+            outputDirectory={outputDirectory}
+            autoFileNameEnabled={autoFileNameEnabled}
+            onDocsFormatChange={setDocsFormat}
+            onOutputDirectoryChange={setOutputDirectory}
+            onAutoFileNameEnabledChange={setAutoFileNameEnabled}
+            wakeupShareLink={wakeupShareLink}
+            wakeupDialogState={wakeupDialogState}
+            onWakeupShareLinkChange={setWakeupShareLink}
+            onWakeupLinkParse={handleWakeupLinkParse}
+            onWakeupDialogClose={handleWakeupDialogClose}
+            onWakeupConflictChoice={handleWakeupConflictChoice}
+          />
         </section>
       </main>
     </section>
@@ -1519,36 +1018,3 @@ function applyLoadedWorkspaceState(
   setters.setWakeupShareLink(state.externalSource.wakeupShareLink)
 }
 
-function formatBootstrapStatusLabel(state: CopilotBootstrapState): string {
-  switch (state.status) {
-    case 'loading':
-      return '根层读取中'
-    case 'empty':
-      return '尚未配置'
-    case 'incomplete':
-      return '配置缺失'
-    case 'starting':
-      return '宿主启动中'
-    case 'ready':
-      return '运行态已就绪'
-    case 'failed':
-      return '宿主启动失败'
-    case 'degraded':
-      return '运行态降级'
-    case 'error':
-      return '读取失败'
-  }
-}
-
-function resolveBootstrapBadgeClass(state: CopilotBootstrapState): string {
-  switch (state.status) {
-    case 'ready':
-      return 'inline-badge--success'
-    case 'degraded':
-    case 'starting':
-    case 'loading':
-      return 'inline-badge--primary'
-    default:
-      return 'inline-badge--warning'
-  }
-}
