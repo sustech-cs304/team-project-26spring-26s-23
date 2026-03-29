@@ -18,9 +18,11 @@ import type { AssistantSessionShell } from '../types'
 import { AssistantAgentDirectoryPane } from './AssistantAgentDirectoryPane'
 import {
   AssistantSessionList,
-  type AssistantSessionContextMenuState,
-  type AssistantSessionDragState,
 } from './AssistantSessionList'
+import type {
+  AssistantSessionContextMenuState,
+  AssistantSessionDragState,
+} from './assistant-session-list-helpers'
 import {
   activateAssistantSession,
   createAssistantAgentDirectoryState,
