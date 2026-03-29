@@ -1,7 +1,7 @@
 import type {
+  MutableRefObject,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
-  Ref,
 } from 'react'
 
 import type { AgentType, AssistantSessionShell } from '../types'
@@ -29,8 +29,8 @@ interface AssistantSessionListProps {
   sessionContextMenu: AssistantSessionContextMenuState | null
   sessionDragState: AssistantSessionDragState | null
   sessionError: string | null
-  sessionListRef: Ref<HTMLUListElement>
-  sessionDragGhostRef: Ref<HTMLDivElement>
+  sessionListRef: MutableRefObject<HTMLUListElement | null>
+  sessionDragGhostRef: MutableRefObject<HTMLDivElement | null>
   onCreateSession: () => void
   onSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
   onSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
@@ -84,7 +84,9 @@ export function AssistantSessionList({
 
       {sessionListState.sessions.length > 0 && (
         <ul
-          ref={sessionListRef}
+          ref={(node) => {
+            sessionListRef.current = node
+          }}
           className="topic-list topic-list--detailed"
           data-testid="assistant-session-list"
         >

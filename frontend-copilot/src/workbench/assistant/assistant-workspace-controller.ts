@@ -1,6 +1,4 @@
 import {
-  createRuntimeSession,
-  getRuntimeCapabilities,
   type RuntimeAgentsListResponse,
   type RuntimeCapabilitiesGetResponse,
   type RuntimeSessionCreateResponse,
@@ -67,28 +65,6 @@ export function createAssistantSessionShell(input: {
     updatedAt: input.response.updatedAt,
     capabilities: createAssistantSessionCapabilities(input.capabilities),
   }
-}
-
-export async function createAssistantSessionShellForAgent(input: {
-  runtimeUrl: string
-  selectedAgent: AgentType
-  createSession: typeof createRuntimeSession
-  getCapabilities: typeof getRuntimeCapabilities
-}): Promise<AssistantSessionShell> {
-  const sessionResponse = await input.createSession({
-    runtimeUrl: input.runtimeUrl,
-    agentId: input.selectedAgent.id,
-  })
-  const capabilitiesResponse = await input.getCapabilities({
-    runtimeUrl: input.runtimeUrl,
-    sessionId: sessionResponse.sessionId,
-  })
-
-  return createAssistantSessionShell({
-    response: sessionResponse,
-    selectedAgent: input.selectedAgent,
-    capabilities: capabilitiesResponse,
-  })
 }
 
 export function activateAssistantSession(

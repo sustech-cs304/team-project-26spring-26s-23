@@ -14,8 +14,16 @@ import {
   createAssistantAgentDirectoryState,
   createAssistantSessionCapabilities,
   createAssistantSessionShell,
-  createAssistantSessionShellForAgent,
 } from './assistant-workspace-controller'
+import {
+  createInitialAssistantSelectedAgentId,
+  resolveAssistantSelectedAgentId,
+} from './assistant-workspace-directory-loader'
+import {
+  createAssistantSessionContextMenuState,
+  createAssistantSessionShellForAgent,
+  getAssistantCreateSessionLabel,
+} from './assistant-workspace-session-controller'
 import {
   createCapabilitiesResponse,
   createDirectoryResponse,
@@ -263,5 +271,46 @@ describe('AssistantWorkspace helpers', () => {
       error: null,
     })
     expect(directoryState.agents.map((agent) => agent.id)).toEqual(['general', 'blackboard'])
+  })
+
+  it('derives and preserves selected agent ids from the backend directory state', () => {
+    const directoryState = createAssistantAgentDirectoryState(createDirectoryResponse())
+
+    expect(createInitialAssistantSelectedAgentId(directoryState)).toBe('general')
+    expect(resolveAssistantSelectedAgentId({
+      directoryState,
+      previousAgentId: 'blackboard',
+    })).toBe('blackboard')
+  })
+
+  it('builds session labels and context menu state from session shell metadata', () => {
+    const selectedAgent = enhanceRuntimeAgents(createDirectoryResponse().agents)[0]
+
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent.')
+    }
+
+    const sessionShell = createAssistantSessionShell({
+      response: createSessionResponse(),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse(),
+    })
+
+    expect(getAssistantCreateSessionLabel({
+      selectedAgent,
+      sessionShell,
+    })).toBe('为 通用智能体 创建会话')
+
+    expect(createAssistantSessionContextMenuState({
+      sessionEntry: sessionShell,
+      x: 320,
+      y: 240,
+    })).toEqual({
+      sessionId: 'session-1',
+      sessionLabel: '通用智能体',
+      x: 320,
+      y: 240,
+      activeSubmenu: null,
+    })
   })
 })

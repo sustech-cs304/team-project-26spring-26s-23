@@ -1,4 +1,4 @@
-import type { Ref } from 'react'
+import type { MutableRefObject } from 'react'
 
 import type { AssistantSessionShell } from '../types'
 import type { AssistantSessionDragState } from './assistant-session-list-helpers'
@@ -6,7 +6,7 @@ import type { AssistantSessionDragState } from './assistant-session-list-helpers
 interface AssistantSessionDragOverlayProps {
   sessionDragState: AssistantSessionDragState | null
   draggingSessionShell: AssistantSessionShell | null
-  sessionDragGhostRef: Ref<HTMLDivElement>
+  sessionDragGhostRef: MutableRefObject<HTMLDivElement | null>
 }
 
 export function AssistantSessionDragOverlay({
@@ -20,7 +20,9 @@ export function AssistantSessionDragOverlay({
 
   return (
     <div
-      ref={sessionDragGhostRef}
+      ref={(node) => {
+        sessionDragGhostRef.current = node
+      }}
       className="topic-card topic-card--drag-ghost"
       data-testid="assistant-session-drag-ghost"
       aria-hidden="true"
