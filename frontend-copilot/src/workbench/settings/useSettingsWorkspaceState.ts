@@ -1,0 +1,165 @@
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+
+import type { ProviderProfile } from '../types'
+import {
+  createInitialSettingsWorkspaceFormState,
+  createSettingsWorkspaceStateSaveInput,
+  loadSettingsWorkspaceHydration,
+  type SettingsWorkspaceFormState,
+} from './settings-workspace-controller'
+import { saveSettingsWorkspaceState } from './workspace-state'
+
+interface UseSettingsWorkspaceStateResult {
+  formState: SettingsWorkspaceFormState
+  workspaceHydrated: boolean
+  activeProviderId: string
+  setActiveProviderId: (value: string) => void
+  providerSecretValues: Record<string, string>
+  casPasswordValue: string
+  setStudentId: (value: string) => void
+  setSustechEmail: (value: string) => void
+  setBlackboardAutoDownloadEnabled: (value: boolean) => void
+  setBlackboardDownloadLimitMb: (value: string) => void
+  setProviderProfiles: (value: ProviderProfile[] | ((previous: ProviderProfile[]) => ProviderProfile[])) => void
+  setPrimaryAssistantModel: (value: string | ((previous: string) => string)) => void
+  setFastAssistantModel: (value: string | ((previous: string) => string)) => void
+  setLanguage: (value: string) => void
+  setProxyMode: (value: string) => void
+  setAssistantNotificationsEnabled: (value: boolean) => void
+  setBackupEnabled: (value: boolean) => void
+  setDataPath: (value: string) => void
+  setBackupCycle: (value: string) => void
+  setLaunchSyncEnabled: (value: boolean) => void
+  setMcpAutoDiscoveryEnabled: (value: boolean) => void
+  setToolPermissionMode: (value: string) => void
+  setSearchEngine: (value: string) => void
+  setSearchResultCount: (value: string) => void
+  setCompressionMode: (value: string) => void
+  setMemoryStrategy: (value: string) => void
+  setMemoryCleanupEnabled: (value: boolean) => void
+  setApiReconnectMode: (value: string) => void
+  setHealthPollingEnabled: (value: boolean) => void
+  setApiBaseUrl: (value: string) => void
+  setDocsFormat: (value: string) => void
+  setOutputDirectory: (value: string) => void
+  setAutoFileNameEnabled: (value: boolean) => void
+  setWakeupShareLink: (value: string) => void
+}
+
+export function useSettingsWorkspaceState(initialActiveProviderId: string): UseSettingsWorkspaceStateResult {
+  const [formState, setFormState] = useState<SettingsWorkspaceFormState>(() => createInitialSettingsWorkspaceFormState())
+  const [activeProviderId, setActiveProviderId] = useState(initialActiveProviderId)
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false)
+  const [providerSecretValues, setProviderSecretValues] = useState<Record<string, string>>({})
+  const [casPasswordValue, setCasPasswordValue] = useState('')
+  const skipNextWorkspaceSaveRef = useRef(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      const hydration = await loadSettingsWorkspaceHydration(activeProviderId)
+
+      if (!cancelled && hydration) {
+        setFormState(hydration.state)
+        setActiveProviderId(hydration.activeProviderId)
+        setProviderSecretValues(hydration.providerSecretValues)
+        setCasPasswordValue(hydration.casPasswordValue)
+      }
+
+      if (!cancelled) {
+        setWorkspaceHydrated(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const workspaceStateInput = useMemo(() => createSettingsWorkspaceStateSaveInput(formState), [formState])
+
+  useEffect(() => {
+    if (!workspaceHydrated) {
+      return
+    }
+
+    if (skipNextWorkspaceSaveRef.current) {
+      skipNextWorkspaceSaveRef.current = false
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void saveSettingsWorkspaceState(workspaceStateInput)
+    }, 200)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [workspaceHydrated, workspaceStateInput])
+
+  return {
+    formState,
+    workspaceHydrated,
+    activeProviderId,
+    setActiveProviderId,
+    providerSecretValues,
+    casPasswordValue,
+    setStudentId: (value) => updateField(setFormState, 'studentId', value),
+    setSustechEmail: (value) => updateField(setFormState, 'sustechEmail', value),
+    setBlackboardAutoDownloadEnabled: (value) => updateField(setFormState, 'blackboardAutoDownloadEnabled', value),
+    setBlackboardDownloadLimitMb: (value) => updateField(setFormState, 'blackboardDownloadLimitMb', value),
+    setProviderProfiles: (value) => {
+      setFormState((previous) => ({
+        ...previous,
+        providerProfiles: typeof value === 'function' ? value(previous.providerProfiles) : value,
+      }))
+    },
+    setPrimaryAssistantModel: (value) => updateField(setFormState, 'primaryAssistantModel', value),
+    setFastAssistantModel: (value) => updateField(setFormState, 'fastAssistantModel', value),
+    setLanguage: (value) => updateField(setFormState, 'language', value),
+    setProxyMode: (value) => updateField(setFormState, 'proxyMode', value),
+    setAssistantNotificationsEnabled: (value) => updateField(setFormState, 'assistantNotificationsEnabled', value),
+    setBackupEnabled: (value) => updateField(setFormState, 'backupEnabled', value),
+    setDataPath: (value) => updateField(setFormState, 'dataPath', value),
+    setBackupCycle: (value) => updateField(setFormState, 'backupCycle', value),
+    setLaunchSyncEnabled: (value) => updateField(setFormState, 'launchSyncEnabled', value),
+    setMcpAutoDiscoveryEnabled: (value) => updateField(setFormState, 'mcpAutoDiscoveryEnabled', value),
+    setToolPermissionMode: (value) => updateField(setFormState, 'toolPermissionMode', value),
+    setSearchEngine: (value) => updateField(setFormState, 'searchEngine', value),
+    setSearchResultCount: (value) => updateField(setFormState, 'searchResultCount', value),
+    setCompressionMode: (value) => updateField(setFormState, 'compressionMode', value),
+    setMemoryStrategy: (value) => updateField(setFormState, 'memoryStrategy', value),
+    setMemoryCleanupEnabled: (value) => updateField(setFormState, 'memoryCleanupEnabled', value),
+    setApiReconnectMode: (value) => {
+      setFormState((previous) => ({
+        ...previous,
+        apiReconnectMode: value,
+      }))
+    },
+    setHealthPollingEnabled: (value) => updateField(setFormState, 'healthPollingEnabled', value),
+    setApiBaseUrl: (value) => {
+      setFormState((previous) => ({
+        ...previous,
+        apiBaseUrl: value,
+      }))
+    },
+    setDocsFormat: (value) => updateField(setFormState, 'docsFormat', value),
+    setOutputDirectory: (value) => updateField(setFormState, 'outputDirectory', value),
+    setAutoFileNameEnabled: (value) => updateField(setFormState, 'autoFileNameEnabled', value),
+    setWakeupShareLink: (value) => updateField(setFormState, 'wakeupShareLink', value),
+  }
+}
+
+function updateField<TKey extends keyof SettingsWorkspaceFormState>(
+  setFormState: Dispatch<SetStateAction<SettingsWorkspaceFormState>>,
+  key: TKey,
+  value: SettingsWorkspaceFormState[TKey] | ((previous: SettingsWorkspaceFormState[TKey]) => SettingsWorkspaceFormState[TKey]),
+) {
+  setFormState((previous) => ({
+    ...previous,
+    [key]: typeof value === 'function'
+      ? (value as (previous: SettingsWorkspaceFormState[TKey]) => SettingsWorkspaceFormState[TKey])(previous[key])
+      : value,
+  }))
+}

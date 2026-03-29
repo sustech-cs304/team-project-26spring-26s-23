@@ -1,42 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { settingsItems } from '../config'
-import type { SettingsWorkspaceEditableState, SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
-import type {
-  ModelCapability,
-  ProviderModelProfile,
-  ProviderProfile,
-  SelectOption,
-  SettingsSection,
-  ThemeMode,
-} from '../types'
-import {
-  createModelProfileId,
-  initialProviderProfiles,
-} from './config'
-import {
-  clearSettingsWorkspaceProviderApiKey,
-  clearSettingsWorkspaceSustechCasPassword,
-  loadSettingsWorkspaceSecretStatuses,
-  loadSettingsWorkspaceSustechCasPassword,
-  loadSettingsWorkspaceState,
-  saveSettingsWorkspaceProviderApiKey,
-  saveSettingsWorkspaceSustechCasPassword,
-  saveSettingsWorkspaceState,
-} from './workspace-state'
+import type { SettingsSection, ThemeMode } from '../types'
 import { SettingsWorkspaceSections } from './SettingsWorkspaceSections'
 import {
-  createCustomProvider,
-  createEmptyModelEditorState,
-  createPlaceholderProviderProfile,
-  createProviderId,
-  formatModelDisplayName,
-  formatModelGroupName,
-  syncTrackedModelValue,
-} from './provider-profiles'
-import type { WakeupDialogState } from './ExternalSourcesSection'
-import type { ModelEditorState } from './provider-profiles'
+  collectAllModelOptions,
+  initialSettingsWorkspaceActiveProviderId,
+} from './settings-workspace-controller'
+import { useSettingsWorkspaceProviderController } from './settings-workspace-provider-controller'
+import { useSettingsWorkspaceSideflows } from './settings-workspace-sideflows'
+import { useSettingsWorkspaceState } from './useSettingsWorkspaceState'
 
 interface SettingsWorkspaceProps {
   bootstrap: CopilotBootstrapController
@@ -45,751 +19,126 @@ interface SettingsWorkspaceProps {
   initialSection?: SettingsSection
 }
 
-function projectLoadedProviderSecretValues(
-  states: Record<string, { apiKey: string }>,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(states).flatMap(([providerId, state]) => {
-      return state.apiKey ? [[providerId, state.apiKey]] : []
-    }),
-  )
-}
-
 export function SettingsWorkspace({
   bootstrap,
   themeMode,
   onThemeModeChange,
   initialSection,
 }: SettingsWorkspaceProps) {
-  const [studentId, setStudentId] = useState('')
-  const [sustechEmail, setSustechEmail] = useState('')
-  const [sustechEmailFocused, setSustechEmailFocused] = useState(false)
-  const [casPasswordDraft, setCasPasswordDraft] = useState('')
-  const [casPasswordSavedValue, setCasPasswordSavedValue] = useState('')
-  const [casPasswordFeedback, setCasPasswordFeedback] = useState<string | null>(null)
-  const [blackboardAutoDownloadEnabled, setBlackboardAutoDownloadEnabled] = useState(false)
-  const [blackboardDownloadLimitMb, setBlackboardDownloadLimitMb] = useState('0')
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? settingsItems[0]?.id ?? 'sustech-info')
-  const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(initialProviderProfiles)
-  const [activeProviderId, setActiveProviderId] = useState<string>(initialProviderProfiles[0]?.id ?? '')
-  const [providerQuery, setProviderQuery] = useState('')
-  const [providerSecretDrafts, setProviderSecretDrafts] = useState<Record<string, string>>({})
-  const [providerSecretSavedValues, setProviderSecretSavedValues] = useState<Record<string, string>>({})
-  const [modelEditorState, setModelEditorState] = useState<ModelEditorState | null>(null)
-  const [modelEditorError, setModelEditorError] = useState<string | null>(null)
-  const [workspaceHydrated, setWorkspaceHydrated] = useState(false)
-  const skipNextWorkspaceSaveRef = useRef(true)
+  const [sustechEmailFocused, setSustechEmailFocused] = useState(false)
 
-  const [language, setLanguage] = useState('zh-CN')
-  const [proxyMode, setProxyMode] = useState('system')
-  const [assistantNotificationsEnabled, setAssistantNotificationsEnabled] = useState(false)
-  const [backupEnabled, setBackupEnabled] = useState(true)
+  const workspaceState = useSettingsWorkspaceState(initialSettingsWorkspaceActiveProviderId)
+  const {
+    formState,
+    activeProviderId,
+    providerSecretValues,
+    casPasswordValue,
+    setActiveProviderId,
+    setStudentId,
+    setSustechEmail,
+    setBlackboardAutoDownloadEnabled,
+    setBlackboardDownloadLimitMb,
+    setProviderProfiles,
+    setPrimaryAssistantModel,
+    setFastAssistantModel,
+    setLanguage,
+    setProxyMode,
+    setAssistantNotificationsEnabled,
+    setBackupEnabled,
+    setDataPath,
+    setBackupCycle,
+    setLaunchSyncEnabled,
+    setMcpAutoDiscoveryEnabled,
+    setToolPermissionMode,
+    setSearchEngine,
+    setSearchResultCount,
+    setCompressionMode,
+    setMemoryStrategy,
+    setMemoryCleanupEnabled,
+    setApiReconnectMode,
+    setHealthPollingEnabled,
+    setApiBaseUrl,
+    setDocsFormat,
+    setOutputDirectory,
+    setAutoFileNameEnabled,
+    setWakeupShareLink,
+  } = workspaceState
 
-  const [dataPath, setDataPath] = useState('D:/workspace/copilot-data')
-  const [backupCycle, setBackupCycle] = useState('daily')
-  const [launchSyncEnabled, setLaunchSyncEnabled] = useState(true)
+  const providerController = useSettingsWorkspaceProviderController({
+    providerProfiles: formState.providerProfiles,
+    activeProviderId,
+    hydratedProviderSecretValues: providerSecretValues,
+    setProviderProfiles,
+    setActiveProviderId,
+    setPrimaryAssistantModel,
+    setFastAssistantModel,
+  })
+  const {
+    activeProvider,
+    activeProviderDetail,
+    providerQuery,
+    setProviderQuery,
+    activeProviderApiKeyDraft,
+    apiKeyVisible,
+    apiKeyFeedback,
+    modelEditorState,
+    modelEditorError,
+    updateActiveProvider,
+    handleProviderApiKeyDraftChange,
+    handlePersistProviderApiKeyDraft,
+    handleToggleApiKeyVisibility,
+    handleCopyApiKey,
+    handleAddProvider,
+    moveProviderToIndex,
+    handleCopyProvider,
+    handleDeleteProvider,
+    handleOpenCreateModelEditor,
+    handleOpenModelEditor,
+    handleRemoveModel,
+    handleCloseModelEditor,
+    handleSaveModel,
+    updateModelEditorState,
+    handleToggleModelCapability,
+    clearModelEditorError,
+  } = providerController
 
-  const [searchEngine, setSearchEngine] = useState('google')
-  const [searchResultCount, setSearchResultCount] = useState('8')
-  const [compressionMode, setCompressionMode] = useState('summary')
-
-  const [memoryStrategy, setMemoryStrategy] = useState('session-longterm')
-  const [memoryCleanupEnabled, setMemoryCleanupEnabled] = useState(true)
-
-  const [mcpAutoDiscoveryEnabled, setMcpAutoDiscoveryEnabled] = useState(true)
-  const [toolPermissionMode, setToolPermissionMode] = useState('manual')
-
-  const [apiReconnectMode, setApiReconnectMode] = useState('exponential')
-  const [healthPollingEnabled, setHealthPollingEnabled] = useState(true)
-  const [apiBaseUrl, setApiBaseUrl] = useState('http://127.0.0.1:8000')
-
-  const [docsFormat, setDocsFormat] = useState('markdown')
-  const [outputDirectory, setOutputDirectory] = useState('D:/workspace/exports')
-  const [autoFileNameEnabled, setAutoFileNameEnabled] = useState(true)
-  const [wakeupShareLink, setWakeupShareLink] = useState('')
-  const [wakeupDialogState, setWakeupDialogState] = useState<WakeupDialogState>(null)
+  const sideflows = useSettingsWorkspaceSideflows({
+    hydratedCasPasswordValue: casPasswordValue,
+    wakeupShareLink: formState.wakeupShareLink,
+  })
+  const {
+    casPasswordDraft,
+    casPasswordFeedback,
+    setCasPasswordDraft,
+    persistCasPasswordDraft,
+    wakeupDialogState,
+    handleWakeupLinkParse,
+    handleWakeupDialogClose,
+    handleWakeupConflictChoice,
+  } = sideflows
 
   const activeSettingsItem = useMemo(
     () => settingsItems.find((item) => item.id === activeSection) ?? settingsItems[0],
     [activeSection],
   )
 
-  const activeProvider = useMemo<ProviderProfile | null>(
-    () => providerProfiles.find((profile) => profile.id === activeProviderId) ?? providerProfiles[0] ?? null,
-    [activeProviderId, providerProfiles],
+  const allModelOptions = useMemo(
+    () => collectAllModelOptions(formState.providerProfiles),
+    [formState.providerProfiles],
   )
 
-  const allModelOptions = useMemo<SelectOption[]>(() => {
-    const modelsById = new Map<string, ProviderModelProfile>()
-
-    providerProfiles.forEach((profile) => {
-      profile.availableModels.forEach((model) => {
-        if (!modelsById.has(model.modelId)) {
-          modelsById.set(model.modelId, model)
-        }
-      })
-    })
-
-    return Array.from(modelsById.values()).map((model) => ({
-      value: model.modelId,
-      label: model.displayName || model.modelId,
-    }))
-  }, [providerProfiles])
-
-  const [primaryAssistantModel, setPrimaryAssistantModel] = useState(
-    initialProviderProfiles[0]?.defaultModel ?? '',
-  )
-  const [fastAssistantModel, setFastAssistantModel] = useState(initialProviderProfiles[0]?.fastModel ?? '')
-  const [apiKeyVisible, setApiKeyVisible] = useState(false)
-  const [apiKeyFeedback, setApiKeyFeedback] = useState<string | null>(null)
-  const activeProviderApiKeyDraft = activeProvider ? (providerSecretDrafts[activeProvider.id] ?? '') : ''
-  const activeProviderDetail = activeProvider ?? createPlaceholderProviderProfile()
   const derivedSustechEmail = useMemo(() => {
-    const normalizedStudentId = studentId.trim()
+    const normalizedStudentId = formState.studentId.trim()
 
     if (!normalizedStudentId) {
       return ''
     }
 
     return `${normalizedStudentId}@sustech.edu.cn`
-  }, [studentId])
-  const displayedSustechEmail = sustechEmail.trim() || (!sustechEmailFocused ? derivedSustechEmail : '')
+  }, [formState.studentId])
 
-  const workspaceStateInput = useMemo<SettingsWorkspaceStateSaveInput>(() => {
-    return {
-      sustech: {
-        studentId,
-        email: sustechEmail,
-        blackboardAutoDownloadEnabled,
-        blackboardDownloadLimitMb,
-      },
-      providerProfiles: providerProfiles.map(({ hasApiKey: _hasApiKey, ...profile }) => ({
-        ...profile,
-        availableModels: profile.availableModels.map((model) => ({
-          ...model,
-          capabilities: [...model.capabilities],
-        })),
-      })),
-      defaultModelRouting: {
-        primaryAssistantModel,
-        fastAssistantModel,
-      },
-      general: {
-        language,
-        proxyMode,
-        assistantNotificationsEnabled,
-        backupEnabled,
-      },
-      data: {
-        dataPath,
-        backupCycle,
-        launchSyncEnabled,
-      },
-      mcp: {
-        mcpAutoDiscoveryEnabled,
-        toolPermissionMode,
-      },
-      search: {
-        searchEngine,
-        searchResultCount,
-        compressionMode,
-      },
-      memory: {
-        memoryStrategy,
-        memoryCleanupEnabled,
-      },
-      api: {
-        apiReconnectMode,
-        healthPollingEnabled,
-        apiBaseUrl,
-      },
-      docs: {
-        docsFormat,
-        outputDirectory,
-        autoFileNameEnabled,
-      },
-      externalSource: {
-        wakeupShareLink,
-      },
-    }
-  }, [
-    apiBaseUrl,
-    apiReconnectMode,
-    assistantNotificationsEnabled,
-    autoFileNameEnabled,
-    backupCycle,
-    backupEnabled,
-    blackboardAutoDownloadEnabled,
-    blackboardDownloadLimitMb,
-    compressionMode,
-    dataPath,
-    docsFormat,
-    fastAssistantModel,
-    healthPollingEnabled,
-    language,
-    launchSyncEnabled,
-    mcpAutoDiscoveryEnabled,
-    memoryCleanupEnabled,
-    memoryStrategy,
-    outputDirectory,
-    primaryAssistantModel,
-    providerProfiles,
-    proxyMode,
-    searchEngine,
-    searchResultCount,
-    studentId,
-    sustechEmail,
-    toolPermissionMode,
-    wakeupShareLink,
-  ])
-
-  useEffect(() => {
-    setModelEditorState(null)
-    setApiKeyVisible(false)
-    setApiKeyFeedback(null)
-  }, [activeProviderId])
-
-  useEffect(() => {
-    let cancelled = false
-
-    void (async () => {
-      const result = await loadSettingsWorkspaceState()
-      let loadedProviderSecretValues: Record<string, string> = {}
-      let loadedCasPasswordValue = ''
-
-      if (result.ok) {
-        const secretStatusesResult = await loadSettingsWorkspaceSecretStatuses({
-          providerIds: result.state.providerProfiles.map((profile) => profile.id),
-        })
-        const sustechCasPasswordResult = await loadSettingsWorkspaceSustechCasPassword()
-
-        if (secretStatusesResult.ok) {
-          loadedProviderSecretValues = projectLoadedProviderSecretValues(secretStatusesResult.states)
-        }
-
-        if (sustechCasPasswordResult.ok) {
-          loadedCasPasswordValue = sustechCasPasswordResult.state.password
-        }
-      }
-
-      if (!cancelled && result.ok) {
-        applyLoadedWorkspaceState(result.state, {
-          activeProviderId,
-          setProviderProfiles,
-          setActiveProviderId,
-          setPrimaryAssistantModel,
-          setFastAssistantModel,
-          setLanguage,
-          setProxyMode,
-          setAssistantNotificationsEnabled,
-          setBackupEnabled,
-          setDataPath,
-          setBackupCycle,
-          setLaunchSyncEnabled,
-          setMcpAutoDiscoveryEnabled,
-          setToolPermissionMode,
-          setSearchEngine,
-          setSearchResultCount,
-          setCompressionMode,
-          setStudentId,
-          setSustechEmail,
-          setBlackboardAutoDownloadEnabled,
-          setBlackboardDownloadLimitMb,
-          setMemoryStrategy,
-          setMemoryCleanupEnabled,
-          setApiReconnectMode,
-          setHealthPollingEnabled,
-          setApiBaseUrl,
-          setDocsFormat,
-          setOutputDirectory,
-          setAutoFileNameEnabled,
-          setWakeupShareLink,
-        })
-        setProviderSecretDrafts(loadedProviderSecretValues)
-        setProviderSecretSavedValues(loadedProviderSecretValues)
-        setCasPasswordDraft(loadedCasPasswordValue)
-        setCasPasswordSavedValue(loadedCasPasswordValue)
-      }
-
-      if (!cancelled) {
-        setWorkspaceHydrated(true)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!workspaceHydrated) {
-      return
-    }
-
-    if (skipNextWorkspaceSaveRef.current) {
-      skipNextWorkspaceSaveRef.current = false
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void saveSettingsWorkspaceState(workspaceStateInput)
-    }, 200)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [workspaceHydrated, workspaceStateInput])
-
-  useEffect(() => {
-    if (providerProfiles.length === 0) {
-      return
-    }
-
-    if (!providerProfiles.some((profile) => profile.id === activeProviderId)) {
-      setActiveProviderId(providerProfiles[0]?.id ?? '')
-    }
-  }, [activeProviderId, providerProfiles])
-
-  useEffect(() => {
-    if (!apiKeyFeedback) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setApiKeyFeedback(null)
-    }, 2000)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [apiKeyFeedback])
-
-  useEffect(() => {
-    if (!casPasswordFeedback) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setCasPasswordFeedback(null)
-    }, 2000)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [casPasswordFeedback])
-
-  const updateActiveProvider = (patch: Partial<ProviderProfile>) => {
-    if (!activeProvider) {
-      return
-    }
-
-    setProviderProfiles((previous) =>
-      previous.map((profile) => {
-        if (profile.id === activeProviderId) {
-          return { ...profile, ...patch }
-        }
-
-        return profile
-      }),
-    )
-  }
-
-  const handleCopyApiKey = async () => {
-    if (!activeProvider) {
-      return
-    }
-
-    if (!activeProviderApiKeyDraft.trim()) {
-      setApiKeyFeedback('当前没有可复制的 API 密钥')
-      return
-    }
-
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('clipboard-unavailable')
-      }
-
-      await navigator.clipboard.writeText(activeProviderApiKeyDraft)
-      setApiKeyFeedback('已复制 API 密钥')
-    } catch {
-      setApiKeyFeedback('复制失败，请手动复制')
-    }
-  }
-
-  const handlePersistProviderApiKeyDraft = async (providerId: string) => {
-    const activeDraft = providerSecretDrafts[providerId]
-
-    if (activeDraft === undefined) {
-      return
-    }
-
-    const normalizedDraft = activeDraft.trim()
-    const savedValue = providerSecretSavedValues[providerId] ?? ''
-
-    if (normalizedDraft === savedValue) {
-      return
-    }
-
-    if (!normalizedDraft) {
-      const result = await clearSettingsWorkspaceProviderApiKey({
-        providerId,
-      })
-
-      if (!result.ok) {
-        setApiKeyFeedback('清除失败，请稍后重试')
-        return
-      }
-
-      setProviderProfiles((previous) =>
-        previous.map((profile) => {
-          return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
-        }),
-      )
-      setProviderSecretDrafts((previous) => ({
-        ...previous,
-        [result.providerId]: '',
-      }))
-      setProviderSecretSavedValues((previous) => ({
-        ...previous,
-        [result.providerId]: result.state.apiKey,
-      }))
-      setApiKeyFeedback('已清除 API 密钥')
-      return
-    }
-
-    const result = await saveSettingsWorkspaceProviderApiKey({
-      providerId,
-      apiKey: normalizedDraft,
-    })
-
-    if (!result.ok) {
-      setApiKeyFeedback('保存失败，请稍后重试')
-      return
-    }
-
-    setProviderProfiles((previous) =>
-      previous.map((profile) => {
-        return profile.id === result.providerId ? { ...profile, hasApiKey: result.state.hasApiKey } : profile
-      }),
-    )
-    setProviderSecretDrafts((previous) => ({
-      ...previous,
-      [result.providerId]: result.state.apiKey,
-    }))
-    setProviderSecretSavedValues((previous) => ({
-      ...previous,
-      [result.providerId]: result.state.apiKey,
-    }))
-    setApiKeyFeedback('已自动保存 API 密钥')
-  }
-
-  const handlePersistCasPasswordDraft = async () => {
-    const normalizedDraft = casPasswordDraft.trim()
-
-    if (normalizedDraft === casPasswordSavedValue) {
-      return
-    }
-
-    if (!normalizedDraft) {
-      const result = await clearSettingsWorkspaceSustechCasPassword()
-
-      if (!result.ok) {
-        setCasPasswordFeedback('保存失败，请稍后重试')
-        return
-      }
-
-      setCasPasswordDraft('')
-      setCasPasswordSavedValue('')
-      setCasPasswordFeedback('已清除 CAS 密码')
-      return
-    }
-
-    const result = await saveSettingsWorkspaceSustechCasPassword({
-      password: normalizedDraft,
-    })
-
-    if (!result.ok) {
-      setCasPasswordFeedback('保存失败，请稍后重试')
-      return
-    }
-
-    setCasPasswordDraft(result.state.password)
-    setCasPasswordSavedValue(result.state.password)
-    setCasPasswordFeedback('已自动保存 CAS 密码')
-  }
-
-  const commitActiveProviderModels = (
-    nextModels: ProviderModelProfile[],
-    options?: { previousModelId?: string | null; nextModelId?: string | null },
-  ) => {
-    const previousModelId = options?.previousModelId ?? null
-    const nextModelId = options?.nextModelId ?? null
-
-    setProviderProfiles((previous) =>
-      previous.map((profile) => {
-        if (profile.id !== activeProviderId) {
-          return profile
-        }
-
-        return {
-          ...profile,
-          availableModels: nextModels,
-          defaultModel: syncTrackedModelValue(profile.defaultModel, previousModelId, nextModelId),
-          fastModel: syncTrackedModelValue(profile.fastModel, previousModelId, nextModelId),
-          fallbackModel: syncTrackedModelValue(profile.fallbackModel, previousModelId, nextModelId),
-        }
-      }),
-    )
-
-    setPrimaryAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
-    setFastAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
-  }
-
-  const handleAddProvider = () => {
-    const nextProvider = createCustomProvider(providerProfiles.length + 1)
-
-    setProviderProfiles((previous) => [...previous, nextProvider])
-    setProviderQuery('')
-    setActiveProviderId(nextProvider.id)
-    setModelEditorState(null)
-  }
-
-  const moveProviderToIndex = (draggingProviderId: string, nextIndex: number) => {
-    setProviderProfiles((previous) => {
-      const draggingIndex = previous.findIndex((profile) => profile.id === draggingProviderId)
-
-      if (draggingIndex === -1) {
-        return previous
-      }
-
-      const clampedIndex = Math.max(0, Math.min(nextIndex, previous.length - 1))
-      const nextProfiles = [...previous]
-      const [draggingProvider] = nextProfiles.splice(draggingIndex, 1)
-      nextProfiles.splice(clampedIndex, 0, draggingProvider)
-      return nextProfiles
-    })
-  }
-
-  const handleCopyProvider = async (providerId: string) => {
-    const sourceProvider = providerProfiles.find((profile) => profile.id === providerId)
-
-    if (!sourceProvider) {
-      return
-    }
-
-    const nextProviderId = createProviderId(sourceProvider.name)
-    const nextProviderName = `${sourceProvider.name} 副本`
-    const copiedSecret = providerSecretSavedValues[providerId] ?? providerSecretDrafts[providerId] ?? ''
-    const nextProvider: ProviderProfile = {
-      ...sourceProvider,
-      id: nextProviderId,
-      name: nextProviderName,
-      hasApiKey: copiedSecret !== '',
-      availableModels: sourceProvider.availableModels.map((model) => ({
-        ...model,
-        id: createModelProfileId(nextProviderId, model.modelId),
-        capabilities: [...model.capabilities],
-      })),
-    }
-
-    setProviderProfiles((previous) => {
-      const sourceIndex = previous.findIndex((profile) => profile.id === providerId)
-      const nextProfiles = [...previous]
-      nextProfiles.splice(sourceIndex + 1, 0, nextProvider)
-      return nextProfiles
-    })
-    setActiveProviderId(nextProviderId)
-
-    if (!copiedSecret) {
-      return
-    }
-
-    const result = await saveSettingsWorkspaceProviderApiKey({
-      providerId: nextProviderId,
-      apiKey: copiedSecret,
-    })
-
-    if (!result.ok) {
-      setApiKeyFeedback('复制服务商后未能同步 API 密钥')
-      return
-    }
-
-    setProviderSecretDrafts((previous) => ({
-      ...previous,
-      [nextProviderId]: result.state.apiKey,
-    }))
-    setProviderSecretSavedValues((previous) => ({
-      ...previous,
-      [nextProviderId]: result.state.apiKey,
-    }))
-  }
-
-  const handleDeleteProvider = async (providerId: string) => {
-    const currentIndex = providerProfiles.findIndex((profile) => profile.id === providerId)
-
-    if (currentIndex === -1) {
-      return
-    }
-
-    const nextActiveProviderId = providerProfiles[currentIndex + 1]?.id
-      ?? providerProfiles[currentIndex - 1]?.id
-      ?? ''
-    const savedSecret = providerSecretSavedValues[providerId] ?? ''
-
-    setProviderProfiles((previous) => previous.filter((profile) => profile.id !== providerId))
-    setProviderSecretDrafts((previous) => {
-      const { [providerId]: _removedDraft, ...remainingDrafts } = previous
-      return remainingDrafts
-    })
-    setProviderSecretSavedValues((previous) => {
-      const { [providerId]: _removedSavedValue, ...remainingSavedValues } = previous
-      return remainingSavedValues
-    })
-    setModelEditorState(null)
-
-    if (providerId === activeProviderId) {
-      setActiveProviderId(nextActiveProviderId)
-    }
-
-    if (!savedSecret) {
-      return
-    }
-
-    const result = await clearSettingsWorkspaceProviderApiKey({ providerId })
-
-    if (!result.ok) {
-      setApiKeyFeedback('删除服务商后未能清除 API 密钥')
-    }
-  }
-
-  const handleOpenCreateModelEditor = () => {
-    if (!activeProvider) {
-      return
-    }
-
-    setModelEditorError(null)
-    setModelEditorState(createEmptyModelEditorState(activeProvider.name, activeProvider.availableModels.length))
-  }
-
-  const handleOpenModelEditor = (index: number) => {
-    if (!activeProvider) {
-      return
-    }
-
-    const currentModel = activeProvider.availableModels[index]
-
-    if (!currentModel) {
-      return
-    }
-
-    setModelEditorError(null)
-    setModelEditorState({
-      ...currentModel,
-      index,
-      advancedOpen: false,
-      isNew: false,
-    })
-  }
-
-  const handleCloseModelEditor = () => {
-    setModelEditorError(null)
-    setModelEditorState(null)
-  }
-
-  const updateModelEditorState = (patch: Partial<ModelEditorState>) => {
-    setModelEditorState((previous) => (previous ? { ...previous, ...patch } : previous))
-  }
-
-  const handleToggleModelCapability = (capability: ModelCapability) => {
-    setModelEditorState((previous) => {
-      if (!previous) {
-        return previous
-      }
-
-      const capabilities = previous.capabilities.includes(capability)
-        ? previous.capabilities.filter((item) => item !== capability)
-        : [...previous.capabilities, capability]
-
-      return {
-        ...previous,
-        capabilities,
-      }
-    })
-  }
-
-  const handleSaveModel = () => {
-    if (!modelEditorState || !activeProvider) {
-      return
-    }
-
-    const nextModelId = modelEditorState.modelId.trim()
-
-    if (!nextModelId) {
-      return
-    }
-
-    const duplicateModelIndex = activeProvider.availableModels.findIndex((model, index) => {
-      return model.modelId === nextModelId && index !== modelEditorState.index
-    })
-
-    if (duplicateModelIndex !== -1) {
-      setModelEditorError('模型 ID 已存在，请使用不同的模型 ID。')
-      return
-    }
-
-    const nextModel: ProviderModelProfile = {
-      id: modelEditorState.isNew ? createModelProfileId(activeProvider.id, nextModelId) : modelEditorState.id,
-      modelId: nextModelId,
-      displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
-      groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
-      capabilities: modelEditorState.capabilities.length > 0 ? modelEditorState.capabilities : ['reasoning'],
-      supportsStreaming: modelEditorState.supportsStreaming,
-      currency: modelEditorState.currency,
-      inputPrice: modelEditorState.inputPrice,
-      outputPrice: modelEditorState.outputPrice,
-    }
-
-    if (modelEditorState.isNew) {
-      commitActiveProviderModels([...activeProvider.availableModels, nextModel])
-    } else {
-      const previousModelId = activeProvider.availableModels[modelEditorState.index]?.modelId ?? null
-      const nextModels = activeProvider.availableModels.map((model, modelIndex) => {
-        return modelIndex === modelEditorState.index ? nextModel : model
-      })
-
-      commitActiveProviderModels(nextModels, { previousModelId, nextModelId })
-    }
-
-    setModelEditorState(null)
-  }
-
-  const handleRemoveModel = (index: number) => {
-    if (!activeProvider) {
-      return
-    }
-
-    const previousModelId = activeProvider.availableModels[index]?.modelId ?? null
-    const nextModels = activeProvider.availableModels.filter((_, modelIndex) => modelIndex !== index)
-
-    commitActiveProviderModels(nextModels, {
-      previousModelId,
-      nextModelId: nextModels[0]?.modelId ?? null,
-    })
-    setModelEditorState(null)
-  }
-
-  const handleWakeupLinkParse = async () => {
-    const parseStatus = await resolveWakeupShareLinkParseStatus(wakeupShareLink)
-    setWakeupDialogState(parseStatus === 'success' ? { status: 'success' } : { status: 'failure' })
-  }
-
-  const handleWakeupDialogClose = () => {
-    setWakeupDialogState(null)
-  }
-
-  const handleWakeupConflictChoice = () => {
-    setWakeupDialogState(null)
-  }
+  const displayedSustechEmail = formState.sustechEmail.trim() || (!sustechEmailFocused ? derivedSustechEmail : '')
 
   return (
     <section className="workspace-stage settings-workspace" aria-label="设置工作区">
@@ -833,7 +182,7 @@ export function SettingsWorkspace({
             bootstrap={bootstrap}
             themeMode={themeMode}
             onThemeModeChange={onThemeModeChange}
-            providerProfiles={providerProfiles}
+            providerProfiles={formState.providerProfiles}
             activeProviderId={activeProviderId}
             activeProvider={activeProvider}
             activeProviderDetail={activeProviderDetail}
@@ -850,14 +199,9 @@ export function SettingsWorkspace({
             onCopyProvider={handleCopyProvider}
             onDeleteProvider={handleDeleteProvider}
             onUpdateActiveProvider={updateActiveProvider}
-            onProviderApiKeyDraftChange={(providerId, value) => {
-              setProviderSecretDrafts((previous) => ({
-                ...previous,
-                [providerId]: value,
-              }))
-            }}
+            onProviderApiKeyDraftChange={handleProviderApiKeyDraftChange}
             onPersistProviderApiKeyDraft={handlePersistProviderApiKeyDraft}
-            onToggleApiKeyVisibility={() => setApiKeyVisible((previous) => !previous)}
+            onToggleApiKeyVisibility={handleToggleApiKeyVisibility}
             onCopyApiKey={handleCopyApiKey}
             onOpenCreateModelEditor={handleOpenCreateModelEditor}
             onOpenModelEditor={handleOpenModelEditor}
@@ -866,66 +210,66 @@ export function SettingsWorkspace({
             onModelEditorSave={handleSaveModel}
             onModelEditorStateChange={updateModelEditorState}
             onToggleModelCapability={handleToggleModelCapability}
-            onClearModelEditorError={() => setModelEditorError(null)}
+            onClearModelEditorError={clearModelEditorError}
             allModelOptions={allModelOptions}
-            primaryAssistantModel={primaryAssistantModel}
-            fastAssistantModel={fastAssistantModel}
+            primaryAssistantModel={formState.primaryAssistantModel}
+            fastAssistantModel={formState.fastAssistantModel}
             onPrimaryAssistantModelChange={setPrimaryAssistantModel}
             onFastAssistantModelChange={setFastAssistantModel}
-            studentId={studentId}
+            studentId={formState.studentId}
             displayedSustechEmail={displayedSustechEmail}
             casPasswordDraft={casPasswordDraft}
             casPasswordFeedback={casPasswordFeedback}
-            blackboardAutoDownloadEnabled={blackboardAutoDownloadEnabled}
-            blackboardDownloadLimitMb={blackboardDownloadLimitMb}
+            blackboardAutoDownloadEnabled={formState.blackboardAutoDownloadEnabled}
+            blackboardDownloadLimitMb={formState.blackboardDownloadLimitMb}
             onStudentIdChange={setStudentId}
             onSustechEmailChange={setSustechEmail}
             onSustechEmailFocusChange={setSustechEmailFocused}
             onCasPasswordDraftChange={setCasPasswordDraft}
-            onPersistCasPasswordDraft={handlePersistCasPasswordDraft}
+            onPersistCasPasswordDraft={persistCasPasswordDraft}
             onBlackboardAutoDownloadEnabledChange={setBlackboardAutoDownloadEnabled}
             onBlackboardDownloadLimitMbChange={setBlackboardDownloadLimitMb}
-            language={language}
-            proxyMode={proxyMode}
-            assistantNotificationsEnabled={assistantNotificationsEnabled}
-            backupEnabled={backupEnabled}
+            language={formState.language}
+            proxyMode={formState.proxyMode}
+            assistantNotificationsEnabled={formState.assistantNotificationsEnabled}
+            backupEnabled={formState.backupEnabled}
             onLanguageChange={setLanguage}
             onProxyModeChange={setProxyMode}
             onAssistantNotificationsEnabledChange={setAssistantNotificationsEnabled}
             onBackupEnabledChange={setBackupEnabled}
-            dataPath={dataPath}
-            backupCycle={backupCycle}
-            launchSyncEnabled={launchSyncEnabled}
+            dataPath={formState.dataPath}
+            backupCycle={formState.backupCycle}
+            launchSyncEnabled={formState.launchSyncEnabled}
             onDataPathChange={setDataPath}
             onBackupCycleChange={setBackupCycle}
             onLaunchSyncEnabledChange={setLaunchSyncEnabled}
-            toolPermissionMode={toolPermissionMode}
-            mcpAutoDiscoveryEnabled={mcpAutoDiscoveryEnabled}
+            toolPermissionMode={formState.toolPermissionMode}
+            mcpAutoDiscoveryEnabled={formState.mcpAutoDiscoveryEnabled}
             onToolPermissionModeChange={setToolPermissionMode}
             onMcpAutoDiscoveryEnabledChange={setMcpAutoDiscoveryEnabled}
-            searchEngine={searchEngine}
-            searchResultCount={searchResultCount}
-            compressionMode={compressionMode}
+            searchEngine={formState.searchEngine}
+            searchResultCount={formState.searchResultCount}
+            compressionMode={formState.compressionMode}
             onSearchEngineChange={setSearchEngine}
             onSearchResultCountChange={setSearchResultCount}
             onCompressionModeChange={setCompressionMode}
-            memoryStrategy={memoryStrategy}
-            memoryCleanupEnabled={memoryCleanupEnabled}
+            memoryStrategy={formState.memoryStrategy}
+            memoryCleanupEnabled={formState.memoryCleanupEnabled}
             onMemoryStrategyChange={setMemoryStrategy}
             onMemoryCleanupEnabledChange={setMemoryCleanupEnabled}
-            apiBaseUrl={apiBaseUrl}
-            apiReconnectMode={apiReconnectMode}
-            healthPollingEnabled={healthPollingEnabled}
+            apiBaseUrl={formState.apiBaseUrl}
+            apiReconnectMode={formState.apiReconnectMode}
+            healthPollingEnabled={formState.healthPollingEnabled}
             onApiBaseUrlChange={setApiBaseUrl}
             onApiReconnectModeChange={setApiReconnectMode}
             onHealthPollingEnabledChange={setHealthPollingEnabled}
-            docsFormat={docsFormat}
-            outputDirectory={outputDirectory}
-            autoFileNameEnabled={autoFileNameEnabled}
+            docsFormat={formState.docsFormat}
+            outputDirectory={formState.outputDirectory}
+            autoFileNameEnabled={formState.autoFileNameEnabled}
             onDocsFormatChange={setDocsFormat}
             onOutputDirectoryChange={setOutputDirectory}
             onAutoFileNameEnabledChange={setAutoFileNameEnabled}
-            wakeupShareLink={wakeupShareLink}
+            wakeupShareLink={formState.wakeupShareLink}
             wakeupDialogState={wakeupDialogState}
             onWakeupShareLinkChange={setWakeupShareLink}
             onWakeupLinkParse={handleWakeupLinkParse}
@@ -937,84 +281,3 @@ export function SettingsWorkspace({
     </section>
   )
 }
-
-async function resolveWakeupShareLinkParseStatus(value: string): Promise<'success' | 'failure'> {
-  const normalizedValue = value.trim()
-
-  if (!normalizedValue) {
-    return 'failure'
-  }
-
-  return normalizedValue.includes('success') || normalizedValue.includes('wakeup') ? 'success' : 'failure'
-}
-
-function applyLoadedWorkspaceState(
-  state: SettingsWorkspaceEditableState,
-  setters: {
-    activeProviderId: string
-    setStudentId: (value: string) => void
-    setSustechEmail: (value: string) => void
-    setBlackboardAutoDownloadEnabled: (value: boolean) => void
-    setBlackboardDownloadLimitMb: (value: string) => void
-    setProviderProfiles: (value: ProviderProfile[]) => void
-    setActiveProviderId: (value: string) => void
-    setPrimaryAssistantModel: (value: string) => void
-    setFastAssistantModel: (value: string) => void
-    setLanguage: (value: string) => void
-    setProxyMode: (value: string) => void
-    setAssistantNotificationsEnabled: (value: boolean) => void
-    setBackupEnabled: (value: boolean) => void
-    setDataPath: (value: string) => void
-    setBackupCycle: (value: string) => void
-    setLaunchSyncEnabled: (value: boolean) => void
-    setMcpAutoDiscoveryEnabled: (value: boolean) => void
-    setToolPermissionMode: (value: string) => void
-    setSearchEngine: (value: string) => void
-    setSearchResultCount: (value: string) => void
-    setCompressionMode: (value: string) => void
-    setMemoryStrategy: (value: string) => void
-    setMemoryCleanupEnabled: (value: boolean) => void
-    setApiReconnectMode: (value: string) => void
-    setHealthPollingEnabled: (value: boolean) => void
-    setApiBaseUrl: (value: string) => void
-    setDocsFormat: (value: string) => void
-    setOutputDirectory: (value: string) => void
-    setAutoFileNameEnabled: (value: boolean) => void
-    setWakeupShareLink: (value: string) => void
-  },
-): void {
-  setters.setStudentId(state.sustech.studentId)
-  setters.setSustechEmail(state.sustech.email)
-  setters.setBlackboardAutoDownloadEnabled(state.sustech.blackboardAutoDownloadEnabled)
-  setters.setBlackboardDownloadLimitMb(state.sustech.blackboardDownloadLimitMb)
-  setters.setProviderProfiles(state.providerProfiles)
-  setters.setActiveProviderId(
-    state.providerProfiles.some((profile) => profile.id === setters.activeProviderId)
-      ? setters.activeProviderId
-      : state.providerProfiles[0]?.id ?? '',
-  )
-  setters.setPrimaryAssistantModel(state.defaultModelRouting.primaryAssistantModel)
-  setters.setFastAssistantModel(state.defaultModelRouting.fastAssistantModel)
-  setters.setLanguage(state.general.language)
-  setters.setProxyMode(state.general.proxyMode)
-  setters.setAssistantNotificationsEnabled(state.general.assistantNotificationsEnabled)
-  setters.setBackupEnabled(state.general.backupEnabled)
-  setters.setDataPath(state.data.dataPath)
-  setters.setBackupCycle(state.data.backupCycle)
-  setters.setLaunchSyncEnabled(state.data.launchSyncEnabled)
-  setters.setMcpAutoDiscoveryEnabled(state.mcp.mcpAutoDiscoveryEnabled)
-  setters.setToolPermissionMode(state.mcp.toolPermissionMode)
-  setters.setSearchEngine(state.search.searchEngine)
-  setters.setSearchResultCount(state.search.searchResultCount)
-  setters.setCompressionMode(state.search.compressionMode)
-  setters.setMemoryStrategy(state.memory.memoryStrategy)
-  setters.setMemoryCleanupEnabled(state.memory.memoryCleanupEnabled)
-  setters.setApiReconnectMode(state.api.apiReconnectMode)
-  setters.setHealthPollingEnabled(state.api.healthPollingEnabled)
-  setters.setApiBaseUrl(state.api.apiBaseUrl)
-  setters.setDocsFormat(state.docs.docsFormat)
-  setters.setOutputDirectory(state.docs.outputDirectory)
-  setters.setAutoFileNameEnabled(state.docs.autoFileNameEnabled)
-  setters.setWakeupShareLink(state.externalSource.wakeupShareLink)
-}
-
