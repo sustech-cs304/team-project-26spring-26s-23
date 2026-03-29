@@ -1,7 +1,7 @@
 import { SelectField } from '../components/FormFields'
 import type { SelectOption } from '../types'
 
-interface DefaultModelRoutesSectionProps {
+export interface DefaultModelRoutesSectionDomain {
   primaryAssistantModel: string
   fastAssistantModel: string
   allModelOptions: SelectOption[]
@@ -9,13 +9,19 @@ interface DefaultModelRoutesSectionProps {
   onFastAssistantModelChange: (value: string) => void
 }
 
-export function DefaultModelRoutesSection({
-  primaryAssistantModel,
-  fastAssistantModel,
-  allModelOptions,
-  onPrimaryAssistantModelChange,
-  onFastAssistantModelChange,
-}: DefaultModelRoutesSectionProps) {
+interface DefaultModelRoutesSectionProps {
+  defaultModels: DefaultModelRoutesSectionDomain
+}
+
+export function DefaultModelRoutesSection({ defaultModels }: DefaultModelRoutesSectionProps) {
+  const {
+    primaryAssistantModel,
+    fastAssistantModel,
+    allModelOptions,
+    onPrimaryAssistantModelChange,
+    onFastAssistantModelChange,
+  } = defaultModels
+
   return (
     <div className="settings-page">
       <section className="settings-card settings-card--form">

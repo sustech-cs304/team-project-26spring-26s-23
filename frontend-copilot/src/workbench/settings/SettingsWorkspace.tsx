@@ -4,6 +4,10 @@ import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { settingsItems } from '../config'
 import type { SettingsSection, ThemeMode } from '../types'
 import { SettingsWorkspaceSections } from './SettingsWorkspaceSections'
+import type { DefaultModelRoutesSectionDomain } from './DefaultModelRoutesSection'
+import type { ExternalSourcesSectionDomain } from './ExternalSourcesSection'
+import type { ProviderProfilesSectionDomain } from './ProviderProfilesSection'
+import type { SustechInfoSectionDomain } from './SustechInfoSection'
 import {
   collectAllModelOptions,
   initialSettingsWorkspaceActiveProviderId,
@@ -140,6 +144,135 @@ export function SettingsWorkspace({
 
   const displayedSustechEmail = formState.sustechEmail.trim() || (!sustechEmailFocused ? derivedSustechEmail : '')
 
+  const providerSectionDomain: ProviderProfilesSectionDomain = {
+    providerProfiles: formState.providerProfiles,
+    activeProviderId,
+    activeProvider,
+    activeProviderDetail,
+    providerQuery,
+    activeProviderApiKeyDraft,
+    apiKeyVisible,
+    apiKeyFeedback,
+    modelEditorState,
+    modelEditorError,
+    onProviderQueryChange: setProviderQuery,
+    onActiveProviderChange: setActiveProviderId,
+    onAddProvider: handleAddProvider,
+    onReorderProviders: moveProviderToIndex,
+    onCopyProvider: handleCopyProvider,
+    onDeleteProvider: handleDeleteProvider,
+    onUpdateActiveProvider: updateActiveProvider,
+    onProviderApiKeyDraftChange: handleProviderApiKeyDraftChange,
+    onPersistProviderApiKeyDraft: handlePersistProviderApiKeyDraft,
+    onToggleApiKeyVisibility: handleToggleApiKeyVisibility,
+    onCopyApiKey: handleCopyApiKey,
+    onOpenCreateModelEditor: handleOpenCreateModelEditor,
+    onOpenModelEditor: handleOpenModelEditor,
+    onRemoveModel: handleRemoveModel,
+    onCloseModelEditor: handleCloseModelEditor,
+    onModelEditorSave: handleSaveModel,
+    onModelEditorStateChange: updateModelEditorState,
+    onToggleModelCapability: handleToggleModelCapability,
+    onClearModelEditorError: clearModelEditorError,
+  }
+
+  const defaultModelsSectionDomain: DefaultModelRoutesSectionDomain = {
+    primaryAssistantModel: formState.primaryAssistantModel,
+    fastAssistantModel: formState.fastAssistantModel,
+    allModelOptions,
+    onPrimaryAssistantModelChange: setPrimaryAssistantModel,
+    onFastAssistantModelChange: setFastAssistantModel,
+  }
+
+  const sustechSectionDomain: SustechInfoSectionDomain = {
+    studentId: formState.studentId,
+    displayedSustechEmail,
+    casPasswordDraft,
+    casPasswordFeedback,
+    blackboardAutoDownloadEnabled: formState.blackboardAutoDownloadEnabled,
+    blackboardDownloadLimitMb: formState.blackboardDownloadLimitMb,
+    onStudentIdChange: setStudentId,
+    onSustechEmailChange: setSustechEmail,
+    onSustechEmailFocusChange: setSustechEmailFocused,
+    onCasPasswordDraftChange: setCasPasswordDraft,
+    onPersistCasPasswordDraft: persistCasPasswordDraft,
+    onBlackboardAutoDownloadEnabledChange: setBlackboardAutoDownloadEnabled,
+    onBlackboardDownloadLimitMbChange: setBlackboardDownloadLimitMb,
+  }
+
+  const externalSourcesSectionDomain: ExternalSourcesSectionDomain = {
+    wakeupShareLink: formState.wakeupShareLink,
+    wakeupDialogState,
+    onWakeupShareLinkChange: setWakeupShareLink,
+    onWakeupLinkParse: handleWakeupLinkParse,
+    onWakeupDialogClose: handleWakeupDialogClose,
+    onWakeupConflictChoice: handleWakeupConflictChoice,
+  }
+
+  const miscSectionDomains = {
+    general: {
+      language: formState.language,
+      proxyMode: formState.proxyMode,
+      assistantNotificationsEnabled: formState.assistantNotificationsEnabled,
+      backupEnabled: formState.backupEnabled,
+      onLanguageChange: setLanguage,
+      onProxyModeChange: setProxyMode,
+      onAssistantNotificationsEnabledChange: setAssistantNotificationsEnabled,
+      onBackupEnabledChange: setBackupEnabled,
+    },
+    display: {
+      themeMode,
+      onThemeModeChange,
+    },
+    data: {
+      dataPath: formState.dataPath,
+      backupCycle: formState.backupCycle,
+      backupEnabled: formState.backupEnabled,
+      launchSyncEnabled: formState.launchSyncEnabled,
+      onDataPathChange: setDataPath,
+      onBackupCycleChange: setBackupCycle,
+      onBackupEnabledChange: setBackupEnabled,
+      onLaunchSyncEnabledChange: setLaunchSyncEnabled,
+    },
+    mcp: {
+      toolPermissionMode: formState.toolPermissionMode,
+      mcpAutoDiscoveryEnabled: formState.mcpAutoDiscoveryEnabled,
+      onToolPermissionModeChange: setToolPermissionMode,
+      onMcpAutoDiscoveryEnabledChange: setMcpAutoDiscoveryEnabled,
+    },
+    search: {
+      searchEngine: formState.searchEngine,
+      searchResultCount: formState.searchResultCount,
+      compressionMode: formState.compressionMode,
+      onSearchEngineChange: setSearchEngine,
+      onSearchResultCountChange: setSearchResultCount,
+      onCompressionModeChange: setCompressionMode,
+    },
+    memory: {
+      memoryStrategy: formState.memoryStrategy,
+      memoryCleanupEnabled: formState.memoryCleanupEnabled,
+      onMemoryStrategyChange: setMemoryStrategy,
+      onMemoryCleanupEnabledChange: setMemoryCleanupEnabled,
+    },
+    api: {
+      bootstrap,
+      apiBaseUrl: formState.apiBaseUrl,
+      apiReconnectMode: formState.apiReconnectMode,
+      healthPollingEnabled: formState.healthPollingEnabled,
+      onApiBaseUrlChange: setApiBaseUrl,
+      onApiReconnectModeChange: setApiReconnectMode,
+      onHealthPollingEnabledChange: setHealthPollingEnabled,
+    },
+    docs: {
+      docsFormat: formState.docsFormat,
+      outputDirectory: formState.outputDirectory,
+      autoFileNameEnabled: formState.autoFileNameEnabled,
+      onDocsFormatChange: setDocsFormat,
+      onOutputDirectoryChange: setOutputDirectory,
+      onAutoFileNameEnabledChange: setAutoFileNameEnabled,
+    },
+  }
+
   return (
     <section className="workspace-stage settings-workspace" aria-label="设置工作区">
       <aside className="workspace-panel settings-panel" aria-label="设置导航列">
@@ -179,102 +312,11 @@ export function SettingsWorkspace({
         <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">
           <SettingsWorkspaceSections
             activeSection={activeSection}
-            bootstrap={bootstrap}
-            themeMode={themeMode}
-            onThemeModeChange={onThemeModeChange}
-            providerProfiles={formState.providerProfiles}
-            activeProviderId={activeProviderId}
-            activeProvider={activeProvider}
-            activeProviderDetail={activeProviderDetail}
-            providerQuery={providerQuery}
-            activeProviderApiKeyDraft={activeProviderApiKeyDraft}
-            apiKeyVisible={apiKeyVisible}
-            apiKeyFeedback={apiKeyFeedback}
-            modelEditorState={modelEditorState}
-            modelEditorError={modelEditorError}
-            onProviderQueryChange={setProviderQuery}
-            onActiveProviderChange={setActiveProviderId}
-            onAddProvider={handleAddProvider}
-            onReorderProviders={moveProviderToIndex}
-            onCopyProvider={handleCopyProvider}
-            onDeleteProvider={handleDeleteProvider}
-            onUpdateActiveProvider={updateActiveProvider}
-            onProviderApiKeyDraftChange={handleProviderApiKeyDraftChange}
-            onPersistProviderApiKeyDraft={handlePersistProviderApiKeyDraft}
-            onToggleApiKeyVisibility={handleToggleApiKeyVisibility}
-            onCopyApiKey={handleCopyApiKey}
-            onOpenCreateModelEditor={handleOpenCreateModelEditor}
-            onOpenModelEditor={handleOpenModelEditor}
-            onRemoveModel={handleRemoveModel}
-            onCloseModelEditor={handleCloseModelEditor}
-            onModelEditorSave={handleSaveModel}
-            onModelEditorStateChange={updateModelEditorState}
-            onToggleModelCapability={handleToggleModelCapability}
-            onClearModelEditorError={clearModelEditorError}
-            allModelOptions={allModelOptions}
-            primaryAssistantModel={formState.primaryAssistantModel}
-            fastAssistantModel={formState.fastAssistantModel}
-            onPrimaryAssistantModelChange={setPrimaryAssistantModel}
-            onFastAssistantModelChange={setFastAssistantModel}
-            studentId={formState.studentId}
-            displayedSustechEmail={displayedSustechEmail}
-            casPasswordDraft={casPasswordDraft}
-            casPasswordFeedback={casPasswordFeedback}
-            blackboardAutoDownloadEnabled={formState.blackboardAutoDownloadEnabled}
-            blackboardDownloadLimitMb={formState.blackboardDownloadLimitMb}
-            onStudentIdChange={setStudentId}
-            onSustechEmailChange={setSustechEmail}
-            onSustechEmailFocusChange={setSustechEmailFocused}
-            onCasPasswordDraftChange={setCasPasswordDraft}
-            onPersistCasPasswordDraft={persistCasPasswordDraft}
-            onBlackboardAutoDownloadEnabledChange={setBlackboardAutoDownloadEnabled}
-            onBlackboardDownloadLimitMbChange={setBlackboardDownloadLimitMb}
-            language={formState.language}
-            proxyMode={formState.proxyMode}
-            assistantNotificationsEnabled={formState.assistantNotificationsEnabled}
-            backupEnabled={formState.backupEnabled}
-            onLanguageChange={setLanguage}
-            onProxyModeChange={setProxyMode}
-            onAssistantNotificationsEnabledChange={setAssistantNotificationsEnabled}
-            onBackupEnabledChange={setBackupEnabled}
-            dataPath={formState.dataPath}
-            backupCycle={formState.backupCycle}
-            launchSyncEnabled={formState.launchSyncEnabled}
-            onDataPathChange={setDataPath}
-            onBackupCycleChange={setBackupCycle}
-            onLaunchSyncEnabledChange={setLaunchSyncEnabled}
-            toolPermissionMode={formState.toolPermissionMode}
-            mcpAutoDiscoveryEnabled={formState.mcpAutoDiscoveryEnabled}
-            onToolPermissionModeChange={setToolPermissionMode}
-            onMcpAutoDiscoveryEnabledChange={setMcpAutoDiscoveryEnabled}
-            searchEngine={formState.searchEngine}
-            searchResultCount={formState.searchResultCount}
-            compressionMode={formState.compressionMode}
-            onSearchEngineChange={setSearchEngine}
-            onSearchResultCountChange={setSearchResultCount}
-            onCompressionModeChange={setCompressionMode}
-            memoryStrategy={formState.memoryStrategy}
-            memoryCleanupEnabled={formState.memoryCleanupEnabled}
-            onMemoryStrategyChange={setMemoryStrategy}
-            onMemoryCleanupEnabledChange={setMemoryCleanupEnabled}
-            apiBaseUrl={formState.apiBaseUrl}
-            apiReconnectMode={formState.apiReconnectMode}
-            healthPollingEnabled={formState.healthPollingEnabled}
-            onApiBaseUrlChange={setApiBaseUrl}
-            onApiReconnectModeChange={setApiReconnectMode}
-            onHealthPollingEnabledChange={setHealthPollingEnabled}
-            docsFormat={formState.docsFormat}
-            outputDirectory={formState.outputDirectory}
-            autoFileNameEnabled={formState.autoFileNameEnabled}
-            onDocsFormatChange={setDocsFormat}
-            onOutputDirectoryChange={setOutputDirectory}
-            onAutoFileNameEnabledChange={setAutoFileNameEnabled}
-            wakeupShareLink={formState.wakeupShareLink}
-            wakeupDialogState={wakeupDialogState}
-            onWakeupShareLinkChange={setWakeupShareLink}
-            onWakeupLinkParse={handleWakeupLinkParse}
-            onWakeupDialogClose={handleWakeupDialogClose}
-            onWakeupConflictChoice={handleWakeupConflictChoice}
+            provider={providerSectionDomain}
+            defaultModels={defaultModelsSectionDomain}
+            sustech={sustechSectionDomain}
+            externalSources={externalSourcesSectionDomain}
+            misc={miscSectionDomains}
           />
         </section>
       </main>

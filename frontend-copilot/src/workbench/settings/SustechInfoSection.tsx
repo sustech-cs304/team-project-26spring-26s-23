@@ -1,6 +1,6 @@
 import { TextField, ToggleSwitch } from '../components/FormFields'
 
-interface SustechInfoSectionProps {
+export interface SustechInfoSectionDomain {
   studentId: string
   displayedSustechEmail: string
   casPasswordDraft: string
@@ -16,21 +16,27 @@ interface SustechInfoSectionProps {
   onBlackboardDownloadLimitMbChange: (value: string) => void
 }
 
-export function SustechInfoSection({
-  studentId,
-  displayedSustechEmail,
-  casPasswordDraft,
-  casPasswordFeedback,
-  blackboardAutoDownloadEnabled,
-  blackboardDownloadLimitMb,
-  onStudentIdChange,
-  onSustechEmailChange,
-  onSustechEmailFocusChange,
-  onCasPasswordDraftChange,
-  onPersistCasPasswordDraft,
-  onBlackboardAutoDownloadEnabledChange,
-  onBlackboardDownloadLimitMbChange,
-}: SustechInfoSectionProps) {
+interface SustechInfoSectionProps {
+  sustech: SustechInfoSectionDomain
+}
+
+export function SustechInfoSection({ sustech }: SustechInfoSectionProps) {
+  const {
+    studentId,
+    displayedSustechEmail,
+    casPasswordDraft,
+    casPasswordFeedback,
+    blackboardAutoDownloadEnabled,
+    blackboardDownloadLimitMb,
+    onStudentIdChange,
+    onSustechEmailChange,
+    onSustechEmailFocusChange,
+    onCasPasswordDraftChange,
+    onPersistCasPasswordDraft,
+    onBlackboardAutoDownloadEnabledChange,
+    onBlackboardDownloadLimitMbChange,
+  } = sustech
+
   const handleBlackboardDownloadLimitChange = (value: string) => {
     if (!/^\d*$/.test(value)) {
       return

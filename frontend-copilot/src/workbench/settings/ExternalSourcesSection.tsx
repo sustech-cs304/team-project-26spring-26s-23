@@ -5,7 +5,7 @@ export type WakeupDialogState =
   | { status: 'success' }
   | null
 
-interface ExternalSourcesSectionProps {
+export interface ExternalSourcesSectionDomain {
   wakeupShareLink: string
   wakeupDialogState: WakeupDialogState
   onWakeupShareLinkChange: (value: string) => void
@@ -14,14 +14,20 @@ interface ExternalSourcesSectionProps {
   onWakeupConflictChoice: () => void
 }
 
-export function ExternalSourcesSection({
-  wakeupShareLink,
-  wakeupDialogState,
-  onWakeupShareLinkChange,
-  onWakeupLinkParse,
-  onWakeupDialogClose,
-  onWakeupConflictChoice,
-}: ExternalSourcesSectionProps) {
+interface ExternalSourcesSectionProps {
+  externalSources: ExternalSourcesSectionDomain
+}
+
+export function ExternalSourcesSection({ externalSources }: ExternalSourcesSectionProps) {
+  const {
+    wakeupShareLink,
+    wakeupDialogState,
+    onWakeupShareLinkChange,
+    onWakeupLinkParse,
+    onWakeupDialogClose,
+    onWakeupConflictChoice,
+  } = externalSources
+
   return (
     <div className="settings-page">
       <section className="settings-card settings-card--form">

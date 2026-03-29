@@ -7,7 +7,7 @@ import { ProviderModelEditorDialog } from './ProviderModelEditorDialog'
 import { ProviderProfileList } from './ProviderProfileList'
 import type { ModelEditorState } from './provider-profiles'
 
-interface ProviderProfilesSectionProps {
+export interface ProviderProfilesSectionDomain {
   providerProfiles: ProviderProfile[]
   activeProviderId: string
   activeProvider: ProviderProfile | null
@@ -39,37 +39,43 @@ interface ProviderProfilesSectionProps {
   onClearModelEditorError: () => void
 }
 
-export function ProviderProfilesSection({
-  providerProfiles,
-  activeProviderId,
-  activeProvider,
-  activeProviderDetail,
-  providerQuery,
-  activeProviderApiKeyDraft,
-  apiKeyVisible,
-  apiKeyFeedback,
-  modelEditorState,
-  modelEditorError,
-  onProviderQueryChange,
-  onActiveProviderChange,
-  onAddProvider,
-  onReorderProviders,
-  onCopyProvider,
-  onDeleteProvider,
-  onUpdateActiveProvider,
-  onProviderApiKeyDraftChange,
-  onPersistProviderApiKeyDraft,
-  onToggleApiKeyVisibility,
-  onCopyApiKey,
-  onOpenCreateModelEditor,
-  onOpenModelEditor,
-  onRemoveModel,
-  onCloseModelEditor,
-  onModelEditorSave,
-  onModelEditorStateChange,
-  onToggleModelCapability,
-  onClearModelEditorError,
-}: ProviderProfilesSectionProps) {
+interface ProviderProfilesSectionProps {
+  provider: ProviderProfilesSectionDomain
+}
+
+export function ProviderProfilesSection({ provider }: ProviderProfilesSectionProps) {
+  const {
+    providerProfiles,
+    activeProviderId,
+    activeProvider,
+    activeProviderDetail,
+    providerQuery,
+    activeProviderApiKeyDraft,
+    apiKeyVisible,
+    apiKeyFeedback,
+    modelEditorState,
+    modelEditorError,
+    onProviderQueryChange,
+    onActiveProviderChange,
+    onAddProvider,
+    onReorderProviders,
+    onCopyProvider,
+    onDeleteProvider,
+    onUpdateActiveProvider,
+    onProviderApiKeyDraftChange,
+    onPersistProviderApiKeyDraft,
+    onToggleApiKeyVisibility,
+    onCopyApiKey,
+    onOpenCreateModelEditor,
+    onOpenModelEditor,
+    onRemoveModel,
+    onCloseModelEditor,
+    onModelEditorSave,
+    onModelEditorStateChange,
+    onToggleModelCapability,
+    onClearModelEditorError,
+  } = provider
+
   return (
     <div className="settings-page settings-page--split">
       <ProviderProfileList
