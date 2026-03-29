@@ -4,7 +4,6 @@ import {
 } from '../../features/copilot/chat-contract'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import type { AgentType, AssistantSessionShell } from '../types'
-import type { AssistantSessionContextMenuState } from './assistant-session-list-helpers'
 import {
   createAssistantSessionShell,
   isCopilotConnectableState,
@@ -57,18 +56,4 @@ export function isAssistantCreateSessionButtonDisabled(input: {
   return !isCopilotConnectableState(input.bootstrapState)
     || input.selectedAgent === null
     || input.sessionStatus === 'creating'
-}
-
-export function createAssistantSessionContextMenuState(input: {
-  sessionEntry: AssistantSessionShell
-  x: number
-  y: number
-}): AssistantSessionContextMenuState {
-  return {
-    sessionId: input.sessionEntry.sessionId,
-    sessionLabel: input.sessionEntry.boundAgent.label,
-    x: input.x,
-    y: input.y,
-    activeSubmenu: null,
-  }
 }

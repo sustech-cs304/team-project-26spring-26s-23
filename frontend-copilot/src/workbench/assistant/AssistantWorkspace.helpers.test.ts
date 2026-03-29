@@ -20,10 +20,13 @@ import {
   resolveAssistantSelectedAgentId,
 } from './assistant-workspace-directory-loader'
 import {
-  createAssistantSessionContextMenuState,
   createAssistantSessionShellForAgent,
   getAssistantCreateSessionLabel,
 } from './assistant-workspace-session-controller'
+import {
+  createAssistantRenderedSessionState,
+  createAssistantSessionContextMenuState,
+} from './assistant-workspace-state-helpers'
 import {
   createCapabilitiesResponse,
   createDirectoryResponse,
@@ -311,6 +314,42 @@ describe('AssistantWorkspace helpers', () => {
       x: 320,
       y: 240,
       activeSubmenu: null,
+    })
+  })
+
+  it('derives rendered sessions and drag preview state from the current drag snapshot', () => {
+    const selectedAgent = enhanceRuntimeAgents(createDirectoryResponse().agents)[0]
+
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent.')
+    }
+
+    const firstSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-1' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-1' }),
+    })
+    const secondSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-2' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-2' }),
+    })
+    const thirdSession = createAssistantSessionShell({
+      response: createSessionResponse({ sessionId: 'session-3' }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({ sessionId: 'session-3' }),
+    })
+
+    expect(createAssistantRenderedSessionState({
+      sessions: [thirdSession, secondSession, firstSession],
+      sessionDragState: {
+        draggingSessionId: 'session-2',
+        previewIndex: 9,
+      },
+    })).toEqual({
+      renderedSessions: [thirdSession, firstSession],
+      dragPreviewIndex: 2,
+      draggingSessionShell: secondSession,
     })
   })
 })
