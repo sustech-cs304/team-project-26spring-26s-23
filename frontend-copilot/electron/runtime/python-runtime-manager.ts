@@ -13,6 +13,7 @@ import {
   sanitizeHostedRuntimeLaunchConfig,
   type HostedRuntimeLaunchConfig,
 } from './runtime-config'
+import { buildPythonRuntimeSpawnArguments } from './runtime-spawn-args'
 import {
   appendRuntimeLog,
   buildHostedRuntimeSnapshot,
@@ -657,12 +658,7 @@ function isHostedBackendFailureLike(value: unknown): value is HostedBackendFailu
     && 'timestamp' in value
 }
 
-export function buildPythonRuntimeSpawnArguments(
-  launchSpecArgs: readonly string[],
-  runtimeArgs: readonly string[],
-): string[] {
-  return [...launchSpecArgs, ...runtimeArgs]
-}
+export { buildPythonRuntimeSpawnArguments } from './runtime-spawn-args'
 
 function summarizeLaunchSpec(
   spec: PythonRuntimeLaunchSpec,
