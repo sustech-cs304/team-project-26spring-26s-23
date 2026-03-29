@@ -4,7 +4,7 @@ import path from 'node:path'
 import {
   BUNDLED_RUNTIME_MANIFEST_FILE_NAME,
   DESKTOP_RUNTIME_ENTRY_MODULE,
-} from './python-runtime-resolver'
+} from './python-runtime-resolver-shared'
 
 export interface BundledRuntimeFixture {
   tempRoot: string
