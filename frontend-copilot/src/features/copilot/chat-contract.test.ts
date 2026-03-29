@@ -132,7 +132,7 @@ describe('chat-contract', () => {
       ],
       recommendedTools: ['tool.file-convert'],
       toolSelectionMode: 'recommendation-only',
-      defaultModelPreference: 'o​penai/gpt-4.1',
+      defaultModelPreference: 'openai/gpt-4.1',
     }
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
