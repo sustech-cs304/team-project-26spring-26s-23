@@ -26,7 +26,7 @@ import {
 } from './copilot-runtime'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from './bootstrap-window'
-import { registerRuntimeConsoleForwarding } from './renderer-ipc'
+import { registerRuntimeConsoleForwarding } from './runtime-console-forwarding'
 
 const copilotRuntimeApi: CopilotRuntimeApi = {
   load() {

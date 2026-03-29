@@ -1,7 +1,7 @@
 import type { IpcMain } from 'electron'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type { MainProcessServices } from './main-services'
-import { registerRendererIpcHandlers } from './renderer-ipc'
+import { registerRendererIpcHandlers } from './renderer-ipc-registration'
 
 type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
 

@@ -1,9 +1,9 @@
 import { BrowserWindow } from 'electron'
 import {
   MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL,
-  writeRuntimeConsoleEntryToTerminal,
   type RuntimeConsoleEntry,
-} from './renderer-ipc'
+} from './renderer-ipc-contract'
+import { writeRuntimeConsoleEntryToTerminal } from './runtime-console-terminal'
 import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
 import type { HostedRuntimePaths } from './runtime/runtime-paths'
 
