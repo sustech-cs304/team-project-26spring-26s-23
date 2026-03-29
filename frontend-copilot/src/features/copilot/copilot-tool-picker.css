@@ -1,0 +1,105 @@
+.copilot-tool-picker {
+  position: relative;
+}
+
+.copilot-tool-picker__trigger {
+  align-items: center;
+}
+
+.copilot-tool-picker__trigger-copy {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+.copilot-tool-picker__summary {
+  display: block;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.copilot-tool-picker__trigger-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.copilot-tool-picker__panel {
+  width: min(30rem, 62vw);
+}
+
+.copilot-tool-picker__quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.copilot-tool-picker__option {
+  align-items: flex-start;
+}
+
+.copilot-tool-picker__option-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.copilot-tool-picker__option--selected .copilot-tool-picker__option-check {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.copilot-tool-picker__option-description {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.copilot-tool-picker__option-tag--builtin {
+  border-color: var(--cap-tools-border);
+  background: var(--cap-tools-bg);
+  color: var(--cap-tools-text);
+}
+
+.copilot-tool-picker__option-tag--external {
+  border-color: var(--cap-search-border);
+  background: var(--cap-search-bg);
+  color: var(--cap-search-text);
+}
+
+.copilot-tool-picker__option-tag--available {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.copilot-tool-picker__option-tag--warning {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.copilot-tool-picker__option-tag--neutral {
+  border-color: var(--border-color);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 900px) {
+  .copilot-tool-picker__panel {
+    width: min(100%, 24rem);
+    max-width: none;
+  }
+}
