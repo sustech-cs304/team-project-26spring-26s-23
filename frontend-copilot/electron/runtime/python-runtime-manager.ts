@@ -22,6 +22,16 @@ import {
   type RuntimeLogLevel,
 } from './runtime-observability'
 import {
+  FAILED_START_CLEANUP_TIMEOUT_MS,
+  appendCapturedText,
+  buildCapturedOutputSummary,
+  requestRuntimeChildTermination,
+  waitForChildExit,
+  type ChildExitResult,
+} from './python-runtime-process'
+import { prepareRuntimePaths, createPrepareRuntimePathsFailure } from './python-runtime-paths-support'
+import { probeRuntimeReadiness } from './python-runtime-readiness'
+import {
   resolvePythonRuntimeLaunchSpec,
   type PythonRuntimeLaunchSpec,
   type PythonRuntimeResolverContext,
@@ -34,7 +44,7 @@ import {
   type HostedBackendFailure,
 } from './runtime-diagnostics'
 import { collectSensitiveValues } from './runtime-redaction'
-import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime-paths'
+import { createHostedRuntimePaths, type HostedRuntimePaths } from './runtime-paths'
 import {
   createInitialHostedBackendState,
   markHostedBackendDegraded,
@@ -76,21 +86,8 @@ interface ResolvedPythonRuntimeManagerOptions extends PythonRuntimeResolverConte
   healthcheckRequestTimeoutMs: number
 }
 
-interface ChildExitResult {
-  code: number | null
-  signal: NodeJS.Signals | null
-}
-
-interface ReadinessProbeResult {
-  ready: boolean
-  detail: string | null
-}
-
 type SpawnedRuntimeChild = ReturnType<typeof spawn>
 type ExpectedExitDisposition = 'none' | 'stopped' | 'failed-start' | 'failed-shutdown'
-
-const MAX_CAPTURED_OUTPUT_LENGTH = 8_000
-const FAILED_START_CLEANUP_TIMEOUT_MS = 1_500
 
 export class PythonRuntimeManager {
   private readonly options: ResolvedPythonRuntimeManagerOptions
@@ -197,7 +194,7 @@ export class PythonRuntimeManager {
     this.resolveChildExit = null
     this.launchConfig = null
 
-    await this.prepareRuntimePaths()
+    await this.ensurePreparedRuntimePaths()
 
     let launchSpec: PythonRuntimeLaunchSpec
 
@@ -329,7 +326,7 @@ export class PythonRuntimeManager {
         code: 'shutdown_timeout',
         phase: 'shutdown',
         message: `Timed out after ${this.options.shutdownTimeoutMs}ms while waiting for the desktop runtime to exit.`,
-        detail: this.buildCapturedOutputSummary(),
+        detail: this.getCapturedOutputSummary(),
         cause: error,
         retryable: false,
       })
@@ -349,7 +346,7 @@ export class PythonRuntimeManager {
           code: 'shutdown_failed',
           phase: 'shutdown',
           message: 'Failed to terminate the desktop runtime process during shutdown.',
-          detail: this.buildCapturedOutputSummary(),
+          detail: this.getCapturedOutputSummary(),
           cause: killError,
           retryable: false,
         })
@@ -363,17 +360,11 @@ export class PythonRuntimeManager {
     }
   }
 
-  private async prepareRuntimePaths(): Promise<void> {
+  private async ensurePreparedRuntimePaths(): Promise<void> {
     try {
-      await ensureHostedRuntimeDirectories(this.runtimePaths)
+      await prepareRuntimePaths(this.runtimePaths)
     } catch (error) {
-      const failure = createHostedBackendFailure({
-        code: 'runtime_resolution_failed',
-        phase: 'configure',
-        message: 'Failed to prepare runtime directories for the desktop backend.',
-        cause: error,
-        retryable: false,
-      })
+      const failure = createPrepareRuntimePathsFailure(error)
       this.state = markHostedBackendFailed(this.state, { failure })
       this.runtimeExitFailure = failure
       await this.persistObservability('error', 'Failed to prepare hosted desktop runtime directories.', {
@@ -446,7 +437,7 @@ export class PythonRuntimeManager {
         cause: error,
       })
 
-      this.runtimeExitFailure = appendFailureDetail(failure, this.buildCapturedOutputSummary())
+      this.runtimeExitFailure = appendFailureDetail(failure, this.getCapturedOutputSummary())
       this.state = markHostedBackendFailed(this.state, { failure: this.runtimeExitFailure })
       this.child = null
       this.settleChildExit({ code: null, signal: null })
@@ -491,7 +482,7 @@ export class PythonRuntimeManager {
 
       const failure = appendFailureDetail(
         classifyUnexpectedExit(code, signal, this.state.status === 'ready' ? 'runtime' : 'healthcheck'),
-        this.buildCapturedOutputSummary(),
+        this.getCapturedOutputSummary(),
       )
 
       this.runtimeExitFailure = failure
@@ -550,13 +541,13 @@ export class PythonRuntimeManager {
         }),
         lastDetail,
       ),
-      this.buildCapturedOutputSummary(),
+      this.getCapturedOutputSummary(),
     )
   }
 
   private normalizeStartFailure(error: unknown): HostedBackendFailure {
     if (isHostedBackendFailureLike(error)) {
-      return appendFailureDetail(error, this.buildCapturedOutputSummary())
+      return appendFailureDetail(error, this.getCapturedOutputSummary())
     }
 
     return appendFailureDetail(
@@ -566,7 +557,7 @@ export class PythonRuntimeManager {
         message: 'Desktop runtime failed during readiness probing.',
         cause: error,
       }),
-      this.buildCapturedOutputSummary(),
+      this.getCapturedOutputSummary(),
     )
   }
 
@@ -594,18 +585,8 @@ export class PythonRuntimeManager {
     }
   }
 
-  private buildCapturedOutputSummary(): string | null {
-    const sections: string[] = []
-
-    if (this.stdoutOutput.trim() !== '') {
-      sections.push(`stdout:\n${this.stdoutOutput.trim()}`)
-    }
-
-    if (this.stderrOutput.trim() !== '') {
-      sections.push(`stderr:\n${this.stderrOutput.trim()}`)
-    }
-
-    return sections.length === 0 ? null : sections.join('\n\n')
+  private getCapturedOutputSummary(): string | null {
+    return buildCapturedOutputSummary(this.stdoutOutput, this.stderrOutput)
   }
 
   private getSensitiveValues(): string[] {
@@ -658,112 +639,6 @@ export class PythonRuntimeManager {
 
 export function createPythonRuntimeManager(options: PythonRuntimeManagerOptions): PythonRuntimeManager {
   return new PythonRuntimeManager(options)
-}
-
-function requestRuntimeChildTermination(
-  child: SpawnedRuntimeChild,
-  signal: 'SIGTERM' | 'SIGKILL',
-): void {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return
-  }
-
-  try {
-    if (process.platform === 'win32') {
-      child.kill()
-      return
-    }
-
-    child.kill(signal)
-  } catch {
-    // Ignore termination races when the child exits between the liveness check and kill request.
-  }
-}
-
-async function probeRuntimeReadiness(url: string, requestTimeoutMs: number): Promise<ReadinessProbeResult> {
-  const controller = new AbortController()
-  const timeoutHandle = setTimeout(() => {
-    controller.abort()
-  }, requestTimeoutMs)
-
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
-      signal: controller.signal,
-    })
-    const responseText = await response.text()
-
-    if (!response.ok) {
-      return {
-        ready: false,
-        detail: `Readiness probe returned HTTP ${response.status}${responseText.trim() === '' ? '' : `: ${truncateText(responseText)}`}`,
-      }
-    }
-
-    const payload = parseJsonResponse(responseText)
-    if (isRuntimeReadyPayload(payload)) {
-      return { ready: true, detail: null }
-    }
-
-    return {
-      ready: false,
-      detail: payload === null
-        ? 'Readiness probe returned an empty response body.'
-        : `Runtime reported not ready yet: ${truncateText(JSON.stringify(payload))}`,
-    }
-  } catch (error) {
-    return {
-      ready: false,
-      detail: error instanceof Error && error.name === 'AbortError'
-        ? `Readiness probe timed out after ${requestTimeoutMs}ms.`
-        : `Readiness probe failed: ${summarizeUnknownError(error)}`,
-    }
-  } finally {
-    clearTimeout(timeoutHandle)
-  }
-}
-
-function parseJsonResponse(text: string): unknown | null {
-  const normalizedText = text.trim()
-  if (normalizedText === '') {
-    return null
-  }
-
-  try {
-    return JSON.parse(normalizedText) as unknown
-  } catch {
-    return normalizedText
-  }
-}
-
-function isRuntimeReadyPayload(payload: unknown): payload is { ready: true } {
-  return typeof payload === 'object'
-    && payload !== null
-    && 'ready' in payload
-    && payload.ready === true
-}
-
-function appendCapturedText(current: string, chunk: string | Buffer): string {
-  const nextChunk = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-  const combined = `${current}${nextChunk}`
-
-  if (combined.length <= MAX_CAPTURED_OUTPUT_LENGTH) {
-    return combined
-  }
-
-  return combined.slice(-MAX_CAPTURED_OUTPUT_LENGTH)
-}
-
-function truncateText(text: string): string {
-  const normalizedText = text.replace(/\s+/g, ' ').trim()
-  if (normalizedText.length <= 300) {
-    return normalizedText
-  }
-
-  return `${normalizedText.slice(0, 297)}...`
 }
 
 function cloneHostedBackendState(state: HostedBackendState): HostedBackendState {
@@ -824,13 +699,4 @@ function summarizeHostedBackendState(state: HostedBackendState): Record<string, 
     signal: state.signal,
     lastFailure: state.lastFailure,
   }
-}
-
-async function waitForChildExit(exitPromise: Promise<ChildExitResult>, timeoutMs: number): Promise<ChildExitResult> {
-  return await Promise.race([
-    exitPromise,
-    delay(timeoutMs).then(() => {
-      throw new Error(`Timed out after ${timeoutMs}ms while waiting for the child process to exit.`)
-    }),
-  ])
 }
