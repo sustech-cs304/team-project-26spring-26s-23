@@ -2,14 +2,18 @@ import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { normalizePythonRuntimeStartFailure } from './python-runtime-startup-failure'
+import { summarizeHostedBackendState, summarizeLaunchSpec } from './python-runtime-observability-support'
 import {
   appendCapturedText,
   buildCapturedOutputSummary,
   requestRuntimeChildTermination,
 } from './python-runtime-process'
+import { createHostedBackendFailure } from './runtime-diagnostics'
 import { prepareRuntimePaths } from './python-runtime-paths-support'
 import { probeRuntimeReadiness } from './python-runtime-readiness'
 import { createHostedRuntimePaths } from './runtime-paths'
+import { createInitialHostedBackendState, markHostedBackendReady } from './runtime-state'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -108,5 +112,102 @@ describe('python runtime path helpers', () => {
     } finally {
       await rm(userDataRoot, { recursive: true, force: true })
     }
+  })
+})
+
+describe('python runtime startup failure helpers', () => {
+  it('preserves hosted backend failures while appending captured output', () => {
+    const failure = createHostedBackendFailure({
+      code: 'startup_timeout',
+      phase: 'healthcheck',
+      message: 'Timed out.',
+      detail: 'probe detail',
+    })
+
+    expect(normalizePythonRuntimeStartFailure(failure, 'stderr:\ntraceback')).toMatchObject({
+      code: 'startup_timeout',
+      phase: 'healthcheck',
+      detail: 'probe detail\nstderr:\ntraceback',
+    })
+  })
+
+  it('wraps unknown readiness failures with the hosted failure shape', () => {
+    const normalized = normalizePythonRuntimeStartFailure(new Error('boom'), 'stdout:\nbooting')
+
+    expect(normalized).toMatchObject({
+      code: 'healthcheck_failed',
+      phase: 'healthcheck',
+      message: 'Desktop runtime failed during readiness probing.',
+      detail: 'boom\nstdout:\nbooting',
+    })
+  })
+})
+
+describe('python runtime observability helpers', () => {
+  it('summarizes launch spec split between base and runtime args', () => {
+    expect(summarizeLaunchSpec({
+      mode: 'development',
+      workspaceRoot: 'workspace',
+      backendDir: 'backend',
+      resourcesRoot: 'resources',
+      workingDirectory: 'backend',
+      entryModule: 'app.desktop_runtime',
+      command: 'python',
+      args: ['-m', 'app.desktop_runtime'],
+      env: {},
+      manifestPath: null,
+      pythonExecutablePath: null,
+      pythonPathEntries: ['backend'],
+      sitePackagesEntries: [],
+    }, ['-m', 'app.desktop_runtime', '--port', '9000'])).toEqual({
+      mode: 'development',
+      workspaceRoot: 'workspace',
+      backendDir: 'backend',
+      resourcesRoot: 'resources',
+      workingDirectory: 'backend',
+      entryModule: 'app.desktop_runtime',
+      command: 'python',
+      baseArgs: ['-m', 'app.desktop_runtime'],
+      runtimeArgs: ['--port', '9000'],
+      args: ['-m', 'app.desktop_runtime', '--port', '9000'],
+      manifestPath: null,
+      pythonExecutablePath: null,
+      pythonPathEntries: ['backend'],
+      sitePackagesEntries: [],
+    })
+  })
+
+  it('summarizes hosted backend state without dropping failure metadata', () => {
+    const failure = createHostedBackendFailure({
+      code: 'unexpected_exit',
+      phase: 'runtime',
+      message: 'Exited unexpectedly.',
+      exitCode: 1,
+    })
+
+    const state = {
+      ...markHostedBackendReady(createInitialHostedBackendState()),
+      status: 'degraded' as const,
+      mode: 'development' as const,
+      baseUrl: 'http://127.0.0.1:9000',
+      pid: null,
+      stoppedAt: '2026-03-29T00:00:00.000Z',
+      exitCode: 1,
+      signal: null,
+      lastFailure: failure,
+    }
+
+    expect(summarizeHostedBackendState(state)).toEqual({
+      status: 'degraded',
+      mode: 'development',
+      baseUrl: 'http://127.0.0.1:9000',
+      pid: null,
+      startedAt: state.startedAt,
+      readyAt: state.readyAt,
+      stoppedAt: '2026-03-29T00:00:00.000Z',
+      exitCode: 1,
+      signal: null,
+      lastFailure: failure,
+    })
   })
 })
