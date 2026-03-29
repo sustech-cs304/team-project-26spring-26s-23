@@ -1,0 +1,84 @@
+.settings-card {
+  border: none;
+  border-radius: 0;
+  background: var(--surface-bg);
+  box-shadow: none;
+  overflow: hidden;
+  transition: background-color 0.18s ease;
+}
+
+.settings-card:hover,
+.hub-card:hover {
+  background: var(--surface-muted);
+}
+
+.settings-card--form {
+  overflow: visible;
+}
+
+.settings-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  padding: 1rem 1rem 0;
+}
+
+.settings-card__header--spaced {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-workspace .panel-head,
+.settings-workspace .workspace-main__header,
+.settings-workspace .settings-nav-item,
+.settings-workspace .settings-card__header,
+.settings-workspace .form-field__meta,
+.settings-workspace .toggle-row,
+.settings-workspace .select-trigger,
+.settings-workspace .select-option,
+.settings-workspace .inline-badge,
+.settings-workspace .toolbar-actions,
+.settings-workspace .workspace-fact,
+.settings-workspace .model-capability-picker,
+.settings-workspace .model-editor-advanced__toggle,
+.settings-workspace .secondary-button,
+.settings-workspace .primary-button,
+.settings-workspace .ghost-button,
+.settings-workspace .icon-button {
+  user-select: none;
+}
+
+.settings-workspace .provider-card__title,
+.settings-workspace .provider-card__meta,
+.settings-workspace .provider-card__description,
+.settings-workspace .model-list-row__name,
+.settings-workspace .model-list-row__id,
+.settings-workspace .workspace-fact strong,
+.settings-workspace .workspace-fact span,
+.settings-workspace input,
+.settings-workspace textarea {
+  user-select: text;
+}
+
+.settings-card__subtitle {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
