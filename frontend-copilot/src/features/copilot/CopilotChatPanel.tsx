@@ -11,7 +11,7 @@ import {
 } from 'react'
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
-import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
+import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   sendRuntimeMessage,
 } from './chat-contract'

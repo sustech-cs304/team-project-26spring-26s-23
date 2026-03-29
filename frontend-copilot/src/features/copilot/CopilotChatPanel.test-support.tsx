@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 
-import type { AssistantAgentDirectoryState } from '../../workbench/assistant/AssistantWorkspace'
+import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './types'
 
