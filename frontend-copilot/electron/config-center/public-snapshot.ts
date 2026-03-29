@@ -2,7 +2,7 @@ import {
   UNIFIED_CONFIG_DOCUMENT_VERSION,
   UNIFIED_CONFIG_DOMAIN_KEYS,
   type UnifiedConfigSnapshot,
-} from './schema'
+} from './domain-schema'
 
 export const CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL = 'config-center:load-public-snapshot'
 export const CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL = 'config-center:public-snapshot-updated'

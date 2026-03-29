@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { parseConfigCenterPublicPatch } from './public-patch'
-import { UNIFIED_CONFIG_FIELD_REGISTRY } from './schema'
+import { UNIFIED_CONFIG_FIELD_REGISTRY } from './field-registry'
 
 describe('parseConfigCenterPublicPatch', () => {
   it('normalizes supported public domains into a unified field patch', () => {

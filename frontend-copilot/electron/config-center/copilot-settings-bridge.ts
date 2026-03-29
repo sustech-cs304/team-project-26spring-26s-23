@@ -1,5 +1,5 @@
 import { normalizeCopilotSettings } from '../copilot-settings'
-import type { UnifiedConfigFieldPatch } from './schema'
+import type { UnifiedConfigFieldPatch } from './field-registry'
 
 /**
  * Converts the legacy Copilot settings disk format into unified config field patches.

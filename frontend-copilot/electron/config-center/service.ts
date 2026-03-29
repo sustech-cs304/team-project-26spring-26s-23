@@ -11,15 +11,17 @@ import {
 import type { UnifiedConfigCenterPaths } from './paths'
 import {
   UNIFIED_CONFIG_DOMAIN_LIST,
-  applyUnifiedConfigFieldPatch,
-  createDefaultUnifiedConfigDomainDocument,
-  createDefaultUnifiedConfigSnapshot,
-  normalizeUnifiedConfigDomainDocument,
   type UnifiedConfigDomainDocument,
   type UnifiedConfigDomainKey,
-  type UnifiedConfigFieldPatch,
   type UnifiedConfigSnapshot,
-} from './schema'
+} from './domain-schema'
+import {
+  createDefaultUnifiedConfigDomainDocument,
+  createDefaultUnifiedConfigSnapshot,
+} from './defaults'
+import { type UnifiedConfigFieldPatch } from './field-registry'
+import { normalizeUnifiedConfigDomainDocument } from './normalize'
+import { applyUnifiedConfigFieldPatch } from './patch'
 
 export type UnifiedConfigSnapshotSource = 'stored' | 'initialized-defaults' | 'migrated-legacy'
 

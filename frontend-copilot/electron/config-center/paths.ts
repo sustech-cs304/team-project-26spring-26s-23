@@ -4,7 +4,7 @@ import {
   UNIFIED_CONFIG_DOMAIN_DEFINITIONS,
   UNIFIED_CONFIG_DOMAIN_KEYS,
   type UnifiedConfigDomainKey,
-} from './schema'
+} from './domain-schema'
 
 export const UNIFIED_CONFIG_CENTER_DIR_NAME = 'config-center'
 

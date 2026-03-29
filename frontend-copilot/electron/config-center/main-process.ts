@@ -15,7 +15,7 @@ import {
   type UnifiedConfigSnapshotSource,
   type UnifiedConfigUpdateResult,
 } from './service'
-import type { UnifiedConfigFieldPatch } from './schema'
+import type { UnifiedConfigFieldPatch } from './field-registry'
 
 export interface ElectronUnifiedConfigLogger {
   (

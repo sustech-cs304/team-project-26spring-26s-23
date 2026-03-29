@@ -3,7 +3,7 @@ import {
   UNIFIED_CONFIG_FIELD_REGISTRY,
   type UnifiedConfigFieldKey,
   type UnifiedConfigFieldPatch,
-} from './schema'
+} from './field-registry'
 
 export const CONFIG_CENTER_PUBLIC_PATCH_CHANNEL = 'config-center:apply-public-patch'
 

@@ -10,11 +10,13 @@ import {
 } from './public-snapshot'
 import { createUnifiedConfigCenter } from './service'
 import {
-  UNIFIED_CONFIG_DOMAIN_KEYS,
   createDefaultUnifiedConfigDomainDocument,
   createDefaultUnifiedConfigSnapshot,
+} from './defaults'
+import {
   createUnifiedConfigDomainDocument,
-} from './schema'
+  UNIFIED_CONFIG_DOMAIN_KEYS,
+} from './domain-schema'
 
 interface ConfigCenterFixture {
   tempRoot: string

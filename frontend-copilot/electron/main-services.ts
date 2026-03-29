@@ -10,7 +10,7 @@ import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
-import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/schema'
+import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/domain-schema'
 import {
   createElectronSettingsWorkspaceService,
   type ElectronSettingsWorkspaceService,
