@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 import type { ProviderProfile } from '../types'
-import {
-  createInitialSettingsWorkspaceFormState,
-  createSettingsWorkspaceStateSaveInput,
-  loadSettingsWorkspaceHydration,
-  type SettingsWorkspaceFormState,
-} from './settings-workspace-controller'
+import { createInitialSettingsWorkspaceFormState, type SettingsWorkspaceFormState } from './settings-workspace-form-state'
+import { loadSettingsWorkspaceHydration } from './settings-workspace-hydration'
+import { createSettingsWorkspaceStateSaveInput } from './settings-workspace-save-input'
 import { saveSettingsWorkspaceState } from './workspace-state'
 
 interface UseSettingsWorkspaceStateResult {

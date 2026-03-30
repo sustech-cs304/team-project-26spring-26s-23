@@ -8,10 +8,8 @@ import type { DefaultModelRoutesSectionDomain } from './DefaultModelRoutesSectio
 import type { ExternalSourcesSectionDomain } from './ExternalSourcesSection'
 import type { ProviderProfilesSectionDomain } from './ProviderProfilesSectionDomain'
 import type { SustechInfoSectionDomain } from './SustechInfoSection'
-import {
-  collectAllModelOptions,
-  initialSettingsWorkspaceActiveProviderId,
-} from './settings-workspace-controller'
+import { initialSettingsWorkspaceActiveProviderId } from './settings-workspace-form-state'
+import { collectAllModelOptions } from './settings-workspace-model-options'
 import { useSettingsWorkspaceProviderController } from './settings-workspace-provider-controller'
 import { useSettingsWorkspaceSideflows } from './settings-workspace-sideflows'
 import { useSettingsWorkspaceState } from './useSettingsWorkspaceState'

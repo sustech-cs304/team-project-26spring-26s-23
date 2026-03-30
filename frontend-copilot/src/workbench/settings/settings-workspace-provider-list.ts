@@ -3,7 +3,7 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ProviderProfile } from '../types'
 import { createModelProfileId } from './config'
 import { createCustomProvider, createProviderId } from './provider-profiles'
-import { resolveSettingsWorkspaceActiveProviderId } from './settings-workspace-controller'
+import { resolveSettingsWorkspaceActiveProviderId } from './settings-workspace-model-options'
 import {
   patchProviderProfileById,
   resolveNextProviderIdAfterDeletion,
