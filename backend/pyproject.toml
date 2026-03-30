@@ -13,6 +13,7 @@ dependencies = [
     "copilotkit>=0.1.78",
     "fastapi>=0.115.14",
     "uvicorn>=0.41.0",
+    "pymupdf>=1.27.2.2",
 ]
 
 [project.optional-dependencies]

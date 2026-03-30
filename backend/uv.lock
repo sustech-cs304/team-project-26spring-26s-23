@@ -243,6 +243,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic-ai" },
+    { name = "pymupdf" },
     { name = "python-dotenv" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
