@@ -6,7 +6,7 @@ import type { SettingsSection, ThemeMode } from '../types'
 import { SettingsWorkspaceSections } from './SettingsWorkspaceSections'
 import type { DefaultModelRoutesSectionDomain } from './DefaultModelRoutesSection'
 import type { ExternalSourcesSectionDomain } from './ExternalSourcesSection'
-import type { ProviderProfilesSectionDomain } from './ProviderProfilesSection'
+import type { ProviderProfilesSectionDomain } from './ProviderProfilesSectionDomain'
 import type { SustechInfoSectionDomain } from './SustechInfoSection'
 import {
   collectAllModelOptions,

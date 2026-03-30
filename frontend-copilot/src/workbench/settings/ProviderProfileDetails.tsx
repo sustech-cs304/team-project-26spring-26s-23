@@ -1,54 +1,29 @@
 import { SelectField, TextareaField, TextField } from '../components/FormFields'
-import type { ProviderProfile } from '../types'
 import { protocolOptions } from './config'
-import { ProviderModelEditorDialog } from './ProviderModelEditorDialog'
 import { ProviderModelListPanel } from './ProviderModelListPanel'
 import { ProviderSecretPanel } from './ProviderSecretPanel'
-import type { ModelEditorState } from './provider-profiles'
+import type { ProviderProfileDetailsDomain } from './ProviderProfilesSectionDomain'
 
 interface ProviderProfileDetailsProps {
-  activeProviderDetail: ProviderProfile
-  activeProviderApiKeyDraft: string
-  apiKeyVisible: boolean
-  apiKeyFeedback: string | null
-  modelEditorState: ModelEditorState | null
-  modelEditorError: string | null
-  onUpdateActiveProvider: (patch: Partial<ProviderProfile>) => void
-  onProviderApiKeyDraftChange: (providerId: string, value: string) => void
-  onPersistProviderApiKeyDraft: (providerId: string) => void | Promise<void>
-  onToggleApiKeyVisibility: () => void
-  onCopyApiKey: () => void | Promise<void>
-  onOpenCreateModelEditor: () => void
-  onOpenModelEditor: (index: number) => void
-  onRemoveModel: (index: number) => void
-  onCloseModelEditor: () => void
-  onModelEditorSave: () => void
-  onModelEditorStateChange: (patch: Partial<ModelEditorState>) => void
-  onToggleModelCapability: (capability: ModelEditorState['capabilities'][number]) => void
-  onClearModelEditorError: () => void
+  detail: ProviderProfileDetailsDomain
 }
 
-export function ProviderProfileDetails({
-  activeProviderDetail,
-  activeProviderApiKeyDraft,
-  apiKeyVisible,
-  apiKeyFeedback,
-  modelEditorState,
-  modelEditorError,
-  onUpdateActiveProvider,
-  onProviderApiKeyDraftChange,
-  onPersistProviderApiKeyDraft,
-  onToggleApiKeyVisibility,
-  onCopyApiKey,
-  onOpenCreateModelEditor,
-  onOpenModelEditor,
-  onRemoveModel,
-  onCloseModelEditor,
-  onModelEditorSave,
-  onModelEditorStateChange,
-  onToggleModelCapability,
-  onClearModelEditorError,
-}: ProviderProfileDetailsProps) {
+export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) {
+  const {
+    activeProviderDetail,
+    activeProviderApiKeyDraft,
+    apiKeyVisible,
+    apiKeyFeedback,
+    onUpdateActiveProvider,
+    onProviderApiKeyDraftChange,
+    onPersistProviderApiKeyDraft,
+    onToggleApiKeyVisibility,
+    onCopyApiKey,
+    onOpenCreateModelEditor,
+    onOpenModelEditor,
+    onRemoveModel,
+  } = detail
+
   return (
     <>
       <section className="settings-card settings-card--form">
@@ -112,16 +87,6 @@ export function ProviderProfileDetails({
         onOpenCreateModelEditor={onOpenCreateModelEditor}
         onOpenModelEditor={onOpenModelEditor}
         onRemoveModel={onRemoveModel}
-      />
-
-      <ProviderModelEditorDialog
-        modelEditorState={modelEditorState}
-        modelEditorError={modelEditorError}
-        onClose={onCloseModelEditor}
-        onSave={onModelEditorSave}
-        onStateChange={onModelEditorStateChange}
-        onToggleCapability={onToggleModelCapability}
-        onClearError={onClearModelEditorError}
       />
     </>
   )

@@ -19,7 +19,8 @@ import {
   MemorySettingsSection,
   SearchSettingsSection,
 } from './MiscSettingsSections'
-import { ProviderProfilesSection, type ProviderProfilesSectionDomain } from './ProviderProfilesSection'
+import { ProviderProfilesSection } from './ProviderProfilesSection'
+import type { ProviderProfilesSectionDomain } from './ProviderProfilesSectionDomain'
 import { SustechInfoSection, type SustechInfoSectionDomain } from './SustechInfoSection'
 
 interface SettingsWorkspaceMiscSectionDomains {
