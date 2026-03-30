@@ -65,6 +65,9 @@ function patchElectronDevStartupExit(startup: ElectronStartup): void {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  resolve: {
+    extensions: ['.mjs', '.ts', '.js', '.mts', '.tsx', '.jsx', '.json'],
+  },
   plugins: [
     react(),
     electron({
