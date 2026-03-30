@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
+
 import pytest
 
 from app.copilot_runtime.session_store import BoundAgentMismatchError, InMemorySessionStore
@@ -102,3 +104,47 @@ def test_append_turn_persists_minimal_text_history_for_same_thread() -> None:
         ("assistant", "doing well"),
     ]
     assert second_session.created_at <= second_session.updated_at
+
+
+class TrackingMetadata(Mapping[str, object]):
+    def __init__(self) -> None:
+        self.returned_values: list[object] = []
+
+    def __getitem__(self, key: str) -> object:
+        if key != "last_run_id":
+            raise KeyError(key)
+        value = object()
+        self.returned_values.append(value)
+        return value
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("last_run_id",))
+
+    def __len__(self) -> int:
+        return 1
+
+
+
+def test_append_turn_merges_metadata_once_for_existing_thread() -> None:
+    store = InMemorySessionStore()
+    store.create(
+        session_id="thread-1",
+        bound_agent_id="default",
+        metadata={"source": "connect"},
+    )
+    metadata = TrackingMetadata()
+
+    session, created = store.append_turn(
+        session_id="thread-1",
+        bound_agent_id="default",
+        user_text="hello",
+        assistant_text="hi there",
+        metadata=metadata,
+    )
+
+    assert created is False
+    assert len(metadata.returned_values) == 1
+    assert session.metadata == {
+        "source": "connect",
+        "last_run_id": metadata.returned_values[0],
+    }

@@ -179,6 +179,7 @@ describe('config center public bridge', () => {
       domains: {
         frontendPreferences: {
           theme: 'dark',
+          animationsEnabled: true,
         },
         assistantBehavior: {
           agentName: 'planner',
@@ -198,6 +199,7 @@ describe('config center public bridge', () => {
       domains: {
         frontendPreferences: {
           theme: 'dark',
+          animationsEnabled: true,
         },
         assistantBehavior: {
           agentName: 'planner',

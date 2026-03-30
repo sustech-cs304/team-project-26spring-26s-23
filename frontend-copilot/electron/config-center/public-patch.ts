@@ -7,22 +7,36 @@ import {
 
 export const CONFIG_CENTER_PUBLIC_PATCH_CHANNEL = 'config-center:apply-public-patch'
 
+type RequireAtLeastOne<T extends object> = {
+  [TKey in keyof T]-?: Required<Pick<T, TKey>> & Partial<Omit<T, TKey>>
+}[keyof T]
+
+type ConfigCenterPublicPatchFrontendPreferences = RequireAtLeastOne<{
+  theme: 'light' | 'dark'
+  animationsEnabled: boolean
+}>
+
+type ConfigCenterPublicPatchAssistantBehavior = RequireAtLeastOne<{
+  agentName: string | null
+}>
+
+type ConfigCenterPublicPatchHostConfig = RequireAtLeastOne<{
+  runtimeUrl: string | null
+}>
+
+type ConfigCenterPublicPatchBackendExposed = RequireAtLeastOne<{
+  model: string | null
+}>
+
+type ConfigCenterPublicPatchDomains = RequireAtLeastOne<{
+  frontendPreferences: ConfigCenterPublicPatchFrontendPreferences
+  assistantBehavior: ConfigCenterPublicPatchAssistantBehavior
+  hostConfig: ConfigCenterPublicPatchHostConfig
+  backendExposed: ConfigCenterPublicPatchBackendExposed
+}>
+
 export interface ConfigCenterPublicPatch {
-  domains?: {
-    frontendPreferences?: {
-      theme?: 'light' | 'dark'
-      animationsEnabled?: boolean
-    }
-    assistantBehavior?: {
-      agentName?: string | null
-    }
-    hostConfig?: {
-      runtimeUrl?: string | null
-    }
-    backendExposed?: {
-      model?: string | null
-    }
-  }
+  domains: ConfigCenterPublicPatchDomains
 }
 
 export interface ConfigCenterPublicPatchSuccess {

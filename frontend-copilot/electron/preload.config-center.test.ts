@@ -65,4 +65,38 @@ describe('preload config center bridge', () => {
     expect(getOffMock()).toHaveBeenCalledOnce()
     expect(getOffMock()).toHaveBeenCalledWith(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL, registeredListener)
   })
+
+  it('ignores invalid public snapshot payloads before they reach renderer listeners', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await loadPreloadModule()
+
+    try {
+      const subscriptionApi = getExposedApi<ConfigCenterPublicSnapshotSubscriptionApi>('configCenterPublicSnapshotSubscription')
+      const listener = vi.fn()
+      const invalidPayload = {
+        version: 1,
+        domains: {
+          frontendPreferences: {
+            theme: 'dark',
+            animationsEnabled: 'nope',
+          },
+        },
+      }
+
+      subscriptionApi.subscribe(listener)
+      const registeredListener = getRegisteredOnListener<
+        (event: unknown, payload: unknown) => void
+      >(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL)
+
+      registeredListener(undefined, invalidPayload)
+
+      expect(listener).not.toHaveBeenCalled()
+      expect(consoleError).toHaveBeenCalledOnce()
+      expect(consoleError.mock.calls[0]?.[0]).toContain('Ignored invalid public snapshot payload')
+      expect(consoleError.mock.calls[0]?.[1]).toBe(invalidPayload)
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
 })

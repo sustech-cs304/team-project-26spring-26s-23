@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
+import type { ConfigCenterPublicPatch } from './public-patch'
 import { parseConfigCenterPublicPatch } from './public-patch'
 import { UNIFIED_CONFIG_FIELD_REGISTRY } from './field-registry'
+
+void ({
+  domains: {
+    frontendPreferences: {
+      theme: 'dark',
+    },
+  },
+} satisfies ConfigCenterPublicPatch)
+
+// @ts-expect-error ConfigCenterPublicPatch.domains must include at least one supported domain.
+void ({
+  domains: {},
+} satisfies ConfigCenterPublicPatch)
+
+// @ts-expect-error Public domain patches must include at least one supported field.
+void ({
+  domains: {
+    frontendPreferences: {},
+  },
+} satisfies ConfigCenterPublicPatch)
 
 describe('parseConfigCenterPublicPatch', () => {
   it('normalizes supported public domains into a unified field patch', () => {

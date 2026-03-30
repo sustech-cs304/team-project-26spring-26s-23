@@ -172,8 +172,6 @@ class InMemorySessionStore:
             metadata=metadata,
         )
         session.append_turn(user_text=user_text, assistant_text=assistant_text)
-        if metadata:
-            session.metadata = {**session.metadata, **metadata}
         return session, created
 
     def _assert_bound_agent(

@@ -13,8 +13,15 @@ from app.copilot_runtime.bridge import (
     BoundAgentMismatchError,
     InvalidSessionHistoryError,
     RuntimeBridge,
+    ToolNotFoundError,
 )
-from app.copilot_runtime.contracts import RuntimeRunRequest, build_runtime_scaffold
+from app.copilot_runtime.contracts import (
+    RuntimeMessageExecutionPolicy,
+    RuntimeMessagePayload,
+    RuntimeMessageSendRequest,
+    RuntimeRunRequest,
+    build_runtime_scaffold,
+)
 from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
 from app.copilot_runtime.tool_registry import build_default_tool_registry
 
@@ -340,6 +347,62 @@ def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
     assert _message_pairs(store, "thread-1") == [("assistant", "orphan assistant")]
 
 
+class StructuredToolLookupError(LookupError):
+    def __init__(self, tool_id: str, message: str | None = None) -> None:
+        self.tool_id = tool_id
+        super().__init__(message or f"Tool lookup failed for '{tool_id}'.")
+
+
+class FailingToolResolutionScaffold:
+    def __init__(self, error: LookupError) -> None:
+        self._error = error
+
+    def resolve_enabled_tool_ids(
+        self,
+        *,
+        agent_id: str,
+        enabled_tools: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        raise self._error
+
+
+@pytest.mark.parametrize(
+    ("lookup_error", "expected_tool_id"),
+    [
+        (StructuredToolLookupError("tool.structured", message="tool catalog mismatch"), "tool.structured"),
+        (LookupError("tool resolution failed for requested alias"), "tool resolution failed for requested alias"),
+    ],
+)
+def test_send_message_unknown_tool_uses_structured_id_or_safe_fallback(
+    lookup_error: LookupError,
+    expected_tool_id: str,
+) -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
+    registry = build_default_agent_registry(executor_factory=executor_factory)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=FailingToolResolutionScaffold(lookup_error),
+    )
+
+    with pytest.raises(ToolNotFoundError) as exc_info:
+        asyncio.run(
+            bridge.send_message(
+                request=_build_message_send_request(
+                    session_id="session-1",
+                    model="openai/gpt-4.1",
+                    enabled_tools=("tool.missing",),
+                )
+            )
+        )
+
+    assert exc_info.value.tool_id == expected_tool_id
+    assert executor_factory.call_count == 1
+    assert store.list_messages("session-1") == ()
+
+
 def _build_scaffold(*, agent_registry: AgentRegistry):
     return build_runtime_scaffold(
         session_store_type="in-memory",
@@ -369,6 +432,28 @@ def _build_run_request(
         forwarded_props={},
         metadata={},
     )
+
+
+def _build_message_send_request(
+    *,
+    session_id: str,
+    model: str,
+    user_text: str = "Hello",
+    agent_id: str | None = None,
+    enabled_tools: tuple[str, ...] = (),
+    request_options: dict[str, object] | None = None,
+) -> RuntimeMessageSendRequest:
+    return RuntimeMessageSendRequest(
+        session_id=session_id,
+        message=RuntimeMessagePayload(role="user", content=user_text),
+        policy=RuntimeMessageExecutionPolicy(
+            model=model,
+            enabledTools=enabled_tools,
+            requestOptions=dict(request_options or {}),
+        ),
+        agent_id=agent_id,
+    )
+
 
 
 def _message_pairs(store: InMemorySessionStore, thread_id: str) -> list[tuple[str, str]]:

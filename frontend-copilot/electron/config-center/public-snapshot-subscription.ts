@@ -1,4 +1,8 @@
-import type { ConfigCenterPublicSnapshotSubscriptionApi } from './public-snapshot'
+import { UNIFIED_CONFIG_DOCUMENT_VERSION } from './domain-schema'
+import type {
+  ConfigCenterPublicSnapshot,
+  ConfigCenterPublicSnapshotSubscriptionApi,
+} from './public-snapshot'
 import { CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL } from './public-snapshot'
 
 interface ConfigCenterPublicSnapshotSubscriptionEventSource {
@@ -12,7 +16,15 @@ export function createConfigCenterPublicSnapshotSubscriptionApi(
   return {
     subscribe(listener) {
       const wrappedListener = (_event: unknown, snapshot: unknown) => {
-        listener(snapshot as Parameters<typeof listener>[0])
+        if (!isConfigCenterPublicSnapshot(snapshot)) {
+          console.error(
+            `[config-center] Ignored invalid public snapshot payload on "${CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL}".`,
+            snapshot,
+          )
+          return
+        }
+
+        listener(snapshot)
       }
 
       eventSource.on(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL, wrappedListener)
@@ -22,4 +34,38 @@ export function createConfigCenterPublicSnapshotSubscriptionApi(
       }
     },
   }
+}
+
+function isConfigCenterPublicSnapshot(value: unknown): value is ConfigCenterPublicSnapshot {
+  if (!isPlainRecord(value) || value.version !== UNIFIED_CONFIG_DOCUMENT_VERSION) {
+    return false
+  }
+
+  const domains = value.domains
+  if (!isPlainRecord(domains)) {
+    return false
+  }
+
+  const frontendPreferences = domains.frontendPreferences
+  const assistantBehavior = domains.assistantBehavior
+  const hostConfig = domains.hostConfig
+  const backendExposed = domains.backendExposed
+
+  return isPlainRecord(frontendPreferences)
+    && (frontendPreferences.theme === 'light' || frontendPreferences.theme === 'dark')
+    && typeof frontendPreferences.animationsEnabled === 'boolean'
+    && isPlainRecord(assistantBehavior)
+    && isNullableString(assistantBehavior.agentName)
+    && isPlainRecord(hostConfig)
+    && isNullableString(hostConfig.runtimeUrl)
+    && isPlainRecord(backendExposed)
+    && isNullableString(backendExposed.model)
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
 }

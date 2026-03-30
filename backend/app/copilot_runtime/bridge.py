@@ -134,9 +134,7 @@ class RuntimeBridge:
                 enabled_tools=request.policy.enabledTools,
             )
         except LookupError as exc:
-            message = str(exc)
-            tool_id = message.removeprefix("Unknown tool '").removesuffix("'.")
-            raise ToolNotFoundError(tool_id) from exc
+            raise ToolNotFoundError(_extract_unknown_tool_id(exc)) from exc
 
         assistant_text = await agent_executor.run(
             agent_name=session.bound_agent_id,
@@ -200,6 +198,24 @@ class RuntimeBridge:
             history.append(_to_model_message(message))
         return history
 
+
+def _extract_unknown_tool_id(error: LookupError) -> str:
+    structured_tool_id = getattr(error, "tool_id", None)
+    if isinstance(structured_tool_id, str):
+        normalized_tool_id = structured_tool_id.strip()
+        if normalized_tool_id != "":
+            return normalized_tool_id
+
+    message = str(error).strip()
+    if message == "":
+        return "unknown"
+
+    prefix = "Unknown tool '"
+    suffix = "'."
+    if message.startswith(prefix) and message.endswith(suffix) and len(message) > len(prefix) + len(suffix):
+        return message[len(prefix) : -len(suffix)]
+
+    return message
 
 
 def _to_model_message(message: RuntimeTextMessage) -> ModelMessage:
