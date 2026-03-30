@@ -3,7 +3,7 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.candue.app",
   "asar": true,
-  "productName": "赶渡 CanDue",
+  "productName": "CanDue",
   "directories": {
     "output": "release/${version}"
   },

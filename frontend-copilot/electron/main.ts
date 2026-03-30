@@ -33,6 +33,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // │ │ └── preload.mjs
 // │
 const APP_ROOT = path.join(__dirname, '..')
+const ELECTRON_APPLICATION_NAME = 'CanDue'
 process.env.APP_ROOT = APP_ROOT
 
 // 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
@@ -42,6 +43,9 @@ export const RENDERER_DIST = path.join(APP_ROOT, 'dist')
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(APP_ROOT, 'public') : RENDERER_DIST
 const VITE_PUBLIC = process.env.VITE_PUBLIC ?? RENDERER_DIST
+
+// Set the Electron application name before any userData-derived path is resolved.
+app.setName(ELECTRON_APPLICATION_NAME)
 
 let win: BrowserWindow | null = null
 let hostedBackendService: HostedBackendService | null = null

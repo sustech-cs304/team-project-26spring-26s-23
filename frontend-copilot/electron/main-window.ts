@@ -32,7 +32,7 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
 
   const targetWindow = new BrowserWindow({
     icon: windowIconPath,
-    title: '赶渡 CanDue',
+    title: 'CanDue',
     width: 1440,
     height: 960,
     show: false,
