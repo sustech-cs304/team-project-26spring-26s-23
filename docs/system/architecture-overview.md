@@ -1,215 +1,184 @@
 ---
 title: 系统架构总览
-description: 从系统级视角说明 Electron 主进程、双层配置系统、Python runtime 与当前 session-first 聊天主路径的关系。
+description: 从系统级视角说明 Electron 宿主、双层配置持久化、Python runtime 与 session-first 聊天路径的当前关系。
 sidebar_position: 1
 ---
 
 # 系统架构总览
 
-本文档先回答一个最重要的问题：系统现在到底由谁负责什么，配置、运行时和聊天主路径又是怎样衔接起来的。
+这篇文档负责收口跨前后端都必须一致的系统事实：桌面宿主由谁持有，配置怎样落盘，聊天主路径怎样接到 Python runtime，以及首次启动时系统处在什么默认状态。
 
-## 一句话认识当前系统
+具体启动顺序见 [运行时生命周期](./runtime-lifecycle.md)，HTTP 字段和错误语义见 [聊天运行时契约](./chat-runtime-contract.md)，状态分层与持有者见 [会话与状态模型](./session-and-state-model.md)。
 
-当前系统可以这样理解：Electron 主进程负责桌面宿主、配置持久化和 runtime 生命周期，renderer 负责工作台界面与会话壳，Python runtime 负责本地 HTTP 服务，而聊天正式主路径已经进入“后端目录给出智能体 → 创建会话时绑定智能体 → 每次请求再携带模型与工具策略”的 session-first 结构。
+## 当前系统的一句话
 
-## 当前系统的四个核心层
+当前应用是一个名为 `CanDue` 的 Electron 桌面宿主。Electron 主进程负责窗口、`userData` 目录下的持久化与 Python hosted backend 生命周期；renderer 负责工作台界面；Python desktop runtime 通过本地 loopback HTTP 提供控制面和聊天入口；聊天主路径已经稳定在 session-first agent 与 request-scoped model/tool policy 这一组契约上。
+
+## 当前系统的四个核心部分
 
 ### Electron 主进程
 
-主进程当前承担下面这些职责：
+主进程当前承担这些系统级职责：
 
-- 它负责创建窗口、延迟显示窗口，并处理应用退出时的清理。
-- 它负责统一配置中心和 settings workspace 的磁盘持久化。
-- 它负责托管 hosted backend 的启动、停止、失败记录与重试。
-- 它负责把可公开的能力通过 IPC 暴露给 renderer，同时保留对底层文件和 secrets 的直接控制。
+- 它负责设置产品名 `CanDue`，并在解析 `app.getPath('userData')` 之前完成命名收口。
+- 它负责创建主窗口、控制启动页显示时机，并在退出时回收 hosted backend。
+- 它负责统一配置中心与 settings workspace 的磁盘持久化。
+- 它负责启动、停止、重试和诊断 Python hosted backend。
+- 它负责通过 preload 与 IPC 向 renderer 暴露受控接口。
 
-实现入口位于[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)。
-
-### Preload
-
-preload 当前是一层很薄的受控桥。它不会把文件系统、spawn 细节或 secret 文档直接暴露到页面环境，而是只暴露几个清晰的接口：
-
-- 它会暴露公开配置中心的读取、补丁和订阅接口。
-- 它会暴露 settings workspace 普通状态与 secrets 的独立接口。
-- 它会暴露 hosted runtime 快照读取与 retry 接口。
-- 它会暴露 bootstrap ready 信号，用来告诉主进程何时可以显示窗口。
-
-相关实现位于[`frontend-copilot/electron/preload.ts`](../../frontend-copilot/electron/preload.ts)与[`frontend-copilot/electron/renderer-ipc.ts`](../../frontend-copilot/electron/renderer-ipc.ts)。
+当前实现主要落在 `frontend-copilot/electron/main.ts`、`frontend-copilot/electron/main-window.ts`、`frontend-copilot/electron/preload.ts` 与 `frontend-copilot/electron/main-ipc.ts`。
 
 ### Renderer 工作台
 
-renderer 是运行在 Electron 中的 React 工作台。它承担的是页面级装配和交互职责：
+renderer 负责页面装配和交互，而不直接持有底层文件或 secrets：
 
-- 它会在启动时读取公开配置快照与 runtime 快照，决定当前工作台状态。
-- 它会承载助手工作区、设置工作区以及其余工作区视图。
-- 它会在有可用 `runtimeUrl` 时进入聊天主路径，继续向后端拉目录、创建会话和发送消息。
+- 它会在启动时读取公开配置快照与 runtime 快照，决定应用当前处于 `loading`、`starting`、`ready`、`failed`、`degraded`、`empty` 或 `incomplete` 哪一类状态。
+- 它会订阅公开配置快照更新，并在配置变化后重新计算根装配状态。
+- 它会承载助手工作区与设置工作区。
+- 它会在存在可用 `runtimeUrl` 时进入聊天主路径。
 
-相关入口位于[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)、[`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)和[`frontend-copilot/src/workbench/settings/SettingsWorkspace.tsx`](../../frontend-copilot/src/workbench/settings/SettingsWorkspace.tsx)。
+当前实现主要落在 `frontend-copilot/src/CopilotAppRoot.tsx`、`frontend-copilot/src/features/copilot/config.ts`、`frontend-copilot/src/workbench/assistant/` 与 `frontend-copilot/src/workbench/settings/`。
 
-### Python Desktop Runtime
+### Preload 与 IPC 暴露面
 
-Python runtime 提供本地 loopback HTTP 服务。它既承担控制面接口，也承担聊天协议入口：
+preload 当前是一层受控桥，而不是让页面直接接触文件系统和 secret 文档的通道。它主要暴露三类接口：
 
-- 它会提供 `/health`、`/ready`、`/version` 和 `/diagnostics` 等运行控制面接口。
-- 它会通过根路径 `POST /` 承载当前单端点聊天协议。
-- 它会维护智能体目录、工具目录以及进程内会话存储。
+- 公开配置中心的读取、补丁写回与快照订阅接口。
+- settings workspace 的普通状态接口与 secrets 接口。
+- hosted runtime 快照读取、重试，以及启动页 ready 信号接口。
 
-服务创建位于[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)，契约结构位于[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)。
+这层边界保证了 renderer 能读取当前需要的事实，但不会直接持有 `userData` 下的配置文件与 secret 文档。
 
-## 配置系统已经分成两层
+### Python desktop runtime
 
-### 第一层是公开配置中心
+Python runtime 当前通过 loopback HTTP 提供本地服务：
 
-公开配置中心位于 `frontend-copilot/electron/config-center/` 目录。它当前属于 Electron 主进程层，由主进程负责读取、归一化、迁移、写回和广播公开快照。
+- 它暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics` 和 `/diagnostics/runtime-info` 这类控制面端点。
+- 它通过根路径 `POST /` 承载聊天相关方法。
+- 它维护后端智能体目录、工具目录和进程内会话存储。
 
-当前正式公开域主要有四个：
+当前实现主要落在 `backend/app/desktop_runtime/server.py`、`backend/app/copilot_runtime/router.py`、`backend/app/copilot_runtime/contracts.py` 与 `backend/app/copilot_runtime/session_store.py`。
 
-| 配置域 | 当前公开字段 | 主要用途 |
+## 配置与持久化已经形成双层结构
+
+当前系统已经不能再用“单个 settings 文件”来描述。更准确的说法是：Electron 主进程同时持有两层面向不同职责的持久化结构。
+
+### 第一层是统一配置中心
+
+统一配置中心位于 `frontend-copilot/electron/config-center/`。它负责公开、稳定、可投影到根装配和宿主启动参数的字段。
+
+当前公开域包括：
+
+| 配置域 | 当前字段 | 主要用途 |
 | --- | --- | --- |
-| `frontend-preferences` | `theme`、`animationsEnabled` | 这些字段用于前端主题和动画偏好。 |
-| `assistant-behavior` | `agentName` | 这个字段保留为助手行为偏好，但当前聊天主路径已经不再依赖它决定能否连接。 |
-| `host-config` | `runtimeUrl` | 这个字段用于开发态 runtime 地址覆盖。 |
-| `backend-exposed` | `model` | 这个字段供主进程在启动 hosted backend 时投影为默认模型参数。 |
+| `frontend-preferences` | `theme`、`animationsEnabled` | 控制主题与动画偏好。 |
+| `assistant-behavior` | `agentName` | 保留助手偏好信息，但它已经不是聊天入口的硬门槛。 |
+| `host-config` | `runtimeUrl` | 提供开发态 runtime 地址覆盖。 |
+| `backend-exposed` | `model` | 供主进程在启动 hosted backend 时投影默认模型参数。 |
 
-公开快照的投影定义位于[`frontend-copilot/electron/config-center/public-snapshot.ts`](../../frontend-copilot/electron/config-center/public-snapshot.ts)，存储和迁移逻辑位于[`frontend-copilot/electron/config-center/service.ts`](../../frontend-copilot/electron/config-center/service.ts)。
+这些字段会被投影成公开快照，供启动页主题、根装配和少量公共设置消费。
 
-### 第二层是 settings workspace 持久化
+### 第二层是 settings workspace
 
-settings workspace 位于 `frontend-copilot/electron/settings-workspace/` 目录。这层同样由主进程 owner 持有，但它解决的是另一类问题：设置工作区中更完整的普通设置和 secret 持久化。
+settings workspace 位于 `frontend-copilot/electron/settings-workspace/`。它和统一配置中心同样由主进程持有，但职责不同：
 
-它当前分成两份文档：
+- 普通状态文档保存 provider profiles、默认模型路由、SUSTech 普通字段、API 设置和其他设置工作区字段。
+- secrets 文档单独保存 provider API key 与 SUSTech CAS 密码等敏感值。
+- 这两类文档不会投影进公开配置快照。
 
-- [`frontend-copilot/electron/settings-workspace/schema.ts`](../../frontend-copilot/electron/settings-workspace/schema.ts)定义的普通状态文档会保存 provider profiles、默认模型路由、SUSTech 相关字段、API 配置等设置。
-- 同一文件中定义的 secrets 文档会保存 provider API key 和 SUSTech CAS 密码等敏感值。
+它的默认路径与统一配置中心共享同一个根目录，也就是 `frontend-copilot/electron/config-center/paths.ts` 生成的 `config-center` 根目录。当前 `settings-workspace-state.json` 与 `settings-workspace-secrets.json` 也位于这个根目录下。
 
-读取与写回逻辑位于[`frontend-copilot/electron/settings-workspace/service.ts`](../../frontend-copilot/electron/settings-workspace/service.ts)，主进程封装位于[`frontend-copilot/electron/settings-workspace/main-process.ts`](../../frontend-copilot/electron/settings-workspace/main-process.ts)。
+### 两层结构的关键边界
 
-### 这两层的边界很明确
+两层结构虽然都由主进程持有，但用途并不相同：
 
-可以用下面这张表来理解它们的差别：
+- 统一配置中心面向“公开、稳定、跨工作区共享”的配置事实。
+- settings workspace 面向“设置页内部需要完整持久化，但不应进入公开快照”的状态和 secrets。
+- Python runtime 当前不会自行读取这两层文档；主进程会把需要的运行参数整理后投影给 runtime。
 
-| 维度 | 公开配置中心 | settings workspace 普通状态 | settings workspace secrets |
-| --- | --- | --- | --- |
-| owner | Electron 主进程负责持久化与广播。 | Electron 主进程负责持久化。 | Electron 主进程负责持久化，并限制暴露方式。 |
-| 主要消费者 | 根装配、启动页主题、工作台公共设置读取。 | 设置工作区表单。 | 设置工作区的 secret 管理界面。 |
-| 是否进入公开快照 | 这部分数据会进入公开快照。 | 这部分数据不会进入公开快照。 | 这部分数据不会进入公开快照。 |
-| 是否适合直接暴露给 renderer | 这部分数据就是给 renderer 公开消费的那一层。 | 这部分数据通过设置工作区 API 定向暴露。 | 这部分数据只通过专门的 secret API 暴露必要结果。 |
+### 旧 `copilot-settings.json` 的当前角色
 
-这意味着，当前配置系统已经不再是“一个 settings 文件 + renderer 本地 state”的结构。系统现在同时存在公开配置面和设置工作区持久化面，两者由同一个主进程持有，但职责不同。
+旧 `copilot-settings.json` 仍然存在兼容作用，但它已经退到迁移输入位置。当前系统会把它当成历史来源，用来回填 `runtimeUrl` 与 `agentName` 等字段；正式写回和后续读取已经转到新的统一配置中心与 settings workspace 结构中。
 
-## Secret 与普通设置已经分层
+## 首次启动已经进入更空白的默认状态
 
-当前关于 secret 的准确表述应该是下面这样：
+最近的实现变化里，有一条很重要：系统默认不再预置 provider 与模型。
 
-- provider API key 和 SUSTech CAS 密码属于 settings workspace secrets。
-- 这些 secret 不会进入 config center public snapshot。
-- renderer 只会通过专门的 load、save、clear API 与主进程交互。
-- 主进程会继续作为 secret 文档的直接 owner。
+当前默认状态是这样的：
 
-这条边界非常重要，因为它说明“设置已持久化”并不等于“设置已经公开给全部页面状态使用”。
+- `frontend-copilot/src/workbench/settings/config.ts` 中的 `initialProviderProfiles` 为空数组。
+- `frontend-copilot/electron/settings-workspace/provider-schema.ts` 会据此把默认 provider profiles 初始化为空。
+- `frontend-copilot/electron/settings-workspace/provider-schema.ts` 里的默认模型路由也会退回空字符串。
+- 统一配置中心中的 `backendExposed.model` 默认值是 `null`。
 
-## Electron 在当前系统中的角色
+这意味着，首次启动时应用不会自动带着一组预填好的 provider 和模型进入设置页。系统仍然保留其他类别的基础默认值，例如语言、搜索或数据路径，但 provider 与模型链路已经收成更空白的起点。
 
-Electron 当前不是一个简单的窗口壳。它在系统中承担的是三个 owner 角色。
+## 聊天主路径为什么已经是 session-first
 
-### 它是桌面生命周期 owner
+当前聊天主路径已经不再围绕全局 `agentName` 或旧的 `agent/run` 叙事组织。跨前后端一致的实际链路是下面这组步骤：
 
-主进程负责窗口创建、启动页显示时机、运行日志转发和退出清理。当前窗口会先创建，再等待 bootstrap ready 信号后显示。这个行为已经是正式启动路径的一部分。
+1. renderer 调用 `agents/list`，从后端获取智能体目录。
+2. 用户选择智能体后，renderer 调用 `session/create`，由后端创建会话并绑定该智能体。
+3. renderer 再调用 `capabilities/get`，读取这个会话对应的工具目录、推荐工具和默认模型偏好提示。
+4. 用户发送消息时，renderer 调用 `message/send`，并在请求里显式携带 `model`、`enabledTools` 与 `requestOptions`。
 
-### 它是配置持久化 owner
+这条链路体现的是三层分工：
 
-主进程同时持有公开配置中心与 settings workspace 的状态和 secrets 文档。renderer 不会直接访问这些底层文件，而是通过 preload 暴露的 API 获得受控读写能力。
+- 智能体目录由后端给出。
+- 会话在创建时绑定智能体。
+- 模型与工具策略在每次消息请求里决定。
 
-### 它是 runtime 生命周期 owner
-
-主进程会决定使用 development 还是 bundled 模式启动 Python runtime，也会决定向 runtime 传递哪些 CLI 参数，例如 `host`、`port`、`local token` 和从公开配置中投影出的默认模型。runtime 本身不会直接去读这些配置文档。
-
-## 当前聊天为什么已经是 session-first
-
-### 后端目录已经成为智能体真源
-
-当前 renderer 不再自己维护一份聊天专用的智能体真源。工作台会向后端请求 `agents/list`，由后端告诉前端当前有哪些可用智能体、默认智能体是谁，以及每个智能体推荐哪些工具、偏好什么默认模型。
-
-相关契约位于[`frontend-copilot/src/features/copilot/chat-contract.ts`](../../frontend-copilot/src/features/copilot/chat-contract.ts)和[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)。
-
-### 会话创建时就会绑定智能体
-
-当前前端主路径会调用 `session/create`。后端返回值中已经包含 `sessionId`、`boundAgent`、`createdAt`、`updatedAt`、`recommendedTools` 和 `defaultModelPreference`。这说明“会话属于哪个智能体”是在会话创建时就确定下来的，而不是在消息发送时临时猜测。
-
-### 能力面已经进入正式主路径
-
-会话创建后，前端会继续调用 `capabilities/get`。返回值当前会包含 `capabilitiesVersion`、工具目录、推荐工具、工具选择模式和默认模型偏好。`AssistantWorkspace` 会把这些内容整理成 `AssistantSessionCapabilities`，再放进 `AssistantSessionShell`。
-
-当前前端还会把 `recommendedTools` 映射为新会话的 `defaultEnabledTools`。因此，默认启用工具来源已经进入正式会话壳，不再是界面上随手拼出来的临时值。
-
-### 请求级消息策略已经进入正式消息请求
-
-[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)发送消息时，会在 `message/send` 请求里显式携带：
-
-- `sessionId` 用来指定当前会话。
-- `agent` 用来做绑定智能体一致性校验。
-- `model` 用来指定本次发送使用的模型。
-- `enabledTools` 用来指定本次启用哪些工具。
-- `requestOptions` 用来携带本次请求的附加选项。
-
-这说明当前聊天主路径已经同时具备会话级绑定和请求级策略两个层次。
+`frontend-copilot/src/features/copilot/chat-contract.ts` 与 `backend/app/copilot_runtime/contracts.py` 已经围绕这条链路对齐。前端当前还会把 `recommendedTools` 映射成新会话的 `defaultEnabledTools`，因此推荐工具已经进入正式会话壳，而不是页面临时拼装出来的装饰状态。
 
 ## 当前系统关系图
 
 ```text
 Electron Main Process
+  ├─ 产品命名与 userData 路径
   ├─ Config Center
-  │    ├─ 分域公开配置文档
-  │    ├─ 公开快照投影与广播
-  │    └─ 旧 copilot-settings.json 迁移入口
-  ├─ Settings Workspace Persistence
-  │    ├─ 普通状态文档
+  │    ├─ 公开域文档
+  │    └─ 公开快照投影与广播
+  ├─ Settings Workspace
+  │    ├─ state 文档
   │    └─ secrets 文档
-  ├─ Hosted Runtime Lifecycle
-  │    ├─ 创建 / 启动 / 重试 / 停止
+  ├─ Hosted Backend Lifecycle
+  │    ├─ 启动 / 重试 / 停止
   │    └─ runtime 快照与失败摘要
-  └─ Preload / IPC Surface
-            │
-            ▼
+  └─ Preload / IPC
+             │
+             ▼
 Renderer Workbench
-  ├─ 根装配层读取公开配置与 runtime 快照
-  ├─ AssistantWorkspace 进入 session-first 聊天主路径
-  └─ SettingsWorkspace 读写普通设置与 secrets
-            │
-            ▼
+  ├─ 根装配读取公开快照与 runtime 快照
+  ├─ AssistantWorkspace 进入 session-first 聊天链路
+  └─ SettingsWorkspace 读写普通状态与 secrets
+             │
+             ▼
 Python Desktop Runtime
-  ├─ /health /ready /version /diagnostics
-  ├─ POST / 单端点聊天协议
+  ├─ 控制面 HTTP 端点
+  ├─ POST / 聊天入口
   ├─ 智能体目录与工具目录
   └─ InMemorySessionStore
 ```
 
-## 旧 `copilot-settings.json` 现在的角色
+## 当前已经成立的系统事实
 
-[`frontend-copilot/electron/config-center/service.ts`](../../frontend-copilot/electron/config-center/service.ts)和[`frontend-copilot/electron/config-center/paths.ts`](../../frontend-copilot/electron/config-center/paths.ts)仍然会把旧 `copilot-settings.json` 作为迁移输入路径使用。它当前最主要的用途，就是在新分域文档不存在时为 `runtimeUrl`、`agentName` 等历史字段提供迁移来源。
+- Electron 产品命名、窗口标题与 `userData` 命名已经统一收口到 `CanDue`。
+- 配置持久化已经形成“统一配置中心 + settings workspace”双层结构。
+- settings workspace 的普通状态与 secrets 已经分文档保存，并继续由主进程直接持有。
+- 聊天主路径已经切到 session-first，会话绑定与请求级模型、工具策略都已经进入正式契约。
+- provider profiles 与默认模型路由的首次状态已经清空为更空白的起点。
 
-因此，旧文件当前更像主进程内部的兼容输入，而不是正式对外接口。
+## 当前仍然要保守描述的地方
 
-## 当前边界
-
-### 当前已经成立的事实
-
-- 配置系统已经分成公开配置中心和 settings workspace 持久化两层。
-- secret 与普通设置已经分层，secret 不会进入公开快照。
-- Electron 主进程已经成为配置持久化 owner 和 runtime 生命周期 owner。
-- 后端目录、会话绑定、能力面和请求级消息策略已经进入正式聊天主路径。
-
-### 当前仍然需要写得谨慎的地方
-
-- Python runtime 还不会直接读取配置中心文档。
-- 会话列表当前还没有后端持久化接口。
-- runtime 状态变化当前还没有面向 renderer 的完整实时推送。
-- 旧 `agent/connect` 与 `agent/run` 仍然保留兼容语义，但当前前端主路径使用的是 `agents/list`、`session/create`、`capabilities/get` 和 `message/send`。
+- Python runtime 当前不会主动读取统一配置中心或 settings workspace 文档。
+- 会话历史仍然保存在后端进程内的 `InMemorySessionStore` 中，runtime 重启后不会自动恢复。
+- hosted runtime 的状态变化还没有形成完整、持续的 renderer 实时推送流。
+- `agent/connect` 与 `agent/run` 仍然保留兼容作用，但它们已经不是当前前端主路径的权威入口。
 
 ## 相关文档
 
 - [运行时生命周期](./runtime-lifecycle.md)
-- [会话与状态模型](./session-and-state-model.md)
 - [聊天运行时契约](./chat-runtime-contract.md)
+- [会话与状态模型](./session-and-state-model.md)
 - [前端分册入口](../frontend/README.md)
-- [后端运行与配置](../backend/run-and-config.md)
+- [后端分册入口](../backend/README.md)
