@@ -8,6 +8,15 @@ from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 
 from app.copilot_runtime import PydanticAIAgentExecutor
+from app.copilot_runtime.contracts import (
+    AGENT_CONNECT_METHOD,
+    AGENT_RUN_METHOD,
+    AGENTS_LIST_METHOD,
+    CAPABILITIES_GET_METHOD,
+    INFO_METHOD,
+    MESSAGE_SEND_METHOD,
+    SESSION_CREATE_METHOD,
+)
 from app.copilot_runtime.session_store import RuntimeTextMessage
 from app.desktop_runtime.server import create_app
 
@@ -30,7 +39,7 @@ def test_post_root_info_returns_runtime_summary() -> None:
     assert response.status_code == 200
     assert payload["protocol"] == "single-endpoint"
     assert payload["defaultAgent"] == "default"
-    assert payload["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    _assert_supported_methods(payload["supportedMethods"])
 
 
 def test_post_root_agent_connect_returns_connect_sse_result() -> None:
@@ -109,7 +118,7 @@ def test_post_root_agent_run_model_not_configured_returns_structured_error() -> 
     assert payload["ok"] is False
     assert payload["error"]["code"] == "model_not_configured"
     assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    _assert_supported_methods(payload["error"]["supportedMethods"])
     assert payload["error"]["stage"] == "phase3-run-bridge"
     assert payload["error"]["details"] == {
         "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"]
@@ -137,7 +146,7 @@ def test_post_root_agent_run_unknown_agent_returns_structured_not_found_error() 
     assert payload["ok"] is False
     assert payload["error"]["code"] == "agent_not_found"
     assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    _assert_supported_methods(payload["error"]["supportedMethods"])
     assert payload["error"]["stage"] == "phase3-run-bridge"
     assert payload["error"]["details"] == {"agentName": "missing-agent"}
     assert payload["error"]["message"] == "Unknown agent 'missing-agent'."
@@ -150,8 +159,8 @@ def test_post_root_agent_run_corrupted_session_history_returns_explicit_error() 
     with TestClient(app) as client:
         store = app.state.copilot_runtime_session_store
         session, _ = store.get_or_create(
-            thread_id="thread-http",
-            agent_name="default",
+            session_id="thread-http",
+            bound_agent_id="default",
             metadata={"last_run_id": "run-1"},
         )
         session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
@@ -166,7 +175,7 @@ def test_post_root_agent_run_corrupted_session_history_returns_explicit_error() 
     assert payload["ok"] is False
     assert payload["error"]["code"] == "invalid_message_history"
     assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    _assert_supported_methods(payload["error"]["supportedMethods"])
     assert payload["error"]["stage"] == "phase3-run-bridge"
     assert payload["error"]["details"] == {}
     assert "expected role 'user'" in payload["error"]["message"]
@@ -259,3 +268,15 @@ def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
         payload = "\n".join(line[6:] for line in lines)
         events.append(json.loads(payload))
     return events
+
+
+def _assert_supported_methods(supported_methods: list[str]) -> None:
+    assert set(supported_methods) >= {
+        INFO_METHOD,
+        AGENTS_LIST_METHOD,
+        SESSION_CREATE_METHOD,
+        CAPABILITIES_GET_METHOD,
+        MESSAGE_SEND_METHOD,
+        AGENT_CONNECT_METHOD,
+        AGENT_RUN_METHOD,
+    }
