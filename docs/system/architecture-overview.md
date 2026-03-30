@@ -14,6 +14,8 @@ sidebar_position: 1
 
 当前应用是一个名为 `CanDue` 的 Electron 桌面宿主。Electron 主进程负责窗口、`userData` 目录下的持久化与 Python hosted backend 生命周期；renderer 负责工作台界面；Python desktop runtime 通过本地 loopback HTTP 提供控制面和聊天入口；聊天主路径已经稳定在 session-first agent 与 request-scoped model/tool policy 这一组契约上。
 
+文中出现 `frontend-copilot/` 时，它只是仓库里的前端目录名，用来定位代码；产品名、窗口标题和 `userData` 命名都以 `CanDue` 为准。
+
 ## 当前系统的四个核心部分
 
 ### Electron 主进程

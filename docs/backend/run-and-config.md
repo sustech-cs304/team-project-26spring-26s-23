@@ -19,6 +19,8 @@ sidebar_position: 3
 
 如果不先把这两种语境拆开，文档很容易被写成“后端永远落在 `backend/data`”这一条单一路径叙事，而这和桌面正式运行现状并不一致。
 
+读这页时也要先把两组路径分开：`backend/data` 只属于 CLI 默认语境，桌面正式运行路径则来自 `CanDue` 的 `userData`。后文出现的路径都只对应各自语境。
+
 ## CLI 直接运行时，runtime 仍然按自己的配置规则工作
 
 直接运行 Python runtime 时，当前入口仍然是：

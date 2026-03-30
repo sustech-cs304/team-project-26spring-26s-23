@@ -358,6 +358,8 @@ Electron 怎样启动这个 runtime，见 [运行时生命周期](./runtime-life
 }
 ```
 
+这里的 `supportedMethods` 只说明 runtime 当前还能识别哪些方法。它同时列出 `agent/connect` 和 `agent/run`，是因为兼容入口仍然存在；这份列表本身不表示这些方法仍和 session-first 四方法处在同一主路径层级。
+
 ### 当前常见错误码
 
 | 错误码 | HTTP 状态 | 常见触发场景 |
