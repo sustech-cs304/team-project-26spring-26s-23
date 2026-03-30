@@ -12,14 +12,14 @@ void ({
   },
 } satisfies ConfigCenterPublicPatch)
 
-// @ts-expect-error ConfigCenterPublicPatch.domains must include at least one supported domain.
 void ({
+  // @ts-expect-error ConfigCenterPublicPatch.domains must include at least one supported domain.
   domains: {},
 } satisfies ConfigCenterPublicPatch)
 
-// @ts-expect-error Public domain patches must include at least one supported field.
 void ({
   domains: {
+    // @ts-expect-error Public domain patches must include at least one supported field.
     frontendPreferences: {},
   },
 } satisfies ConfigCenterPublicPatch)
