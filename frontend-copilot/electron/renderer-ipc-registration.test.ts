@@ -4,8 +4,9 @@ import { BOOTSTRAP_WINDOW_READY_CHANNEL } from './bootstrap-window'
 import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL } from './config-center/public-patch'
 import { CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL } from './config-center/public-snapshot'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
+import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
+import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
-import { createFakeIpcMain, createRendererIpcHandlers } from './renderer-ipc.test-support'
 
 describe('registerRendererIpcHandlers', () => {
   it('registers only the config center public and runtime channels needed by the renderer', async () => {

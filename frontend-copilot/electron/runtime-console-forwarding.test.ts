@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, type RuntimeConsoleEntry } from './renderer-ipc-contract'
+import { createFakeIpcRenderer } from './renderer-ipc-transport.test-support'
 import { registerRuntimeConsoleForwarding } from './runtime-console-forwarding'
-import { createFakeIpcRenderer } from './renderer-ipc.test-support'
 
 describe('registerRuntimeConsoleForwarding', () => {
   it('registers runtime console forwarding for browser-side debug output', () => {
