@@ -216,13 +216,14 @@ export function ProviderModelEditorDialog({
             <div className="model-capability-picker">
               {modelCapabilityOptions.map((option) => {
                 const active = modelEditorState.capabilities.includes(option.value)
+                const capabilityClassName = active ? ` model-capability-button--${option.value}` : ' model-capability-button--inactive'
 
                 return (
                   <button
                     key={option.value}
                     type="button"
                     aria-pressed={active}
-                    className={`model-capability-button model-capability-button--${option.value}${active ? ' model-capability-button--active' : ''}`}
+                    className={`model-capability-button${capabilityClassName}${active ? ' model-capability-button--active' : ''}`}
                     onClick={() => onToggleCapability(option.value)}
                   >
                     {option.label}
