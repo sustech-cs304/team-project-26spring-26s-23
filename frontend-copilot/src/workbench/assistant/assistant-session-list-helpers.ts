@@ -77,6 +77,10 @@ export function getAssistantSessionCardTestId(sessionId: string): string {
   return `assistant-session-card-${sessionId}`
 }
 
+export function getAssistantSessionRenameInputTestId(sessionId: string): string {
+  return `assistant-session-rename-input-${sessionId}`
+}
+
 export function resolveAssistantSessionActiveState(
   sessionEntry: AssistantSessionShell,
   activeSessionId: string | null,

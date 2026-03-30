@@ -186,6 +186,10 @@
   transform: translateX(2px);
 }
 
+.session-context-menu__item--danger {
+  color: var(--danger-fg, #b42318);
+}
+
 .session-context-menu__submenu {
   position: relative;
 }
@@ -269,6 +273,18 @@
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.topic-card__title-input {
+  width: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
 .topic-card__meta {

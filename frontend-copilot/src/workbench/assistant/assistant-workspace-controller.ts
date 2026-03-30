@@ -60,6 +60,7 @@ export function createAssistantSessionShell(input: {
 }): AssistantSessionShell {
   return {
     sessionId: input.response.sessionId,
+    title: input.selectedAgent.label,
     boundAgent: input.selectedAgent,
     createdAt: input.response.createdAt,
     updatedAt: input.response.updatedAt,

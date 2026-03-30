@@ -29,6 +29,70 @@ export function appendAssistantSessionShell(
   }
 }
 
+export function resolveAssistantSessionTitle(sessionEntry: AssistantSessionShell): string {
+  const normalizedTitle = sessionEntry.title?.trim()
+
+  if (normalizedTitle !== undefined && normalizedTitle.length > 0) {
+    return normalizedTitle
+  }
+
+  return sessionEntry.boundAgent.label
+}
+
+export function renameAssistantSessionShell(
+  state: AssistantSessionListState,
+  sessionId: string,
+  nextTitle: string,
+): AssistantSessionListState {
+  const normalizedTitle = nextTitle.trim()
+
+  if (normalizedTitle.length === 0) {
+    return state
+  }
+
+  let hasChanged = false
+  const nextSessions = state.sessions.map((sessionEntry) => {
+    if (sessionEntry.sessionId !== sessionId) {
+      return sessionEntry
+    }
+
+    if (resolveAssistantSessionTitle(sessionEntry) === normalizedTitle && sessionEntry.title === normalizedTitle) {
+      return sessionEntry
+    }
+
+    hasChanged = true
+    return {
+      ...sessionEntry,
+      title: normalizedTitle,
+    }
+  })
+
+  if (!hasChanged) {
+    return state
+  }
+
+  return {
+    ...state,
+    sessions: nextSessions,
+  }
+}
+
+export function removeAssistantSessionShell(
+  state: AssistantSessionListState,
+  sessionId: string,
+): AssistantSessionListState {
+  if (!state.sessions.some((sessionEntry) => sessionEntry.sessionId === sessionId)) {
+    return state
+  }
+
+  const nextSessions = state.sessions.filter((sessionEntry) => sessionEntry.sessionId !== sessionId)
+
+  return {
+    sessions: nextSessions,
+    activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
+  }
+}
+
 export function moveAssistantSessionShellToIndex(
   state: AssistantSessionListState,
   draggingSessionId: string,

@@ -70,6 +70,9 @@ export function AssistantWorkspace({
     dragPreviewIndex,
     draggingSessionShell,
     sessionContextMenu,
+    renamingSessionId,
+    renamingValue,
+    deleteConfirmationSessionId,
     sessionDragState,
     sessionListRef,
     sessionDragGhostRef,
@@ -79,6 +82,13 @@ export function AssistantWorkspace({
     handleSessionClick,
     handleSessionContextMenu,
     dismissSessionContextMenu,
+    requestSessionRename,
+    updateSessionRenameValue,
+    commitSessionRename,
+    cancelSessionRename,
+    requestSessionDelete,
+    confirmSessionDelete,
+    cancelSessionDelete,
     selectSessionSubmenu,
   } = useAssistantWorkspaceState({
     bootstrap,
@@ -107,6 +117,9 @@ export function AssistantWorkspace({
         dragPreviewIndex={dragPreviewIndex}
         draggingSessionShell={draggingSessionShell}
         sessionContextMenu={sessionContextMenu}
+        renamingSessionId={renamingSessionId}
+        renamingValue={renamingValue}
+        deleteConfirmationSessionId={deleteConfirmationSessionId}
         sessionDragState={sessionDragState}
         sessionError={sessionError}
         sessionListRef={sessionListRef}
@@ -118,6 +131,13 @@ export function AssistantWorkspace({
         onSessionClick={handleSessionClick}
         onSessionContextMenu={handleSessionContextMenu}
         onDismissContextMenu={dismissSessionContextMenu}
+        onRequestRename={requestSessionRename}
+        onRenameValueChange={updateSessionRenameValue}
+        onCommitRename={commitSessionRename}
+        onCancelRename={cancelSessionRename}
+        onRequestDelete={requestSessionDelete}
+        onConfirmDelete={confirmSessionDelete}
+        onCancelDelete={cancelSessionDelete}
         onSelectSubmenu={selectSessionSubmenu}
       />
 

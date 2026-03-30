@@ -70,6 +70,7 @@ export interface AssistantSessionCapabilities {
 
 export interface AssistantSessionShell {
   sessionId: string
+  title?: string
   boundAgent: AgentType
   createdAt: string
   updatedAt: string

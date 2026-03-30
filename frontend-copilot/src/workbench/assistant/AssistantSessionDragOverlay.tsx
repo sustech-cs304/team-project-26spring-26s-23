@@ -2,6 +2,7 @@ import type { MutableRefObject } from 'react'
 
 import type { AssistantSessionShell } from '../types'
 import type { AssistantSessionDragState } from './assistant-session-list-helpers'
+import { resolveAssistantSessionTitle } from './assistant-session-helpers'
 
 interface AssistantSessionDragOverlayProps {
   sessionDragState: AssistantSessionDragState | null
@@ -27,7 +28,7 @@ export function AssistantSessionDragOverlay({
       data-testid="assistant-session-drag-ghost"
       aria-hidden="true"
     >
-      <span className="topic-card__title">{draggingSessionShell.boundAgent.label}</span>
+      <span className="topic-card__title">{resolveAssistantSessionTitle(draggingSessionShell)}</span>
       <span className="topic-card__meta" />
     </div>
   )

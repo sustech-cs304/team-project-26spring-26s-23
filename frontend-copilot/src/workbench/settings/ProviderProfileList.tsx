@@ -128,6 +128,7 @@ export function ProviderProfileList({
       {providerContextMenu !== null ? (
         <ProviderProfileContextMenu
           contextMenu={providerContextMenu}
+          onDismissContextMenu={closeProviderContextMenu}
           onCopyProvider={onCopyProvider}
           onDeleteProvider={onDeleteProvider}
         />

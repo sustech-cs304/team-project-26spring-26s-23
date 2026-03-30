@@ -63,6 +63,7 @@ describe('assistant-workspace-controller', () => {
 
     expect(shell).toEqual({
       sessionId: 'session-1',
+      title: '通用智能体',
       boundAgent: expect.objectContaining({
         id: 'general',
         label: '通用智能体',

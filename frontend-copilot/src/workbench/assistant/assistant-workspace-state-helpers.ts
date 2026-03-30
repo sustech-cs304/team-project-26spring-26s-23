@@ -6,6 +6,7 @@ import type {
 import {
   clampAssistantSessionPreviewIndex,
   filterDraggedSessionFromRender,
+  resolveAssistantSessionTitle,
 } from './assistant-session-helpers'
 
 export interface AssistantRenderedSessionState {
@@ -21,7 +22,7 @@ export function createAssistantSessionContextMenuState(input: {
 }): AssistantSessionContextMenuState {
   return {
     sessionId: input.sessionEntry.sessionId,
-    sessionLabel: input.sessionEntry.boundAgent.label,
+    sessionLabel: resolveAssistantSessionTitle(input.sessionEntry),
     x: input.x,
     y: input.y,
     activeSubmenu: null,

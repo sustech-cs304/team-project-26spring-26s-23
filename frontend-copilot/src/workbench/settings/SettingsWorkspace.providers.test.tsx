@@ -103,7 +103,9 @@ describe('SettingsWorkspace provider interactions', () => {
     expect(providerNameInput.value).toBe('Persisted Router')
 
     await contextMenuElement(rendered.getByTestId('settings-provider-card-openrouter'))
+    expect(rendered.getByTestId('provider-context-menu')).not.toBeNull()
     await clickElement(rendered.getByText('复制服务商'))
+    expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
 
     expect(saveProviderApiKey).toHaveBeenCalledWith({
       providerId: 'persisted-router-1',
@@ -142,7 +144,9 @@ describe('SettingsWorkspace provider interactions', () => {
     await flushAsyncEffects()
 
     await contextMenuElement(rendered.getByTestId('settings-provider-card-openrouter'))
+    expect(rendered.getByTestId('provider-context-menu')).not.toBeNull()
     await clickElement(rendered.getByText('删除服务商'))
+    expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
 
     expect(clearProviderApiKey).toHaveBeenCalledWith({
       providerId: 'openrouter',

@@ -8,8 +8,11 @@ import {
   createAssistantSessionListState,
   filterDraggedSessionFromRender,
   moveAssistantSessionShellToIndex,
+  removeAssistantSessionShell,
+  renameAssistantSessionShell,
   reorderAssistantSessionShells,
   resolveActiveAssistantSessionShell,
+  resolveAssistantSessionTitle,
 } from './assistant-session-helpers'
 import {
   createCapabilitiesResponse,
@@ -113,5 +116,30 @@ describe('assistant-session-helpers', () => {
     ])
     expect(clampAssistantSessionPreviewIndex(9, 2)).toBe(2)
     expect(clampAssistantSessionPreviewIndex(-1, 2)).toBe(0)
+  })
+
+  it('renames a session without disturbing the active session selection and resolves fallback titles', () => {
+    const initialState = {
+      sessions: [createSessionShellFixture('session-2'), createSessionShellFixture('session-1')],
+      activeSessionId: 'session-1',
+    }
+
+    const renamedState = renameAssistantSessionShell(initialState, 'session-2', '  Blackboard 草稿  ')
+
+    expect(resolveAssistantSessionTitle(renamedState.sessions[0]!)).toBe('Blackboard 草稿')
+    expect(resolveAssistantSessionTitle(renamedState.sessions[1]!)).toBe('通用智能体')
+    expect(renamedState.activeSessionId).toBe('session-1')
+  })
+
+  it('removes sessions and clears the active session instead of auto-selecting another entry', () => {
+    const initialState = {
+      sessions: [createSessionShellFixture('session-2'), createSessionShellFixture('session-1')],
+      activeSessionId: 'session-2',
+    }
+
+    const nextState = removeAssistantSessionShell(initialState, 'session-2')
+
+    expect(nextState.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-1'])
+    expect(nextState.activeSessionId).toBeNull()
   })
 })

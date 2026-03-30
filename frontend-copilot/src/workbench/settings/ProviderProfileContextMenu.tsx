@@ -2,6 +2,7 @@ import type { ProviderContextMenuState } from './provider-profiles'
 
 interface ProviderProfileContextMenuProps {
   contextMenu: ProviderContextMenuState
+  onDismissContextMenu: () => void
   onCopyProvider: (providerId: string) => void | Promise<void>
   onDeleteProvider: (providerId: string) => void | Promise<void>
 }
@@ -19,6 +20,7 @@ const providerProfileContextMenuActions = [
     label: '复制服务商',
     className: 'session-context-menu__item',
     onSelect: (providerId: string, handlers: Omit<ProviderProfileContextMenuProps, 'contextMenu'>) => {
+      handlers.onDismissContextMenu()
       void handlers.onCopyProvider(providerId)
     },
   },
@@ -27,6 +29,7 @@ const providerProfileContextMenuActions = [
     label: '删除服务商',
     className: 'session-context-menu__item session-context-menu__item--danger',
     onSelect: (providerId: string, handlers: Omit<ProviderProfileContextMenuProps, 'contextMenu'>) => {
+      handlers.onDismissContextMenu()
       void handlers.onDeleteProvider(providerId)
     },
   },
@@ -34,10 +37,11 @@ const providerProfileContextMenuActions = [
 
 export function ProviderProfileContextMenu({
   contextMenu,
+  onDismissContextMenu,
   onCopyProvider,
   onDeleteProvider,
 }: ProviderProfileContextMenuProps) {
-  const actionHandlers = { onCopyProvider, onDeleteProvider }
+  const actionHandlers = { onDismissContextMenu, onCopyProvider, onDeleteProvider }
 
   return (
     <div

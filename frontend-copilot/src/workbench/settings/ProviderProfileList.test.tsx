@@ -44,9 +44,18 @@ describe('ProviderProfileList', () => {
     await act(async () => {
       rendered.getByText('复制服务商').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
+
+    await act(async () => {
+      rendered.getByTestId('settings-provider-card-provider-a').dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 22 }),
+      )
+    })
+
     await act(async () => {
       rendered.getByText('删除服务商').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
 
     expect(onCopyProvider).toHaveBeenCalledWith('provider-a')
     expect(onDeleteProvider).toHaveBeenCalledWith('provider-a')
@@ -149,6 +158,9 @@ function renderList(overrides?: {
       }
 
       return target as HTMLElement
+    },
+    queryByTestId(testId: string) {
+      return container.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null
     },
     getByText(text: string) {
       const target = Array.from(container.querySelectorAll<HTMLElement>('*')).find((element) => {

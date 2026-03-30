@@ -10,18 +10,30 @@ import {
 
 interface AssistantSessionContextMenuProps {
   sessionContextMenu: AssistantSessionContextMenuState | null
+  deleteConfirmationSessionId: string | null
   onDismissContextMenu: () => void
+  onRequestRename: (sessionId: string) => void
+  onRequestDelete: (sessionId: string) => void
+  onConfirmDelete: (sessionId: string) => void
+  onCancelDelete: () => void
   onSelectSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
 }
 
 export function AssistantSessionContextMenu({
   sessionContextMenu,
+  deleteConfirmationSessionId,
   onDismissContextMenu,
+  onRequestRename,
+  onRequestDelete,
+  onConfirmDelete,
+  onCancelDelete,
   onSelectSubmenu,
 }: AssistantSessionContextMenuProps) {
   if (sessionContextMenu === null) {
     return null
   }
+
+  const deleteConfirmationActive = deleteConfirmationSessionId === sessionContextMenu.sessionId
 
   return (
     <div
@@ -34,18 +46,60 @@ export function AssistantSessionContextMenu({
       <p className="session-context-menu__title">{sessionContextMenu.sessionLabel}</p>
 
       <div className="session-context-menu__group">
-        {assistantSessionPrimaryActions.map((action) => (
-          <button
-            key={action.testId}
-            type="button"
-            className="session-context-menu__item"
-            data-testid={action.testId}
-            role="menuitem"
-            onClick={onDismissContextMenu}
-          >
-            {action.label}
-          </button>
-        ))}
+        <button
+          type="button"
+          className="session-context-menu__item"
+          data-testid={assistantSessionPrimaryActions[0]?.testId}
+          role="menuitem"
+          onClick={() => onRequestRename(sessionContextMenu.sessionId)}
+        >
+          {assistantSessionPrimaryActions[0]?.label}
+        </button>
+
+        {deleteConfirmationActive
+          ? (
+              <>
+                <button
+                  type="button"
+                  className="session-context-menu__item session-context-menu__item--danger"
+                  data-testid="assistant-session-context-action-delete-confirm"
+                  role="menuitem"
+                  onClick={() => onConfirmDelete(sessionContextMenu.sessionId)}
+                >
+                  确认删除会话
+                </button>
+                <button
+                  type="button"
+                  className="session-context-menu__item"
+                  data-testid="assistant-session-context-action-delete-cancel"
+                  role="menuitem"
+                  onClick={onCancelDelete}
+                >
+                  取消删除
+                </button>
+              </>
+            )
+          : (
+              <button
+                type="button"
+                className="session-context-menu__item"
+                data-testid={assistantSessionPrimaryActions[1]?.testId}
+                role="menuitem"
+                onClick={() => onRequestDelete(sessionContextMenu.sessionId)}
+              >
+                {assistantSessionPrimaryActions[1]?.label}
+              </button>
+            )}
+
+        <button
+          type="button"
+          className="session-context-menu__item"
+          data-testid={assistantSessionPrimaryActions[2]?.testId}
+          role="menuitem"
+          onClick={onDismissContextMenu}
+        >
+          {assistantSessionPrimaryActions[2]?.label}
+        </button>
 
         <AssistantSessionSubmenu
           active={sessionContextMenu.activeSubmenu === 'copy'}
@@ -127,8 +181,6 @@ function AssistantSessionSubmenu({
         role="menuitem"
         aria-haspopup="menu"
         aria-expanded={active}
-        onFocus={() => onActiveChange(true)}
-        onClick={() => onActiveChange(!active)}
       >
         <span>{label}</span>
         <span className="session-context-menu__submenu-caret" aria-hidden="true">›</span>

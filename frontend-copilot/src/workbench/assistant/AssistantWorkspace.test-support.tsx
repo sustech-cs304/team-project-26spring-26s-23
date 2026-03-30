@@ -5,5 +5,12 @@ export {
   createSessionResponse,
 } from './assistant-workspace-test-fixtures'
 export { renderWithRoot, type RenderedAssistantWorkspace } from './assistant-workspace-test-dom'
-export { clickElement, hoverElement, openContextMenu } from './assistant-workspace-test-interactions'
+export {
+  blurElement,
+  clickElement,
+  hoverElement,
+  inputText,
+  keyDownElement,
+  openContextMenu,
+} from './assistant-workspace-test-interactions'
 export { createDeferred, type Deferred } from './assistant-workspace-test-async'

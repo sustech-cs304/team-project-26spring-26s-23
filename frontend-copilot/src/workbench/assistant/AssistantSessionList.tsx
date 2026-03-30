@@ -27,6 +27,9 @@ interface AssistantSessionListProps {
   dragPreviewIndex: number | null
   draggingSessionShell: AssistantSessionShell | null
   sessionContextMenu: AssistantSessionContextMenuState | null
+  renamingSessionId: string | null
+  renamingValue: string
+  deleteConfirmationSessionId: string | null
   sessionDragState: AssistantSessionDragState | null
   sessionError: string | null
   sessionListRef: MutableRefObject<HTMLUListElement | null>
@@ -36,6 +39,13 @@ interface AssistantSessionListProps {
   onSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   onSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   onDismissContextMenu: () => void
+  onRequestRename: (sessionId: string) => void
+  onRenameValueChange: (value: string) => void
+  onCommitRename: () => void
+  onCancelRename: () => void
+  onRequestDelete: (sessionId: string) => void
+  onConfirmDelete: (sessionId: string) => void
+  onCancelDelete: () => void
   onSelectSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
 }
 
@@ -49,6 +59,9 @@ export function AssistantSessionList({
   dragPreviewIndex,
   draggingSessionShell,
   sessionContextMenu,
+  renamingSessionId,
+  renamingValue,
+  deleteConfirmationSessionId,
   sessionDragState,
   sessionError,
   sessionListRef,
@@ -58,6 +71,13 @@ export function AssistantSessionList({
   onSessionClick,
   onSessionContextMenu,
   onDismissContextMenu,
+  onRequestRename,
+  onRenameValueChange,
+  onCommitRename,
+  onCancelRename,
+  onRequestDelete,
+  onConfirmDelete,
+  onCancelDelete,
   onSelectSubmenu,
 }: AssistantSessionListProps) {
   return (
@@ -97,9 +117,14 @@ export function AssistantSessionList({
               active={resolveAssistantSessionActiveState(sessionEntry, sessionListState.activeSessionId)}
               visualIndex={visualIndex}
               showDropGapBefore={dragPreviewIndex === visualIndex}
+              editing={renamingSessionId === sessionEntry.sessionId}
+              editingValue={renamingSessionId === sessionEntry.sessionId ? renamingValue : ''}
               onSessionPointerDown={onSessionPointerDown}
               onSessionClick={onSessionClick}
               onSessionContextMenu={onSessionContextMenu}
+              onRenameValueChange={onRenameValueChange}
+              onCommitRename={onCommitRename}
+              onCancelRename={onCancelRename}
             />
           ))}
           {dragPreviewIndex === renderedSessions.length && (
@@ -120,7 +145,12 @@ export function AssistantSessionList({
 
       <AssistantSessionContextMenu
         sessionContextMenu={sessionContextMenu}
+        deleteConfirmationSessionId={deleteConfirmationSessionId}
         onDismissContextMenu={onDismissContextMenu}
+        onRequestRename={onRequestRename}
+        onRequestDelete={onRequestDelete}
+        onConfirmDelete={onConfirmDelete}
+        onCancelDelete={onCancelDelete}
         onSelectSubmenu={onSelectSubmenu}
       />
 

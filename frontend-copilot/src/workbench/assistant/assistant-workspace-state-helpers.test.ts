@@ -53,6 +53,19 @@ describe('assistant-workspace-state-helpers', () => {
     })
   })
 
+  it('prefers a renamed session title when building session context menu state', () => {
+    const sessionShell = {
+      ...createSessionShellFixture('session-1'),
+      title: '需求分析讨论',
+    }
+
+    expect(createAssistantSessionContextMenuState({
+      sessionEntry: sessionShell,
+      x: 16,
+      y: 24,
+    }).sessionLabel).toBe('需求分析讨论')
+  })
+
   it('derives rendered sessions and drag preview state from the current drag snapshot', () => {
     const firstSession = createSessionShellFixture('session-1')
     const secondSession = createSessionShellFixture('session-2')
