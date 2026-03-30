@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
@@ -13,7 +13,6 @@ import {
   createSelectedAgent,
   createSessionShell,
 } from './CopilotChatPanel.test-support'
-import { createPersistedWorkspaceState } from '../../workbench/settings/settings-workspace-test-fixtures'
 
 declare global {
   // eslint-disable-next-line no-var
