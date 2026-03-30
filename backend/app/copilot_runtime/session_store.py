@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -58,9 +59,9 @@ class RuntimeSessionRecord:
     def agent_name(self) -> str:
         return self.bound_agent_id
 
-    def touch(self, *, metadata: dict[str, Any] | None = None) -> None:
+    def touch(self, *, metadata: Mapping[str, Any] | None = None) -> None:
         if metadata:
-            self.metadata = {**self.metadata, **metadata}
+            self.metadata = {**self.metadata, **dict(metadata)}
         self.updated_at = datetime.now(UTC)
 
     def append_message(self, *, role: RuntimeMessageRole, content: str) -> RuntimeTextMessage:
@@ -98,7 +99,7 @@ class InMemorySessionStore:
         self,
         *,
         bound_agent_id: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: Mapping[str, Any] | None = None,
         session_id: str | None = None,
     ) -> RuntimeSessionRecord:
         resolved_agent_id = _require_non_empty_string(
@@ -117,7 +118,7 @@ class InMemorySessionStore:
         session = RuntimeSessionRecord(
             session_id=resolved_session_id,
             bound_agent_id=resolved_agent_id,
-            metadata=dict(metadata or {}),
+            metadata=dict(metadata) if metadata is not None else {},
             created_at=now,
             updated_at=now,
         )
@@ -129,7 +130,7 @@ class InMemorySessionStore:
         *,
         session_id: str,
         bound_agent_id: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> tuple[RuntimeSessionRecord, bool]:
         resolved_session_id = _require_non_empty_string(session_id, field_name="session_id")
         resolved_agent_id = _require_non_empty_string(
@@ -164,7 +165,7 @@ class InMemorySessionStore:
         bound_agent_id: str,
         user_text: str,
         assistant_text: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> tuple[RuntimeSessionRecord, bool]:
         session, created = self.get_or_create(
             session_id=session_id,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from types import MappingProxyType
 
 import pytest
 
@@ -73,6 +74,21 @@ def test_create_generates_session_id_and_bound_agent_record() -> None:
     assert session.session_id.startswith("session-")
     assert session.bound_agent_id == "default"
     assert store.get(session.session_id) is session
+
+
+def test_create_materializes_mapping_metadata() -> None:
+    store = InMemorySessionStore()
+    source_metadata = {"source": "connect"}
+
+    session = store.create(
+        bound_agent_id="default",
+        metadata=MappingProxyType(source_metadata),
+    )
+    source_metadata["source"] = "mutated"
+
+    assert session.metadata == {"source": "connect"}
+    assert isinstance(session.metadata, dict)
+
 
 
 def test_append_turn_persists_minimal_text_history_for_same_thread() -> None:

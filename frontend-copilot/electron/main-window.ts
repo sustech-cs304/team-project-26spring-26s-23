@@ -40,6 +40,9 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     backgroundColor: '#f3f5f8',
     webPreferences: {
       preload: options.preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   })
 
