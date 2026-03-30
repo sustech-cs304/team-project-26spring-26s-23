@@ -13,6 +13,7 @@ from app.copilot_runtime.bridge import (
     BoundAgentMismatchError,
     InvalidSessionHistoryError,
     RuntimeBridge,
+    SessionNotFoundError,
     ToolNotFoundError,
 )
 from app.copilot_runtime.contracts import (
@@ -170,13 +171,13 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.tools[0].displayName == "File Convert"
 
 
-def test_get_capabilities_raises_lookup_error_for_unknown_session() -> None:
+def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -> None:
     store = InMemorySessionStore()
     registry = build_default_agent_registry()
     scaffold = _build_scaffold(agent_registry=registry)
     bridge = RuntimeBridge(session_store=store, agent_registry=registry, scaffold=scaffold)
 
-    with pytest.raises(LookupError, match="Unknown session 'missing-session'."):
+    with pytest.raises(SessionNotFoundError, match="Unknown session 'missing-session'."):
         bridge.get_capabilities(session_id="missing-session")
 
 

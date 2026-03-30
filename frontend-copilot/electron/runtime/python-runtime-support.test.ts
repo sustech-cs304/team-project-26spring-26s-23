@@ -8,6 +8,7 @@ import {
   appendCapturedText,
   buildCapturedOutputSummary,
   requestRuntimeChildTermination,
+  type SpawnedRuntimeChild,
 } from './python-runtime-process'
 import { createHostedBackendFailure } from './runtime-diagnostics'
 import { prepareRuntimePaths } from './python-runtime-paths-support'
@@ -41,7 +42,7 @@ describe('python runtime process helpers', () => {
       exitCode: 0,
       signalCode: null,
       kill,
-    } as unknown as ReturnType<typeof import('node:child_process').spawn>, 'SIGTERM')
+    } as unknown as SpawnedRuntimeChild, 'SIGTERM')
 
     expect(kill).not.toHaveBeenCalled()
   })

@@ -126,6 +126,25 @@ def test_root_post_capabilities_get_unknown_session_returns_structured_error() -
     assert payload["error"]["details"] == {"sessionId": "missing-session"}
 
 
+def test_root_post_capabilities_get_unknown_agent_returns_structured_error() -> None:
+    app, _scaffold, store = _build_app()
+    store.create(bound_agent_id="missing-agent", session_id="session-1")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json={"method": "capabilities/get", "body": {"sessionId": "session-1"}},
+        )
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "agent_not_found"
+    assert payload["error"]["requestedMethod"] == "capabilities/get"
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
+    assert payload["error"]["details"] == {"agentName": "missing-agent"}
+
+
 def test_root_post_info_shape_without_method_is_recognized() -> None:
     app, scaffold, _ = _build_app()
 

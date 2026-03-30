@@ -147,11 +147,20 @@ def _handle_capabilities_get_request(
 
     try:
         capabilities = runtime_bridge.get_capabilities(session_id=capabilities_request.session_id)
-    except LookupError:
+    except SessionNotFoundError as exc:
         return _error_response(
             status.HTTP_404_NOT_FOUND,
             build_session_not_found_error(
-                session_id=capabilities_request.session_id,
+                session_id=exc.session_id,
+                scaffold=scaffold,
+                requested_method=CAPABILITIES_GET_METHOD,
+            ),
+        )
+    except AgentNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_agent_not_found_error(
+                agent_name=exc.agent_name,
                 scaffold=scaffold,
                 requested_method=CAPABILITIES_GET_METHOD,
             ),

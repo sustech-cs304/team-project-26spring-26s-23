@@ -1,4 +1,4 @@
-import type { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 
 export interface ChildExitResult {
@@ -6,7 +6,7 @@ export interface ChildExitResult {
   signal: NodeJS.Signals | null
 }
 
-type SpawnedRuntimeChild = ReturnType<typeof spawn>
+export type SpawnedRuntimeChild = ChildProcess
 
 const MAX_CAPTURED_OUTPUT_LENGTH = 8_000
 export const FAILED_START_CLEANUP_TIMEOUT_MS = 1_500

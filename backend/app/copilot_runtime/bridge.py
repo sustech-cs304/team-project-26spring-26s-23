@@ -164,7 +164,7 @@ class RuntimeBridge:
             raise RuntimeError("Runtime scaffold is required for capabilities queries.")
         session = self._session_store.get(session_id)
         if session is None:
-            raise LookupError(f"Unknown session '{session_id}'.")
+            raise SessionNotFoundError(session_id)
         self._resolve_agent(session.bound_agent_id)
         return self._scaffold.build_capabilities_response(session=session)
 

@@ -1,9 +1,9 @@
-import type { spawn } from 'node:child_process'
 import type { HostedRuntimeLaunchConfig } from './runtime-config'
 import { RuntimeTextFileSink, type RuntimeLogLevel } from './runtime-observability'
 import {
   appendCapturedText,
   type ChildExitResult,
+  type SpawnedRuntimeChild,
 } from './python-runtime-process'
 import {
   appendFailureDetail,
@@ -19,8 +19,6 @@ import {
   type HostedBackendState,
 } from './runtime-state'
 import { summarizeHostedBackendState } from './python-runtime-observability-support'
-
-type SpawnedRuntimeChild = ReturnType<typeof spawn>
 
 export type ExpectedRuntimeExitDisposition = 'none' | 'stopped' | 'failed-start' | 'failed-shutdown'
 
