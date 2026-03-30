@@ -28,6 +28,11 @@ export function createFakeIpcRenderer() {
       on: vi.fn((channel: string, listener: IpcListener) => {
         registeredListeners.set(channel, listener)
       }),
+      off: vi.fn((channel: string, listener: IpcListener) => {
+        if (registeredListeners.get(channel) === listener) {
+          registeredListeners.delete(channel)
+        }
+      }),
     },
   }
 }

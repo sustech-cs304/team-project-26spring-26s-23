@@ -4,10 +4,16 @@ import { MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL } from './renderer-ipc-contract'
 export function registerRuntimeConsoleForwarding(
   ipcRenderer: IpcRendererLike,
   targetConsole: ConsoleLike = console,
-): void {
-  ipcRenderer.on(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, (_event, entry: RuntimeConsoleEntry) => {
+): () => void {
+  const listener = (_event: unknown, entry: RuntimeConsoleEntry) => {
     writeRuntimeConsoleEntryToBrowserConsole(entry, targetConsole)
-  })
+  }
+
+  ipcRenderer.on(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, listener)
+
+  return () => {
+    ipcRenderer.off(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, listener)
+  }
 }
 
 export function writeRuntimeConsoleEntryToBrowserConsole(

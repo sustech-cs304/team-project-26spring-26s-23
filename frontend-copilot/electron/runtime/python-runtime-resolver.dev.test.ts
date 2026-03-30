@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildDevelopmentPythonRuntimeLaunchSpec } from './python-runtime-resolver-dev'
 import { DESKTOP_RUNTIME_ENTRY_MODULE } from './python-runtime-resolver-shared'
 import {
@@ -9,6 +9,10 @@ import {
 } from './runtime-test-fixtures'
 
 describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('resolves backend paths from the Electron app root in development mode', () => {
     const spec = buildDevelopmentPythonRuntimeLaunchSpec({
       appRoot: path.resolve('.'),
@@ -34,8 +38,6 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
   it('does not prefer uv when falling back to shell Python interpreters', async () => {
     const fixture = await createDevelopmentRuntimeFixture()
     const fakeBinDir = path.join(fixture.tempRoot, 'fake-bin')
-    const originalPath = process.env.PATH
-    const originalWindowsPath = process.env.Path
 
     await rm(fixture.pythonExecutablePath, { force: true })
 
@@ -47,9 +49,9 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
         ...(process.platform === 'win32' ? [writeSuccessfulCommandProbe(fakeBinDir, 'py')] : []),
       ])
 
-      process.env.PATH = fakeBinDir
+      vi.stubEnv('PATH', fakeBinDir)
       if (process.platform === 'win32') {
-        process.env.Path = fakeBinDir
+        vi.stubEnv('Path', fakeBinDir)
       }
 
       const spec = buildDevelopmentPythonRuntimeLaunchSpec({
@@ -66,18 +68,6 @@ describe('buildDevelopmentPythonRuntimeLaunchSpec', () => {
         expect(spec.args).toEqual(['-m', DESKTOP_RUNTIME_ENTRY_MODULE])
       }
     } finally {
-      if (originalPath === undefined) {
-        delete process.env.PATH
-      } else {
-        process.env.PATH = originalPath
-      }
-      if (process.platform === 'win32') {
-        if (originalWindowsPath === undefined) {
-          delete process.env.Path
-        } else {
-          process.env.Path = originalWindowsPath
-        }
-      }
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
   })

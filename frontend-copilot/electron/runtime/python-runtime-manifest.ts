@@ -38,6 +38,7 @@ export async function readBundledPythonRuntimeManifest(
       sitePackagesRelativePaths: normalizeRequiredRelativePathArray(
         rawBackend.sitePackagesRelativePaths,
         'backend.sitePackagesRelativePaths',
+        { allowEmpty: true },
       ),
     },
     metadata: {
@@ -89,8 +90,20 @@ function normalizeRequiredInteger(value: unknown, fieldName: string): number {
   return value
 }
 
-function normalizeRequiredRelativePathArray(value: unknown, fieldName: string): string[] {
-  if (!Array.isArray(value) || value.length === 0) {
+function normalizeRequiredRelativePathArray(
+  value: unknown,
+  fieldName: string,
+  options: { allowEmpty?: boolean } = {},
+): string[] {
+  const { allowEmpty = false } = options
+
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `Bundled runtime manifest field "${fieldName}" must be ${allowEmpty ? 'an' : 'a non-empty'} array of relative paths.`,
+    )
+  }
+
+  if (!allowEmpty && value.length === 0) {
     throw new Error(`Bundled runtime manifest field "${fieldName}" must be a non-empty array of relative paths.`)
   }
 

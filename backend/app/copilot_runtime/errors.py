@@ -198,16 +198,31 @@ def build_method_not_implemented_error(
     requested_method: str,
     scaffold: RuntimeScaffold,
 ) -> RuntimeErrorResponse:
+    supported_methods = _format_supported_methods_for_message(scaffold.supported_methods)
     return _build_runtime_error(
         code=METHOD_NOT_IMPLEMENTED_CODE,
         message=(
             f"Runtime method '{requested_method}' is not implemented yet in the current scaffold. "
-            "Supported methods are info, agents/list, session/create, capabilities/get, message/send, agent/connect, and agent/run."
+            f"Supported methods are {supported_methods}."
         ),
         scaffold=scaffold,
         requested_method=requested_method,
         details={},
     )
+
+
+
+def _format_supported_methods_for_message(supported_methods: tuple[str, ...]) -> str:
+    if len(supported_methods) == 0:
+        return "none"
+
+    if len(supported_methods) == 1:
+        return supported_methods[0]
+
+    if len(supported_methods) == 2:
+        return f"{supported_methods[0]} and {supported_methods[1]}"
+
+    return f"{', '.join(supported_methods[:-1])}, and {supported_methods[-1]}"
 
 
 

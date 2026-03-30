@@ -14,9 +14,10 @@ describe('registerRuntimeConsoleForwarding', () => {
       error: vi.fn(),
     }
 
-    registerRuntimeConsoleForwarding(ipcRenderer as never, targetConsole)
+    const unsubscribe = registerRuntimeConsoleForwarding(ipcRenderer as never, targetConsole)
 
     expect(ipcRenderer.on).toHaveBeenCalledWith(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, expect.any(Function))
+    expect(unsubscribe).toEqual(expect.any(Function))
 
     const listener = registeredListeners.get(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL)
     listener?.(undefined, {
@@ -31,5 +32,17 @@ describe('registerRuntimeConsoleForwarding', () => {
     expect(targetConsole.debug).toHaveBeenCalledWith('[electron-main]', '[startup] webContents:dom-ready', {
       sinceWindowMs: 18,
     })
+  })
+
+  it('returns an unsubscribe function that removes the runtime console listener', () => {
+    const { registeredListeners, ipcRenderer } = createFakeIpcRenderer()
+
+    const unsubscribe = registerRuntimeConsoleForwarding(ipcRenderer as never)
+    const listener = registeredListeners.get(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL)
+
+    unsubscribe()
+
+    expect(ipcRenderer.off).toHaveBeenCalledWith(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, listener)
+    expect(registeredListeners.has(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL)).toBe(false)
   })
 })

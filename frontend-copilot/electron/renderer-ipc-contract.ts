@@ -1,6 +1,6 @@
 import type { IpcRenderer } from 'electron'
 
-export type IpcRendererLike = Pick<IpcRenderer, 'on'>
+export type IpcRendererLike = Pick<IpcRenderer, 'on' | 'off'>
 export type ConsoleLike = Pick<Console, 'debug' | 'info' | 'warn' | 'error'>
 
 export const MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL = 'runtime:main-console'

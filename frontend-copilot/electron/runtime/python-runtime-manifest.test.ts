@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import { readBundledPythonRuntimeManifest } from './python-runtime-manifest'
 import { DESKTOP_RUNTIME_ENTRY_MODULE } from './python-runtime-resolver-shared'
@@ -30,6 +30,48 @@ describe('readBundledPythonRuntimeManifest', () => {
           stagingTool: 'frontend-copilot/scripts/prepare-bundled-runtime.mjs',
         },
       })
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('allows empty site-packages arrays when the bundled runtime does not expose extra directories', async () => {
+    const fixture = await createBundledRuntimeFixture()
+
+    try {
+      const rawManifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
+        backend: {
+          sitePackagesRelativePaths: unknown
+        }
+      }
+
+      rawManifest.backend.sitePackagesRelativePaths = []
+      await writeFile(fixture.manifestPath, `${JSON.stringify(rawManifest, null, 2)}\n`, 'utf8')
+
+      const manifest = await readBundledPythonRuntimeManifest(fixture.manifestPath)
+
+      expect(manifest.backend.sitePackagesRelativePaths).toEqual([])
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('still requires at least one Python path entry for bundled backend imports', async () => {
+    const fixture = await createBundledRuntimeFixture()
+
+    try {
+      const rawManifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
+        backend: {
+          pythonPathRelativePaths: unknown
+        }
+      }
+
+      rawManifest.backend.pythonPathRelativePaths = []
+      await writeFile(fixture.manifestPath, `${JSON.stringify(rawManifest, null, 2)}\n`, 'utf8')
+
+      await expect(readBundledPythonRuntimeManifest(fixture.manifestPath)).rejects.toThrow(
+        'Bundled runtime manifest field "backend.pythonPathRelativePaths" must be a non-empty array of relative paths.',
+      )
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }

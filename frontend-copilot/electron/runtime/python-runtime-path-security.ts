@@ -1,16 +1,16 @@
 import path from 'node:path'
 
-export function normalizeRequiredRelativePath(value: unknown, fieldName: string): string {
-  const normalizedValue = normalizeRequiredString(value, fieldName)
+export function normalizeRequiredRelativePath(value: unknown, label: string): string {
+  const normalizedValue = normalizeRequiredString(value, label)
 
   if (path.isAbsolute(normalizedValue)) {
-    throw new Error(`Bundled runtime manifest field "${fieldName}" must be a relative path.`)
+    throw new Error(`Bundled runtime ${label} must be a relative path.`)
   }
 
   return normalizedValue
 }
 
-export function normalizeOptionalRelativePath(value: unknown, fieldName: string): string | null {
+export function normalizeOptionalRelativePath(value: unknown, label: string): string | null {
   const normalizedValue = normalizeOptionalString(value)
 
   if (normalizedValue === null) {
@@ -18,7 +18,7 @@ export function normalizeOptionalRelativePath(value: unknown, fieldName: string)
   }
 
   if (path.isAbsolute(normalizedValue)) {
-    throw new Error(`Bundled runtime manifest field "${fieldName}" must be a relative path when provided.`)
+    throw new Error(`Bundled runtime ${label} must be a relative path when provided.`)
   }
 
   return normalizedValue
@@ -40,11 +40,11 @@ export function resolveBundledRuntimeRelativePath(
   return resolvedPath
 }
 
-function normalizeRequiredString(value: unknown, fieldName: string): string {
+function normalizeRequiredString(value: unknown, label: string): string {
   const normalizedValue = normalizeOptionalString(value)
 
   if (normalizedValue === null) {
-    throw new Error(`Bundled runtime manifest field "${fieldName}" must be a non-empty string.`)
+    throw new Error(`Bundled runtime ${label} must be a non-empty string.`)
   }
 
   return normalizedValue
