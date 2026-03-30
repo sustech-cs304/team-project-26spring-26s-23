@@ -65,6 +65,7 @@ export function CopilotChatPanel({
   const [, setSendError] = useState<string | null>(null)
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
   const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
+  const [workspaceStateLoaded, setWorkspaceStateLoaded] = useState(false)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
 
@@ -119,6 +120,7 @@ export function CopilotChatPanel({
     }),
     [modelCatalog.models, workspacePrimaryModel],
   )
+  const hasAvailableModels = modelCatalog.models.length > 0
 
   useEffect(() => {
     if (sessionShell === null) {
@@ -146,11 +148,13 @@ export function CopilotChatPanel({
       if (result.ok) {
         setWorkspaceProviderProfiles(result.state.providerProfiles)
         setWorkspacePrimaryModel(result.state.defaultModelRouting.primaryAssistantModel)
+        setWorkspaceStateLoaded(true)
         return
       }
 
       setWorkspaceProviderProfiles([])
       setWorkspacePrimaryModel('')
+      setWorkspaceStateLoaded(true)
     })()
 
     return () => {
@@ -159,17 +163,30 @@ export function CopilotChatPanel({
   }, [loadWorkspaceState])
 
   useEffect(() => {
-    if (preferredWorkspaceModelId === '') {
+    if (!workspaceStateLoaded) {
       return
     }
 
-    setComposerDraft((current) => current.model.trim() === ''
-      ? {
-          ...current,
-          model: preferredWorkspaceModelId,
-        }
-      : current)
-  }, [preferredWorkspaceModelId])
+    setComposerDraft((current) => {
+      if (!hasAvailableModels) {
+        return current.model === ''
+          ? current
+          : {
+              ...current,
+              model: '',
+            }
+      }
+
+      if (preferredWorkspaceModelId === '' || current.model.trim() !== '') {
+        return current
+      }
+
+      return {
+        ...current,
+        model: preferredWorkspaceModelId,
+      }
+    })
+  }, [hasAvailableModels, preferredWorkspaceModelId, workspaceStateLoaded])
 
   useEffect(() => {
     setConversation([])
@@ -193,8 +210,9 @@ export function CopilotChatPanel({
       sessionShell,
       sendStatus,
       composerDraft,
+      hasAvailableModels,
     }),
-    [composerDraft, sendStatus, sessionShell, state],
+    [composerDraft, hasAvailableModels, sendStatus, sessionShell, state],
   )
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
@@ -204,6 +222,7 @@ export function CopilotChatPanel({
       sessionShell,
       composerDraft,
       sendStatus,
+      hasAvailableModels,
       composerInputRef,
       sendMessage,
       setSendStatus,

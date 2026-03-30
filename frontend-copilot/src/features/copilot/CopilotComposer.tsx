@@ -41,6 +41,8 @@ export function CopilotComposer({
   composerHeight,
   onResizeStart,
 }: CopilotComposerProps) {
+  const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
+
   const handleMessageInputKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
       return
@@ -78,6 +80,7 @@ export function CopilotComposer({
         <ModelPicker
           selectedModelId={draft.model}
           groups={modelGroups}
+          disabled={!hasAvailableModels}
           onSelectModel={(model) => {
             onDraftChange((current) => ({
               ...current,

@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { createProviderProfile } from '../../src/workbench/settings/settings-workspace-test-fixtures'
 import { createElectronUnifiedConfigService } from '../config-center/main-process'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createSettingsWorkspacePaths } from './paths'
@@ -40,7 +41,12 @@ describe('createSettingsWorkspaceStorage', () => {
       const result = await fixture.storage.loadState()
 
       expect(result.source).toBe('initialized-defaults')
-      expect(result.state.providerProfiles.length).toBeGreaterThan(0)
+      expect(result.state.providerProfiles).toEqual([])
+      expect(result.state.defaultModelRouting).toEqual({
+        primaryAssistantModel: '',
+        fastAssistantModel: '',
+      })
+      expect(result.state.providerProfiles.flatMap((profile) => profile.availableModels)).toEqual([])
       expect(result.state.providerProfiles.every((profile) => profile.hasApiKey === false)).toBe(true)
 
       expect(await readJsonFile(fixture.paths.stateDocument)).toMatchObject({
@@ -67,18 +73,18 @@ describe('createSettingsWorkspaceStorage', () => {
 
     try {
       const initial = await fixture.storage.loadState()
+      const persistedProvider = createProviderProfile({
+        id: 'persisted-provider',
+        name: 'Persisted Router',
+      })
       const stateToSave = {
         ...initial.state,
-        providerProfiles: initial.state.providerProfiles.map((profile, index) => {
-          return index === 0
-            ? {
-              ...profile,
-              name: 'Persisted Router',
-              endpoint: 'https://persisted.example.com/v1',
-              notes: 'persisted-note',
-            }
-            : profile
-        }),
+        providerProfiles: [
+          {
+            ...persistedProvider,
+            notes: 'persisted-note',
+          },
+        ],
         defaultModelRouting: {
           primaryAssistantModel: 'persisted-primary',
           fastAssistantModel: 'persisted-fast',
@@ -120,13 +126,13 @@ describe('createSettingsWorkspaceStorage', () => {
     try {
       await fixture.storage.loadState()
 
-      await fixture.storage.saveProviderSecret('openrouter', 'first-secret')
+      await fixture.storage.saveProviderSecret('persisted-provider', 'first-secret')
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({
         version: 1,
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {
-            openrouter: {
+            'persisted-provider': {
               apiKey: 'first-secret',
             },
           },
@@ -136,13 +142,18 @@ describe('createSettingsWorkspaceStorage', () => {
         },
       })
 
-      await fixture.storage.saveProviderSecret('openrouter', 'second-secret')
+      await fixture.storage.saveState({
+        ...(await fixture.storage.loadState()).state,
+        providerProfiles: [createProviderProfile({ id: 'persisted-provider', name: 'Persisted Router' })],
+      })
+
+      await fixture.storage.saveProviderSecret('persisted-provider', 'second-secret')
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({
         version: 1,
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {
-            openrouter: {
+            'persisted-provider': {
               apiKey: 'second-secret',
             },
           },
@@ -153,24 +164,24 @@ describe('createSettingsWorkspaceStorage', () => {
       })
 
       const loadedStateWithSecret = await fixture.storage.loadState()
-      expect(loadedStateWithSecret.state.providerProfiles.find((profile) => profile.id === 'openrouter')?.hasApiKey).toBe(true)
+      expect(loadedStateWithSecret.state.providerProfiles.find((profile) => profile.id === 'persisted-provider')?.hasApiKey).toBe(true)
 
-      const secretStatuses = await fixture.storage.loadSecretStates(['openrouter', 'ollama-local'])
+      const secretStatuses = await fixture.storage.loadSecretStates(['persisted-provider', 'missing-provider'])
       expect(secretStatuses.states).toEqual({
-        openrouter: {
+        'persisted-provider': {
           hasApiKey: true,
           apiKey: 'second-secret',
         },
-        'ollama-local': {
+        'missing-provider': {
           hasApiKey: false,
           apiKey: '',
         },
       })
 
       const reloadedStorage = createSettingsWorkspaceStorage({ paths: fixture.paths })
-      const reloadedSecretStatuses = await reloadedStorage.loadSecretStates(['openrouter'])
+      const reloadedSecretStatuses = await reloadedStorage.loadSecretStates(['persisted-provider'])
       expect(reloadedSecretStatuses.states).toEqual({
-        openrouter: {
+        'persisted-provider': {
           hasApiKey: true,
           apiKey: 'second-secret',
         },
@@ -190,7 +201,7 @@ describe('createSettingsWorkspaceStorage', () => {
       expect(publicSnapshotJson).not.toContain('providerSecrets')
       expect(publicSnapshotJson).not.toContain('apiKey')
 
-      await fixture.storage.clearProviderSecret('openrouter')
+      await fixture.storage.clearProviderSecret('persisted-provider')
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({
         version: 1,
         kind: 'settings-workspace-secrets',
@@ -202,9 +213,9 @@ describe('createSettingsWorkspaceStorage', () => {
         },
       })
 
-      const clearedStatuses = await fixture.storage.loadSecretStates(['openrouter'])
+      const clearedStatuses = await fixture.storage.loadSecretStates(['persisted-provider'])
       expect(clearedStatuses.states).toEqual({
-        openrouter: {
+        'persisted-provider': {
           hasApiKey: false,
           apiKey: '',
         },

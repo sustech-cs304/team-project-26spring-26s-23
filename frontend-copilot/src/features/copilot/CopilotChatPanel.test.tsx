@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
@@ -13,6 +13,7 @@ import {
   createSelectedAgent,
   createSessionShell,
 } from './CopilotChatPanel.test-support'
+import { createPersistedWorkspaceState } from '../../workbench/settings/settings-workspace-test-fixtures'
 
 declare global {
   // eslint-disable-next-line no-var
@@ -80,8 +81,9 @@ describe('CopilotChatPanel', () => {
     expect(html).toContain('按 Enter 发送，按 Ctrl + Enter 换行')
     expect(html).toContain('copilot-chat__send-button')
     expect(html).toContain('copilot-chat__stream--scrollbarless')
-    expect(html).toContain('aria-label="请输入消息内容。"')
-    expect(html).toContain('当前尚未发送消息')
+    expect(html).toContain('aria-label="消息内容"')
+    expect(html).toContain('尚未配置模型')
+    expect(html).toContain('请先前往设置页添加模型服务商和模型。')
     expect(html.indexOf('data-testid="chat-message-scroll-region"')).toBeLessThan(
       html.indexOf('data-testid="chat-composer-dock"'),
     )

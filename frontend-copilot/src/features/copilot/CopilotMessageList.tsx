@@ -2,9 +2,13 @@ import type { CopilotConversationTurn } from './copilot-chat-helpers'
 
 interface CopilotMessageListProps {
   conversation: CopilotConversationTurn[]
+  emptyState?: {
+    title: string
+    description: string
+  } | null
 }
 
-export function CopilotMessageList({ conversation }: CopilotMessageListProps) {
+export function CopilotMessageList({ conversation, emptyState = null }: CopilotMessageListProps) {
   return (
     <div
       className="copilot-chat__stream copilot-chat__stream--scrollbarless"
@@ -13,8 +17,14 @@ export function CopilotMessageList({ conversation }: CopilotMessageListProps) {
     >
       {conversation.length === 0
         ? (
-            <div className="copilot-chat__empty">
-              <p className="copilot-chat__empty-title">当前尚未发送消息</p>
+            <div
+              className="copilot-chat__empty"
+              data-testid={emptyState === null ? 'chat-empty-state' : 'chat-no-model-empty-state'}
+            >
+              <p className="copilot-chat__empty-title">{emptyState?.title ?? '当前尚未发送消息'}</p>
+              {emptyState !== null && (
+                <p className="copilot-chat__empty-description">{emptyState.description}</p>
+              )}
             </div>
           )
         : conversation.map((turn) => (

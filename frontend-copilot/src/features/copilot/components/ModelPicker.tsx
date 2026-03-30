@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import {
-  COPILOT_SAMPLE_MODEL_CATALOG,
+  createEmptyCopilotModel,
   createFallbackCopilotModel,
   filterCopilotModelGroups,
   getCopilotModelById,
@@ -22,7 +22,7 @@ export function ModelPicker({
   selectedModelId,
   onSelectModel,
   disabled = false,
-  groups = COPILOT_SAMPLE_MODEL_CATALOG.groups,
+  groups = [],
 }: ModelPickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -30,13 +30,20 @@ export function ModelPicker({
   const pickerRef = useRef<HTMLDivElement | null>(null)
   const panelId = useId()
   const models = useMemo(() => groups.flatMap((group) => group.models), [groups])
+  const hasAnyModels = models.length > 0
 
   const resolvedSelectedModel = useMemo(() => getCopilotModelById(selectedModelId, models), [models, selectedModelId])
   const selectedModel = useMemo(
-    () => resolvedSelectedModel ?? createFallbackCopilotModel(selectedModelId),
-    [resolvedSelectedModel, selectedModelId],
+    () => {
+      if (!hasAnyModels) {
+        return createEmptyCopilotModel()
+      }
+
+      return resolvedSelectedModel ?? createFallbackCopilotModel(selectedModelId)
+    },
+    [hasAnyModels, resolvedSelectedModel, selectedModelId],
   )
-  const isSelectedModelInvalid = selectedModelId.trim() !== '' && resolvedSelectedModel === null
+  const isSelectedModelInvalid = hasAnyModels && selectedModelId.trim() !== '' && resolvedSelectedModel === null
   const availableTags = useMemo(() => getCopilotModelTags(models), [models])
   const filteredModels = useMemo(
     () => filterCopilotModelGroups({
@@ -85,7 +92,7 @@ export function ModelPicker({
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={panelId}
-        disabled={disabled}
+        disabled={disabled || !hasAnyModels}
         onClick={() => {
           setIsOpen((current) => !current)
         }}

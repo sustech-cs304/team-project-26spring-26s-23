@@ -1,4 +1,4 @@
-import type { ModelCapability, ProviderModelProfile, ProviderProfile, SelectOption } from '../types'
+import type { ModelCapability, ProviderProfile, SelectOption } from '../types'
 
 let nextModelProfileSequence = 0
 
@@ -12,26 +12,6 @@ export function createModelProfileId(providerId: string, modelId: string) {
   nextModelProfileSequence += 1
 
   return `${providerId}-${sanitizedModelId || 'model'}-${nextModelProfileSequence}`
-}
-
-function createInitialModel(
-  providerId: string,
-  modelId: string,
-  displayName: string,
-  groupName: string,
-  capabilities: ModelCapability[],
-): ProviderModelProfile {
-  return {
-    id: createModelProfileId(providerId, modelId),
-    modelId,
-    displayName,
-    groupName,
-    capabilities,
-    supportsStreaming: true,
-    currency: 'usd',
-    inputPrice: '0.50',
-    outputPrice: '3.00',
-  }
 }
 
 export const protocolOptions: SelectOption[] = [
@@ -120,83 +100,4 @@ export const currencyOptions: SelectOption[] = [
   { value: 'cny', label: '人民币（CNY）' },
 ]
 
-export const initialProviderProfiles: ProviderProfile[] = [
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    protocol: 'openai',
-    endpoint: 'https://openrouter.ai/api/v1',
-    hasApiKey: false,
-    defaultModel: 'openai/gpt-4.1',
-    fastModel: 'openai/gpt-4.1-mini',
-    fallbackModel: 'anthropic/claude-3.7-sonnet',
-    organization: 'team-project-26spring',
-    region: 'Global',
-    notes: '适合统一接入多家模型，后续可按成本切换路由。',
-    availableModels: [
-      createInitialModel('openrouter', 'openai/gpt-4.1', 'GPT-4.1', 'OpenAI', ['vision', 'reasoning', 'tools']),
-      createInitialModel(
-        'openrouter',
-        'openai/gpt-4.1-mini',
-        'GPT-4.1 Mini',
-        'OpenAI',
-        ['vision', 'reasoning', 'tools'],
-      ),
-      createInitialModel(
-        'openrouter',
-        'anthropic/claude-3.7-sonnet',
-        'Claude 3.7 Sonnet',
-        'Anthropic',
-        ['vision', 'reasoning', 'tools'],
-      ),
-    ],
-  },
-  {
-    id: 'baill-openai',
-    name: 'BaiLiOpenAI',
-    protocol: 'openai-response',
-    endpoint: 'https://api.baili.example.com/v1',
-    hasApiKey: false,
-    defaultModel: 'baili-chat-pro',
-    fastModel: 'baili-chat-lite',
-    fallbackModel: 'baili-reasoner',
-    organization: 'school-lab',
-    region: 'CN-North',
-    notes: '面向校园网络环境的占位服务商配置。',
-    availableModels: [
-      createInitialModel('baill-openai', 'baili-chat-pro', 'Baili Chat Pro', 'BaiLi', ['reasoning', 'tools']),
-      createInitialModel('baill-openai', 'baili-chat-lite', 'Baili Chat Lite', 'BaiLi', ['reasoning']),
-      createInitialModel('baill-openai', 'baili-reasoner', 'Baili Reasoner', 'BaiLi', ['reasoning']),
-    ],
-  },
-  {
-    id: 'ollama-local',
-    name: 'Ollama Local',
-    protocol: 'ollama',
-    endpoint: 'http://127.0.0.1:11434/v1',
-    hasApiKey: false,
-    defaultModel: 'llama3.2:latest',
-    fastModel: 'qwen2.5:7b',
-    fallbackModel: 'mistral:latest',
-    organization: 'local-dev',
-    region: 'Local',
-    notes: '本地 Ollama 运行时示例，用于离线或局域网模型服务。',
-    availableModels: [
-      createInitialModel(
-        'ollama-local',
-        'llama3.2:latest',
-        'Llama 3.2',
-        'Ollama',
-        ['reasoning', 'tools'],
-      ),
-      createInitialModel('ollama-local', 'qwen2.5:7b', 'Qwen 2.5 7B', 'Ollama', ['reasoning', 'tools']),
-      createInitialModel(
-        'ollama-local',
-        'mistral:latest',
-        'Mistral',
-        'Ollama',
-        ['reasoning', 'tools'],
-      ),
-    ],
-  },
-]
+export const initialProviderProfiles: ProviderProfile[] = []

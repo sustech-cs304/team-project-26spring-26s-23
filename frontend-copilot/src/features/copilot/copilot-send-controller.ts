@@ -21,6 +21,7 @@ export function getCopilotSendDisabledReason(input: {
   sessionShell: AssistantSessionShell | null
   sendStatus: 'idle' | 'sending'
   composerDraft: CopilotChatComposerDraft
+  hasAvailableModels: boolean
 }): string | null {
   if (!isCopilotConnectableState(input.state)) {
     return '当前运行态未就绪，无法发送消息。'
@@ -32,6 +33,10 @@ export function getCopilotSendDisabledReason(input: {
 
   if (input.sendStatus === 'sending') {
     return '当前消息仍在发送中。'
+  }
+
+  if (!input.hasAvailableModels) {
+    return '尚未配置模型，请先前往设置页添加模型服务商和模型。'
   }
 
   if (input.composerDraft.messageText.trim() === '') {
@@ -50,6 +55,7 @@ export async function orchestrateCopilotSend(input: {
   sessionShell: AssistantSessionShell | null
   composerDraft: CopilotChatComposerDraft
   sendStatus: 'idle' | 'sending'
+  hasAvailableModels: boolean
   composerInputRef: RefObject<HTMLTextAreaElement>
   sendMessage: typeof sendRuntimeMessage
   setSendStatus: Dispatch<SetStateAction<'idle' | 'sending'>>
@@ -58,6 +64,11 @@ export async function orchestrateCopilotSend(input: {
   setConversation: Dispatch<SetStateAction<CopilotConversationTurn[]>>
 }) {
   if (!isCopilotConnectableState(input.state) || input.sessionShell === null || input.sendStatus === 'sending') {
+    return
+  }
+
+  if (!input.hasAvailableModels) {
+    input.setSendError('尚未配置模型，请先前往设置页添加模型服务商和模型。')
     return
   }
 

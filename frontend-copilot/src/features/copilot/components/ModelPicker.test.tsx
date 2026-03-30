@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { createProviderProfile } from '../../../workbench/settings/settings-workspace-test-fixtures'
-import { createCopilotModelCatalog, DEFAULT_COPILOT_MODEL_ID } from '../model-picker'
+import { createCopilotModelCatalog, createCopilotModelCatalogFromOptions } from '../model-picker'
 import { ModelPicker } from './ModelPicker'
 
 declare global {
@@ -90,14 +90,81 @@ describe('ModelPicker', () => {
 
     rendered.unmount()
   })
+
+  it('shows the explicit no-model label and keeps the trigger disabled when no configured models exist', () => {
+    const rendered = renderWithRoot(
+      <ModelPicker
+        selectedModelId="openai/gpt-4.1"
+        groups={[]}
+        onSelectModel={() => {
+          throw new Error('No model should be selectable when no configured models exist.')
+        }}
+      />,
+    )
+
+    const trigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    expect(trigger.disabled).toBe(true)
+    expect(trigger.textContent).toContain('尚未配置模型')
+    expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
+
+    rendered.unmount()
+  })
 })
 
+const TEST_MODEL_CATALOG = createCopilotModelCatalogFromOptions([
+  {
+    id: 'openrouter/gemini-2.5-pro-preview',
+    name: 'Gemini 2.5 Pro Preview',
+    provider: 'OpenRouter',
+    group: 'OpenRouter',
+    tags: ['推理', '工具', '联网'],
+    icon: {
+      label: 'G',
+      accent: '#60a5fa',
+    },
+  },
+  {
+    id: 'moonshot/kimi-k2.5',
+    name: 'Kimi K2.5',
+    provider: 'Moonshot',
+    group: 'Moonshot',
+    tags: ['推理', '联网'],
+    icon: {
+      label: 'K',
+      accent: '#a78bfa',
+    },
+  },
+  {
+    id: 'anthropic/claude-opus-4.1',
+    name: 'Claude Opus 4.1',
+    provider: 'FoxCodeAnthropic',
+    group: 'FoxCodeAnthropic',
+    tags: ['推理', '工具'],
+    icon: {
+      label: 'C',
+      accent: '#fb923c',
+    },
+  },
+  {
+    id: 'cherry/qwen-free',
+    name: 'Qwen Free',
+    provider: 'CherryAI',
+    group: 'CherryAI',
+    tags: ['免费', '工具'],
+    icon: {
+      label: 'Q',
+      accent: '#facc15',
+    },
+  },
+])
+
 function ModelPickerHarness() {
-  const [selectedModelId, setSelectedModelId] = useState(DEFAULT_COPILOT_MODEL_ID)
+  const [selectedModelId, setSelectedModelId] = useState(TEST_MODEL_CATALOG.models[0]?.id ?? '')
 
   return (
     <ModelPicker
       selectedModelId={selectedModelId}
+      groups={TEST_MODEL_CATALOG.groups}
       onSelectModel={(model) => {
         setSelectedModelId(model.id)
       }}

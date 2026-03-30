@@ -139,19 +139,15 @@ export function createCustomProvider(index: number): ProviderProfile {
     id: providerId,
     name: providerName,
     protocol: 'openai',
-    endpoint: 'https://api.example.com/v1',
+    endpoint: '',
     hasApiKey: false,
-    defaultModel: 'custom-model',
-    fastModel: 'custom-model-fast',
-    fallbackModel: 'custom-model-fallback',
+    defaultModel: '',
+    fastModel: '',
+    fallbackModel: '',
     organization: '',
-    region: 'Custom',
+    region: '',
     notes: '',
-    availableModels: [
-      createProviderModelProfile(providerId, 'custom-model', providerName),
-      createProviderModelProfile(providerId, 'custom-model-fast', providerName),
-      createProviderModelProfile(providerId, 'custom-model-fallback', providerName),
-    ],
+    availableModels: [],
   }
 }
 

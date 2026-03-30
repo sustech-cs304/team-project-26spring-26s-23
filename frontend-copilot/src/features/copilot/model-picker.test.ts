@@ -73,4 +73,15 @@ describe('copilot model picker bridge', () => {
       models: catalog.models,
     })).toBe('openai/gpt-4.1')
   })
+
+  it('returns an empty preferred model id when no configured models exist', () => {
+    const catalog = createCopilotModelCatalog([])
+
+    expect(catalog.groups).toEqual([])
+    expect(catalog.models).toEqual([])
+    expect(resolveCopilotPreferredModelId({
+      preferredModelId: 'openai/gpt-4.1',
+      models: catalog.models,
+    })).toBe('')
+  })
 })

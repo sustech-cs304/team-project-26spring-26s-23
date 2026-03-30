@@ -76,7 +76,7 @@ describe('SettingsWorkspace structure', () => {
     expect(html).not.toContain('启用微动画')
   })
 
-  it('limits provider endpoint types to the five supported options and removes provider state toggles', () => {
+  it('shows the empty provider state on first initialization without seeded provider examples', () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace
         bootstrap={createBootstrapController()}
@@ -86,19 +86,11 @@ describe('SettingsWorkspace structure', () => {
       />,
     )
 
-    expect(html).toContain('端点类型')
-    expect(html).toContain('OpenAI')
-    expect(html).toContain('OpenAI-Response')
-    expect(html).toContain('Gemini')
-    expect(html).toContain('Anthropic')
-    expect(html).toContain('Ollama')
-    expect(html).not.toContain('OpenAI Compatible')
-    expect(html).not.toContain('Custom REST')
-    expect(html).not.toContain('启用当前服务商')
-    expect(html).not.toContain('设为默认服务商')
-    expect(html).not.toContain('启用中')
-    expect(html).not.toContain('已停用')
-    expect(html).not.toContain('>默认<')
+    expect(html).toContain('模型服务商')
+    expect(html).toContain('可在左侧添加服务商信息')
+    expect(html).not.toContain('OpenRouter')
+    expect(html).not.toContain('Ollama Local')
+    expect(html).not.toContain('BaiLiOpenAI')
   })
 
   it('keeps the development runtime override card wired into the api section', () => {

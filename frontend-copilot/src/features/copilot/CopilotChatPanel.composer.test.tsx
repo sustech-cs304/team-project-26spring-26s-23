@@ -203,8 +203,60 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('shows the explicit no-model empty state and clears session-level fallback model when no configured models exist', async () => {
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'initialized-defaults' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [],
+        defaultModelRouting: {
+          primaryAssistantModel: '',
+          fastAssistantModel: '',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            defaultModelPreference: 'openai/gpt-4.1',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+
+    expect(loadWorkspaceState).toHaveBeenCalledTimes(1)
+    expect(modelTrigger.disabled).toBe(true)
+    expect(modelTrigger.textContent).toContain('尚未配置模型')
+    expect(modelTrigger.textContent).not.toContain('openai/gpt-4.1')
+    expect(sendButton.disabled).toBe(true)
+    expect(sendButton.title).toBe('尚未配置模型，请先前往设置页添加模型服务商和模型。')
+    expect(rendered.getByTestId('chat-no-model-empty-state').textContent).toContain('尚未配置模型')
+    expect(rendered.getByTestId('chat-no-model-empty-state').textContent).toContain('请先前往设置页添加模型服务商和模型。')
+
+    rendered.unmount()
+  })
+
   it('submits on Enter and keeps newline behavior for Ctrl + Enter in the message composer', async () => {
     const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
     const rendered = renderWithRoot(
       <CopilotChatPanel
@@ -217,8 +269,13 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionStatus="idle"
         sessionError={null}
         sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
       />,
     )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
     await setFormControlValue(messageInput, '第一行')
@@ -243,6 +300,8 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   it('renders the bottom-anchored composer surface and updates height when the resize handle is dragged', async () => {
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
     const rendered = renderWithRoot(
       <CopilotChatPanel
         state={createReadyState()}
@@ -253,8 +312,13 @@ describe('CopilotChatPanel composer interactions', () => {
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
+        loadWorkspaceState={loadWorkspaceState}
       />,
     )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
 
     const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
     const resizeHandle = rendered.getByTestId('chat-composer-resize-handle') as HTMLDivElement
@@ -277,6 +341,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
   it('supports searching and shortcut-updating message-level enabledTools through the tool picker', async () => {
     const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
     const rendered = renderWithRoot(
       <CopilotChatPanel
@@ -289,8 +354,13 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionStatus="idle"
         sessionError={null}
         sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
       />,
     )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
 
     await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
 
@@ -341,6 +411,7 @@ describe('CopilotChatPanel composer interactions', () => {
       resolvedToolIds: input.enabledTools,
       requestOptions: input.requestOptions ?? {},
     }))
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
     const rendered = renderWithRoot(
       <CopilotChatPanel
@@ -353,8 +424,13 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionStatus="idle"
         sessionError={null}
         sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
       />,
     )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请回显本条消息')
@@ -374,6 +450,7 @@ describe('CopilotChatPanel composer interactions', () => {
         status: 400,
       })
     })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
     const rendered = renderWithRoot(
       <CopilotChatPanel
@@ -386,8 +463,13 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionStatus="idle"
         sessionError={null}
         sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
       />,
     )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请使用不存在的工具')
@@ -424,4 +506,12 @@ function createResolvedSendMessageSpy(
       requestOptions: input.requestOptions ?? {},
     })),
   )
+}
+
+function createPersistedWorkspaceStateLoader() {
+  return vi.fn(async () => ({
+    ok: true as const,
+    source: 'stored' as const,
+    state: createPersistedWorkspaceState(),
+  }))
 }

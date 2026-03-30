@@ -55,6 +55,8 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
 }
 
 function renderSessionShell(props: CopilotPanelShellProps) {
+  const hasAvailableModels = props.modelGroups.some((group) => group.models.length > 0)
+
   if (props.directoryState.status === 'loading' || props.directoryState.status === 'idle') {
     return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
@@ -106,7 +108,15 @@ function renderSessionShell(props: CopilotPanelShellProps) {
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
-        <CopilotMessageList conversation={props.conversation} />
+        <CopilotMessageList
+          conversation={props.conversation}
+          emptyState={hasAvailableModels
+            ? null
+            : {
+                title: '尚未配置模型',
+                description: '请先前往设置页添加模型服务商和模型。',
+              }}
+        />
         <CopilotComposer
           capabilities={props.sessionShell.capabilities}
           modelGroups={props.modelGroups}
