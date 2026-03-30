@@ -1,50 +1,48 @@
 import { describe, expect, it } from 'vitest'
 
 import { resolveCopilotConfigState } from './config'
-import type {
-  CopilotRendererRuntimeLoadResult,
-  CopilotRendererRuntimeSnapshot,
-  CopilotRendererSettingsLoadResult,
-} from './types'
-import type { CopilotSettingsStorageState } from '../../../electron/copilot-settings'
-
-function createSettingsResult(
-  settings: Partial<{ runtimeUrl: string | null; agentName: string | null }> = {},
-  storageState: CopilotSettingsStorageState = 'stored',
-): CopilotRendererSettingsLoadResult {
-  return {
-    ok: true,
-    settings: {
-      runtimeUrl: settings.runtimeUrl ?? null,
-      agentName: settings.agentName ?? null,
-    },
-    storageState,
-  }
-}
-
-function createRuntimeResult(
-  overrides: Partial<CopilotRendererRuntimeSnapshot> = {},
-): CopilotRendererRuntimeLoadResult {
-  return {
-    ok: true,
-    snapshot: {
-      hosted: {
-        status: 'stopped',
-        expectedMode: 'development',
-        resolvedMode: null,
-        runtimeUrl: null,
-        isPackaged: false,
-        failure: null,
-        ...overrides,
-      },
-    },
-  }
-}
+import {
+  createBootstrapFieldsResult,
+  createRuntimeResult,
+} from './config.test-support'
 
 describe('resolveCopilotConfigState', () => {
+  it('returns an error state when bootstrap field loading fails', () => {
+    expect(resolveCopilotConfigState({
+      bootstrapFieldsResult: {
+        ok: false,
+        error: 'snapshot unavailable',
+      },
+      runtimeResult: createRuntimeResult({
+        status: 'ready',
+        runtimeUrl: 'http://127.0.0.1:8765',
+        resolvedMode: 'development',
+      }),
+    })).toEqual({
+      status: 'error',
+      error: 'snapshot unavailable',
+    })
+  })
+
+  it('returns an error state when hosted runtime loading fails', () => {
+    expect(resolveCopilotConfigState({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
+        runtimeUrl: 'http://localhost:4400',
+        agentName: 'planner',
+      }),
+      runtimeResult: {
+        ok: false,
+        error: 'runtime unavailable',
+      },
+    })).toEqual({
+      status: 'error',
+      error: 'runtime unavailable',
+    })
+  })
+
   it('prefers hosted runtime facts when the backend is ready', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://manual-override:9000',
         agentName: 'campus-agent',
       }),
@@ -62,13 +60,34 @@ describe('resolveCopilotConfigState', () => {
 
     expect(state.runtimeUrl).toBe('http://127.0.0.1:8765')
     expect(state.runtimeSource).toBe('hosted')
-    expect(state.agentName).toBe('campus-agent')
     expect(state.diagnostics.modeSource).toBe('resolved')
+  })
+
+  it('no longer treats missing agentName as a readiness blocker', () => {
+    const state = resolveCopilotConfigState({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
+        runtimeUrl: 'http://127.0.0.1:3000',
+        agentName: null,
+      }),
+      runtimeResult: createRuntimeResult({
+        status: 'stopped',
+      }),
+    })
+
+    expect(state.status).toBe('ready')
+    if (state.status !== 'ready') {
+      throw new Error('Expected ready state from dev override.')
+    }
+
+    expect(state.runtimeSource).toBe('dev-override')
+    expect(state.runtimeUrl).toBe('http://127.0.0.1:3000')
+    expect(state.agentName).toBeNull()
+    expect(state.agentNameSource).toBe('missing')
   })
 
   it('keeps a distinct starting state while the hosted backend boots', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         agentName: 'campus-agent',
       }),
       runtimeResult: createRuntimeResult({
@@ -88,7 +107,7 @@ describe('resolveCopilotConfigState', () => {
 
   it('surfaces hosted startup failures in packaged mode without allowing overrides', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://manual-override:9000',
         agentName: 'campus-agent',
       }),
@@ -118,50 +137,9 @@ describe('resolveCopilotConfigState', () => {
     expect(state.devOverrideAllowed).toBe(false)
   })
 
-  it('falls back to a development override when hosted runtime is unavailable', () => {
-    const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
-        runtimeUrl: 'http://127.0.0.1:3000',
-        agentName: 'campus-agent',
-      }),
-      runtimeResult: createRuntimeResult({
-        status: 'stopped',
-      }),
-    })
-
-    expect(state.status).toBe('ready')
-    if (state.status !== 'ready') {
-      throw new Error('Expected ready state from dev override.')
-    }
-
-    expect(state.runtimeSource).toBe('dev-override')
-    expect(state.runtimeUrl).toBe('http://127.0.0.1:3000')
-    expect(state.agentName).toBe('campus-agent')
-  })
-
-  it('reports incomplete development override state when the agent name is missing', () => {
-    const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
-        runtimeUrl: 'http://127.0.0.1:3000',
-        agentName: null,
-      }),
-      runtimeResult: createRuntimeResult({
-        status: 'stopped',
-      }),
-    })
-
-    expect(state.status).toBe('incomplete')
-    if (state.status !== 'incomplete') {
-      throw new Error('Expected incomplete state.')
-    }
-
-    expect(state.runtimeSource).toBe('dev-override')
-    expect(state.missingFields).toEqual(['agentName'])
-  })
-
   it('preserves degraded hosted runtime state when a usable runtime url still exists', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({
+      bootstrapFieldsResult: createBootstrapFieldsResult({
         agentName: 'campus-agent',
       }),
       runtimeResult: createRuntimeResult({
@@ -189,9 +167,9 @@ describe('resolveCopilotConfigState', () => {
     expect(state.diagnostics.failure?.code).toBe('unexpected_exit')
   })
 
-  it('returns an empty state when neither hosted runtime nor settings provide connection facts', () => {
+  it('returns an empty state when neither hosted runtime nor bootstrap fields provide a runtime url', () => {
     const state = resolveCopilotConfigState({
-      settingsResult: createSettingsResult({}, 'empty'),
+      bootstrapFieldsResult: createBootstrapFieldsResult({}, 'empty'),
       runtimeResult: createRuntimeResult({
         status: 'stopped',
       }),
@@ -202,7 +180,8 @@ describe('resolveCopilotConfigState', () => {
       throw new Error('Expected empty state.')
     }
 
-    expect(state.missingFields).toEqual(['runtimeUrl', 'agentName'])
+    expect(state.missingFields).toEqual(['runtimeUrl'])
     expect(state.runtimeSource).toBe('none')
+    expect(state.storageState).toBe('empty')
   })
 })

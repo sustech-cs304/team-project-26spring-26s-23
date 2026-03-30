@@ -1,4 +1,4 @@
-"""Structured errors for the minimal Copilot runtime run bridge."""
+"""Structured errors for the Copilot runtime run bridge."""
 
 from __future__ import annotations
 
@@ -7,9 +7,12 @@ from typing import Any
 
 from .contracts import RuntimeContract, RuntimeScaffold
 
-INVALID_REQUEST_CODE = "invalid_runtime_request"
+INVALID_REQUEST_CODE = "invalid_request"
 METHOD_NOT_IMPLEMENTED_CODE = "method_not_implemented"
+SESSION_NOT_FOUND_CODE = "session_not_found"
 AGENT_NOT_FOUND_CODE = "agent_not_found"
+AGENT_MISMATCH_CODE = "agent_mismatch"
+TOOL_NOT_FOUND_CODE = "tool_not_found"
 UNSUPPORTED_MESSAGE_SHAPE_CODE = "unsupported_message_shape"
 INVALID_MESSAGE_HISTORY_CODE = "invalid_message_history"
 MODEL_NOT_CONFIGURED_CODE = "model_not_configured"
@@ -32,6 +35,7 @@ class RuntimeErrorResponse(RuntimeContract):
     error: RuntimeErrorDetail
 
 
+
 def build_invalid_request_error(
     *,
     message: str,
@@ -48,6 +52,23 @@ def build_invalid_request_error(
     )
 
 
+
+def build_session_not_found_error(
+    *,
+    session_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=SESSION_NOT_FOUND_CODE,
+        message=f"Unknown session '{session_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"sessionId": session_id},
+    )
+
+
+
 def build_agent_not_found_error(
     *,
     agent_name: str,
@@ -61,6 +82,48 @@ def build_agent_not_found_error(
         requested_method=requested_method,
         details={"agentName": agent_name},
     )
+
+
+
+def build_agent_mismatch_error(
+    *,
+    session_id: str,
+    bound_agent_id: str,
+    requested_agent_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=AGENT_MISMATCH_CODE,
+        message=(
+            f"Session '{session_id}' is bound to agent '{bound_agent_id}', "
+            f"cannot use agent '{requested_agent_id}'."
+        ),
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={
+            "sessionId": session_id,
+            "boundAgentId": bound_agent_id,
+            "requestedAgentId": requested_agent_id,
+        },
+    )
+
+
+
+def build_tool_not_found_error(
+    *,
+    tool_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=TOOL_NOT_FOUND_CODE,
+        message=f"Unknown tool '{tool_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"toolId": tool_id},
+    )
+
 
 
 def build_unsupported_message_shape_error(
@@ -79,6 +142,7 @@ def build_unsupported_message_shape_error(
     )
 
 
+
 def build_invalid_message_history_error(
     *,
     message: str,
@@ -95,6 +159,7 @@ def build_invalid_message_history_error(
     )
 
 
+
 def build_model_not_configured_error(
     *,
     message: str,
@@ -108,6 +173,7 @@ def build_model_not_configured_error(
         requested_method=requested_method,
         details={"modelEnvironmentKeys": list(scaffold.model_environment_keys)},
     )
+
 
 
 def build_agent_execution_failed_error(
@@ -126,21 +192,38 @@ def build_agent_execution_failed_error(
     )
 
 
+
 def build_method_not_implemented_error(
     *,
     requested_method: str,
     scaffold: RuntimeScaffold,
 ) -> RuntimeErrorResponse:
+    supported_methods = _format_supported_methods_for_message(scaffold.supported_methods)
     return _build_runtime_error(
         code=METHOD_NOT_IMPLEMENTED_CODE,
         message=(
             f"Runtime method '{requested_method}' is not implemented yet in the current scaffold. "
-            "Only the info, agent/connect, and agent/run capabilities are currently available."
+            f"Supported methods are {supported_methods}."
         ),
         scaffold=scaffold,
         requested_method=requested_method,
         details={},
     )
+
+
+
+def _format_supported_methods_for_message(supported_methods: tuple[str, ...]) -> str:
+    if len(supported_methods) == 0:
+        return "none"
+
+    if len(supported_methods) == 1:
+        return supported_methods[0]
+
+    if len(supported_methods) == 2:
+        return f"{supported_methods[0]} and {supported_methods[1]}"
+
+    return f"{', '.join(supported_methods[:-1])}, and {supported_methods[-1]}"
+
 
 
 def _build_runtime_error(

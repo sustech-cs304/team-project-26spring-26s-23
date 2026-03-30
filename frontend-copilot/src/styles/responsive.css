@@ -1,0 +1,150 @@
+@media (max-width: 1440px) {
+  .conversation-workspace {
+    grid-template-columns: 260px 308px minmax(0, 1fr);
+  }
+
+  .workspace-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1200px) {
+  .conversation-workspace,
+  .settings-workspace,
+  .hub-workspace {
+    grid-template-columns: 292px minmax(0, 1fr);
+  }
+
+  .assistant-panel {
+    display: none;
+  }
+
+  .hub-main-grid,
+  .form-grid--two,
+  .form-grid--pricing,
+  .settings-page--balanced {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .workbench-shell {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .workbench-rail {
+    flex-direction: row;
+    justify-content: center;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.7rem;
+  }
+
+  .rail-spacer {
+    display: none;
+  }
+
+  .conversation-workspace,
+  .settings-workspace,
+  .hub-workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: auto;
+  }
+
+  .workspace-stage {
+    height: auto;
+    min-height: calc(100vh - 60px);
+  }
+
+  .workspace-panel {
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .topic-panel,
+  .settings-panel,
+  .hub-panel {
+    order: 1;
+  }
+
+  .workspace-main {
+    order: 2;
+  }
+
+  .workspace-main__header,
+  .settings-card__header--spaced,
+  .toolbar-actions,
+  .topic-card__meta,
+  .provider-card__title-row,
+  .provider-card__meta-row,
+  .toggle-row,
+  .model-editor-modal__footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .settings-page--split {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+  }
+
+  .model-list-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-list-row__main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.45rem;
+  }
+
+  .model-list-row__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .model-editor-backdrop {
+    padding: 1rem;
+  }
+
+  .model-editor-modal {
+    max-height: calc(100vh - 2rem);
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-panel,
+  .workspace-main,
+  .settings-page,
+  .hub-main-grid,
+  .settings-stack {
+    padding: 0.85rem;
+  }
+
+  .model-editor-modal__header,
+  .model-editor-modal__body,
+  .model-editor-modal__footer {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+  }
+
+  .assistant-card,
+  .topic-card,
+  .settings-nav-item,
+  .hub-list__item,
+  .provider-card,
+  .toggle-row,
+  .workspace-main__header,
+  .workspace-hero,
+  .workspace-main__content,
+  .workspace-chat-shell,
+  .hub-card,
+  .settings-card {
+    border-radius: var(--radius-md);
+  }
+}

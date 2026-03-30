@@ -1,6 +1,6 @@
 ---
 title: 运行时生命周期
-description: 说明桌面运行时在 development 与 bundled 模式下的启动、配置、就绪与回收流程。
+description: 说明桌面应用当前怎样启动窗口、装配配置、拉起本地 runtime，并在启动页可见后进入正式工作台。
 sidebar_position: 2
 ---
 
@@ -8,421 +8,204 @@ sidebar_position: 2
 
 ## 文档目标
 
-本文档描述 CanDue 桌面应用的运行时如何被启动、配置、就绪、使用与回收，覆盖当前已落地的两种主路径：
+本文档说明当前桌面应用怎样完成这几件事：
 
-- **development / hosted backend 模式**：开发环境下，Electron 主进程启动本地 Python 后端子进程
-- **packaged / bundled runtime 模式**：打包环境下，Electron 主进程启动捆绑的 Python 运行时
+- Electron 主进程怎样创建但延迟显示窗口。
+- renderer 怎样先准备启动页主题，再发出 bootstrap ready 信号。
+- 主进程怎样拉起 hosted backend，并向 renderer 暴露当前可读的 runtime 快照。
+- 配置中心公共快照怎样参与启动装配，又怎样通过订阅链路继续更新。
 
-本文档聚焦运行时生命周期管理，不展开聊天协议细节或 session/state 模型细节（这些属于后续专题文档）。
+本文档只描述当前已经落地的行为。聊天协议细节和系统状态分层会分别放在[聊天运行时契约](./chat-runtime-contract.md)和[会话与状态模型](./session-and-state-model.md)中展开。
+
+## 一张总图
+
+当前启动主线可以概括成下面这条链路：
+
+```text
+Electron main 进入 whenReady
+  → 注册当前 preload / IPC 暴露面
+  → 异步启动 hosted backend
+  → 创建 BrowserWindow，并保持 show: false
+  → renderer 预先读取公开配置快照，准备启动页主题
+  → renderer 渲染启动页
+  → renderer 在下一次绘制后发送 bootstrap ready 信号
+  → main 收到信号后显示窗口
+  → renderer 继续装配配置状态、runtime 状态与工作台
+```
+
+这条链路里有两个容易写错的点。
+
+- 主窗口当前会尽早创建，但不会立刻显示。
+- renderer 当前已经拥有公开配置快照的订阅链路，配置变化后可以继续刷新根装配状态。
 
 ## 运行时模式
 
-系统支持两种运行时模式，由 Electron 主进程根据 `app.isPackaged` 自动判断：
+Electron 仍然根据 `app.isPackaged` 选择 hosted backend 的启动方式。主判断和服务创建位于[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)与[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)。
 
-### development 模式
+### Development 模式
 
-- **触发条件**：`app.isPackaged === false`
-- **Python 解析策略**：使用工作区 `backend/` 目录下的源码，通过 `python -m app.desktop_runtime` 启动
-- **依赖管理**：不强制依赖 `uv`，开发者可自行管理 Python 虚拟环境
-- **代码锚点**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
+当 `app.isPackaged === false` 时，主进程会把工作区中的 `backend/` 目录作为后端源码目录，并通过 `python -m app.desktop_runtime` 启动本地 Python runtime。解析器会优先尝试工作区虚拟环境中的 Python，可用时直接使用该解释器。
 
-### bundled 模式
+### Bundled 模式
 
-- **触发条件**：`app.isPackaged === true`
-- **Python 解析策略**：使用 `app.getPath('resources')` 下的 `python-runtime/` 目录，包含预打包的 Python 解释器与依赖；具体布局以 `backend-runtime-manifest.json` 为准，由 `python-runtime-resolver.ts` 解析
-- **打包脚本**：[`frontend-copilot/scripts/prepare-bundled-runtime.mjs`](../../frontend-copilot/scripts/prepare-bundled-runtime.mjs)
-- **代码锚点**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
+当 `app.isPackaged === true` 时，主进程会从 `resources/python-runtime/` 中读取打包后的运行时清单，再据此解析 Python 可执行文件、后端工作目录和入口模块。清单准备逻辑位于[`frontend-copilot/scripts/prepare-bundled-runtime.mjs`](../../frontend-copilot/scripts/prepare-bundled-runtime.mjs)。
 
-## 启动阶段
+## 主进程启动顺序
 
-### 1. Electron 主进程初始化
+### 生命周期处理器会先完成注册
 
-**入口**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
+[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)在模块加载阶段就调用 `registerApplicationLifecycleHandlers()`。因此，`window-all-closed`、`activate` 和 `before-quit` 这些收尾逻辑会早于真正的窗口创建完成注册。
 
-```
-app.whenReady() → registerHandlers() → startHostedBackend() → createWindow()
-```
+### `app.whenReady()` 之后会进入三件并行相关的工作
 
-**关键步骤**：
+主进程在 `whenReady` 成功后会依次完成下面几步：
 
-1. 注册 IPC handlers：
-   - `COPILOT_SETTINGS_LOAD_CHANNEL` / `COPILOT_SETTINGS_SAVE_CHANNEL`
-   - `COPILOT_RUNTIME_LOAD_CHANNEL` / `COPILOT_RUNTIME_RETRY_CHANNEL`
-2. 解析命令行参数（如果提供）：
-   - `--runtime-model`：指定 Copilot 模型
-   - `--runtime-host`：指定监听地址（默认 `127.0.0.1`）
-   - `--runtime-app-mode`：指定应用模式（默认 `desktop`）
-   - `--runtime-environment`：指定运行环境（默认 `development` 或 `production`）
-   - `--runtime-local-token`：指定本地令牌
-3. 创建 `HostedBackendService` 实例
-4. 异步启动 hosted backend（不阻塞窗口创建）
-5. 创建 BrowserWindow 并加载 renderer
+1. 主进程会调用 `registerRendererIpcHandlers()`，把当前 renderer 需要的公开接口全部挂到 IPC 上。
+2. 主进程会调用 `startHostedBackend()`，但这个调用使用 `void` 启动，因此不会阻塞后续窗口创建。
+3. 主进程会立即调用 `createWindow()` 创建主窗口。
 
-**代码锚点**：
-- 命令行参数解析：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts) `parseHostedRuntimeCommandLineArguments()`
-- 服务创建：[`frontend-copilot/electron/runtime/hosted-backend-service.ts`](../../frontend-copilot/electron/runtime/hosted-backend-service.ts)
+这意味着当前系统的窗口创建与后端就绪不是同一个等待点。窗口会先被创建，后端会在后台继续启动，真正的可见时机会交给 bootstrap ready 信号控制。
 
-### 2. 运行时配置组装
+### 主窗口当前采用延迟显示
 
-**负责模块**：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts)
+[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)中的 `BrowserWindow` 配置明确设置了 `show: false`。窗口创建后会开始加载 renderer 页面，但主进程不会在 `did-finish-load` 时直接调用 `show()`。
 
-**配置来源优先级**（从高到低）：
+实际显示动作由[`frontend-copilot/electron/bootstrap-window-controller.ts`](../../frontend-copilot/electron/bootstrap-window-controller.ts)中的 `showWindowWhenBootstrapScreenIsReady()` 控制。只要窗口仍然存在且尚未可见，主进程就会在收到 bootstrap ready 信号后再显示窗口。
 
-1. **CLI 参数**（主路径）：
-   - Electron 主进程参数：`--runtime-*`
-   - 传递给 Python 子进程的参数：`--host`, `--port`, `--model`, `--local-token` 等
-2. **环境变量**（兼容回退）：
-   - `COPILOT_DESKTOP_RUNTIME_HOST`
-   - `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT`
-   - `COPILOT_RUNTIME_MODEL` / `COPILOT_MODEL`（legacy）
-   - 其他 `COPILOT_DESKTOP_RUNTIME_*` 变量
-3. **默认值**：
-   - `host`: `127.0.0.1`
-   - `port`: 动态分配（通过 `allocateLoopbackPort()`）
-   - `appMode`: `desktop`
-   - `environment`: `development`（开发）或 `production`（打包）
-   - `localToken`: 自动生成（24 字节随机 hex）
+## 启动页主题与 bootstrap ready 信号
 
-**关键函数**：
-- `createHostedRuntimeLaunchConfig()`：组装完整启动配置
-- `buildDesktopRuntimeArguments()`：构建传递给 Python 子进程的 CLI 参数数组
-- `allocateLoopbackPort()`：动态分配可用端口
+### 启动页主题会先于正式工作台准备
 
-**测试依据**：[`frontend-copilot/electron/runtime/runtime-config.test.ts`](../../frontend-copilot/electron/runtime/runtime-config.test.ts)
+renderer 入口位于[`frontend-copilot/src/main.tsx`](../../frontend-copilot/src/main.tsx)。它在真正渲染 React 根节点前，会先调用[`frontend-copilot/src/startup-theme.ts`](../../frontend-copilot/src/startup-theme.ts)中的 `primeStartupTheme()`。
 
-### 3. Python 运行时解析
+这一步会先按系统主题写入一个回退值，再尝试读取公开配置快照中的 `theme` 字段。如果读取成功，启动页会尽早使用配置中心中的主题值。这样做的直接结果是，窗口首次可见时，启动页主题已经过一次准备，不需要先闪出默认主题再切换。
 
-**负责模块**：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
+### 启动页可见后才会通知主进程显示窗口
 
-**解析逻辑**：
+renderer 在渲染出启动页后，不会立刻通知主进程。它会调用[`frontend-copilot/src/bootstrap-window.ts`](../../frontend-copilot/src/bootstrap-window.ts)中的 `waitForNextPaint()`，等待两个 `requestAnimationFrame` 周期之后，再通过 preload API 触发 `signalBootstrapScreenReady()`。
 
-```typescript
-resolvePythonRuntimeLaunchSpec({
-  appRoot,
-  resourcesPath,
-  isPackaged
-}) → PythonRuntimeLaunchSpec
-```
+对应的 IPC 信道是 `bootstrap-window:ready`，定义位于[`frontend-copilot/electron/bootstrap-window.ts`](../../frontend-copilot/electron/bootstrap-window.ts)。主进程收到该调用后，会执行 `notifyBootstrapWindowReady()`，最终进入 `showWindowWhenBootstrapScreenIsReady()`。
 
-**development 模式解析**：
-- `workspaceRoot`: `appRoot` 的父目录
-- `backendDir`: `workspaceRoot/backend`
-- `command`: 优先使用 `backend/.venv` 下的 Python 可执行文件（如 `.venv/bin/python` 或 Windows 下的 `.venv/Scripts/python.exe`），若不存在或不可用则回退到系统 PATH 中的 `python3` / `python`
-- `args`: `['-m', 'app.desktop_runtime']`
-- `workingDirectory`: `backendDir`
-- `entryModule`: `app.desktop_runtime`
+因此，当前窗口延迟显示的意义很明确：主进程等待的是“启动页已经实际绘制”，而不是“runtime 已经 ready”或“工作台已经完全加载”。
 
-**bundled 模式解析**：
-- **清单文件**：从 `resourcesRoot/python-runtime/backend-runtime-manifest.json` 读取运行时清单
-- `backendDir`: 由清单字段 `manifest.backend.workingDirectoryRelativePath` 决定（相对于 `resourcesRoot`）
-- `command`: 由清单字段 `manifest.python.executableRelativePath` 决定（相对于 `resourcesRoot`）
-- `args`: `['-m', '<manifest.backend.entryModule>']`
-- `workingDirectory`: `backendDir`（即基于清单解析出的后端工作目录）
+## 当前 preload 暴露面与 IPC 名称
 
-**失败面**：
-- Python 可执行文件不存在
-- `backend/` 目录结构不完整
-- `python-runtime/` 目录缺失或损坏
+当前 preload 入口是[`frontend-copilot/electron/preload.ts`](../../frontend-copilot/electron/preload.ts)。它对 renderer 暴露的是几组分开的 API，而不是旧文档里那种单一 settings bridge。
 
-### 4. Python 子进程启动
+| 能力分组 | window 暴露名 | 当前 IPC 名称 | 作用 |
+| --- | --- | --- | --- |
+| 公开配置快照读取 | `window.configCenterPublicSnapshot` | `config-center:load-public-snapshot` | renderer 读取公开配置中心快照。 |
+| 公开配置补丁写回 | `window.configCenterPublicPatch` | `config-center:apply-public-patch` | renderer 提交公开字段补丁，由主进程写回对应域文件。 |
+| 公开配置快照订阅 | `window.configCenterPublicSnapshotSubscription` | `config-center:public-snapshot-updated` | 主进程在公开快照更新后向所有窗口广播。 |
+| settings workspace 普通状态 | `window.settingsWorkspaceState` | `settings-workspace:state-load` 与 `settings-workspace:state-save` | 设置页读取和保存普通持久化状态。 |
+| settings workspace secrets | `window.settingsWorkspaceSecrets` | `settings-workspace:secrets-load-statuses`、`settings-workspace:secrets-load-sustech-cas`、`settings-workspace:secrets-save-provider-api-key`、`settings-workspace:secrets-clear-provider-api-key`、`settings-workspace:secrets-save-sustech-cas`、`settings-workspace:secrets-clear-sustech-cas` | 设置页读取 secret 状态、加载具体 secret、保存与清除 secret。 |
+| hosted runtime 快照 | `window.copilotRuntime` | `copilot-runtime:load` 与 `copilot-runtime:retry` | renderer 读取当前 runtime 快照，并触发重试。 |
+| bootstrap ready | `window.bootstrapWindow` | `bootstrap-window:ready` | renderer 告知主进程启动页已经可以对用户显示。 |
 
-**负责模块**：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
+除此之外，preload 还会通过[`frontend-copilot/electron/renderer-ipc.ts`](../../frontend-copilot/electron/renderer-ipc.ts)注册 `runtime:main-console` 监听，把主进程的运行日志转发到浏览器控制台。这条链路属于日志可见性，不属于给业务页面直接调用的公开 API。
 
-**启动流程**：
+## 启动时的配置读取与公开订阅
 
-```typescript
-PythonRuntimeManager.start() →
-  prepareRuntimePaths() →
-  resolvePythonRuntimeLaunchSpec() →
-  allocateLoopbackPort() →
-  createHostedRuntimeLaunchConfig() →
-  spawn(command, args, options) →
-  waitForRuntimeReady()
-```
+### 根装配会同时读取公开配置快照和 runtime 快照
 
-**spawn 参数**：
-- `command`: Python 可执行文件路径
-- `args`: `['-m', 'app.desktop_runtime', '--host', '127.0.0.1', '--port', '54321', ...]`
-- `cwd`: `backendDir`
-- `env`: 清理后的环境变量（移除 `COPILOT_DESKTOP_RUNTIME_*`，添加 `PYTHONUNBUFFERED=1`）
-- `stdio`: `['ignore', 'pipe', 'pipe']`（捕获 stdout/stderr）
+[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)启动后，会调用[`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)中的 `loadCopilotConfigState()`。这个函数会并行做两件事：
 
-**状态流转**：
-- `stopped` → `starting`（spawn 成功）
-- `starting` → `ready`（健康检查通过）
-- `starting` → `failed`（spawn 失败或健康检查超时）
+1. 它会通过 `loadConfigCenterPublicSnapshot()` 读取公开配置中心快照。
+2. 它会通过 `loadCopilotRuntime()` 读取 hosted runtime 快照。
 
-**代码锚点**：
-- `PythonRuntimeManager.startInternal()`
-- `trackSpawnedProcess()`：监听子进程事件
-- `waitForRuntimeReady()`：轮询健康检查
+然后，renderer 会把这两部分信息合并为当前 `CopilotBootstrapState`。因此，当前根装配从一开始就同时依赖配置事实和运行事实。
 
-**测试依据**：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts)
+### 公开配置快照已经具备订阅更新链路
 
-### 5. Python 后端配置解析与 FastAPI 启动
+[`frontend-copilot/src/features/copilot/config-center.ts`](../../frontend-copilot/src/features/copilot/config-center.ts)已经对外提供 `subscribeToConfigCenterPublicSnapshotUpdates()`。主进程在应用公开补丁后，会通过[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)中的 `publishConfigCenterPublicSnapshotUpdate()` 广播新的公开快照。
 
-**入口**：[`backend/app/desktop_runtime/__main__.py`](../../backend/app/desktop_runtime/__main__.py) → [`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)收到订阅事件后，会调用 `refreshCopilotBootstrapStateFromPublicSnapshot()`。这一步不会只重算本地 state，它还会再次读取当前 runtime 快照，然后重新得出新的 bootstrap 状态。
 
-**配置解析**：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
+因此，当前 renderer 已经不能再写成“只有一次性 snapshot、没有后续更新”。准确的说法是：
 
-```python
-parse_runtime_config(argv, env=os.environ) → DesktopRuntimeConfig
-```
+- 公开配置中心已经有订阅链路。
+- 公开配置变化到来时，根装配会据此重新计算状态，并顺带刷新一次 runtime 快照。
+- hosted runtime 自身还没有独立的持续推送通道，读取方式仍然以 `load` 和 `retry` 为主。
 
-**配置来源优先级**（从高到低）：
+### settings workspace 持久化不会进入公开快照
 
-1. **CLI 参数**（主路径）：
-   - `--host`, `--port`, `--app-mode`, `--environment`
-   - `--model`, `--local-token`
-   - 路径参数：`--user-data-dir`, `--root-dir`, `--config-dir`, `--logs-dir`, `--database-dir`, `--state-dir`
-   - 文件参数：`--settings-file`, `--host-log-file`, `--backend-stdout-log-file`, `--backend-stderr-log-file`
-2. **环境变量**（兼容回退）：
-   - `COPILOT_DESKTOP_RUNTIME_HOST`, `COPILOT_DESKTOP_RUNTIME_PORT`
-   - `COPILOT_RUNTIME_MODEL` / `COPILOT_MODEL`（legacy）
-   - 其他 `COPILOT_DESKTOP_RUNTIME_*` 变量
-3. **默认值**：
-   - `host`: `127.0.0.1`（仅允许 loopback 地址）
-   - `port`: `8765`
-   - `app_mode`: `desktop`
-   - `environment`: `development`
+设置页的普通状态与 secrets 当前走的是另一套 API，入口位于[`frontend-copilot/src/workbench/settings/workspace-state.ts`](../../frontend-copilot/src/workbench/settings/workspace-state.ts)。这部分状态虽然也由主进程持久化，但它不会投影进公开配置快照。
 
-**FastAPI 应用创建**：
+因此，启动主线中的“公开配置读取”与“设置工作区持久化”需要分开理解。前者参与根装配和主题准备，后者主要服务设置工作区本身。
 
-```python
-create_app(config) →
-  RuntimeLifecycleManager(config) →
-  build_default_runtime_dependencies() →
-  FastAPI(lifespan=lifespan)
-```
+## Hosted backend 的启动与就绪
 
-**lifespan 管理**：
-- `startup()`：初始化 session store、agent registry、tool registry
-- `shutdown()`：清理资源
+### 主进程会先构造服务，再按当前配置启动 Python runtime
 
-**HTTP 端点**：
-- `/health`：健康检查
-- `/ready`：就绪检查（返回 `{"ready": true}`）
-- `/version` / `/build-info`：版本信息
-- `/diagnostics`：诊断信息（需要 local token）
-- `/agent/*`：Copilot 聊天运行时端点
+[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)中的 `ensureHostedBackendService()` 会先准备运行时目录，再解析命令行参数，并从统一配置中心完整快照中读取 `backendExposed.model`。这个模型字段随后会作为 hosted backend 的启动配置之一，交给 `createHostedBackendService()`。
 
-**代码锚点**：
-- `create_app()`：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
-- `parse_runtime_config()`：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
+这里有两个实际含义：
 
-**测试依据**：
-- [`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py)
-- [`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)
+- runtime 的默认模型投影属于主进程启动逻辑的一部分。
+- Python runtime 当前不会自己去读配置中心文件，它接收的是主进程整理后的 CLI 参数。
 
-### 6. 就绪检查与状态同步
+### 启动过程仍然以健康检查作为 ready 条件
 
-**Electron 侧健康检查**：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
+主进程最终会通过[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)拉起 Python 子进程，并轮询 `GET /ready`。只有 readiness 检查成功后，hosted backend 状态才会进入 `ready`。
 
-```typescript
-waitForRuntimeReady(child, config) →
-  循环轮询 GET /ready (每 300ms) →
-  超时 30s 后失败
-```
+后端应用本身由[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)创建。它会在 FastAPI lifespan 中准备 runtime 依赖，并暴露 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics` 等控制面端点，同时把聊天主路径挂在根路径 `POST /` 上。
 
-**就绪判定**：
-- HTTP 200 响应
-- 响应体包含 `{"ready": true}`
+### renderer 读取到的是主进程整理后的 runtime 快照
 
-**状态流转**：
-- `starting` → `ready`：就绪检查通过
-- `starting` → `failed`：超时或子进程退出
+主进程通过[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)中的 `buildCopilotRuntimeSnapshot()` 向 renderer 返回 `CopilotRuntimeSnapshot`。当前快照会包含下面这些信息：
 
-**renderer 侧等待**：[`frontend-copilot/src/features/copilot/runtime.ts`](../../frontend-copilot/src/features/copilot/runtime.ts)
+- `status` 会反映 `starting`、`ready`、`failed`、`degraded` 或 `stopped`。
+- `expectedMode` 会告诉 renderer 当前期望是 development 还是 bundled。
+- `resolvedMode` 会告诉 renderer 已经解析出的实际 Python runtime 模式。
+- `runtimeUrl` 会告诉 renderer 当前可用的 loopback 地址。
+- `failure` 会带上最近一次失败摘要。
 
-```typescript
-loadCopilotRuntime() →
-  IPC: COPILOT_RUNTIME_LOAD_CHANNEL →
-  返回 CopilotRuntimeSnapshot
-```
+如果 hosted backend 仍在启动中，而底层状态还停留在 `stopped`，主进程会把快照状态修正为 `starting`，从而让 renderer 得到更符合用户感知的启动状态。
 
-**CopilotRuntimeSnapshot 结构**：
-- `hosted.status`：`starting` | `ready` | `failed` | `stopped` | `degraded`
-- `hosted.runtimeUrl`：运行时 base URL
-- `hosted.failure`：失败摘要（如果有）
+## 当前聊天进入工作台后的主路径位置
 
-**代码锚点**：
-- `probeRuntimeReadiness()`：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
-- `buildCopilotRuntimeSnapshot()`：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
+当根装配已经拿到可用 `runtimeUrl` 时，工作台会进入 session-first 聊天主路径。相关前端实现主要位于[`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)和[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)。
 
-## 运行时状态模型
+当前正式链路会依次完成下面这些步骤：
 
-### HostedBackendState
+1. renderer 会调用 `agents/list` 获取后端智能体目录。
+2. 用户选择智能体后，renderer 会调用 `session/create` 创建会话，并在创建时绑定智能体。
+3. renderer 会继续调用 `capabilities/get` 取得 `capabilitiesVersion`、工具目录、推荐工具和默认模型偏好。
+4. 用户发送消息时，renderer 会调用 `message/send`，并在每次请求里显式传入 `model`、`enabledTools` 与 `requestOptions`。
 
-**定义**：[`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)
-
-**状态枚举**：
-
-- `stopped`：初始状态或已停止
-- `starting`：子进程已 spawn，等待就绪
-- `ready`：就绪检查通过，可接受请求
-- `failed`：启动失败或运行时崩溃
-- `degraded`：运行时曾就绪但后续退出
-
-**状态字段**：
-
-```typescript
-{
-  status: HostedBackendStatus
-  mode: 'development' | 'bundled' | null
-  baseUrl: string | null
-  pid: number | null
-  startedAt: string | null  // ISO 8601
-  readyAt: string | null
-  stoppedAt: string | null
-  exitCode: number | null
-  signal: NodeJS.Signals | null
-  lastFailure: HostedBackendFailure | null
-}
-```
-
-**状态转换函数**：
-- `markHostedBackendStarting()`
-- `markHostedBackendReady()`
-- `markHostedBackendFailed()`
-- `markHostedBackendDegraded()`
-- `markHostedBackendStopped()`
-
-**测试依据**：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts)
+因此，runtime 就绪之后进入的已经是会话优先主路径，不再是旧文档中那种围绕旧 IPC 名称和旧 agent 入口展开的描述。
 
 ## 停止与回收
 
-### 正常停止
+### 正常退出时，主进程会先清理 hosted backend
 
-**触发时机**：
-- 用户关闭应用窗口
-- Electron `before-quit` 事件
+当应用进入 `before-quit` 时，[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)会先把 `quitSequenceStarted` 置为真，再调用 `stopHostedBackend()`。只有这一步结束后，主进程才会继续执行 `app.quit()`。
 
-**停止流程**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
+底层停止逻辑由[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)负责。它会先尝试优雅停止，再在需要时执行更强制的回收动作，并把状态与失败信息写回诊断体系。
 
-```typescript
-app.on('before-quit') →
-  stopHostedBackend() →
-  PythonRuntimeManager.stop() →
-  发送 SIGTERM →
-  等待子进程退出（超时 5s）→
-  必要时发送 SIGKILL
-```
+### 异常退出后，主进程会保留失败摘要
 
-**状态流转**：
-- `ready` → `stopped`：正常退出
-- `ready` → `failed`：停止超时
-
-**代码锚点**：
-- `stopInternal()`：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
-
-### 异常退出处理
-
-**监听机制**：`child.once('exit', (code, signal) => ...)`
-
-**退出分类**：[`frontend-copilot/electron/runtime/runtime-diagnostics.ts`](../../frontend-copilot/electron/runtime/runtime-diagnostics.ts)
-
-- `code === 0`：正常退出
-- `code !== 0`：异常退出
-- `signal !== null`：被信号终止
-
-**失败记录**：
-- `HostedBackendFailure` 对象
-- 持久化到 `last-failure.json`
-- 包含 stdout/stderr 尾部输出（最多 8000 字符）
-
-**状态流转**：
-- `starting` 时退出 → `failed`
-- `ready` 时退出 → `degraded`
-
-## 配置来源总结
-
-### CLI 参数为主路径
-
-当前运行时配置以 CLI 参数为主导，环境变量仅作为兼容回退。这一设计确保：
-
-1. **显式配置**：Electron 主进程完全控制 Python 子进程的启动参数
-2. **隔离性**：子进程不继承宿主的 `COPILOT_DESKTOP_RUNTIME_*` 环境变量
-3. **可测试性**：配置解析逻辑可独立测试，不依赖全局环境
-
-**Electron → Python 参数传递**：
-
-```
-Electron CLI: --runtime-model=gpt-4
-              ↓
-Python CLI:   --model=gpt-4
-```
-
-**代码锚点**：
-- Electron 侧：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts) `buildDesktopRuntimeArguments()`
-- Python 侧：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py) `parse_runtime_config()`
-
-### 环境变量兼容回退
-
-环境变量支持以下场景：
-
-1. **开发调试**：临时覆盖配置而不修改启动脚本
-2. **CI/CD**：在自动化环境中注入配置
-3. **向后兼容**：支持旧版本的配置方式
-
-**优先级**：CLI 参数 > 环境变量 > 默认值
+如果 runtime 在启动期退出，状态会进入 `failed`。如果 runtime 曾经 ready，后来又退出，状态会进入 `degraded`。失败摘要会通过 `CopilotHostedRuntimeFailureSummary` 暴露给 renderer，同时也会进入主进程日志和运行诊断文件。
 
 ## 当前边界
 
-### 已实现
+### 当前已经成立的事实
 
-- ✅ development / bundled 两种运行时模式
-- ✅ CLI 参数主导的配置体系
-- ✅ 动态端口分配
-- ✅ 自动生成 local token
-- ✅ 健康检查与就绪探测
-- ✅ 子进程 stdout/stderr 捕获与日志持久化
-- ✅ 失败诊断与状态快照
-- ✅ 优雅停止与超时强制终止
+- 主窗口已经采用延迟显示，显示时机由 bootstrap ready 信号控制。
+- 启动页主题会在工作台加载前根据公开配置快照先做准备。
+- 公开配置中心已经具备读取、补丁写回和订阅更新三条链路。
+- settings workspace 普通状态与 secrets 已经形成独立的主进程持久化接口。
+- hosted backend 的创建、启动、失败摘要和停止都由 Electron 主进程统一持有。
 
-### 未实现（非当前范围）
+### 当前仍然需要保守描述的地方
 
-- ❌ 运行时热重启
-- ❌ 多实例并发管理
-- ❌ 外部部署模式（非 hosted backend）
-- ❌ 运行时健康度量与自动恢复
-- ❌ 配置文件持久化（当前仅支持 CLI/环境变量）
-
-### 关键约束
-
-1. **loopback 限制**：运行时仅监听 `127.0.0.1` / `localhost` / `::1`，不支持外部访问
-2. **单实例模型**：每个 Electron 主进程仅管理一个 Python 子进程
-3. **同步启动**：窗口创建不等待运行时就绪，renderer 通过 IPC 读取一次性 snapshot（无推送/轮询），需手动重试或重载以刷新状态
-4. **无持久化编排**：运行时不作为系统服务运行，随 Electron 进程生命周期
+- hosted runtime 状态还没有面向 renderer 的持续推送通道。
+- settings workspace secrets 仍然由主进程 owner 持有，不会进入公开快照。
+- 会话历史当前仍然保留在 Python runtime 进程内存中，runtime 重启后不会自动恢复。
+- 窗口显示不等待 runtime ready，因此用户先看到的仍然可能是启动页或错误态壳层。
 
 ## 相关文档
 
-- [系统架构总览](./architecture-overview.md)：理解运行时在整体架构中的位置
-- [聊天运行时契约](./chat-runtime-contract.md)：理解运行时就绪后的 HTTP 端点契约
-- [Session 与状态模型](./session-and-state-model.md)：理解运行时内部的 session 管理
-
-## 代码锚点索引
-
-### Electron 主进程
-
-- 启动入口：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
-- 配置解析：[`frontend-copilot/electron/runtime/runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts)
-- 运行时管理：[`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
-- 运行时解析：[`frontend-copilot/electron/runtime/python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts)
-- 状态模型：[`frontend-copilot/electron/runtime/runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts)
-- 失败诊断：[`frontend-copilot/electron/runtime/runtime-diagnostics.ts`](../../frontend-copilot/electron/runtime/runtime-diagnostics.ts)
-
-### Python 后端
-
-- 启动入口：[`backend/app/desktop_runtime/__main__.py`](../../backend/app/desktop_runtime/__main__.py)
-- 服务创建：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
-- 配置解析：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
-- 生命周期管理：[`backend/app/desktop_runtime/lifecycle.py`](../../backend/app/desktop_runtime/lifecycle.py)
-- 健康检查：[`backend/app/desktop_runtime/health.py`](../../backend/app/desktop_runtime/health.py)
-
-### 测试
-
-- Electron 配置测试：[`frontend-copilot/electron/runtime/runtime-config.test.ts`](../../frontend-copilot/electron/runtime/runtime-config.test.ts)
-- Electron 状态测试：[`frontend-copilot/electron/runtime/runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts)
-- Python 配置测试：[`backend/tests/unit/desktop_runtime/test_config.py`](../../backend/tests/unit/desktop_runtime/test_config.py)
-- Python 服务测试：[`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)
-- 集成测试：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)
+- [系统架构总览](./architecture-overview.md)
+- [会话与状态模型](./session-and-state-model.md)
+- [聊天运行时契约](./chat-runtime-contract.md)

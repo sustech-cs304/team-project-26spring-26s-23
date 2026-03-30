@@ -1,33 +1,22 @@
 import { app, BrowserWindow, Menu, ipcMain } from 'electron'
-import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
-  COPILOT_SETTINGS_LOAD_CHANNEL,
-  COPILOT_SETTINGS_SAVE_CHANNEL,
-  getCopilotSettingsStorageState,
-  mergeCopilotSettings,
-  normalizeCopilotSettings,
-} from './copilot-settings'
-import {
-  COPILOT_RUNTIME_LOAD_CHANNEL,
-  COPILOT_RUNTIME_RETRY_CHANNEL,
-} from './copilot-runtime'
+  CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL,
+  type ConfigCenterPublicSnapshot,
+} from './config-center/public-snapshot'
 import type {
   CopilotHostedRuntimeFailureSummary,
   CopilotRuntimeLoadResult,
   CopilotRuntimeSnapshot,
 } from './copilot-runtime'
-import type {
-  CopilotSettings,
-  CopilotSettingsLoadResult,
-  CopilotSettingsPatch,
-  CopilotSettingsSaveResult,
-} from './copilot-settings'
+import { showWindowWhenBootstrapScreenIsReady } from './bootstrap-window-controller'
+import { registerMainProcessIpcHandlers } from './main-ipc'
+import { createMainRuntimeLogger, formatUnknownError } from './main-runtime-log'
+import { createMainProcessServices } from './main-services'
+import { createMainWindow } from './main-window'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
-import { appendRuntimeLog, type RuntimeLogLevel } from './runtime/runtime-observability'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime/runtime-paths'
 import { isHostedBackendFailure, type HostedBackendFailure } from './runtime/runtime-diagnostics'
 import { createInitialHostedBackendState, type HostedBackendState } from './runtime/runtime-state'
@@ -44,6 +33,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // │ │ └── preload.mjs
 // │
 const APP_ROOT = path.join(__dirname, '..')
+const ELECTRON_APPLICATION_NAME = 'CanDue'
 process.env.APP_ROOT = APP_ROOT
 
 // 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
@@ -54,214 +44,50 @@ export const RENDERER_DIST = path.join(APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(APP_ROOT, 'public') : RENDERER_DIST
 const VITE_PUBLIC = process.env.VITE_PUBLIC ?? RENDERER_DIST
 
+// Set the Electron application name before any userData-derived path is resolved.
+app.setName(ELECTRON_APPLICATION_NAME)
+
 let win: BrowserWindow | null = null
 let hostedBackendService: HostedBackendService | null = null
+let hostedBackendServicePromise: Promise<HostedBackendService> | null = null
 let runtimePaths: HostedRuntimePaths | null = null
 let quitSequenceStarted = false
 let hostedBackendStartupInFlight = false
 const electronStartupStartedAt = Date.now()
+const mainRuntimeLogger = createMainRuntimeLogger({
+  electronStartupStartedAt,
+  prepareRuntimePaths: prepareApplicationRuntimePaths,
+})
 
-function logStartupTrace(stage: string, context: Record<string, unknown> = {}): void {
-  const payload = {
-    sinceMainMs: Date.now() - electronStartupStartedAt,
-    ...context,
-  }
+const mainProcessServices = createMainProcessServices({
+  prepareRuntimePaths: prepareApplicationRuntimePaths,
+  appendMainRuntimeLog(level, message, context) {
+    return mainRuntimeLogger.appendMainRuntimeLog(level, message, context)
+  },
+  publishConfigCenterPublicSnapshotUpdate,
+})
 
-  console.info(`[startup] ${stage}`, JSON.stringify(payload))
-  void appendMainRuntimeLog('info', `[startup] ${stage}`, payload)
-}
-
-function openDetachedDevTools(targetWindow: BrowserWindow): boolean {
-  if (targetWindow.isDestroyed()) {
-    return false
-  }
-
-  const { webContents } = targetWindow
-
-  if (webContents.isDestroyed() || webContents.isDevToolsOpened()) {
-    return false
-  }
-
-  try {
-    webContents.openDevTools({
-      mode: 'detach',
-      activate: true,
-    })
-
-    void appendMainRuntimeLog('info', 'Opening detached DevTools window.', {
-      triggeredBy: 'F12',
-      windowId: targetWindow.id,
-    })
-    return true
-  } catch (error) {
-    void appendMainRuntimeLog('warn', 'Failed to open detached DevTools window.', {
-      triggeredBy: 'F12',
-      windowId: targetWindow.id,
-      detail: formatUnknownError(error),
-    })
-    return false
-  }
-}
-
-function registerDeveloperShortcuts(targetWindow: BrowserWindow): void {
-  targetWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || input.key !== 'F12' || input.isAutoRepeat) {
-      return
-    }
-
-    if (!openDetachedDevTools(targetWindow)) {
-      return
-    }
-
-    event.preventDefault()
+function createWindow(): void {
+  win = createMainWindow({
+    devServerUrl: VITE_DEV_SERVER_URL,
+    preloadPath: path.join(__dirname, 'preload.mjs'),
+    publicDir: VITE_PUBLIC,
+    rendererDistDir: RENDERER_DIST,
+    appendMainRuntimeLog: mainRuntimeLogger.appendMainRuntimeLog,
+    flushPendingRendererRuntimeConsoleEntries: mainRuntimeLogger.flushPendingRendererRuntimeConsoleEntries,
+    logStartupTrace: mainRuntimeLogger.logStartupTrace,
   })
 }
 
-function createWindow() {
-  logStartupTrace('createWindow:start', {
-    devServerUrl: VITE_DEV_SERVER_URL ?? null,
-  })
-
-  const windowCreatedAt = Date.now()
-  const generatedIconDir = path.join(VITE_PUBLIC, 'generated-icons')
-  const preferredWindowIconPath =
-    process.platform === 'win32'
-      ? path.join(generatedIconDir, 'icon.ico')
-      : path.join(generatedIconDir, 'icon.png')
-  const windowIconPath = existsSync(preferredWindowIconPath)
-    ? preferredWindowIconPath
-    : path.join(VITE_PUBLIC, 'candue_icon.png')
-
-  win = new BrowserWindow({
-    icon: windowIconPath,
-    title: '赶渡 CanDue',
-    width: 1440,
-    height: 960,
-    autoHideMenuBar: true,
-    backgroundColor: '#f3f5f8',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-    },
-  })
-
-  win.setMenuBarVisibility(false)
-  registerDeveloperShortcuts(win)
-
-  win.webContents.on('did-start-loading', () => {
-    logStartupTrace('webContents:did-start-loading', {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-    })
-  })
-
-  win.webContents.on('dom-ready', () => {
-    logStartupTrace('webContents:dom-ready', {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-    })
-  })
-
-  win.webContents.on('did-finish-load', () => {
-    logStartupTrace('webContents:did-finish-load', {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-    })
-  })
-
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    logStartupTrace('webContents:did-fail-load', {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-      errorCode,
-      errorDescription,
-      validatedURL,
-    })
-  })
-
-  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    const rendererLogLevel = normalizeRendererConsoleLogLevel(level)
-    const payload = {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-      level,
-      line,
-      sourceId,
-      message,
-    }
-
-    if (message.startsWith('[startup]')) {
-      void appendMainRuntimeLog('info', '[startup] renderer-console', payload)
-      return
-    }
-
-    if (rendererLogLevel === 'warn' || rendererLogLevel === 'error' || message.startsWith('[renderer]')) {
-      void appendMainRuntimeLog(rendererLogLevel, 'renderer-console', payload)
-    }
-  })
-
-  win.webContents.on('preload-error', (_event, preloadPath, error) => {
-    void appendMainRuntimeLog('error', 'Renderer preload script failed.', {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-      preloadPath,
-      detail: formatUnknownError(error),
-    })
-  })
-
-  win.webContents.on('render-process-gone', (_event, details) => {
-    void appendMainRuntimeLog('error', 'Renderer process exited unexpectedly.', {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-      reason: details.reason,
-      exitCode: details.exitCode,
-    })
-  })
-
-  win.webContents.on('unresponsive', () => {
-    logStartupTrace('webContents:unresponsive', {
-      sinceWindowMs: Date.now() - windowCreatedAt,
-    })
-  })
-
-  if (VITE_DEV_SERVER_URL) {
-    logStartupTrace('window-load:start', {
-      kind: 'url',
-      target: VITE_DEV_SERVER_URL,
-    })
-    win.loadURL(VITE_DEV_SERVER_URL)
-  } else {
-    const target = path.join(RENDERER_DIST, 'index.html')
-    logStartupTrace('window-load:start', {
-      kind: 'file',
-      target,
-    })
-    win.loadFile(target)
-  }
+async function notifyBootstrapWindowReady(): Promise<void> {
+  showWindowWhenBootstrapScreenIsReady(win, mainRuntimeLogger.logStartupTrace)
 }
 
-function registerCopilotSettingsHandlers() {
-  ipcMain.removeHandler(COPILOT_SETTINGS_LOAD_CHANNEL)
-  ipcMain.removeHandler(COPILOT_SETTINGS_SAVE_CHANNEL)
-
-  ipcMain.handle(COPILOT_SETTINGS_LOAD_CHANNEL, async (): Promise<CopilotSettingsLoadResult> => {
-    return await loadCopilotSettings()
-  })
-
-  ipcMain.handle(COPILOT_SETTINGS_SAVE_CHANNEL, async (_event, patch: CopilotSettingsPatch): Promise<CopilotSettingsSaveResult> => {
-    return await saveCopilotSettings(patch)
-  })
-}
-
-function registerCopilotRuntimeHandlers() {
-  ipcMain.removeHandler(COPILOT_RUNTIME_LOAD_CHANNEL)
-  ipcMain.removeHandler(COPILOT_RUNTIME_RETRY_CHANNEL)
-
-  ipcMain.handle(COPILOT_RUNTIME_LOAD_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
-    return loadCopilotRuntime()
-  })
-
-  ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
-    return retryCopilotRuntime()
-  })
-}
 
 async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
     if (hostedBackendStartupInFlight) {
-      const service = ensureHostedBackendService()
+      const service = await ensureHostedBackendService()
 
       try {
         await service.start()
@@ -286,7 +112,7 @@ async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
 async function retryCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
     await prepareApplicationRuntimePaths()
-    const service = ensureHostedBackendService()
+    const service = await ensureHostedBackendService()
 
     try {
       const state = await service.start()
@@ -308,92 +134,21 @@ async function retryCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   }
 }
 
-async function loadCopilotSettings(): Promise<CopilotSettingsLoadResult> {
-  const paths = await prepareApplicationRuntimePaths()
-
-  try {
-    const fileContent = await readFile(paths.copilotSettingsFile, 'utf8')
-    const settings = normalizeCopilotSettings(JSON.parse(fileContent))
-
-    return {
-      ok: true,
-      settings,
-      storageState: getCopilotSettingsStorageState(settings),
-    }
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      try {
-        const migratedSettings = await tryMigrateLegacyCopilotSettings(paths)
-        if (migratedSettings !== null) {
-          return {
-            ok: true,
-            settings: migratedSettings,
-            storageState: getCopilotSettingsStorageState(migratedSettings),
-          }
-        }
-      } catch (migrationError) {
-        return {
-          ok: false,
-          error: `Failed to migrate legacy Copilot settings: ${formatUnknownError(migrationError)}`,
-        }
-      }
-
-      const emptySettings = createEmptyCopilotSettings()
-
-      return {
-        ok: true,
-        settings: emptySettings,
-        storageState: 'empty',
-      }
-    }
-
-    return {
-      ok: false,
-      error: `Failed to load Copilot settings: ${formatUnknownError(error)}`,
-    }
-  }
-}
-
-async function saveCopilotSettings(patch: CopilotSettingsPatch): Promise<CopilotSettingsSaveResult> {
-  const currentSettingsResult = await loadCopilotSettings()
-
-  if (!currentSettingsResult.ok) {
-    return currentSettingsResult
+async function ensureHostedBackendService(): Promise<HostedBackendService> {
+  if (hostedBackendService !== null) {
+    return hostedBackendService
   }
 
-  const settings = mergeCopilotSettings(currentSettingsResult.settings, patch)
-  const paths = await prepareApplicationRuntimePaths()
-
-  try {
-    await writeFile(paths.copilotSettingsFile, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
-    void appendMainRuntimeLog('info', 'Saved Copilot settings to desktop runtime config storage.', {
-      storageState: getCopilotSettingsStorageState(settings),
-      settingsFile: paths.copilotSettingsFile,
-    })
-
-    return {
-      ok: true,
-      settings,
-      storageState: getCopilotSettingsStorageState(settings),
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      error: `Failed to save Copilot settings: ${formatUnknownError(error)}`,
-    }
+  if (hostedBackendServicePromise !== null) {
+    return await hostedBackendServicePromise
   }
-}
 
-function createEmptyCopilotSettings(): CopilotSettings {
-  return normalizeCopilotSettings({})
-}
-
-function ensureHostedBackendService(): HostedBackendService {
-  if (hostedBackendService === null) {
+  hostedBackendServicePromise = (async () => {
     const paths = getHostedRuntimePaths()
     const runtimeCommandLineOptions = resolveHostedRuntimeCommandLineOptions()
+    const configuredModel = await mainProcessServices.loadConfiguredHostedRuntimeModel()
 
-    hostedBackendService = createHostedBackendService({
+    const service = createHostedBackendService({
       appRoot: APP_ROOT,
       resourcesPath: process.resourcesPath,
       isPackaged: app.isPackaged,
@@ -404,33 +159,44 @@ function ensureHostedBackendService(): HostedBackendService {
       environment: runtimeCommandLineOptions.environment,
       localToken: runtimeCommandLineOptions.localToken,
       model: runtimeCommandLineOptions.model,
+      configuredModel,
     })
-  }
 
-  return hostedBackendService
+    hostedBackendService = service
+    return service
+  })()
+
+  try {
+    return await hostedBackendServicePromise
+  } finally {
+    hostedBackendServicePromise = null
+  }
 }
 
 async function startHostedBackend(): Promise<void> {
   hostedBackendStartupInFlight = true
-  const service = ensureHostedBackendService()
-  const paths = getHostedRuntimePaths()
-
-  void appendMainRuntimeLog('info', 'Starting hosted desktop backend.', {
-    isPackaged: app.isPackaged,
-    userDataPath: paths.userDataDir,
-    runtimeRootDir: paths.runtimeRootDir,
-    configDir: paths.configDir,
-    logsDir: paths.logsDir,
-    databaseDir: paths.databaseDir,
-    stateDir: paths.stateDir,
-  })
 
   try {
-    const state = await service.start()
-    logHostedBackendState('Hosted backend is ready.', state)
-  } catch (error) {
-    const failure = isHostedBackendFailure(error) ? error : service.getLastFailure()
-    logHostedBackendFailure('Hosted backend startup failed.', failure, error)
+    const service = await ensureHostedBackendService()
+    const paths = getHostedRuntimePaths()
+
+    void mainRuntimeLogger.appendMainRuntimeLog('info', '[desktop-runtime] Starting hosted desktop backend.', {
+      isPackaged: app.isPackaged,
+      userDataPath: paths.userDataDir,
+      runtimeRootDir: paths.runtimeRootDir,
+      configDir: paths.configDir,
+      logsDir: paths.logsDir,
+      databaseDir: paths.databaseDir,
+      stateDir: paths.stateDir,
+    })
+
+    try {
+      const state = await service.start()
+      logHostedBackendState('Hosted backend is ready.', state)
+    } catch (error) {
+      const failure = isHostedBackendFailure(error) ? error : service.getLastFailure()
+      logHostedBackendFailure('Hosted backend startup failed.', failure, error)
+    }
   } finally {
     hostedBackendStartupInFlight = false
   }
@@ -480,7 +246,7 @@ function registerApplicationLifecycleHandlers() {
 
     quitSequenceStarted = true
     event.preventDefault()
-    void appendMainRuntimeLog('info', 'Electron main process entered before-quit cleanup.', null)
+    void mainRuntimeLogger.appendMainRuntimeLog('info', '[desktop-runtime] Electron main process entered before-quit cleanup.', null)
 
     void stopHostedBackend()
       .catch((error) => {
@@ -496,8 +262,8 @@ function resolveHostedRuntimeCommandLineOptions() {
   const { options, warning } = parseHostedRuntimeCommandLineArgumentsSafely(process.argv)
 
   if (warning !== null) {
-    console.warn('[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.', JSON.stringify(warning))
-    void appendMainRuntimeLog('warn', 'Ignoring invalid hosted runtime command-line arguments.', { ...warning })
+    const message = '[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.'
+    void mainRuntimeLogger.appendMainRuntimeLog('warn', message, { ...warning })
   }
 
   return options
@@ -505,8 +271,7 @@ function resolveHostedRuntimeCommandLineOptions() {
 
 function logHostedBackendState(message: string, state: HostedBackendState): void {
   const summary = summarizeHostedBackendState(state)
-  console.info(`[desktop-runtime] ${message}`, JSON.stringify(summary))
-  void appendMainRuntimeLog('info', message, summary)
+  void mainRuntimeLogger.appendMainRuntimeLog('info', `[desktop-runtime] ${message}`, summary)
 }
 
 function logHostedBackendFailure(
@@ -514,16 +279,16 @@ function logHostedBackendFailure(
   failure: HostedBackendFailure | null,
   error?: unknown,
 ): void {
+  const runtimeMessage = `[desktop-runtime] ${message}`
+
   if (failure !== null) {
     const summary = summarizeHostedBackendFailure(failure)
-    console.error(`[desktop-runtime] ${message}`, JSON.stringify(summary))
-    void appendMainRuntimeLog('error', message, summary)
+    void mainRuntimeLogger.appendMainRuntimeLog('error', runtimeMessage, summary)
     return
   }
 
   const detail = formatUnknownError(error)
-  console.error(`[desktop-runtime] ${message}`, detail)
-  void appendMainRuntimeLog('error', message, { detail })
+  void mainRuntimeLogger.appendMainRuntimeLog('error', runtimeMessage, { detail })
 }
 
 function getHostedRuntimePaths(): HostedRuntimePaths {
@@ -531,48 +296,20 @@ function getHostedRuntimePaths(): HostedRuntimePaths {
   return runtimePaths
 }
 
+function publishConfigCenterPublicSnapshotUpdate(snapshot: ConfigCenterPublicSnapshot): void {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (browserWindow.isDestroyed()) {
+      continue
+    }
+
+    browserWindow.webContents.send(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL, snapshot)
+  }
+}
+
 async function prepareApplicationRuntimePaths(): Promise<HostedRuntimePaths> {
   const paths = getHostedRuntimePaths()
   await ensureHostedRuntimeDirectories(paths)
   return paths
-}
-
-async function tryMigrateLegacyCopilotSettings(paths: HostedRuntimePaths): Promise<CopilotSettings | null> {
-  try {
-    const legacyContent = await readFile(paths.legacyCopilotSettingsFile, 'utf8')
-    const settings = normalizeCopilotSettings(JSON.parse(legacyContent))
-    await writeFile(paths.copilotSettingsFile, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
-    void appendMainRuntimeLog('info', 'Migrated legacy Copilot settings into desktop runtime config storage.', {
-      legacySettingsFile: paths.legacyCopilotSettingsFile,
-      settingsFile: paths.copilotSettingsFile,
-      storageState: getCopilotSettingsStorageState(settings),
-    })
-    return settings
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      return null
-    }
-
-    throw error
-  }
-}
-
-async function appendMainRuntimeLog(
-  level: RuntimeLogLevel,
-  message: string,
-  context: Record<string, unknown> | null,
-): Promise<void> {
-  try {
-    const paths = await prepareApplicationRuntimePaths()
-    await appendRuntimeLog(paths.hostLogFile, {
-      source: 'electron-main',
-      level,
-      message,
-      context: context ?? undefined,
-    })
-  } catch (error) {
-    console.error('[desktop-runtime] Failed to append Electron main log entry.', formatUnknownError(error))
-  }
 }
 
 function buildCopilotRuntimeSnapshot(): CopilotRuntimeSnapshot {
@@ -639,45 +376,26 @@ function summarizeHostedBackendFailure(failure: HostedBackendFailure): Record<st
   }
 }
 
-function isFileNotFoundError(error: unknown): error is NodeJS.ErrnoException {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
-}
-
-function formatUnknownError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  return String(error)
-}
-
-function normalizeRendererConsoleLogLevel(level: number): RuntimeLogLevel {
-  if (level >= 3) {
-    return 'error'
-  }
-
-  if (level === 2) {
-    return 'warn'
-  }
-
-  return 'info'
-}
-
 registerApplicationLifecycleHandlers()
 
 void app.whenReady()
   .then(() => {
-    logStartupTrace('app:ready')
+    mainRuntimeLogger.logStartupTrace('app:ready')
     Menu.setApplicationMenu(null)
-    registerCopilotSettingsHandlers()
-    registerCopilotRuntimeHandlers()
+    registerMainProcessIpcHandlers(ipcMain, {
+      services: mainProcessServices,
+      loadCopilotRuntime,
+      retryCopilotRuntime,
+      notifyBootstrapWindowReady,
+    })
     void startHostedBackend()
     createWindow()
   })
   .catch((error) => {
-    console.error('[desktop-runtime] Failed to bootstrap the Electron main process.', formatUnknownError(error))
-    void appendMainRuntimeLog('error', 'Failed to bootstrap the Electron main process.', {
-      detail: formatUnknownError(error),
+    const message = '[desktop-runtime] Failed to bootstrap the Electron main process.'
+    const detail = formatUnknownError(error)
+    void mainRuntimeLogger.appendMainRuntimeLog('error', message, {
+      detail,
     })
     app.quit()
   })

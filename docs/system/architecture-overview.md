@@ -1,358 +1,215 @@
 ---
 title: 系统架构总览
-description: 从系统级视角说明 Electron、Python runtime 与 Renderer 的组件关系和主数据流。
+description: 从系统级视角说明 Electron 主进程、双层配置系统、Python runtime 与当前 session-first 聊天主路径的关系。
 sidebar_position: 1
 ---
 
 # 系统架构总览
 
-## 文档目标
+本文档先回答一个最重要的问题：系统现在到底由谁负责什么，配置、运行时和聊天主路径又是怎样衔接起来的。
 
-本文档帮助新成员在一篇文档中理解当前系统全貌，建立整体心智模型。阅读时间约 5-10 分钟。
+## 一句话认识当前系统
 
-## 系统定位
+当前系统可以这样理解：Electron 主进程负责桌面宿主、配置持久化和 runtime 生命周期，renderer 负责工作台界面与会话壳，Python runtime 负责本地 HTTP 服务，而聊天正式主路径已经进入“后端目录给出智能体 → 创建会话时绑定智能体 → 每次请求再携带模型与工具策略”的 session-first 结构。
 
-赶渡 CanDue 是一个基于 Electron 的桌面应用，当前处于**最小聊天 MVP 阶段**，核心能力是提供一个本地托管的 AI 助手聊天界面。系统采用"Electron 宿主 + Python 后端 runtime"架构，前端通过 HTTP 与本地 Python 服务通信。
+## 当前系统的四个核心层
 
-## 核心组件关系
+### Electron 主进程
 
-### 组件拓扑
+主进程当前承担下面这些职责：
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Electron 主进程 (main.ts)                                    │
-│  - 管理窗口生命周期                                           │
-│  - 启动/停止 Python runtime                                   │
-│  - 提供 IPC 桥接（settings、runtime snapshot）                │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             │ spawn 子进程
-             ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Python Desktop Runtime (backend/app/desktop_runtime/)       │
-│  - FastAPI HTTP 服务（手动启动时默认 127.0.0.1:8765；Electron 托管时端口动态分配） │
-│  - 提供 /health、/ready、/diagnostics 等管理端点             │
-│  - 挂载 Copilot Runtime 单端点路由                           │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             │ 挂载路由
-             ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Copilot Runtime (backend/app/copilot_runtime/)              │
-│  - 单端点聊天 runtime（POST /）                              │
-│  - 支持 info、agent/connect、agent/run 三类方法              │
-│  - 管理 session store（内存中的多轮对话历史）                │
-│  - 默认单 agent（名为 "default"）                            │
-└─────────────────────────────────────────────────────────────┘
+- 它负责创建窗口、延迟显示窗口，并处理应用退出时的清理。
+- 它负责统一配置中心和 settings workspace 的磁盘持久化。
+- 它负责托管 hosted backend 的启动、停止、失败记录与重试。
+- 它负责把可公开的能力通过 IPC 暴露给 renderer，同时保留对底层文件和 secrets 的直接控制。
 
-┌─────────────────────────────────────────────────────────────┐
-│ Electron Renderer (frontend-copilot/src/)                   │
-│  - React 应用，提供聊天 UI                                    │
-│  - 通过 fetch 调用本地 Python runtime                        │
-│  - 集成 CopilotKit 作为聊天 UI 框架                          │
-└─────────────────────────────────────────────────────────────┘
-```
+实现入口位于[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)。
 
-### 主要数据流
+### Preload
 
-1. **启动流程**：
-   - Electron 主进程启动 → 创建窗口 → 并行启动 Python runtime
-   - Python runtime 启动 → 监听端口 → 报告 `/ready` 端点可用
-   - Renderer 加载 → 通过 IPC 获取 runtime URL → 连接到本地 HTTP 服务
+preload 当前是一层很薄的受控桥。它不会把文件系统、spawn 细节或 secret 文档直接暴露到页面环境，而是只暴露几个清晰的接口：
 
-2. **聊天流程**：
-   - 用户在 Renderer 输入消息 → CopilotKit 发起 HTTP POST 请求到 `/`
-   - Copilot Runtime 解析请求 → 调用 PydanticAI agent → 返回 SSE 流式响应
-   - Session store 记录 user/assistant 消息对，维护多轮上下文
+- 它会暴露公开配置中心的读取、补丁和订阅接口。
+- 它会暴露 settings workspace 普通状态与 secrets 的独立接口。
+- 它会暴露 hosted runtime 快照读取与 retry 接口。
+- 它会暴露 bootstrap ready 信号，用来告诉主进程何时可以显示窗口。
 
-3. **配置流程**：
-   - Renderer 通过 IPC 请求加载/保存 settings
-   - Electron 主进程读写 `config/copilot-settings.json`
-   - Settings 当前仅包含 `runtimeUrl` 与 `agentName`，用于配置本地 Copilot Runtime 地址及默认使用的 agent 名称
+相关实现位于[`frontend-copilot/electron/preload.ts`](../../frontend-copilot/electron/preload.ts)与[`frontend-copilot/electron/renderer-ipc.ts`](../../frontend-copilot/electron/renderer-ipc.ts)。
 
-## 关键子系统说明
+### Renderer 工作台
 
-### 1. Electron 主进程
+renderer 是运行在 Electron 中的 React 工作台。它承担的是页面级装配和交互职责：
 
-**代码锚点**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
+- 它会在启动时读取公开配置快照与 runtime 快照，决定当前工作台状态。
+- 它会承载助手工作区、设置工作区以及其余工作区视图。
+- 它会在有可用 `runtimeUrl` 时进入聊天主路径，继续向后端拉目录、创建会话和发送消息。
 
-**职责**：
-- 管理 BrowserWindow 生命周期
-- 通过 `PythonRuntimeManager` 启动/停止 Python 子进程
-- 提供 IPC handlers：
-  - `COPILOT_SETTINGS_LOAD_CHANNEL` / `COPILOT_SETTINGS_SAVE_CHANNEL`
-  - `COPILOT_RUNTIME_LOAD_CHANNEL` / `COPILOT_RUNTIME_RETRY_CHANNEL`
-- 在 `before-quit` 时优雅关闭 Python runtime
+相关入口位于[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)、[`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)和[`frontend-copilot/src/workbench/settings/SettingsWorkspace.tsx`](../../frontend-copilot/src/workbench/settings/SettingsWorkspace.tsx)。
 
-**关键依赖**：
-- `PythonRuntimeManager`：管理 Python 子进程的启动、健康检查、停止
-- `HostedBackendService`：封装 runtime manager，提供统一的 start/stop 接口
+### Python Desktop Runtime
 
-### 2. Python Desktop Runtime
+Python runtime 提供本地 loopback HTTP 服务。它既承担控制面接口，也承担聊天协议入口：
 
-**代码锚点**：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
+- 它会提供 `/health`、`/ready`、`/version` 和 `/diagnostics` 等运行控制面接口。
+- 它会通过根路径 `POST /` 承载当前单端点聊天协议。
+- 它会维护智能体目录、工具目录以及进程内会话存储。
 
-**职责**：
-- 提供本地 HTTP 服务（FastAPI）；手动启动时默认监听 `127.0.0.1:8765`，Electron 托管路径下端口由宿主动态分配
-- 仅允许 loopback 地址，拒绝外部访问
-- 提供管理端点：
-  - `GET /health`：健康检查
-  - `GET /ready`：就绪检查（启动时轮询此端点）
-  - `GET /diagnostics`：诊断信息（需要 local token）
-  - `GET /version`：版本信息
-- 挂载 Copilot Runtime 路由到 `POST /`
+服务创建位于[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)，契约结构位于[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)。
 
-**配置来源**：
-- CLI 参数（由 Electron 主进程传递）
-- 环境变量（如 `COPILOT_DESKTOP_RUNTIME_HOST`、`COPILOT_DESKTOP_RUNTIME_PORT`）
-- 配置文件路径由 CLI 参数指定
+## 配置系统已经分成两层
 
-**代码锚点**：[`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py)
+### 第一层是公开配置中心
 
-### 3. Copilot Runtime（单端点聊天 runtime）
+公开配置中心位于 `frontend-copilot/electron/config-center/` 目录。它当前属于 Electron 主进程层，由主进程负责读取、归一化、迁移、写回和广播公开快照。
 
-**代码锚点**：[`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py)
+当前正式公开域主要有四个：
 
-**职责**：
-- 提供单端点 `POST /` 接收所有聊天请求
-- 根据 `method` 字段路由到不同处理逻辑：
-  - `info`：返回 runtime 元信息（支持的 agents、methods）
-  - `agent/connect`：建立 session，返回 session descriptor
-  - `agent/run`：执行用户消息，调用 agent，返回 assistant 回复
-- 返回 SSE（Server-Sent Events）流式响应
-- 错误处理：返回结构化错误（如 `agent_not_found`、`model_not_configured`）
+| 配置域 | 当前公开字段 | 主要用途 |
+| --- | --- | --- |
+| `frontend-preferences` | `theme`、`animationsEnabled` | 这些字段用于前端主题和动画偏好。 |
+| `assistant-behavior` | `agentName` | 这个字段保留为助手行为偏好，但当前聊天主路径已经不再依赖它决定能否连接。 |
+| `host-config` | `runtimeUrl` | 这个字段用于开发态 runtime 地址覆盖。 |
+| `backend-exposed` | `model` | 这个字段供主进程在启动 hosted backend 时投影为默认模型参数。 |
 
-**核心契约**：[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)
+公开快照的投影定义位于[`frontend-copilot/electron/config-center/public-snapshot.ts`](../../frontend-copilot/electron/config-center/public-snapshot.ts)，存储和迁移逻辑位于[`frontend-copilot/electron/config-center/service.ts`](../../frontend-copilot/electron/config-center/service.ts)。
 
-**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)
+### 第二层是 settings workspace 持久化
 
-### 4. Session Store
+settings workspace 位于 `frontend-copilot/electron/settings-workspace/` 目录。这层同样由主进程 owner 持有，但它解决的是另一类问题：设置工作区中更完整的普通设置和 secret 持久化。
 
-**代码锚点**：[`backend/app/copilot_runtime/session_store.py`](../../backend/app/copilot_runtime/session_store.py)
+它当前分成两份文档：
 
-**职责**：
-- 维护 `threadId` → `RuntimeSessionRecord` 的映射
-- 每个 session 包含：
-  - `thread_id`：唯一标识一个对话线程
-  - `agent_name`：当前使用的 agent
-  - `messages`：user/assistant 消息历史
-  - `metadata`：元数据（如 `last_run_id`）
-  - `created_at` / `updated_at`：时间戳
-- 当前实现：`InMemorySessionStore`（进程内存，重启丢失）
+- [`frontend-copilot/electron/settings-workspace/schema.ts`](../../frontend-copilot/electron/settings-workspace/schema.ts)定义的普通状态文档会保存 provider profiles、默认模型路由、SUSTech 相关字段、API 配置等设置。
+- 同一文件中定义的 secrets 文档会保存 provider API key 和 SUSTech CAS 密码等敏感值。
 
-**语义**：
-- `threadId` 是前端选择的会话/话题 ID（字符串），代表一个对话线程
-- 同一 `threadId` 的多次 `agent/run` 请求会复用历史消息
-- Session 在 Python runtime 重启后丢失（未持久化）
+读取与写回逻辑位于[`frontend-copilot/electron/settings-workspace/service.ts`](../../frontend-copilot/electron/settings-workspace/service.ts)，主进程封装位于[`frontend-copilot/electron/settings-workspace/main-process.ts`](../../frontend-copilot/electron/settings-workspace/main-process.ts)。
 
-### 5. Agent Registry & Tool Registry
+### 这两层的边界很明确
 
-**代码锚点**：
-- [`backend/app/copilot_runtime/agent_registry.py`](../../backend/app/copilot_runtime/agent_registry.py)
-- [`backend/app/copilot_runtime/tool_registry.py`](../../backend/app/copilot_runtime/tool_registry.py)
+可以用下面这张表来理解它们的差别：
 
-**当前状态**：
-- **Agent Registry**：注册可用的 agents，当前默认只有一个名为 `"default"` 的 agent
-- **Tool Registry**：注册可用的 toolsets，当前默认只有一个名为 `"default"` 的空 toolset
-- **边界**：这两个 registry 主要承载**注册与元数据管理**，不是完整的业务 API 后端
-- **未来扩展**：多 agent、多 toolset 的支持已预留接口，但当前 MVP 仅使用默认单例
+| 维度 | 公开配置中心 | settings workspace 普通状态 | settings workspace secrets |
+| --- | --- | --- | --- |
+| owner | Electron 主进程负责持久化与广播。 | Electron 主进程负责持久化。 | Electron 主进程负责持久化，并限制暴露方式。 |
+| 主要消费者 | 根装配、启动页主题、工作台公共设置读取。 | 设置工作区表单。 | 设置工作区的 secret 管理界面。 |
+| 是否进入公开快照 | 这部分数据会进入公开快照。 | 这部分数据不会进入公开快照。 | 这部分数据不会进入公开快照。 |
+| 是否适合直接暴露给 renderer | 这部分数据就是给 renderer 公开消费的那一层。 | 这部分数据通过设置工作区 API 定向暴露。 | 这部分数据只通过专门的 secret API 暴露必要结果。 |
 
-### 6. Electron Renderer
+这意味着，当前配置系统已经不再是“一个 settings 文件 + renderer 本地 state”的结构。系统现在同时存在公开配置面和设置工作区持久化面，两者由同一个主进程持有，但职责不同。
 
-**代码锚点**：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)
+## Secret 与普通设置已经分层
 
-**职责**：
-- 提供聊天 UI（基于 CopilotKit）
-- 启动时通过 IPC 加载 runtime snapshot，获取 `runtimeUrl`
-- 根据 runtime 状态决定是否注入 CopilotKit Provider
-- 提供重试机制（当 runtime 启动失败时）
+当前关于 secret 的准确表述应该是下面这样：
 
-**状态管理**：
-- `CopilotBootstrapState`：runtime 启动状态（loading、ready、degraded、error）
-- `CopilotSettings`：用户配置（`runtimeUrl`、`agentName`）
+- provider API key 和 SUSTech CAS 密码属于 settings workspace secrets。
+- 这些 secret 不会进入 config center public snapshot。
+- renderer 只会通过专门的 load、save、clear API 与主进程交互。
+- 主进程会继续作为 secret 文档的直接 owner。
 
-**代码锚点**：[`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)
+这条边界非常重要，因为它说明“设置已持久化”并不等于“设置已经公开给全部页面状态使用”。
 
-## 运行时产物与目录
+## Electron 在当前系统中的角色
 
-### 目录结构
+Electron 当前不是一个简单的窗口壳。它在系统中承担的是三个 owner 角色。
 
-默认情况下，运行时产物存储在 Electron `userData` 目录下：
+### 它是桌面生命周期 owner
 
-```
-<userData>/
-└── desktop-runtime/
-    ├── config/
-    │   └── copilot-settings.json      # 用户配置
-    ├── logs/
-    │   ├── electron-host.log          # Electron 主进程日志
-    │   ├── backend.stdout.log         # Python 子进程 stdout
-    │   └── backend.stderr.log         # Python 子进程 stderr
-    ├── database/                      # 预留（当前未使用）
-    └── state/
-        ├── runtime-snapshot.json      # Runtime 状态快照
-        └── last-failure.json          # 最近失败记录
+主进程负责窗口创建、启动页显示时机、运行日志转发和退出清理。当前窗口会先创建，再等待 bootstrap ready 信号后显示。这个行为已经是正式启动路径的一部分。
+
+### 它是配置持久化 owner
+
+主进程同时持有公开配置中心与 settings workspace 的状态和 secrets 文档。renderer 不会直接访问这些底层文件，而是通过 preload 暴露的 API 获得受控读写能力。
+
+### 它是 runtime 生命周期 owner
+
+主进程会决定使用 development 还是 bundled 模式启动 Python runtime，也会决定向 runtime 传递哪些 CLI 参数，例如 `host`、`port`、`local token` 和从公开配置中投影出的默认模型。runtime 本身不会直接去读这些配置文档。
+
+## 当前聊天为什么已经是 session-first
+
+### 后端目录已经成为智能体真源
+
+当前 renderer 不再自己维护一份聊天专用的智能体真源。工作台会向后端请求 `agents/list`，由后端告诉前端当前有哪些可用智能体、默认智能体是谁，以及每个智能体推荐哪些工具、偏好什么默认模型。
+
+相关契约位于[`frontend-copilot/src/features/copilot/chat-contract.ts`](../../frontend-copilot/src/features/copilot/chat-contract.ts)和[`backend/app/copilot_runtime/contracts.py`](../../backend/app/copilot_runtime/contracts.py)。
+
+### 会话创建时就会绑定智能体
+
+当前前端主路径会调用 `session/create`。后端返回值中已经包含 `sessionId`、`boundAgent`、`createdAt`、`updatedAt`、`recommendedTools` 和 `defaultModelPreference`。这说明“会话属于哪个智能体”是在会话创建时就确定下来的，而不是在消息发送时临时猜测。
+
+### 能力面已经进入正式主路径
+
+会话创建后，前端会继续调用 `capabilities/get`。返回值当前会包含 `capabilitiesVersion`、工具目录、推荐工具、工具选择模式和默认模型偏好。`AssistantWorkspace` 会把这些内容整理成 `AssistantSessionCapabilities`，再放进 `AssistantSessionShell`。
+
+当前前端还会把 `recommendedTools` 映射为新会话的 `defaultEnabledTools`。因此，默认启用工具来源已经进入正式会话壳，不再是界面上随手拼出来的临时值。
+
+### 请求级消息策略已经进入正式消息请求
+
+[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)发送消息时，会在 `message/send` 请求里显式携带：
+
+- `sessionId` 用来指定当前会话。
+- `agent` 用来做绑定智能体一致性校验。
+- `model` 用来指定本次发送使用的模型。
+- `enabledTools` 用来指定本次启用哪些工具。
+- `requestOptions` 用来携带本次请求的附加选项。
+
+这说明当前聊天主路径已经同时具备会话级绑定和请求级策略两个层次。
+
+## 当前系统关系图
+
+```text
+Electron Main Process
+  ├─ Config Center
+  │    ├─ 分域公开配置文档
+  │    ├─ 公开快照投影与广播
+  │    └─ 旧 copilot-settings.json 迁移入口
+  ├─ Settings Workspace Persistence
+  │    ├─ 普通状态文档
+  │    └─ secrets 文档
+  ├─ Hosted Runtime Lifecycle
+  │    ├─ 创建 / 启动 / 重试 / 停止
+  │    └─ runtime 快照与失败摘要
+  └─ Preload / IPC Surface
+            │
+            ▼
+Renderer Workbench
+  ├─ 根装配层读取公开配置与 runtime 快照
+  ├─ AssistantWorkspace 进入 session-first 聊天主路径
+  └─ SettingsWorkspace 读写普通设置与 secrets
+            │
+            ▼
+Python Desktop Runtime
+  ├─ /health /ready /version /diagnostics
+  ├─ POST / 单端点聊天协议
+  ├─ 智能体目录与工具目录
+  └─ InMemorySessionStore
 ```
 
-**代码锚点**：
-- [`backend/app/desktop_runtime/config.py`](../../backend/app/desktop_runtime/config.py) - `DesktopRuntimePaths`
-- [`frontend-copilot/electron/runtime/runtime-paths.ts`](../../frontend-copilot/electron/runtime/runtime-paths.ts)
+## 旧 `copilot-settings.json` 现在的角色
 
-### Settings 语义
+[`frontend-copilot/electron/config-center/service.ts`](../../frontend-copilot/electron/config-center/service.ts)和[`frontend-copilot/electron/config-center/paths.ts`](../../frontend-copilot/electron/config-center/paths.ts)仍然会把旧 `copilot-settings.json` 作为迁移输入路径使用。它当前最主要的用途，就是在新分域文档不存在时为 `runtimeUrl`、`agentName` 等历史字段提供迁移来源。
 
-`copilot-settings.json` 包含：
-- `runtimeUrl`：本地 Copilot Runtime 地址（如 `http://127.0.0.1:8765`）
-- `agentName`：默认使用的 agent 名称
+因此，旧文件当前更像主进程内部的兼容输入，而不是正式对外接口。
 
-**代码锚点**：[`frontend-copilot/electron/copilot-settings.ts`](../../frontend-copilot/electron/copilot-settings.ts)
+## 当前边界
 
-## 当前边界与非目标
+### 当前已经成立的事实
 
-### 已实现
+- 配置系统已经分成公开配置中心和 settings workspace 持久化两层。
+- secret 与普通设置已经分层，secret 不会进入公开快照。
+- Electron 主进程已经成为配置持久化 owner 和 runtime 生命周期 owner。
+- 后端目录、会话绑定、能力面和请求级消息策略已经进入正式聊天主路径。
 
-- ✅ Electron 宿主 + Python runtime 基础架构
-- ✅ 单端点聊天 runtime（info、connect、run）
-- ✅ 内存 session store（多轮对话）
-- ✅ 基于 PydanticAI 的 agent 执行
-- ✅ 本地 HTTP 服务（loopback only）
-- ✅ 启动健康检查与重试机制
-- ✅ 结构化错误处理
+### 当前仍然需要写得谨慎的地方
 
-### 当前限制
-
-- ⚠️ Session 未持久化（重启丢失）
-- ⚠️ 默认单 agent、单 toolset（多 agent 接口已预留）
-- ⚠️ Tool registry 主要承载注册/元数据，非完整业务 API
-- ⚠️ 无用户认证（本地应用，loopback only）
-- ⚠️ 无多用户支持
-
-### 未来扩展方向
-
-- 🔮 Session 持久化（SQLite）
-- 🔮 多 agent 支持（不同角色的助手）
-- 🔮 Tool calling（调用外部 API、本地工具）
-- 🔮 更丰富的 UI 交互（文件上传、图表展示等）
-
-## 主要控制流与边界
-
-### 启动链路
-
-1. **Electron 主进程启动**：
-   - 解析主进程 CLI 参数（如 `--runtime-host`、`--runtime-port`、`--runtime-model`）
-   - 将解析到的 runtime 配置转换为 Python 子进程参数（如 `--host`、`--port`、`--model`）
-   - 创建 `PythonRuntimeManager`
-   - 调用 `manager.start()`
-
-2. **Python Runtime Manager**：
-   - 分配 loopback 端口
-   - 解析 Python runtime 启动规格（development 或 bundled 模式）
-   - Spawn Python 子进程：`python -m app.desktop_runtime --host 127.0.0.1 --port <port> ...`
-   - 轮询 `/ready` 端点，等待就绪
-
-3. **Python Desktop Runtime**：
-   - 加载配置（CLI 参数 + 环境变量）
-   - 创建 FastAPI app
-   - 组装 Copilot Runtime 依赖（session store、agent registry、tool registry）
-   - 启动 uvicorn 服务
-
-4. **Renderer 启动**：
-   - 通过 IPC 调用 `COPILOT_RUNTIME_LOAD_CHANNEL`
-   - 获取 runtime snapshot（包含 `runtimeUrl`、`status`）
-   - 如果 status 为 `ready`，注入 CopilotKit Provider
-   - 渲染聊天 UI
-
-**代码锚点**：
-- [`frontend-copilot/electron/runtime/python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts)
-- [`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py) - `create_app()`
-
-### 聊天请求链路
-
-1. **用户输入消息**：
-   - Renderer 中用户输入文本
-   - CopilotKit 发起 `POST <runtimeUrl>/` 请求
-   - Body 包含 `method: "agent/run"`、`threadId`、`runId`、`messages`
-
-2. **Copilot Runtime 处理**：
-   - Router 解析 `method` 字段，路由到 `_handle_run_request()`
-   - 从 session store 获取或创建 session
-   - 调用 `RuntimeBridge.run()`
-
-3. **RuntimeBridge 执行**：
-   - 从 agent registry 获取 agent
-   - 将 session 历史转换为 PydanticAI 消息格式
-   - 调用 `agent.run(user_prompt, message_history=...)`
-   - 获取 assistant 回复
-
-4. **返回响应**：
-   - 将 assistant 回复追加到 session
-   - 构造 SSE 事件流：`RUN_STARTED` → `STATE_SNAPSHOT` → `TEXT_MESSAGE_START` → `TEXT_MESSAGE_CONTENT` → `TEXT_MESSAGE_END` → `RUN_FINISHED`
-   - 返回给 Renderer
-
-**代码锚点**：
-- [`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py) - `_handle_run_request()`
-- [`backend/app/copilot_runtime/bridge.py`](../../backend/app/copilot_runtime/bridge.py)
-
-### 错误处理边界
-
-Copilot Runtime 提供**显式失败与结构化错误**：
-
-- `agent_not_found` (404)：请求的 agent 不存在
-- `model_not_configured` (503)：未配置 LLM model
-- `invalid_message_history` (409)：session 历史损坏（如孤立的 assistant 消息）
-- `agent_execution_failed` (500)：agent 执行失败
-
-**测试依据**：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)
-
-## 关键设计决策
-
-### 1. 为什么使用 Electron + Python？
-
-- **Electron**：提供跨平台桌面 UI，成熟的生态
-- **Python**：AI/ML 生态丰富，PydanticAI 等框架成熟
-- **本地 HTTP**：解耦前后端，Python runtime 可独立测试
-
-### 2. 为什么使用单端点 runtime？
-
-- 简化协议：所有请求发往同一端点，通过 `method` 字段路由
-- 便于扩展：新增 method 无需修改路由配置
-- 对齐 CopilotKit 协议：CopilotKit 默认使用单端点模式
-
-### 3. 为什么 session 在内存中？
-
-- MVP 阶段优先快速迭代
-- 避免引入 SQLite 等持久化依赖
-- 未来可平滑迁移到持久化存储
-
-### 4. 为什么 loopback only？
-
-- 安全性：避免暴露到网络
-- 简化认证：本地应用无需复杂的用户认证
-- 性能：本地通信延迟低
+- Python runtime 还不会直接读取配置中心文档。
+- 会话列表当前还没有后端持久化接口。
+- runtime 状态变化当前还没有面向 renderer 的完整实时推送。
+- 旧 `agent/connect` 与 `agent/run` 仍然保留兼容语义，但当前前端主路径使用的是 `agents/list`、`session/create`、`capabilities/get` 和 `message/send`。
 
 ## 相关文档
 
-- [Runtime 生命周期](./runtime-lifecycle.md) - 详细启动链路、两种运行模式
-- [聊天 Runtime 契约](./chat-runtime-contract.md) - 单端点协议、请求/响应格式
-- [Session 与状态模型](./session-and-state-model.md) - threadId 语义、状态管理
-- [后端分册](../backend/README.md) - 后端模块布局、配置、边界
-- [前端分册](../frontend/README.md) - 前端 UI 现状、连接契约
-
-## 快速定位代码
-
-### 核心入口
-
-- Electron 主进程：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts)
-- Python runtime 入口：[`backend/app/desktop_runtime/server.py`](../../backend/app/desktop_runtime/server.py)
-- Copilot runtime 路由：[`backend/app/copilot_runtime/router.py`](../../backend/app/copilot_runtime/router.py)
-- Renderer 根组件：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)
-
-### 关键测试
-
-- Desktop runtime 单元测试：[`backend/tests/unit/desktop_runtime/test_server.py`](../../backend/tests/unit/desktop_runtime/test_server.py)
-- Copilot runtime 集成测试：[`backend/tests/integration/test_copilot_runtime_http.py`](../../backend/tests/integration/test_copilot_runtime_http.py)
-- Session store 单元测试：[`backend/tests/unit/copilot_runtime/test_session_store.py`](../../backend/tests/unit/copilot_runtime/test_session_store.py)
-
----
-
-**文档版本**：2026-03-25  
-**对应代码版本**：当前 main 分支最新状态
+- [运行时生命周期](./runtime-lifecycle.md)
+- [会话与状态模型](./session-and-state-model.md)
+- [聊天运行时契约](./chat-runtime-contract.md)
+- [前端分册入口](../frontend/README.md)
+- [后端运行与配置](../backend/run-and-config.md)

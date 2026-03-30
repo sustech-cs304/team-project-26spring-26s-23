@@ -1,141 +1,118 @@
 ---
 title: 运行与配置参考
-description: 结构化汇总当前后端命令、配置项、默认路径与测试分层事实。
+description: 结构化汇总当前后端命令、参数、环境变量、默认路径与测试分层事实。
 sidebar_position: 7
 ---
 
 # 运行与配置参考
 
-> 这份附录服务于 [运行与配置](./run-and-config.md)。它只整理当前已经确认的命令、配置项、默认路径和测试分层事实，不替代正文解释。
+这份附录服务于 [运行与配置](./run-and-config.md)。它只整理当前已经确认的命令、参数、环境变量和默认路径，方便查表时快速定位。
 
 ## 1. 当前已确认的运行入口
 
-### 1.1 已实现的入口
+### 1.1 已实现入口
 
-| 入口 | 位置 | 当前状态 | 说明 |
-| --- | --- | --- | --- |
-| Blackboard 课程目录搜索 CLI | `app.blackboard.provider.cli.search_course_catalog` | 已实现 | 需要凭据；可终端预览；可保存 JSON 报告。 |
-| Blackboard ICS 同步 CLI | `app.blackboard.provider.cli.sync_calendar_ics` | 已实现 | 需要 feed URL；可写 SQLite；可保存 JSON 报告。 |
-| Desktop runtime 本地 HTTP 入口 | `app.desktop_runtime` | 已实现 | 仅监听 loopback；提供 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info` 最小契约。 |
+| 入口 | 位置 | 当前说明 |
+| --- | --- | --- |
+| Blackboard 课程目录搜索 CLI | `app.blackboard.provider.cli.search_course_catalog` | 需要凭据；可终端预览；可保存 JSON 报告 |
+| Blackboard ICS 同步 CLI | `app.blackboard.provider.cli.sync_calendar_ics` | 需要 feed URL；可写 SQLite；可保存 JSON 报告 |
+| Desktop runtime 本地 HTTP 服务 | `app.desktop_runtime` | 仅监听 loopback；提供控制面端点和聊天根端点 |
 
 ### 1.2 代码里可调用但不是正式入口
 
-| 入口 | 位置 | 当前状态 | 说明 |
-| --- | --- | --- | --- |
-| Blackboard 工具层：课程目录搜索 | `app.blackboard.provider.tools.agent_tools.search_course_catalog` | 可调用但不是正式入口 | 返回字典，不是 HTTP 响应。 |
-| Blackboard 工具层：ICS 刷新 | `app.blackboard.provider.tools.agent_tools.refresh_calendar_ics` | 可调用但不是正式入口 | 返回字典，不是 HTTP 响应。 |
-| Blackboard 工具层：snapshot 同步 | `app.blackboard.provider.tools.agent_tools.sync_blackboard_snapshot` | 可调用但不是正式入口 | 返回抓取、同步和校验结果字典。 |
-| Blackboard snapshot use case | `app.blackboard.provider.use_cases.snapshot_sync.run_blackboard_snapshot_sync` | 可调用但不是正式入口 | 会抓取、构建 payload、同步数据库、做完整性检查。 |
-| TIS 链路诊断 | `app.teaching_information_system.provider.use_cases.diagnostics.run_tis_link_diagnostic` | 可调用但不是正式入口 | 主要用于验证登录、首页分析、候选接口探测。 |
-| TIS 个人成绩 | `app.teaching_information_system.provider.use_cases.personal_grades.fetch_personal_grades_with_credentials` | 可调用但不是正式入口 | 可选持久化。 |
-| TIS 学分绩 | `app.teaching_information_system.provider.use_cases.credit_gpa.fetch_credit_gpa_with_credentials` | 可调用但不是正式入口 | 可选持久化。 |
-| TIS 已选课程 | `app.teaching_information_system.provider.use_cases.selected_courses.fetch_selected_courses_with_credentials` | 可调用但不是正式入口 | 可选持久化。 |
-
-### 1.3 当前还未完成的服务入口
-
-| 形态 | 当前状态 | 说明 |
+| 入口 | 位置 | 当前说明 |
 | --- | --- | --- |
-| 面向前端的复杂业务 HTTP API 服务 | 未完成正式收敛 | 当前阶段只补齐桌面运行时最小契约，不暴露 Blackboard / TIS 复杂业务 API。 |
+| Blackboard 工具层：课程目录搜索 | `app.blackboard.provider.tools.agent_tools.search_course_catalog` | 返回字典，不是 HTTP 响应 |
+| Blackboard 工具层：ICS 刷新 | `app.blackboard.provider.tools.agent_tools.refresh_calendar_ics` | 返回字典，不是 HTTP 响应 |
+| Blackboard 工具层：snapshot 同步 | `app.blackboard.provider.tools.agent_tools.sync_blackboard_snapshot` | 返回抓取、同步和校验结果字典 |
+| Blackboard snapshot use case | `app.blackboard.provider.use_cases.snapshot_sync.run_blackboard_snapshot_sync` | 内部用例编排，不是正式入口 |
+| TIS 诊断 / 成绩 / 学分绩 / 已选课程 use case | `app.teaching_information_system.provider.use_cases.*` | 内部可调用能力，不是正式 HTTP 入口 |
 
-## 2. CLI 命令参考
-
-> 以下命令除特别说明外都应在 `backend/` 目录下执行；Desktop runtime 推荐示例从仓库根目录调用 `uv run --directory backend`，以便用纯参数形式显式固定运行时路径与模型。
+## 2. 常用命令参考
 
 ### 2.1 课程目录搜索 CLI
 
 ```bash
+cd backend
 python -m app.blackboard.provider.cli.search_course_catalog --help
 python -m app.blackboard.provider.cli.search_course_catalog --keyword 计算机 --preview 5
 python -m app.blackboard.provider.cli.search_course_catalog --keyword 数据库 --limit 20 --save-json
 ```
 
-#### 主要参数
+### 主要参数
 
 | 参数 | 是否必需 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--keyword` | 必需 | 无 | 搜索关键词。 |
-| `--field` | 可选 | `CourseName` | 搜索字段。 |
-| `--operator` | 可选 | `Contains` | 搜索操作符。 |
-| `--limit` | 可选 | `0` | `<=0` 代表不限制返回条数。 |
-| `--preview` | 可选 | `10` | 终端预览条数。 |
-| `--save-json` | 可选 | 关闭 | 将结果写入 `data/reports/`。 |
-
-#### 运行前提
-
-- 需要 `SUSTECH_USERNAME`
-- 需要 `SUSTECH_PASSWORD`
-
-#### 主要输出
-
-- 终端日志
-- 结果预览
-- 可选 JSON 报告：`data/reports/course_catalog_search_时间戳.json`
+| `--keyword` | 必需 | 无 | 搜索关键词 |
+| `--field` | 可选 | `CourseName` | 搜索字段 |
+| `--operator` | 可选 | `Contains` | 搜索操作符 |
+| `--limit` | 可选 | `0` | `<=0` 代表不限制条数 |
+| `--preview` | 可选 | `10` | 终端预览条数 |
+| `--save-json` | 可选 | 关闭 | 写入 `data/reports/` |
 
 ### 2.2 ICS 同步 CLI
 
 ```bash
+cd backend
 python -m app.blackboard.provider.cli.sync_calendar_ics --help
 python -m app.blackboard.provider.cli.sync_calendar_ics --save-json
 python -m app.blackboard.provider.cli.sync_calendar_ics --feed-url https://example.com/calendar.ics --db-path data/custom.db --save-json
 ```
 
-#### 主要参数
+### 主要参数
 
 | 参数 | 是否必需 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--feed-url` | 可选 | 无 | 未传入时按环境变量优先级读取。 |
-| `--db-path` | 可选 | 无 | 未传入时读取环境变量，再退回默认路径。 |
-| `--save-json` | 可选 | 关闭 | 将同步统计与事件快照写入 `data/reports/`。 |
+| `--feed-url` | 可选 | 无 | 未传入时按环境变量优先级读取 |
+| `--db-path` | 可选 | 无 | 未传入时读环境变量，再回退默认路径 |
+| `--save-json` | 可选 | 关闭 | 写同步统计和事件快照 |
 
-#### feed URL 解析优先级
+### feed URL 解析优先级
 
 1. `--feed-url`
 2. `BLACKBOARD_CALENDAR_FEED_URL`
 3. `CALENDAR_FEED_URL`
 
-#### 数据库路径解析优先级
+### 数据库路径解析优先级
 
 1. `--db-path`
 2. `SUSTECH_DB_PATH`
-3. 默认值 `data/sustech.db`
+3. `data/sustech.db`
 
-#### 主要输出
+### 2.3 Desktop runtime
 
-- 终端日志
-- 同步统计
-- 可选 JSON 报告：`data/reports/calendar_ics_sync_时间戳.json`
-
-### 2.3 Desktop runtime 本地 HTTP 入口
+推荐从仓库根目录执行：
 
 ```bash
 uv run --directory backend python -m app.desktop_runtime --help
-uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --app-mode desktop --environment development --root-dir ./backend/data/desktop-runtime-cli --user-data-dir ./backend/data --config-dir ./backend/data/desktop-runtime-cli/config --logs-dir ./backend/data/desktop-runtime-cli/logs --database-dir ./backend/data/desktop-runtime-cli/database --state-dir ./backend/data/desktop-runtime-cli/state --settings-file ./backend/data/desktop-runtime-cli/config/copilot-settings.json --host-log-file ./backend/data/desktop-runtime-cli/logs/electron-host.log --backend-stdout-log-file ./backend/data/desktop-runtime-cli/logs/backend.stdout.log --backend-stderr-log-file ./backend/data/desktop-runtime-cli/logs/backend.stderr.log --runtime-snapshot-file ./backend/data/desktop-runtime-cli/state/runtime-snapshot.json --last-failure-file ./backend/data/desktop-runtime-cli/state/last-failure.json --model test --local-token cli-token
+uv run --directory backend python -m app.desktop_runtime --model test
+uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --root-dir ./backend/data/desktop-runtime-cli --model test
 ```
 
-#### 主要参数
+### 主要参数
 
 | 参数 | 是否必需 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--host` | 可选 | `127.0.0.1` | 仅允许 loopback 地址，例如 `127.0.0.1`、`localhost`、`::1`。 |
-| `--port` | 可选 | `8765` | 本地监听端口。 |
-| `--app-mode` | 可选 | `desktop` | 应用模式。 |
-| `--environment` | 可选 | `development` | 运行环境。 |
-| `--root-dir` | 可选 | `data/desktop-runtime` | 桌面运行时根目录。 |
-| `--user-data-dir` | 可选 | `data` | Electron `userData` 根目录。 |
-| `--config-dir` | 可选 | `data/desktop-runtime/config` | 桌面运行时配置目录。 |
-| `--logs-dir` | 可选 | `data/desktop-runtime/logs` | 运行时日志目录。 |
-| `--database-dir` | 可选 | `data/desktop-runtime/database` | 运行时数据库目录。 |
-| `--state-dir` | 可选 | `data/desktop-runtime/state` | 运行态快照与失败摘要目录。 |
-| `--settings-file` | 可选 | `data/desktop-runtime/config/copilot-settings.json` | Copilot 设置文件路径。 |
-| `--host-log-file` | 可选 | `data/desktop-runtime/logs/electron-host.log` | Electron 主进程日志文件路径。 |
-| `--backend-stdout-log-file` | 可选 | `data/desktop-runtime/logs/backend.stdout.log` | Python 子进程 stdout 日志文件路径。 |
-| `--backend-stderr-log-file` | 可选 | `data/desktop-runtime/logs/backend.stderr.log` | Python 子进程 stderr 日志文件路径。 |
-| `--runtime-snapshot-file` | 可选 | `data/desktop-runtime/state/runtime-snapshot.json` | 运行态快照文件路径。 |
-| `--last-failure-file` | 可选 | `data/desktop-runtime/state/last-failure.json` | 最近失败摘要文件路径。 |
-| `--model` | 可选 | 无 | Copilot 聊天运行时模型；当前推荐显式通过 CLI 传入。 |
-| `--local-token` | 可选 | 无 | 若提供，则 diagnostics 端点要求 `X-Local-Token`。 |
+| `--host` | 可选 | `127.0.0.1` | 仅允许 loopback 地址 |
+| `--port` | 可选 | `8765` | 本地监听端口 |
+| `--app-mode` | 可选 | `desktop` | 应用模式 |
+| `--environment` | 可选 | `development` | 运行环境 |
+| `--user-data-dir` | 可选 | `data` | userData 根目录 |
+| `--root-dir` | 可选 | `data/desktop-runtime` | runtime 根目录 |
+| `--config-dir` | 可选 | `data/desktop-runtime/config` | 配置目录 |
+| `--logs-dir` | 可选 | `data/desktop-runtime/logs` | 日志目录 |
+| `--database-dir` | 可选 | `data/desktop-runtime/database` | 数据目录 |
+| `--state-dir` | 可选 | `data/desktop-runtime/state` | 状态目录 |
+| `--settings-file` | 可选 | `data/desktop-runtime/config/copilot-settings.json` | 旧设置文件路径，当前主要保留给迁移输入 |
+| `--host-log-file` | 可选 | `data/desktop-runtime/logs/electron-host.log` | Electron 主进程日志 |
+| `--backend-stdout-log-file` | 可选 | `data/desktop-runtime/logs/backend.stdout.log` | Python stdout 日志 |
+| `--backend-stderr-log-file` | 可选 | `data/desktop-runtime/logs/backend.stderr.log` | Python stderr 日志 |
+| `--runtime-snapshot-file` | 可选 | `data/desktop-runtime/state/runtime-snapshot.json` | 运行态快照 |
+| `--last-failure-file` | 可选 | `data/desktop-runtime/state/last-failure.json` | 最近失败摘要 |
+| `--model` | 可选 | 无 | runtime 默认模型 |
+| `--local-token` | 可选 | 无 | diagnostics 保护令牌 |
 
-#### 最小契约端点
+### 当前可观察控制面端点
 
 - `GET /health`
 - `GET /ready`
@@ -144,92 +121,89 @@ uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port
 - `GET /diagnostics`
 - `GET /diagnostics/runtime-info`
 
-#### 主要输出
+### 当前正式聊天方法
 
-- health / ready 状态
-- 版本与入口信息
-- 不包含敏感值的运行目录与配置摘要
+- `agents/list`
+- `session/create`
+- `capabilities/get`
+- `message/send`
 
-## 3. 当前已确认环境变量
+## 3. 环境变量参考
 
 ### 3.1 `.env.example` 中明确给出的变量
 
-| 变量名 | 用途 | 当前适用范围 | 是否建议优先配置 |
-| --- | --- | --- | --- |
-| `SUSTECH_USERNAME` | 统一登录用户名 | Blackboard CLI、TIS 调用、live 测试 | 是 |
-| `SUSTECH_PASSWORD` | 统一登录密码 | Blackboard CLI、TIS 调用、live 测试 | 是 |
-| `BLACKBOARD_CALENDAR_FEED_URL` | Blackboard ICS 订阅地址 | ICS CLI | 跑 ICS 时是 |
-| `SUSTECH_DB_PATH` | SQLite 数据库路径 | Blackboard / TIS 持久化相关能力 | 视需要 |
+| 变量名 | 用途 | 当前适用范围 |
+| --- | --- | --- |
+| `SUSTECH_USERNAME` | 统一登录用户名 | Blackboard CLI、TIS 调用、live 测试 |
+| `SUSTECH_PASSWORD` | 统一登录密码 | Blackboard CLI、TIS 调用、live 测试 |
+| `BLACKBOARD_CALENDAR_FEED_URL` | ICS 订阅地址 | ICS CLI |
+| `SUSTECH_DB_PATH` | SQLite 数据库路径 | Blackboard / TIS 持久化相关能力 |
 
-### 3.2 Desktop runtime 运行时环境变量（兼容回退）
+### 3.2 Desktop runtime 环境变量
 
-> 当前这些变量仍会被解析，但日常开发与联调优先使用 `--host`、`--port`、`--app-mode`、`--environment`、`--model`、`--local-token` 等 CLI 参数；下表主要用于兼容回退与宿主内部传递说明。
-
-| 变量名 | 用途 | 当前适用范围 | 说明 |
-| --- | --- | --- | --- |
-| `COPILOT_DESKTOP_RUNTIME_HOST` | loopback 监听地址 | Desktop runtime | 仅允许 `127.0.0.1`、`localhost`、`::1`。 |
-| `COPILOT_DESKTOP_RUNTIME_PORT` | 本地监听端口 | Desktop runtime | 默认 `8765`。 |
-| `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN` | 本地调用令牌 | Desktop runtime | 当前可选；配置后保护 diagnostics 端点。 |
-| `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR` | 用户数据根目录 | Desktop runtime | 默认 `data`。 |
-| `COPILOT_DESKTOP_RUNTIME_ROOT_DIR` | 桌面运行时根目录 | Desktop runtime | 默认 `data/desktop-runtime`。 |
-| `COPILOT_DESKTOP_RUNTIME_CONFIG_DIR` | 配置目录 | Desktop runtime | 默认 `data/desktop-runtime/config`。 |
-| `COPILOT_DESKTOP_RUNTIME_LOGS_DIR` | 日志目录 | Desktop runtime | 默认 `data/desktop-runtime/logs`。 |
-| `COPILOT_DESKTOP_RUNTIME_DATABASE_DIR` | 数据库目录 | Desktop runtime | 默认 `data/desktop-runtime/database`。 |
-| `COPILOT_DESKTOP_RUNTIME_STATE_DIR` | 运行态目录 | Desktop runtime | 默认 `data/desktop-runtime/state`。 |
-| `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE` | Copilot 设置文件 | Desktop runtime | 默认 `data/desktop-runtime/config/copilot-settings.json`。 |
-| `COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE` | Electron 主进程日志文件 | Desktop runtime | 默认 `data/desktop-runtime/logs/electron-host.log`。 |
-| `COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE` | Python stdout 日志文件 | Desktop runtime | 默认 `data/desktop-runtime/logs/backend.stdout.log`。 |
-| `COPILOT_DESKTOP_RUNTIME_BACKEND_STDERR_LOG_FILE` | Python stderr 日志文件 | Desktop runtime | 默认 `data/desktop-runtime/logs/backend.stderr.log`。 |
-| `COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE` | 运行态快照文件 | Desktop runtime | 默认 `data/desktop-runtime/state/runtime-snapshot.json`。 |
-| `COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE` | 最近失败摘要文件 | Desktop runtime | 默认 `data/desktop-runtime/state/last-failure.json`。 |
-| `COPILOT_DESKTOP_RUNTIME_APP_MODE` | 应用模式 | Desktop runtime | 默认 `desktop`。 |
-| `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT` | 运行环境 | Desktop runtime | 默认 `development`。 |
+| 变量名 | 用途 | 默认说明 |
+| --- | --- | --- |
+| `COPILOT_DESKTOP_RUNTIME_HOST` | loopback 监听地址 | 默认 `127.0.0.1` |
+| `COPILOT_DESKTOP_RUNTIME_PORT` | 本地监听端口 | 默认 `8765` |
+| `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN` | diagnostics 令牌 | 默认无 |
+| `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR` | userData 根目录 | 默认 `data` |
+| `COPILOT_DESKTOP_RUNTIME_ROOT_DIR` | runtime 根目录 | 默认 `data/desktop-runtime` |
+| `COPILOT_DESKTOP_RUNTIME_CONFIG_DIR` | 配置目录 | 默认 `data/desktop-runtime/config` |
+| `COPILOT_DESKTOP_RUNTIME_LOGS_DIR` | 日志目录 | 默认 `data/desktop-runtime/logs` |
+| `COPILOT_DESKTOP_RUNTIME_DATABASE_DIR` | 数据目录 | 默认 `data/desktop-runtime/database` |
+| `COPILOT_DESKTOP_RUNTIME_STATE_DIR` | 状态目录 | 默认 `data/desktop-runtime/state` |
+| `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE` | 旧设置文件路径 | 默认 `data/desktop-runtime/config/copilot-settings.json` |
+| `COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE` | Electron 主进程日志 | 默认 `data/desktop-runtime/logs/electron-host.log` |
+| `COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE` | Python stdout 日志 | 默认 `data/desktop-runtime/logs/backend.stdout.log` |
+| `COPILOT_DESKTOP_RUNTIME_BACKEND_STDERR_LOG_FILE` | Python stderr 日志 | 默认 `data/desktop-runtime/logs/backend.stderr.log` |
+| `COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE` | 运行态快照文件 | 默认 `data/desktop-runtime/state/runtime-snapshot.json` |
+| `COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE` | 最近失败摘要文件 | 默认 `data/desktop-runtime/state/last-failure.json` |
+| `COPILOT_DESKTOP_RUNTIME_APP_MODE` | 应用模式 | 默认 `desktop` |
+| `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT` | 运行环境 | 默认 `development` |
 
 ### 3.3 代码中额外兼容读取的变量
 
-| 变量名 | 出现位置 | 当前含义 | 说明 |
-| --- | --- | --- | --- |
-| `CALENDAR_FEED_URL` | ICS CLI | Blackboard ICS 订阅地址兼容键 | 可用，但主文档仍以 `BLACKBOARD_CALENDAR_FEED_URL` 为主。 |
-| `COPILOT_RUNTIME_MODEL` | Desktop runtime / agent executor | Copilot 运行时模型兼容键 | 仍会读取，但当前推荐改为显式传 `--model`。 |
-| `COPILOT_MODEL` | Desktop runtime / agent executor | Copilot 运行时模型 legacy 兼容键 | 仍会读取，但当前推荐改为显式传 `--model`。 |
-| `TIS_ROLE_CODE` | TIS 诊断 from env | TIS 角色代码 | 不在 `.env.example` 基础展示里。 |
-| `ROLE_CODE` | TIS 诊断 from env | TIS 角色代码兼容键 | 不在 `.env.example` 基础展示里。 |
+| 变量名 | 当前含义 | 说明 |
+| --- | --- | --- |
+| `CALENDAR_FEED_URL` | ICS 订阅地址兼容键 | 仍可用，但主文档以 `BLACKBOARD_CALENDAR_FEED_URL` 为主 |
+| `COPILOT_RUNTIME_MODEL` | runtime 模型兼容键 | 仍会读取，但更推荐显式传 `--model` |
+| `COPILOT_MODEL` | runtime 模型 legacy 兼容键 | 仍会读取，但更推荐显式传 `--model` |
+| `TIS_ROLE_CODE` | TIS 角色代码 | 不在 `.env.example` 基础展示里 |
+| `ROLE_CODE` | TIS 角色代码兼容键 | 不在 `.env.example` 基础展示里 |
 
 ## 4. 默认路径与落盘位置
 
-| 路径 | 当前用途 | 说明 |
-| --- | --- | --- |
-| `backend/.env` | 本地运行配置 | CLI 和测试会读取。 |
-| `backend/data/sustech.db` | 默认 SQLite 路径 | 当 `SUSTECH_DB_PATH` 未提供时使用。 |
-| `backend/data/reports/` | CLI JSON 报告目录 | 课程目录搜索和 ICS 同步会创建并写入。 |
-| `backend/data/` | Desktop runtime userData 根目录回退值 | 未显式指定 `user data dir` 时使用。 |
-| `backend/data/desktop-runtime/` | Desktop runtime 根目录 | 未显式指定 `runtime root dir` 时使用。 |
-| `backend/data/desktop-runtime/config/` | Desktop runtime 配置目录 | 默认保存 `copilot-settings.json`。 |
-| `backend/data/desktop-runtime/logs/` | Desktop runtime 日志目录 | 默认保存 `electron-host.log`、`backend.stdout.log`、`backend.stderr.log`。 |
-| `backend/data/desktop-runtime/database/` | Desktop runtime 数据目录 | 未显式指定 `database dir` 时使用。 |
-| `backend/data/desktop-runtime/state/` | Desktop runtime 状态目录 | 默认保存 `runtime-snapshot.json` 和 `last-failure.json`。 |
-| `backend/tests/` | 测试目录 | 已按 unit / integration / e2e 分层。 |
+| 路径 | 当前用途 |
+| --- | --- |
+| `backend/.env` | 本地运行配置 |
+| `backend/data/sustech.db` | 默认 SQLite 路径 |
+| `backend/data/reports/` | CLI JSON 报告目录 |
+| `backend/data/desktop-runtime/` | runtime 根目录 |
+| `backend/data/desktop-runtime/config/config-center/` | 正式统一配置中心分域文档目录 |
+| `backend/data/desktop-runtime/config/copilot-settings.json` | 旧设置文件路径，主要保留给迁移输入 |
+| `backend/data/desktop-runtime/logs/` | 日志目录 |
+| `backend/data/desktop-runtime/state/` | runtime 快照和失败摘要目录 |
+| `backend/tests/` | 测试目录 |
 
-## 5. 测试分层现状
+## 5. 当前测试分层
 
-| 目录 | 当前状态 | 说明 |
-| --- | --- | --- |
-| `tests/unit/` | 已实现 | 覆盖解析、DTO、provider、data 同步等本地逻辑。 |
-| `tests/integration/` | 已实现 | 多个测试带 `live` 标记，依赖真实凭据和网络。 |
-| `tests/e2e/` | 已实现 | 当前包含 Blackboard snapshot sync 的整链路验证；同样依赖 `live`。 |
+| 目录 | 当前说明 |
+| --- | --- |
+| `tests/unit/` | 本地逻辑单元测试 |
+| `tests/integration/` | 模块协作与 HTTP 集成测试 |
+| `tests/e2e/` | 整链路测试 |
 
 ### pytest 标记
 
-`pyproject.toml` 中已确认的标记：
-
 | 标记 | 含义 |
 | --- | --- |
-| `live` | 需要真实 Blackboard/TIS 凭据和网络环境。 |
-| `e2e` | 用于 Blackboard snapshot sync 的端到端验证。 |
+| `live` | 需要真实凭据和网络 |
+| `e2e` | Blackboard snapshot sync 端到端验证 |
 
 ### 常见测试命令
 
 ```bash
+cd backend
 pytest
 pytest -m "not live"
 pytest -m live
@@ -237,10 +211,10 @@ pytest tests/unit
 uv run pytest tests/unit/desktop_runtime -q
 ```
 
-## 6. 当前配置与运行边界的简写结论
+## 6. 快速结论
 
-- Blackboard CLI：**已实现，可直接运行。**
-- Desktop runtime 本地 HTTP 入口：**已实现，但当前推荐以纯 CLI 参数形式启动；环境变量仅保留兼容回退。**
-- Blackboard 工具层与 snapshot use case：**可调用，但不是正式入口。**
-- TIS provider use case：**可调用，但不是正式入口。**
-- 复杂业务 Web API：**当前仍不能写成已实现。**
+- Blackboard CLI：已实现，可直接运行
+- Desktop runtime：已实现，推荐用显式 CLI 参数启动
+- 配置中心：正式配置在 `config-center/*.json`，旧 `copilot-settings.json` 主要保留给迁移输入
+- 聊天主路径：当前正式方法是 `agents/list`、`session/create`、`capabilities/get`、`message/send`
+- Blackboard / TIS 复杂业务 API：当前仍不能写成已实现

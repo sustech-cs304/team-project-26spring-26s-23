@@ -5,6 +5,25 @@
     <link rel="icon" type="image/png" href="/candue_icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>赶渡 CanDue</title>
+    <script>
+      (() => {
+        const root = document.documentElement
+        root.dataset.theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+
+        const snapshotApi = window.configCenterPublicSnapshot
+        if (!snapshotApi?.load) {
+          return
+        }
+
+        void snapshotApi.load()
+          .then((result) => {
+            if (result?.ok) {
+              root.dataset.theme = result.snapshot.domains.frontendPreferences.theme
+            }
+          })
+          .catch(() => {})
+      })()
+    </script>
     <link rel="stylesheet" href="/src/index.css" />
     <link rel="modulepreload" href="/src/CopilotAppRoot.tsx" />
     <link rel="modulepreload" href="/src/App.tsx" />

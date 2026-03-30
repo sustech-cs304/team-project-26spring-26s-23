@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from .agent import AgentExecutorFactory, DEFAULT_AGENT_NAME
-from .tool_registry import DEFAULT_TOOLSET_NAME
+from .tool_registry import DEFAULT_TOOLSET_NAME, FILE_CONVERT_TOOL_ID
 
 DEFAULT_AGENT_LABEL = "Default"
 DEFAULT_AGENT_DESCRIPTION = "Minimal default agent exposed by the Copilot runtime run bridge."
+DEFAULT_AGENT_STATUS = "active"
+DEFAULT_AGENT_DIRECTORY_VERSION = "agents-v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,11 +23,35 @@ class AgentDescriptor:
     default: bool = False
     toolset_name: str | None = None
     executor_factory: AgentExecutorFactory | None = None
+    status: str = DEFAULT_AGENT_STATUS
+    recommended_tools: tuple[str, ...] = ()
+    default_model_preference: str | None = None
+    icon_key: str | None = None
 
     def build_info_view(self) -> dict[str, str]:
         return {
             "name": self.name,
             "description": self.description,
+        }
+
+    def build_directory_view(self) -> dict[str, Any]:
+        return {
+            "agentId": self.name,
+            "status": self.status,
+            "recommendedTools": list(self.recommended_tools),
+            "defaultModelPreference": self.default_model_preference,
+            "displayName": self.label,
+            "description": self.description,
+            "iconKey": self.icon_key,
+        }
+
+    def build_bound_agent_view(self) -> dict[str, Any]:
+        return {
+            "agentId": self.name,
+            "status": self.status,
+            "displayName": self.label,
+            "description": self.description,
+            "iconKey": self.icon_key,
         }
 
     def build_diagnostics_summary(self) -> dict[str, Any]:
@@ -34,7 +60,11 @@ class AgentDescriptor:
             "label": self.label,
             "description": self.description,
             "default": self.default,
+            "status": self.status,
             "toolsetName": self.toolset_name,
+            "recommendedTools": list(self.recommended_tools),
+            "defaultModelPreference": self.default_model_preference,
+            "iconKey": self.icon_key,
             "hasExecutorFactory": self.executor_factory is not None,
         }
 
@@ -45,6 +75,10 @@ class AgentRegistry:
         self._default_agent_name: str | None = None
         for descriptor in descriptors:
             self.register(descriptor)
+
+    @property
+    def directory_version(self) -> str:
+        return DEFAULT_AGENT_DIRECTORY_VERSION
 
     def register(self, descriptor: AgentDescriptor) -> AgentDescriptor:
         if descriptor.name.strip() == "":
@@ -78,12 +112,31 @@ class AgentRegistry:
             for name, descriptor in self._descriptors_by_name.items()
         }
 
+    def build_directory_view(self) -> tuple[dict[str, Any], ...]:
+        return tuple(
+            descriptor.build_directory_view()
+            for descriptor in self._descriptors_by_name.values()
+        )
+
+    def build_bound_agent_view(self, agent_id: str) -> dict[str, Any]:
+        descriptor = self.get(agent_id)
+        if descriptor is None:
+            raise LookupError(f"Unknown agent '{agent_id}'.")
+        return descriptor.build_bound_agent_view()
+
+    def build_agent_toolset_map(self) -> dict[str, str | None]:
+        return {
+            descriptor.name: descriptor.toolset_name
+            for descriptor in self._descriptors_by_name.values()
+        }
+
     def build_diagnostics_summary(self) -> dict[str, Any]:
         return {
             "available_agents": [
                 descriptor.name for descriptor in self._descriptors_by_name.values()
             ],
             "default_agent": self._default_agent_name,
+            "agent_directory_version": self.directory_version,
             "agent_summaries": [
                 descriptor.build_diagnostics_summary()
                 for descriptor in self._descriptors_by_name.values()
@@ -105,6 +158,7 @@ def build_default_agent_registry(
             default=True,
             toolset_name=toolset_name,
             executor_factory=executor_factory,
+            recommended_tools=(FILE_CONVERT_TOOL_ID,),
         )
     )
     return registry

@@ -1,458 +1,288 @@
 ---
 title: 前端分册入口
-description: 前端文档入口，汇总快速上手、系统定位、页面能力与推荐阅读路径。
+description: 前端正式文档入口，帮助读者快速理解当前桌面前端、session-first 聊天主路径，以及公开配置中心与 settings workspace 的分层现状。
 sidebar_position: 1
 sidebar_label: 总览
 ---
 
 # 前端分册入口
 
-## 文档目标
+如果你只准备先读一篇前端文档，建议从这里开始。
 
-本文档作为前端分册的权威入口，帮助读者理解当前 Electron + renderer 前端子系统的职责边界、组成部分与阅读路径。阅读时间约 5-10 分钟。
+这篇总览主要帮助读者快速建立四个认识：
 
-## 前端子系统定位
+1. 当前前端到底是什么形态。
+2. 现在有哪些正式持久化层。
+3. 聊天入口为什么已经变成 session-first。
+4. 设置页最近一轮收敛之后，页面重点落在什么地方。
 
-当前前端不是通用浏览器端 SPA，而是**桌面宿主下的 Electron renderer + IPC + hosted runtime consumption**。它的核心职责是：
+## 先用一句话认识当前前端
 
-- 提供桌面应用窗口与工作区界面
-- 通过 Electron IPC 读取宿主管理的 runtime 状态与本地配置
-- 消费宿主托管的 Python desktop runtime 提供的 HTTP 聊天端点
-- 展示最小聊天 UI，支持纯文本多轮对话
+当前前端是一个运行在 Electron 宿主中的 React renderer。
 
-## 前端快速上手
+今天再描述它，最值得先抓住的主线有三条：
 
-### 安装依赖
+1. **聊天主路径已经稳定成 session-first。**
+2. **设置页已经形成公开配置中心与 settings workspace 两层正式持久化。**
+3. **当前 UI 已经完成一轮明显收敛，页面分区和入口都比早期版本更清晰。**
 
-在 `frontend-copilot/` 目录执行：
+## 当前前端有哪些正式持久化层
 
-```bash
-cd frontend-copilot
-npm install
-```
+理解前端现状时，先把持久化层分开，会比直接看页面更容易建立整体认识。
 
-### 启动开发环境
+### 第一层：公开配置中心
 
-常用开发命令如下：
+这一层负责少量、公开、需要进入系统主链路的字段。
 
-```bash
-cd frontend-copilot
-npm run dev
-npm run dev -- -- --runtime-model test
-npm run dev:hosted
-```
+它当前的特点是：
 
-当前开发态会优先尝试托管本地 Python desktop runtime。如果你要做最小聊天联调，还需要注意：
+- 按域拆分成多份 JSON 文档
+- 主进程负责读取、归一化和迁移
+- renderer 通过公共快照、公共补丁和更新订阅消费它
+- 当前公开字段数量仍然比较克制
 
-- 当前正式生效的关键设置只有 `runtimeUrl` 与 `agentName`
-- 设置页还没有 `agentName` 的正式编辑入口
-- 首次联调前，通常需要先确保 Electron `userData/desktop-runtime/config/copilot-settings.json` 中至少存在 `{"agentName":"default"}`
+目前这层最值得记住的字段包括：
 
-### 构建、测试与检查
+- `theme`
+- `animationsEnabled`
+- `agentName`
+- `runtimeUrl`
+- `model`
 
-```bash
-cd frontend-copilot
-npm run build
-npm run preview
-npm run test
-npm run lint
-npx tsc --noEmit
-```
+阅读这些字段时，可以先把它们看成“公开配置接口中的关键入口”。其中：
 
-如果你需要验证打包前的 bundled runtime staging，还可以进一步执行：
+- `theme` 直接影响启动壳与工作台主题
+- `runtimeUrl` 直接参与当前连接判断
+- `agentName` 仍保留为 assistant 偏好字段
+- `model` 继续作为宿主公开给后端的默认模型字段存在
 
-```bash
-cd frontend-copilot
-npm run stage:bundled-runtime
-```
+### 第二层：settings workspace 专用持久化
 
-## 前端组成部分
+这一层是当前设置页最重要的新增认识。
 
-### 1. Electron 主进程层
+设置工作区已经拥有自己的正式持久化层，至少包括：
 
-**代码位置**：`frontend-copilot/electron/`
+- 普通状态文档
+- secret 文档
 
-**核心模块**：
-- [`main.ts`](../../frontend-copilot/electron/main.ts) - 主进程入口，管理窗口生命周期、IPC handlers、Python runtime 托管
-- [`preload.ts`](../../frontend-copilot/electron/preload.ts) - 预加载脚本，通过 `contextBridge` 暴露 `copilotSettings` 与 `copilotRuntime` API
-- [`copilot-settings.ts`](../../frontend-copilot/electron/copilot-settings.ts) - Copilot 配置读写封装
-- [`copilot-runtime.ts`](../../frontend-copilot/electron/copilot-runtime.ts) - Runtime 状态快照与重试接口
+它承载的范围比公开配置中心更大，覆盖：
 
-**职责边界**：
-- 主进程负责启动/停止 Python 子进程，不直接处理聊天业务逻辑
-- 主进程通过 IPC 向 renderer 提供 runtime URL、状态快照、配置读写能力
-- 主进程在 `before-quit` 时优雅关闭 Python runtime
+- `SUSTech 信息`
+- 模型服务商列表与模型清单
+- 默认模型路由
+- 常规、数据、MCP、搜索、记忆、文档处理等页面的大量字段
+- provider API key、CAS 密码等 secret 字段
+- `外部源` 页中的 WakeUP 分享链接
 
-### 2. Runtime 托管层
+从阅读角度看，可以把这层理解成“设置工作区自己的正式存储层”。它回答的是：设置页里这些更丰富的工作区字段，现在记到哪里去。
 
-**代码位置**：`frontend-copilot/electron/runtime/`
+### 第三层：运行态与窗口内状态
 
-**核心模块**：
-- [`hosted-backend-service.ts`](../../frontend-copilot/electron/runtime/hosted-backend-service.ts) - 封装 Python runtime manager，提供统一 start/stop 接口
-- [`python-runtime-manager.ts`](../../frontend-copilot/electron/runtime/python-runtime-manager.ts) - 管理 Python 子进程启动、健康检查、停止
-- [`python-runtime-resolver.ts`](../../frontend-copilot/electron/runtime/python-runtime-resolver.ts) - 解析 development 与 bundled 两种运行模式
-- [`runtime-config.ts`](../../frontend-copilot/electron/runtime/runtime-config.ts) - 解析 CLI 参数（`--runtime-model`、`--runtime-host` 等）
-- [`runtime-state.ts`](../../frontend-copilot/electron/runtime/runtime-state.ts) - 定义 hosted backend 状态机（stopped、starting、ready、failed、degraded）
-- [`runtime-paths.ts`](../../frontend-copilot/electron/runtime/runtime-paths.ts) - 定义运行时目录结构（config、logs、database、state）
-- [`runtime-diagnostics.ts`](../../frontend-copilot/electron/runtime/runtime-diagnostics.ts) - 定义失败诊断结构
-- [`runtime-observability.ts`](../../frontend-copilot/electron/runtime/runtime-observability.ts) - 日志写入封装
-- [`runtime-redaction.ts`](../../frontend-copilot/electron/runtime/runtime-redaction.ts) - 敏感信息脱敏
+除了配置文档，前端还有一层非常重要的运行态信息，例如：
 
-**职责边界**：
-- 托管层只负责"启动 Python 进程、等待就绪、监控状态、优雅停止"
-- 不负责聊天协议解析、session 管理或业务逻辑
-- 开发态优先使用 `../backend/.venv/` 虚拟环境，回退到系统 Python
-- Packaged 模式从 `resources/python-runtime/` 读取 bundled runtime manifest
+- 根层 bootstrap 状态
+- hosted backend 状态
+- 当前窗口内的会话列表
 
-**测试依据**：
-- [`runtime-config.test.ts`](../../frontend-copilot/electron/runtime/runtime-config.test.ts) - CLI 参数解析测试
-- [`runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts) - 状态流转测试
+这一层主要服务当前界面与聊天过程本身，帮助前端判断：
 
-### 3. Renderer 根装配层
+- 能否连上后端
+- 是否已经具备继续创建会话和发送消息的条件
 
-**代码位置**：`frontend-copilot/src/`
+## 当前聊天入口为什么叫 session-first
 
-**核心模块**：
-- [`main.tsx`](../../frontend-copilot/src/main.tsx) - Renderer 入口，挂载 React 根组件
-- [`CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx) - 根装配层，负责：
-  - 通过 IPC 加载 runtime snapshot 与 settings
-  - 决策是否注入 CopilotKit Provider
-  - 按需懒加载工作台与 Provider 模块
-  - 提供启动失败兜底与重试机制
-- [`App.tsx`](../../frontend-copilot/src/App.tsx) - 工作台外壳，提供左侧导航与工作区路由
+当前聊天主路径可以按下面的顺序理解：
 
-**职责边界**：
-- 根装配层不自行读取配置或猜测 runtime URL，统一消费主进程提供的状态快照
-- 只有当 runtime 状态为 `ready` 或 `degraded` 且具备 `runtimeUrl` 与 `agentName` 时，才注入 CopilotKit Provider
-- 启动链路：`main.tsx` → `CopilotAppRoot.tsx` → 懒加载 `App.tsx` 与 CopilotKit
+1. 先确认有可用 runtime URL。
+2. 从后端拉智能体目录。
+3. 选择一个智能体。
+4. 创建会话。
+5. 读取这个会话的能力面。
+6. 发送消息时，再给出本次模型和工具选择。
 
-**测试依据**：
-- [`CopilotAppRoot.test.tsx`](../../frontend-copilot/src/CopilotAppRoot.test.tsx) - 根装配层状态决策测试
+这个结构带来了三点很直观的变化：
 
-### 4. Copilot 聊天能力层
+- **智能体目录以后台返回为准。**
+- **会话成为聊天体验里的清晰边界。**
+- **模型选择器与工具选择器真正进入了消息发送过程。**
 
-**代码位置**：`frontend-copilot/src/features/copilot/`
+因此今天理解聊天入口时，更适合从“目录 → 会话 → 消息”这条路径切入。
 
-**核心模块**：
-- [`config.ts`](../../frontend-copilot/src/features/copilot/config.ts) - 从 IPC 读取 runtime snapshot 与 settings，决策 bootstrap 状态
-- [`CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx) - 聊天面板 UI，展示不同 bootstrap 状态的提示与聊天区
-- [`runtime.ts`](../../frontend-copilot/src/features/copilot/runtime.ts) - Runtime API 封装（load、retry）
-- [`settings.ts`](../../frontend-copilot/src/features/copilot/settings.ts) - Settings API 封装（load、save）
-- [`types.ts`](../../frontend-copilot/src/features/copilot/types.ts) - 类型定义
+## 当前聊天 UI 已经收敛成什么样
 
-**职责边界**：
-- 聊天面板只负责 UI 展示与用户交互，不直接管理 HTTP 请求
-- CopilotKit 负责实际的 HTTP 聊天请求（POST 到 `runtimeUrl`）
-- 当前支持最小纯文本聊天 MVP：单 agent、多轮上下文、显式失败展示
-- 不包含工具调用、确认机制或完整会话产品化
+### 1. 启动页主题已经进入正式体验
 
-**测试依据**：
-- [`config.test.ts`](../../frontend-copilot/src/features/copilot/config.test.ts) - Bootstrap 状态决策测试
-- [`CopilotChatPanel.test.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx) - 聊天面板渲染测试
-- [`runtime.test.ts`](../../frontend-copilot/src/features/copilot/runtime.test.ts) - Runtime API 测试
+当前启动时会先根据系统主题给出浅色 / 深色兜底外观，再用正式主题覆盖。
 
-### 5. 工作区界面层
+同时，启动壳完成首屏绘制后，窗口再进入显示阶段。
 
-**代码位置**：`frontend-copilot/src/workbench/`
+从用户体验角度看，这意味着：
 
-**核心模块**：
-- [`assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx) - 助手工作区，提供三段式布局（助手类型列、话题列、聊天区）
-- [`settings/SettingsWorkspace.tsx`](../../frontend-copilot/src/workbench/settings/SettingsWorkspace.tsx) - 设置工作区
-- [`hub/HubWorkspace.tsx`](../../frontend-copilot/src/workbench/hub/HubWorkspace.tsx) - 能力中心工作区
-- 其他工作区（files、developer）当前为占位骨架
+- 冷启动时可以更自然地进入当前主题
+- 启动壳与工作台之间的主题体验已经连成一体
 
-**职责边界**：
-- 助手工作区已接入最小聊天 UI，当前话题 ID 作为 `threadId` 传给聊天区
-- 设置工作区大部分字段仍为前端本地交互，未完整接入后端配置能力
-- 当前设置页没有 `agentName` 的正式编辑入口（需手动编辑 `copilot-settings.json`）
+### 2. 助手工作区已经稳定成三栏结构
 
-**测试依据**：
-- [`AssistantWorkspace.test.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx) - 助手工作区渲染测试
+当前三栏分别是：
 
-## 前端在整个系统中的位置
+- 左侧：后端智能体目录
+- 中间：会话创建与切换列
+- 右侧：聊天主内容区
 
-### 与 Electron 主进程的关系
+中间列已经承担：
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Electron 主进程 (main.ts)                                    │
-│  - 管理窗口生命周期                                           │
-│  - 启动/停止 Python runtime                                   │
-│  - 提供 IPC 桥接（settings、runtime snapshot）                │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             │ IPC (contextBridge)
-             ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Electron Renderer (CopilotAppRoot.tsx)                      │
-│  - 通过 IPC 读取 runtime snapshot                            │
-│  - 决策是否注入 CopilotKit Provider                          │
-│  - 渲染工作台与聊天 UI                                        │
-└─────────────────────────────────────────────────────────────┘
-```
+- 创建会话
+- 切换会话
+- 排序会话
+- 打开会话右键菜单
 
-**关键 IPC 通道**：
-- `COPILOT_SETTINGS_LOAD_CHANNEL` / `COPILOT_SETTINGS_SAVE_CHANNEL` - 配置读写
-- `COPILOT_RUNTIME_LOAD_CHANNEL` / `COPILOT_RUNTIME_RETRY_CHANNEL` - Runtime 状态与重试
+### 3. 聊天发送区已经成为完整 composer
 
-**代码锚点**：
-- [`frontend-copilot/electron/preload.ts`](../../frontend-copilot/electron/preload.ts#L13-L29) - IPC API 暴露
-- [`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts#L188-L212) - IPC handlers 注册
+当前聊天区已经包括：
 
-### 与 Hosted Backend 的关系
+- 可滚动消息流
+- 空会话占位
+- 底部输入区
+- 模型选择器
+- 工具选择器
+- 发送按钮
+- 输入区高度调节
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Electron 主进程                                              │
-│  - 启动 Python 子进程                                         │
-│  - 等待 /ready 端点可用                                       │
-│  - 提供 runtimeUrl 给 renderer                               │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             │ spawn 子进程
-             ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Python Desktop Runtime (backend/app/desktop_runtime/)       │
-│  - FastAPI HTTP 服务（默认 127.0.0.1:8765）                  │
-│  - 挂载 Copilot Runtime 单端点路由（POST /）                 │
-└────────────┬────────────────────────────────────────────────┘
-             │
-             │ HTTP (fetch)
-             ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Electron Renderer                                           │
-│  - CopilotKit 发起 HTTP POST 请求到 runtimeUrl              │
-│  - 接收 SSE 流式响应                                          │
-│  - 展示 user/assistant 消息                                  │
-└─────────────────────────────────────────────────────────────┘
-```
+其中：
 
-**关键契约**：
-- Renderer 不直接管理 Python 进程，只消费主进程提供的 `runtimeUrl`
-- CopilotKit 负责实际的 HTTP 聊天请求，前端只需提供 `runtimeUrl` 与 `agentName`
-- 后端显式失败会以内联红色错误消息显示在聊天区
+- **模型选择器**支持搜索、标签筛选和分组展示
+- **工具选择器**支持搜索、全选、反选和推荐工具集
 
-**系统专题参考**：
-- [系统架构总览](../system/architecture-overview.md) - 完整组件拓扑
-- [Runtime 生命周期](../system/runtime-lifecycle.md) - 启动链路详解
-- [聊天 Runtime 契约](../system/chat-runtime-contract.md) - HTTP 协议规范
+## 现在应该怎样理解设置页
 
-## 当前已实现什么
+设置工作区已经形成一组稳定导航，当前左侧分区包括：
 
-### 已落地能力
+- `SUSTech 信息`
+- `模型服务`
+- `默认模型`
+- `常规设置`
+- `显示设置`
+- `数据设置`
+- `MCP 服务器`
+- `网络搜索`
+- `全局记忆`
+- `API 服务器`
+- `文档处理`
+- `外部源`
 
-- ✅ Electron 桌面壳与窗口管理
-- ✅ Python runtime 托管层（development 与 bundled 两种模式）
-- ✅ IPC 桥接（settings 读写、runtime snapshot 读取、重试机制）
-- ✅ 根装配层状态决策（loading、empty、incomplete、starting、ready、failed、degraded、error）
-- ✅ 最小聊天工作区（三段式布局：助手类型列、话题列、聊天区）
-- ✅ 纯文本多轮对话（当前话题 ID 作为 `threadId` 传给后端）
-- ✅ Runtime state 消费（区分 hosted status、runtime URL 来源、agent 来源）
-- ✅ Settings 读写（保存在 `userData/desktop-runtime/config/copilot-settings.json`）
-- ✅ 错误展示（后端显式失败以内联红色消息显示）
-- ✅ 启动失败兜底与重试机制
+这组导航本身就能帮助读者建立一个整体画面：设置页已经覆盖前端工作区中的大部分长期设置，并开始把公开配置入口与工作区专用状态放进同一套稳定布局中。
 
-**代码锚点**：
-- [`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts#L366-L390) - Hosted backend 启动
-- [`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx#L160-L434) - 根装配层
-- [`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L221-L384) - 聊天 UI
-- [`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx) - 助手工作区
+### 当前最值得优先认识的几个设置页变化
 
-### 尚不是什么
+#### 常规页现在聚焦基础偏好
 
-- ⚠️ 不是完整业务前端：会话列表、助手类型、能力中心、文件工作区当前主要使用前端本地静态数据
-- ⚠️ 不是多 agent orchestration UI：当前只支持单 agent（名为 `"default"`）
-- ⚠️ 不是完整配置管理界面：设置页大部分字段仍为前端本地交互，未完整接入后端
-- ⚠️ 设置页没有 `agentName` 的正式编辑入口：首次联调需手动编辑 `copilot-settings.json`
-- ⚠️ 聊天面板仅覆盖最小 MVP：不包含工具调用、确认机制或完整会话产品化
+当前常规页主要承载：
+
+- 界面语言
+- 代理模式
+- 助手消息通知
+- 自动备份
+
+因此它更像一个面向工作区使用习惯的基础偏好页。
+
+#### 显示页现在聚焦主题
+
+当前显示页中的可见主入口是：
+
+- 主题
+
+这让显示页的角色变得很清晰：它当前主要承担主题外观入口。
+
+#### 默认模型页现在聚焦模型路由
+
+当前默认模型页中的核心内容是：
+
+- 主助手模型
+- 快速执行模型
+
+因此这页更适合作为“默认模型路由页”来阅读。
+
+#### 模型服务页已经进入成熟工作区形态
+
+当前模型服务页已经支持：
+
+- 服务商搜索
+- 右键菜单
+- 复制服务商
+- 删除服务商
+- 拖动排序
+- 无服务商时的空状态
+- provider secrets 回填
+- 模型列表管理与模型编辑弹层
+
+它已经是设置工作区里最成熟的一部分之一。
+
+#### 新页面入口已经补齐
+
+当前还值得特别记住两个已经出现的页面：
+
+- `SUSTech 信息`
+- `外部源`
+
+其中 `外部源` 已经包含 WakeUP 链接解析入口，后续会继续承载外部来源接入逻辑。
+
+## 最近一轮最重要的 UI 收敛，可以怎样概括
+
+如果只想抓最关键的变化，可以先记住下面这些：
+
+1. **启动页已经纳入正式主题体验。**
+2. **聊天入口已经稳定成 session-first 三栏壳。**
+3. **模型选择器与工具选择器已经进入消息发送主路径。**
+4. **设置页已经扩展为更大的 settings workspace。**
+5. **`SUSTech 信息`、`外部源`、WakeUP 解析入口都已经出现。**
+6. **常规页、显示页和默认模型页的页面职责都比早期版本更清晰。**
+
+## 现在最值得优先看的实现位置
+
+### 配置与持久化
+
+- `frontend-copilot/electron/config-center/`
+- `frontend-copilot/electron/settings-workspace/`
+- `frontend-copilot/src/features/copilot/config-center.ts`
+
+### 聊天主路径
+
+- `frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`
+- `frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`
+- `frontend-copilot/src/features/copilot/components/ModelPicker.tsx`
+- `frontend-copilot/src/features/copilot/components/ToolPicker.tsx`
+
+### 设置工作区
+
+- `frontend-copilot/src/workbench/settings/SettingsWorkspace.tsx`
+- `frontend-copilot/src/workbench/settings/ProviderProfileList.tsx`
+- `frontend-copilot/src/workbench/settings/ProviderProfilesSection.tsx`
+- `frontend-copilot/src/workbench/settings/workspace-state.ts`
 
 ## 推荐阅读顺序
 
-### 新成员快速上手
+### 如果你想先弄清“字段到底存到哪里”
 
-如果你是第一次接触前端子系统，推荐按以下顺序阅读：
+1. [当前生效字段参考](./reference-current-fields.md)
+2. [页面能力参考](./reference-page-capabilities.md)
+3. [前端运行时状态参考](./reference-runtime-states.md)
 
-1. **先建立系统全貌**：
-   - [系统架构总览](../system/architecture-overview.md) - 理解 Electron + Python runtime 整体架构
-   - [Runtime 生命周期](../system/runtime-lifecycle.md) - 理解启动链路与两种运行模式
+### 如果你想先看“当前界面到底长什么样”
 
-2. **再深入前端实现**：
-   - 本文档（`docs/frontend/README.md`）- 前端分册入口，已合并快速上手说明
-   - [UI 当前状态](./ui-current-state.md) - 理解界面结构与交互程度
+1. [前端当前 UI 状态说明](./ui-current-state.md)
+2. [页面能力参考](./reference-page-capabilities.md)
+3. [已实现、占位与下一步](./roadmap-and-placeholders.md)
 
-3. **查阅前端分册其他页面**（按需）：
-   - [UI 当前状态](./ui-current-state.md) - 界面结构与交互程度
-   - [后端连接契约](./backend-connection-contract.md) - 前端如何连接后端
-   - [路线图与占位](./roadmap-and-placeholders.md) - 已实现与未来计划
+### 如果你想跨层看聊天与运行时
 
-### 开发时查表
+1. [系统架构总览](../system/architecture-overview.md)
+2. [聊天运行时契约](../system/chat-runtime-contract.md)
+3. [会话与状态模型](../system/session-and-state-model.md)
+4. [后端运行与配置](../backend/run-and-config.md)
 
-如果你已经在写代码，只需快速查事实：
+## 阅读这一组文档时，建议先带着两个问题
 
-- [参考：当前生效字段](./reference-current-fields.md) - 查当前真正生效的配置字段
-- [参考：Runtime 状态](./reference-runtime-states.md) - 查 `loading` / `ready` / `error` 等状态含义
-- [参考：页面能力](./reference-page-capabilities.md) - 查各工作区当前的数据来源与交互程度
+1. 当前这个页面或字段，属于公开配置中心，还是属于 settings workspace。
+2. 当前这块内容，主要承担主路径能力，还是承担工作区持久化与结构承载。
 
-### 理解跨前后端主题
-
-如果你需要理解跨前后端的系统级概念，优先阅读系统专题：
-
-- [聊天 Runtime 契约](../system/chat-runtime-contract.md) - 单端点协议、请求/响应格式
-- [Session 与状态模型](../system/session-and-state-model.md) - threadId 语义、状态管理
-
-**重要**：不要在前端分册中重复展开这些系统级主题，应引导读者去相应 system 文档。
-
-## 关键判断与代码锚点
-
-### 1. 前端如何决策是否注入 CopilotKit Provider？
-
-**决策逻辑**：[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx#L148-L158)
-
-```typescript
-export function shouldLoadCopilotProvider(input: {
-  configState: CopilotBootstrapState
-  providerLoadState: ProviderLoadState
-  allowWorkbenchWithoutProvider: boolean
-  providerLoaded: boolean
-}): boolean {
-  return isCopilotConnectableState(input.configState)
-    && !input.allowWorkbenchWithoutProvider
-    && !input.providerLoaded
-    && (input.providerLoadState.status === 'idle' || input.providerLoadState.status === 'loading')
-}
-```
-
-**关键条件**：
-- `configState.status` 必须为 `ready` 或 `degraded`
-- 必须具备 `runtimeUrl` 与 `agentName`
-- Provider 尚未加载
-
-### 2. 前端如何读取 runtime snapshot？
-
-**IPC 调用**：[`frontend-copilot/src/features/copilot/runtime.ts`](../../frontend-copilot/src/features/copilot/runtime.ts)
-
-```typescript
-export async function loadCopilotRuntimeSnapshot(): Promise<CopilotRuntimeLoadResult> {
-  return await window.copilotRuntime.load()
-}
-```
-
-**主进程实现**：[`frontend-copilot/electron/main.ts`](../../frontend-copilot/electron/main.ts#L214-L237)
-
-返回的 snapshot 包含：
-- `hosted.status` - Hosted backend 状态（stopped、starting、ready、failed、degraded）
-- `hosted.runtimeUrl` - Runtime URL（如 `http://127.0.0.1:8765`）
-- `hosted.failure` - 失败摘要（如果有）
-
-### 3. 前端如何区分 runtime URL 来源？
-
-**决策逻辑**：[`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)
-
-Runtime URL 来源优先级：
-1. **Hosted**：主进程托管的 Python runtime 提供（`snapshot.hosted.runtimeUrl`）
-2. **Dev override**：开发态手填覆盖（`settings.runtimeUrl`，仅当 hosted 未提供时）
-3. **None**：无有效来源
-
-Agent 来源：
-1. **Settings**：本地配置提供（`settings.agentName`）
-2. **Missing**：未提供
-
-### 4. 前端如何展示不同 bootstrap 状态？
-
-**状态定义**：[`frontend-copilot/src/features/copilot/types.ts`](../../frontend-copilot/src/features/copilot/types.ts)
-
-```typescript
-export type CopilotBootstrapState =
-  | { status: 'loading' }
-  | { status: 'error'; error: string }
-  | { status: 'empty'; missingFields: string[]; ... }
-  | { status: 'incomplete'; missingFields: string[]; ... }
-  | { status: 'starting'; ... }
-  | { status: 'ready'; runtimeUrl: string; agentName: string; ... }
-  | { status: 'failed'; ... }
-  | { status: 'degraded'; runtimeUrl: string; agentName: string; ... }
-```
-
-**UI 渲染**：[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx#L51-L219)
-
-- `loading` / `starting` - 显示等待提示
-- `empty` / `incomplete` - 显示缺失字段提示
-- `failed` - 显示失败摘要与重试按钮
-- `degraded` - 显示警告提示，但仍挂载聊天区
-- `ready` - 显示连接详情，挂载聊天区
-- `error` - 显示 IPC 读取失败
-
-## 质量保证
-
-### 测试覆盖
-
-当前前端测试主要覆盖：
-
-1. **Runtime 托管层**：
-   - [`runtime-config.test.ts`](../../frontend-copilot/electron/runtime/runtime-config.test.ts) - CLI 参数解析
-   - [`runtime-state.test.ts`](../../frontend-copilot/electron/runtime/runtime-state.test.ts) - 状态流转
-
-2. **Copilot 能力层**：
-   - [`config.test.ts`](../../frontend-copilot/src/features/copilot/config.test.ts) - Bootstrap 状态决策
-   - [`CopilotChatPanel.test.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.test.tsx) - 聊天面板渲染
-   - [`runtime.test.ts`](../../frontend-copilot/src/features/copilot/runtime.test.ts) - Runtime API
-
-3. **工作区层**：
-   - [`AssistantWorkspace.test.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.test.tsx) - 助手工作区渲染
-   - [`CopilotAppRoot.test.tsx`](../../frontend-copilot/src/CopilotAppRoot.test.tsx) - 根装配层
-
-**运行测试**：
-
-```bash
-cd frontend-copilot
-npm run test
-```
-
-预期上述命令执行后所有测试均应通过。
-
-### 类型检查
-
-```bash
-cd frontend-copilot
-npx tsc --noEmit
-```
-
-### Lint
-
-```bash
-cd frontend-copilot
-npm run lint
-```
-
-## 相关文档
-
-### 系统专题（跨前后端）
-
-- [系统架构总览](../system/architecture-overview.md) - 完整组件拓扑与数据流
-- [Runtime 生命周期](../system/runtime-lifecycle.md) - 启动链路、两种运行模式
-- [聊天 Runtime 契约](../system/chat-runtime-contract.md) - 单端点协议、请求/响应格式
-- [Session 与状态模型](../system/session-and-state-model.md) - threadId 语义、状态管理
-
-### 前端分册（本分册其他页面）
-
-- [UI 当前状态](./ui-current-state.md) - 界面结构与交互程度
-- [后端连接契约](./backend-connection-contract.md) - 前端如何连接后端
-- [路线图与占位](./roadmap-and-placeholders.md) - 已实现与未来计划
-- [参考：当前生效字段](./reference-current-fields.md) - 配置字段查表
-- [参考：Runtime 状态](./reference-runtime-states.md) - 状态含义查表
-- [参考：页面能力](./reference-page-capabilities.md) - 工作区能力查表
-
-### 后端分册
-
-- [后端分册入口](../backend/README.md) - 后端子系统总览
-- [模块布局](../backend/module-layout.md) - 后端代码组织
-- [运行与配置](../backend/run-and-config.md) - 后端启动与配置
-
-### 快速上手
-
-- 本文档前部的“前端快速上手”章节 - 安装、启动、构建、测试与检查命令入口
-
----
-
-**文档版本**：2026-03-25  
-**对应代码版本**：当前 main 分支
+只要沿着这两个问题往下读，当前前端的结构就会比较清楚。

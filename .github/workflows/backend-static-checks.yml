@@ -14,8 +14,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  blackboard-static:
-    name: Blackboard static checks
+  backend-pyright:
+    name: Backend pyright
     runs-on: ubuntu-latest
 
     steps:
@@ -33,35 +33,17 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --project backend --extra dev --extra test --frozen
 
-      - name: Run Blackboard pyright
-        run: >-
-          uv run --project backend pyright -p pyrightconfig.json
-          backend/app/blackboard
-          backend/tests/unit/api/test_blackboard_api_layer.py
-          backend/tests/unit/api/test_blackboard_remaining_api.py
-          backend/tests/unit/api/test_course_catalog_search.py
-          backend/tests/unit/api/test_sidebar_parser.py
-          backend/tests/unit/data/test_calendar_ics.py
-          backend/tests/unit/data/test_database_sync.py
-          backend/tests/unit/provider/test_blackboard_provider.py
-          backend/tests/unit/shared/test_blackboard_shared.py
-          backend/tests/unit/shared/test_blackboard_url_ids.py
+      - name: Run backend pyright for active application domains
+        run: |
+          uv run --project backend pyright -p pyrightconfig.json \
+            backend/app/blackboard \
+            backend/app/teaching_information_system \
+            backend/app/copilot_runtime \
+            backend/app/desktop_runtime \
+            backend/app/tools
 
-      - name: Run Blackboard pytest
-        run: >-
-          uv run --project backend python -m pytest -c backend/pyproject.toml
-          backend/tests/unit/api/test_blackboard_api_layer.py
-          backend/tests/unit/api/test_blackboard_remaining_api.py
-          backend/tests/unit/api/test_course_catalog_search.py
-          backend/tests/unit/api/test_sidebar_parser.py
-          backend/tests/unit/data/test_calendar_ics.py
-          backend/tests/unit/data/test_database_sync.py
-          backend/tests/unit/provider/test_blackboard_provider.py
-          backend/tests/unit/shared/test_blackboard_shared.py
-          backend/tests/unit/shared/test_blackboard_url_ids.py
-
-  tis-static:
-    name: TIS static checks
+  business-domain-pytest:
+    name: Business domain pytest
     runs-on: ubuntu-latest
 
     steps:
@@ -79,15 +61,37 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --project backend --extra dev --extra test --frozen
 
-      - name: Run TIS pyright
-        run: >-
-          uv run --project backend pyright -p pyrightconfig.json
-          backend/app/teaching_information_system
-          backend/tests/unit/data/test_tis_database_sync.py
-          backend/tests/unit/provider/test_tis_persistence_integration.py
+      - name: Run Blackboard and TIS unit pytest
+        run: |
+          uv run --project backend python -m pytest -c backend/pyproject.toml -m "not live and not e2e" \
+            backend/tests/unit/api \
+            backend/tests/unit/data \
+            backend/tests/unit/provider \
+            backend/tests/unit/shared
 
-      - name: Run TIS pytest
-        run: >-
-          uv run --project backend python -m pytest -c backend/pyproject.toml
-          backend/tests/unit/data/test_tis_database_sync.py
-          backend/tests/unit/provider/test_tis_persistence_integration.py
+  runtime-smoke-pytest:
+    name: Runtime and smoke pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/.python-version
+
+      - name: Install backend dependencies
+        run: uv sync --project backend --extra dev --extra test --frozen
+
+      - name: Run runtime, desktop, tools, and CI-safe integration smoke pytest
+        run: |
+          uv run --project backend python -m pytest -c backend/pyproject.toml -m "not live and not e2e" \
+            backend/tests/unit/copilot_runtime \
+            backend/tests/unit/desktop_runtime \
+            backend/tests/unit/tools \
+            backend/tests/integration/test_copilot_runtime_http.py

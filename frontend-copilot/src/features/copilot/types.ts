@@ -4,19 +4,28 @@ import type {
   CopilotRuntimeLoadResult,
   CopilotRuntimeRetryResult,
 } from '../../../electron/copilot-runtime'
-import type {
-  CopilotSettings,
-  CopilotSettingsLoadResult,
-  CopilotSettingsPatch,
-  CopilotSettingsSaveResult,
-  CopilotSettingsStorageState,
-} from '../../../electron/copilot-settings'
 
-export type CopilotRendererSettings = CopilotSettings
-export type CopilotRendererSettingsPatch = CopilotSettingsPatch
-export type CopilotRendererSettingsLoadResult = CopilotSettingsLoadResult
-export type CopilotRendererSettingsSaveResult = CopilotSettingsSaveResult
-export type CopilotRendererSettingsStorageState = CopilotSettingsStorageState
+export interface CopilotBootstrapFields {
+  runtimeUrl: string | null
+  agentName: string | null
+}
+
+export interface CopilotBootstrapFieldsLoadSuccess {
+  ok: true
+  fields: CopilotBootstrapFields
+  storageState: 'empty' | 'stored'
+}
+
+export interface CopilotBootstrapFieldsLoadFailure {
+  ok: false
+  error: string
+}
+
+export type CopilotBootstrapFieldsLoadResult =
+  | CopilotBootstrapFieldsLoadSuccess
+  | CopilotBootstrapFieldsLoadFailure
+
+export type CopilotBootstrapFieldsStorageState = CopilotBootstrapFieldsLoadSuccess['storageState']
 
 export type CopilotRendererRuntimeSnapshot = CopilotHostedRuntimeSnapshot
 export type CopilotRendererRuntimeFailureSummary = CopilotHostedRuntimeFailureSummary
@@ -24,15 +33,10 @@ export type CopilotRendererRuntimeLoadResult = CopilotRuntimeLoadResult
 export type CopilotRendererRuntimeRetryResult = CopilotRuntimeRetryResult
 
 export type CopilotConfigStatus = 'empty' | 'incomplete' | 'starting' | 'ready' | 'failed' | 'degraded' | 'error'
-export type CopilotConfigMissingField = 'runtimeUrl' | 'agentName'
+export type CopilotConfigMissingField = 'runtimeUrl'
 export type CopilotRuntimeSource = 'hosted' | 'dev-override' | 'none'
-export type CopilotAgentNameSource = 'settings' | 'missing'
+export type CopilotAgentNameSource = 'config-center' | 'missing'
 export type CopilotModeSource = 'resolved' | 'expected'
-
-export interface CopilotNormalizedSettings {
-  runtimeUrl: string | null
-  agentName: string | null
-}
 
 export interface CopilotDiagnosticsSummary {
   hostedStatus: CopilotRendererRuntimeSnapshot['status']
@@ -43,8 +47,8 @@ export interface CopilotDiagnosticsSummary {
 }
 
 interface CopilotConfigResolvedStateBase {
-  settings: CopilotNormalizedSettings
-  storageState: CopilotRendererSettingsStorageState
+  bootstrapFields: CopilotBootstrapFields
+  storageState: CopilotBootstrapFieldsStorageState
   runtime: CopilotRendererRuntimeSnapshot
   runtimeUrl: string | null
   runtimeSource: CopilotRuntimeSource
@@ -72,7 +76,6 @@ export interface CopilotConfigStartingState extends CopilotConfigResolvedStateBa
 export interface CopilotConfigReadyState extends CopilotConfigResolvedStateBase {
   status: 'ready'
   runtimeUrl: string
-  agentName: string
 }
 
 export interface CopilotConfigFailedState extends CopilotConfigResolvedStateBase {
@@ -82,7 +85,6 @@ export interface CopilotConfigFailedState extends CopilotConfigResolvedStateBase
 export interface CopilotConfigDegradedState extends CopilotConfigResolvedStateBase {
   status: 'degraded'
   runtimeUrl: string
-  agentName: string
 }
 
 export interface CopilotConfigErrorState {

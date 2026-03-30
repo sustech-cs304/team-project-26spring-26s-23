@@ -1,22 +1,26 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 
+import type { ConfigCenterPublicSnapshot } from '../electron/config-center/public-snapshot'
 import {
   BootstrapScreen,
   BOOTSTRAP_CONNECTING_MESSAGE,
   BOOTSTRAP_PREPARING_MESSAGE,
 } from './components/BootstrapScreen'
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
-import { loadCopilotConfigState, retryCopilotConfigState } from './features/copilot/config'
+import {
+  loadCopilotConfigState,
+  loadCopilotConfigStateFromPublicSnapshot,
+  retryCopilotConfigState,
+} from './features/copilot/config'
+import { subscribeToConfigCenterPublicSnapshotUpdates } from './features/copilot/config-center'
 import type {
   CopilotBootstrapController,
   CopilotBootstrapState,
-  CopilotConnectableState,
 } from './features/copilot/types'
 
 let workbenchImportAttempts = 0
-let providerImportAttempts = 0
-let cachedCopilotKitModule: typeof import('@copilotkit/react-core') | null = null
-let cachedCopilotKitPromise: Promise<typeof import('@copilotkit/react-core')> | null = null
+let initialConfigStateCache: CopilotBootstrapState | null = null
+let initialConfigStatePromise: Promise<CopilotBootstrapState> | null = null
 
 function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
   console.info('[startup]', JSON.stringify({
@@ -49,53 +53,8 @@ const loadWorkbenchApp = () => {
       throw error
     })
 }
+
 const LazyApp = lazy(loadWorkbenchApp)
-const loadCopilotKit = () => {
-  if (cachedCopilotKitModule !== null) {
-    logStartupTrace('provider-import:cache-hit')
-    return Promise.resolve(cachedCopilotKitModule)
-  }
-
-  if (cachedCopilotKitPromise !== null) {
-    logStartupTrace('provider-import:promise-hit')
-    return cachedCopilotKitPromise
-  }
-
-  const attempt = ++providerImportAttempts
-  const startedAt = performance.now()
-  logStartupTrace('provider-import:start', { attempt })
-
-  cachedCopilotKitPromise = import('@copilotkit/react-core')
-    .then((module) => {
-      cachedCopilotKitModule = module
-      logStartupTrace('provider-import:resolved', {
-        attempt,
-        durationMs: Math.round(performance.now() - startedAt),
-      })
-      return module
-    })
-    .catch((error) => {
-      cachedCopilotKitPromise = null
-      logStartupTrace('provider-import:failed', {
-        attempt,
-        durationMs: Math.round(performance.now() - startedAt),
-        error: formatErrorMessage(error),
-      })
-      throw error
-    })
-
-  return cachedCopilotKitPromise
-}
-
-type CopilotKitComponent = typeof import('@copilotkit/react-core')['CopilotKit']
-type ProviderLoadState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'ready' }
-  | { status: 'error'; error: string }
-
-let initialConfigStateCache: CopilotBootstrapState | null = null
-let initialConfigStatePromise: Promise<CopilotBootstrapState> | null = null
 
 function loadInitialConfigState(): Promise<CopilotBootstrapState> {
   if (initialConfigStateCache !== null) {
@@ -145,24 +104,30 @@ function rememberConfigState(state: CopilotBootstrapState) {
   initialConfigStatePromise = Promise.resolve(state)
 }
 
-export function shouldLoadCopilotProvider(input: {
-  configState: CopilotBootstrapState
-  providerLoadState: ProviderLoadState
-  allowWorkbenchWithoutProvider: boolean
-  providerLoaded: boolean
-}): boolean {
-  return isCopilotConnectableState(input.configState)
-    && !input.allowWorkbenchWithoutProvider
-    && !input.providerLoaded
-    && (input.providerLoadState.status === 'idle' || input.providerLoadState.status === 'loading')
+export async function refreshCopilotBootstrapStateFromPublicSnapshot(input: {
+  snapshot: ConfigCenterPublicSnapshot
+  applyState: (state: CopilotBootstrapState) => void
+}): Promise<CopilotBootstrapState> {
+  try {
+    const nextState = await loadCopilotConfigStateFromPublicSnapshot(input.snapshot)
+    rememberConfigState(nextState)
+    input.applyState(nextState)
+    return nextState
+  } catch (error) {
+    const nextState = {
+      status: 'error',
+      error: formatErrorMessage(error),
+    } satisfies CopilotBootstrapState
+
+    rememberConfigState(nextState)
+    input.applyState(nextState)
+    return nextState
+  }
 }
 
 export function CopilotAppRoot() {
   const [configState, setConfigState] = useState<CopilotBootstrapState>({ status: 'loading' })
   const [retrying, setRetrying] = useState(false)
-  const [copilotKit, setCopilotKit] = useState<CopilotKitComponent | null>(null)
-  const [providerLoadState, setProviderLoadState] = useState<ProviderLoadState>({ status: 'idle' })
-  const [allowWorkbenchWithoutProvider, setAllowWorkbenchWithoutProvider] = useState(false)
 
   const visibleStage = useMemo(() => {
     if (configState.status === 'loading' || configState.status === 'starting') {
@@ -173,18 +138,8 @@ export function CopilotAppRoot() {
       return 'config:error'
     }
 
-    if (isCopilotConnectableState(configState) && !allowWorkbenchWithoutProvider) {
-      if (providerLoadState.status === 'idle' || providerLoadState.status === 'loading') {
-        return `provider:${providerLoadState.status}`
-      }
-
-      if (providerLoadState.status === 'error') {
-        return 'provider:error'
-      }
-    }
-
     return 'workbench'
-  }, [allowWorkbenchWithoutProvider, configState, providerLoadState.status])
+  }, [configState.status])
 
   const readConfigState = useCallback(async (source: 'initial' | 'retry') => {
     const startedAt = performance.now()
@@ -236,86 +191,56 @@ export function CopilotAppRoot() {
   }, [readConfigState])
 
   useEffect(() => {
-    logStartupTrace('visible-stage', {
-      visibleStage,
-      configStatus: configState.status,
-      providerStatus: providerLoadState.status,
-      allowWorkbenchWithoutProvider,
-      providerLoaded: copilotKit !== null,
-      runtimeUrl: isCopilotConnectableState(configState) ? configState.runtimeUrl : null,
-      agentName: isCopilotConnectableState(configState) ? configState.agentName : null,
-    })
-  }, [allowWorkbenchWithoutProvider, configState, copilotKit, providerLoadState.status, visibleStage])
-
-  useEffect(() => {
-    if (!isCopilotConnectableState(configState)) {
-      if (copilotKit !== null) {
-        setCopilotKit(null)
-      }
-
-      if (providerLoadState.status !== 'idle') {
-        setProviderLoadState({ status: 'idle' })
-      }
-
-      if (allowWorkbenchWithoutProvider) {
-        setAllowWorkbenchWithoutProvider(false)
-      }
-
-      return
-    }
-
-    if (!shouldLoadCopilotProvider({
-      configState,
-      providerLoadState,
-      allowWorkbenchWithoutProvider,
-      providerLoaded: copilotKit !== null,
-    })) {
-      return
-    }
-
     let disposed = false
-    setProviderLoadState((current) => {
-      if (current.status === 'loading') {
-        return current
-      }
-
-      return { status: 'loading' }
-    })
-
-    void loadCopilotKit()
-      .then((module) => {
-        if (disposed) {
-          return
-        }
-
-        setCopilotKit(() => module.CopilotKit as CopilotKitComponent)
-        setProviderLoadState({ status: 'ready' })
+    const unsubscribe = subscribeToConfigCenterPublicSnapshotUpdates((snapshot) => {
+      logStartupTrace('config-state:subscription:received', {
+        version: snapshot.version,
+        runtimeUrl: snapshot.domains.hostConfig.runtimeUrl,
+        agentName: snapshot.domains.assistantBehavior.agentName,
       })
-      .catch((error) => {
+
+      void refreshCopilotBootstrapStateFromPublicSnapshot({
+        snapshot,
+        applyState(nextState) {
+          if (disposed) {
+            return
+          }
+
+          setConfigState(nextState)
+        },
+      }).then((nextState) => {
         if (disposed) {
           return
         }
 
-        setCopilotKit(null)
-        setProviderLoadState({
-          status: 'error',
-          error: formatErrorMessage(error),
+        logStartupTrace('config-state:subscription:resolved', {
+          status: nextState.status,
         })
       })
+    })
 
     return () => {
       disposed = true
+      unsubscribe()
     }
-  }, [allowWorkbenchWithoutProvider, configState, copilotKit, providerLoadState.status])
+  }, [])
+
+  useEffect(() => {
+    logStartupTrace('visible-stage', {
+      visibleStage,
+      configStatus: configState.status,
+      runtimeUrl: configState.status === 'ready' || configState.status === 'degraded'
+        ? configState.runtimeUrl
+        : null,
+      agentName: configState.status === 'ready' || configState.status === 'degraded'
+        ? configState.agentName
+        : null,
+    })
+  }, [configState, visibleStage])
 
   const handleRetryConfig = useCallback(() => {
     void readConfigState('retry')
   }, [readConfigState])
-
-  const handleRetryProvider = useCallback(() => {
-    setAllowWorkbenchWithoutProvider(false)
-    setProviderLoadState({ status: 'idle' })
-  }, [])
 
   const bootstrap = useMemo<CopilotBootstrapController>(() => ({
     state: configState,
@@ -325,7 +250,7 @@ export function CopilotAppRoot() {
 
   const workbench = (
     <RecoverableErrorBoundary
-      resetKeys={[configState.status, allowWorkbenchWithoutProvider]}
+      resetKeys={[configState.status]}
       fallback={({ error, reset }) => (
         <BootstrapScreen
           title="工作台壳层加载失败"
@@ -385,60 +310,9 @@ export function CopilotAppRoot() {
     )
   }
 
-  if (isCopilotConnectableState(configState) && !allowWorkbenchWithoutProvider) {
-    if (providerLoadState.status === 'idle' || providerLoadState.status === 'loading') {
-      return (
-        <BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />
-      )
-    }
-
-    if (providerLoadState.status === 'error') {
-      return (
-        <BootstrapScreen
-          title="Copilot Provider 注入失败"
-          description="运行态已经解析成功，但 Provider 模块未能完成按需加载。当前显示根级失败兜底，避免助手工作区在无解释情况下空白。"
-          tone="error"
-          details={<pre className="startup-shell__pre">{providerLoadState.error}</pre>}
-          actions={[
-            {
-              label: '重试注入 Provider',
-              onClick: handleRetryProvider,
-            },
-            {
-              label: '继续进入工作台',
-              onClick: () => setAllowWorkbenchWithoutProvider(true),
-              emphasis: 'secondary',
-            },
-          ]}
-        />
-      )
-    }
-  }
-
-  if (
-    isCopilotConnectableState(configState)
-    && !allowWorkbenchWithoutProvider
-    && providerLoadState.status === 'ready'
-    && copilotKit !== null
-  ) {
-    const CopilotProvider = copilotKit
-
-    return (
-      <CopilotProvider runtimeUrl={configState.runtimeUrl} agent={configState.agentName}>
-        {workbench}
-      </CopilotProvider>
-    )
-  }
-
   return workbench
 }
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-function isCopilotConnectableState(
-  state: CopilotBootstrapState,
-): state is CopilotConnectableState {
-  return state.status === 'ready' || state.status === 'degraded'
 }

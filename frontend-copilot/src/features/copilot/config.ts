@@ -1,51 +1,47 @@
+import type { ConfigCenterPublicSnapshot } from '../../../electron/config-center/public-snapshot'
+import { loadConfigCenterPublicSnapshot } from './config-center'
 import { loadCopilotRuntime, retryCopilotRuntime } from './runtime'
-import { loadCopilotSettings } from './settings'
 import type {
   CopilotAgentNameSource,
+  CopilotBootstrapFields,
+  CopilotBootstrapFieldsLoadResult,
   CopilotConfigMissingField,
   CopilotConfigState,
   CopilotDiagnosticsSummary,
-  CopilotNormalizedSettings,
   CopilotRendererRuntimeLoadResult,
   CopilotRendererRuntimeSnapshot,
-  CopilotRendererSettings,
-  CopilotRendererSettingsLoadResult,
   CopilotRuntimeSource,
 } from './types'
 
-export function normalizeCopilotSettings(
-  settings: Partial<CopilotRendererSettings> | null | undefined,
-): CopilotNormalizedSettings {
+export function normalizeCopilotBootstrapFields(
+  fields: Partial<CopilotBootstrapFields> | null | undefined,
+): CopilotBootstrapFields {
   return {
-    runtimeUrl: normalizeOptionalString(settings?.runtimeUrl),
-    agentName: normalizeOptionalString(settings?.agentName),
+    runtimeUrl: normalizeOptionalString(fields?.runtimeUrl),
+    agentName: normalizeOptionalString(fields?.agentName),
   }
 }
 
 export function getMissingCopilotConfigFields(
-  settings: CopilotNormalizedSettings,
+  fields: CopilotBootstrapFields,
 ): CopilotConfigMissingField[] {
   const missingFields: CopilotConfigMissingField[] = []
 
-  if (settings.runtimeUrl === null) {
+  if (fields.runtimeUrl === null) {
     missingFields.push('runtimeUrl')
-  }
-
-  if (settings.agentName === null) {
-    missingFields.push('agentName')
   }
 
   return missingFields
 }
 
 export function resolveCopilotConfigState(input: {
-  settingsResult: CopilotRendererSettingsLoadResult
+  bootstrapFieldsResult: CopilotBootstrapFieldsLoadResult
   runtimeResult: CopilotRendererRuntimeLoadResult
 }): CopilotConfigState {
-  if (!input.settingsResult.ok) {
+  if (!input.bootstrapFieldsResult.ok) {
     return {
       status: 'error',
-      error: input.settingsResult.error,
+      error: input.bootstrapFieldsResult.error,
     }
   }
 
@@ -56,24 +52,24 @@ export function resolveCopilotConfigState(input: {
     }
   }
 
-  const settings = normalizeCopilotSettings(input.settingsResult.settings)
+  const bootstrapFields = normalizeCopilotBootstrapFields(input.bootstrapFieldsResult.fields)
   const runtime = input.runtimeResult.snapshot.hosted
   const devOverrideAllowed = !runtime.isPackaged && runtime.expectedMode === 'development'
-  const devOverrideConfigured = devOverrideAllowed && settings.runtimeUrl !== null
+  const devOverrideConfigured = devOverrideAllowed && bootstrapFields.runtimeUrl !== null
   const runtimeSelection = resolveRuntimeSelection({
     runtime,
-    settings,
+    bootstrapFields,
     devOverrideConfigured,
   })
-  const agentName = settings.agentName
-  const agentNameSource: CopilotAgentNameSource = agentName === null ? 'missing' : 'settings'
+  const agentName = bootstrapFields.agentName
+  const agentNameSource: CopilotAgentNameSource = agentName === null ? 'missing' : 'config-center'
   const diagnostics = buildCopilotDiagnosticsSummary({
     runtime,
     runtimeSource: runtimeSelection.runtimeSource,
   })
   const baseState = {
-    settings,
-    storageState: input.settingsResult.storageState,
+    bootstrapFields,
+    storageState: input.bootstrapFieldsResult.storageState,
     runtime,
     runtimeUrl: runtimeSelection.runtimeUrl,
     runtimeSource: runtimeSelection.runtimeSource,
@@ -100,7 +96,6 @@ export function resolveCopilotConfigState(input: {
         ...baseState,
         status: 'ready',
         runtimeUrl: baseState.runtimeUrl!,
-        agentName: baseState.agentName!,
       }
     }
 
@@ -125,7 +120,6 @@ export function resolveCopilotConfigState(input: {
         ...baseState,
         status: 'degraded',
         runtimeUrl: baseState.runtimeUrl!,
-        agentName: baseState.agentName!,
       }
     }
 
@@ -145,7 +139,6 @@ export function resolveCopilotConfigState(input: {
           ...baseState,
           status: 'ready',
           runtimeUrl: baseState.runtimeUrl!,
-          agentName: baseState.agentName!,
         }
       }
 
@@ -170,13 +163,12 @@ export function resolveCopilotConfigState(input: {
           ...baseState,
           status: 'ready',
           runtimeUrl: baseState.runtimeUrl!,
-          agentName: baseState.agentName!,
         }
       }
 
       const missingFields = getMissingReadyStateFields(baseState)
 
-      if (missingFields.length === 2) {
+      if (missingFields.length === 1 && missingFields[0] === 'runtimeUrl') {
         return {
           ...baseState,
           status: 'empty',
@@ -194,27 +186,69 @@ export function resolveCopilotConfigState(input: {
 }
 
 export async function loadCopilotConfigState(): Promise<CopilotConfigState> {
-  const [settingsResult, runtimeResult] = await Promise.all([
-    loadCopilotSettings(),
+  const [bootstrapFieldsResult, runtimeResult] = await Promise.all([
+    loadBootstrapFields(),
     loadCopilotRuntime(),
   ])
 
   return resolveCopilotConfigState({
-    settingsResult,
+    bootstrapFieldsResult,
+    runtimeResult,
+  })
+}
+
+export async function loadCopilotConfigStateFromPublicSnapshot(
+  snapshot: ConfigCenterPublicSnapshot,
+): Promise<CopilotConfigState> {
+  const [bootstrapFieldsResult, runtimeResult] = await Promise.all([
+    Promise.resolve(loadBootstrapFieldsFromConfigCenterPublicSnapshot(snapshot)),
+    loadCopilotRuntime(),
+  ])
+
+  return resolveCopilotConfigState({
+    bootstrapFieldsResult,
     runtimeResult,
   })
 }
 
 export async function retryCopilotConfigState(): Promise<CopilotConfigState> {
-  const [settingsResult, runtimeResult] = await Promise.all([
-    loadCopilotSettings(),
+  const [bootstrapFieldsResult, runtimeResult] = await Promise.all([
+    loadBootstrapFields(),
     retryCopilotRuntime(),
   ])
 
   return resolveCopilotConfigState({
-    settingsResult,
+    bootstrapFieldsResult,
     runtimeResult,
   })
+}
+
+async function loadBootstrapFields(): Promise<CopilotBootstrapFieldsLoadResult> {
+  const snapshotResult = await loadConfigCenterPublicSnapshot()
+
+  if (!snapshotResult.ok) {
+    return {
+      ok: false,
+      error: snapshotResult.error,
+    }
+  }
+
+  return loadBootstrapFieldsFromConfigCenterPublicSnapshot(snapshotResult.snapshot)
+}
+
+export function loadBootstrapFieldsFromConfigCenterPublicSnapshot(
+  snapshot: ConfigCenterPublicSnapshot,
+): CopilotBootstrapFieldsLoadResult {
+  const fields = normalizeCopilotBootstrapFields({
+    runtimeUrl: snapshot.domains.hostConfig.runtimeUrl,
+    agentName: snapshot.domains.assistantBehavior.agentName,
+  })
+
+  return {
+    ok: true,
+    fields,
+    storageState: fields.runtimeUrl === null ? 'empty' : 'stored',
+  }
 }
 
 function buildCopilotDiagnosticsSummary(input: {
@@ -232,7 +266,7 @@ function buildCopilotDiagnosticsSummary(input: {
 
 function resolveRuntimeSelection(input: {
   runtime: CopilotRendererRuntimeSnapshot
-  settings: CopilotNormalizedSettings
+  bootstrapFields: CopilotBootstrapFields
   devOverrideConfigured: boolean
 }): {
   runtimeSource: CopilotRuntimeSource
@@ -252,7 +286,7 @@ function resolveRuntimeSelection(input: {
       if (input.devOverrideConfigured) {
         return {
           runtimeSource: 'dev-override',
-          runtimeUrl: input.settings.runtimeUrl,
+          runtimeUrl: input.bootstrapFields.runtimeUrl,
         }
       }
 
@@ -265,16 +299,11 @@ function resolveRuntimeSelection(input: {
 
 function getMissingReadyStateFields(input: {
   runtimeUrl: string | null
-  agentName: string | null
 }): CopilotConfigMissingField[] {
   const missingFields: CopilotConfigMissingField[] = []
 
   if (input.runtimeUrl === null) {
     missingFields.push('runtimeUrl')
-  }
-
-  if (input.agentName === null) {
-    missingFields.push('agentName')
   }
 
   return missingFields

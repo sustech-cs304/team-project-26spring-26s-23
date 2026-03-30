@@ -1,9 +1,18 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
 import type { CopilotBootstrapController } from './features/copilot/types'
 import { isHubWorkspaceView, railPrimaryItems, railSecondaryItems } from './workbench/config'
+import {
+  loadAnimationsEnabledPreference,
+  subscribeToAnimationsEnabledPreferenceUpdates,
+} from './workbench/animation-config'
+import {
+  loadThemeModePreference,
+  persistThemeModePreference,
+  subscribeToThemeModePreferenceUpdates,
+} from './workbench/theme-config'
 import type { ThemeMode, WorkspaceView } from './workbench/types'
 import './App.css'
 
@@ -69,7 +78,28 @@ interface AppProps {
 
 function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
-  const [themeMode, setThemeMode] = useState<ThemeMode>('light')
+  const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode)
+  const [animationsEnabled, setAnimationsEnabled] = useState(resolveInitialAnimationsEnabled)
+
+  const applyThemeMode = useCallback((nextThemeMode: ThemeMode) => {
+    setThemeMode(nextThemeMode)
+  }, [])
+
+  const applyAnimationsEnabled = useCallback((nextAnimationsEnabled: boolean) => {
+    setAnimationsEnabled(nextAnimationsEnabled)
+  }, [])
+
+  const handleThemeModeChange = useCallback((nextThemeMode: ThemeMode) => {
+    if (nextThemeMode === themeMode) {
+      return
+    }
+
+    void persistThemeModePreference({
+      previousThemeMode: themeMode,
+      themeMode: nextThemeMode,
+      applyThemeMode,
+    })
+  }, [applyThemeMode, themeMode])
 
   useEffect(() => {
     logStartupTrace('mounted')
@@ -80,8 +110,62 @@ function App({ bootstrap }: AppProps) {
   }, [])
 
   useEffect(() => {
+    let disposed = false
+
+    void loadThemeModePreference().then((result) => {
+      if (disposed || !result.ok) {
+        return
+      }
+
+      applyThemeMode(result.themeMode)
+    })
+
+    const unsubscribe = subscribeToThemeModePreferenceUpdates((nextThemeMode) => {
+      if (disposed) {
+        return
+      }
+
+      applyThemeMode(nextThemeMode)
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [applyThemeMode])
+
+  useEffect(() => {
+    let disposed = false
+
+    void loadAnimationsEnabledPreference().then((result) => {
+      if (disposed || !result.ok) {
+        return
+      }
+
+      applyAnimationsEnabled(result.animationsEnabled)
+    })
+
+    const unsubscribe = subscribeToAnimationsEnabledPreferenceUpdates((nextAnimationsEnabled) => {
+      if (disposed) {
+        return
+      }
+
+      applyAnimationsEnabled(nextAnimationsEnabled)
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [applyAnimationsEnabled])
+
+  useEffect(() => {
     document.documentElement.dataset.theme = themeMode
   }, [themeMode])
+
+  useEffect(() => {
+    document.documentElement.dataset.animations = animationsEnabled ? 'enabled' : 'disabled'
+  }, [animationsEnabled])
 
   useEffect(() => {
     logStartupTrace('active-workspace', {
@@ -93,7 +177,11 @@ function App({ bootstrap }: AppProps) {
   const workspaceMeta = useMemo(() => resolveWorkspaceMeta(activeWorkspace), [activeWorkspace])
 
   return (
-    <div className="workbench-shell" data-theme={themeMode}>
+    <div
+      className="workbench-shell"
+      data-theme={themeMode}
+      data-animations={animationsEnabled ? 'enabled' : 'disabled'}
+    >
       <aside className="workbench-rail" aria-label="主图标栏">
         {railPrimaryItems.map((item) => {
           const Icon = item.icon
@@ -168,7 +256,12 @@ function App({ bootstrap }: AppProps) {
         <Suspense
           fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
         >
-          {renderActiveWorkspace(activeWorkspace, bootstrap, themeMode, setThemeMode)}
+          {renderActiveWorkspace(
+            activeWorkspace,
+            bootstrap,
+            themeMode,
+            handleThemeModeChange,
+          )}
         </Suspense>
       </RecoverableErrorBoundary>
     </div>
@@ -234,6 +327,22 @@ function resolveWorkspaceMeta(view: WorkspaceView): { label: string; loadingDesc
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function resolveInitialThemeMode(): ThemeMode {
+  if (typeof document === 'undefined') {
+    return 'light'
+  }
+
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+}
+
+function resolveInitialAnimationsEnabled(): boolean {
+  if (typeof document === 'undefined') {
+    return true
+  }
+
+  return document.documentElement.dataset.animations !== 'disabled'
 }
 
 export default App

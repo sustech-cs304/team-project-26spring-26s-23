@@ -1,66 +1,93 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { shouldLoadCopilotProvider } from './CopilotAppRoot'
+const configMocks = vi.hoisted(() => ({
+  loadCopilotConfigStateFromPublicSnapshot: vi.fn(),
+}))
+
+vi.mock('./features/copilot/config', async () => {
+  const actual = await vi.importActual<typeof import('./features/copilot/config')>('./features/copilot/config')
+  return {
+    ...actual,
+    loadCopilotConfigStateFromPublicSnapshot: configMocks.loadCopilotConfigStateFromPublicSnapshot,
+  }
+})
+
+import { refreshCopilotBootstrapStateFromPublicSnapshot } from './CopilotAppRoot'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './features/copilot/types'
 
-describe('shouldLoadCopilotProvider', () => {
-  it('starts a provider load when a connectable runtime still has no provider instance', () => {
-    const configState = createReadyState()
+describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
+  it('applies the latest bootstrap state resolved from a public snapshot without requiring a global agentName', async () => {
+    const nextState = createReadyState({
+      runtimeUrl: 'http://localhost:4400',
+      agentName: null,
+      agentNameSource: 'missing',
+    })
+    const applyState = vi.fn()
+    configMocks.loadCopilotConfigStateFromPublicSnapshot.mockResolvedValueOnce(nextState)
 
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'idle' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(true)
+    const result = await refreshCopilotBootstrapStateFromPublicSnapshot({
+      snapshot: {
+        version: 1,
+        domains: {
+          frontendPreferences: {
+            theme: 'dark',
+            animationsEnabled: true,
+          },
+          assistantBehavior: {
+            agentName: null,
+          },
+          hostConfig: {
+            runtimeUrl: 'http://localhost:4400',
+          },
+          backendExposed: {
+            model: null,
+          },
+        },
+      },
+      applyState,
+    })
 
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'loading' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(true)
-
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'ready' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: true,
-    })).toBe(false)
-
-    expect(shouldLoadCopilotProvider({
-      configState,
-      providerLoadState: { status: 'error', error: 'boom' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(false)
+    expect(configMocks.loadCopilotConfigStateFromPublicSnapshot).toHaveBeenCalledOnce()
+    expect(applyState).toHaveBeenCalledOnce()
+    expect(applyState).toHaveBeenCalledWith(nextState)
+    expect(result).toEqual(nextState)
   })
 
-  it('keeps waiting on an in-flight provider import during StrictMode remounts', () => {
-    expect(shouldLoadCopilotProvider({
-      configState: createReadyState(),
-      providerLoadState: { status: 'loading' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: false,
-    })).toBe(true)
-  })
+  it('falls back to an error bootstrap state when snapshot refresh fails', async () => {
+    const applyState = vi.fn()
+    configMocks.loadCopilotConfigStateFromPublicSnapshot.mockRejectedValueOnce(new Error('refresh failed'))
 
-  it('does not start another provider load after opting into workbench fallback', () => {
-    expect(shouldLoadCopilotProvider({
-      configState: createReadyState(),
-      providerLoadState: { status: 'idle' },
-      allowWorkbenchWithoutProvider: true,
-      providerLoaded: false,
-    })).toBe(false)
-  })
+    const result = await refreshCopilotBootstrapStateFromPublicSnapshot({
+      snapshot: {
+        version: 1,
+        domains: {
+          frontendPreferences: {
+            theme: 'light',
+            animationsEnabled: true,
+          },
+          assistantBehavior: {
+            agentName: null,
+          },
+          hostConfig: {
+            runtimeUrl: null,
+          },
+          backendExposed: {
+            model: null,
+          },
+        },
+      },
+      applyState,
+    })
 
-  it('does not start another provider load after the provider module is already available', () => {
-    expect(shouldLoadCopilotProvider({
-      configState: createReadyState(),
-      providerLoadState: { status: 'loading' },
-      allowWorkbenchWithoutProvider: false,
-      providerLoaded: true,
-    })).toBe(false)
+    expect(applyState).toHaveBeenCalledOnce()
+    expect(applyState).toHaveBeenCalledWith({
+      status: 'error',
+      error: 'refresh failed',
+    })
+    expect(result).toEqual({
+      status: 'error',
+      error: 'refresh failed',
+    })
   })
 })
 
@@ -77,11 +104,13 @@ function createDiagnosticsSummary(
   }
 }
 
-function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'> {
+function createBaseResolvedState(
+  overrides: Partial<Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'>> = {},
+): Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'> {
   return {
-    settings: {
+    bootstrapFields: {
       runtimeUrl: 'http://127.0.0.1:8765',
-      agentName: 'campus-agent',
+      agentName: null,
     },
     storageState: 'stored',
     runtime: {
@@ -94,17 +123,20 @@ function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status
     },
     runtimeUrl: 'http://127.0.0.1:8765',
     runtimeSource: 'hosted',
-    agentName: 'campus-agent',
-    agentNameSource: 'settings',
+    agentName: null,
+    agentNameSource: 'missing',
     diagnostics: createDiagnosticsSummary(),
     devOverrideAllowed: true,
     devOverrideConfigured: false,
+    ...overrides,
   }
 }
 
-function createReadyState(): CopilotBootstrapState {
+function createReadyState(
+  overrides: Partial<Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'>> = {},
+): CopilotBootstrapState {
   return {
     status: 'ready',
-    ...createBaseResolvedState(),
+    ...createBaseResolvedState(overrides),
   }
 }

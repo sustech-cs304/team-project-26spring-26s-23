@@ -10,10 +10,18 @@ from fastapi import Request, status
 from .contracts import (
     AGENT_CONNECT_METHOD,
     AGENT_RUN_METHOD,
+    CAPABILITIES_GET_METHOD,
     INFO_METHOD,
+    MESSAGE_SEND_METHOD,
+    SESSION_CREATE_METHOD,
+    RuntimeCapabilitiesGetRequest,
     RuntimeConnectRequest,
+    RuntimeMessageExecutionPolicy,
+    RuntimeMessagePayload,
+    RuntimeMessageSendRequest,
     RuntimeRunRequest,
     RuntimeScaffold,
+    RuntimeSessionCreateRequest,
 )
 from .errors import (
     RuntimeErrorResponse,
@@ -191,6 +199,99 @@ class RuntimeProtocolParser:
             context=context,
             forwarded_props=forwarded_props,
             metadata={},
+        )
+
+    def extract_session_create_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeSessionCreateRequest:
+        if payload is None:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message="Runtime method 'session/create' requires a JSON payload.",
+                    scaffold=self._scaffold,
+                    requested_method=SESSION_CREATE_METHOD,
+                ),
+            )
+
+        request_body = self._extract_body(payload, requested_method=SESSION_CREATE_METHOD)
+        agent_id = self._require_non_empty_string(
+            request_body.get("agentId"),
+            field_name="agentId",
+            requested_method=SESSION_CREATE_METHOD,
+        )
+        if self._scaffold.supports_agent(agent_id):
+            return RuntimeSessionCreateRequest(agent_id=agent_id)
+
+        raise RuntimeProtocolError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error=build_agent_not_found_error(
+                agent_name=agent_id,
+                scaffold=self._scaffold,
+                requested_method=SESSION_CREATE_METHOD,
+            ),
+        )
+
+    def extract_capabilities_get_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeCapabilitiesGetRequest:
+        if payload is None:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message="Runtime method 'capabilities/get' requires a JSON payload.",
+                    scaffold=self._scaffold,
+                    requested_method=CAPABILITIES_GET_METHOD,
+                ),
+            )
+
+        request_body = self._extract_body(payload, requested_method=CAPABILITIES_GET_METHOD)
+        session_id = self._require_non_empty_string(
+            request_body.get("sessionId"),
+            field_name="sessionId",
+            requested_method=CAPABILITIES_GET_METHOD,
+        )
+        return RuntimeCapabilitiesGetRequest(session_id=session_id)
+
+    def extract_message_send_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeMessageSendRequest:
+        if payload is None:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message="Runtime method 'message/send' requires a JSON payload.",
+                    scaffold=self._scaffold,
+                    requested_method=MESSAGE_SEND_METHOD,
+                ),
+            )
+
+        request_body = self._extract_body(payload, requested_method=MESSAGE_SEND_METHOD)
+        session_id = self._require_non_empty_string(
+            request_body.get("sessionId"),
+            field_name="sessionId",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+
+        raw_agent_id = request_body.get("agent")
+        agent_id: str | None = None
+        if raw_agent_id is not None:
+            agent_id = self._require_non_empty_string(
+                raw_agent_id,
+                field_name="agent",
+                requested_method=MESSAGE_SEND_METHOD,
+            )
+
+        message = self._extract_message_send_payload(request_body.get("message"))
+        policy = self._extract_message_execution_policy(request_body)
+        return RuntimeMessageSendRequest(
+            session_id=session_id,
+            message=message,
+            policy=policy,
+            agent_id=agent_id,
         )
 
     def extract_run_request(self, payload: dict[str, Any] | None) -> RuntimeRunRequest:
@@ -432,6 +533,105 @@ class RuntimeProtocolParser:
                 ),
             )
         return dict(value)
+
+    def _optional_list_of_strings(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if not isinstance(value, list):
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be an array of strings.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+
+        normalized_items: list[str] = []
+        for index, item in enumerate(value):
+            if not isinstance(item, str) or item.strip() == "":
+                raise RuntimeProtocolError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error=build_invalid_request_error(
+                        message=(
+                            f"Runtime request field '{field_name}' must contain only non-empty strings."
+                        ),
+                        scaffold=self._scaffold,
+                        requested_method=requested_method,
+                        details={"field": f"{field_name}[{index}]"},
+                    ),
+                )
+            normalized_items.append(item.strip())
+        return tuple(normalized_items)
+
+    def _extract_message_send_payload(self, value: Any) -> RuntimeMessagePayload:
+        if not isinstance(value, dict):
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message="Runtime request field 'message' must be an object.",
+                    scaffold=self._scaffold,
+                    requested_method=MESSAGE_SEND_METHOD,
+                    details={"field": "message"},
+                ),
+            )
+
+        role = self._require_non_empty_string(
+            value.get("role"),
+            field_name="message.role",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+        normalized_role = role.lower()
+        if normalized_role != "user":
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_unsupported_message_shape_error(
+                    message="Runtime method 'message/send' currently requires a user text message.",
+                    scaffold=self._scaffold,
+                    requested_method=MESSAGE_SEND_METHOD,
+                    details={"field": "message.role", "role": normalized_role},
+                ),
+            )
+
+        content = self._require_non_empty_string(
+            value.get("content"),
+            field_name="message.content",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+        return RuntimeMessagePayload(role=normalized_role, content=content)
+
+    def _extract_message_execution_policy(
+        self,
+        request_body: dict[str, Any],
+    ) -> RuntimeMessageExecutionPolicy:
+        model = self._require_non_empty_string(
+            request_body.get("model"),
+            field_name="model",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+
+        enabled_tools = self._optional_list_of_strings(
+            request_body.get("enabledTools"),
+            field_name="enabledTools",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+        request_options = self._optional_object(
+            request_body.get("requestOptions"),
+            field_name="requestOptions",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+        return RuntimeMessageExecutionPolicy(
+            model=model,
+            enabledTools=enabled_tools,
+            requestOptions=request_options,
+        )
 
     def _extract_latest_user_message_text(self, messages: tuple[dict[str, Any], ...]) -> str:
         if not messages:

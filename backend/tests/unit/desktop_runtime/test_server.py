@@ -19,6 +19,16 @@ _BROWSER_TEST_USER_AGENT = (
 )
 
 from app.copilot_runtime import PydanticAIAgentExecutor
+from app.copilot_runtime.contracts import (
+    AGENT_CONNECT_METHOD,
+    AGENT_RUN_METHOD,
+    AGENTS_LIST_METHOD,
+    CAPABILITIES_GET_METHOD,
+    INFO_METHOD,
+    MESSAGE_SEND_METHOD,
+    SESSION_CREATE_METHOD,
+)
+from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
 
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
@@ -69,26 +79,40 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
     assert capabilities["default_agent"] == "default"
     assert capabilities["available_toolsets"] == ["default"]
     assert capabilities["default_toolset"] == "default"
-    assert capabilities["agent_summaries"] == [
-        {
-            "name": "default",
-            "label": "Default",
-            "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
-            "default": True,
-            "toolsetName": "default",
-            "hasExecutorFactory": True,
-        }
-    ]
-    assert capabilities["toolset_summaries"] == [
-        {
-            "name": "default",
-            "label": "Default",
-            "description": "Placeholder empty toolset metadata reserved for the default Copilot agent.",
-            "default": True,
-            "toolCount": 0,
-            "tools": [],
-        }
-    ]
+    agent_summaries = capabilities["agent_summaries"]
+    assert len(agent_summaries) == 1
+
+    agent_summary = agent_summaries[0]
+    assert agent_summary["name"] == "default"
+    assert agent_summary["label"] == "Default"
+    assert (
+        agent_summary["description"]
+        == "Minimal default agent exposed by the Copilot runtime run bridge."
+    )
+    assert agent_summary["default"] is True
+    assert agent_summary["status"] == "active"
+    assert agent_summary["toolsetName"] == "default"
+    assert agent_summary["recommendedTools"] == [FILE_CONVERT_TOOL_ID]
+    assert agent_summary["defaultModelPreference"] is None
+    assert agent_summary["iconKey"] is None
+    assert agent_summary["hasExecutorFactory"] is True
+
+    toolset_summaries = capabilities["toolset_summaries"]
+    assert len(toolset_summaries) == 1
+
+    toolset_summary = toolset_summaries[0]
+    assert toolset_summary["name"] == "default"
+    assert toolset_summary["label"] == "Default"
+    assert toolset_summary["default"] is True
+    assert toolset_summary["toolCount"] == 1
+    assert len(toolset_summary["tools"]) == 1
+    assert toolset_summary["tools"][0] == {
+        "toolId": FILE_CONVERT_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "File Convert",
+        "description": "Convert DOCX, PDF, and PPTX files into text.",
+    }
 
 
 
@@ -160,7 +184,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
         "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
     }
     assert runtime_info_payload["defaultAgent"] == "default"
-    assert runtime_info_payload["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    _assert_supported_methods(runtime_info_payload["supportedMethods"])
     assert runtime_info_payload["protocol"] == "single-endpoint"
     assert runtime_info_payload["stage"] == "phase3-run-bridge"
     assert connect_response.headers["content-type"].startswith("text/event-stream")
@@ -215,10 +239,14 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["capabilities"]["chat_runtime_path"] == "/"
     assert diagnostics_payload["capabilities"]["available_agents"] == ["default"]
     assert diagnostics_payload["capabilities"]["default_agent"] == "default"
-    assert diagnostics_payload["capabilities"]["supported_methods"] == ["info", "agent/connect", "agent/run"]
+    _assert_supported_methods(diagnostics_payload["capabilities"]["supported_methods"])
     assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
     assert diagnostics_payload["capabilities"]["session_store_type"] == "in-memory"
     assert diagnostics_payload["capabilities"]["current_stage_supports_info_only"] is False
+    assert diagnostics_payload["capabilities"]["current_stage_supports_agents_list"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_session_create"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_capabilities_get"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_message_send"] is True
     assert diagnostics_payload["capabilities"]["current_stage_supports_connect"] is True
     assert diagnostics_payload["capabilities"]["current_stage_supports_run"] is True
     assert diagnostics_payload["capabilities"]["model_configured"] is True
@@ -381,7 +409,7 @@ def test_create_app_without_model_keeps_info_and_connect_but_run_fails_explicitl
         diagnostics_response = client.get("/diagnostics")
 
     assert info_response.status_code == 200
-    assert info_response.json()["supportedMethods"] == ["info", "agent/connect", "agent/run"]
+    _assert_supported_methods(info_response.json()["supportedMethods"])
     assert connect_response.status_code == 200
     assert _parse_sse_events(connect_response.text)[-1]["result"]["ok"] is True
     assert run_response.status_code == 503
@@ -392,7 +420,15 @@ def test_create_app_without_model_keeps_info_and_connect_but_run_fails_explicitl
             "message": "No runtime model is configured. Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL.",
             "stage": "phase3-run-bridge",
             "requestedMethod": "agent/run",
-            "supportedMethods": ["info", "agent/connect", "agent/run"],
+            "supportedMethods": [
+                INFO_METHOD,
+                AGENTS_LIST_METHOD,
+                SESSION_CREATE_METHOD,
+                CAPABILITIES_GET_METHOD,
+                MESSAGE_SEND_METHOD,
+                AGENT_CONNECT_METHOD,
+                AGENT_RUN_METHOD,
+            ],
             "details": {
                 "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"],
             },
@@ -460,6 +496,18 @@ def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
         payload = "\n".join(line[6:] for line in lines)
         events.append(json.loads(payload))
     return events
+
+
+def _assert_supported_methods(supported_methods: list[str]) -> None:
+    assert set(supported_methods) >= {
+        INFO_METHOD,
+        AGENTS_LIST_METHOD,
+        SESSION_CREATE_METHOD,
+        CAPABILITIES_GET_METHOD,
+        MESSAGE_SEND_METHOD,
+        AGENT_CONNECT_METHOD,
+        AGENT_RUN_METHOD,
+    }
 
 
 def _build_test_agent_executor() -> PydanticAIAgentExecutor:

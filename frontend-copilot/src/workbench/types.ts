@@ -1,9 +1,12 @@
 import type { LucideIcon } from 'lucide-react'
 
+import type { RuntimeToolDirectoryEntry } from '../features/copilot/chat-contract'
+
 export type WorkspaceView = 'assistant' | 'capabilities' | 'files' | 'developer' | 'settings'
 export type HubWorkspaceView = Exclude<WorkspaceView, 'assistant' | 'settings'>
-export type AgentTypeId = 'general' | 'blackboard' | 'tis'
+export type AgentTypeId = string
 export type SettingsSection =
+  | 'sustech-info'
   | 'model-service'
   | 'default-model'
   | 'general'
@@ -14,6 +17,7 @@ export type SettingsSection =
   | 'memory'
   | 'api'
   | 'docs'
+  | 'external-source'
 
 export interface SelectOption {
   value: string
@@ -48,13 +52,29 @@ export interface AgentType {
   label: string
   shortLabel: string
   description: string
+  hint: string | null
+  status: string
   icon: LucideIcon
+  recommendedTools: string[]
+  defaultModelPreference: string | null
 }
 
-export interface ConversationItem {
-  id: string
-  title: string
+export interface AssistantSessionCapabilities {
+  capabilitiesVersion: string
+  allAvailableTools: RuntimeToolDirectoryEntry[]
+  recommendedToolsForAgent: string[]
+  defaultEnabledTools: string[]
+  toolSelectionMode: string
+  defaultModelPreference: string | null
+}
+
+export interface AssistantSessionShell {
+  sessionId: string
+  title?: string
+  boundAgent: AgentType
+  createdAt: string
   updatedAt: string
+  capabilities: AssistantSessionCapabilities
 }
 
 export interface SettingsNavItem {
@@ -82,14 +102,12 @@ export interface ProviderProfile {
   name: string
   protocol: string
   endpoint: string
-  apiKey: string
+  hasApiKey: boolean
   defaultModel: string
   fastModel: string
   fallbackModel: string
   organization: string
   region: string
   notes: string
-  enabled: boolean
-  isDefault: boolean
   availableModels: ProviderModelProfile[]
 }

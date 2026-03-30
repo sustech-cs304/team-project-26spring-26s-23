@@ -27,6 +27,9 @@ class RuntimeAgentExecutor(Protocol):
         agent_name: str,
         user_prompt: str,
         message_history: Sequence[ModelMessage],
+        model: Any | None = None,
+        enabled_tools: Sequence[str] = (),
+        request_options: Mapping[str, Any] | None = None,
     ) -> str: ...
 
 
@@ -75,16 +78,21 @@ class PydanticAIAgentExecutor:
         agent_name: str,
         user_prompt: str,
         message_history: Sequence[ModelMessage],
+        model: Any | None = None,
+        enabled_tools: Sequence[str] = (),
+        request_options: Mapping[str, Any] | None = None,
     ) -> str:
         if agent_name != self.agent_name:
             raise AgentExecutionError(f"Unsupported agent '{agent_name}'.")
 
-        model = self.resolve_model()
+        resolved_model = self.resolve_model(model_override=model)
+        _ = tuple(enabled_tools)
+        _ = dict(request_options or {})
         try:
             result = await self._agent.run(
                 user_prompt,
                 message_history=message_history,
-                model=model,
+                model=resolved_model,
             )
         except ModelNotConfiguredError:
             raise
@@ -99,8 +107,8 @@ class PydanticAIAgentExecutor:
 
         return output
 
-    def resolve_model(self) -> Any:
-        explicit_model = self._resolved_explicit_model()
+    def resolve_model(self, *, model_override: Any | None = None) -> Any:
+        explicit_model = self._resolved_explicit_model(model_override)
         if explicit_model is not None:
             return explicit_model
 
@@ -111,13 +119,14 @@ class PydanticAIAgentExecutor:
             )
         return model_name
 
-    def _resolved_explicit_model(self) -> Any | None:
-        if self._model_override is None:
+    def _resolved_explicit_model(self, model_override: Any | None = None) -> Any | None:
+        candidate = self._model_override if model_override is None else model_override
+        if candidate is None:
             return None
-        if isinstance(self._model_override, str):
-            value = self._model_override.strip()
+        if isinstance(candidate, str):
+            value = candidate.strip()
             return value or None
-        return self._model_override
+        return candidate
 
     def _configured_model_name(self) -> str | None:
         for key in MODEL_ENVIRONMENT_KEYS:
