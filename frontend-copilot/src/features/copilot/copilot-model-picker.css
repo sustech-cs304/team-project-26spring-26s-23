@@ -24,7 +24,16 @@
   transition:
     background-color 0.16s ease,
     color 0.16s ease,
+    opacity 0.16s ease,
     transform 0.16s ease;
+}
+
+.copilot-model-picker__trigger-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .copilot-model-picker__trigger:hover:not(:disabled) {
@@ -48,6 +57,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.copilot-model-picker__trigger--invalid .copilot-model-picker__trigger-value {
+  opacity: 0.56;
+}
+
+.copilot-model-picker__badge {
+  flex: 0 0 auto;
+  padding: 0.12rem 0.42rem;
+  border: 1px solid var(--warning-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--warning-soft, var(--surface-subtle));
+  color: var(--warning-text, var(--text-secondary));
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .copilot-model-picker__trigger-caret {
@@ -210,6 +235,13 @@
   display: flex;
   flex-direction: column;
   gap: 0.22rem;
+}
+
+.copilot-model-picker__group-empty {
+  margin: 0;
+  padding: 0.38rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 .copilot-model-picker__option {

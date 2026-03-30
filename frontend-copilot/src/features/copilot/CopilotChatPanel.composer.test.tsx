@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { act } from 'react'
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
@@ -17,6 +18,7 @@ import {
   setFormControlValue,
   submitForm,
 } from './CopilotChatPanel.test-support'
+import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
 declare global {
   // eslint-disable-next-line no-var
@@ -34,6 +36,51 @@ afterAll(() => {
 describe('CopilotChatPanel composer interactions', () => {
   it('sends messages with the updated model selected from the picker', async () => {
     const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+          createProviderProfile({
+            id: 'provider-anthropic',
+            name: 'Anthropic Mirror',
+            availableModels: [
+              {
+                id: 'provider-anthropic:anthropic/claude-opus-4.1',
+                modelId: 'anthropic/claude-opus-4.1',
+                displayName: 'Claude Opus 4.1',
+                groupName: 'Anthropic',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'openai/gpt-4.1',
+        },
+      }),
+    }))
 
     const rendered = renderWithRoot(
       <CopilotChatPanel
@@ -46,20 +93,28 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionStatus="idle"
         sessionError={null}
         sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
       />,
     )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
     const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
 
-    expect(modelTrigger.textContent).toContain('Gemini 2.5 Pro Preview')
-    expect(getTriggerIconText(modelTrigger)).toBe('G')
+    expect(loadWorkspaceState).toHaveBeenCalledTimes(1)
+    expect(modelTrigger.textContent).toContain('GPT 4.1')
+    expect(getTriggerIconText(modelTrigger)).toBe('O')
 
     await clickElement(modelTrigger)
-    await clickElement(rendered.getByTestId('chat-model-option-anthropic/claude-opus-4.1'))
+    expect(rendered.container.textContent).toContain('OpenAI Compatible')
+    expect(rendered.container.textContent).toContain('Anthropic Mirror')
+    await clickElement(rendered.getByTestId('chat-model-option-provider-anthropic-anthropic/claude-opus-4.1'))
 
     expect(modelTrigger.textContent).toContain('Claude Opus 4.1')
-    expect(getTriggerIconText(modelTrigger)).toBe('C')
+    expect(getTriggerIconText(modelTrigger)).toBe('A')
 
     await setFormControlValue(messageInput, '请总结刚才的内容')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
@@ -71,6 +126,79 @@ describe('CopilotChatPanel composer interactions', () => {
         content: '请总结刚才的内容',
       },
     })
+
+    rendered.unmount()
+  })
+
+  it('keeps an invalid selected model visible after persisted settings remove it, excludes it from candidates, and clears invalid state after reselecting a valid model', async () => {
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-active',
+            name: 'Active Provider',
+            availableModels: [
+              {
+                id: 'provider-active:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+          createProviderProfile({
+            id: 'provider-empty',
+            name: 'Empty Provider',
+            availableModels: [],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'openai/gpt-4.1',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            defaultModelPreference: 'legacy/retired-model',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    expect(modelTrigger.textContent).toContain('legacy/retired-model')
+    expect(rendered.getByTestId('chat-model-picker-invalid-badge').textContent).toContain('失效')
+
+    await clickElement(modelTrigger)
+
+    expect(rendered.getByTestId('chat-model-group-empty-provider-empty')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-provider-active-legacy/retired-model')).toBeNull()
+    await clickElement(rendered.getByTestId('chat-model-option-provider-active-openai/gpt-4.1'))
+
+    expect(modelTrigger.textContent).toContain('GPT 4.1')
+    expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
 
     rendered.unmount()
   })

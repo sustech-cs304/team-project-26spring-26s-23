@@ -4,7 +4,6 @@ import {
   RuntimeRequestError,
   type RuntimeMessageSendResponse,
 } from './chat-contract'
-import { getCopilotDefaultModel } from './model-picker'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './types'
 
 export interface CopilotChatComposerDraft {
@@ -44,7 +43,7 @@ export const MAX_COPILOT_COMPOSER_HEIGHT = 360
 export function createEmptyComposerDraft(): CopilotChatComposerDraft {
   return {
     messageText: '',
-    model: getCopilotDefaultModel().id,
+    model: '',
     enabledTools: [],
     requestOptionsText: '{}',
   }
@@ -53,7 +52,7 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
 export function createComposerDraftFromSession(sessionShell: AssistantSessionShell): CopilotChatComposerDraft {
   return {
     messageText: '',
-    model: getCopilotDefaultModel().id,
+    model: sessionShell.capabilities.defaultModelPreference ?? '',
     enabledTools: [...sessionShell.capabilities.defaultEnabledTools],
     requestOptionsText: '{}',
   }

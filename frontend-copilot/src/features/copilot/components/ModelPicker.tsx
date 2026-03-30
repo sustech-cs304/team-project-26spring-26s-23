@@ -1,13 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import {
-  COPILOT_SAMPLE_MODELS,
+  COPILOT_SAMPLE_MODEL_CATALOG,
   createFallbackCopilotModel,
-  filterCopilotModels,
+  filterCopilotModelGroups,
   getCopilotModelById,
   getCopilotModelTags,
-  groupCopilotModels,
   type CopilotModelIconSpec,
+  type CopilotModelGroup,
   type CopilotModelOption,
 } from '../model-picker'
 
@@ -15,35 +15,39 @@ interface ModelPickerProps {
   selectedModelId: string
   onSelectModel: (model: CopilotModelOption) => void
   disabled?: boolean
-  models?: CopilotModelOption[]
+  groups?: CopilotModelGroup[]
 }
 
 export function ModelPicker({
   selectedModelId,
   onSelectModel,
   disabled = false,
-  models = COPILOT_SAMPLE_MODELS,
+  groups = COPILOT_SAMPLE_MODEL_CATALOG.groups,
 }: ModelPickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTags, setActiveTags] = useState<string[]>([])
   const pickerRef = useRef<HTMLDivElement | null>(null)
   const panelId = useId()
+  const models = useMemo(() => groups.flatMap((group) => group.models), [groups])
 
+  const resolvedSelectedModel = useMemo(() => getCopilotModelById(selectedModelId, models), [models, selectedModelId])
   const selectedModel = useMemo(
-    () => getCopilotModelById(selectedModelId, models) ?? createFallbackCopilotModel(selectedModelId),
-    [models, selectedModelId],
+    () => resolvedSelectedModel ?? createFallbackCopilotModel(selectedModelId),
+    [resolvedSelectedModel, selectedModelId],
   )
+  const isSelectedModelInvalid = selectedModelId.trim() !== '' && resolvedSelectedModel === null
   const availableTags = useMemo(() => getCopilotModelTags(models), [models])
   const filteredModels = useMemo(
-    () => filterCopilotModels({
-      models,
+    () => filterCopilotModelGroups({
+      groups,
       query: searchQuery,
       tags: activeTags,
     }),
-    [activeTags, models, searchQuery],
+    [activeTags, groups, searchQuery],
   )
-  const groupedModels = useMemo(() => groupCopilotModels(filteredModels), [filteredModels])
+  const hasVisibleModels = filteredModels.some((group) => group.models.length > 0)
+  const hasAnyGroups = groups.length > 0
 
   useEffect(() => {
     if (!isOpen) {
@@ -77,7 +81,7 @@ export function ModelPicker({
     <div className="copilot-model-picker" ref={pickerRef}>
       <button
         type="button"
-        className="copilot-model-picker__trigger"
+        className={`copilot-model-picker__trigger${isSelectedModelInvalid ? ' copilot-model-picker__trigger--invalid' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={panelId}
@@ -87,8 +91,15 @@ export function ModelPicker({
         }}
         data-testid="chat-model-picker-trigger"
       >
-        <ModelPickerIcon icon={selectedModel.icon} title={selectedModel.name} />
-        <span className="copilot-model-picker__trigger-label">{selectedModel.name}</span>
+        <span className="copilot-model-picker__trigger-value" data-testid="chat-model-picker-trigger-value">
+          <ModelPickerIcon icon={selectedModel.icon} title={selectedModel.name} />
+          <span className="copilot-model-picker__trigger-label">{selectedModel.name}</span>
+          {isSelectedModelInvalid && (
+            <span className="copilot-model-picker__badge" data-testid="chat-model-picker-invalid-badge">
+              失效
+            </span>
+          )}
+        </span>
         <span className="copilot-model-picker__trigger-caret" aria-hidden="true">
           {isOpen ? '▴' : '▾'}
         </span>
@@ -146,49 +157,62 @@ export function ModelPicker({
           </div>
 
           <div className="copilot-model-picker__groups">
-            {groupedModels.length === 0
+            {!hasAnyGroups
               ? (
-                  <p className="copilot-model-picker__empty">未找到匹配的模型。</p>
+                  <p className="copilot-model-picker__empty">暂无可用模型。</p>
                 )
-              : groupedModels.map((group) => (
-                  <section key={group.key} className="copilot-model-picker__group">
-                    <p className="copilot-model-picker__group-title">{group.title}</p>
-                    <div className="copilot-model-picker__list">
-                      {group.models.map((model) => {
-                        const isSelected = model.id === selectedModelId
+              : (
+                  <>
+                    {!hasVisibleModels && (searchQuery.trim() !== '' || activeTags.length > 0) && (
+                      <p className="copilot-model-picker__empty">未找到匹配的模型。</p>
+                    )}
+                    {filteredModels.map((group) => (
+                   <section key={group.key} className="copilot-model-picker__group">
+                     <p className="copilot-model-picker__group-title">{group.title}</p>
+                     <div className="copilot-model-picker__list">
+                      {group.models.length === 0
+                        ? (
+                            <p className="copilot-model-picker__group-empty" data-testid={`chat-model-group-empty-${group.key}`}>
+                              暂无模型
+                            </p>
+                          )
+                        : group.models.map((model) => {
+                            const isSelected = model.id === selectedModelId
 
-                        return (
-                          <button
-                            key={model.id}
-                            type="button"
-                            className={`copilot-model-picker__option${isSelected ? ' copilot-model-picker__option--selected' : ''}`}
-                            onClick={() => {
-                              onSelectModel(model)
-                              setIsOpen(false)
-                            }}
-                            data-testid={`chat-model-option-${model.id}`}
-                          >
-                            <ModelPickerIcon icon={model.icon} title={model.name} />
-                            <span className="copilot-model-picker__option-body">
-                              <span className="copilot-model-picker__option-name">{model.name}</span>
-                              <span className="copilot-model-picker__option-meta">{model.id}</span>
-                            </span>
-                            <span className="copilot-model-picker__option-tags" aria-hidden="true">
-                              {model.tags.map((tag) => (
-                                <span
-                                  key={`${model.id}:${tag}`}
-                                  className={buildModelTagClassName(tag, false, 'chip')}
-                                >
-                                  {tag}
+                            return (
+                              <button
+                                key={`${group.key}:${model.id}`}
+                                type="button"
+                                className={`copilot-model-picker__option${isSelected ? ' copilot-model-picker__option--selected' : ''}`}
+                                onClick={() => {
+                                  onSelectModel(model)
+                                  setIsOpen(false)
+                                }}
+                                data-testid={`chat-model-option-${group.key}-${model.id}`}
+                              >
+                                <ModelPickerIcon icon={model.icon} title={model.name} />
+                                <span className="copilot-model-picker__option-body">
+                                  <span className="copilot-model-picker__option-name">{model.name}</span>
+                                  <span className="copilot-model-picker__option-meta">{model.id}</span>
                                 </span>
-                              ))}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </section>
-                ))}
+                                <span className="copilot-model-picker__option-tags" aria-hidden="true">
+                                  {model.tags.map((tag) => (
+                                    <span
+                                      key={`${group.key}:${model.id}:${tag}`}
+                                      className={buildModelTagClassName(tag, false, 'chip')}
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </span>
+                              </button>
+                            )
+                          })}
+                     </div>
+                   </section>
+                    ))}
+                  </>
+                )}
           </div>
         </section>
       )}

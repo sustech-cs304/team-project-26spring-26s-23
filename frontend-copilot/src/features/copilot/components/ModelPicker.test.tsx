@@ -5,7 +5,8 @@ import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { DEFAULT_COPILOT_MODEL_ID } from '../model-picker'
+import { createProviderProfile } from '../../../workbench/settings/settings-workspace-test-fixtures'
+import { createCopilotModelCatalog, DEFAULT_COPILOT_MODEL_ID } from '../model-picker'
 import { ModelPicker } from './ModelPicker'
 
 declare global {
@@ -38,29 +39,54 @@ describe('ModelPicker', () => {
     const searchInput = rendered.getByTestId('chat-model-picker-search') as HTMLInputElement
     await setFormControlValue(searchInput, 'claude')
 
-    expect(rendered.queryByTestId('chat-model-option-anthropic/claude-opus-4.1')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-moonshot/kimi-k2.5')).toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-FoxCodeAnthropic-anthropic/claude-opus-4.1')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-Moonshot-moonshot/kimi-k2.5')).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-model-picker-tag-工具'))
     await clickElement(rendered.getByTestId('chat-model-picker-tag-免费'))
 
-    expect(rendered.queryByTestId('chat-model-option-cherry/qwen-free')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-anthropic/claude-opus-4.1')).toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-openrouter/gemini-2.5-pro-preview')).toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-CherryAI-cherry/qwen-free')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-FoxCodeAnthropic-anthropic/claude-opus-4.1')).toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-OpenRouter-openrouter/gemini-2.5-pro-preview')).toBeNull()
 
     await clickElement(rendered.getByTestId('chat-model-picker-tag-all'))
 
-    expect(rendered.queryByTestId('chat-model-option-openrouter/gemini-2.5-pro-preview')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-moonshot/kimi-k2.5')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-OpenRouter-openrouter/gemini-2.5-pro-preview')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-Moonshot-moonshot/kimi-k2.5')).not.toBeNull()
 
     await clickElement(rendered.getByTestId('chat-model-picker-tag-免费'))
 
-    await clickElement(rendered.getByTestId('chat-model-option-cherry/qwen-free'))
+    await clickElement(rendered.getByTestId('chat-model-option-CherryAI-cherry/qwen-free'))
 
     expect(trigger.textContent).toContain('Qwen Free')
     expect(getTriggerIconText(trigger)).toBe('Q')
     expect(rendered.queryByTestId('chat-model-picker-panel')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('keeps empty provider groups, marks invalid current model, hides it from candidates, and clears invalid state after selecting a valid model', async () => {
+    const rendered = renderWithRoot(<InvalidModelPickerHarness />)
+
+    const trigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    const triggerValue = rendered.getByTestId('chat-model-picker-trigger-value')
+    expect(trigger.textContent).toContain('legacy/retired-model')
+    expect(rendered.getByTestId('chat-model-picker-invalid-badge').textContent).toContain('失效')
+    expect(trigger.className).toContain('copilot-model-picker__trigger--invalid')
+    expect(triggerValue.className).toContain('copilot-model-picker__trigger-value')
+
+    await clickElement(trigger)
+
+    expect(rendered.getByTestId('chat-model-group-empty-provider-empty')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-provider-active-legacy/retired-model')).toBeNull()
+    expect(rendered.getByTestId('chat-model-option-provider-active-openai/gpt-4.1')).not.toBeNull()
+
+    await clickElement(rendered.getByTestId('chat-model-option-provider-active-openai/gpt-4.1'))
+
+    expect(trigger.textContent).toContain('GPT 4.1')
+    expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
+    expect(trigger.className).not.toContain('copilot-model-picker__trigger--invalid')
 
     rendered.unmount()
   })
@@ -72,6 +98,44 @@ function ModelPickerHarness() {
   return (
     <ModelPicker
       selectedModelId={selectedModelId}
+      onSelectModel={(model) => {
+        setSelectedModelId(model.id)
+      }}
+    />
+  )
+}
+
+function InvalidModelPickerHarness() {
+  const [selectedModelId, setSelectedModelId] = useState('legacy/retired-model')
+  const groups = createCopilotModelCatalog([
+    createProviderProfile({
+      id: 'provider-active',
+      name: 'Active Provider',
+      availableModels: [
+        {
+          id: 'provider-active:openai/gpt-4.1',
+          modelId: 'openai/gpt-4.1',
+          displayName: 'GPT 4.1',
+          groupName: 'OpenAI',
+          capabilities: ['reasoning', 'tools'],
+          supportsStreaming: true,
+          currency: 'usd',
+          inputPrice: '1',
+          outputPrice: '2',
+        },
+      ],
+    }),
+    createProviderProfile({
+      id: 'provider-empty',
+      name: 'Empty Provider',
+      availableModels: [],
+    }),
+  ]).groups
+
+  return (
+    <ModelPicker
+      selectedModelId={selectedModelId}
+      groups={groups}
       onSelectModel={(model) => {
         setSelectedModelId(model.id)
       }}

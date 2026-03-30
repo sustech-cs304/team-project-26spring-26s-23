@@ -8,6 +8,7 @@ import {
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
+import { loadSettingsWorkspaceState } from '../../workbench/settings/workspace-state'
 import {
   sendRuntimeMessage,
 } from './chat-contract'
@@ -20,6 +21,10 @@ import {
   type CopilotChatComposerDraft,
   type CopilotConversationTurn,
 } from './copilot-chat-helpers'
+import {
+  createCopilotModelCatalog,
+  resolveCopilotPreferredModelId,
+} from './model-picker'
 import {
   getCopilotSendDisabledReason,
   orchestrateCopilotSend,
@@ -39,6 +44,7 @@ interface CopilotChatPanelProps {
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
   sendMessage?: typeof sendRuntimeMessage
+  loadWorkspaceState?: typeof loadSettingsWorkspaceState
 }
 
 export function CopilotChatPanel({
@@ -51,11 +57,14 @@ export function CopilotChatPanel({
   sessionStatus,
   sessionError,
   sendMessage = sendRuntimeMessage,
+  loadWorkspaceState = loadSettingsWorkspaceState,
 }: CopilotChatPanelProps) {
   const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
   const [conversation, setConversation] = useState<CopilotConversationTurn[]>([])
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending'>('idle')
   const [, setSendError] = useState<string | null>(null)
+  const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
+  const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
 
@@ -99,6 +108,18 @@ export function CopilotChatPanel({
     ],
   )
 
+  const modelCatalog = useMemo(
+    () => createCopilotModelCatalog(workspaceProviderProfiles),
+    [workspaceProviderProfiles],
+  )
+  const preferredWorkspaceModelId = useMemo(
+    () => resolveCopilotPreferredModelId({
+      preferredModelId: workspacePrimaryModel,
+      models: modelCatalog.models,
+    }),
+    [modelCatalog.models, workspacePrimaryModel],
+  )
+
   useEffect(() => {
     if (sessionShell === null) {
       setComposerDraft(createEmptyComposerDraft())
@@ -111,6 +132,44 @@ export function CopilotChatPanel({
     setSendStatus('idle')
     setSendError(null)
   }, [sessionIdentity, sessionShell])
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      const result = await loadWorkspaceState()
+
+      if (cancelled) {
+        return
+      }
+
+      if (result.ok) {
+        setWorkspaceProviderProfiles(result.state.providerProfiles)
+        setWorkspacePrimaryModel(result.state.defaultModelRouting.primaryAssistantModel)
+        return
+      }
+
+      setWorkspaceProviderProfiles([])
+      setWorkspacePrimaryModel('')
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [loadWorkspaceState])
+
+  useEffect(() => {
+    if (preferredWorkspaceModelId === '') {
+      return
+    }
+
+    setComposerDraft((current) => current.model.trim() === ''
+      ? {
+          ...current,
+          model: preferredWorkspaceModelId,
+        }
+      : current)
+  }, [preferredWorkspaceModelId])
 
   useEffect(() => {
     setConversation([])
@@ -165,6 +224,7 @@ export function CopilotChatPanel({
         directoryState={directoryState}
         sessionStatus={sessionStatus}
         sessionError={sessionError}
+        modelGroups={modelCatalog.groups}
         composerDraft={composerDraft}
         onComposerDraftChange={setComposerDraft}
         onSend={handleSend}

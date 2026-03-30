@@ -16,6 +16,7 @@ import type {
   CopilotConversationTurn,
 } from './copilot-chat-helpers'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
+import type { CopilotModelGroup } from './model-picker'
 import type { CopilotBootstrapState } from './types'
 
 export interface CopilotPanelShellProps {
@@ -27,6 +28,7 @@ export interface CopilotPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  modelGroups: CopilotModelGroup[]
   composerDraft: CopilotChatComposerDraft
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
@@ -107,6 +109,7 @@ function renderSessionShell(props: CopilotPanelShellProps) {
         <CopilotMessageList conversation={props.conversation} />
         <CopilotComposer
           capabilities={props.sessionShell.capabilities}
+          modelGroups={props.modelGroups}
           draft={props.composerDraft}
           onDraftChange={props.onComposerDraftChange}
           onSubmit={props.onSend}

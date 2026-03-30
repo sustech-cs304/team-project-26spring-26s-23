@@ -2,6 +2,14 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './types'
 
+interface SessionShellOverrides {
+  sessionId?: string
+  boundAgent?: Partial<AgentType>
+  createdAt?: string
+  updatedAt?: string
+  capabilities?: Partial<AssistantSessionShell['capabilities']>
+}
+
 export function createDiagnosticsSummary(
   overrides: Partial<CopilotDiagnosticsSummary> = {},
 ): CopilotDiagnosticsSummary {
@@ -127,6 +135,13 @@ export function createSelectedAgent(): AgentType {
   }
 }
 
+function createSelectedAgentWithOverrides(overrides: Partial<AgentType> = {}): AgentType {
+  return {
+    ...createSelectedAgent(),
+    ...overrides,
+  }
+}
+
 export function createDirectoryState(): AssistantAgentDirectoryState {
   return {
     status: 'ready',
@@ -147,12 +162,14 @@ export function createIdleDirectoryState(): AssistantAgentDirectoryState {
   }
 }
 
-export function createSessionShell(): AssistantSessionShell {
+export function createSessionShell(overrides: SessionShellOverrides = {}): AssistantSessionShell {
+  const boundAgent = createSelectedAgentWithOverrides(overrides.boundAgent)
+
   return {
-    sessionId: 'session-1',
-    boundAgent: createSelectedAgent(),
-    createdAt: '2026-03-27T10:00:00Z',
-    updatedAt: '2026-03-27T10:00:00Z',
+    sessionId: overrides.sessionId ?? 'session-1',
+    boundAgent,
+    createdAt: overrides.createdAt ?? '2026-03-27T10:00:00Z',
+    updatedAt: overrides.updatedAt ?? '2026-03-27T10:00:00Z',
     capabilities: {
       capabilitiesVersion: 'cap-v12',
       allAvailableTools: [
@@ -175,6 +192,7 @@ export function createSessionShell(): AssistantSessionShell {
       defaultEnabledTools: ['tool.file-convert'],
       toolSelectionMode: 'recommendation-only',
       defaultModelPreference: 'openai/gpt-4.1',
+      ...overrides.capabilities,
     },
   }
 }

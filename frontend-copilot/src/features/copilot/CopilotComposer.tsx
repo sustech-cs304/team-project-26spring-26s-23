@@ -10,11 +10,13 @@ import { ArrowUp } from 'lucide-react'
 
 import type { AssistantSessionShell } from '../../workbench/types'
 import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
+import type { CopilotModelGroup } from './model-picker'
 import { ModelPicker } from './components/ModelPicker'
 import { ToolPicker } from './components/ToolPicker'
 
 interface CopilotComposerProps {
   capabilities: AssistantSessionShell['capabilities']
+  modelGroups: CopilotModelGroup[]
   draft: CopilotChatComposerDraft
   onDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -28,6 +30,7 @@ interface CopilotComposerProps {
 
 export function CopilotComposer({
   capabilities,
+  modelGroups,
   draft,
   onDraftChange,
   onSubmit,
@@ -74,6 +77,7 @@ export function CopilotComposer({
       <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
         <ModelPicker
           selectedModelId={draft.model}
+          groups={modelGroups}
           onSelectModel={(model) => {
             onDraftChange((current) => ({
               ...current,

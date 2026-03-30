@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRuntimeDebugSummary,
   buildRuntimeMessageSendInput,
+  createEmptyComposerDraft,
   buildSessionDebugSummary,
   createComposerDraftFromSession,
   formatRuntimeMessageSendError,
@@ -17,7 +18,6 @@ import {
   createSelectedAgent,
   createSessionShell,
 } from './CopilotChatPanel.test-support'
-import { DEFAULT_COPILOT_MODEL_ID } from './model-picker'
 import type { CopilotBootstrapState } from './types'
 
 describe('copilot chat helpers', () => {
@@ -53,12 +53,19 @@ describe('copilot chat helpers', () => {
     })
   })
 
-  it('creates composer defaults from session capabilities instead of hardcoded values', () => {
+  it('creates composer defaults from empty state and session capabilities without falling back to static model ids', () => {
+    expect(createEmptyComposerDraft()).toEqual({
+      messageText: '',
+      model: '',
+      enabledTools: [],
+      requestOptionsText: '{}',
+    })
+
     const draft = createComposerDraftFromSession(createSessionShell())
 
     expect(draft).toEqual({
       messageText: '',
-      model: DEFAULT_COPILOT_MODEL_ID,
+      model: 'openai/gpt-4.1',
       enabledTools: ['tool.file-convert'],
       requestOptionsText: '{}',
     })
