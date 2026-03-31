@@ -1,6 +1,6 @@
 ---
 title: 项目文档
-description: 项目文档总入口，概览阅读顺序、文档结构与当前系统边界。
+description: 文档入口，说明系统层权威范围、前后端分册边界与建议阅读顺序。
 sidebar_position: 1
 sidebar_label: 文档首页
 slug: /
@@ -8,171 +8,101 @@ slug: /
 
 # 项目文档
 
-这份首页文档的目标很简单：
+这套文档按“系统层权威源 + 端内分册”的方式组织。
 
-- 帮你先建立整个项目的全局印象
-- 告诉你应该先读哪几篇正式文档
-- 区分正式手册与计划材料
+## 先看文档边界
 
-## 这个项目现在是什么
+- `docs/system/` 负责收口跨前后端都必须一致的系统事实。后续前端分册和后端分册都应当以这里为准。
+- `docs/frontend/` 从 renderer、Electron 暴露面、页面状态和设置工作区的前端视角展开，不单独改写系统层已经确定的事实。
+- `docs/backend/` 从 desktop runtime、copilot runtime 和业务模块的后端视角展开，也不单独改写系统层已经确定的事实。
+- `docs/plans/` 只用于计划、排期和方案讨论，不作为当前实现的权威说明。
+- `docs/meetings/` 主要用于历史追溯，不替代正式手册。
 
-当前项目是一个 Electron 桌面应用，目标是把课程相关能力、桌面运行时和智能助手体验整合到同一个工作台里。
+## 建议阅读顺序
 
-它当前主要由三部分组成：
+### 第一次接手项目
 
-- **桌面前端**：`frontend-copilot/`
-  - Electron + React + TypeScript
-  - 已进入统一配置中心与 session-first 聊天主路径
+建议先按下面的顺序阅读：
 
-- **Python 后端**：`backend/`
-  - desktop runtime
-  - copilot runtime
-  - Blackboard / TIS 领域能力
+1. [系统架构总览](./system/architecture-overview.md)
+2. [运行时生命周期](./system/runtime-lifecycle.md)
+3. [聊天运行时契约](./system/chat-runtime-contract.md)
+4. [会话与状态模型](./system/session-and-state-model.md)
+5. [前端分册入口](./frontend/README.md)
+6. [后端分册入口](./backend/README.md)
 
-- **项目文档**：`docs/`
-  - 系统总览
-  - 前端分册
-  - 后端分册
-  - 参考附录与未来草案
+这个顺序的作用很直接：先把跨端共识读清，再进入各自分册，后面阅读 [`docs/frontend/`](./frontend/) 或 [`docs/backend/`](./backend/) 时就不会反复碰到概念冲突。
 
-## 当前项目最重要的三条主线
+### 只想快速定位某类问题
 
-如果你最近才接手项目，先记住下面三件事就够了：
+| 你要确认的问题 | 优先阅读 |
+| --- | --- |
+| 现在系统由哪些层组成，各层谁负责什么 | [系统架构总览](./system/architecture-overview.md) |
+| 应用怎样启动窗口、拉起 runtime、暴露启动态 | [运行时生命周期](./system/runtime-lifecycle.md) |
+| 聊天 HTTP 端点、请求体、响应体和错误码是什么 | [聊天运行时契约](./system/chat-runtime-contract.md) |
+| 配置、设置、会话、消息历史分别放在哪里 | [会话与状态模型](./system/session-and-state-model.md) |
+| renderer 当前页面、配置桥接和运行态细节 | [前端分册入口](./frontend/README.md) |
+| Python runtime、模块边界和运行配置细节 | [后端分册入口](./backend/README.md) |
 
-1. **统一配置中心已经正式落地**
-   - 配置已不是单一 settings 文件思路
-   - 当前已经是多文件 JSON、可读、带迁移的持久化系统
+## 当前系统层已经收口的事实
 
-2. **聊天主路径已经切到 session-first**
-   - 后端目录是真源
-   - 会话绑定智能体
-   - 每次消息再决定模型和工具策略
+系统层文档当前已经统一收口了这些全局事实，后续分册应当直接引用，不再各自重写一遍：
 
-3. **UI 已经完成一轮当前形态收敛**
-   - 启动页主题已进入正式外观
-   - 聊天面板已有稳定布局
-   - 模型选择器、工具选择器与设置页正式入口已经形成当前版本
+- 当前配置系统已经是“统一配置中心 + settings workspace”双层持久化结构。
+- 当前聊天主路径已经是 session-first，会话先绑定智能体，每次消息再携带模型与工具策略。
+- Electron 产品命名与 `userData` 路径已经统一收口到 `CanDue`。
+- 首次启动时不会再预置默认 provider 或默认模型，系统会从更空白的初始状态进入设置与聊天链路。
 
-## 推荐阅读顺序
+这些事实的具体展开，分别见 [`docs/system/`](./system/) 下四篇系统文档。
 
-### 如果你第一次接手项目
+## 三组文档怎样闭环
 
-建议按这个顺序阅读：
+这套站点当前按一条固定关系阅读：
 
-1. **先看两篇子系统入口**
-   - `docs/frontend/README.md`
-   - `docs/backend/README.md`
+- `docs/system/` 先定义跨前后端都要一致的事实，例如产品命名、宿主路径来源、session-first 契约和状态 owner。
+- `docs/frontend/` 再从 renderer、preload 和设置工作区出发，补齐前端这边真正可见的页面、字段和状态。
+- `docs/backend/` 最后从 desktop runtime、模块布局和对外契约出发，补齐 Python 侧实现、运行语境和兼容边界。
 
-2. **再看系统专题层**
-   - `docs/system/architecture-overview.md`
-   - `docs/system/runtime-lifecycle.md`
-   - `docs/system/chat-runtime-contract.md`
-   - `docs/system/session-and-state-model.md`
+frontend 和 backend 两个分册都按同一套三层结构组织：
 
-3. **最后按角色深入**
-   - 前端开发：继续读 `docs/frontend/`
-   - 后端开发：继续读 `docs/backend/`
+- 入口层负责给出阅读顺序。
+- 当前事实层负责解释当前代码已经落地的实现。
+- 参考与边界层负责查字段、状态、兼容方法和未来草案。
 
-### 如果你只想快速确认某个问题
+如果某个问题同时跨到两端，先回到 [`docs/system/`](./system/) 校验口径，再进入分册细节。这样阅读时更容易避免把端内说明写成系统事实，也更容易把兼容说明和当前主路径区分开。
 
-可以直接看这些参考文档：
+## 分册该怎么用
 
-- 后端运行与配置：`docs/backend/reference-run-and-config.md`
-- 后端当前可观察契约：`docs/backend/reference-current-contracts.md`
-- 前端当前生效字段：`docs/frontend/reference-current-fields.md`
-- 前端运行时状态：`docs/frontend/reference-runtime-states.md`
-- 前端页面能力：`docs/frontend/reference-page-capabilities.md`
-- 前端当前 UI：`docs/frontend/ui-current-state.md`
+### 前端分册
 
-## 当前文档体系怎么分层
+当前前端分册更适合回答下面这些问题：
 
-### 1. 系统专题层
+- renderer 当前有哪些工作区与页面能力。
+- preload 和 IPC 暴露面怎样被前端消费。
+- 设置工作区当前有哪些可编辑字段和运行态表现。
+- 哪些界面已经稳定，哪些仍然只是占位或未来草案。
 
-`docs/system/` 负责跨前后端的系统概念，例如：
+入口位于 [前端分册入口](./frontend/README.md)。
 
-- 整体架构
-- runtime 生命周期
-- 聊天运行时契约
-- 会话与状态模型
+### 后端分册
 
-### 2. 前端分册
+当前后端分册更适合回答下面这些问题：
 
-`docs/frontend/` 主要回答：
+- desktop runtime 与 copilot runtime 怎样组织。
+- 当前服务怎样启动、怎样接收宿主投影的运行配置。
+- 当前可观察契约和兼容边界分别是什么。
+- Blackboard、TIS 等后端领域能力处在什么阶段。
 
-- renderer 当前负责什么
-- 配置中心哪些字段已正式生效
-- 当前 UI 长什么样
-- 页面成熟度到哪一步
+入口位于 [后端分册入口](./backend/README.md)。
 
-### 3. 后端分册
+## 正式文档的使用原则
 
-`docs/backend/` 主要回答：
-
-- desktop runtime 和 copilot runtime 怎么组织
-- 后端怎么启动、怎么取配置
-- 当前可观察契约是什么
-- Blackboard / TIS 还处在哪个成熟度阶段
-
-## 正式文档与非正式材料的区别
-
-### 正式文档主路径
-
-下面这些目录和文档属于正式手册的一部分：
-
-- `docs/system/`
-- `docs/frontend/`
-- `docs/backend/`
-- 本页 `docs/README.md`
-
-### 非正式或辅助材料
-
-下面这些内容不应当被当作当前系统事实的权威说明：
-
-- `docs/plans/`
-  - 计划文档
-  - 只用于设计、排期和方案讨论
-  - 不属于正式文档主路径
-
-- `docs/meetings/`
-  - 会议记录或会议附件
-  - 主要用于历史追溯
-
-## 当前项目边界
-
-### 已实现
-
-- Electron 桌面工作台
-- 主进程托管的 Python desktop runtime
-- 统一配置中心正式链路
-- session-first 聊天主路径
-- Blackboard CLI 与本地同步链路
-- TIS 若干 provider 能力
-- 分层测试覆盖
-
-### 代码里可调用，但不是正式入口
-
-- Blackboard 工具层函数与 snapshot use case
-- TIS provider use case
-- 设置页中大量仍未进入正式配置链路的表单项
-
-### 未来方向
-
-- 更完整的会话恢复与历史回放
-- Blackboard / TIS 业务接口进一步服务化
-- 更完整的工具调用与权限机制
-- 其余工作区的数据面补齐
-
-## 文档更新原则
-
-正式文档当前遵循这些原则：
-
-1. **先写当前代码事实**，不把草案写成已实现
-2. **先维护权威文档**，避免平行重复说明
-3. **跨层概念统一收敛到系统专题**
-4. **计划材料不替代正式手册**
+- 需要判断当前实现事实时，优先看系统层文档和分册正文，不把计划稿当成实现说明。
+- 需要判断跨端概念时，优先回到 [`docs/system/`](./system/) 校验，不在前端分册和后端分册之间来回比对口径。
+- 需要判断未来方向时，明确区分“当前已实现”“兼容保留”“未来草案”三种状态。
 
 ## 继续阅读
 
-- 系统架构总览：`docs/system/architecture-overview.md`
-- 前端文档入口：`docs/frontend/README.md`
-- 后端文档入口：`docs/backend/README.md`
+- [系统架构总览](./system/architecture-overview.md)
+- [前端分册入口](./frontend/README.md)
+- [后端分册入口](./backend/README.md)

@@ -1,274 +1,248 @@
 ---
 title: 会话与状态模型
-description: 解释公开配置中心、settings workspace、宿主运行态、会话壳与后端内存会话当前怎样协同工作。
+description: 解释公开配置中心、settings workspace、宿主运行态、renderer 会话壳与后端进程内会话当前怎样分层持有。
 sidebar_position: 4
 ---
 
 # 会话与状态模型
 
-这份文档专门解决一个常见混淆：现在系统里有哪些状态，它们分别放在哪里，又是谁负责更新。
+这篇文档只回答一个问题：当前系统里有哪些状态，它们分别放在哪里，由谁持有，又怎样彼此影响。
 
-如果这几层没有先分开，文档里很容易把公开配置、设置页持久化、宿主运行态、会话壳和消息历史写成一团。
+系统结构见 [系统架构总览](./architecture-overview.md)，启动顺序见 [运行时生命周期](./runtime-lifecycle.md)，聊天字段与方法见 [聊天运行时契约](./chat-runtime-contract.md)。
 
 ## 先看当前状态地图
 
-当前系统至少需要分成六层状态来看：
+当前系统至少要分成下面六层状态来理解：
 
-| 状态层 | owner | 主要存放位置 | 典型内容 |
+| 状态层 | 主要 owner | 主要位置 | 典型内容 |
 | --- | --- | --- | --- |
-| 公开配置中心状态 | Electron 主进程负责持久化与公开投影。 | `config-center/*.json` 与公开快照。 | `theme`、`animationsEnabled`、`runtimeUrl`、`model`、`agentName`。 |
-| settings workspace 普通状态 | Electron 主进程负责持久化。 | `settings-workspace-state.json`。 | provider profiles、默认模型路由、API 设置、SUSTech 普通字段。 |
-| settings workspace secret 状态 | Electron 主进程负责持久化与访问控制。 | `settings-workspace-secrets.json`。 | provider API key、SUSTech CAS 密码。 |
-| 宿主运行态 | Electron 主进程负责维护。 | hosted runtime 内存快照与诊断文件。 | `starting`、`ready`、`failed`、`degraded`、`runtimeUrl`、失败摘要。 |
-| 会话状态 | renderer 与 Python runtime 分别持有不同部分。 | renderer 内存中的会话列表，加上后端 `InMemorySessionStore`。 | `sessionId`、`boundAgent`、创建时间、更新时间、后端消息历史。 |
-| 消息级临时状态 | renderer 页面负责维护。 | 聊天面板本地 state。 | 输入草稿、当前模型、启用工具、`requestOptions`、发送中状态、当前面板消息列表。 |
+| 公开配置中心状态 | Electron 主进程 | `config-center` 域文档与公开快照 | `theme`、`animationsEnabled`、`agentName`、`runtimeUrl`、`model` |
+| settings workspace 普通状态 | Electron 主进程 | `settings-workspace-state.json` | provider profiles、默认模型路由、SUSTech 普通字段、API 与其他设置页字段 |
+| settings workspace secret 状态 | Electron 主进程 | `settings-workspace-secrets.json` | provider API key、SUSTech CAS 密码 |
+| 宿主运行态 | Electron 主进程 | hosted runtime 内存快照与诊断文件 | `starting`、`ready`、`failed`、`degraded`、`runtimeUrl`、失败摘要 |
+| renderer 根装配状态 | renderer | `CopilotConfigState` | `loading`、`starting`、`ready`、`failed`、`degraded`、`empty`、`incomplete` |
+| 会话与消息状态 | renderer 与 Python runtime 分层持有 | renderer 内存会话壳 + 后端 `InMemorySessionStore` + 聊天面板本地 state | 智能体目录、会话壳、消息历史、当前模型、启用工具、输入草稿 |
 
-这张图说明，当前系统已经不能再用“配置状态只有一层”来概括。
+这张图背后最关键的一点是：当前系统已经不再是“一个 settings 文件 + 一份前端本地状态”的结构。
 
 ## 第一层：公开配置中心状态
 
-### 公开配置中心保存的是可公开的稳定配置
+### 这层保存的是可公开、稳定、可投影的配置
 
-公开配置中心由[`frontend-copilot/electron/config-center/service.ts`](../../frontend-copilot/electron/config-center/service.ts)负责读写，并由[`frontend-copilot/electron/config-center/public-snapshot.ts`](../../frontend-copilot/electron/config-center/public-snapshot.ts)投影为 renderer 可消费的公共快照。
+统一配置中心由 Electron 主进程读写，并投影成 renderer 可消费的公开快照。当前公开字段主要是：
 
-当前公开快照中正式存在的字段主要有：
-
-| 域 | 字段 | 当前作用 |
+| 配置域 | 字段 | 当前作用 |
 | --- | --- | --- |
-| `frontendPreferences` | `theme` | 这个字段控制前端主题。 |
-| `frontendPreferences` | `animationsEnabled` | 这个字段控制动画开关。 |
-| `assistantBehavior` | `agentName` | 这个字段保留为助手行为偏好。 |
-| `hostConfig` | `runtimeUrl` | 这个字段提供开发态 runtime 地址覆盖。 |
-| `backendExposed` | `model` | 这个字段供主进程在启动 runtime 时投影默认模型。 |
+| `frontend-preferences` | `theme` | 控制前端主题。 |
+| `frontend-preferences` | `animationsEnabled` | 控制动画开关。 |
+| `assistant-behavior` | `agentName` | 保留助手偏好信息。 |
+| `host-config` | `runtimeUrl` | 提供 development 场景的 runtime 地址 override。 |
+| `backend-exposed` | `model` | 供主进程在启动 hosted backend 时投影默认模型参数。 |
 
-### 这层状态怎样影响启动与聊天入口
+### 这层已经具备订阅更新链路
 
-[`frontend-copilot/src/features/copilot/config.ts`](../../frontend-copilot/src/features/copilot/config.ts)会把 `runtimeUrl` 和 `agentName` 提取为启动装配字段。当前真正影响连接判断的关键字段是 `runtimeUrl`。`agentName` 仍然保留在公开快照里，但它已经不是进入聊天主路径的硬门槛。
+主进程在公开补丁写回后，会广播新的公开快照。renderer 收到后会重新计算根装配状态，因此这层状态已经不是一次性读取。
 
-### 这层状态已经有公开订阅链路
+### `agentName` 仍然存在，但它已经不是聊天入口门槛
 
-[`frontend-copilot/src/features/copilot/config-center.ts`](../../frontend-copilot/src/features/copilot/config-center.ts)提供 `subscribeToConfigCenterPublicSnapshotUpdates()`。主进程在公开补丁生效后，会向所有窗口广播新快照。根装配收到后会重新计算 bootstrap 状态。
+当前公开快照里仍然保留 `agentName`，这对连续性和偏好记录仍然有价值。但在根装配状态里，真正决定缺失字段的关键项已经只剩 `runtimeUrl`。换句话说，`agentName` 仍然是公开配置的一部分，却不再是进入主聊天路径的硬条件。
 
 ## 第二层：settings workspace 普通状态
 
-### 这层状态服务的是设置工作区本身
+### 这层服务设置工作区本身
 
-settings workspace 普通状态定义位于[`frontend-copilot/electron/settings-workspace/schema.ts`](../../frontend-copilot/electron/settings-workspace/schema.ts)，读写逻辑位于[`frontend-copilot/electron/settings-workspace/service.ts`](../../frontend-copilot/electron/settings-workspace/service.ts)。
+settings workspace 普通状态由主进程持久化，当前保存的是设置页需要完整回显和编辑的一整组字段，例如：
 
-这部分状态当前包含很多设置页字段，例如：
+- provider profiles 与模型清单。
+- 默认模型路由。
+- SUSTech 学号、邮箱和 Blackboard 普通字段。
+- API、搜索、数据、文档导出、MCP、记忆等设置项。
 
-- 它会保存 SUSTech 学号、邮箱和 Blackboard 下载相关字段。
-- 它会保存 provider profiles 与默认模型路由。
-- 它会保存 API、搜索、文档输出、数据路径、MCP 等普通设置。
+### 这层不会进入公开快照
 
-### 这层状态不会进入公开快照
+虽然这层和统一配置中心共享同一持久化根目录，但它不会投影进公开配置快照。根装配读取的是公开配置中心；设置页自己的完整表单状态，则通过 settings workspace 独立接口读取。
 
-虽然这份文档和公开配置中心共享同一持久化根目录，但它不会被投影进 `ConfigCenterPublicSnapshot`。这意味着设置工作区的普通状态与根装配读取的公开快照是两层不同的系统状态。
+### 当前首次状态已经更空白
 
-renderer 访问这部分状态时，会经过[`frontend-copilot/src/workbench/settings/workspace-state.ts`](../../frontend-copilot/src/workbench/settings/workspace-state.ts)中的 `loadSettingsWorkspaceState()` 和 `saveSettingsWorkspaceState()`。
+最近实现里有一条很重要的变化：provider 与模型默认值已经清空。当前默认行为是：
+
+- provider profiles 默认是空数组。
+- 默认模型路由里的主模型与快速模型默认都是空字符串。
+- 设置页首次进入时不会自动带上一组预置 provider。
+
+这说明设置工作区的首次状态已经从“预填一组模型服务配置”收成“允许用户从空白开始配置”。
+
+### 这层仍然保留其他类别的基础默认值
+
+虽然 provider 与默认模型已经清空，但普通状态文档里仍然保留一些非敏感的基础默认值，例如默认语言、搜索参数、数据路径或文档导出目录。这些值属于设置页体验默认值，不等同于聊天链路已经有可用 provider 或模型。
 
 ## 第三层：settings workspace secret 状态
 
-### 这层状态单独保存敏感值
+### secrets 已经单独成层
 
-settings workspace secrets 与普通状态分开存放，文档结构同样定义在[`frontend-copilot/electron/settings-workspace/schema.ts`](../../frontend-copilot/electron/settings-workspace/schema.ts)。当前典型 secret 包括：
+settings workspace secrets 与普通状态分文档保存。当前典型 secret 包括：
 
 - provider API key。
 - SUSTech CAS 密码。
 
-### 这层状态由主进程直接 owner 持有
+### 这层继续由主进程直接持有
 
-主进程通过[`frontend-copilot/electron/settings-workspace/main-process.ts`](../../frontend-copilot/electron/settings-workspace/main-process.ts)封装了专用接口，用于加载 secret 状态、读取具体 secret、保存 secret 和清除 secret。公开配置快照不会包含这些值，设置工作区也只能通过定向 API 与之交互。
+renderer 不能通过公开快照获取这类值，而是只能通过专门的 secrets API 去读取状态、保存或清除。当前设计强调的是“受控访问”，而不是“把敏感值并入通用页面状态”。
 
-这条边界有两个结果：
+### secret 状态与普通状态的关系
 
-- secret 不会随公开配置广播到全局页面状态。
-- “设置工作区已持久化”并不意味着“全部设置都可以通过公开快照看到”。
+设置页会把普通状态与 secret 状态一起水合成可编辑视图。例如 provider profile 上的 `hasApiKey` 是主进程把 secrets 状态投影回普通可编辑态后的结果，但实际 API key 仍然保存在 secret 文档里。
 
 ## 第四层：宿主运行态
 
-### 这层状态描述的是当前 runtime 运行事实
+### 这层描述的是当前 Python runtime 的运行事实
 
-hosted runtime 快照由主进程构建，返回结构定义在[`frontend-copilot/electron/copilot-runtime.ts`](../../frontend-copilot/electron/copilot-runtime.ts)。它回答的是下面这些问题：
+主进程会构建 hosted runtime 快照，并通过 preload 暴露给 renderer。当前这层状态主要回答：
 
-- 当前本地 Python runtime 是否在启动、已就绪、失败或降级。
-- 当前是否存在可用 `runtimeUrl`。
-- 最近一次失败发生在什么阶段，是否可以重试。
-- 当前期望模式和已解析模式分别是什么。
+- hosted backend 现在处于 `starting`、`ready`、`failed`、`degraded` 还是 `stopped`。
+- 当前期望模式与已解析模式分别是什么。
+- 当前有没有可用 `runtimeUrl`。
+- 最近一次失败发生在什么阶段，是否可重试。
 
-### 这层状态会参与根装配
+### 这层由主进程统一持有
 
-[`frontend-copilot/src/CopilotAppRoot.tsx`](../../frontend-copilot/src/CopilotAppRoot.tsx)启动时，会把公开配置快照和 runtime 快照一起装配为 `CopilotBootstrapState`。因此，renderer 的 `loading`、`starting`、`ready`、`failed`、`degraded`、`empty` 和 `incomplete`，都来自配置事实和运行事实的合并结果。
+Python runtime 自己并不会把这些状态直接推给 renderer。当前 renderer 看到的是主进程整理过的快照，因此这层状态是典型的宿主运行态，而不是页面本地状态。
 
-## 第五层：会话状态
+## 第五层：renderer 根装配状态
 
-会话状态当前需要继续拆成三块来看。
+### 这层是“配置事实 + 运行事实”的合成结果
 
-### 智能体目录状态来自后端目录
+renderer 启动时会并行读取公开配置快照与 runtime 快照，再合成为 `CopilotConfigState`。当前状态值包括：
 
-[`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)会在可连接状态下请求 `agents/list`，形成目录状态。目录数据来自后端，前端只做展示增强。目录项当前至少会提供：
+- `loading`
+- `starting`
+- `ready`
+- `failed`
+- `degraded`
+- `empty`
+- `incomplete`
 
-- `agentId`。
-- `status`。
-- `displayName`。
-- `description`。
-- `recommendedTools`。
-- `defaultModelPreference`。
-- `iconKey`。
+### `empty` 状态反映当前更空白的首次进入语义
 
-因此，智能体目录当前属于后端真源的一部分。
+当 hosted runtime 处于 `stopped`，同时公开配置里也没有 `runtimeUrl` 时，根装配会把当前状态视为 `empty`。这和当前更空白的 provider 与模型初始状态是一致的：系统允许第一次进入时没有现成的运行地址，也没有现成的模型服务配置。
 
-### 会话列表状态当前保留在 renderer 内存里
+### development override 会影响这层状态计算
 
-同一个文件中的 `AssistantSessionListState` 维护的是当前窗口里已经创建的会话列表和激活会话。它主要包含 `sessions` 与 `activeSessionId`，并通过 `appendAssistantSessionShell()` 等函数在本地更新。
+在 development 场景里，如果公开配置中存在 `runtimeUrl` override，renderer 仍然可能进入可连接状态。这说明根装配状态不是只看 hosted backend 成功与否，还会考虑公开配置里的开发态覆盖来源。
 
-这层状态当前有三个特点：
+## 第六层：会话与消息状态
 
-- 它主要存在于 renderer 内存里。
-- 它不是公开配置中心的一部分。
-- 它也不是后端提供的持久化会话列表接口。
+这层最容易混淆，因为它其实由前后端分开持有。
 
-### 当前激活会话壳已经包含正式会话能力面
+### 6.1 智能体目录状态来自后端
 
-创建会话时，前端会先请求 `session/create`，再请求 `capabilities/get`，最后整理出 `AssistantSessionShell`。类型定义位于[`frontend-copilot/src/workbench/types.ts`](../../frontend-copilot/src/workbench/types.ts)。
+前端进入可连接状态后，会先调用 `agents/list`。当前目录状态由后端目录给出，前端只做展示增强。目录项至少会包含：
 
-当前会话壳中至少包含：
+- `agentId`
+- `status`
+- `displayName`
+- `description`
+- `recommendedTools`
+- `defaultModelPreference`
+- `iconKey`
 
-- `sessionId`。
-- `boundAgent`。
-- `createdAt`。
-- `updatedAt`。
-- `capabilities`。
+因此，智能体目录当前属于后端事实，而不是前端静态常量。
 
-其中 `capabilities` 当前会继续带出：
+### 6.2 renderer 会话壳状态只保留在当前窗口内存里
 
-- `capabilitiesVersion`。
-- `allAvailableTools`。
-- `recommendedToolsForAgent`。
-- `defaultEnabledTools`。
-- `toolSelectionMode`。
-- `defaultModelPreference`。
+前端当前会在 renderer 内存里维护已创建的会话列表与激活会话。每个会话壳至少会包含：
 
-[`frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx`](../../frontend-copilot/src/workbench/assistant/AssistantWorkspace.tsx)中的 `createAssistantSessionCapabilities()` 目前会把 `recommendedTools` 直接映射为新会话的 `defaultEnabledTools`。因此，默认启用工具来源当前就是能力面中的推荐工具集合。
+- `sessionId`
+- `boundAgent`
+- `createdAt`
+- `updatedAt`
+- `capabilities`
 
-## 第六层：消息级临时状态
+其中 `capabilities` 当前会带出：
 
-### 这层状态只服务当前聊天面板交互
+- `capabilitiesVersion`
+- `allAvailableTools`
+- `recommendedToolsForAgent`
+- `defaultEnabledTools`
+- `toolSelectionMode`
+- `defaultModelPreference`
 
-[`frontend-copilot/src/features/copilot/CopilotChatPanel.tsx`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx)当前会维护下面这些本地状态：
+前端当前会把 `recommendedTools` 直接映射成 `defaultEnabledTools`，所以“新会话默认勾选哪些工具”已经进入正式会话壳，而不是聊天面板临时拼接的值。
+
+### 6.3 会话绑定发生在后端会话级
+
+当前正式链路里，前端会先调用 `session/create`，后端立即返回 `sessionId` 和 `boundAgent`。这意味着“某个会话属于哪个智能体”在创建时就已经固定下来。
+
+随后如果前端在 `message/send` 里显式带了 `agent`，后端会把它当成防串会话校验值；如果它和会话绑定智能体不一致，就会返回 `agent_mismatch`。
+
+### 6.4 后端消息历史保存在进程内 `InMemorySessionStore`
+
+当前 Python runtime 会按 `sessionId` 持有会话记录。每条会话记录至少保存：
+
+- `session_id`
+- `bound_agent_id`
+- `metadata`
+- `messages`
+- `created_at`
+- `updated_at`
+
+当 `message/send` 成功时，后端会把这一轮 user 与 assistant 文本追加进这份进程内历史。多轮上下文的正式持有者，当前仍然是后端会话存储。
+
+### 6.5 这份历史当前不会跨 runtime 重启保存
+
+因为会话存储仍然是进程内内存结构，所以 runtime 一旦重启，会话历史就会丢失。前端当前也没有一条正式的“按 `sessionId` 回放完整历史”的链路。
+
+### 6.6 聊天面板还有一层页面级临时状态
+
+聊天面板本地还会维护一组更短生命周期的交互状态，例如：
 
 - 输入框草稿文本。
-- 本次发送选中的模型。
-- 本次启用的工具列表。
+- 当前选中的模型。
+- 当前启用的工具列表。
 - `requestOptions` 文本与解析结果。
 - 发送中状态。
-- 当前面板可见的消息列表。
+- 当前面板中已经展示的消息列表。
 
-### 这层状态与后端会话历史不是同一层
-
-聊天面板中的 `conversation` 只代表当前页面上已经展示的会话片段。用户切换到另一个会话时，面板会清空本地消息数组重新开始。当前前端不会在切换会话后自动向后端回放完整历史。
-
-因此，消息级临时状态是界面状态，不是会话总历史。
-
-## 会话优先聊天主路径当前怎样工作
-
-### 第一步由后端目录给出智能体
-
-前端首先调用 `agents/list`。返回值中会包含 `directoryVersion`、`defaultAgentId` 和智能体列表，因此会话创建前的可选智能体范围由后端目录决定。
-
-### 第二步在创建会话时绑定智能体
-
-前端调用 `session/create` 时会带上 `agentId`。后端响应中已经返回 `sessionId`、`boundAgent`、`createdAt`、`updatedAt`、`recommendedTools` 和 `defaultModelPreference`。因此，绑定智能体是会话的一部分，而不是事后补充出来的页面状态。
-
-### 第三步由能力面补足正式会话上下文
-
-前端随后调用 `capabilities/get`。当前响应会提供：
-
-- `sessionId`。
-- `boundAgent`。
-- `capabilitiesVersion`。
-- `tools`。
-- `recommendedTools`。
-- `toolSelectionMode`。
-- `defaultModelPreference`。
-
-有了这一步，当前会话壳已经能稳定表达“这个会话当前绑定了谁、有哪些可用工具、默认会启用哪些工具、当前能力版本是什么”。
-
-### 第四步在消息请求里显式携带请求级策略
-
-前端发送消息时会调用 `message/send`，并显式传入：
-
-- `sessionId`。
-- `agent`，用于和会话绑定智能体保持一致。
-- `message`。
-- `model`。
-- `enabledTools`。
-- `requestOptions`。
-
-因此，当前消息主路径同时具有下面三层语义：
-
-- 会话级语义由 `sessionId` 和 `boundAgent` 表达。
-- 能力级语义由 `capabilitiesVersion`、工具目录和默认启用工具表达。
-- 请求级语义由 `model`、`enabledTools` 和 `requestOptions` 表达。
-
-## 后端会话状态目前怎样保存
-
-### 当前使用的是进程内 `InMemorySessionStore`
-
-[`backend/app/copilot_runtime/session_store.py`](../../backend/app/copilot_runtime/session_store.py)中的 `InMemorySessionStore` 当前按 `session_id` 保存会话。每条 `RuntimeSessionRecord` 至少包含：
-
-- `session_id`。
-- `bound_agent_id`。
-- `metadata`。
-- `messages`。
-- `created_at`。
-- `updated_at`。
-
-### 成功发送消息后，后端会把这一轮消息追加进会话
-
-当 `message/send` 成功时，runtime 会读取当前会话，校验请求中的可选 `agent` 是否与会话绑定一致，再按当前请求使用的模型、工具和 `requestOptions` 执行一轮消息。执行成功后，后端会把 user 与 assistant 这一轮文本追加进会话记录。
-
-这说明，多轮上下文的正式持有者当前仍然是后端会话存储。
-
-### 这份历史当前不会跨 runtime 重启保存
-
-因为会话存储仍然只在 Python 进程内存里，所以 runtime 一旦重启，会话历史就会丢失。当前前端也没有一条正式的“按 `sessionId` 回放完整历史”链路。
+这层状态只是当前页面交互所需的临时状态，不等于后端会话总历史。
 
 ## 当前哪些状态会自动更新
 
-### 已经具备自动更新链路的状态
+### 已经有明确更新链路的状态
 
-公开配置中心快照当前已经支持订阅更新。因此，`theme`、`animationsEnabled`、`agentName`、`runtimeUrl` 和 `model` 这些公开字段发生变化后，根装配可以收到新的公开快照并重新计算状态。
+下面这些状态当前已经有比较明确的刷新路径：
 
-### 当前还没有形成完整实时流的状态
+- 公开配置中心快照会在补丁写回后广播更新。
+- 根装配状态会在收到公开快照后重新计算。
+- settings workspace 普通状态和 secret 状态会在设置页重新加载或保存后更新。
+- 会话壳会在 `session/create` 和 `capabilities/get` 完成后建立或刷新。
 
-下面这些状态目前还没有形成完整、持续的实时推送：
+### 当前仍然没有完整实时流的状态
+
+下面这些状态还没有形成完整、持续的实时推送：
 
 - hosted runtime 的全部状态变化。
-- settings workspace 的普通状态与 secrets 变化。
-- 会话列表的跨窗口同步。
-- 后端会话历史回放。
+- settings workspace 跨页面、跨窗口的同步更新。
+- renderer 会话列表的跨窗口同步。
+- 后端完整会话历史的主动回放。
 - 能力面变化后的自动失效刷新。
-
-这些状态当前更多还是通过启动时读取、用户操作触发读取或局部重算来更新。
 
 ## 当前最容易写错的地方
 
 ### 公开配置中心不是所有状态的总仓库
 
-公开配置中心当前只负责可公开的稳定配置。它不会负责会话列表、后端消息历史、运行失败摘要和聊天面板瞬时状态。
+它当前只负责可公开、稳定、适合根装配消费的配置事实，不负责会话列表、后端消息历史或设置页全部表单字段。
 
-### settings workspace 已经是独立状态层
+### settings workspace 已经是独立持久化面
 
-当前系统除了公开配置中心之外，还存在 settings workspace 普通状态层和 settings workspace secret 状态层。这两层都属于主进程持久化系统，但它们不进入公开快照。
+它和统一配置中心同属主进程持久化系统，但保存的是另一类状态：设置工作区自己的完整状态与 secrets。
 
-### `agentName` 仍然存在，但当前聊天入口主要看 `runtimeUrl`
+### `agentName` 还在，但聊天主路径已经改成 session-first
 
-公开快照里保留 `agentName` 有其连续性价值，不过当前前端能否进入聊天主路径，关键条件仍然是有没有可用 `runtimeUrl`。
+`agentName` 仍然存在于公开配置里，但正式聊天链路已经不再围绕它组织。当前会话由 `session/create` 绑定智能体，消息再通过请求级字段指定模型与工具策略。
 
-### 当前前端消息列表不是完整历史视图
+### 首次空白状态是当前实现的一部分
 
-聊天面板里的本地消息数组只反映当前面板已经展示的消息结果。它不等于后端会话总历史，也不能写成“已经具备完整历史回放能力”。
+当前没有预置 provider 与默认模型，并不是文档缺失，而是代码现实。看到空白的模型服务配置、空白的默认模型路由或 `empty` 根状态时，应该把它理解成当前首次启动语义，而不是异常回退。
 
 ## 相关文档
 
@@ -276,4 +250,3 @@ hosted runtime 快照由主进程构建，返回结构定义在[`frontend-copilo
 - [运行时生命周期](./runtime-lifecycle.md)
 - [聊天运行时契约](./chat-runtime-contract.md)
 - [前端运行时状态参考](../frontend/reference-runtime-states.md)
-- [后端运行与配置](../backend/run-and-config.md)

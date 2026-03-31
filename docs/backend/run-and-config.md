@@ -1,321 +1,162 @@
 ---
 title: 后端运行与配置
-description: 说明 desktop runtime 的启动方式、配置来源、运行目录，以及它与统一配置中心和当前聊天主路径的关系。
+description: 说明 desktop runtime 的启动方式、配置来源，以及 CLI 与 Electron 宿主管理下的路径差异。
 sidebar_position: 3
 ---
 
 # 后端运行与配置
 
-本文档解释当前 Python desktop runtime 怎样启动、怎样取配置、运行目录长什么样，以及它和 Electron 宿主配置中心之间现在怎样配合。
+这页只说明当前 Python `desktop_runtime` 怎样启动、怎样取配置，以及同一套 runtime 在两种运行语境下会落到什么路径上。目录边界请看[后端模块布局](./module-layout.md)，端点与方法请看[后端暴露契约与前端接入点](./frontend-connection.md)。
 
-## 先给结论
+## 先分清两种运行语境
 
-当前后端运行方式可以概括成一句话：
+当前桌面后端虽然只有一套 Python runtime，但实际有两种很不同的运行语境。
 
-> **Python runtime 继续以 CLI 参数、环境变量和默认值解释配置；Electron 主进程负责统一配置中心、宿主治理与参数投影；两者之间不是“runtime 直接读取配置中心文件”的关系。**
+| 语境 | 谁发起启动 | 路径从哪里来 | 当前更常见的场景 |
+| --- | --- | --- | --- |
+| 直接用 CLI 运行 | 开发者手动执行 `python -m app.desktop_runtime` | runtime 自己按 CLI 参数、环境变量和默认值解析 | 后端开发、联调、单独验证 runtime |
+| Electron 宿主管理运行 | Electron 主进程启动 Python 子进程 | 主进程先根据 `CanDue` 的 `userData` 派生路径，再显式传给 runtime | 正式桌面应用、打包运行、宿主托管 |
 
-这句话里最容易被写错的有两点：
+如果不先把这两种语境拆开，文档很容易被写成“后端永远落在 `backend/data`”这一条单一路径叙事，而这和桌面正式运行现状并不一致。
 
-1. 统一配置中心已经正式落在 Electron 主进程侧。
-2. Python runtime 当前并不会直接读取 `config-center/*.json`。
+读这页时也要先把两组路径分开：`backend/data` 只属于 CLI 默认语境，桌面正式运行路径则来自 `CanDue` 的 `userData`。后文出现的路径都只对应各自语境。
 
-## 文档范围
+## CLI 直接运行时，runtime 仍然按自己的配置规则工作
 
-本文档覆盖：
-
-- desktop runtime 的启动入口
-- CLI 参数、环境变量和默认值的优先级
-- 运行目录与落盘路径
-- 配置中心与 Python runtime 的关系
-- 当前聊天主路径在后端侧需要哪些基础条件
-
-本文档不展开：
-
-- Electron 到 Python 的完整跨进程生命周期
-- 控制面和聊天端点的完整 HTTP 契约
-- Blackboard / TIS 业务能力本身
-
-## 启动入口
-
-### 主要启动路径
-
-当前后端的主要启动入口是：
-
-- `python -m app.desktop_runtime`
-
-从仓库根目录更推荐这样跑：
+直接运行 Python runtime 时，当前入口仍然是：
 
 ```bash
 uv run --directory backend python -m app.desktop_runtime
 ```
 
-这样做的好处是：
+这条路径下，runtime 会自己解析配置。当前优先级很明确：
 
-- 运行目录更清楚
-- 更容易显式传路径和模型参数
-- 更接近宿主最终调用方式
+1. CLI 参数优先。
+2. 环境变量其次。
+3. 默认值最后兜底。
 
-### 配置解析入口
+### CLI 直接运行时的默认路径
 
-当前运行配置由 `parse_runtime_config()` 解析，解析顺序是：
+如果没有显式传入目录参数，runtime 当前会按下面这组默认值工作：
 
-1. CLI 参数
-2. 环境变量
-3. 默认值
+| 项目 | 默认值 |
+| --- | --- |
+| `userDataDir` | `backend/data` |
+| `runtimeRootDir` | `backend/data/desktop-runtime` |
+| `configDir` | `backend/data/desktop-runtime/config` |
+| `logsDir` | `backend/data/desktop-runtime/logs` |
+| `databaseDir` | `backend/data/desktop-runtime/database` |
+| `stateDir` | `backend/data/desktop-runtime/state` |
+| `settingsFile` | `backend/data/desktop-runtime/config/copilot-settings.json` |
 
-最终会生成 desktop runtime 配置对象，再交给服务器入口继续启动。
+因此，`backend/data` 这套路径叙事只适用于“你没有额外传参，并且直接用 CLI 启动 Python runtime”这一类场景。
 
-### 服务器入口会做什么
+## Electron 宿主管理运行时，路径先由主进程决定
 
-服务器启动时当前会：
+正式桌面应用里，启动顺序是另一套逻辑。
 
-- 创建 FastAPI 应用
-- 注册 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics`、`/diagnostics/runtime-info`
-- 注册统一的聊天根端点 `POST /`
-- 配置 loopback-only 安全边界
-- 挂上 runtime 生命周期管理
-
-## 配置来源与优先级
-
-### 当前优先级
-
-配置来源按这个顺序生效：
-
-1. **CLI 参数**
-2. **环境变量**
-3. **默认值**
-
-因此当前推荐写法仍然是：
-
-- 开发和联调时优先显式传 CLI 参数
-- 环境变量主要保留给兼容回退和宿主内部传递
-
-## 关键参数类别
-
-### 1. 网络参数
-
-| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| Host | `--host` | `COPILOT_DESKTOP_RUNTIME_HOST` | `127.0.0.1` | 仅允许 loopback 地址 |
-| Port | `--port` | `COPILOT_DESKTOP_RUNTIME_PORT` | `8765` | 本地监听端口 |
-
-当前 host 必须是 loopback 地址，例如：
-
-- `127.0.0.1`
-- `localhost`
-- `::1`
-
-否则启动会失败。
-
-### 2. 运行模式参数
-
-| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| App Mode | `--app-mode` | `COPILOT_DESKTOP_RUNTIME_APP_MODE` | `desktop` | 应用模式标识 |
-| Environment | `--environment` | `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT` | `development` | 运行环境标识 |
-
-### 3. 目录参数
-
-| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| User Data Dir | `--user-data-dir` | `COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR` | `backend/data` | userData 根目录；Electron 宿主会传入自己的 userData |
-| Runtime Root Dir | `--root-dir` | `COPILOT_DESKTOP_RUNTIME_ROOT_DIR` | `{user_data_dir}/desktop-runtime` | 运行时根目录 |
-| Config Dir | `--config-dir` | `COPILOT_DESKTOP_RUNTIME_CONFIG_DIR` | `{runtime_root_dir}/config` | 配置目录 |
-| Logs Dir | `--logs-dir` | `COPILOT_DESKTOP_RUNTIME_LOGS_DIR` | `{runtime_root_dir}/logs` | 日志目录 |
-| Database Dir | `--database-dir` | `COPILOT_DESKTOP_RUNTIME_DATABASE_DIR` | `{runtime_root_dir}/database` | 数据目录 |
-| State Dir | `--state-dir` | `COPILOT_DESKTOP_RUNTIME_STATE_DIR` | `{runtime_root_dir}/state` | 状态与诊断目录 |
-
-### 4. 文件路径参数
-
-| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| Settings File | `--settings-file` | `COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE` | `{config_dir}/copilot-settings.json` | 旧设置文件路径；当前主要保留给宿主内部迁移输入 |
-| Host Log File | `--host-log-file` | `COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE` | `{logs_dir}/electron-host.log` | Electron 主进程日志 |
-| Backend Stdout Log | `--backend-stdout-log-file` | `COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE` | `{logs_dir}/backend.stdout.log` | Python stdout 日志 |
-| Backend Stderr Log | `--backend-stderr-log-file` | `COPILOT_DESKTOP_RUNTIME_BACKEND_STDERR_LOG_FILE` | `{logs_dir}/backend.stderr.log` | Python stderr 日志 |
-| Runtime Snapshot | `--runtime-snapshot-file` | `COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE` | `{state_dir}/runtime-snapshot.json` | 运行态快照 |
-| Last Failure | `--last-failure-file` | `COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE` | `{state_dir}/last-failure.json` | 最近失败摘要 |
-
-### 5. 模型与认证参数
-
-| 参数 | CLI 标志 | 环境变量 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| Model | `--model` | `COPILOT_RUNTIME_MODEL`、`COPILOT_MODEL` | `None` | runtime 默认模型 |
-| Local Token | `--local-token` | `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN` | `None` | diagnostics 保护令牌 |
-
-当前模型参数最准确的理解是：
-
-- `--model` 仍然是 runtime 最直接的模型入口
-- Electron 宿主可以把配置中心里的 `backendExposed.model` 投影成这个参数
-- 聊天面板里的每次消息模型选择，不会回写这里的启动参数
-
-## 运行目录与产物
-
-### 默认目录结构
-
-默认情况下，运行目录大致是：
+Electron 主进程会先统一产品名 `CanDue`，再从宿主 `userData` 根目录派生出 hosted runtime 路径，然后把这些路径显式传给 Python 子进程。当前主进程派生出来的目录结构是：
 
 ```text
-backend/data/
+{userData}/
 └── desktop-runtime/
     ├── config/
-    │   ├── config-center/
-    │   │   ├── frontend-preferences.json
-    │   │   ├── assistant-behavior.json
-    │   │   ├── host-config.json
-    │   │   ├── backend-exposed.json
-    │   │   ├── settings-workspace-state.json
-    │   │   └── settings-workspace-secrets.json
-    │   └── copilot-settings.json
     ├── logs/
-    │   ├── electron-host.log
-    │   ├── backend.stdout.log
-    │   └── backend.stderr.log
     ├── database/
     └── state/
-        ├── runtime-snapshot.json
-        └── last-failure.json
 ```
 
-### 这些目录和文件现在分别代表什么
+这意味着桌面正式运行时，Python runtime 并不会靠自己的默认 `backend/data` 去猜目录。更常见的实际情况是：主进程已经把 `--user-data-dir`、`--root-dir`、`--config-dir`、`--logs-dir`、`--database-dir` 和 `--state-dir` 一并传进来了。
 
-| 路径 | 当前角色 |
+### Electron 语境下的关键路径
+
+| 项目 | 当前宿主做法 |
 | --- | --- |
-| `config-center/*.json` | 正式统一配置中心分域文档 |
-| `config-center/settings-workspace-state.json` | 设置页工作区的状态持久化文档，由 Electron 主进程 owner |
-| `config-center/settings-workspace-secrets.json` | 设置页 secrets 持久化文档，由 Electron 主进程 owner |
-| `copilot-settings.json` | legacy 设置文件路径，主要作为迁移输入 |
-| `logs/*` | Electron 主进程与 Python 子进程日志 |
-| `runtime-snapshot.json` | 宿主运行态快照 |
-| `last-failure.json` | 最近失败摘要 |
+| `userDataDir` | 取自 Electron 的 `app.getPath('userData')` |
+| `runtimeRootDir` | `{userData}/desktop-runtime` |
+| `configDir` | `{runtimeRootDir}/config` |
+| `logsDir` | `{runtimeRootDir}/logs` |
+| `databaseDir` | `{runtimeRootDir}/database` |
+| `stateDir` | `{runtimeRootDir}/state` |
+| `settingsFile` | `{configDir}/copilot-settings.json` |
+| `legacyCopilotSettingsFile` | `{userData}/copilot-settings.json` |
 
-这里最关键的一条边界是：
+这里还有一条容易漏写的事实：宿主兼容迁移时，会同时关注 `configDir` 里的 `copilot-settings.json` 和 `userData` 根目录下的旧文件。它们现在主要服务主进程侧迁移与兼容，不是当前 Python runtime 的正式配置真源。
 
-- `runtime-snapshot.json` 和 `last-failure.json` 是观测产物，不是配置源。
+## 当前配置 owner 在 Electron 主进程，不在 Python runtime
 
-## 统一配置中心与 Python runtime 的关系
+后端今天仍然会解释 CLI 参数、环境变量和默认值，但统一配置中心已经不在 Python runtime 这一侧。
 
-这是当前后端文档里最需要写准的一节。
+当前更准确的分工是：
 
-### 当前真正的分工
+- Electron 主进程负责统一配置中心文档。
+- Electron 主进程也负责 settings workspace 的状态文档和 secrets 文档。
+- Python runtime 继续只解释启动参数与环境变量。
+- 前端 renderer 通过 preload 读取公开配置快照和 runtime 快照，而不是直接去读 Python 目录里的对象。
 
-当前系统里：
+### 当前这些文件的 owner 是谁
 
-- Electron 主进程负责统一配置中心
-- Electron 主进程也负责 settings workspace 的状态文档与 secrets 文档
-- renderer 通过 preload 消费公共快照与公共补丁
-- Python runtime 继续只解释 CLI 参数、环境变量和默认值
+| 路径 | 当前 owner | 当前角色 |
+| --- | --- | --- |
+| `config-center/*.json` | Electron 主进程 | 统一配置中心分域文档 |
+| `config-center/settings-workspace-state.json` | Electron 主进程 | 设置工作区普通状态持久化 |
+| `config-center/settings-workspace-secrets.json` | Electron 主进程 | 设置工作区 secrets 持久化 |
+| `runtime-snapshot.json` | Electron 主进程与 runtime 生命周期 | 运行态快照 |
+| `last-failure.json` | Electron 主进程与 runtime 生命周期 | 最近失败摘要 |
 
-因此现在不能写成：
+其中 `runtime-snapshot.json` 和 `last-failure.json` 是观测产物，不是配置源。
 
-- “Python runtime 直接读取统一配置中心分域文件”
-- “Python runtime 直接读取 settings workspace 持久化文档”
+## Electron 主进程在后端视角下承担三件事
 
-### settings workspace 在这条边界里的位置
+### 它是配置 owner
 
-settings workspace 已经为设置页提供了大范围持久化层，但这层当前仍然属于 Electron 主进程 owner。
+主进程维护统一配置中心和 settings workspace 文档，并决定哪些字段可以进入公开快照，哪些字段只留在 secrets 存储里。
 
-这意味着：
+### 它是 runtime launcher
 
-- renderer 可以通过 preload 读写这些设置页状态与 secret 状态
-- 主进程负责把它们保存到 `config-center/settings-workspace-state.json` 和 `config-center/settings-workspace-secrets.json`
-- Python runtime 当前不会自己读取这些文档来决定运行参数
+主进程负责准备目录、构造启动参数、拉起 Python 子进程，并整理 hosted backend 的状态快照给 renderer 使用。
 
-因此现在不能把“设置页很多字段已经能保存”直接写成“后端运行时已经直接采用这些字段”。
+### 它是参数投影者
 
-### `copilot-settings.json` 现在还剩什么作用
+主进程可以把宿主层已有的配置字段投影为 Python runtime 的启动参数。当前最典型的一条链路是 `backendExposed.model`。
 
-旧 `copilot-settings.json` 当前主要只剩：
+## 模型配置现在有两层语义
 
-- 主进程内部迁移输入源
+当前文档里最容易写错的一点，就是把“宿主给 runtime 的启动模型”与“聊天请求里的本次模型”写成同一层。
 
-也就是说：
+### 启动层的模型
 
-- 它不是 renderer 当前正式接口
-- 也不是 runtime 当前正式配置源
-- 它只是帮助新配置中心首次落盘时承接旧字段
+Electron 主进程启动 Python runtime 时，会先做一层模型解析：
 
-### `backendExposed.model` 现在怎样进入 runtime
+1. 显式传入的 runtime 模型优先。
+2. 然后才是配置中心里的 `backendExposed.model`。
+3. 最后才回退到环境变量兼容键。
 
-这条链路当前是：
+解析完成后，主进程会把结果投影为 `--model` 传给 Python runtime。
 
-1. 设置页把值写入配置中心 `backendExposed.model`
-2. Electron 主进程读取这个字段
-3. 宿主在下一次完整启动时决定是否把它投影为 `--model`
-4. Python runtime 继续像处理普通 CLI 参数一样处理它
+### 请求层的模型与工具策略
 
-所以这里增加的是：
+当前正式聊天主路径里，`message/send` 仍然会在请求体里显式带上本次 `model` 和 `enabledTools`。这说明：
 
-- **宿主参数投影层**
+- 启动时的 `--model` 仍然有 runtime 默认值和兼容入口的意义。
+- 当前正式聊天请求仍然采用请求级模型和工具策略。
+- 文档不适合把启动参数和每次消息的执行策略写成一层配置。
 
-不是：
+## 当前安全与宿主边界
 
-- **runtime 自己去读配置文件层**
+### 服务仍然只监听 loopback
 
-### secrets 当前仍然属于主进程 owner 范围
+runtime 当前只允许 `127.0.0.1`、`localhost` 和 `::1` 这类 loopback 地址。非 loopback 地址会在启动阶段直接被拒绝。
 
-provider API key 和 SUSTech CAS password 当前都保存在 settings workspace secrets 文档里。
+### diagnostics 可以受 local token 保护
 
-这层边界需要继续写清楚：
+如果启动时带了 `--local-token`，`/diagnostics` 和 `/diagnostics/runtime-info` 需要请求头 `X-Local-Token`。这个 token 不会作为公开配置快照的一部分暴露给 renderer。
 
-- secret 当前由 Electron 主进程读写和保管
-- secret 不进入公开配置快照
-- secret 也不是当前 Python runtime 诊断响应里的公开配置来源
+### Electron 打包场景有单独的 CORS 处理
 
-## 当前聊天主路径对后端意味着什么
+服务端会允许桌面场景需要的 loopback origin，并对打包应用中常见的 `Origin: null` 做额外校验。这里只保留结论，完整生命周期请看[运行时生命周期](../system/runtime-lifecycle.md)。
 
-当前前端正式聊天主路径已经是：
-
-- `agents/list`
-- `session/create`
-- `capabilities/get`
-- `message/send`
-
-这对后端的含义是：
-
-### 1. 智能体目录真源在后端
-
-runtime 现在需要对外提供当前智能体目录，而不是默认前端自己写死一份主路径真源。
-
-### 2. 会话要绑定智能体
-
-一旦会话创建成功，该会话就和 `boundAgent` 绑定。后续消息如果携带不一致的 agent 校验值，会报错。
-
-### 3. 模型与工具是请求级策略
-
-当前每条 `message/send` 请求都可以显式给出：
-
-- `model`
-- `enabledTools`
-- `requestOptions`
-
-因此当前运行时默认模型只是“启动时默认条件”的一部分，不等于每次消息的最终执行模型。
-
-## 安全边界
-
-### Loopback-only
-
-当前 runtime 仍然强制 loopback-only：
-
-- 只允许绑定 `127.0.0.1`、`localhost`、`::1`
-- 非 loopback 地址会直接被拒绝
-
-### CORS 与 Electron 场景
-
-当前服务端会对桌面场景做专门处理：
-
-- 只允许 loopback origin
-- 对 Electron 打包应用常见的 `Origin: null` 做专门判断
-- 不会把任意 `null` origin 都放行
-
-### Local Token
-
-如果配置了 `--local-token`：
-
-- `/diagnostics` 和 `/diagnostics/runtime-info` 需要 `X-Local-Token`
-- token 不会写进诊断响应和日志明文
-
-## 开发运行示例
+## 直接运行时最常用的命令
 
 ### 最小启动
 
@@ -323,37 +164,31 @@ runtime 现在需要对外提供当前智能体目录，而不是默认前端自
 uv run --directory backend python -m app.desktop_runtime
 ```
 
-### 显式指定模型与目录
+### 显式指定模型和目录
 
 ```bash
 uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --root-dir ./backend/data/desktop-runtime-cli --model test
 ```
 
-### 验证运行状态
+### 验证控制面
 
-启动后可以访问：
+```text
+http://127.0.0.1:8765/health
+http://127.0.0.1:8765/ready
+http://127.0.0.1:8765/version
+http://127.0.0.1:8765/diagnostics
+```
 
-- `http://127.0.0.1:8765/health`
-- `http://127.0.0.1:8765/ready`
-- `http://127.0.0.1:8765/version`
-- `http://127.0.0.1:8765/diagnostics`
+## 这页想帮助你先建立什么判断
 
-## 当前不要再写成这些说法
-
-下面这些说法当前都不准确：
-
-- “Python runtime 会直接读取统一配置中心文件。”
-- “Python runtime 会直接读取 settings workspace state / secrets 文档。”
-- “`copilot-settings.json` 仍然是现行正式配置文件。”
-- “所有前端设置都已经进入后端运行时配置。”
-- “provider API key 和 CAS password 会出现在公开配置快照里。”
-- “前端每次消息使用的模型等同于 runtime 启动时的 `--model`。”
-- “当前聊天主路径仍然主要是旧 `agent/run`。”
+- `backend/data` 只是一种 CLI 默认语境，不代表桌面正式运行路径。
+- 桌面正式运行时，路径更常由 Electron 主进程根据 `CanDue` 的 `userData` 派生并显式传入。
+- Python runtime 当前不会直接读取统一配置中心或 settings workspace 文档。
+- 当前正式聊天主路径仍然保留请求级模型和工具策略，不会被启动参数合并成一层。
 
 ## 相关文档
 
-- [聊天运行时契约](../system/chat-runtime-contract.md)
-- [系统架构总览](../system/architecture-overview.md)
-- [会话与状态模型](../system/session-and-state-model.md)
-- [前端路线图与占位说明](../frontend/roadmap-and-placeholders.md)
-- [当前可观察契约参考](./reference-current-contracts.md)
+- [后端模块布局](./module-layout.md)
+- [后端暴露契约与前端接入点](./frontend-connection.md)
+- [运行与配置参考](./reference-run-and-config.md)
+- [运行时生命周期](../system/runtime-lifecycle.md)
