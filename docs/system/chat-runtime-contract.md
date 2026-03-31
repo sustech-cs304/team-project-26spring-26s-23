@@ -299,7 +299,7 @@ Electron 怎样启动这个 runtime，见 [运行时生命周期](./runtime-life
 | `message.role` | 当前必须是 `user`。 |
 | `message.content` | 必须是非空文本。 |
 | `model` | 必须是非空字符串。 |
-| `enabledTools` | 可选；如果提供，必须是非空字符串数组。 |
+| `enabledTools` | 可选；如果提供，必须是字符串数组；数组元素如果存在，必须是非空字符串。 |
 | `requestOptions` | 可选；如果提供，必须是对象。 |
 
 ### 响应示例

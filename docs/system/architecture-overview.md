@@ -34,7 +34,7 @@ sidebar_position: 1
 
 renderer 负责页面装配和交互，而不直接持有底层文件或 secrets：
 
-- 它会在启动时读取公开配置快照与 runtime 快照，决定应用当前处于 `loading`、`starting`、`ready`、`failed`、`degraded`、`empty` 或 `incomplete` 哪一类状态。
+- 它会在启动时读取公开配置快照与 runtime 快照，决定应用当前处于 `loading`、`starting`、`ready`、`failed`、`degraded`、`error`、`empty` 或 `incomplete` 哪一类状态。
 - 它会订阅公开配置快照更新，并在配置变化后重新计算根装配状态。
 - 它会承载助手工作区与设置工作区。
 - 它会在存在可用 `runtimeUrl` 时进入聊天主路径。
