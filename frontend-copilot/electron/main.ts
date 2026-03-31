@@ -16,6 +16,7 @@ import { createMainRuntimeLogger, formatUnknownError } from './main-runtime-log'
 import { createMainProcessServices } from './main-services'
 import { createMainWindow } from './main-window'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
+import { createHostModelRouteBridge, type HostModelRouteBridge } from './runtime/host-model-route-bridge'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime/runtime-paths'
 import { isHostedBackendFailure, type HostedBackendFailure } from './runtime/runtime-diagnostics'
@@ -50,6 +51,8 @@ app.setName(ELECTRON_APPLICATION_NAME)
 let win: BrowserWindow | null = null
 let hostedBackendService: HostedBackendService | null = null
 let hostedBackendServicePromise: Promise<HostedBackendService> | null = null
+let hostModelRouteBridge: HostModelRouteBridge | null = null
+let hostModelRouteBridgePromise: Promise<HostModelRouteBridge> | null = null
 let runtimePaths: HostedRuntimePaths | null = null
 let quitSequenceStarted = false
 let hostedBackendStartupInFlight = false
@@ -134,6 +137,33 @@ async function retryCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   }
 }
 
+async function ensureHostModelRouteBridge(): Promise<HostModelRouteBridge> {
+  if (hostModelRouteBridge !== null) {
+    return hostModelRouteBridge
+  }
+
+  if (hostModelRouteBridgePromise !== null) {
+    return await hostModelRouteBridgePromise
+  }
+
+  hostModelRouteBridgePromise = (async () => {
+    const bridge = await createHostModelRouteBridge({
+      async resolveProviderRoute(request) {
+        return await mainProcessServices.resolveSettingsWorkspaceProviderRoute(request)
+      },
+    })
+
+    hostModelRouteBridge = bridge
+    return bridge
+  })()
+
+  try {
+    return await hostModelRouteBridgePromise
+  } finally {
+    hostModelRouteBridgePromise = null
+  }
+}
+
 async function ensureHostedBackendService(): Promise<HostedBackendService> {
   if (hostedBackendService !== null) {
     return hostedBackendService
@@ -146,7 +176,7 @@ async function ensureHostedBackendService(): Promise<HostedBackendService> {
   hostedBackendServicePromise = (async () => {
     const paths = getHostedRuntimePaths()
     const runtimeCommandLineOptions = resolveHostedRuntimeCommandLineOptions()
-    const configuredModel = await mainProcessServices.loadConfiguredHostedRuntimeModel()
+    const routeBridge = await ensureHostModelRouteBridge()
 
     const service = createHostedBackendService({
       appRoot: APP_ROOT,
@@ -158,8 +188,8 @@ async function ensureHostedBackendService(): Promise<HostedBackendService> {
       appMode: runtimeCommandLineOptions.appMode,
       environment: runtimeCommandLineOptions.environment,
       localToken: runtimeCommandLineOptions.localToken,
-      model: runtimeCommandLineOptions.model,
-      configuredModel,
+      hostModelRouteBridgeUrl: routeBridge.bootstrap.url,
+      hostModelRouteBridgeToken: routeBridge.bootstrap.token,
     })
 
     hostedBackendService = service
@@ -202,8 +232,20 @@ async function startHostedBackend(): Promise<void> {
   }
 }
 
+async function stopHostModelRouteBridge(): Promise<void> {
+  if (hostModelRouteBridge === null) {
+    return
+  }
+
+  const activeBridge = hostModelRouteBridge
+  hostModelRouteBridge = null
+  hostModelRouteBridgePromise = null
+  await activeBridge.stop()
+}
+
 async function stopHostedBackend(): Promise<void> {
   if (hostedBackendService === null) {
+    await stopHostModelRouteBridge()
     return
   }
 
@@ -211,17 +253,21 @@ async function stopHostedBackend(): Promise<void> {
     await hostedBackendService.stop()
   } catch (error) {
     logHostedBackendFailure('Hosted backend shutdown threw an unexpected error.', null, error)
-    return
   }
 
   const state = hostedBackendService.getState()
 
   if (state.status === 'failed' && state.lastFailure !== null) {
     logHostedBackendFailure('Hosted backend shutdown completed with a recorded failure.', state.lastFailure)
-    return
+  } else {
+    logHostedBackendState('Hosted backend stopped.', state)
   }
 
-  logHostedBackendState('Hosted backend stopped.', state)
+  try {
+    await stopHostModelRouteBridge()
+  } catch (error) {
+    logHostedBackendFailure('Host model route bridge shutdown threw an unexpected error.', null, error)
+  }
 }
 
 function registerApplicationLifecycleHandlers() {

@@ -37,6 +37,7 @@ from app.desktop_runtime.health import (  # noqa: E402
     build_readiness_contract,
     build_version_contract,
 )
+from app.desktop_runtime.host_model_route_bridge import HostModelRouteBridgeClient  # noqa: E402
 from app.desktop_runtime.lifecycle import RuntimeLifecycleManager  # noqa: E402
 
 
@@ -82,6 +83,10 @@ def create_app(
         runtime_config = parse_runtime_config([], env=os.environ, cwd=BACKEND_DIR)
 
     lifecycle_manager = RuntimeLifecycleManager(runtime_config)
+    host_model_route_bridge_client = HostModelRouteBridgeClient(
+        bridge_url=runtime_config.host_model_route_bridge_url,
+        bridge_token=runtime_config.host_model_route_bridge_token,
+    )
     runtime_dependencies = build_default_runtime_dependencies(
         runtime_config=runtime_config,
         session_store=session_store,
@@ -98,6 +103,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.runtime_config = runtime_config
         app.state.lifecycle_manager = lifecycle_manager
+        app.state.host_model_route_bridge_client = host_model_route_bridge_client
         app.state.copilot_runtime_dependencies = runtime_dependencies
         app.state.copilot_runtime_scaffold = runtime_scaffold
         app.state.copilot_runtime_session_store = runtime_session_store

@@ -21,6 +21,8 @@ export interface HostedRuntimeLaunchConfig {
   port: number
   localToken: string
   model: string | null
+  hostModelRouteBridgeUrl: string | null
+  hostModelRouteBridgeToken: string | null
   args: string[]
   baseUrl: string
   readyUrl: string
@@ -43,6 +45,7 @@ export interface SanitizedHostedRuntimeLaunchConfig {
   environment: string
   localTokenConfigured: boolean
   modelConfigured: boolean
+  hostModelRouteBridgeConfigured: boolean
   paths: SanitizedHostedRuntimePaths
 }
 
@@ -54,6 +57,8 @@ export interface HostedRuntimeLaunchConfigOptions {
   localToken?: string
   model?: string | null
   configuredModel?: string | null
+  hostModelRouteBridgeUrl?: string | null
+  hostModelRouteBridgeToken?: string | null
   appMode?: string
   environment?: string
   paths?: HostedRuntimePaths
@@ -81,17 +86,23 @@ export function createHostedRuntimeLaunchConfig(
   const environment = options.environment ?? DEFAULT_RUNTIME_ENVIRONMENT
   const paths = options.paths ?? createHostedRuntimePaths(options.userDataPath)
   const baseUrl = formatRuntimeBaseUrl(host, options.port)
+  const hostModelRouteBridgeUrl = options.hostModelRouteBridgeUrl ?? null
+  const hostModelRouteBridgeToken = options.hostModelRouteBridgeToken ?? null
 
   return {
     host,
     port: options.port,
     localToken,
     model,
+    hostModelRouteBridgeUrl,
+    hostModelRouteBridgeToken,
     args: buildDesktopRuntimeArguments({
       host,
       port: options.port,
       localToken,
       model,
+      hostModelRouteBridgeUrl,
+      hostModelRouteBridgeToken,
       appMode,
       environment,
       paths,
@@ -121,6 +132,8 @@ export function sanitizeHostedRuntimeLaunchConfig(
     environment: config.environment,
     localTokenConfigured: config.localToken.trim() !== '',
     modelConfigured: config.model !== null,
+    hostModelRouteBridgeConfigured:
+      config.hostModelRouteBridgeUrl !== null && (config.hostModelRouteBridgeToken?.trim() ?? '') !== '',
     paths: sanitizeHostedRuntimePaths(config.paths),
   }
 }

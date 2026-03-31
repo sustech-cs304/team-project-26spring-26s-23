@@ -1,5 +1,10 @@
 import type { SettingsWorkspacePaths } from './paths'
 import {
+  resolveSettingsWorkspaceProviderRoute,
+  type SettingsWorkspaceProviderRouteResolveRequest,
+  type SettingsWorkspaceProviderRouteResolveResult,
+} from './provider-route-resolver'
+import {
   type SettingsWorkspaceProviderSecretState,
   type SettingsWorkspaceProviderSecretStateById,
   type SettingsWorkspaceSustechCasSecretState,
@@ -42,6 +47,9 @@ export interface SettingsWorkspaceStorage {
   clearSustechCasSecret: () => Promise<{
     state: SettingsWorkspaceSustechCasSecretState
   }>
+  resolveProviderRoute: (
+    request: SettingsWorkspaceProviderRouteResolveRequest,
+  ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
 }
 
 export interface CreateSettingsWorkspaceStorageOptions {
@@ -56,6 +64,19 @@ export function createSettingsWorkspaceStorage(
   const stateStorage = createSettingsWorkspaceStateStorage(documentIO)
   const secretStorage = createSettingsWorkspaceSecretStorage(documentIO)
 
+  const resolveProviderRoute = async (
+    request: SettingsWorkspaceProviderRouteResolveRequest,
+  ): Promise<SettingsWorkspaceProviderRouteResolveResult> => {
+    const { state } = await stateStorage.loadState()
+    const { states } = await secretStorage.loadSecretStates([request.providerProfileId])
+
+    return resolveSettingsWorkspaceProviderRoute({
+      state,
+      secretStates: states,
+      request,
+    })
+  }
+
   return {
     loadState: stateStorage.loadState,
     saveState: stateStorage.saveState,
@@ -65,5 +86,6 @@ export function createSettingsWorkspaceStorage(
     clearProviderSecret: secretStorage.clearProviderSecret,
     saveSustechCasSecret: secretStorage.saveSustechCasSecret,
     clearSustechCasSecret: secretStorage.clearSustechCasSecret,
+    resolveProviderRoute,
   }
 }

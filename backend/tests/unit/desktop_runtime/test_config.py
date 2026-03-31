@@ -45,6 +45,8 @@ def test_parse_runtime_config_defaults_to_loopback_and_backend_data_dir() -> Non
     assert config.port == DEFAULT_PORT
     assert config.local_token is None
     assert config.model is None
+    assert config.host_model_route_bridge_url is None
+    assert config.host_model_route_bridge_token is None
     assert config.app_mode == DEFAULT_APP_MODE
     assert config.environment == DEFAULT_ENVIRONMENT
     assert config.user_data_dir == DEFAULT_USER_DATA_DIR.resolve()
@@ -153,6 +155,10 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
             str(tmp_path / "cli-snapshot.json"),
             "--last-failure-file",
             str(tmp_path / "cli-last-failure.json"),
+            "--host-model-route-bridge-url",
+            "http://127.0.0.1:45678/host/private/provider-routes/resolve",
+            "--host-model-route-bridge-token",
+            "bridge-token-123",
             "--model",
             "cli-model",
             "--local-token",
@@ -166,6 +172,8 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
     assert config.port == 9012
     assert config.local_token == "cli-secret"
     assert config.model == "cli-model"
+    assert config.host_model_route_bridge_url == "http://127.0.0.1:45678/host/private/provider-routes/resolve"
+    assert config.host_model_route_bridge_token == "bridge-token-123"
     assert config.user_data_dir == (tmp_path / "cli-data").resolve()
     assert config.runtime_root_dir == (tmp_path / "cli-root").resolve()
     assert config.config_dir == (tmp_path / "cli-config").resolve()

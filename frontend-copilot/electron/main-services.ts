@@ -27,6 +27,7 @@ import type {
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
 } from './settings-workspace/ipc'
+import type { SettingsWorkspaceProviderRouteResolveRequest, SettingsWorkspaceProviderRouteResolveResult } from './settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/state-schema'
 import type { HostedRuntimePaths } from './runtime/runtime-paths'
 
@@ -63,6 +64,9 @@ export interface MainProcessServices {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  resolveSettingsWorkspaceProviderRoute: (
+    request: SettingsWorkspaceProviderRouteResolveRequest,
+  ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
   loadConfiguredHostedRuntimeModel: () => Promise<string | null>
 }
 
@@ -144,6 +148,11 @@ export function createMainProcessServices(
     },
     async clearSettingsWorkspaceSustechCasSecret(): Promise<SettingsWorkspaceSustechCasSecretMutationResult> {
       return await getSettingsWorkspaceService().clearSustechCasSecret()
+    },
+    async resolveSettingsWorkspaceProviderRoute(
+      request: SettingsWorkspaceProviderRouteResolveRequest,
+    ): Promise<SettingsWorkspaceProviderRouteResolveResult> {
+      return await getSettingsWorkspaceService().resolveProviderRoute(request)
     },
     loadConfiguredHostedRuntimeModel,
   }

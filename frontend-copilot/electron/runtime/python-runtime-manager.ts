@@ -74,6 +74,8 @@ export interface PythonRuntimeManagerOptions extends PythonRuntimeResolverContex
   model?: string | null
   configuredModel?: string | null
   localToken?: string
+  hostModelRouteBridgeUrl?: string | null
+  hostModelRouteBridgeToken?: string | null
   startupTimeoutMs?: number
   shutdownTimeoutMs?: number
   healthcheckIntervalMs?: number
@@ -89,6 +91,8 @@ interface ResolvedPythonRuntimeManagerOptions extends PythonRuntimeResolverConte
   model?: string | null
   configuredModel?: string | null
   localToken?: string
+  hostModelRouteBridgeUrl?: string | null
+  hostModelRouteBridgeToken?: string | null
   startupTimeoutMs: number
   shutdownTimeoutMs: number
   healthcheckIntervalMs: number
@@ -255,6 +259,8 @@ export class PythonRuntimeManager {
       model: this.options.model,
       configuredModel: this.options.configuredModel,
       localToken: this.options.localToken,
+      hostModelRouteBridgeUrl: this.options.hostModelRouteBridgeUrl,
+      hostModelRouteBridgeToken: this.options.hostModelRouteBridgeToken,
       paths: this.runtimePaths,
     })
 
@@ -501,7 +507,10 @@ export class PythonRuntimeManager {
   }
 
   private getSensitiveValues(): string[] {
-    return collectSensitiveValues(this.launchConfig?.localToken)
+    return collectSensitiveValues(
+      this.launchConfig?.localToken,
+      this.launchConfig?.hostModelRouteBridgeToken,
+    )
   }
 
   private async persistObservability(

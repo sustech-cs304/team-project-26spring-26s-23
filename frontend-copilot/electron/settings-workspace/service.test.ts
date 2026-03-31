@@ -224,4 +224,128 @@ describe('createSettingsWorkspaceStorage', () => {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
   })
+
+  it('resolves provider routes from stable ids plus route snapshots without leaking secrets into public snapshots', async () => {
+    const fixture = await createSettingsWorkspaceFixture()
+
+    try {
+      await fixture.storage.loadState()
+      const persistedProvider = createProviderProfile({
+        id: 'resolved-provider',
+        protocol: 'openai',
+        endpoint: 'https://resolved.example.com/v1/',
+        defaultModel: 'gpt-4.1',
+        fastModel: 'gpt-4.1-mini',
+        fallbackModel: 'gpt-4.1-mini',
+      })
+      await fixture.storage.saveState({
+        ...(await fixture.storage.loadState()).state,
+        providerProfiles: [persistedProvider],
+      })
+      await fixture.storage.saveProviderSecret('resolved-provider', 'resolved-secret')
+
+      await expect(fixture.storage.resolveProviderRoute({
+        providerProfileId: 'resolved-provider',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://resolved.example.com/v1',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toEqual({
+        ok: true,
+        route: {
+          providerProfileId: 'resolved-provider',
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://resolved.example.com/v1',
+          modelId: 'gpt-4.1',
+          auth: {
+            apiKey: 'resolved-secret',
+          },
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        providerProfileId: 'missing-provider',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://resolved.example.com/v1',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'provider_profile_not_found',
+          message: "Provider profile 'missing-provider' does not exist.",
+          details: {
+            providerProfileId: 'missing-provider',
+          },
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        providerProfileId: 'resolved-provider',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://drifted.example.com/v1',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'route_snapshot_mismatch',
+          message: "Provider profile 'resolved-provider' no longer matches the requested route snapshot.",
+          details: {
+            providerProfileId: 'resolved-provider',
+            mismatches: [
+              {
+                field: 'baseUrl',
+                expected: 'https://resolved.example.com/v1',
+                actual: 'https://drifted.example.com/v1',
+              },
+            ],
+          },
+        },
+      })
+
+      await fixture.storage.clearProviderSecret('resolved-provider')
+      await expect(fixture.storage.resolveProviderRoute({
+        providerProfileId: 'resolved-provider',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://resolved.example.com/v1',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toEqual({
+        ok: false,
+        error: {
+          code: 'provider_secret_missing',
+          message: "Provider profile 'resolved-provider' is missing an API key.",
+          details: {
+            providerProfileId: 'resolved-provider',
+          },
+        },
+      })
+
+      const unifiedConfigService = createElectronUnifiedConfigService({
+        prepareRuntimePaths: async () => fixture.hostedPaths,
+      })
+      const publicSnapshotResult = await unifiedConfigService.loadPublicSnapshot()
+      expect(publicSnapshotResult.ok).toBe(true)
+      if (!publicSnapshotResult.ok) {
+        throw new Error('Expected config center public snapshot load to succeed.')
+      }
+
+      const publicSnapshotJson = JSON.stringify(publicSnapshotResult.snapshot)
+      expect(publicSnapshotJson).not.toContain('resolved-secret')
+      expect(publicSnapshotJson).not.toContain('resolved-provider')
+      expect(publicSnapshotJson).not.toContain('apiKey')
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
 })
