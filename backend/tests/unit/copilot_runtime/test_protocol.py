@@ -89,7 +89,7 @@ def test_extract_capabilities_get_request_requires_session_id() -> None:
     assert exc.error.error.details == {"field": "sessionId"}
 
 
-def test_extract_message_send_request_reads_request_scoped_fields() -> None:
+def test_extract_message_send_request_reads_model_route_policy_fields() -> None:
     parser = _build_parser()
 
     request = parser.extract_message_send_request(
@@ -97,11 +97,21 @@ def test_extract_message_send_request_reads_request_scoped_fields() -> None:
             "method": "message/send",
             "body": {
                 "sessionId": "session-123",
-                "agent": "default",
+                "agentId": "default",
                 "message": {"role": "user", "content": "Hello"},
-                "model": "openai/gpt-4.1",
-                "enabledTools": ["tool.file-convert"],
-                "requestOptions": {"temperature": 0.2},
+                "policy": {
+                    "modelRoute": {
+                        "providerProfileId": "provider-1",
+                        "snapshot": {
+                            "provider": "openai",
+                            "endpointType": "openai-compatible",
+                            "baseUrl": "https://example.com/v1",
+                            "modelId": "gpt-4.1",
+                        },
+                    },
+                    "enabledTools": ["tool.file-convert"],
+                    "requestOptions": {"temperature": 0.2},
+                },
             },
         }
     )
@@ -110,10 +120,35 @@ def test_extract_message_send_request_reads_request_scoped_fields() -> None:
     assert request.agent_id == "default"
     assert request.message.role == "user"
     assert request.message.content == "Hello"
-    assert request.policy.model == "openai/gpt-4.1"
+    assert request.policy.modelRoute.provider_profile_id == "provider-1"
+    assert request.policy.modelRoute.snapshot.provider == "openai"
+    assert request.policy.modelRoute.snapshot.endpoint_type == "openai-compatible"
+    assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
+    assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
     assert request.policy.enabledTools == ("tool.file-convert",)
     assert request.policy.requestOptions == {"temperature": 0.2}
 
+
+def test_extract_message_send_request_requires_model_route_policy_object() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_message_send_request(
+            {
+                "method": "message/send",
+                "body": {
+                    "sessionId": "session-123",
+                    "message": {"role": "user", "content": "Hello"},
+                    "policy": {},
+                },
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_request"
+    assert exc.error.error.requestedMethod == "message/send"
+    assert exc.error.error.details == {"field": "policy.modelRoute"}
 
 
 def test_extract_message_send_request_requires_user_text_message() -> None:
@@ -126,7 +161,17 @@ def test_extract_message_send_request_requires_user_text_message() -> None:
                 "body": {
                     "sessionId": "session-123",
                     "message": {"role": "assistant", "content": "Nope"},
-                    "model": "openai/gpt-4.1",
+                    "policy": {
+                        "modelRoute": {
+                            "providerProfileId": "provider-1",
+                            "snapshot": {
+                                "provider": "openai",
+                                "endpointType": "openai-compatible",
+                                "baseUrl": "https://example.com/v1",
+                                "modelId": "gpt-4.1",
+                            },
+                        }
+                    },
                 },
             }
         )
@@ -136,7 +181,6 @@ def test_extract_message_send_request_requires_user_text_message() -> None:
     assert exc.error.error.code == "unsupported_message_shape"
     assert exc.error.error.requestedMethod == "message/send"
     assert exc.error.error.details == {"field": "message.role", "role": "assistant"}
-
 
 
 def test_extract_run_request_normalizes_latest_user_message_text_parts() -> None:

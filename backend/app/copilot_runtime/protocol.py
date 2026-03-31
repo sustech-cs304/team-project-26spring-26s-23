@@ -23,6 +23,7 @@ from .contracts import (
     RuntimeScaffold,
     RuntimeSessionCreateRequest,
 )
+from .model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
 from .errors import (
     RuntimeErrorResponse,
     build_agent_not_found_error,
@@ -276,12 +277,12 @@ class RuntimeProtocolParser:
             requested_method=MESSAGE_SEND_METHOD,
         )
 
-        raw_agent_id = request_body.get("agent")
+        raw_agent_id = request_body.get("agentId", request_body.get("agent"))
         agent_id: str | None = None
         if raw_agent_id is not None:
             agent_id = self._require_non_empty_string(
                 raw_agent_id,
-                field_name="agent",
+                field_name="agentId",
                 requested_method=MESSAGE_SEND_METHOD,
             )
 
@@ -522,11 +523,24 @@ class RuntimeProtocolParser:
     ) -> dict[str, Any]:
         if value is None:
             return {}
+        return self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+
+    def _require_object(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
-                    message=f"Runtime request field '{field_name}' must be an object when provided.",
+                    message=f"Runtime request field '{field_name}' must be an object.",
                     scaffold=self._scaffold,
                     requested_method=requested_method,
                     details={"field": field_name},
@@ -611,26 +625,76 @@ class RuntimeProtocolParser:
         self,
         request_body: dict[str, Any],
     ) -> RuntimeMessageExecutionPolicy:
-        model = self._require_non_empty_string(
-            request_body.get("model"),
-            field_name="model",
+        policy = self._require_object(
+            request_body.get("policy"),
+            field_name="policy",
             requested_method=MESSAGE_SEND_METHOD,
         )
-
+        model_route = self._extract_model_route(
+            policy.get("modelRoute"),
+            field_name="policy.modelRoute",
+        )
         enabled_tools = self._optional_list_of_strings(
-            request_body.get("enabledTools"),
-            field_name="enabledTools",
+            policy.get("enabledTools"),
+            field_name="policy.enabledTools",
             requested_method=MESSAGE_SEND_METHOD,
         )
         request_options = self._optional_object(
-            request_body.get("requestOptions"),
-            field_name="requestOptions",
+            policy.get("requestOptions"),
+            field_name="policy.requestOptions",
             requested_method=MESSAGE_SEND_METHOD,
         )
         return RuntimeMessageExecutionPolicy(
-            model=model,
+            modelRoute=model_route,
             enabledTools=enabled_tools,
             requestOptions=request_options,
+        )
+
+    def _extract_model_route(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+    ) -> RuntimeModelRoute:
+        route = self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+        provider_profile_id = self._require_non_empty_string(
+            route.get("providerProfileId"),
+            field_name=f"{field_name}.providerProfileId",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+        snapshot = self._require_object(
+            route.get("snapshot"),
+            field_name=f"{field_name}.snapshot",
+            requested_method=MESSAGE_SEND_METHOD,
+        )
+        return RuntimeModelRoute(
+            provider_profile_id=provider_profile_id,
+            snapshot=RuntimeModelRouteSnapshot(
+                provider=self._require_non_empty_string(
+                    snapshot.get("provider"),
+                    field_name=f"{field_name}.snapshot.provider",
+                    requested_method=MESSAGE_SEND_METHOD,
+                ),
+                endpoint_type=self._require_non_empty_string(
+                    snapshot.get("endpointType"),
+                    field_name=f"{field_name}.snapshot.endpointType",
+                    requested_method=MESSAGE_SEND_METHOD,
+                ),
+                base_url=self._require_non_empty_string(
+                    snapshot.get("baseUrl"),
+                    field_name=f"{field_name}.snapshot.baseUrl",
+                    requested_method=MESSAGE_SEND_METHOD,
+                ),
+                model_id=self._require_non_empty_string(
+                    snapshot.get("modelId"),
+                    field_name=f"{field_name}.snapshot.modelId",
+                    requested_method=MESSAGE_SEND_METHOD,
+                ),
+            ),
         )
 
     def _extract_latest_user_message_text(self, messages: tuple[dict[str, Any], ...]) -> str:

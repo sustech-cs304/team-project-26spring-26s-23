@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, cast
 
 from .agent_registry import AgentRegistry, build_default_agent_registry
+from .model_routes import RuntimeModelRoute
 from .session_store import RuntimeSessionRecord
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
@@ -126,7 +127,7 @@ class RuntimeMessagePayload(RuntimeContract):
 
 @dataclass(frozen=True, slots=True)
 class RuntimeMessageExecutionPolicy(RuntimeContract):
-    model: str
+    modelRoute: RuntimeModelRoute
     enabledTools: tuple[str, ...] = ()
     requestOptions: dict[str, Any] = field(default_factory=dict)
 

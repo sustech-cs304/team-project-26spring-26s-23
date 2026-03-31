@@ -9,6 +9,12 @@ from .agent import PydanticAIAgentExecutor
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .bridge import RuntimeBridge
 from .contracts import RuntimeScaffold, build_runtime_scaffold
+from .message_runs import RuntimeMessageRunOrchestrator
+from .model_routes import (
+    HostModelRouteUnavailableError,
+    RuntimeModelRoute,
+    RuntimeModelRouteResolver,
+)
 from .session_store import InMemorySessionStore
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
@@ -24,8 +30,16 @@ class RuntimeDependencies:
     agent_registry: AgentRegistry
     tool_registry: ToolRegistry
     agent_executor: PydanticAIAgentExecutor
+    message_run_orchestrator: RuntimeMessageRunOrchestrator
     runtime_bridge: RuntimeBridge
     scaffold: RuntimeScaffold
+
+
+class _UnavailableRuntimeModelRouteResolver(RuntimeModelRouteResolver):
+    async def resolve(self, model_route: RuntimeModelRoute):
+        raise HostModelRouteUnavailableError(
+            detail="Host model route bridge bootstrap is not configured."
+        )
 
 
 def build_default_runtime_dependencies(
@@ -33,12 +47,14 @@ def build_default_runtime_dependencies(
     runtime_config: DesktopRuntimeConfig | None = None,
     session_store: InMemorySessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
+    model_route_resolver: RuntimeModelRouteResolver | None = None,
 ) -> RuntimeDependencies:
     """Create the default runtime object graph without adding protocol logic."""
 
     resolved_session_store = session_store or InMemorySessionStore()
     runtime_model = runtime_config.model if runtime_config is not None else None
     resolved_agent_executor = agent_executor or PydanticAIAgentExecutor(model=runtime_model)
+    resolved_model_route_resolver = model_route_resolver or _UnavailableRuntimeModelRouteResolver()
     tool_registry = build_default_tool_registry()
     agent_registry = build_default_agent_registry(
         executor_factory=lambda: resolved_agent_executor,
@@ -51,16 +67,24 @@ def build_default_runtime_dependencies(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
     )
+    message_run_orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=resolved_session_store,
+        agent_registry=agent_registry,
+        scaffold=scaffold,
+        model_route_resolver=resolved_model_route_resolver,
+    )
     runtime_bridge = RuntimeBridge(
         session_store=resolved_session_store,
         agent_registry=agent_registry,
         scaffold=scaffold,
+        message_run_orchestrator=message_run_orchestrator,
     )
     return RuntimeDependencies(
         session_store=resolved_session_store,
         agent_registry=agent_registry,
         tool_registry=tool_registry,
         agent_executor=resolved_agent_executor,
+        message_run_orchestrator=message_run_orchestrator,
         runtime_bridge=runtime_bridge,
         scaffold=scaffold,
     )

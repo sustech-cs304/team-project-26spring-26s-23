@@ -11,11 +11,25 @@ class RuntimeModelRouteSnapshot:
     base_url: str
     model_id: str
 
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "provider": self.provider,
+            "endpointType": self.endpoint_type,
+            "baseUrl": self.base_url,
+            "modelId": self.model_id,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeModelRoute:
     provider_profile_id: str
     snapshot: RuntimeModelRouteSnapshot
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "providerProfileId": self.provider_profile_id,
+            "snapshot": self.snapshot.to_dict(),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +40,17 @@ class ResolvedRuntimeModelRoute:
     base_url: str
     model_id: str
     api_key: str
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "providerProfileId": self.provider_profile_id,
+            "snapshot": {
+                "provider": self.provider,
+                "endpointType": self.endpoint_type,
+                "baseUrl": self.base_url,
+                "modelId": self.model_id,
+            },
+        }
 
 
 class RuntimeModelRouteResolver(Protocol):

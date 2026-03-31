@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+from collections.abc import AsyncIterable, Iterable
+from typing import Any
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -40,6 +41,7 @@ from .errors import (
     build_tool_not_found_error,
 )
 from .protocol import RuntimeProtocolError, RuntimeProtocolParser
+from .run_events import RuntimeRunEvent, encode_runtime_run_events
 from .session_store import InMemorySessionStore
 
 
@@ -82,7 +84,7 @@ def build_router(
             )
 
         if requested_method == MESSAGE_SEND_METHOD:
-            return await _handle_message_send_request(
+            return _handle_message_send_request(
                 parser=parser,
                 payload=payload,
                 scaffold=scaffold,
@@ -132,7 +134,6 @@ def _handle_session_create_request(
     return JSONResponse(content=scaffold.build_session_create_response(session=session_record).to_dict())
 
 
-
 def _handle_capabilities_get_request(
     *,
     parser: RuntimeProtocolParser,
@@ -169,78 +170,21 @@ def _handle_capabilities_get_request(
     return JSONResponse(content=capabilities.to_dict())
 
 
-
-async def _handle_message_send_request(
+def _handle_message_send_request(
     *,
     parser: RuntimeProtocolParser,
     payload: dict[str, Any] | None,
     scaffold: RuntimeScaffold,
     runtime_bridge: RuntimeBridge,
-) -> JSONResponse:
+) -> JSONResponse | StreamingResponse:
     try:
         message_send_request = parser.extract_message_send_request(payload)
     except RuntimeProtocolError as exc:
         return _error_response(exc.status_code, exc.error)
 
     try:
-        bridge_result = await runtime_bridge.send_message(request=message_send_request)
-    except SessionNotFoundError as exc:
-        return _error_response(
-            status.HTTP_404_NOT_FOUND,
-            build_session_not_found_error(
-                session_id=exc.session_id,
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except BoundAgentMismatchError as exc:
-        return _error_response(
-            status.HTTP_409_CONFLICT,
-            build_agent_mismatch_error(
-                session_id=exc.session_id,
-                bound_agent_id=exc.expected_agent_id,
-                requested_agent_id=exc.actual_agent_id,
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except ToolNotFoundError as exc:
-        return _error_response(
-            status.HTTP_400_BAD_REQUEST,
-            build_tool_not_found_error(
-                tool_id=exc.tool_id,
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except AgentNotFoundError as exc:
-        return _error_response(
-            status.HTTP_404_NOT_FOUND,
-            build_agent_not_found_error(
-                agent_name=exc.agent_name,
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except ModelNotConfiguredError as exc:
-        return _error_response(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            build_model_not_configured_error(
-                message=str(exc),
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except InvalidSessionHistoryError as exc:
-        return _error_response(
-            status.HTTP_409_CONFLICT,
-            build_invalid_message_history_error(
-                message=str(exc),
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except AgentExecutionError as exc:
+        return _stream_runtime_run_events(runtime_bridge.stream_message(request=message_send_request))
+    except RuntimeError as exc:
         return _error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             build_agent_execution_failed_error(
@@ -249,26 +193,6 @@ async def _handle_message_send_request(
                 requested_method=MESSAGE_SEND_METHOD,
             ),
         )
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        return _error_response(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            build_agent_execution_failed_error(
-                message=f"Unexpected agent execution failure: {exc}",
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-
-    return JSONResponse(
-        content=scaffold.build_message_send_response(
-            session=bridge_result.session,
-            assistant_text=bridge_result.assistant_text,
-            resolved_model_id=bridge_result.resolved_model_id,
-            resolved_tool_ids=bridge_result.resolved_tool_ids,
-            request_options=bridge_result.request_options,
-        ).to_dict()
-    )
-
 
 
 def _handle_connect_request(
@@ -395,6 +319,14 @@ async def _handle_run_request(
             result=result,
             assistant_message_id=assistant_message_id,
         )
+    )
+
+
+def _stream_runtime_run_events(events: AsyncIterable[RuntimeRunEvent]) -> StreamingResponse:
+    return StreamingResponse(
+        encode_runtime_run_events(events),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
     )
 
 

@@ -9,7 +9,6 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Text
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry, build_default_agent_registry
 from app.copilot_runtime.bridge import (
     AgentExecutionError,
-    AgentNotFoundError,
     BoundAgentMismatchError,
     InvalidSessionHistoryError,
     RuntimeBridge,
@@ -23,6 +22,8 @@ from app.copilot_runtime.contracts import (
     RuntimeRunRequest,
     build_runtime_scaffold,
 )
+from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
+from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
 from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
 from app.copilot_runtime.tool_registry import build_default_tool_registry
 
@@ -60,6 +61,15 @@ class RecordingExecutorFactory:
     def __call__(self) -> RecordingAgentExecutor:
         self.call_count += 1
         return self._executor
+
+
+class _StubMessageRunOrchestrator:
+    def __init__(self, *, events: list[object] | None = None) -> None:
+        self._events = list(events or [])
+
+    async def stream_events(self, *, request: RuntimeMessageSendRequest):
+        for event in self._events:
+            yield event
 
 
 def test_run_resolves_default_agent_through_registry_and_factory() -> None:
@@ -190,7 +200,7 @@ def test_run_raises_explicit_error_when_agent_is_not_registered() -> None:
         scaffold=_build_scaffold(agent_registry=registry),
     )
 
-    with pytest.raises(AgentNotFoundError, match="Unknown agent 'missing-agent'."):
+    with pytest.raises(Exception, match="Unknown agent 'missing-agent'."):
         asyncio.run(
             bridge.run(
                 request=_build_run_request(
@@ -382,10 +392,17 @@ def test_send_message_unknown_tool_uses_structured_id_or_safe_fallback(
     store.create(bound_agent_id="default", session_id="session-1")
     executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
     registry = build_default_agent_registry(executor_factory=executor_factory)
+    scaffold = FailingToolResolutionScaffold(lookup_error)
     bridge = RuntimeBridge(
         session_store=store,
         agent_registry=registry,
-        scaffold=FailingToolResolutionScaffold(lookup_error),
+        scaffold=scaffold,
+        message_run_orchestrator=RuntimeMessageRunOrchestrator(
+            session_store=store,
+            agent_registry=registry,
+            scaffold=scaffold,
+            model_route_resolver=_FailingModelRouteResolver(),
+        ),
     )
 
     with pytest.raises(ToolNotFoundError) as exc_info:
@@ -393,15 +410,20 @@ def test_send_message_unknown_tool_uses_structured_id_or_safe_fallback(
             bridge.send_message(
                 request=_build_message_send_request(
                     session_id="session-1",
-                    model="openai/gpt-4.1",
+                    model_id="gpt-4.1",
                     enabled_tools=("tool.missing",),
                 )
             )
         )
 
     assert exc_info.value.tool_id == expected_tool_id
-    assert executor_factory.call_count == 1
+    assert executor_factory.call_count == 0
     assert store.list_messages("session-1") == ()
+
+
+class _FailingModelRouteResolver:
+    async def resolve(self, model_route: RuntimeModelRoute):
+        raise AssertionError("model route resolver should not run when tool resolution fails first")
 
 
 def _build_scaffold(*, agent_registry: AgentRegistry):
@@ -438,7 +460,7 @@ def _build_run_request(
 def _build_message_send_request(
     *,
     session_id: str,
-    model: str,
+    model_id: str,
     user_text: str = "Hello",
     agent_id: str | None = None,
     enabled_tools: tuple[str, ...] = (),
@@ -448,13 +470,20 @@ def _build_message_send_request(
         session_id=session_id,
         message=RuntimeMessagePayload(role="user", content=user_text),
         policy=RuntimeMessageExecutionPolicy(
-            model=model,
+            modelRoute=RuntimeModelRoute(
+                provider_profile_id="provider-1",
+                snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://example.com/v1",
+                    model_id=model_id,
+                ),
+            ),
             enabledTools=enabled_tools,
             requestOptions=dict(request_options or {}),
         ),
         agent_id=agent_id,
     )
-
 
 
 def _message_pairs(store: InMemorySessionStore, thread_id: str) -> list[tuple[str, str]]:

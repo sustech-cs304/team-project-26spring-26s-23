@@ -23,6 +23,8 @@ from app.copilot_runtime import (
     build_runtime_scaffold,
 )
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
+from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
+from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
 
 
@@ -277,7 +279,7 @@ def test_root_post_agent_connect_rebinding_existing_thread_returns_agent_mismatc
     }
 
 
-def test_root_post_message_send_returns_request_scoped_resolution() -> None:
+def test_root_post_message_send_streams_typed_events_and_persists_history() -> None:
     app, _scaffold, store, executor = _build_app_with_recording_executor()
     store.create(bound_agent_id="default", session_id="session-1")
 
@@ -286,26 +288,40 @@ def test_root_post_message_send_returns_request_scoped_resolution() -> None:
             "/",
             json=_build_message_send_request(
                 session_id="session-1",
-                model="openai/gpt-4.1",
+                model="gpt-4.1",
                 enabled_tools=["tool.file-convert"],
                 request_options={"temperature": 0.2},
             ),
         )
 
-    payload = response.json()
+    events = _parse_sse_events(response.text)
+    completed = events[-1]["payload"]
     assert response.status_code == 200
-    assert payload["sessionId"] == "session-1"
-    assert payload["boundAgent"]["agentId"] == "default"
-    assert payload["resolvedModelId"] == "openai/gpt-4.1"
-    assert payload["resolvedToolIds"] == ["tool.file-convert"]
-    assert payload["requestOptions"] == {"temperature": 0.2}
-    assert payload["assistantMessage"] == {"role": "assistant", "content": TEST_MODEL_REPLY}
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert [event["type"] for event in events] == [
+        "run_started",
+        "text_delta",
+        "run_completed",
+    ]
+    assert events[1]["payload"]["delta"] == TEST_MODEL_REPLY
+    assert completed["resolvedModelId"] == "gpt-4.1"
+    assert completed["resolvedToolIds"] == ["tool.file-convert"]
+    assert completed["requestOptions"] == {"temperature": 0.2}
+    assert completed["resolvedModelRoute"] == {
+        "providerProfileId": "provider-1",
+        "snapshot": {
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+    }
     assert executor.calls == [
         {
             "agent_name": "default",
             "user_prompt": "Hello",
             "message_history": [],
-            "model": "openai/gpt-4.1",
+            "resolved_model_id": "gpt-4.1",
             "enabled_tools": ["tool.file-convert"],
             "request_options": {"temperature": 0.2},
         }
@@ -316,7 +332,7 @@ def test_root_post_message_send_returns_request_scoped_resolution() -> None:
     ]
 
 
-def test_root_post_message_send_agent_mismatch_returns_conflict() -> None:
+def test_root_post_message_send_agent_mismatch_streams_failed_terminal_event() -> None:
     app, _scaffold, store = _build_app_with_secondary_agent()
     store.create(bound_agent_id="default", session_id="session-1")
 
@@ -326,22 +342,25 @@ def test_root_post_message_send_agent_mismatch_returns_conflict() -> None:
             json=_build_message_send_request(
                 session_id="session-1",
                 agent_id="secondary",
-                model="openai/gpt-4.1",
+                model="gpt-4.1",
             ),
         )
 
-    payload = response.json()
-    assert response.status_code == 409
-    assert payload["error"]["code"] == "agent_mismatch"
-    assert payload["error"]["requestedMethod"] == "message/send"
-    assert payload["error"]["details"] == {
-        "sessionId": "session-1",
-        "boundAgentId": "default",
-        "requestedAgentId": "secondary",
+    events = _parse_sse_events(response.text)
+    assert response.status_code == 200
+    assert [event["type"] for event in events] == ["run_started", "run_failed"]
+    assert events[-1]["payload"] == {
+        "code": "agent_mismatch",
+        "message": "Session 'session-1' is bound to agent 'default', cannot use agent 'secondary'.",
+        "details": {
+            "sessionId": "session-1",
+            "boundAgentId": "default",
+            "requestedAgentId": "secondary",
+        },
     }
 
 
-def test_root_post_message_send_unknown_tool_returns_structured_error() -> None:
+def test_root_post_message_send_unknown_tool_streams_failed_terminal_event() -> None:
     app, _scaffold, store = _build_app()
     store.create(bound_agent_id="default", session_id="session-1")
 
@@ -350,16 +369,19 @@ def test_root_post_message_send_unknown_tool_returns_structured_error() -> None:
             "/",
             json=_build_message_send_request(
                 session_id="session-1",
-                model="openai/gpt-4.1",
+                model="gpt-4.1",
                 enabled_tools=["tool.missing"],
             ),
         )
 
-    payload = response.json()
-    assert response.status_code == 400
-    assert payload["error"]["code"] == "tool_not_found"
-    assert payload["error"]["requestedMethod"] == "message/send"
-    assert payload["error"]["details"] == {"toolId": "tool.missing"}
+    events = _parse_sse_events(response.text)
+    assert response.status_code == 200
+    assert [event["type"] for event in events] == ["run_started", "run_failed"]
+    assert events[-1]["payload"] == {
+        "code": "tool_not_found",
+        "message": "Unknown tool 'tool.missing'.",
+        "details": {"toolId": "tool.missing"},
+    }
 
 
 def test_root_post_message_send_intersects_requested_tools_with_available_tools() -> None:
@@ -371,14 +393,19 @@ def test_root_post_message_send_intersects_requested_tools_with_available_tools(
             "/",
             json=_build_message_send_request(
                 session_id="session-1",
-                model="openai/gpt-4.1",
+                model="gpt-4.1",
                 enabled_tools=["tool.file-convert", "tool.disabled"],
             ),
         )
 
-    payload = response.json()
+    events = _parse_sse_events(response.text)
     assert response.status_code == 200
-    assert payload["resolvedToolIds"] == ["tool.file-convert"]
+    assert [event["type"] for event in events] == [
+        "run_started",
+        "text_delta",
+        "run_completed",
+    ]
+    assert events[-1]["payload"]["resolvedToolIds"] == ["tool.file-convert"]
     assert executor.calls[0]["enabled_tools"] == ["tool.file-convert"]
 
 
@@ -525,6 +552,23 @@ class _ExplodingRuntimeBridge(RuntimeBridge):
     async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
         raise self._error
 
+class _ImmediateTextStream:
+    def __init__(self, *, output: str, resolved_model_id: str) -> None:
+        self.resolved_model_id = resolved_model_id
+        self._output = output
+
+    async def __aenter__(self) -> "_ImmediateTextStream":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def iter_deltas(self):
+        yield self._output
+
+    async def get_output(self) -> str:
+        return self._output
+
 
 class _PermissiveExecutor:
     def __init__(self, *, reply: str) -> None:
@@ -543,6 +587,18 @@ class _PermissiveExecutor:
         request_options: dict[str, object] | None = None,
     ) -> str:
         return self._reply
+
+    def open_text_stream(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: list[str] | tuple[str, ...] = (),
+        request_options: dict[str, object] | None = None,
+    ) -> _ImmediateTextStream:
+        return _ImmediateTextStream(output=self._reply, resolved_model_id=model_route.model_id)
 
 
 class _RecordingExecutor(_PermissiveExecutor):
@@ -579,6 +635,67 @@ class _RecordingExecutor(_PermissiveExecutor):
             request_options=request_options,
         )
 
+    def open_text_stream(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: list[str] | tuple[str, ...] = (),
+        request_options: dict[str, object] | None = None,
+    ) -> _ImmediateTextStream:
+        self.calls.append(
+            {
+                "agent_name": agent_name,
+                "user_prompt": user_prompt,
+                "message_history": list(message_history),
+                "resolved_model_id": model_route.model_id,
+                "enabled_tools": list(enabled_tools),
+                "request_options": dict(request_options or {}),
+            }
+        )
+        return super().open_text_stream(
+            agent_name=agent_name,
+            user_prompt=user_prompt,
+            message_history=message_history,
+            model_route=model_route,
+            enabled_tools=enabled_tools,
+            request_options=request_options,
+        )
+
+
+class _EchoModelRouteResolver:
+    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+        return ResolvedRuntimeModelRoute(
+            provider_profile_id=model_route.provider_profile_id,
+            provider=model_route.snapshot.provider,
+            endpoint_type=model_route.snapshot.endpoint_type,
+            base_url=model_route.snapshot.base_url,
+            model_id=model_route.snapshot.model_id,
+            api_key="test-api-key",
+        )
+
+
+def _build_runtime_bridge(
+    *,
+    store: InMemorySessionStore,
+    agent_registry: AgentRegistry,
+    scaffold: RuntimeScaffold,
+) -> RuntimeBridge:
+    return RuntimeBridge(
+        session_store=store,
+        agent_registry=agent_registry,
+        scaffold=scaffold,
+        message_run_orchestrator=RuntimeMessageRunOrchestrator(
+            session_store=store,
+            agent_registry=agent_registry,
+            scaffold=scaffold,
+            model_route_resolver=_EchoModelRouteResolver(),
+        ),
+    )
+
+
 
 def _build_app(
     *,
@@ -601,8 +718,8 @@ def _build_app(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
     )
-    bridge = runtime_bridge or RuntimeBridge(
-        session_store=store,
+    bridge = runtime_bridge or _build_runtime_bridge(
+        store=store,
         agent_registry=agent_registry,
         scaffold=scaffold,
     )
@@ -642,7 +759,7 @@ def _build_app_with_secondary_agent() -> tuple[FastAPI, RuntimeScaffold, InMemor
         agent_registry=registry,
         tool_registry=tool_registry,
     )
-    bridge = RuntimeBridge(session_store=store, agent_registry=registry, scaffold=scaffold)
+    bridge = _build_runtime_bridge(store=store, agent_registry=registry, scaffold=scaffold)
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))
     return app, scaffold, store
@@ -668,7 +785,7 @@ def _build_app_with_recording_executor() -> tuple[
         agent_registry=agent_registry,
         tool_registry=tool_registry,
     )
-    bridge = RuntimeBridge(session_store=store, agent_registry=agent_registry, scaffold=scaffold)
+    bridge = _build_runtime_bridge(store=store, agent_registry=agent_registry, scaffold=scaffold)
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))
     return app, scaffold, store, executor
@@ -717,7 +834,7 @@ def _build_app_with_unavailable_tool_catalog() -> tuple[
         agent_registry=agent_registry,
         tool_registry=tool_registry,
     )
-    bridge = RuntimeBridge(session_store=store, agent_registry=agent_registry, scaffold=scaffold)
+    bridge = _build_runtime_bridge(store=store, agent_registry=agent_registry, scaffold=scaffold)
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))
     return app, scaffold, store, executor
@@ -790,12 +907,22 @@ def _build_message_send_request(
     body: dict[str, Any] = {
         "sessionId": session_id,
         "message": {"role": "user", "content": user_text},
-        "model": model,
-        "enabledTools": list(enabled_tools or []),
-        "requestOptions": dict(request_options or {}),
+        "policy": {
+            "modelRoute": {
+                "providerProfileId": "provider-1",
+                "snapshot": {
+                    "provider": "openai",
+                    "endpointType": "openai-compatible",
+                    "baseUrl": "https://example.com/v1",
+                    "modelId": model,
+                },
+            },
+            "enabledTools": list(enabled_tools or []),
+            "requestOptions": dict(request_options or {}),
+        },
     }
     if agent_id is not None:
-        body["agent"] = agent_id
+        body["agentId"] = agent_id
     return {"method": "message/send", "body": body}
 
 

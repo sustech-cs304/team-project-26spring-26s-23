@@ -23,6 +23,7 @@ from app.copilot_runtime import (  # noqa: E402
     build_default_runtime_dependencies,
     build_router,
 )
+from app.copilot_runtime.model_routes import RuntimeModelRouteResolver  # noqa: E402
 from app.copilot_runtime.session_store import InMemorySessionStore  # noqa: E402
 from app.desktop_runtime.config import (  # noqa: E402
     LOCAL_TOKEN_HEADER_NAME,
@@ -76,6 +77,7 @@ def create_app(
     *,
     session_store: InMemorySessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
+    model_route_resolver: RuntimeModelRouteResolver | None = None,
 ) -> FastAPI:
     runtime_config = config
     if runtime_config is None:
@@ -91,6 +93,7 @@ def create_app(
         runtime_config=runtime_config,
         session_store=session_store,
         agent_executor=agent_executor,
+        model_route_resolver=model_route_resolver or host_model_route_bridge_client,
     )
     runtime_session_store = runtime_dependencies.session_store
     runtime_agent_executor = runtime_dependencies.agent_executor
