@@ -1,6 +1,5 @@
 import {
   HOSTED_RUNTIME_CHILD_ENV_NAMES_TO_STRIP,
-  HOSTED_RUNTIME_MODEL_ENV_NAMES,
   HOSTED_RUNTIME_OVERRIDE_ENV_NAMES,
 } from './runtime-config-flags'
 import {
@@ -29,26 +28,6 @@ export function resolveHostedRuntimeEnvironmentOverrides(
     healthcheckIntervalMs: parseIntegerOverride(processEnv[HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.HEALTHCHECK_INTERVAL_MS]),
     healthcheckRequestTimeoutMs: parseIntegerOverride(processEnv[HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.HEALTHCHECK_REQUEST_TIMEOUT_MS]),
   }
-}
-
-export function resolveHostedRuntimeModel(
-  processEnv: NodeJS.ProcessEnv,
-  explicitModel?: string | null,
-  configuredModel?: string | null,
-): string | null {
-  const normalizedExplicitModel = normalizeOptionalString(explicitModel)
-  if (normalizedExplicitModel !== undefined) {
-    return normalizedExplicitModel
-  }
-
-  const normalizedConfiguredModel = normalizeOptionalString(configuredModel)
-  if (normalizedConfiguredModel !== undefined) {
-    return normalizedConfiguredModel
-  }
-
-  return normalizeOptionalString(processEnv[HOSTED_RUNTIME_MODEL_ENV_NAMES.PRIMARY])
-    ?? normalizeOptionalString(processEnv[HOSTED_RUNTIME_MODEL_ENV_NAMES.LEGACY])
-    ?? null
 }
 
 export function buildDesktopRuntimeEnvironment(

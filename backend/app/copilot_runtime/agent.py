@@ -195,7 +195,7 @@ class PydanticAIAgentExecutor:
         model_name = self._configured_model_name()
         if model_name is None:
             raise ModelNotConfiguredError(
-                "No runtime model is configured. Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL."
+                "No runtime model is configured. Provide an explicit executor model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL."
             )
         return model_name
 

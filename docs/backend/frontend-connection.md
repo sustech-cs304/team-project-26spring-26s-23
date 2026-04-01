@@ -46,7 +46,7 @@ sidebar_label: 后端暴露契约与前端接入点
 
 ### 它是参数投影者
 
-主进程可以把宿主层的字段投影为 Python runtime 的启动参数。当前最典型的一条链路，是把 `backendExposed.model` 解析后投影为 `--model`。
+主进程可以把宿主层的运行边界字段投影为 Python runtime 的启动参数。当前保留的主要是目录参数、`--local-token`，以及宿主私有 provider 路由解析桥的 bootstrap 信息。
 
 这三件事在 backend 视角下很重要，因为它们解释了当前后端为什么仍然按 CLI 参数工作，却又已经处在 Electron 宿主管理之下。
 

@@ -384,7 +384,7 @@ class FailingToolResolutionScaffold:
         (LookupError("tool resolution failed for requested alias"), "tool resolution failed for requested alias"),
     ],
 )
-def test_send_message_unknown_tool_uses_structured_id_or_safe_fallback(
+def test_stream_message_unknown_tool_emits_failed_event_with_structured_id_or_safe_fallback(
     lookup_error: LookupError,
     expected_tool_id: str,
 ) -> None:
@@ -405,18 +405,26 @@ def test_send_message_unknown_tool_uses_structured_id_or_safe_fallback(
         ),
     )
 
-    with pytest.raises(ToolNotFoundError) as exc_info:
-        asyncio.run(
-            bridge.send_message(
+    async def collect_events():
+        return [
+            event
+            async for event in bridge.stream_message(
                 request=_build_message_send_request(
                     session_id="session-1",
                     model_id="gpt-4.1",
                     enabled_tools=("tool.missing",),
                 )
             )
-        )
+        ]
 
-    assert exc_info.value.tool_id == expected_tool_id
+    events = asyncio.run(collect_events())
+
+    assert [event.type for event in events] == ["run_started", "run_failed"]
+    assert events[-1].payload == {
+        "code": "tool_not_found",
+        "message": f"Unknown tool '{expected_tool_id}'.",
+        "details": {"toolId": expected_tool_id},
+    }
     assert executor_factory.call_count == 0
     assert store.list_messages("session-1") == ()
 

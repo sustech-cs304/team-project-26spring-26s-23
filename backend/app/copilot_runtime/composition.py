@@ -52,8 +52,7 @@ def build_default_runtime_dependencies(
     """Create the default runtime object graph without adding protocol logic."""
 
     resolved_session_store = session_store or InMemorySessionStore()
-    runtime_model = runtime_config.model if runtime_config is not None else None
-    resolved_agent_executor = agent_executor or PydanticAIAgentExecutor(model=runtime_model)
+    resolved_agent_executor = agent_executor or PydanticAIAgentExecutor()
     resolved_model_route_resolver = model_route_resolver or _UnavailableRuntimeModelRouteResolver()
     tool_registry = build_default_tool_registry()
     agent_registry = build_default_agent_registry(

@@ -6,7 +6,6 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:hosted": "vite -- --runtime-model=test",
     "generate:icons": "node ./scripts/generate-icons.mjs",
     "prebuild": "npm run generate:icons",
     "typecheck": "npm run typecheck:check",

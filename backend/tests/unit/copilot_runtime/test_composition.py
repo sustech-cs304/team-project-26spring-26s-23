@@ -75,7 +75,7 @@ def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor()
 
 
 
-def test_build_default_runtime_dependencies_prefers_runtime_config_model_over_environment(
+def test_build_default_runtime_dependencies_uses_environment_backed_executor_even_with_runtime_config(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -83,10 +83,10 @@ def test_build_default_runtime_dependencies_prefers_runtime_config_model_over_en
     monkeypatch.setenv("COPILOT_MODEL", "legacy-env-model")
 
     dependencies = build_default_runtime_dependencies(
-        runtime_config=_build_runtime_config(tmp_path, model="cli-model")
+        runtime_config=_build_runtime_config(tmp_path)
     )
 
-    assert dependencies.agent_executor.resolve_model() == "cli-model"
+    assert dependencies.agent_executor.resolve_model() == "runtime-env-model"
     assert dependencies.scaffold.model_configured is True
 
 
@@ -96,7 +96,7 @@ def _build_test_agent_executor() -> PydanticAIAgentExecutor:
 
 
 
-def _build_runtime_config(tmp_path: Path, *, model: str | None = None) -> DesktopRuntimeConfig:
+def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
     return DesktopRuntimeConfig(
@@ -119,7 +119,6 @@ def _build_runtime_config(tmp_path: Path, *, model: str | None = None) -> Deskto
         ),
         app_mode="desktop",
         environment="test",
-        model=model,
     )
 
 def _build_run_request(*, thread_id: str, run_id: str, user_message_text: str) -> RuntimeRunRequest:

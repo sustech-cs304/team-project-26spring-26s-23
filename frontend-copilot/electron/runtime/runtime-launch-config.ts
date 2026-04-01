@@ -10,17 +10,13 @@ import {
   DEFAULT_RUNTIME_ENVIRONMENT,
   DEFAULT_RUNTIME_HOST,
 } from './runtime-config-flags'
-import {
-  buildDesktopRuntimeEnvironment,
-  resolveHostedRuntimeModel,
-} from './runtime-config-model'
+import { buildDesktopRuntimeEnvironment } from './runtime-config-model'
 import { buildDesktopRuntimeArguments } from './runtime-spawn-args'
 
 export interface HostedRuntimeLaunchConfig {
   host: string
   port: number
   localToken: string
-  model: string | null
   hostModelRouteBridgeUrl: string | null
   hostModelRouteBridgeToken: string | null
   args: string[]
@@ -44,7 +40,6 @@ export interface SanitizedHostedRuntimeLaunchConfig {
   appMode: string
   environment: string
   localTokenConfigured: boolean
-  modelConfigured: boolean
   hostModelRouteBridgeConfigured: boolean
   paths: SanitizedHostedRuntimePaths
 }
@@ -55,8 +50,6 @@ export interface HostedRuntimeLaunchConfigOptions {
   port: number
   host?: string
   localToken?: string
-  model?: string | null
-  configuredModel?: string | null
   hostModelRouteBridgeUrl?: string | null
   hostModelRouteBridgeToken?: string | null
   appMode?: string
@@ -81,7 +74,6 @@ export function createHostedRuntimeLaunchConfig(
 ): HostedRuntimeLaunchConfig {
   const host = options.host ?? DEFAULT_RUNTIME_HOST
   const localToken = options.localToken ?? createLocalToken()
-  const model = resolveHostedRuntimeModel(options.processEnv, options.model, options.configuredModel)
   const appMode = options.appMode ?? DEFAULT_RUNTIME_APP_MODE
   const environment = options.environment ?? DEFAULT_RUNTIME_ENVIRONMENT
   const paths = options.paths ?? createHostedRuntimePaths(options.userDataPath)
@@ -93,14 +85,12 @@ export function createHostedRuntimeLaunchConfig(
     host,
     port: options.port,
     localToken,
-    model,
     hostModelRouteBridgeUrl,
     hostModelRouteBridgeToken,
     args: buildDesktopRuntimeArguments({
       host,
       port: options.port,
       localToken,
-      model,
       hostModelRouteBridgeUrl,
       hostModelRouteBridgeToken,
       appMode,
@@ -131,7 +121,6 @@ export function sanitizeHostedRuntimeLaunchConfig(
     appMode: config.appMode,
     environment: config.environment,
     localTokenConfigured: config.localToken.trim() !== '',
-    modelConfigured: config.model !== null,
     hostModelRouteBridgeConfigured:
       config.hostModelRouteBridgeUrl !== null && (config.hostModelRouteBridgeToken?.trim() ?? '') !== '',
     paths: sanitizeHostedRuntimePaths(config.paths),

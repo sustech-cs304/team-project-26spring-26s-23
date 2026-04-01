@@ -22,7 +22,6 @@ export {
 export {
   buildDesktopRuntimeEnvironment,
   resolveHostedRuntimeEnvironmentOverrides,
-  resolveHostedRuntimeModel,
   type HostedRuntimeEnvironmentOverrides,
 } from './runtime-config-model'
 export {

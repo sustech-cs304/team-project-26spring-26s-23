@@ -141,17 +141,6 @@ class RuntimeMessageSendRequest(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeMessageSendResponse(RuntimeContract):
-    ok: bool
-    sessionId: str
-    boundAgent: RuntimeBoundAgent
-    assistantMessage: RuntimeMessagePayload
-    resolvedModelId: str
-    resolvedToolIds: tuple[str, ...] = ()
-    requestOptions: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
 class RuntimeConnectRequest(RuntimeContract):
     agent_name: str
     thread_id: str
@@ -320,25 +309,6 @@ class RuntimeScaffold(RuntimeContract):
 
     def supports_agent(self, agent_name: str) -> bool:
         return agent_name in self.bound_agent_views
-
-    def build_message_send_response(
-        self,
-        *,
-        session: RuntimeSessionRecord,
-        assistant_text: str,
-        resolved_model_id: str,
-        resolved_tool_ids: tuple[str, ...],
-        request_options: dict[str, Any] | None = None,
-    ) -> RuntimeMessageSendResponse:
-        return RuntimeMessageSendResponse(
-            ok=True,
-            sessionId=session.session_id,
-            boundAgent=self._get_bound_agent_view(session.bound_agent_id),
-            assistantMessage=RuntimeMessagePayload(role="assistant", content=assistant_text),
-            resolvedModelId=resolved_model_id,
-            resolvedToolIds=resolved_tool_ids,
-            requestOptions=dict(request_options or {}),
-        )
 
     def resolve_enabled_tool_ids(
         self,

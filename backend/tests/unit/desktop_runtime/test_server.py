@@ -33,8 +33,6 @@ from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
     ENV_HOST,
-    ENV_LEGACY_MODEL,
-    ENV_MODEL,
     ENV_PORT,
     ENV_USER_DATA_DIR,
     LOCAL_TOKEN_HEADER_NAME,
@@ -116,24 +114,24 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
 
 
 
-def test_create_app_passes_runtime_model_to_default_executor(
+def test_create_app_uses_environment_backed_default_executor_without_exposing_retired_startup_model(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv(ENV_MODEL, "runtime-env-model")
-    monkeypatch.setenv(ENV_LEGACY_MODEL, "legacy-env-model")
+    monkeypatch.setenv("COPILOT_RUNTIME_MODEL", "runtime-env-model")
+    monkeypatch.setenv("COPILOT_MODEL", "legacy-env-model")
 
-    app = create_app(_build_config(tmp_path, model="cli-model"))
+    app = create_app(_build_config(tmp_path))
 
     with TestClient(app) as client:
         response = client.get("/diagnostics")
         runtime_executor = app.state.copilot_runtime_agent_executor
 
     assert response.status_code == 200
-    assert runtime_executor.resolve_model() == "cli-model"
+    assert runtime_executor.resolve_model() == "runtime-env-model"
 
     payload = response.json()
-    assert payload["configuration"]["model"] == "cli-model"
+    assert "model" not in payload["configuration"]
     assert payload["capabilities"]["model_configured"] is True
 
 
@@ -397,8 +395,8 @@ def test_create_app_without_model_keeps_info_and_connect_but_run_fails_explicitl
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv(ENV_MODEL, raising=False)
-    monkeypatch.delenv(ENV_LEGACY_MODEL, raising=False)
+    monkeypatch.delenv("COPILOT_RUNTIME_MODEL", raising=False)
+    monkeypatch.delenv("COPILOT_MODEL", raising=False)
 
     app = create_app(_build_config(tmp_path))
 
@@ -417,7 +415,7 @@ def test_create_app_without_model_keeps_info_and_connect_but_run_fails_explicitl
         "ok": False,
         "error": {
             "code": "model_not_configured",
-            "message": "No runtime model is configured. Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL.",
+            "message": "No runtime model is configured. Provide an explicit executor model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL.",
             "stage": "phase3-run-bridge",
             "requestedMethod": "agent/run",
             "supportedMethods": [
@@ -520,7 +518,6 @@ def _build_config(
     tmp_path: Path,
     *,
     local_token: str | None = None,
-    model: str | None = None,
 ) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
@@ -544,5 +541,4 @@ def _build_config(
         ),
         app_mode="desktop",
         environment="test",
-        model=model,
     )

@@ -6,7 +6,6 @@ export interface DesktopRuntimeArgumentInput {
   host: string
   port: number
   localToken: string
-  model: string | null
   hostModelRouteBridgeUrl: string | null
   hostModelRouteBridgeToken: string | null
   appMode: string
@@ -43,7 +42,6 @@ export function buildDesktopRuntimeArguments(input: DesktopRuntimeArgumentInput)
     DESKTOP_RUNTIME_ARGUMENT_NAMES.HOST_MODEL_ROUTE_BRIDGE_TOKEN,
     input.hostModelRouteBridgeToken,
   )
-  appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.MODEL, input.model)
   appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.LOCAL_TOKEN, input.localToken)
 
   return args

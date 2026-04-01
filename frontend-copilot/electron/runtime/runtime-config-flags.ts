@@ -41,7 +41,6 @@ export const HOSTED_RUNTIME_MODEL_ENV_NAMES = {
 } as const
 
 export const HOSTED_RUNTIME_MAIN_PROCESS_ARGUMENT_NAMES = {
-  MODEL: '--runtime-model',
   HOST: '--runtime-host',
   APP_MODE: '--runtime-app-mode',
   ENVIRONMENT: '--runtime-environment',
@@ -71,7 +70,6 @@ export const DESKTOP_RUNTIME_ARGUMENT_NAMES = {
   LAST_FAILURE_FILE: '--last-failure-file',
   HOST_MODEL_ROUTE_BRIDGE_URL: '--host-model-route-bridge-url',
   HOST_MODEL_ROUTE_BRIDGE_TOKEN: '--host-model-route-bridge-token',
-  MODEL: '--model',
   LOCAL_TOKEN: '--local-token',
 } as const
 

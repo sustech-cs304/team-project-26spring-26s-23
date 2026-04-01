@@ -58,7 +58,7 @@ backend/app/
 ### 先看哪些文件
 
 - `server.py` 负责创建应用、注册控制面端点和挂载聊天路由。
-- `config.py` 负责解析 `--host`、`--port`、`--model` 以及各类路径参数。
+- `config.py` 负责解析 `--host`、`--port`、`--local-token`、宿主路由桥参数以及各类路径参数。
 - `health.py` 负责构造健康检查、版本和 diagnostics 响应。
 - `lifecycle.py` 负责管理 runtime 的生命周期状态。
 
@@ -98,11 +98,12 @@ backend/app/
 
 ### 先看哪些文件
 
-- `contracts.py` 定义当前方法对应的响应契约和目录视图。
+- `contracts.py` 定义当前方法对应的目录视图与请求契约。
 - `protocol.py` 负责把 `POST /` 的请求体解析成内部请求对象。
 - `router.py` 负责按 `method` 分发请求。
-- `composition.py` 负责装配默认 session store、智能体目录、工具目录和 bridge。
-- `bridge.py` 负责读取会话历史、解析请求级模型与工具策略，并执行消息。
+- `composition.py` 负责装配默认 session store、智能体目录、工具目录、run 编排层和 bridge。
+- `message_runs.py` 负责请求级模型路由解析、流式事件编排和最终归档。
+- `bridge.py` 现在只保留会话能力查询与最薄的流式桥接入口。
 - `session_store.py` 负责当前的内存态会话存储。
 - `agent_registry.py` 和 `tool_registry.py` 负责目录真源。
 

@@ -15,12 +15,12 @@ sidebar_position: 5
 ```bash
 uv run --directory backend python -m app.desktop_runtime --help
 uv run --directory backend python -m app.desktop_runtime
-uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --root-dir ./backend/data/desktop-runtime-cli --model test
+uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port 8771 --root-dir ./backend/data/desktop-runtime-cli
 ```
 
 ### Electron 宿主管理启动
 
-桌面应用正式运行时，不需要手动输入 Python 命令。Electron 主进程会先准备 hosted runtime 路径，再把 host、port、各类目录、`--model` 和 `--local-token` 一并传给 Python 子进程。
+桌面应用正式运行时，不需要手动输入 Python 命令。Electron 主进程会先准备 hosted runtime 路径，再把 host、port、各类目录、`--local-token` 和 host model route bridge bootstrap 一并传给 Python 子进程。
 
 ## desktop runtime 当前参数参考
 
@@ -33,7 +33,6 @@ uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port
 | App Mode | `--app-mode` | `COPILOT_DESKTOP_RUNTIME_APP_MODE` | `desktop` | 应用模式标识。 |
 | Environment | `--environment` | `COPILOT_DESKTOP_RUNTIME_ENVIRONMENT` | `development` | 运行环境标识。 |
 | Local Token | `--local-token` | `COPILOT_DESKTOP_RUNTIME_LOCAL_TOKEN` | 无 | 保护 diagnostics 端点。 |
-| Model | `--model` | `COPILOT_RUNTIME_MODEL`、`COPILOT_MODEL` | 无 | runtime 启动层模型入口。 |
 
 ### 目录参数
 
@@ -81,25 +80,19 @@ uv run --directory backend python -m app.desktop_runtime --host 127.0.0.1 --port
 | `{configDir}/config-center/settings-workspace-state.json` | 设置工作区普通状态 |
 | `{configDir}/config-center/settings-workspace-secrets.json` | 设置工作区 secrets |
 
-## 模型解析顺序参考
+## 运行参数解析顺序参考
 
 ### Python runtime 自己的配置顺序
 
-Python runtime 解析配置时，顺序仍然是：
+Python runtime 解析启动配置时，顺序仍然是：
 
 1. CLI 参数。
 2. 环境变量。
 3. 默认值。
 
-### Electron 宿主在启动前的模型解析顺序
+### 聊天模型的当前定位
 
-Electron 主进程决定是否传 `--model` 时，当前顺序是：
-
-1. 显式 runtime 模型。
-2. 配置中心里的 `backendExposed.model`。
-3. 兼容环境变量键。
-
-这层解析发生在宿主侧，随后才把结果作为启动参数传给 Python runtime。
+聊天模型不再由 startup 参数解析。当前模型选择只在 [`message/send`](../system/chat-runtime-contract.md:268) 的请求体里通过 `modelRoute` 表达，并在执行阶段由宿主 provider route bridge 校验与解析。
 
 ## 当前已确认的控制面端点
 

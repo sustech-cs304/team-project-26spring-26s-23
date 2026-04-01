@@ -22,12 +22,7 @@ from .execution_support import (
     build_message_history,
 )
 from .message_runs import RuntimeMessageRunOrchestrator
-from .run_events import (
-    RUN_CANCELLED_EVENT_TYPE,
-    RUN_COMPLETED_EVENT_TYPE,
-    RUN_FAILED_EVENT_TYPE,
-    RuntimeRunEvent,
-)
+from .run_events import RuntimeRunEvent
 from .session_store import BoundAgentMismatchError, InMemorySessionStore, RuntimeSessionRecord
 
 
@@ -38,17 +33,6 @@ class RuntimeBridgeResult:
     assistant_text: str
     session: RuntimeSessionRecord
     newly_created: bool
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeMessageSendResult:
-    """Successful result of a request-scoped message send."""
-
-    assistant_text: str
-    session: RuntimeSessionRecord
-    resolved_model_id: str
-    resolved_tool_ids: tuple[str, ...]
-    request_options: dict[str, object]
 
 
 class RuntimeBridge:
@@ -96,53 +80,6 @@ class RuntimeBridge:
         orchestrator = self._require_message_run_orchestrator()
         return orchestrator.stream_events(request=request)
 
-    async def send_message(self, *, request: RuntimeMessageSendRequest) -> RuntimeMessageSendResult:
-        completed_payload: dict[str, Any] | None = None
-        async for event in self.stream_message(request=request):
-            if event.type == RUN_COMPLETED_EVENT_TYPE:
-                completed_payload = dict(event.payload)
-                continue
-            if event.type == RUN_FAILED_EVENT_TYPE:
-                raise _compat_exception_from_failed_event(event)
-            if event.type == RUN_CANCELLED_EVENT_TYPE:
-                raise AgentExecutionError("Message run was cancelled.")
-
-        if completed_payload is None:
-            raise AgentExecutionError("Message run finished without a completion event.")
-
-        session = self._session_store.get(request.session_id)
-        if session is None:
-            raise SessionNotFoundError(request.session_id)
-
-        assistant_text = completed_payload.get("assistantText")
-        if not isinstance(assistant_text, str) or assistant_text.strip() == "":
-            raise AgentExecutionError("Message run completion event did not include assistant text.")
-
-        resolved_model_id = completed_payload.get("resolvedModelId")
-        if not isinstance(resolved_model_id, str) or resolved_model_id.strip() == "":
-            raise AgentExecutionError("Message run completion event did not include a resolved model id.")
-
-        resolved_tool_ids_value = completed_payload.get("resolvedToolIds")
-        resolved_tool_ids = tuple(
-            item.strip()
-            for item in resolved_tool_ids_value
-            if isinstance(item, str) and item.strip() != ""
-        ) if isinstance(resolved_tool_ids_value, list) else ()
-        request_options_value = completed_payload.get("requestOptions")
-        request_options = (
-            dict(request_options_value)
-            if isinstance(request_options_value, dict)
-            else {}
-        )
-
-        return RuntimeMessageSendResult(
-            assistant_text=assistant_text,
-            session=session,
-            resolved_model_id=resolved_model_id.strip(),
-            resolved_tool_ids=resolved_tool_ids,
-            request_options=request_options,
-        )
-
     def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:
             raise RuntimeError("Runtime scaffold is required for capabilities queries.")
@@ -175,33 +112,6 @@ class RuntimeBridge:
         return build_message_history(messages)
 
 
-def _compat_exception_from_failed_event(event: RuntimeRunEvent) -> Exception:
-    payload = dict(event.payload)
-    code = payload.get("code")
-    message = payload.get("message")
-    details = payload.get("details")
-    normalized_message = message if isinstance(message, str) and message.strip() != "" else "Message run failed."
-    normalized_details = details if isinstance(details, dict) else {}
-
-    if code == "session_not_found":
-        return SessionNotFoundError(str(normalized_details.get("sessionId", event.sessionId)))
-    if code == "agent_mismatch":
-        return BoundAgentMismatchError(
-            session_id=str(normalized_details.get("sessionId", event.sessionId)),
-            expected_agent_id=str(normalized_details.get("boundAgentId", "unknown")),
-            actual_agent_id=str(normalized_details.get("requestedAgentId", "unknown")),
-        )
-    if code == "tool_not_found":
-        return ToolNotFoundError(str(normalized_details.get("toolId", "unknown")))
-    if code == "agent_not_found":
-        return AgentNotFoundError(str(normalized_details.get("agentName", "unknown")))
-    if code == "invalid_message_history":
-        return InvalidSessionHistoryError(normalized_message)
-    if code == "model_not_configured":
-        return ModelNotConfiguredError(normalized_message)
-    return AgentExecutionError(normalized_message)
-
-
 __all__ = [
     "AgentExecutionError",
     "AgentNotFoundError",
@@ -210,7 +120,6 @@ __all__ = [
     "ModelNotConfiguredError",
     "RuntimeBridge",
     "RuntimeBridgeResult",
-    "RuntimeMessageSendResult",
     "SessionNotFoundError",
     "ToolNotFoundError",
 ]

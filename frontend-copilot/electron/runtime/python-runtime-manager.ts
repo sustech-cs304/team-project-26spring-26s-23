@@ -71,8 +71,6 @@ export interface PythonRuntimeManagerOptions extends PythonRuntimeResolverContex
   processEnv?: NodeJS.ProcessEnv
   host?: string
   appMode?: string
-  model?: string | null
-  configuredModel?: string | null
   localToken?: string
   hostModelRouteBridgeUrl?: string | null
   hostModelRouteBridgeToken?: string | null
@@ -88,8 +86,6 @@ interface ResolvedPythonRuntimeManagerOptions extends PythonRuntimeResolverConte
   host: string
   appMode: string
   environment: string
-  model?: string | null
-  configuredModel?: string | null
   localToken?: string
   hostModelRouteBridgeUrl?: string | null
   hostModelRouteBridgeToken?: string | null
@@ -256,8 +252,6 @@ export class PythonRuntimeManager {
       host: this.options.host,
       appMode: this.options.appMode,
       environment: this.options.environment,
-      model: this.options.model,
-      configuredModel: this.options.configuredModel,
       localToken: this.options.localToken,
       hostModelRouteBridgeUrl: this.options.hostModelRouteBridgeUrl,
       hostModelRouteBridgeToken: this.options.hostModelRouteBridgeToken,

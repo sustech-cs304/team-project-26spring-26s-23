@@ -10,7 +10,6 @@ import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
-import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/domain-schema'
 import {
   createElectronSettingsWorkspaceService,
   type ElectronSettingsWorkspaceService,
@@ -67,7 +66,6 @@ export interface MainProcessServices {
   resolveSettingsWorkspaceProviderRoute: (
     request: SettingsWorkspaceProviderRouteResolveRequest,
   ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
-  loadConfiguredHostedRuntimeModel: () => Promise<string | null>
 }
 
 export function createMainProcessServices(
@@ -99,11 +97,6 @@ export function createMainProcessServices(
     })
 
     return settingsWorkspaceService
-  }
-
-  async function loadConfiguredHostedRuntimeModel(): Promise<string | null> {
-    const loadResult = await getUnifiedConfigService().loadSnapshot()
-    return loadResult.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].values.model
   }
 
   return {
@@ -154,6 +147,5 @@ export function createMainProcessServices(
     ): Promise<SettingsWorkspaceProviderRouteResolveResult> {
       return await getSettingsWorkspaceService().resolveProviderRoute(request)
     },
-    loadConfiguredHostedRuntimeModel,
   }
 }

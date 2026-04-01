@@ -8,7 +8,7 @@ import {
 } from './runtime-config'
 
 describe('collectForwardedElectronMainProcessArguments', () => {
-  it('keeps hosted runtime flags after the npm-forwarded separator', () => {
+  it('keeps supported hosted runtime flags after the npm-forwarded separator', () => {
     expect(collectForwardedElectronMainProcessArguments([
       'node',
       'vite',
@@ -20,14 +20,12 @@ describe('collectForwardedElectronMainProcessArguments', () => {
       '--runtime-environment',
       'development',
     ])).toEqual([
-      '--runtime-model',
-      'test',
       '--runtime-environment',
       'development',
     ])
   })
 
-  it('collects hosted runtime flags even when vite argv arrives without a separator', () => {
+  it('collects supported hosted runtime flags even when vite argv arrives without a separator', () => {
     expect(collectForwardedElectronMainProcessArguments([
       'node',
       'vite',
@@ -36,15 +34,13 @@ describe('collectForwardedElectronMainProcessArguments', () => {
       '--runtime-host=127.0.0.1',
       '--open',
     ])).toEqual([
-      '--runtime-model',
-      'test',
       '--runtime-host=127.0.0.1',
     ])
   })
 })
 
 describe('parseHostedRuntimeCommandLineArguments', () => {
-  it('normalizes forwarded Electron main-process runtime flags into launch options', () => {
+  it('normalizes supported Electron main-process runtime flags into launch options', () => {
     expect(parseHostedRuntimeCommandLineArguments([
       '--runtime-model=test',
       '--runtime-host', '127.0.0.1',
@@ -52,7 +48,6 @@ describe('parseHostedRuntimeCommandLineArguments', () => {
       '--runtime-environment', 'development',
       '--runtime-local-token', 'token-123',
     ])).toEqual({
-      model: 'test',
       host: '127.0.0.1',
       appMode: 'desktop',
       environment: 'development',
@@ -60,13 +55,15 @@ describe('parseHostedRuntimeCommandLineArguments', () => {
     })
   })
 
-  it('feeds the parsed runtime model into the Python argv builder', () => {
+  it('ignores retired runtime model flags when building Python argv', () => {
     const forwardedArgs = collectForwardedElectronMainProcessArguments([
       'node',
       'vite',
       '--',
       '--runtime-model',
       'cli-model',
+      '--runtime-local-token',
+      'token-cli',
     ])
     const runtimeOptions = parseHostedRuntimeCommandLineArguments(forwardedArgs)
     const config = createHostedRuntimeLaunchConfig({
@@ -75,14 +72,14 @@ describe('parseHostedRuntimeCommandLineArguments', () => {
         COPILOT_RUNTIME_MODEL: 'env-model',
       },
       port: 43210,
-      model: runtimeOptions.model,
-      localToken: 'token-cli',
+      localToken: runtimeOptions.localToken,
     })
 
-    expect(config.model).toBe('cli-model')
+    expect(runtimeOptions).toEqual({
+      localToken: 'token-cli',
+    })
+    expect(config.args).not.toContain('--model')
     expect(config.args).toEqual(expect.arrayContaining([
-      '--model',
-      'cli-model',
       '--local-token',
       'token-cli',
     ]))

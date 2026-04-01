@@ -25,10 +25,8 @@ from app.desktop_runtime.config import (
     ENV_DATABASE_DIR,
     ENV_ENVIRONMENT,
     ENV_HOST,
-    ENV_LEGACY_MODEL,
     ENV_LOCAL_TOKEN,
     ENV_LOGS_DIR,
-    ENV_MODEL,
     ENV_PORT,
     ENV_ROOT_DIR,
     ENV_USER_DATA_DIR,
@@ -44,7 +42,6 @@ def test_parse_runtime_config_defaults_to_loopback_and_backend_data_dir() -> Non
     assert config.host == DEFAULT_HOST
     assert config.port == DEFAULT_PORT
     assert config.local_token is None
-    assert config.model is None
     assert config.host_model_route_bridge_url is None
     assert config.host_model_route_bridge_token is None
     assert config.app_mode == DEFAULT_APP_MODE
@@ -61,6 +58,7 @@ def test_parse_runtime_config_defaults_to_loopback_and_backend_data_dir() -> Non
     assert config.backend_stderr_log_file == config.logs_dir / DEFAULT_BACKEND_STDERR_LOG_FILE_NAME
     assert config.runtime_snapshot_file == config.state_dir / DEFAULT_RUNTIME_SNAPSHOT_FILE_NAME
     assert config.last_failure_file == config.state_dir / DEFAULT_LAST_FAILURE_FILE_NAME
+    assert "model" not in config.sanitized_summary()
 
 
 def test_parse_runtime_config_reads_environment_values() -> None:
@@ -74,7 +72,6 @@ def test_parse_runtime_config_reads_environment_values() -> None:
         ENV_DATABASE_DIR: "runtime-state/db-custom",
         ENV_APP_MODE: "desktop-bundled",
         ENV_ENVIRONMENT: "production",
-        ENV_MODEL: "env-runtime-model",
     }
 
     config = parse_runtime_config([], env=env, cwd=BACKEND_DIR)
@@ -90,7 +87,7 @@ def test_parse_runtime_config_reads_environment_values() -> None:
     assert config.state_dir == config.runtime_root_dir / DEFAULT_STATE_DIR_NAME
     assert config.app_mode == "desktop-bundled"
     assert config.environment == "production"
-    assert config.model == "env-runtime-model"
+    assert "model" not in config.sanitized_summary()
 
 
 def test_parse_runtime_config_formats_ipv6_loopback_base_url() -> None:
@@ -117,8 +114,6 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
         ENV_ROOT_DIR: str(tmp_path / "env-root"),
         ENV_APP_MODE: "env-mode",
         ENV_ENVIRONMENT: "env-environment",
-        ENV_MODEL: "env-runtime-model",
-        ENV_LEGACY_MODEL: "env-legacy-model",
     }
 
     config = parse_runtime_config(
@@ -159,8 +154,6 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
             "http://127.0.0.1:45678/host/private/provider-routes/resolve",
             "--host-model-route-bridge-token",
             "bridge-token-123",
-            "--model",
-            "cli-model",
             "--local-token",
             "cli-secret",
         ],
@@ -171,7 +164,6 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
     assert config.host == "127.0.0.1"
     assert config.port == 9012
     assert config.local_token == "cli-secret"
-    assert config.model == "cli-model"
     assert config.host_model_route_bridge_url == "http://127.0.0.1:45678/host/private/provider-routes/resolve"
     assert config.host_model_route_bridge_token == "bridge-token-123"
     assert config.user_data_dir == (tmp_path / "cli-data").resolve()
@@ -190,25 +182,25 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
     assert config.environment == "staging"
 
 
-def test_parse_runtime_config_model_falls_back_to_environment_keys_in_priority_order(
+def test_parse_runtime_config_ignores_retired_model_environment_variables(
     tmp_path: Path,
 ) -> None:
-    runtime_env_config = parse_runtime_config(
+    config = parse_runtime_config(
         [],
         env={
-            ENV_MODEL: "runtime-model",
-            ENV_LEGACY_MODEL: "legacy-model",
+            "COPILOT_RUNTIME_MODEL": "runtime-model",
+            "COPILOT_MODEL": "legacy-model",
         },
         cwd=tmp_path,
     )
-    legacy_env_config = parse_runtime_config(
-        [],
-        env={ENV_LEGACY_MODEL: "legacy-model"},
-        cwd=tmp_path,
-    )
 
-    assert runtime_env_config.model == "runtime-model"
-    assert legacy_env_config.model == "legacy-model"
+    assert "model" not in config.sanitized_summary()
+
+
+
+def test_parse_runtime_config_rejects_retired_model_flag(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        parse_runtime_config(["--model", "cli-model"], env={}, cwd=tmp_path)
 
 
 

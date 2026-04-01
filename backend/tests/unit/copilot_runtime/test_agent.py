@@ -18,7 +18,7 @@ def test_run_raises_model_not_configured_when_no_model_is_available() -> None:
 
     with pytest.raises(
         ModelNotConfiguredError,
-        match="Pass --model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL",
+        match="Provide an explicit executor model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL",
     ):
         asyncio.run(
             executor.run(
