@@ -1,12 +1,12 @@
 ---
 title: 当前契约参考
-description: 查表式整理当前 runtime 控制面、聊天主路径字段与错误码。
+description: 查表式整理当前 runtime 控制面、聊天主路径字段、流式事件与错误码。
 sidebar_position: 6
 ---
 
 # 当前契约参考
 
-这页服务于[后端暴露契约与前端接入点](./frontend-connection.md)。正文只汇总当前已经确认的控制面端点、聊天方法、兼容方法和错误码，方便联调与排错时快速对照。
+这页服务于 [后端暴露契约与前端接入点](./frontend-connection.md)。正文只汇总当前已经确认的控制面端点、聊天方法、流式事件、兼容方法和错误码，方便联调与排错时快速对照。
 
 ## 当前控制面端点
 
@@ -36,7 +36,7 @@ sidebar_position: 6
 }
 ```
 
-当前解析器仍兼容少量把字段直接放在顶层的旧写法，但新的对接更适合继续使用显式 `body`。
+当前解析器仍兼容少量把字段直接放在顶层的旧写法，但新的对接继续使用显式 `body` 更清楚。
 
 ## 当前正式主路径方法
 
@@ -131,7 +131,7 @@ sidebar_position: 6
 
 #### 当前用途
 
-这条方法用于向某个已绑定会话发送一条消息，并在请求里显式给出本次执行策略。
+这条方法用于向某个已绑定会话发送一条消息，并以流式事件返回本轮 run 的执行过程。
 
 #### 当前请求字段
 
@@ -141,27 +141,89 @@ sidebar_position: 6
 | `agent` | 可选；如果提供，会用于校验与会话绑定智能体是否一致。 |
 | `message.role` | 当前必须是 `user`。 |
 | `message.content` | 必须是非空文本。 |
-| `model` | 必须是非空字符串。 |
-| `enabledTools` | 可选；如果提供，必须是字符串数组。 |
-| `requestOptions` | 可选；如果提供，必须是对象。 |
+| `policy.modelRoute.providerProfileId` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.provider` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.endpointType` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.baseUrl` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.modelId` | 必须是非空字符串。 |
+| `policy.enabledTools` | 可选；如果提供，必须是字符串数组。 |
+| `policy.requestOptions` | 可选；如果提供，必须是对象。 |
 
-#### 当前值得依赖的响应字段
+#### 当前事件流外壳
+
+一旦流成功建立，每个事件都带有统一外壳：
 
 | 字段 | 含义 |
 | --- | --- |
-| `ok` | 请求是否成功 |
+| `type` | 事件类型 |
+| `runId` | 当前 run 标识 |
 | `sessionId` | 当前会话 ID |
-| `boundAgent` | 当前绑定智能体 |
-| `assistantMessage` | 助手返回消息 |
-| `resolvedModelId` | 这一轮实际采用的模型 ID |
-| `resolvedToolIds` | 这一轮实际启用的工具 ID |
-| `requestOptions` | 当前回显的请求选项 |
+| `sequence` | 严格递增的事件序号 |
+| `payload` | 当前事件载荷 |
+
+#### 当前事件集合
+
+| 事件类型 | 当前语义 |
+| --- | --- |
+| `run_started` | run 已建立，前端可以创建 assistant 占位项。 |
+| `text_delta` | assistant 文本增量片段。 |
+| `run_completed` | 本轮成功完成，并带回最终 assistant 文本与解析后的路由回显。 |
+| `run_failed` | 本轮失败结束，并给出错误码、错误消息与细节。 |
+| `run_cancelled` | 本轮取消结束，并给出取消原因。 |
+| `run_diagnostic` | 非敏感诊断信息，通常出现在失败前。 |
+| `tool_event_reserved` | 协议预留事件，本期没有真实工具生命周期。 |
+
+#### 当前终态规则
+
+| 规则 | 当前要求 |
+| --- | --- |
+| 首个事件 | 必须是 `run_started`。 |
+| 终态事件 | 只能是 `run_completed`、`run_failed` 或 `run_cancelled` 之一。 |
+| 终态之后 | 不会继续输出其他事件。 |
+| 诊断事件 | 可以在失败终态前出现。 |
+
+#### `run_completed` 当前值得依赖的字段
+
+| 字段 | 含义 |
+| --- | --- |
+| `assistantMessageId` | assistant 占位消息 ID |
+| `assistantText` | 本轮最终 assistant 文本 |
+| `resolvedModelId` | 本轮实际采用的模型 ID |
+| `resolvedModelRoute` | 本轮解析确认后的公开路由回显 |
+| `resolvedToolIds` | 本轮实际启用的工具 ID |
+| `requestOptions` | 本轮回显的请求选项 |
+
+#### `run_failed` 当前值得依赖的字段
+
+| 字段 | 含义 |
+| --- | --- |
+| `code` | 错误码 |
+| `message` | 错误消息 |
+| `details` | 错误细节对象 |
+
+#### `run_cancelled` 当前值得依赖的字段
+
+| 字段 | 含义 |
+| --- | --- |
+| `assistantMessageId` | assistant 占位消息 ID |
+| `reason` | 取消原因 |
+
+#### `run_diagnostic` 当前值得依赖的字段
+
+| 字段 | 含义 |
+| --- | --- |
+| `code` | 诊断码 |
+| `message` | 诊断消息 |
+| `details` | 非敏感诊断细节 |
+| `stage` | 诊断阶段 |
 
 #### 当前语义重点
 
 - 会话绑定的是智能体。
-- 模型和工具策略属于请求级输入。
+- 模型语义已经升级为请求级 `modelRoute`，而不是单一字符串 `model`。
+- provider secrets 不进入请求体，也不进入事件流。
 - 当前 session store 仍然是内存态，runtime 重启后会话不会自动恢复。
+- 增量阶段只累积草稿，成功完成才归档 assistant 文本。
 
 ## 当前兼容方法
 
@@ -177,7 +239,9 @@ backend 分册不再把它们当成当前正式主路径来描述。
 
 ## 当前错误响应外壳
 
-聊天相关错误当前统一返回下面这类结构：
+### 流建立前的 JSON 错误
+
+聊天相关错误当前仍然可能返回下面这类 JSON 外壳：
 
 ```json
 {
@@ -193,20 +257,33 @@ backend 分册不再把它们当成当前正式主路径来描述。
 }
 ```
 
+这类错误通常发生在流建立之前，例如请求结构无效、会话不存在，或者 agent 校验失败。
+
+### 流建立后的错误
+
+如果错误发生在 run 已建立之后，当前主线会优先使用流内错误：
+
+1. 需要补充诊断时，先发 `run_diagnostic`。
+2. 再发 `run_failed` 作为终态。
+
 ## 当前常见错误码
 
-| 错误码 | HTTP 状态 | 常见触发场景 |
-| --- | --- | --- |
-| `invalid_request` | 400 | `method`、`body`、`sessionId`、`message` 或 `model` 等字段格式不对。 |
-| `session_not_found` | 404 | 请求引用的 `sessionId` 不存在。 |
-| `agent_not_found` | 404 | 请求中的 `agentId` 不在当前目录中。 |
-| `agent_mismatch` | 409 | `message/send` 里的 `agent` 与会话绑定智能体不一致。 |
-| `tool_not_found` | 400 | `enabledTools` 中出现后端不认识的工具 ID。 |
-| `unsupported_message_shape` | 400 | 兼容方法里传入了当前不支持的消息结构。 |
-| `invalid_message_history` | 409 | 进程内会话历史损坏，无法继续拼装上下文。 |
-| `model_not_configured` | 503 | 当前 runtime 没有可用模型配置。 |
-| `agent_execution_failed` | 500 | 智能体执行阶段抛错。 |
-| `method_not_implemented` | 501 | 调用了当前 scaffold 不支持的方法。 |
+| 错误码 | 常见触发场景 |
+| --- | --- |
+| `invalid_request` | `method`、`body`、`sessionId`、`message` 或 `policy.modelRoute` 等字段格式不对。 |
+| `session_not_found` | 请求引用的 `sessionId` 不存在。 |
+| `agent_not_found` | 请求中的 `agentId` 不在当前目录中。 |
+| `agent_mismatch` | `message/send` 里的 `agent` 与会话绑定智能体不一致。 |
+| `tool_not_found` | `enabledTools` 中出现后端不认识的工具 ID。 |
+| `invalid_message_history` | 进程内会话历史损坏，无法继续拼装上下文。 |
+| `model_not_configured` | 当前 runtime 没有可用模型执行器配置。 |
+| `provider_profile_not_found` | 请求中的 `providerProfileId` 在宿主真源中不存在。 |
+| `model_route_snapshot_mismatch` | 请求快照与宿主当前 provider 配置不一致。 |
+| `provider_secret_missing` | 对应 provider profile 缺少 API key。 |
+| `host_model_route_access_denied` | Python runtime 调宿主私桥时访问令牌无效。 |
+| `host_model_route_unavailable` | 宿主私桥不可用或返回了无效响应。 |
+| `agent_execution_failed` | 智能体执行阶段抛错。 |
+| `method_not_implemented` | 调用了当前 scaffold 不支持的方法。 |
 
 ## 当前哪些字段更适合依赖
 
@@ -218,7 +295,11 @@ backend 分册不再把它们当成当前正式主路径来描述。
 - `boundAgent`
 - `capabilitiesVersion`
 - `toolSelectionMode`
+- `policy.modelRoute`
+- `runId`
+- `sequence`
 - `resolvedModelId`
+- `resolvedModelRoute`
 - `resolvedToolIds`
 
 相比之下，某些响应里较细的提示字段、错误文案逐字内容和日志明细键名，更适合继续按当前实现细节理解。
@@ -226,5 +307,6 @@ backend 分册不再把它们当成当前正式主路径来描述。
 ## 快速结论
 
 - 当前正式聊天主路径仍然是四个 session-first 方法。
+- [`message/send`](../system/chat-runtime-contract.md) 已经切到流式事件主合同。
 - 兼容方法依然存在，但已经退到参考位置。
-- 当前错误外壳和常见错误码已经足够支持联调与排错。
+- 当前错误外壳、流式事件集合与常见错误码已经足够支持联调与排错。

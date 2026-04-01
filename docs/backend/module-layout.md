@@ -1,12 +1,12 @@
 ---
 title: 后端模块布局
-description: 说明 Python 后端当前的目录结构、运行责任与模块边界。
+description: 说明 Python 后端当前的目录结构、运行责任与流式聊天主线的模块边界。
 sidebar_position: 2
 ---
 
 # 后端模块布局
 
-这页只说明当前代码已经形成的目录结构和职责边界。启动参数、路径差异和配置来源请看[后端运行与配置](./run-and-config.md)，HTTP 方法与前端接入方式请看[后端暴露契约与前端接入点](./frontend-connection.md)。
+这页只说明当前代码已经形成的目录结构和职责边界。启动参数、路径差异和配置来源见 [后端运行与配置](./run-and-config.md)，HTTP 方法与前端接入方式见 [后端暴露契约与前端接入点](./frontend-connection.md)。
 
 ## 当前后端可以先分成四层
 
@@ -21,8 +21,8 @@ sidebar_position: 2
 
 ```text
 backend/app/
-├─ desktop_runtime/              # 本地 loopback HTTP 服务与生命周期
-├─ copilot_runtime/             # 聊天契约、会话、目录与消息执行
+├─ desktop_runtime/              # 本地 loopback HTTP 服务、生命周期与宿主私桥客户端
+├─ copilot_runtime/             # 聊天契约、会话、run 编排与流式事件
 ├─ blackboard/                  # Blackboard 领域能力
 ├─ teaching_information_system/ # TIS 领域能力
 ├─ core/                        # 跨领域基础设施
@@ -34,8 +34,8 @@ backend/app/
 
 | 目录 | 当前角色 | 今天是否属于正式主路径 |
 | --- | --- | --- |
-| `desktop_runtime/` | 启动本地 HTTP 服务，解析运行配置，提供控制面端点，挂载聊天根端点。 | 是 |
-| `copilot_runtime/` | 承接当前聊天主契约，管理智能体目录、工具目录、会话和消息执行。 | 是 |
+| `desktop_runtime/` | 启动本地 HTTP 服务，解析运行配置，提供控制面端点，并装配宿主私桥客户端。 | 是 |
+| `copilot_runtime/` | 承接当前聊天主契约，管理智能体目录、工具目录、会话、run 编排和流式事件。 | 是 |
 | `blackboard/` | 提供 Blackboard 抓取、同步、持久化、CLI 与工具层能力。 | 否 |
 | `teaching_information_system/` | 提供 TIS 抓取、诊断、成绩与课程相关能力。 | 否 |
 | `core/` | 放跨领域基础设施，目前以认证为主。 | 否 |
@@ -51,20 +51,22 @@ backend/app/
 - 它创建 FastAPI 应用。
 - 它注册 `/health`、`/ready`、`/version`、`/build-info`、`/diagnostics` 和 `/diagnostics/runtime-info` 这些控制面端点。
 - 它把聊天运行时根端点 `POST /` 挂到同一个 loopback HTTP 服务上。
+- 它创建宿主私桥客户端，让 Python runtime 能在执行阶段按请求解析 provider 路由。
 - 它管理启动、就绪和关闭过程。
 
 这里要分清一条边界：`desktop_runtime/` 是宿主管理下的服务入口层，它负责承载服务和暴露控制面，但不会在这里展开聊天业务细节。
 
 ### 先看哪些文件
 
-- `server.py` 负责创建应用、注册控制面端点和挂载聊天路由。
-- `config.py` 负责解析 `--host`、`--port`、`--local-token`、宿主路由桥参数以及各类路径参数。
+- `server.py` 负责创建应用、注册控制面端点、挂载聊天路由，并注入宿主私桥客户端。
+- `config.py` 负责解析 `--host`、`--port`、`--local-token`、宿主私桥 bootstrap 和各类路径参数。
+- `host_model_route_bridge.py` 负责与宿主私桥通信，按请求解析 provider route。
 - `health.py` 负责构造健康检查、版本和 diagnostics 响应。
 - `lifecycle.py` 负责管理 runtime 的生命周期状态。
 
 ## `copilot_runtime/` 是当前聊天主契约的核心
 
-`copilot_runtime/` 才是今天聊天后端的核心实现。它当前已经不是早期那种以 `agent/connect` 和 `agent/run` 为中心的说明方式，而是围绕一条更清楚的 session-first 主路径组织。
+`copilot_runtime/` 才是今天聊天后端的核心实现。它已经不再围绕旧的整包 `message/send` 叙事组织，而是围绕 session-first 主路径和 run 流式主线展开。
 
 当前正式主路径是四个方法：
 
@@ -77,7 +79,7 @@ backend/app/
 
 - 智能体目录由后端提供。
 - 会话在创建时绑定智能体。
-- 模型和工具策略在每次消息请求里单独给出。
+- 模型路由、工具列表和请求选项在每次消息请求里单独给出。
 
 因此，这一层的关键责任包括：
 
@@ -85,33 +87,59 @@ backend/app/
 - 维护智能体目录和工具目录。
 - 管理进程内会话存储。
 - 组装能力面响应。
-- 按请求执行消息发送，并把成功结果写回会话历史。
+- 以 run 为中心编排一次流式消息执行。
+- 在成功终态时完成会话归档。
 
 ### 这一层今天真正成熟到什么程度
 
-当前默认装配里，聊天 runtime 只注册了最小智能体目录和默认工具目录。默认工具目录里已经有内建的 `tool.file-convert`，对应的实现位于 `app/tools/file_convert.py`。
+当前默认装配里，聊天 runtime 只注册了最小智能体目录和默认工具目录。默认工具目录里仍然有内建的 `tool.file-convert`，对应实现位于 `app/tools/file_convert.py`。
 
 这意味着两件事：
 
-- `copilot_runtime/` 已经是一条能独立工作的聊天主路径。
+- `copilot_runtime/` 已经是一条能独立工作的流式聊天主路径。
 - Blackboard 和 TIS 并不会因为目录存在，就自动成为当前正式聊天工具目录的一部分。
 
 ### 先看哪些文件
 
-- `contracts.py` 定义当前方法对应的目录视图与请求契约。
-- `protocol.py` 负责把 `POST /` 的请求体解析成内部请求对象。
-- `router.py` 负责按 `method` 分发请求。
+- `contracts.py` 定义当前方法对应的目录视图、请求契约和能力面模型。
+- `protocol.py` 负责把 `POST /` 的请求体解析成内部请求对象，当前重点包括 `policy.modelRoute`。
+- `router.py` 负责按 `method` 分发请求，并把 [`message/send`](../system/chat-runtime-contract.md) 转到流式响应路径。
 - `composition.py` 负责装配默认 session store、智能体目录、工具目录、run 编排层和 bridge。
-- `message_runs.py` 负责请求级模型路由解析、流式事件编排和最终归档。
-- `bridge.py` 现在只保留会话能力查询与最薄的流式桥接入口。
+- `message_runs.py` 负责请求级模型路由解析、流式事件编排、错误终态和最终归档。
+- `run_events.py` 负责定义 `run_started`、`text_delta`、`run_completed`、`run_failed`、`run_cancelled`、`run_diagnostic` 与 `tool_event_reserved` 这些事件，以及 SSE 编码。
+- `model_routes.py` 负责模型路由对象、解析结果和相关错误类型定义。
+- `bridge.py` 现在只保留会话能力查询、兼容 run 路径和最薄的流式桥接入口。
 - `session_store.py` 负责当前的内存态会话存储。
 - `agent_registry.py` 和 `tool_registry.py` 负责目录真源。
+
+### `message_runs.py` 是当前主线的收口点
+
+当前流式主线最关键的模块是 `message_runs.py`。这层已经承担了下面这些工作：
+
+- 生成 `runId` 和 assistant 占位消息 ID。
+- 先发 `run_started`。
+- 读取请求中的 `modelRoute`。
+- 通过 `RuntimeModelRouteResolver` 在执行前解析 provider route 与认证信息。
+- 打开上游文本流并持续输出 `text_delta`。
+- 在失败前按需要输出 `run_diagnostic`。
+- 在成功结束时归档最终 assistant 文本，并发出 `run_completed`。
+- 在取消或失败时发出对应终态，但不归档 assistant 成功消息。
+
+### `bridge.py` 当前已经退到薄桥位置
+
+当前主线里，`bridge.py` 不再承担整条聊天执行主语义。它现在更适合作为：
+
+- 会话能力查询入口。
+- 兼容 `agent/run` 的桥接层。
+- 流式 [`message/send`](../system/chat-runtime-contract.md) 的最薄转发入口。
+
+如果文档仍然把 `RuntimeBridge.send_message()` 写成当前主线核心，那就已经落后于实现现实了。
 
 ### 旧兼容方法现在处在什么位置
 
 `info`、`agent/connect` 和 `agent/run` 仍然存在于 runtime 中，也仍然服务某些兼容链路和旧测试。但在 backend 分册里，它们不再和当前主路径并列叙述。
 
-更准确的说法是：这些方法仍然可见，但它们已经退到兼容位置；当前权威主路径仍然是 session-first 四方法。
+更准确的说法是：这些方法仍然可见，但它们已经退到兼容位置；当前权威主路径仍然是 session-first 四方法，其中 `message/send` 已切到流式事件响应。
 
 ## `blackboard/` 是成熟度最高的领域能力模块
 
@@ -161,16 +189,14 @@ backend/app/
 
 当前更准确的关系是：
 
-- `desktop_runtime/` 和 `copilot_runtime/` 一起构成当前本地聊天后端。
+- `desktop_runtime/` 和 `copilot_runtime/` 一起构成当前本地流式聊天后端。
 - `blackboard/` 和 `teaching_information_system/` 主要提供领域能力、CLI、工具结果和未来服务化输入。
 - 默认聊天 runtime 目前不会自动把 Blackboard 与 TIS 全量收编成正式工具目录。
 
 ## 这页想帮助你先建立什么判断
 
-如果你刚接手代码，可以先用下面这组判断防止误读：
-
-- 看到 `desktop_runtime/` 时，优先把它理解成本地宿主服务入口。
-- 看到 `copilot_runtime/` 时，优先把它理解成当前聊天契约和会话执行核心。
+- 看到 `desktop_runtime/` 时，优先把它理解成本地宿主服务入口和宿主私桥客户端入口。
+- 看到 `copilot_runtime/` 时，优先把它理解成当前聊天契约、run 编排和流式事件核心。
 - 看到 Blackboard 与 TIS 时，优先把它们理解成领域能力模块，而不是已经完成前端服务化的业务 API。
 - 看到 `services/` 时，先把它看成预留位置，不要直接当成已经成型的主服务层。
 

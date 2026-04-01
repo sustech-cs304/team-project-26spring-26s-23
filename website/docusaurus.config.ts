@@ -34,6 +34,7 @@ const config: Config = {
           path: '../docs',
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
+          exclude: ['plans/**'],
         },
         blog: false,
         theme: {
