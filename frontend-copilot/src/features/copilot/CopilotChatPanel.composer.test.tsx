@@ -547,6 +547,59 @@ describe('CopilotChatPanel composer interactions', () => {
 
     rendered.unmount()
   })
+
+  it('allows cancelling an in-flight send, stops later deltas, and surfaces cancelled state', async () => {
+    const sendMessage = createAbortableSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请开始并允许我取消')
+
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '第一段')
+
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    expect(sendButton.title).toBe('取消当前响应')
+    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('响应生成中，可随时取消。')
+    expect(rendered.container.textContent).toContain('第一段')
+    expect(rendered.container.textContent).not.toContain('第二段')
+
+    await clickElement(sendButton)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
+    expect(rendered.container.textContent).toContain('已取消')
+    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('当前响应已取消，未定稿为成功消息。')
+    expect(rendered.container.textContent).toContain('第一段')
+    expect(rendered.container.textContent).not.toContain('第二段')
+    expect(rendered.container.textContent).not.toContain('已完成')
+
+    rendered.unmount()
+  })
 })
 
 function createResolvedSendMessageSpy() {
@@ -593,4 +646,71 @@ function createPersistedWorkspaceStateLoader() {
     source: 'stored' as const,
     state: createPersistedWorkspaceState(),
   }))
+}
+
+function createAbortableSendMessageSpy() {
+  return vi.fn(async function* (input: Parameters<typeof sendRuntimeMessage>[0]) {
+    yield {
+      type: 'run_started',
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-cancel:assistant',
+      },
+    }
+
+    await Promise.resolve()
+    yield {
+      type: 'text_delta',
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        assistantMessageId: 'run-cancel:assistant',
+        delta: '第一段',
+      },
+    }
+
+    await new Promise<never>((_resolve, reject) => {
+      const abort = () => {
+        const error = new Error('The operation was aborted.')
+        error.name = 'AbortError'
+        reject(error)
+      }
+
+      if (input.signal?.aborted) {
+        abort()
+        return
+      }
+
+      input.signal?.addEventListener('abort', abort, { once: true })
+    })
+
+    yield {
+      type: 'text_delta',
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        assistantMessageId: 'run-cancel:assistant',
+        delta: '第二段',
+      },
+    }
+  })
+}
+
+async function waitForText(container: HTMLElement, expectedText: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (container.textContent?.includes(expectedText)) {
+      return
+    }
+
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  throw new Error(`Timed out waiting for text: ${expectedText}`)
 }

@@ -251,46 +251,53 @@ export async function* sendRuntimeMessage(input: {
   let sawRunStarted = false
   let sawTerminal = false
 
-  for await (const event of parseRuntimeRunEventStream(response.body)) {
-    if (sawTerminal) {
-      throw new Error('Runtime event stream emitted additional events after a terminal event.')
+  try {
+    for await (const event of parseRuntimeRunEventStream(response.body)) {
+      if (sawTerminal) {
+        throw new Error('Runtime event stream emitted additional events after a terminal event.')
+      }
+
+      if (event.sequence <= lastSequence) {
+        throw new Error(`Runtime event sequence regressed from ${lastSequence} to ${event.sequence}.`)
+      }
+
+      if (runId !== null && event.runId !== runId) {
+        throw new Error(`Runtime event stream changed runId from ${runId} to ${event.runId}.`)
+      }
+
+      if (sessionId !== null && event.sessionId !== sessionId) {
+        throw new Error(`Runtime event stream changed sessionId from ${sessionId} to ${event.sessionId}.`)
+      }
+
+      if (!sawRunStarted && event.type !== 'run_started') {
+        throw new Error(`Runtime event stream must begin with run_started, received ${event.type}.`)
+      }
+
+      lastSequence = event.sequence
+      runId = event.runId
+      sessionId = event.sessionId
+      if (event.type === 'run_started') {
+        sawRunStarted = true
+      }
+      if (isTerminalRuntimeRunEvent(event)) {
+        sawTerminal = true
+      }
+
+      yield event
     }
 
-    if (event.sequence <= lastSequence) {
-      throw new Error(`Runtime event sequence regressed from ${lastSequence} to ${event.sequence}.`)
+    if (!sawRunStarted) {
+      throw new Error('Runtime event stream ended before run_started was received.')
     }
 
-    if (runId !== null && event.runId !== runId) {
-      throw new Error(`Runtime event stream changed runId from ${runId} to ${event.runId}.`)
+    if (!sawTerminal) {
+      throw new Error('Runtime event stream ended without a terminal event.')
     }
-
-    if (sessionId !== null && event.sessionId !== sessionId) {
-      throw new Error(`Runtime event stream changed sessionId from ${sessionId} to ${event.sessionId}.`)
+  } catch (error) {
+    if (isAbortLikeError(error) || input.signal?.aborted === true) {
+      throw createAbortError()
     }
-
-    if (!sawRunStarted && event.type !== 'run_started') {
-      throw new Error(`Runtime event stream must begin with run_started, received ${event.type}.`)
-    }
-
-    lastSequence = event.sequence
-    runId = event.runId
-    sessionId = event.sessionId
-    if (event.type === 'run_started') {
-      sawRunStarted = true
-    }
-    if (isTerminalRuntimeRunEvent(event)) {
-      sawTerminal = true
-    }
-
-    yield event
-  }
-
-  if (!sawRunStarted) {
-    throw new Error('Runtime event stream ended before run_started was received.')
-  }
-
-  if (!sawTerminal) {
-    throw new Error('Runtime event stream ended without a terminal event.')
+    throw error
   }
 }
 
@@ -406,4 +413,17 @@ function buildRuntimeErrorMessage(payload: RuntimeErrorPayload, status: number):
   }
 
   return `Runtime request failed with HTTP ${status}.`
+}
+
+function createAbortError(): Error {
+  const error = new Error('The operation was aborted.')
+  error.name = 'AbortError'
+  return error
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'name' in error
+    && error.name === 'AbortError'
 }

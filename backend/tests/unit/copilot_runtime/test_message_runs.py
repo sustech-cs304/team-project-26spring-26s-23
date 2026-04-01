@@ -207,6 +207,46 @@ def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> No
     assert store.list_messages("session-1") == ()
 
 
+def test_stream_events_client_disconnect_cancels_run_and_does_not_archive() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["partial", "late"], output="partial late")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    disconnect_checks = 0
+
+    async def is_client_disconnected() -> bool:
+        nonlocal disconnect_checks
+        disconnect_checks += 1
+        return disconnect_checks >= 2
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1"),
+            is_client_disconnected=is_client_disconnected,
+        )
+    )
+
+    assert [event.type for event in events] == ["run_started", "text_delta", "run_cancelled"]
+    assert events[-1].payload == {
+        "assistantMessageId": events[0].payload["assistantMessageId"],
+        "reason": "cancelled",
+    }
+    assert store.list_messages("session-1") == ()
+
+
+
 def test_encode_runtime_run_event_renders_sse_payload() -> None:
     request = _build_request(session_id="session-1")
     event = asyncio.run(_collect_events_from_request(request))[0]
@@ -246,8 +286,15 @@ def test_stream_events_missing_session_emits_failed_terminal_event() -> None:
 async def _collect_events(
     orchestrator: RuntimeMessageRunOrchestrator,
     request: RuntimeMessageSendRequest,
+    is_client_disconnected=None,
 ):
-    return [event async for event in orchestrator.stream_events(request=request)]
+    return [
+        event
+        async for event in orchestrator.stream_events(
+            request=request,
+            is_client_disconnected=is_client_disconnected,
+        )
+    ]
 
 
 async def _collect_events_from_request(request: RuntimeMessageSendRequest):

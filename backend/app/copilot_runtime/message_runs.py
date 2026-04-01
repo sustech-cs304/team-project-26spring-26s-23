@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Protocol
@@ -95,6 +95,7 @@ class RuntimeMessageRunOrchestrator:
         self,
         *,
         request: RuntimeMessageSendRequest,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
     ) -> AsyncIterator[RuntimeRunEvent]:
         run_id = _next_run_id()
         assistant_message_id = f"{run_id}:assistant"
@@ -209,6 +210,7 @@ class RuntimeMessageRunOrchestrator:
                 request_options=request.policy.requestOptions,
             ) as stream:
                 async for delta in stream.iter_deltas():
+                    await self._raise_if_client_disconnected(is_client_disconnected)
                     if delta == "":
                         continue
                     yield events.build(
@@ -218,7 +220,9 @@ class RuntimeMessageRunOrchestrator:
                             "delta": delta,
                         },
                     )
+                await self._raise_if_client_disconnected(is_client_disconnected)
                 assistant_text = await stream.get_output()
+                await self._raise_if_client_disconnected(is_client_disconnected)
         except asyncio.CancelledError:
             yield events.build(
                 RUN_CANCELLED_EVENT_TYPE,
@@ -257,6 +261,7 @@ class RuntimeMessageRunOrchestrator:
                 yield event
             return
 
+        await self._raise_if_client_disconnected(is_client_disconnected)
         persisted_session, _created = self._session_store.append_turn(
             session_id=session.session_id,
             bound_agent_id=session.bound_agent_id,
@@ -327,6 +332,21 @@ class RuntimeMessageRunOrchestrator:
             )
         except LookupError as exc:
             raise ToolNotFoundError(extract_unknown_tool_id(exc)) from exc
+
+    async def _raise_if_client_disconnected(
+        self,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+    ) -> None:
+        if await self._is_client_disconnected(is_client_disconnected):
+            raise asyncio.CancelledError()
+
+    async def _is_client_disconnected(
+        self,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+    ) -> bool:
+        if is_client_disconnected is None:
+            return False
+        return await is_client_disconnected()
 
     async def _build_failed_events(
         self,

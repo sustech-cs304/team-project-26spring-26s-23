@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { sendRuntimeMessage } from './chat-contract'
 import {
@@ -102,5 +102,37 @@ describe('sendRuntimeMessage', () => {
       code: 'agent_mismatch',
       status: 409,
     })
+  })
+
+  it('forwards abort signals into the streaming POST request', async () => {
+    const abortError = new Error('The operation was aborted.')
+    abortError.name = 'AbortError'
+    const fetchFn = vi.fn(async () => {
+      throw abortError
+    })
+    const abortController = new AbortController()
+    abortController.abort()
+
+    await expect(async () => {
+      for await (const _event of sendRuntimeMessage({
+        runtimeUrl,
+        sessionId,
+        agent: agentId,
+        message: createUserMessage(),
+        modelRoute: createRuntimeModelRoute(),
+        enabledTools: [],
+        requestOptions: {},
+        fetchFn,
+        signal: abortController.signal,
+      })) {
+        throw new Error(`Unexpected event: ${JSON.stringify(_event)}`)
+      }
+    }).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', expect.objectContaining({
+      signal: abortController.signal,
+    }))
   })
 })

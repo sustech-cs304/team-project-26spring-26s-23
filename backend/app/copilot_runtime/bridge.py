@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -76,9 +76,17 @@ class RuntimeBridge:
             newly_created=newly_created,
         )
 
-    def stream_message(self, *, request: RuntimeMessageSendRequest) -> AsyncIterator[RuntimeRunEvent]:
+    def stream_message(
+        self,
+        *,
+        request: RuntimeMessageSendRequest,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
+    ) -> AsyncIterator[RuntimeRunEvent]:
         orchestrator = self._require_message_run_orchestrator()
-        return orchestrator.stream_events(request=request)
+        return orchestrator.stream_events(
+            request=request,
+            is_client_disconnected=is_client_disconnected,
+        )
 
     def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:

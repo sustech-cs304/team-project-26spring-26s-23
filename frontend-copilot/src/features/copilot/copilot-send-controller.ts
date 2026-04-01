@@ -92,6 +92,7 @@ export async function orchestrateCopilotSend(input: {
   setSendError: Dispatch<SetStateAction<string | null>>
   setComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   setConversation: Dispatch<SetStateAction<CopilotConversationTurn[]>>
+  signal?: AbortSignal
 }) {
   if (!isCopilotConnectableState(input.state) || input.sessionShell === null) {
     return
@@ -169,7 +170,10 @@ export async function orchestrateCopilotSend(input: {
   let didReachTerminal = false
 
   try {
-    for await (const event of input.sendMessage(runtimeInput)) {
+    for await (const event of input.sendMessage({
+      ...runtimeInput,
+      signal: input.signal,
+    })) {
       switch (event.type) {
         case 'run_started': {
           const nextAssistantMessageId = event.payload.assistantMessageId
@@ -285,27 +289,42 @@ export async function orchestrateCopilotSend(input: {
       }
     }
   } catch (error) {
-    const formattedError = formatRuntimeMessageSendError(error)
-    input.setSendError(formattedError)
-    input.setConversation((current) => failAssistantTurn(current, {
-      assistantMessageId,
-      content: formattedError,
-      diagnostic,
-    }))
-    input.setRunState((current) => ({
-      ...current,
-      phase: error instanceof DOMException && error.name === 'AbortError' ? 'cancelled' : 'failed',
-      assistantMessageId,
-      diagnostic,
-      failure: error instanceof DOMException && error.name === 'AbortError'
-        ? null
-        : {
-            code: 'stream_transport_failed',
-            message: formattedError,
-            details: {},
-          },
-      cancelReason: error instanceof DOMException && error.name === 'AbortError' ? 'cancelled' : null,
-    }))
+    if (isAbortError(error) || input.signal?.aborted === true) {
+      input.setSendError(null)
+      input.setConversation((current) => cancelAssistantTurn(current, {
+        assistantMessageId,
+        reason: 'cancelled',
+        diagnostic,
+      }))
+      input.setRunState((current) => ({
+        ...current,
+        phase: 'cancelled',
+        assistantMessageId,
+        diagnostic,
+        failure: null,
+        cancelReason: 'cancelled',
+      }))
+    } else {
+      const formattedError = formatRuntimeMessageSendError(error)
+      input.setSendError(formattedError)
+      input.setConversation((current) => failAssistantTurn(current, {
+        assistantMessageId,
+        content: formattedError,
+        diagnostic,
+      }))
+      input.setRunState((current) => ({
+        ...current,
+        phase: 'failed',
+        assistantMessageId,
+        diagnostic,
+        failure: {
+          code: 'stream_transport_failed',
+          message: formattedError,
+          details: {},
+        },
+        cancelReason: null,
+      }))
+    }
   } finally {
     if (!didReachTerminal) {
       input.setRunState((current) => {
@@ -334,4 +353,11 @@ function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
       modelId: route.snapshot.modelId,
     },
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'name' in error
+    && error.name === 'AbortError'
 }

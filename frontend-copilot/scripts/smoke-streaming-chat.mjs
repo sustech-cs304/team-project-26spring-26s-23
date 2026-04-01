@@ -117,6 +117,7 @@ async function main() {
       throw new Error(`Unexpected session/create response: ${JSON.stringify(sessionPayload)}`)
     }
 
+    const abortController = options.cancelAfterFirstDelta ? new AbortController() : null
     const messageResponse = await fetch(`${runtimeUrl}/`, {
       method: 'POST',
       headers: {
@@ -138,6 +139,7 @@ async function main() {
           },
         },
       }),
+      signal: abortController?.signal,
     })
 
     if (!messageResponse.ok || messageResponse.body === null) {
@@ -145,6 +147,39 @@ async function main() {
     }
 
     console.log('=== streamed runtime events ===')
+    if (options.cancelAfterFirstDelta) {
+      const cancelResult = await readRuntimeRunEventsUntilFirstDeltaAndAbort(messageResponse.body, abortController)
+      for (const event of cancelResult.events) {
+        console.log(JSON.stringify(summarizeRuntimeEvent(event), null, 2))
+      }
+
+      const textDeltaEvents = cancelResult.events.filter((event) => event.type === 'text_delta')
+      if (!cancelResult.transportAborted) {
+        throw new Error('Cancel smoke expected the client transport to abort after the first delta.')
+      }
+      if (!cancelResult.events.some((event) => event.type === 'run_started')) {
+        throw new Error('Cancel smoke expected a run_started event before aborting the stream.')
+      }
+      if (textDeltaEvents.length !== 1) {
+        throw new Error(`Cancel smoke expected exactly one text_delta before aborting, received ${textDeltaEvents.length}.`)
+      }
+      if (cancelResult.events.some((event) => event.type === 'run_completed')) {
+        throw new Error('Cancel smoke must not observe a run_completed event after client abort.')
+      }
+
+      await delay(250)
+      console.log('=== cancel smoke summary ===')
+      console.log(JSON.stringify({
+        runtimeUrl,
+        providerProfileId: route.providerProfileId,
+        modelId: route.snapshot.modelId,
+        abortedByClient: cancelResult.transportAborted,
+        eventTypes: cancelResult.events.map((event) => event.type),
+        firstDelta: textDeltaEvents[0]?.payload?.delta ?? null,
+      }, null, 2))
+      return
+    }
+
     const events = await readRuntimeRunEvents(messageResponse.body)
     for (const event of events) {
       console.log(JSON.stringify(summarizeRuntimeEvent(event), null, 2))
@@ -179,6 +214,7 @@ function parseArgs(argv) {
     userDataDir: DEFAULT_USER_DATA_DIR,
     providerProfileId: null,
     message: DEFAULT_MESSAGE,
+    cancelAfterFirstDelta: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -200,6 +236,11 @@ function parseArgs(argv) {
     if (token === '--message' && typeof nextValue === 'string') {
       options.message = nextValue
       index += 1
+      continue
+    }
+
+    if (token === '--cancel-after-first-delta') {
+      options.cancelAfterFirstDelta = true
       continue
     }
 
@@ -603,6 +644,56 @@ async function readRuntimeRunEvents(stream) {
   }
 
   return events
+}
+
+async function readRuntimeRunEventsUntilFirstDeltaAndAbort(stream, abortController) {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const events = []
+
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) {
+        buffer += decoder.decode()
+        break
+      }
+
+      buffer += decoder.decode(chunk.value, { stream: true })
+      buffer = buffer.replace(/\r\n/g, '\n')
+
+      while (true) {
+        const boundaryIndex = buffer.indexOf('\n\n')
+        if (boundaryIndex < 0) {
+          break
+        }
+
+        const block = buffer.slice(0, boundaryIndex)
+        buffer = buffer.slice(boundaryIndex + 2)
+        const parsed = parseSseEventBlock(block)
+        if (parsed === null) {
+          continue
+        }
+
+        events.push(parsed)
+        if (parsed.type === 'text_delta') {
+          abortController?.abort()
+          return {
+            events,
+            transportAborted: abortController?.signal.aborted === true,
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return {
+    events,
+    transportAborted: abortController?.signal.aborted === true,
+  }
 }
 
 function parseSseEventBlock(block) {

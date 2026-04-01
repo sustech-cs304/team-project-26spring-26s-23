@@ -84,11 +84,12 @@ def build_router(
             )
 
         if requested_method == MESSAGE_SEND_METHOD:
-            return _handle_message_send_request(
+            return await _handle_message_send_request(
                 parser=parser,
                 payload=payload,
                 scaffold=scaffold,
                 runtime_bridge=runtime_bridge,
+                http_request=request,
             )
 
         if requested_method == AGENT_CONNECT_METHOD:
@@ -170,12 +171,13 @@ def _handle_capabilities_get_request(
     return JSONResponse(content=capabilities.to_dict())
 
 
-def _handle_message_send_request(
+async def _handle_message_send_request(
     *,
     parser: RuntimeProtocolParser,
     payload: dict[str, Any] | None,
     scaffold: RuntimeScaffold,
     runtime_bridge: RuntimeBridge,
+    http_request: Request,
 ) -> JSONResponse | StreamingResponse:
     try:
         message_send_request = parser.extract_message_send_request(payload)
@@ -183,7 +185,12 @@ def _handle_message_send_request(
         return _error_response(exc.status_code, exc.error)
 
     try:
-        return _stream_runtime_run_events(runtime_bridge.stream_message(request=message_send_request))
+        return _stream_runtime_run_events(
+            runtime_bridge.stream_message(
+                request=message_send_request,
+                is_client_disconnected=http_request.is_disconnected,
+            )
+        )
     except RuntimeError as exc:
         return _error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

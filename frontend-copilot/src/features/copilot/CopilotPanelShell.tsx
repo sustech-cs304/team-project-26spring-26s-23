@@ -33,8 +33,11 @@ export interface CopilotPanelShellProps {
   composerDraft: CopilotChatComposerDraft
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
+  onCancelCurrentRun: () => void
   sendStatus: 'idle' | 'sending'
+  canCancelSend: boolean
   sendDisabledReason: string | null
+  runNotice: string | null
   conversation: CopilotConversationTurn[]
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
@@ -124,9 +127,12 @@ function renderSessionShell(props: CopilotPanelShellProps) {
           draft={props.composerDraft}
           onDraftChange={props.onComposerDraftChange}
           onSubmit={props.onSend}
+          onCancel={props.onCancelCurrentRun}
           sendStatus={props.sendStatus}
+          canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
           composerError={props.sendError ?? props.sessionError}
+          runNotice={props.runNotice}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}

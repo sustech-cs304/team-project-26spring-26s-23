@@ -6,7 +6,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import { ArrowUp } from 'lucide-react'
+import { ArrowUp, Square } from 'lucide-react'
 
 import type { AssistantSessionShell } from '../../workbench/types'
 import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
@@ -20,9 +20,12 @@ interface CopilotComposerProps {
   draft: CopilotChatComposerDraft
   onDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
   sendStatus: 'idle' | 'sending'
+  canCancel: boolean
   sendDisabledReason: string | null
   composerError: string | null
+  runNotice: string | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -34,15 +37,19 @@ export function CopilotComposer({
   draft,
   onDraftChange,
   onSubmit,
+  onCancel,
   sendStatus,
+  canCancel,
   sendDisabledReason,
   composerError,
+  runNotice,
   composerInputRef,
   composerHeight,
   onResizeStart,
 }: CopilotComposerProps) {
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
-  const controlsDisabled = sendStatus === 'sending'
+  const isSending = sendStatus === 'sending'
+  const controlsDisabled = isSending
 
   const handleMessageInputKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
@@ -147,18 +154,28 @@ export function CopilotComposer({
         </div>
 
         <button
-          type="submit"
-          className="copilot-chat__send-button"
+          type={isSending ? 'button' : 'submit'}
+          className={[
+            'copilot-chat__send-button',
+            isSending ? 'copilot-chat__send-button--cancel' : '',
+          ].filter((className) => className !== '').join(' ')}
           data-testid="chat-composer-send-button"
-          disabled={sendDisabledReason !== null}
-          title={sendDisabledReason ?? '发送消息'}
-          aria-label={sendDisabledReason ?? '发送消息'}
+          disabled={isSending ? !canCancel : sendDisabledReason !== null}
+          title={isSending ? '取消当前响应' : sendDisabledReason ?? '发送消息'}
+          aria-label={isSending ? '取消当前响应' : sendDisabledReason ?? '发送消息'}
+          onClick={isSending ? onCancel : undefined}
         >
-          {sendStatus === 'sending'
-            ? <span className="copilot-chat__send-button-spinner" aria-hidden="true">…</span>
+          {isSending
+            ? <Square className="copilot-chat__send-button-icon" aria-hidden="true" />
             : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
         </button>
       </div>
+
+      {runNotice !== null && (
+        <p className="copilot-chat__composer-status" data-testid="chat-composer-run-status" role="status">
+          {runNotice}
+        </p>
+      )}
 
       {composerError !== null && (
         <p className="copilot-panel__error" role="alert">

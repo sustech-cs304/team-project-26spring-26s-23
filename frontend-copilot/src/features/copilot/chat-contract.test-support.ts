@@ -157,8 +157,23 @@ export async function* createRuntimeMessageEventStream(
     },
     createRuntimeRunCompletedEvent(),
   ],
+  options: {
+    signal?: AbortSignal
+    yieldBetweenEvents?: boolean
+  } = {},
 ): AsyncGenerator<RuntimeRunEvent> {
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
+    if (options.signal?.aborted) {
+      throw createAbortError()
+    }
+
+    if (index > 0 && options.yieldBetweenEvents !== false) {
+      await Promise.resolve()
+      if (options.signal?.aborted) {
+        throw createAbortError()
+      }
+    }
+
     yield event
   }
 }
@@ -206,4 +221,10 @@ export function createRuntimeErrorPayload(input: { code?: string; message?: stri
         }
       : {}),
   }
+}
+
+function createAbortError(): Error {
+  const error = new Error('The operation was aborted.')
+  error.name = 'AbortError'
+  return error
 }

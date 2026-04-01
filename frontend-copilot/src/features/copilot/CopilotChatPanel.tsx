@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MutableRefObject,
 } from 'react'
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
@@ -71,6 +72,7 @@ export function CopilotChatPanel({
   const [workspaceStateLoaded, setWorkspaceStateLoaded] = useState(false)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
+  const activeAbortControllerRef = useRef<AbortController | null>(null)
 
   const sessionIdentity = sessionShell === null
     ? null
@@ -135,8 +137,21 @@ export function CopilotChatPanel({
     [composerDraft, modelCatalog.models],
   )
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
+  const canCancelSend = activeAbortControllerRef.current !== null && sendStatus === 'sending'
+  const runNotice = useMemo(() => {
+    if (runState.phase === 'starting' || runState.phase === 'streaming') {
+      return '响应生成中，可随时取消。'
+    }
+    if (runState.phase === 'cancelled') {
+      return '当前响应已取消，未定稿为成功消息。'
+    }
+    return null
+  }, [runState.phase])
 
   useEffect(() => {
+    activeAbortControllerRef.current?.abort()
+    activeAbortControllerRef.current = null
+
     if (sessionShell === null) {
       setComposerDraft(createEmptyComposerDraft())
       setRunState(createIdleCopilotRunState())
@@ -175,6 +190,13 @@ export function CopilotChatPanel({
       cancelled = true
     }
   }, [loadWorkspaceState])
+
+  useEffect(() => {
+    return () => {
+      activeAbortControllerRef.current?.abort()
+      activeAbortControllerRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (!workspaceStateLoaded) {
@@ -232,6 +254,8 @@ export function CopilotChatPanel({
   }, [hasAvailableModels, modelCatalog.models, preferredWorkspaceModel, workspaceStateLoaded])
 
   useEffect(() => {
+    activeAbortControllerRef.current?.abort()
+    activeAbortControllerRef.current = null
     setConversation([])
     setRunState(createIdleCopilotRunState())
     setSendError(null)
@@ -262,19 +286,31 @@ export function CopilotChatPanel({
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    await orchestrateCopilotSend({
-      state,
-      sessionShell,
-      composerDraft: effectiveComposerDraft,
-      runState,
-      hasAvailableModels,
-      composerInputRef,
-      sendMessage,
-      setRunState,
-      setSendError,
-      setComposerDraft,
-      setConversation,
-    })
+    const abortController = new AbortController()
+    activeAbortControllerRef.current = abortController
+
+    try {
+      await orchestrateCopilotSend({
+        state,
+        sessionShell,
+        composerDraft: effectiveComposerDraft,
+        runState,
+        hasAvailableModels,
+        composerInputRef,
+        sendMessage,
+        setRunState,
+        setSendError,
+        setComposerDraft,
+        setConversation,
+        signal: abortController.signal,
+      })
+    } finally {
+      clearAbortController(activeAbortControllerRef, abortController)
+    }
+  }
+
+  const handleCancelCurrentRun = () => {
+    activeAbortControllerRef.current?.abort()
   }
 
   return (
@@ -293,8 +329,11 @@ export function CopilotChatPanel({
         composerDraft={effectiveComposerDraft}
         onComposerDraftChange={setComposerDraft}
         onSend={handleSend}
+        onCancelCurrentRun={handleCancelCurrentRun}
         sendStatus={sendStatus}
+        canCancelSend={canCancelSend}
         sendDisabledReason={sendDisabledReason}
+        runNotice={runNotice}
         conversation={conversation}
         composerInputRef={composerInputRef}
         composerHeight={composerHeight}
@@ -364,5 +403,14 @@ function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
       baseUrl: route.snapshot.baseUrl,
       modelId: route.snapshot.modelId,
     },
+  }
+}
+
+function clearAbortController(
+  ref: MutableRefObject<AbortController | null>,
+  controller: AbortController,
+) {
+  if (ref.current === controller) {
+    ref.current = null
   }
 }
