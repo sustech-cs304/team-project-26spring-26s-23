@@ -11,6 +11,7 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import { loadSettingsWorkspaceState } from '../../workbench/settings/workspace-state'
 import {
   sendRuntimeMessage,
+  type RuntimeModelRoute,
 } from './chat-contract'
 import { CopilotPanelShell } from './CopilotPanelShell'
 import {
@@ -24,14 +25,16 @@ import {
 import {
   createCopilotModelCatalog,
   resolveCopilotPreferredModelId,
+  type CopilotModelOption,
 } from './model-picker'
 import {
+  createIdleCopilotRunState,
   getCopilotSendDisabledReason,
   orchestrateCopilotSend,
 } from './copilot-send-controller'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import { useCopilotComposerResize } from './useCopilotComposerResize'
-import type { CopilotBootstrapState } from './types'
+import type { CopilotBootstrapState, CopilotRunState } from './types'
 import './copilot.css'
 
 interface CopilotChatPanelProps {
@@ -61,8 +64,8 @@ export function CopilotChatPanel({
 }: CopilotChatPanelProps) {
   const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
   const [conversation, setConversation] = useState<CopilotConversationTurn[]>([])
-  const [sendStatus, setSendStatus] = useState<'idle' | 'sending'>('idle')
-  const [, setSendError] = useState<string | null>(null)
+  const [runState, setRunState] = useState<CopilotRunState>(createIdleCopilotRunState)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
   const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
   const [workspaceStateLoaded, setWorkspaceStateLoaded] = useState(false)
@@ -120,18 +123,29 @@ export function CopilotChatPanel({
     }),
     [modelCatalog.models, workspacePrimaryModel],
   )
+  const preferredWorkspaceModel = useMemo(
+    () => modelCatalog.models.find((model) => (
+      model.id === preferredWorkspaceModelId || model.modelId === preferredWorkspaceModelId
+    )) ?? null,
+    [modelCatalog.models, preferredWorkspaceModelId],
+  )
   const hasAvailableModels = modelCatalog.models.length > 0
+  const effectiveComposerDraft = useMemo(
+    () => resolveComposerDraftModelSelection(composerDraft, modelCatalog.models),
+    [composerDraft, modelCatalog.models],
+  )
+  const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
 
   useEffect(() => {
     if (sessionShell === null) {
       setComposerDraft(createEmptyComposerDraft())
-      setSendStatus('idle')
+      setRunState(createIdleCopilotRunState())
       setSendError(null)
       return
     }
 
     setComposerDraft(createComposerDraftFromSession(sessionShell))
-    setSendStatus('idle')
+    setRunState(createIdleCopilotRunState())
     setSendError(null)
   }, [sessionIdentity, sessionShell])
 
@@ -169,27 +183,58 @@ export function CopilotChatPanel({
 
     setComposerDraft((current) => {
       if (!hasAvailableModels) {
-        return current.model === ''
+        return current.selectedModelId === '' && current.selectedModelRoute === null
           ? current
           : {
               ...current,
-              model: '',
+              selectedModelId: '',
+              selectedModelRoute: null,
             }
       }
 
-      if (preferredWorkspaceModelId === '' || current.model.trim() !== '') {
+      const selectedModel = modelCatalog.models.find((model) => (
+        model.id === current.selectedModelId || model.modelId === current.selectedModelId
+      ))
+      if (selectedModel !== undefined) {
+        if (
+          current.selectedModelId === selectedModel.id
+          && isSameModelRoute(current.selectedModelRoute, selectedModel.route)
+        ) {
+          return current
+        }
+
+        return {
+          ...current,
+          selectedModelId: selectedModel.id,
+          selectedModelRoute: cloneRuntimeModelRoute(selectedModel.route),
+        }
+      }
+
+      if (current.selectedModelId.trim() !== '') {
+        return current.selectedModelRoute === null
+          ? current
+          : {
+              ...current,
+              selectedModelRoute: null,
+            }
+      }
+
+      if (preferredWorkspaceModel === null) {
         return current
       }
 
       return {
         ...current,
-        model: preferredWorkspaceModelId,
+        selectedModelId: preferredWorkspaceModel.id,
+        selectedModelRoute: cloneRuntimeModelRoute(preferredWorkspaceModel.route),
       }
     })
-  }, [hasAvailableModels, preferredWorkspaceModelId, workspaceStateLoaded])
+  }, [hasAvailableModels, modelCatalog.models, preferredWorkspaceModel, workspaceStateLoaded])
 
   useEffect(() => {
     setConversation([])
+    setRunState(createIdleCopilotRunState())
+    setSendError(null)
   }, [sessionShell?.sessionId])
 
   useEffect(() => {
@@ -208,11 +253,11 @@ export function CopilotChatPanel({
     () => getCopilotSendDisabledReason({
       state,
       sessionShell,
-      sendStatus,
-      composerDraft,
+      runState,
+      composerDraft: effectiveComposerDraft,
       hasAvailableModels,
     }),
-    [composerDraft, hasAvailableModels, sendStatus, sessionShell, state],
+    [effectiveComposerDraft, hasAvailableModels, runState, sessionShell, state],
   )
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
@@ -220,12 +265,12 @@ export function CopilotChatPanel({
     await orchestrateCopilotSend({
       state,
       sessionShell,
-      composerDraft,
-      sendStatus,
+      composerDraft: effectiveComposerDraft,
+      runState,
       hasAvailableModels,
       composerInputRef,
       sendMessage,
-      setSendStatus,
+      setRunState,
       setSendError,
       setComposerDraft,
       setConversation,
@@ -243,8 +288,9 @@ export function CopilotChatPanel({
         directoryState={directoryState}
         sessionStatus={sessionStatus}
         sessionError={sessionError}
+        sendError={sendError}
         modelGroups={modelCatalog.groups}
-        composerDraft={composerDraft}
+        composerDraft={effectiveComposerDraft}
         onComposerDraftChange={setComposerDraft}
         onSend={handleSend}
         sendStatus={sendStatus}
@@ -256,4 +302,67 @@ export function CopilotChatPanel({
       />
     </section>
   )
+}
+
+function isSameModelRoute(left: RuntimeModelRoute | null, right: RuntimeModelRoute): boolean {
+  if (left === null) {
+    return false
+  }
+
+  return left.providerProfileId === right.providerProfileId
+    && left.snapshot.provider === right.snapshot.provider
+    && left.snapshot.endpointType === right.snapshot.endpointType
+    && left.snapshot.baseUrl === right.snapshot.baseUrl
+    && left.snapshot.modelId === right.snapshot.modelId
+}
+
+function resolveComposerDraftModelSelection(
+  draft: CopilotChatComposerDraft,
+  models: CopilotModelOption[],
+): CopilotChatComposerDraft {
+  if (draft.selectedModelId.trim() === '') {
+    return draft.selectedModelRoute === null
+      ? draft
+      : {
+          ...draft,
+          selectedModelRoute: null,
+        }
+  }
+
+  const matchedModel = models.find((model) => (
+    model.id === draft.selectedModelId || model.modelId === draft.selectedModelId
+  ))
+  if (matchedModel === undefined) {
+    return draft.selectedModelRoute === null
+      ? draft
+      : {
+          ...draft,
+          selectedModelRoute: null,
+        }
+  }
+
+  if (
+    draft.selectedModelId === matchedModel.id
+    && isSameModelRoute(draft.selectedModelRoute, matchedModel.route)
+  ) {
+    return draft
+  }
+
+  return {
+    ...draft,
+    selectedModelId: matchedModel.id,
+    selectedModelRoute: cloneRuntimeModelRoute(matchedModel.route),
+  }
+}
+
+function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
+  return {
+    providerProfileId: route.providerProfileId,
+    snapshot: {
+      provider: route.snapshot.provider,
+      endpointType: route.snapshot.endpointType,
+      baseUrl: route.snapshot.baseUrl,
+      modelId: route.snapshot.modelId,
+    },
+  }
 }

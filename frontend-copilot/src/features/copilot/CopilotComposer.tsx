@@ -22,7 +22,7 @@ interface CopilotComposerProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   sendStatus: 'idle' | 'sending'
   sendDisabledReason: string | null
-  sessionError: string | null
+  composerError: string | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -36,12 +36,13 @@ export function CopilotComposer({
   onSubmit,
   sendStatus,
   sendDisabledReason,
-  sessionError,
+  composerError,
   composerInputRef,
   composerHeight,
   onResizeStart,
 }: CopilotComposerProps) {
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
+  const controlsDisabled = sendStatus === 'sending'
 
   const handleMessageInputKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
@@ -78,13 +79,22 @@ export function CopilotComposer({
     <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={onSubmit}>
       <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
         <ModelPicker
-          selectedModelId={draft.model}
+          selectedModelId={draft.selectedModelId}
           groups={modelGroups}
-          disabled={!hasAvailableModels}
+          disabled={!hasAvailableModels || controlsDisabled}
           onSelectModel={(model) => {
             onDraftChange((current) => ({
               ...current,
-              model: model.id,
+              selectedModelId: model.id,
+              selectedModelRoute: {
+                providerProfileId: model.route.providerProfileId,
+                snapshot: {
+                  provider: model.route.snapshot.provider,
+                  endpointType: model.route.snapshot.endpointType,
+                  baseUrl: model.route.snapshot.baseUrl,
+                  modelId: model.route.snapshot.modelId,
+                },
+              },
             }))
           }}
         />
@@ -92,6 +102,7 @@ export function CopilotComposer({
           tools={capabilities.allAvailableTools}
           selectedToolIds={draft.enabledTools}
           recommendedToolIds={capabilities.recommendedToolsForAgent}
+          disabled={controlsDisabled}
           onChangeToolIds={(enabledTools: string[]) => {
             onDraftChange((current) => ({
               ...current,
@@ -122,6 +133,7 @@ export function CopilotComposer({
             name="messageText"
             aria-label="消息内容"
             value={draft.messageText}
+            disabled={controlsDisabled}
             onChange={(event) => {
               const nextValue = event.currentTarget.value
               onDraftChange((current) => ({
@@ -148,9 +160,9 @@ export function CopilotComposer({
         </button>
       </div>
 
-      {sessionError !== null && (
+      {composerError !== null && (
         <p className="copilot-panel__error" role="alert">
-          {sessionError}
+          {composerError}
         </p>
       )}
     </form>

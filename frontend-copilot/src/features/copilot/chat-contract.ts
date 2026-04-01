@@ -1,3 +1,8 @@
+import {
+  isTerminalRuntimeRunEvent,
+  parseRuntimeRunEventStream,
+} from './runtime-message-stream'
+
 export interface RuntimeAgentDirectoryEntry {
   agentId: string
   status: string
@@ -58,15 +63,77 @@ export interface RuntimeMessagePayload {
   content: string
 }
 
-export interface RuntimeMessageSendResponse {
-  ok: true
+export interface RuntimeModelRouteSnapshot {
+  provider: string
+  endpointType: string
+  baseUrl: string
+  modelId: string
+}
+
+export interface RuntimeModelRoute {
+  providerProfileId: string
+  snapshot: RuntimeModelRouteSnapshot
+}
+
+export interface RuntimeRunEventBase<TType extends string, TPayload extends Record<string, unknown>> {
+  type: TType
+  runId: string
   sessionId: string
-  boundAgent: RuntimeBoundAgent
-  assistantMessage: RuntimeMessagePayload
+  sequence: number
+  payload: TPayload
+}
+
+export type RuntimeRunStartedEvent = RuntimeRunEventBase<'run_started', {
+  assistantMessageId: string
+}>
+
+export type RuntimeTextDeltaEvent = RuntimeRunEventBase<'text_delta', {
+  assistantMessageId: string
+  delta: string
+}>
+
+export type RuntimeRunCompletedEvent = RuntimeRunEventBase<'run_completed', {
+  assistantMessageId: string
+  assistantText: string
   resolvedModelId: string
+  resolvedModelRoute: RuntimeModelRoute
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
-}
+}>
+
+export type RuntimeRunFailedEvent = RuntimeRunEventBase<'run_failed', {
+  code: string
+  message: string
+  details: Record<string, unknown>
+}>
+
+export type RuntimeRunCancelledEvent = RuntimeRunEventBase<'run_cancelled', {
+  assistantMessageId: string
+  reason: string
+}>
+
+export type RuntimeRunDiagnosticEvent = RuntimeRunEventBase<'run_diagnostic', {
+  code: string
+  message: string
+  details: Record<string, unknown>
+  stage: string
+}>
+
+export type RuntimeToolEventReservedEvent = RuntimeRunEventBase<'tool_event_reserved', Record<string, unknown>>
+
+export type RuntimeRunEvent =
+  | RuntimeRunStartedEvent
+  | RuntimeTextDeltaEvent
+  | RuntimeRunCompletedEvent
+  | RuntimeRunFailedEvent
+  | RuntimeRunCancelledEvent
+  | RuntimeRunDiagnosticEvent
+  | RuntimeToolEventReservedEvent
+
+export type RuntimeRunTerminalEvent =
+  | RuntimeRunCompletedEvent
+  | RuntimeRunFailedEvent
+  | RuntimeRunCancelledEvent
 
 interface RuntimeErrorPayload {
   ok?: false
@@ -136,29 +203,95 @@ export async function getRuntimeCapabilities(input: {
   })
 }
 
-export async function sendRuntimeMessage(input: {
+export async function* sendRuntimeMessage(input: {
   runtimeUrl: string
   sessionId: string
   agent?: string
   message: RuntimeMessagePayload
-  model: string
+  modelRoute: RuntimeModelRoute
   enabledTools: string[]
   requestOptions?: Record<string, unknown>
   fetchFn?: FetchLike
-}): Promise<RuntimeMessageSendResponse> {
-  return postRuntimeMethod<RuntimeMessageSendResponse>({
-    runtimeUrl: input.runtimeUrl,
-    method: 'message/send',
-    body: {
-      sessionId: input.sessionId,
-      ...(input.agent === undefined ? {} : { agent: input.agent }),
-      message: input.message,
-      model: input.model,
-      enabledTools: input.enabledTools,
-      requestOptions: input.requestOptions ?? {},
+  signal?: AbortSignal
+}): AsyncGenerator<RuntimeRunEvent> {
+  const fetchFn = input.fetchFn ?? fetch
+  const response = await fetchFn(buildRuntimeEndpoint(input.runtimeUrl), {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
     },
-    fetchFn: input.fetchFn,
+    body: JSON.stringify(buildRuntimeRequest({
+      method: 'message/send',
+      body: {
+        sessionId: input.sessionId,
+        ...(input.agent === undefined ? {} : { agent: input.agent }),
+        message: input.message,
+        policy: {
+          modelRoute: input.modelRoute,
+          enabledTools: input.enabledTools,
+          requestOptions: input.requestOptions ?? {},
+        },
+      },
+    })),
+    signal: input.signal,
   })
+
+  if (!response.ok) {
+    throw await buildRuntimeRequestErrorFromResponse(response)
+  }
+
+  if (response.body === null) {
+    throw new Error('Runtime message stream response body is unavailable.')
+  }
+
+  let lastSequence = 0
+  let runId: string | null = null
+  let sessionId: string | null = null
+  let sawRunStarted = false
+  let sawTerminal = false
+
+  for await (const event of parseRuntimeRunEventStream(response.body)) {
+    if (sawTerminal) {
+      throw new Error('Runtime event stream emitted additional events after a terminal event.')
+    }
+
+    if (event.sequence <= lastSequence) {
+      throw new Error(`Runtime event sequence regressed from ${lastSequence} to ${event.sequence}.`)
+    }
+
+    if (runId !== null && event.runId !== runId) {
+      throw new Error(`Runtime event stream changed runId from ${runId} to ${event.runId}.`)
+    }
+
+    if (sessionId !== null && event.sessionId !== sessionId) {
+      throw new Error(`Runtime event stream changed sessionId from ${sessionId} to ${event.sessionId}.`)
+    }
+
+    if (!sawRunStarted && event.type !== 'run_started') {
+      throw new Error(`Runtime event stream must begin with run_started, received ${event.type}.`)
+    }
+
+    lastSequence = event.sequence
+    runId = event.runId
+    sessionId = event.sessionId
+    if (event.type === 'run_started') {
+      sawRunStarted = true
+    }
+    if (isTerminalRuntimeRunEvent(event)) {
+      sawTerminal = true
+    }
+
+    yield event
+  }
+
+  if (!sawRunStarted) {
+    throw new Error('Runtime event stream ended before run_started was received.')
+  }
+
+  if (!sawTerminal) {
+    throw new Error('Runtime event stream ended without a terminal event.')
+  }
 }
 
 async function postRuntimeMethod<TResponse>(input: {
@@ -216,6 +349,37 @@ function isRuntimeErrorPayload(payload: unknown): payload is RuntimeErrorPayload
   }
 
   return 'ok' in payload && payload.ok === false
+}
+
+async function buildRuntimeRequestErrorFromResponse(
+  response: Awaited<ReturnType<FetchLike>>,
+): Promise<RuntimeRequestError> {
+  const payload = await readRuntimeErrorPayload(response)
+  return buildRuntimeRequestError(payload, response.status)
+}
+
+async function readRuntimeErrorPayload(
+  response: Awaited<ReturnType<FetchLike>>,
+): Promise<RuntimeErrorPayload> {
+  const contentType = getResponseHeader(response, 'content-type')
+  if (!contentType.includes('application/json') && typeof response.json !== 'function') {
+    return {}
+  }
+
+  try {
+    const payload = await response.json() as unknown
+    return isRuntimeErrorPayload(payload) ? payload : {}
+  } catch {
+    return {}
+  }
+}
+
+function getResponseHeader(
+  response: Awaited<ReturnType<FetchLike>>,
+  headerName: string,
+): string {
+  const headerValue = response.headers?.get(headerName) ?? response.headers?.get(headerName.toLowerCase())
+  return typeof headerValue === 'string' ? headerValue.toLowerCase() : ''
 }
 
 function buildRuntimeRequestError(payload: RuntimeErrorPayload, status: number): RuntimeRequestError {

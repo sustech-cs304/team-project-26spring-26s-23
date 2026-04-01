@@ -12,6 +12,7 @@ import {
   parseRequestOptionsText,
 } from './copilot-chat-helpers'
 import { RuntimeRequestError } from './chat-contract'
+import { createRuntimeModelRoute } from './chat-contract.test-support'
 import {
   createDirectoryState,
   createReadyState,
@@ -53,10 +54,11 @@ describe('copilot chat helpers', () => {
     })
   })
 
-  it('creates composer defaults from empty state and session capabilities without falling back to static model ids', () => {
+  it('creates composer defaults from empty state and seeds the session preferred model id while deferring route resolution', () => {
     expect(createEmptyComposerDraft()).toEqual({
       messageText: '',
-      model: '',
+      selectedModelId: '',
+      selectedModelRoute: null,
       enabledTools: [],
       requestOptionsText: '{}',
     })
@@ -65,20 +67,30 @@ describe('copilot chat helpers', () => {
 
     expect(draft).toEqual({
       messageText: '',
-      model: 'openai/gpt-4.1',
-      enabledTools: ['tool.file-convert'],
+      selectedModelId: 'openai/gpt-4.1',
+      selectedModelRoute: null,
+      enabledTools: [],
       requestOptionsText: '{}',
     })
   })
 
-  it('builds request-scoped message input with sessionId, boundAgent validation value, model, enabledTools and requestOptions', () => {
+  it('builds request-scoped message input with sessionId, boundAgent validation value, modelRoute, enabledTools and requestOptions', () => {
     const sessionShell = createSessionShell()
     const input = buildRuntimeMessageSendInput({
       runtimeUrl: 'http://127.0.0.1:8765',
       sessionShell,
       draft: {
         messageText: '请总结这份文档',
-        model: 'qwen-plus',
+        selectedModelId: 'provider-openai:openai/gpt-4.1',
+        selectedModelRoute: createRuntimeModelRoute({
+          providerProfileId: 'provider-openai',
+          snapshot: {
+            provider: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: 'qwen-plus',
+          },
+        }),
         enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
       },
@@ -95,7 +107,15 @@ describe('copilot chat helpers', () => {
         role: 'user',
         content: '请总结这份文档',
       },
-      model: 'qwen-plus',
+      modelRoute: {
+        providerProfileId: 'provider-openai',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: 'qwen-plus',
+        },
+      },
       enabledTools: ['tool.remote-search', 'tool.file-convert'],
       requestOptions: {
         trace: true,

@@ -39,25 +39,25 @@ describe('ModelPicker', () => {
     const searchInput = rendered.getByTestId('chat-model-picker-search') as HTMLInputElement
     await setFormControlValue(searchInput, 'claude')
 
-    expect(rendered.queryByTestId('chat-model-option-FoxCodeAnthropic-anthropic/claude-opus-4.1')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-Moonshot-moonshot/kimi-k2.5')).toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-FoxCodeAnthropic-provider-claude')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-Moonshot-provider-kimi')).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-model-picker-tag-工具'))
     await clickElement(rendered.getByTestId('chat-model-picker-tag-免费'))
 
-    expect(rendered.queryByTestId('chat-model-option-CherryAI-cherry/qwen-free')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-FoxCodeAnthropic-anthropic/claude-opus-4.1')).toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-OpenRouter-openrouter/gemini-2.5-pro-preview')).toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-CherryAI-provider-qwen-free')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-FoxCodeAnthropic-provider-claude')).toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-OpenRouter-provider-gemini')).toBeNull()
 
     await clickElement(rendered.getByTestId('chat-model-picker-tag-all'))
 
-    expect(rendered.queryByTestId('chat-model-option-OpenRouter-openrouter/gemini-2.5-pro-preview')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-Moonshot-moonshot/kimi-k2.5')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-OpenRouter-provider-gemini')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-model-option-Moonshot-provider-kimi')).not.toBeNull()
 
     await clickElement(rendered.getByTestId('chat-model-picker-tag-免费'))
 
-    await clickElement(rendered.getByTestId('chat-model-option-CherryAI-cherry/qwen-free'))
+    await clickElement(rendered.getByTestId('chat-model-option-CherryAI-provider-qwen-free'))
 
     expect(trigger.textContent).toContain('Qwen Free')
     expect(getTriggerIconText(trigger)).toBe('Q')
@@ -80,9 +80,9 @@ describe('ModelPicker', () => {
 
     expect(rendered.getByTestId('chat-model-group-empty-provider-empty')).not.toBeNull()
     expect(rendered.queryByTestId('chat-model-option-provider-active-legacy/retired-model')).toBeNull()
-    expect(rendered.getByTestId('chat-model-option-provider-active-openai/gpt-4.1')).not.toBeNull()
+    expect(rendered.getByTestId('chat-model-option-provider-active-provider-active:openai/gpt-4.1')).not.toBeNull()
 
-    await clickElement(rendered.getByTestId('chat-model-option-provider-active-openai/gpt-4.1'))
+    await clickElement(rendered.getByTestId('chat-model-option-provider-active-provider-active:openai/gpt-4.1'))
 
     expect(trigger.textContent).toContain('GPT 4.1')
     expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
@@ -112,8 +112,9 @@ describe('ModelPicker', () => {
 })
 
 const TEST_MODEL_CATALOG = createCopilotModelCatalogFromOptions([
-  {
-    id: 'openrouter/gemini-2.5-pro-preview',
+  createOption({
+    id: 'provider-gemini',
+    modelId: 'openrouter/gemini-2.5-pro-preview',
     name: 'Gemini 2.5 Pro Preview',
     provider: 'OpenRouter',
     group: 'OpenRouter',
@@ -122,9 +123,10 @@ const TEST_MODEL_CATALOG = createCopilotModelCatalogFromOptions([
       label: 'G',
       accent: '#60a5fa',
     },
-  },
-  {
-    id: 'moonshot/kimi-k2.5',
+  }),
+  createOption({
+    id: 'provider-kimi',
+    modelId: 'moonshot/kimi-k2.5',
     name: 'Kimi K2.5',
     provider: 'Moonshot',
     group: 'Moonshot',
@@ -133,9 +135,10 @@ const TEST_MODEL_CATALOG = createCopilotModelCatalogFromOptions([
       label: 'K',
       accent: '#a78bfa',
     },
-  },
-  {
-    id: 'anthropic/claude-opus-4.1',
+  }),
+  createOption({
+    id: 'provider-claude',
+    modelId: 'anthropic/claude-opus-4.1',
     name: 'Claude Opus 4.1',
     provider: 'FoxCodeAnthropic',
     group: 'FoxCodeAnthropic',
@@ -144,9 +147,10 @@ const TEST_MODEL_CATALOG = createCopilotModelCatalogFromOptions([
       label: 'C',
       accent: '#fb923c',
     },
-  },
-  {
-    id: 'cherry/qwen-free',
+  }),
+  createOption({
+    id: 'provider-qwen-free',
+    modelId: 'cherry/qwen-free',
     name: 'Qwen Free',
     provider: 'CherryAI',
     group: 'CherryAI',
@@ -155,8 +159,31 @@ const TEST_MODEL_CATALOG = createCopilotModelCatalogFromOptions([
       label: 'Q',
       accent: '#facc15',
     },
-  },
+  }),
 ])
+
+function createOption(input: {
+  id: string
+  modelId: string
+  name: string
+  provider: string
+  group: string
+  tags: string[]
+  icon: { label: string; accent: string }
+}) {
+  return {
+    ...input,
+    route: {
+      providerProfileId: input.id,
+      snapshot: {
+        provider: 'openai',
+        endpointType: 'openai-compatible',
+        baseUrl: 'https://api.example.com/v1',
+        modelId: input.modelId,
+      },
+    },
+  }
+}
 
 function ModelPickerHarness() {
   const [selectedModelId, setSelectedModelId] = useState(TEST_MODEL_CATALOG.models[0]?.id ?? '')

@@ -79,7 +79,7 @@ async function bootstrapRenderer() {
   scheduleBootstrapWindowReadyNotification()
   logStartupTrace('copilot-root-import:start')
 
-  void import('./CopilotAppRoot.tsx')
+  void import('./CopilotAppRoot')
     .then(({ CopilotAppRoot }) => {
       logStartupTrace('copilot-root-import:resolved')
 

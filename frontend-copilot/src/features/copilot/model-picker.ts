@@ -1,3 +1,4 @@
+import type { RuntimeModelRoute } from './chat-contract'
 import type { ModelCapability, ProviderProfile } from '../../workbench/types'
 
 export interface CopilotModelIconSpec {
@@ -7,11 +8,13 @@ export interface CopilotModelIconSpec {
 
 export interface CopilotModelOption {
   id: string
+  modelId: string
   name: string
   provider: string
   group: string
   tags: string[]
   icon: CopilotModelIconSpec
+  route: RuntimeModelRoute
 }
 
 export interface CopilotModelGroup {
@@ -35,6 +38,7 @@ export function getCopilotModelById(
 export function createEmptyCopilotModel(): CopilotModelOption {
   return {
     id: '',
+    modelId: '',
     name: '尚未配置模型',
     provider: '',
     group: '',
@@ -42,6 +46,15 @@ export function createEmptyCopilotModel(): CopilotModelOption {
     icon: {
       label: '?',
       accent: '#94a3b8',
+    },
+    route: {
+      providerProfileId: '',
+      snapshot: {
+        provider: '',
+        endpointType: '',
+        baseUrl: '',
+        modelId: '',
+      },
     },
   }
 }
@@ -55,6 +68,7 @@ export function createFallbackCopilotModel(modelId: string): CopilotModelOption 
 
   return {
     id: trimmedModelId,
+    modelId: trimmedModelId,
     name: trimmedModelId,
     provider: 'Custom',
     group: 'Custom',
@@ -63,6 +77,15 @@ export function createFallbackCopilotModel(modelId: string): CopilotModelOption 
       label: trimmedModelId.slice(0, 1).toUpperCase(),
       accent: '#94a3b8',
     },
+    route: {
+      providerProfileId: '',
+      snapshot: {
+        provider: '',
+        endpointType: '',
+        baseUrl: '',
+        modelId: trimmedModelId,
+      },
+    },
   }
 }
 
@@ -70,7 +93,12 @@ export function createCopilotModelCatalog(providerProfiles: ProviderProfile[]): 
   const groups = providerProfiles.map((profile) => ({
     key: profile.id,
     title: resolveProviderTitle(profile.name, profile.id),
-    models: profile.availableModels.map((model) => createCopilotModelOption(profile, model.modelId, model.displayName, model.capabilities)),
+    models: profile.availableModels.map((model) => createCopilotModelOption(profile, {
+      id: model.id,
+      modelId: model.modelId,
+      displayName: model.displayName,
+      capabilities: model.capabilities,
+    })),
   }))
 
   return {
@@ -92,9 +120,20 @@ export function resolveCopilotPreferredModelId(input: {
   preferredModelId: string
   models: CopilotModelOption[]
 }): string {
-  const preferredModel = getCopilotModelById(input.preferredModelId, input.models)
+  const normalizedPreferredModelId = input.preferredModelId.trim()
+  if (normalizedPreferredModelId !== '') {
+    const exactMatch = input.models.find((model) => model.id === normalizedPreferredModelId)
+    if (exactMatch !== undefined) {
+      return exactMatch.id
+    }
 
-  return preferredModel?.id ?? input.models[0]?.id ?? ''
+    const routeMatch = input.models.find((model) => model.modelId === normalizedPreferredModelId)
+    if (routeMatch !== undefined) {
+      return routeMatch.id
+    }
+  }
+
+  return input.models[0]?.id ?? ''
 }
 
 export function getCopilotModelTags(models: CopilotModelOption[] = []): string[] {
@@ -129,6 +168,7 @@ export function filterCopilotModels(input: {
 
     const searchableText = [
       model.id,
+      model.modelId,
       model.name,
       model.provider,
       model.group,
@@ -172,24 +212,43 @@ export function groupCopilotModels(models: CopilotModelOption[]): CopilotModelGr
 
 function createCopilotModelOption(
   profile: ProviderProfile,
-  modelId: string,
-  displayName: string,
-  capabilities: ModelCapability[],
+  model: {
+    id: string
+    modelId: string
+    displayName: string
+    capabilities: ModelCapability[]
+  },
 ): CopilotModelOption {
   const providerTitle = resolveProviderTitle(profile.name, profile.id)
-  const trimmedModelId = modelId.trim()
-  const trimmedDisplayName = displayName.trim()
+  const trimmedModelId = normalizeModelId(model.modelId)
+  const trimmedDisplayName = model.displayName.trim()
   const modelName = trimmedDisplayName === ''
     ? (trimmedModelId === '' ? '未命名模型' : trimmedModelId)
     : trimmedDisplayName
 
   return {
-    id: trimmedModelId,
+    id: model.id.trim() || `${profile.id}:${trimmedModelId}`,
+    modelId: trimmedModelId,
     name: modelName,
     provider: providerTitle,
     group: providerTitle,
-    tags: mapCapabilitiesToTags(capabilities),
+    tags: mapCapabilitiesToTags(model.capabilities),
     icon: createProviderIconSpec(profile.id, providerTitle, modelName),
+    route: createRuntimeModelRoute(profile, trimmedModelId),
+  }
+}
+
+function createRuntimeModelRoute(profile: ProviderProfile, modelId: string): RuntimeModelRoute {
+  const provider = normalizeProviderIdentifier(profile.protocol)
+
+  return {
+    providerProfileId: profile.id,
+    snapshot: {
+      provider,
+      endpointType: provider === 'openai' ? 'openai-compatible' : provider,
+      baseUrl: normalizeBaseUrl(profile.endpoint),
+      modelId,
+    },
   }
 }
 
@@ -231,4 +290,16 @@ function createProviderIconSpec(providerId: string, providerTitle: string, model
 
 function resolveProviderTitle(name: string, fallbackId: string): string {
   return name.trim() || fallbackId.trim() || '未命名服务商'
+}
+
+function normalizeProviderIdentifier(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '')
+}
+
+function normalizeModelId(value: string): string {
+  return value.trim()
 }

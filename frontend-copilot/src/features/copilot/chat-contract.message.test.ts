@@ -5,32 +5,46 @@ import {
   agentId,
   createFetchFn,
   createRuntimeErrorPayload,
-  createRuntimeMessageSendResponse,
+  createRuntimeModelRoute,
   createUserMessage,
   runtimeUrl,
   sessionId,
 } from './chat-contract.test-support'
 
 describe('sendRuntimeMessage', () => {
-  it('posts message/send with request-scoped model, enabledTools and requestOptions', async () => {
-    const fetchFn = createFetchFn(createRuntimeMessageSendResponse())
-
-    const response = await sendRuntimeMessage({
-      runtimeUrl,
-      sessionId,
-      agent: agentId,
-      message: createUserMessage(),
-      model: 'qwen-plus',
-      enabledTools: ['tool.file-convert'],
-      requestOptions: {
-        trace: true,
+  it('posts message/send with request-scoped modelRoute, enabledTools and requestOptions', async () => {
+    const fetchFn = createFetchFn(createRuntimeErrorPayload(), {
+      ok: false,
+      status: 418,
+      headers: {
+        'content-type': 'application/json',
       },
-      fetchFn,
+    })
+
+    await expect(async () => {
+      for await (const _event of sendRuntimeMessage({
+        runtimeUrl,
+        sessionId,
+        agent: agentId,
+        message: createUserMessage(),
+        modelRoute: createRuntimeModelRoute(),
+        enabledTools: ['tool.file-convert'],
+        requestOptions: {
+          trace: true,
+        },
+        fetchFn,
+      })) {
+        throw new Error(`Unexpected event: ${JSON.stringify(_event)}`)
+      }
+    }).rejects.toMatchObject({
+      name: 'RuntimeRequestError',
+      status: 418,
     })
 
     expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
       method: 'POST',
       headers: {
+        Accept: 'text/event-stream',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -42,16 +56,17 @@ describe('sendRuntimeMessage', () => {
             role: 'user',
             content: '请总结这份文档',
           },
-          model: 'qwen-plus',
-          enabledTools: ['tool.file-convert'],
-          requestOptions: {
-            trace: true,
+          policy: {
+            modelRoute: createRuntimeModelRoute(),
+            enabledTools: ['tool.file-convert'],
+            requestOptions: {
+              trace: true,
+            },
           },
         },
       }),
+      signal: undefined,
     })
-    expect(response.resolvedModelId).toBe('qwen-plus')
-    expect(response.resolvedToolIds).toEqual(['tool.file-convert'])
   })
 
   it('throws RuntimeRequestError for explicit message/send backend failures', async () => {
@@ -63,19 +78,26 @@ describe('sendRuntimeMessage', () => {
       {
         ok: false,
         status: 409,
+        headers: {
+          'content-type': 'application/json',
+        },
       },
     )
 
-    await expect(sendRuntimeMessage({
-      runtimeUrl,
-      sessionId,
-      agent: 'blackboard',
-      message: createUserMessage(),
-      model: 'qwen-plus',
-      enabledTools: ['tool.file-convert'],
-      requestOptions: {},
-      fetchFn,
-    })).rejects.toMatchObject({
+    await expect(async () => {
+      for await (const _event of sendRuntimeMessage({
+        runtimeUrl,
+        sessionId,
+        agent: 'blackboard',
+        message: createUserMessage(),
+        modelRoute: createRuntimeModelRoute(),
+        enabledTools: ['tool.file-convert'],
+        requestOptions: {},
+        fetchFn,
+      })) {
+        throw new Error(`Unexpected event: ${JSON.stringify(_event)}`)
+      }
+    }).rejects.toMatchObject({
       name: 'RuntimeRequestError',
       code: 'agent_mismatch',
       status: 409,

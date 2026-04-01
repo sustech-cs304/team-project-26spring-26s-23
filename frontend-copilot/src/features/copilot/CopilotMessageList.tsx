@@ -30,12 +30,43 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
         : conversation.map((turn) => (
             <article
               key={turn.id}
-              className={`copilot-chat__message copilot-chat__message--${turn.kind}`}
+              className={[
+                'copilot-chat__message',
+                `copilot-chat__message--${turn.kind}`,
+                turn.status ? `copilot-chat__message--${turn.status}` : '',
+              ].filter((className) => className !== '').join(' ')}
             >
-              {turn.kind !== 'user' && <p className="copilot-chat__message-label">{turn.title}</p>}
+              {turn.kind !== 'user' && (
+                <div className="copilot-chat__message-header">
+                  <p className="copilot-chat__message-label">{turn.title}</p>
+                  {turn.status !== undefined && (
+                    <span className={`copilot-chat__message-status copilot-chat__message-status--${turn.status}`}>
+                      {formatTurnStatus(turn.status)}
+                    </span>
+                  )}
+                </div>
+              )}
               <p className="copilot-chat__message-text">{turn.content}</p>
+              {turn.diagnostic !== null && turn.diagnostic !== undefined && (
+                <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
+                  诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
+                </p>
+              )}
             </article>
           ))}
     </div>
   )
+}
+
+function formatTurnStatus(status: NonNullable<CopilotConversationTurn['status']>): string {
+  switch (status) {
+    case 'streaming':
+      return '流式输出中'
+    case 'completed':
+      return '已完成'
+    case 'failed':
+      return '失败'
+    case 'cancelled':
+      return '已取消'
+  }
 }

@@ -4,6 +4,7 @@ import type {
   CopilotRuntimeLoadResult,
   CopilotRuntimeRetryResult,
 } from '../../../electron/copilot-runtime'
+import type { RuntimeModelRoute } from './chat-contract'
 
 export interface CopilotBootstrapFields {
   runtimeUrl: string | null
@@ -37,6 +38,7 @@ export type CopilotConfigMissingField = 'runtimeUrl'
 export type CopilotRuntimeSource = 'hosted' | 'dev-override' | 'none'
 export type CopilotAgentNameSource = 'config-center' | 'missing'
 export type CopilotModeSource = 'resolved' | 'expected'
+export type CopilotRunPhase = 'idle' | 'starting' | 'streaming' | 'completed' | 'failed' | 'cancelled'
 
 export interface CopilotDiagnosticsSummary {
   hostedStatus: CopilotRendererRuntimeSnapshot['status']
@@ -44,6 +46,34 @@ export interface CopilotDiagnosticsSummary {
   mode: CopilotRendererRuntimeSnapshot['resolvedMode'] | CopilotRendererRuntimeSnapshot['expectedMode']
   modeSource: CopilotModeSource
   runtimeSource: CopilotRuntimeSource
+}
+
+export interface CopilotRunDiagnosticSummary {
+  code: string
+  message: string
+  stage: string
+  details: Record<string, unknown>
+}
+
+export interface CopilotRunFailureSummary {
+  code: string
+  message: string
+  details: Record<string, unknown>
+}
+
+export interface CopilotRunState {
+  phase: CopilotRunPhase
+  runId: string | null
+  sessionId: string | null
+  assistantMessageId: string | null
+  activeModelRoute: RuntimeModelRoute | null
+  resolvedModelId: string | null
+  resolvedModelRoute: RuntimeModelRoute | null
+  resolvedToolIds: string[]
+  requestOptions: Record<string, unknown>
+  diagnostic: CopilotRunDiagnosticSummary | null
+  failure: CopilotRunFailureSummary | null
+  cancelReason: string | null
 }
 
 interface CopilotConfigResolvedStateBase {

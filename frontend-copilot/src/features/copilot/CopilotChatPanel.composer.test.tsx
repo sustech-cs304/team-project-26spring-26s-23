@@ -4,7 +4,8 @@ import { act } from 'react'
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
-import { RuntimeRequestError, sendRuntimeMessage, type RuntimeMessageSendResponse } from './chat-contract'
+import { RuntimeRequestError, sendRuntimeMessage } from './chat-contract'
+import { createRuntimeMessageEventStream } from './chat-contract.test-support'
 import {
   clickElement,
   createDirectoryState,
@@ -61,6 +62,7 @@ describe('CopilotChatPanel composer interactions', () => {
           createProviderProfile({
             id: 'provider-anthropic',
             name: 'Anthropic Mirror',
+            protocol: 'anthropic',
             availableModels: [
               {
                 id: 'provider-anthropic:anthropic/claude-opus-4.1',
@@ -111,7 +113,7 @@ describe('CopilotChatPanel composer interactions', () => {
     await clickElement(modelTrigger)
     expect(rendered.container.textContent).toContain('OpenAI Compatible')
     expect(rendered.container.textContent).toContain('Anthropic Mirror')
-    await clickElement(rendered.getByTestId('chat-model-option-provider-anthropic-anthropic/claude-opus-4.1'))
+    await clickElement(rendered.getByTestId('chat-model-option-provider-anthropic-provider-anthropic:anthropic/claude-opus-4.1'))
 
     expect(modelTrigger.textContent).toContain('Claude Opus 4.1')
     expect(getTriggerIconText(modelTrigger)).toBe('A')
@@ -121,7 +123,13 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      model: 'anthropic/claude-opus-4.1',
+      modelRoute: {
+        providerProfileId: 'provider-anthropic',
+        snapshot: {
+          provider: 'anthropic',
+          modelId: 'anthropic/claude-opus-4.1',
+        },
+      },
       message: {
         content: '请总结刚才的内容',
       },
@@ -195,7 +203,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(rendered.getByTestId('chat-model-group-empty-provider-empty')).not.toBeNull()
     expect(rendered.queryByTestId('chat-model-option-provider-active-legacy/retired-model')).toBeNull()
-    await clickElement(rendered.getByTestId('chat-model-option-provider-active-openai/gpt-4.1'))
+    await clickElement(rendered.getByTestId('chat-model-option-provider-active-provider-active:openai/gpt-4.1'))
 
     expect(modelTrigger.textContent).toContain('GPT 4.1')
     expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
@@ -393,24 +401,7 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   it('echoes user and assistant messages after a successful send', async () => {
-    const sendMessage = createResolvedSendMessageSpy(async (input) => ({
-      ok: true,
-      sessionId: input.sessionId,
-      boundAgent: {
-        agentId: input.agent ?? 'general',
-        status: 'ready',
-        displayName: '通用智能体',
-        description: '默认通用智能体',
-        iconKey: null,
-      },
-      assistantMessage: {
-        role: 'assistant',
-        content: '这是助手回显',
-      },
-      resolvedModelId: input.model,
-      resolvedToolIds: input.enabledTools,
-      requestOptions: input.requestOptions ?? {},
-    }))
+    const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
     const rendered = renderWithRoot(
@@ -439,12 +430,13 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.container.textContent).toContain('请回显本条消息')
     expect(rendered.container.textContent).toContain('助手响应')
     expect(rendered.container.textContent).toContain('这是助手回显')
+    expect(rendered.container.textContent).toContain('已完成')
 
     rendered.unmount()
   })
 
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
-    const sendMessage = vi.fn<(input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>>(async () => {
+    const sendMessage = vi.fn(async function* () {
       throw new RuntimeRequestError('tool_not_found: unknown tool', {
         code: 'tool_not_found',
         status: 400,
@@ -483,29 +475,42 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 })
 
-function createResolvedSendMessageSpy(
-  implementation?: (input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>,
-) {
-  return vi.fn<(input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>>(
-    implementation ?? (async (input) => ({
-      ok: true,
+function createResolvedSendMessageSpy() {
+  return vi.fn((input: Parameters<typeof sendRuntimeMessage>[0]) => createRuntimeMessageEventStream([
+    {
+      type: 'run_started',
+      runId: 'run-1',
       sessionId: input.sessionId,
-      boundAgent: {
-        agentId: input.agent ?? 'general',
-        status: 'ready',
-        displayName: '通用智能体',
-        description: '默认通用智能体',
-        iconKey: null,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-1:assistant',
       },
-      assistantMessage: {
-        role: 'assistant',
-        content: '已收到',
+    },
+    {
+      type: 'text_delta',
+      runId: 'run-1',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        assistantMessageId: 'run-1:assistant',
+        delta: '这是助手回显',
       },
-      resolvedModelId: input.model,
-      resolvedToolIds: input.enabledTools,
-      requestOptions: input.requestOptions ?? {},
-    })),
-  )
+    },
+    {
+      type: 'run_completed',
+      runId: 'run-1',
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        assistantMessageId: 'run-1:assistant',
+        assistantText: '这是助手回显',
+        resolvedModelId: input.modelRoute.snapshot.modelId,
+        resolvedModelRoute: input.modelRoute,
+        resolvedToolIds: input.enabledTools,
+        requestOptions: input.requestOptions ?? {},
+      },
+    },
+  ]))
 }
 
 function createPersistedWorkspaceStateLoader() {

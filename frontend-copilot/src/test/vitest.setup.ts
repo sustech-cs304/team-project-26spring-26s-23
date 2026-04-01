@@ -11,16 +11,24 @@ if (hasDomEnvironment) {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
 }
 
-afterEach(() => {
-  vi.useRealTimers()
-  vi.restoreAllMocks()
+const registerVitestCleanup = () => {
+  try {
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
 
-  if (!hasDomEnvironment) {
-    return
+      if (!hasDomEnvironment) {
+        return
+      }
+
+      delete (window as Partial<Window>).settingsWorkspaceState
+      delete (window as Partial<Window>).settingsWorkspaceSecrets
+    })
+  } catch {
+    // Ignore contexts where Vitest has not attached a current suite yet.
   }
+}
 
-  delete (window as Partial<Window>).settingsWorkspaceState
-  delete (window as Partial<Window>).settingsWorkspaceSecrets
-})
+registerVitestCleanup()
 
 export {}

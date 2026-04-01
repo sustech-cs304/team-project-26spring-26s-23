@@ -9,6 +9,8 @@ describe('copilot model picker bridge', () => {
       createProviderProfile({
         id: 'provider-alpha',
         name: 'Alpha Provider',
+        protocol: 'openai',
+        endpoint: 'https://alpha.example.com/v1/',
         availableModels: [
           {
             id: 'provider-alpha:openai/gpt-4.1',
@@ -47,14 +49,25 @@ describe('copilot model picker bridge', () => {
         title: 'Alpha Provider',
         models: [
           expect.objectContaining({
-            id: 'openai/gpt-4.1',
+            id: 'provider-alpha:openai/gpt-4.1',
+            modelId: 'openai/gpt-4.1',
             name: 'GPT 4.1',
             provider: 'Alpha Provider',
             group: 'Alpha Provider',
             tags: ['推理', '工具'],
+            route: {
+              providerProfileId: 'provider-alpha',
+              snapshot: {
+                provider: 'openai',
+                endpointType: 'openai-compatible',
+                baseUrl: 'https://alpha.example.com/v1',
+                modelId: 'openai/gpt-4.1',
+              },
+            },
           }),
           expect.objectContaining({
-            id: 'google/gemini-2.5-pro',
+            id: 'provider-alpha:google/gemini-2.5-pro',
+            modelId: 'google/gemini-2.5-pro',
             name: 'Gemini 2.5 Pro',
             provider: 'Alpha Provider',
             group: 'Alpha Provider',
@@ -69,9 +82,9 @@ describe('copilot model picker bridge', () => {
       }),
     ])
     expect(resolveCopilotPreferredModelId({
-      preferredModelId: 'missing/model',
+      preferredModelId: 'openai/gpt-4.1',
       models: catalog.models,
-    })).toBe('openai/gpt-4.1')
+    })).toBe('provider-alpha:openai/gpt-4.1')
   })
 
   it('returns an empty preferred model id when no configured models exist', () => {

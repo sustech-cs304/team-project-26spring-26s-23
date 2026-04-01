@@ -2,11 +2,20 @@
   "compilerOptions": {
     "composite": true,
     "skipLibCheck": true,
+    "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
+    "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "electron/runtime/**/*.ts"],
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "electron/**/*.ts",
+    "electron/**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
   "exclude": ["electron/runtime/**/*.test.ts"]
 }

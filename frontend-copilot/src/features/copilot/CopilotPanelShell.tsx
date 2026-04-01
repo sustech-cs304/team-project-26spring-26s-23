@@ -28,6 +28,7 @@ export interface CopilotPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  sendError: string | null
   modelGroups: CopilotModelGroup[]
   composerDraft: CopilotChatComposerDraft
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
@@ -125,7 +126,7 @@ function renderSessionShell(props: CopilotPanelShellProps) {
           onSubmit={props.onSend}
           sendStatus={props.sendStatus}
           sendDisabledReason={props.sendDisabledReason}
-          sessionError={props.sessionError}
+          composerError={props.sendError ?? props.sessionError}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}

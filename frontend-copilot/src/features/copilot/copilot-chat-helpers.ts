@@ -2,13 +2,19 @@ import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   RuntimeRequestError,
-  type RuntimeMessageSendResponse,
+  type RuntimeModelRoute,
+  type RuntimeRunCompletedEvent,
 } from './chat-contract'
-import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './types'
+import type {
+  CopilotBootstrapState,
+  CopilotDiagnosticsSummary,
+  CopilotRunDiagnosticSummary,
+} from './types'
 
 export interface CopilotChatComposerDraft {
   messageText: string
-  model: string
+  selectedModelId: string
+  selectedModelRoute: RuntimeModelRoute | null
   enabledTools: string[]
   requestOptionsText: string
 }
@@ -21,7 +27,7 @@ export interface RuntimeMessageSendInput {
     role: 'user'
     content: string
   }
-  model: string
+  modelRoute: RuntimeModelRoute
   enabledTools: string[]
   requestOptions: Record<string, unknown>
 }
@@ -31,9 +37,12 @@ export interface CopilotConversationTurn {
   kind: 'user' | 'assistant' | 'error'
   title: string
   content: string
+  status?: 'streaming' | 'completed' | 'failed' | 'cancelled'
   resolvedModelId?: string
+  resolvedModelRoute?: RuntimeModelRoute
   resolvedToolIds?: string[]
   requestOptions?: Record<string, unknown>
+  diagnostic?: CopilotRunDiagnosticSummary | null
 }
 
 export const DEFAULT_COPILOT_COMPOSER_HEIGHT = 160
@@ -43,17 +52,21 @@ export const MAX_COPILOT_COMPOSER_HEIGHT = 360
 export function createEmptyComposerDraft(): CopilotChatComposerDraft {
   return {
     messageText: '',
-    model: '',
+    selectedModelId: '',
+    selectedModelRoute: null,
     enabledTools: [],
     requestOptionsText: '{}',
   }
 }
 
-export function createComposerDraftFromSession(sessionShell: AssistantSessionShell): CopilotChatComposerDraft {
+export function createComposerDraftFromSession(
+  sessionShell?: AssistantSessionShell,
+): CopilotChatComposerDraft {
   return {
     messageText: '',
-    model: sessionShell.capabilities.defaultModelPreference ?? '',
-    enabledTools: [...sessionShell.capabilities.defaultEnabledTools],
+    selectedModelId: sessionShell?.capabilities.defaultModelPreference ?? '',
+    selectedModelRoute: null,
+    enabledTools: [],
     requestOptionsText: '{}',
   }
 }
@@ -64,6 +77,10 @@ export function buildRuntimeMessageSendInput(input: {
   draft: CopilotChatComposerDraft
   requestOptions: Record<string, unknown>
 }): RuntimeMessageSendInput {
+  if (input.draft.selectedModelRoute === null) {
+    throw new Error('请先选择可发送的模型路由。')
+  }
+
   return {
     runtimeUrl: input.runtimeUrl,
     sessionId: input.sessionShell.sessionId,
@@ -72,7 +89,7 @@ export function buildRuntimeMessageSendInput(input: {
       role: 'user',
       content: input.draft.messageText.trim(),
     },
-    model: input.draft.model.trim(),
+    modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
     enabledTools: dedupeToolIds(input.draft.enabledTools),
     requestOptions: { ...input.requestOptions },
   }
@@ -155,27 +172,155 @@ export function createUserTurn(content: string): CopilotConversationTurn {
     kind: 'user',
     title: '',
     content,
+    status: 'completed',
   }
 }
 
-export function createAssistantTurn(response: RuntimeMessageSendResponse): CopilotConversationTurn {
+export function createPendingAssistantTurn(input: {
+  assistantMessageId: string
+  diagnostic?: CopilotRunDiagnosticSummary | null
+}): CopilotConversationTurn {
   return {
-    id: `assistant:${response.sessionId}:${Math.random().toString(36).slice(2)}`,
+    id: input.assistantMessageId,
     kind: 'assistant',
     title: '助手响应',
-    content: response.assistantMessage.content,
-    resolvedModelId: response.resolvedModelId,
-    resolvedToolIds: [...response.resolvedToolIds],
-    requestOptions: { ...response.requestOptions },
+    content: '',
+    status: 'streaming',
+    diagnostic: input.diagnostic ?? null,
   }
 }
 
-export function createErrorTurn(content: string): CopilotConversationTurn {
+export function appendAssistantDelta(
+  turns: CopilotConversationTurn[],
+  input: {
+    assistantMessageId: string
+    delta: string
+  },
+): CopilotConversationTurn[] {
+  return turns.map((turn) => {
+    if (turn.id !== input.assistantMessageId) {
+      return turn
+    }
+
+    return {
+      ...turn,
+      content: `${turn.content}${input.delta}`,
+      status: 'streaming',
+    }
+  })
+}
+
+export function completeAssistantTurn(
+  turns: CopilotConversationTurn[],
+  event: RuntimeRunCompletedEvent,
+  diagnostic: CopilotRunDiagnosticSummary | null,
+): CopilotConversationTurn[] {
+  const nextTurns: CopilotConversationTurn[] = turns.map((turn): CopilotConversationTurn => {
+    if (turn.id !== event.payload.assistantMessageId) {
+      return turn
+    }
+
+    return {
+      ...turn,
+      content: event.payload.assistantText,
+      status: 'completed',
+      resolvedModelId: event.payload.resolvedModelId,
+      resolvedModelRoute: cloneRuntimeModelRoute(event.payload.resolvedModelRoute),
+      resolvedToolIds: [...event.payload.resolvedToolIds],
+      requestOptions: { ...event.payload.requestOptions },
+      diagnostic,
+    }
+  })
+
+  return ensureAssistantTurnExists(nextTurns, {
+    id: event.payload.assistantMessageId,
+    kind: 'assistant',
+    title: '助手响应',
+    content: event.payload.assistantText,
+    status: 'completed',
+    resolvedModelId: event.payload.resolvedModelId,
+    resolvedModelRoute: cloneRuntimeModelRoute(event.payload.resolvedModelRoute),
+    resolvedToolIds: [...event.payload.resolvedToolIds],
+    requestOptions: { ...event.payload.requestOptions },
+    diagnostic,
+  })
+}
+
+export function failAssistantTurn(
+  turns: CopilotConversationTurn[],
+  input: {
+    assistantMessageId: string | null
+    content: string
+    diagnostic: CopilotRunDiagnosticSummary | null
+  },
+): CopilotConversationTurn[] {
+  if (input.assistantMessageId === null) {
+    return [...turns, createErrorTurn(input.content, input.diagnostic)]
+  }
+
+  const nextTurns: CopilotConversationTurn[] = turns.map((turn): CopilotConversationTurn => {
+    if (turn.id !== input.assistantMessageId) {
+      return turn
+    }
+
+    return {
+      ...turn,
+      kind: 'error',
+      title: '发送失败',
+      content: input.content,
+      status: 'failed',
+      diagnostic: input.diagnostic,
+    }
+  })
+
+  return ensureAssistantTurnExists(nextTurns, {
+    id: input.assistantMessageId,
+    kind: 'error',
+    title: '发送失败',
+    content: input.content,
+    status: 'failed',
+    diagnostic: input.diagnostic,
+  })
+}
+
+export function cancelAssistantTurn(
+  turns: CopilotConversationTurn[],
+  input: {
+    assistantMessageId: string | null
+    reason: string
+    diagnostic: CopilotRunDiagnosticSummary | null
+  },
+): CopilotConversationTurn[] {
+  if (input.assistantMessageId === null) {
+    return turns
+  }
+
+  return turns.map((turn) => {
+    if (turn.id !== input.assistantMessageId) {
+      return turn
+    }
+
+    return {
+      ...turn,
+      status: 'cancelled',
+      title: '已取消',
+      content: turn.content === '' ? formatCancelledReason(input.reason) : turn.content,
+      diagnostic: input.diagnostic,
+    }
+  })
+}
+
+export function createErrorTurn(
+  content: string,
+  diagnostic: CopilotRunDiagnosticSummary | null = null,
+): CopilotConversationTurn {
   return {
     id: `error:${content}:${Math.random().toString(36).slice(2)}`,
     kind: 'error',
     title: '发送失败',
     content,
+    status: 'failed',
+    diagnostic,
   }
 }
 
@@ -198,6 +343,32 @@ function dedupeToolIds(toolIds: string[]): string[] {
   }
 
   return [...uniqueToolIds]
+}
+
+function ensureAssistantTurnExists(
+  turns: CopilotConversationTurn[],
+  turn: CopilotConversationTurn,
+): CopilotConversationTurn[] {
+  return turns.some((currentTurn) => currentTurn.id === turn.id)
+    ? turns
+    : [...turns, turn]
+}
+
+function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
+  return {
+    providerProfileId: route.providerProfileId,
+    snapshot: {
+      provider: route.snapshot.provider,
+      endpointType: route.snapshot.endpointType,
+      baseUrl: route.snapshot.baseUrl,
+      modelId: route.snapshot.modelId,
+    },
+  }
+}
+
+function formatCancelledReason(reason: string): string {
+  const trimmedReason = reason.trim()
+  return trimmedReason === '' ? '本次响应已取消。' : `本次响应已取消：${trimmedReason}`
 }
 
 export function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string {

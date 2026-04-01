@@ -5,7 +5,9 @@ import type {
   RuntimeBoundAgent,
   RuntimeCapabilitiesGetResponse,
   RuntimeMessagePayload,
-  RuntimeMessageSendResponse,
+  RuntimeModelRoute,
+  RuntimeRunCompletedEvent,
+  RuntimeRunEvent,
   RuntimeSessionCreateResponse,
 } from './chat-contract'
 
@@ -99,23 +101,65 @@ export function createRuntimeCapabilitiesGetResponse(
   }
 }
 
-export function createRuntimeMessageSendResponse(
-  overrides: Partial<RuntimeMessageSendResponse> = {},
-): RuntimeMessageSendResponse {
+export function createRuntimeModelRoute(
+  overrides: Partial<RuntimeModelRoute> = {},
+): RuntimeModelRoute {
   return {
-    ok: true,
-    sessionId,
-    boundAgent: createBoundAgent(),
-    assistantMessage: {
-      role: 'assistant',
-      content: '这是总结结果。',
+    providerProfileId: overrides.providerProfileId ?? 'provider-openai',
+    snapshot: {
+      provider: overrides.snapshot?.provider ?? 'openai',
+      endpointType: overrides.snapshot?.endpointType ?? 'openai-compatible',
+      baseUrl: overrides.snapshot?.baseUrl ?? 'https://api.example.com/v1',
+      modelId: overrides.snapshot?.modelId ?? 'qwen-plus',
     },
-    resolvedModelId: 'qwen-plus',
-    resolvedToolIds: ['tool.file-convert'],
-    requestOptions: {
-      trace: true,
+  }
+}
+
+export function createRuntimeRunCompletedEvent(
+  overrides: Partial<RuntimeRunCompletedEvent> = {},
+): RuntimeRunCompletedEvent {
+  return {
+    type: 'run_completed',
+    runId: overrides.runId ?? 'run-1',
+    sessionId: overrides.sessionId ?? sessionId,
+    sequence: overrides.sequence ?? 3,
+    payload: {
+      assistantMessageId: overrides.payload?.assistantMessageId ?? 'run-1:assistant',
+      assistantText: overrides.payload?.assistantText ?? '这是总结结果。',
+      resolvedModelId: overrides.payload?.resolvedModelId ?? 'qwen-plus',
+      resolvedModelRoute: overrides.payload?.resolvedModelRoute ?? createRuntimeModelRoute(),
+      resolvedToolIds: overrides.payload?.resolvedToolIds ?? ['tool.file-convert'],
+      requestOptions: overrides.payload?.requestOptions ?? { trace: true },
     },
-    ...overrides,
+  }
+}
+
+export async function* createRuntimeMessageEventStream(
+  events: RuntimeRunEvent[] = [
+    {
+      type: 'run_started',
+      runId: 'run-1',
+      sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-1:assistant',
+      },
+    },
+    {
+      type: 'text_delta',
+      runId: 'run-1',
+      sessionId,
+      sequence: 2,
+      payload: {
+        assistantMessageId: 'run-1:assistant',
+        delta: '这是总结结果。',
+      },
+    },
+    createRuntimeRunCompletedEvent(),
+  ],
+): AsyncGenerator<RuntimeRunEvent> {
+  for (const event of events) {
+    yield event
   }
 }
 
@@ -129,15 +173,24 @@ export function createUserMessage(
   }
 }
 
-export function createFetchResponse(payload: unknown, init: { ok?: boolean; status?: number } = {}) {
+export function createFetchResponse(payload: unknown, init: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}) {
   return {
     ok: init.ok ?? true,
     status: init.status ?? 200,
+    headers: {
+      get(name: string) {
+        const normalizedHeaders = Object.fromEntries(
+          Object.entries(init.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
+        )
+        return normalizedHeaders[name.toLowerCase()] ?? null
+      },
+    },
     json: async () => payload,
+    body: null,
   }
 }
 
-export function createFetchFn(payload: unknown, init: { ok?: boolean; status?: number } = {}) {
+export function createFetchFn(payload: unknown, init: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}) {
   return vi.fn().mockResolvedValue(createFetchResponse(payload, init))
 }
 
