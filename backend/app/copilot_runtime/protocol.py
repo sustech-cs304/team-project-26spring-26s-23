@@ -31,22 +31,6 @@ from .errors import (
     build_unsupported_message_shape_error,
 )
 
-INFO_REQUEST_KEYS = frozenset({"properties", "frontendUrl", "method"})
-RUN_LIKE_REQUEST_KEYS = frozenset(
-    {
-        "threadId",
-        "runId",
-        "messages",
-        "state",
-        "actions",
-        "metaEvents",
-        "nodeName",
-        "agentName",
-        "name",
-    }
-)
-
-
 class RuntimeProtocolError(RuntimeError):
     """Structured protocol parsing failure that the HTTP router can render directly."""
 
@@ -93,29 +77,18 @@ class RuntimeProtocolParser:
         return payload
 
     def extract_method(self, payload: dict[str, Any] | None) -> str:
-        if payload is None or payload == {}:
-            return INFO_METHOD
-
-        request_keys = set(payload)
-        if request_keys.issubset(INFO_REQUEST_KEYS) and request_keys <= {"properties", "frontendUrl"}:
-            return INFO_METHOD
-
-        method = payload.get("method")
-        if method is None:
-            inferred_method = self._infer_implicit_method(payload)
-            if inferred_method is not None:
-                return inferred_method
-
+        if payload is None:
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
                     message=(
-                        "Runtime request must provide a supported info shape or an explicit 'method' field."
+                        "Runtime request must provide a JSON object with an explicit 'method' field."
                     ),
                     scaffold=self._scaffold,
                 ),
             )
 
+        method = payload.get("method")
         if not isinstance(method, str):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -134,9 +107,6 @@ class RuntimeProtocolParser:
                     scaffold=self._scaffold,
                 ),
             )
-
-        if normalized_method == "run":
-            return AGENT_RUN_METHOD
 
         return normalized_method
 
@@ -277,12 +247,12 @@ class RuntimeProtocolParser:
             requested_method=MESSAGE_SEND_METHOD,
         )
 
-        raw_agent_id = request_body.get("agentId", request_body.get("agent"))
+        raw_agent_id = request_body.get("agent")
         agent_id: str | None = None
         if raw_agent_id is not None:
             agent_id = self._require_non_empty_string(
                 raw_agent_id,
-                field_name="agentId",
+                field_name="agent",
                 requested_method=MESSAGE_SEND_METHOD,
             )
 
@@ -391,8 +361,7 @@ class RuntimeProtocolParser:
 
     def _extract_body(self, payload: dict[str, Any], *, requested_method: str) -> dict[str, Any]:
         raw_body = payload.get("body")
-        request_body = payload if raw_body is None else raw_body
-        if not isinstance(request_body, dict):
+        if not isinstance(raw_body, dict):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
@@ -402,7 +371,7 @@ class RuntimeProtocolParser:
                     details={"field": "body"},
                 ),
             )
-        return dict(request_body)
+        return dict(raw_body)
 
     def _resolve_agent_name(
         self,
@@ -842,10 +811,3 @@ class RuntimeProtocolParser:
             ),
         )
 
-    def _infer_implicit_method(self, payload: dict[str, Any]) -> str | None:
-        body = payload.get("body")
-        if any(key in payload for key in RUN_LIKE_REQUEST_KEYS):
-            return AGENT_RUN_METHOD
-        if isinstance(body, dict) and any(key in body for key in RUN_LIKE_REQUEST_KEYS):
-            return AGENT_RUN_METHOD
-        return None

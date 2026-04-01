@@ -147,8 +147,8 @@ def test_root_post_capabilities_get_unknown_agent_returns_structured_error() -> 
     assert payload["error"]["details"] == {"agentName": "missing-agent"}
 
 
-def test_root_post_info_shape_without_method_is_recognized() -> None:
-    app, scaffold, _ = _build_app()
+def test_root_post_info_shape_without_method_returns_structured_bad_request() -> None:
+    app, _scaffold, _store = _build_app()
 
     with TestClient(app) as client:
         response = client.post(
@@ -159,12 +159,17 @@ def test_root_post_info_shape_without_method_is_recognized() -> None:
             },
         )
 
-    assert response.status_code == 200
-    assert response.json() == scaffold.build_info_response().to_dict()
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_request"
+    assert payload["error"]["requestedMethod"] is None
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
 
 
-def test_root_post_run_like_request_is_recognized_and_streamed() -> None:
-    app, _, store = _build_app()
+
+def test_root_post_run_like_request_without_explicit_method_returns_structured_bad_request() -> None:
+    app, _scaffold, _store = _build_app()
 
     with TestClient(app) as client:
         response = client.post(
@@ -177,24 +182,12 @@ def test_root_post_run_like_request_is_recognized_and_streamed() -> None:
             },
         )
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-
-    events = _parse_sse_events(response.text)
-    assert [event["type"] for event in events] == [
-        "RUN_STARTED",
-        "STATE_SNAPSHOT",
-        "TEXT_MESSAGE_START",
-        "TEXT_MESSAGE_CONTENT",
-        "TEXT_MESSAGE_END",
-        "RUN_FINISHED",
-    ]
-    assert events[-1]["result"]["agentName"] == "default"
-    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
-        ("user", "Hello"),
-        ("assistant", TEST_MODEL_REPLY),
-    ]
-
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_request"
+    assert payload["error"]["requestedMethod"] is None
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
 
 def test_root_post_invalid_method_shape_returns_structured_bad_request() -> None:
     app, _scaffold, _store = _build_app()
@@ -922,7 +915,7 @@ def _build_message_send_request(
         },
     }
     if agent_id is not None:
-        body["agentId"] = agent_id
+        body["agent"] = agent_id
     return {"method": "message/send", "body": body}
 
 

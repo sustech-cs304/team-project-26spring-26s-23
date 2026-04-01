@@ -6,26 +6,30 @@ from app.copilot_runtime import build_runtime_scaffold
 from app.copilot_runtime.protocol import RuntimeProtocolError, RuntimeProtocolParser
 
 
-def test_extract_method_recognizes_info_shape_without_explicit_method() -> None:
+def test_extract_method_requires_explicit_method_field() -> None:
     parser = _build_parser()
 
-    method = parser.extract_method(
-        {
-            "properties": {"mode": "desktop"},
-            "frontendUrl": "http://localhost:5173",
-        }
-    )
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_method(
+            {
+                "properties": {"mode": "desktop"},
+                "frontendUrl": "http://localhost:5173",
+            }
+        )
 
-    assert method == "info"
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_request"
+    assert exc.error.error.requestedMethod is None
 
 
-def test_extract_method_normalizes_legacy_run_alias_to_agent_run() -> None:
+
+def test_extract_method_no_longer_normalizes_legacy_run_alias() -> None:
     parser = _build_parser()
 
     method = parser.extract_method({"method": "  Run  "})
 
-    assert method == "agent/run"
-
+    assert method == "run"
 
 def test_extract_session_create_request_validates_known_agent() -> None:
     parser = _build_parser()
@@ -97,7 +101,7 @@ def test_extract_message_send_request_reads_model_route_policy_fields() -> None:
             "method": "message/send",
             "body": {
                 "sessionId": "session-123",
-                "agentId": "default",
+                "agent": "default",
                 "message": {"role": "user", "content": "Hello"},
                 "policy": {
                     "modelRoute": {
@@ -181,6 +185,37 @@ def test_extract_message_send_request_requires_user_text_message() -> None:
     assert exc.error.error.code == "unsupported_message_shape"
     assert exc.error.error.requestedMethod == "message/send"
     assert exc.error.error.details == {"field": "message.role", "role": "assistant"}
+
+
+
+def test_extract_message_send_request_requires_explicit_body_wrapper() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_message_send_request(
+            {
+                "method": "message/send",
+                "sessionId": "session-123",
+                "message": {"role": "user", "content": "Hello"},
+                "policy": {
+                    "modelRoute": {
+                        "providerProfileId": "provider-1",
+                        "snapshot": {
+                            "provider": "openai",
+                            "endpointType": "openai-compatible",
+                            "baseUrl": "https://example.com/v1",
+                            "modelId": "gpt-4.1",
+                        },
+                    }
+                },
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_request"
+    assert exc.error.error.requestedMethod == "message/send"
+    assert exc.error.error.details == {"field": "body"}
 
 
 def test_extract_run_request_normalizes_latest_user_message_text_parts() -> None:
