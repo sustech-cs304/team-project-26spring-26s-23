@@ -69,7 +69,7 @@ Python runtime 当前通过 loopback HTTP 提供本地服务：
 
 ### 可选外部参考
 
-仓库里仍然保留 CopilotKit 相关依赖，但它当前更适合作为局部组件来源或参考材料。当前聊天运行时主线的协议、状态机和传输层，已经由项目自身实现。CopilotKit 当前不再是主运行时依赖。
+当前聊天运行时主线的协议、状态机和传输层，已经由项目自身实现；仓库里的 CopilotKit 依赖也已经移除。当前仍保留的 `copilot_runtime`、`features/copilot` 等命名，主要是历史沿用的内部命名空间，而不是第三方运行时耦合。
 
 ## 配置与持久化已经形成双层结构
 
@@ -222,7 +222,7 @@ Python Desktop Runtime
 - provider profiles 与 secrets 真源已经稳定落在 Electron 主进程。
 - Python runtime 通过宿主私桥在执行阶段解析 provider 路由与密钥，不再通过 startup model 参数承载聊天执行配置。
 - [`message/send`](./chat-runtime-contract.md) 已经切到流式事件主合同。
-- CopilotKit 当前只保留为局部组件来源或参考，不再承担主运行时职责。
+- CopilotKit 依赖已经移除；仓库里保留的 `copilot` 命名当前主要是内部历史命名空间。
 - `frontend-copilot/scripts/smoke-streaming-chat.mjs` 已经可以作为本地主线验收资产。
 
 ## 当前仍然要保守描述的地方

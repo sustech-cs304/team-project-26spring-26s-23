@@ -419,13 +419,13 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 
 这条脚本已经可以覆盖真实 provider、请求级模型路由、宿主取密钥与 `text_delta` 主线。
 
-## CopilotKit 在当前主线中的位置
+## 当前与 CopilotKit 的关系
 
-CopilotKit 相关依赖目前仍然留在仓库里，但它已经不再承担当前聊天运行时主线的职责。当前主线里的事实是：
+CopilotKit 依赖已经从当前仓库移除；当前主线里的事实是：
 
 - 前端聊天协议、状态机和流式解析都由项目自身实现。
 - Python runtime 主合同也由项目自身维护。
-- CopilotKit 更适合作为局部组件来源或后续参考材料，而不是当前运行时依赖。
+- 仓库里保留的 `copilot_runtime`、`features/copilot` 等命名主要是历史沿用的内部命名空间，不再代表对第三方 CopilotKit runtime 的运行时耦合。
 
 ## 相关文档
 
