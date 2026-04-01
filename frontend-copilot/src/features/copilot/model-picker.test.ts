@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
-import { createCopilotModelCatalog, resolveCopilotPreferredModelId } from './model-picker'
+import {
+  createCopilotModelCatalog,
+  getRuntimeModelRouteStreamingSupportReason,
+  isRuntimeModelRouteSupportedForStreamingChat,
+  resolveCopilotPreferredModelId,
+} from './model-picker'
 
 describe('copilot model picker bridge', () => {
   it('maps persisted provider profiles into provider-backed groups and model options', () => {
@@ -85,6 +90,37 @@ describe('copilot model picker bridge', () => {
       preferredModelId: 'openai/gpt-4.1',
       models: catalog.models,
     })).toBe('provider-alpha:openai/gpt-4.1')
+    expect(isRuntimeModelRouteSupportedForStreamingChat(catalog.models[0]?.route ?? null)).toBe(true)
+    expect(getRuntimeModelRouteStreamingSupportReason(catalog.models[0]?.route ?? null)).toBeNull()
+  })
+
+  it('marks openai-response routes as unsupported for current streaming chat', () => {
+    const catalog = createCopilotModelCatalog([
+      createProviderProfile({
+        id: 'provider-response',
+        name: 'Response Provider',
+        protocol: 'openai-response',
+        endpoint: 'https://response.example.com/v1/',
+        availableModels: [
+          {
+            id: 'provider-response:gpt-5.4',
+            modelId: 'gpt-5.4',
+            displayName: 'GPT 5.4',
+            groupName: 'Response',
+            capabilities: ['reasoning', 'tools'],
+            supportsStreaming: true,
+            currency: 'usd',
+            inputPrice: '1',
+            outputPrice: '2',
+          },
+        ],
+      }),
+    ])
+
+    expect(isRuntimeModelRouteSupportedForStreamingChat(catalog.models[0]?.route ?? null)).toBe(false)
+    expect(getRuntimeModelRouteStreamingSupportReason(catalog.models[0]?.route ?? null)).toBe(
+      '当前流式聊天暂不支持“openai-response”端点类型，请切换到 openai-compatible 模型路由。',
+    )
   })
 
   it('returns an empty preferred model id when no configured models exist', () => {

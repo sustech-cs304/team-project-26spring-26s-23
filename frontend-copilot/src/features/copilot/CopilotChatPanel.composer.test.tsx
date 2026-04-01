@@ -60,15 +60,15 @@ describe('CopilotChatPanel composer interactions', () => {
             ],
           }),
           createProviderProfile({
-            id: 'provider-anthropic',
-            name: 'Anthropic Mirror',
-            protocol: 'anthropic',
+            id: 'provider-beta',
+            name: 'Beta Router',
+            protocol: 'openai',
             availableModels: [
               {
-                id: 'provider-anthropic:anthropic/claude-opus-4.1',
-                modelId: 'anthropic/claude-opus-4.1',
-                displayName: 'Claude Opus 4.1',
-                groupName: 'Anthropic',
+                id: 'provider-beta:openai/gpt-4.1-mini',
+                modelId: 'openai/gpt-4.1-mini',
+                displayName: 'GPT 4.1 Mini',
+                groupName: 'Beta',
                 capabilities: ['reasoning', 'tools'],
                 supportsStreaming: true,
                 currency: 'usd',
@@ -112,11 +112,11 @@ describe('CopilotChatPanel composer interactions', () => {
 
     await clickElement(modelTrigger)
     expect(rendered.container.textContent).toContain('OpenAI Compatible')
-    expect(rendered.container.textContent).toContain('Anthropic Mirror')
-    await clickElement(rendered.getByTestId('chat-model-option-provider-anthropic-provider-anthropic:anthropic/claude-opus-4.1'))
+    expect(rendered.container.textContent).toContain('Beta Router')
+    await clickElement(rendered.getByTestId('chat-model-option-provider-beta-provider-beta:openai/gpt-4.1-mini'))
 
-    expect(modelTrigger.textContent).toContain('Claude Opus 4.1')
-    expect(getTriggerIconText(modelTrigger)).toBe('A')
+    expect(modelTrigger.textContent).toContain('GPT 4.1 Mini')
+    expect(getTriggerIconText(modelTrigger)).toBe('B')
 
     await setFormControlValue(messageInput, '请总结刚才的内容')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
@@ -124,10 +124,10 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
       modelRoute: {
-        providerProfileId: 'provider-anthropic',
+        providerProfileId: 'provider-beta',
         snapshot: {
-          provider: 'anthropic',
-          modelId: 'anthropic/claude-opus-4.1',
+          provider: 'openai',
+          modelId: 'openai/gpt-4.1-mini',
         },
       },
       message: {
@@ -470,6 +470,80 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.container.textContent).toContain('请使用不存在的工具')
     expect(rendered.container.textContent).toContain('发送失败')
     expect(rendered.container.textContent).toContain('tool_not_found：本次消息启用了后端未注册的 toolId')
+
+    rendered.unmount()
+  })
+
+  it('disables send and surfaces an explicit message when the selected route endpoint type is not supported for streaming chat', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-response',
+            name: 'Response Provider',
+            protocol: 'openai-response',
+            defaultModel: 'gpt-5.4',
+            fastModel: 'gpt-5.4',
+            fallbackModel: 'gpt-5.4',
+            availableModels: [
+              {
+                id: 'provider-response:gpt-5.4',
+                modelId: 'gpt-5.4',
+                displayName: 'GPT 5.4',
+                groupName: 'Response',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'gpt-5.4',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            defaultModelPreference: 'provider-response:gpt-5.4',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    await setFormControlValue(messageInput, '请执行一次真实流式对话')
+
+    expect(sendButton.disabled).toBe(true)
+    expect(sendButton.title).toBe('当前流式聊天暂不支持“openai-response”端点类型，请切换到 openai-compatible 模型路由。')
+
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(0)
+    expect(rendered.container.textContent).toContain('当前流式聊天暂不支持“openai-response”端点类型，请切换到 openai-compatible 模型路由。')
 
     rendered.unmount()
   })

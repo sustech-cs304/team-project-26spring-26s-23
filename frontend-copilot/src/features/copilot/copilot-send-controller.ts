@@ -16,6 +16,7 @@ import {
   type CopilotChatComposerDraft,
   type CopilotConversationTurn,
 } from './copilot-chat-helpers'
+import { getRuntimeModelRouteStreamingSupportReason } from './model-picker'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type {
   CopilotBootstrapState,
@@ -71,6 +72,11 @@ export function getCopilotSendDisabledReason(input: {
     return '请先选择本次发送要使用的模型路由。'
   }
 
+  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
+  if (streamingSupportReason !== null) {
+    return streamingSupportReason
+  }
+
   return null
 }
 
@@ -108,6 +114,12 @@ export async function orchestrateCopilotSend(input: {
 
   if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
     input.setSendError('请先选择本次发送要使用的模型路由。')
+    return
+  }
+
+  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
+  if (streamingSupportReason !== null) {
+    input.setSendError(streamingSupportReason)
     return
   }
 

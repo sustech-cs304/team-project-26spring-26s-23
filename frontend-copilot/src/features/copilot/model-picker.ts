@@ -28,6 +28,31 @@ export interface CopilotModelCatalog {
   models: CopilotModelOption[]
 }
 
+export const STREAMING_CHAT_SUPPORTED_ENDPOINT_TYPES = ['openai-compatible'] as const
+
+const STREAMING_CHAT_SUPPORTED_ENDPOINT_TYPE_SET = new Set<string>(STREAMING_CHAT_SUPPORTED_ENDPOINT_TYPES)
+
+export function isStreamingChatEndpointTypeSupported(endpointType: string): boolean {
+  return STREAMING_CHAT_SUPPORTED_ENDPOINT_TYPE_SET.has(normalizeEndpointType(endpointType))
+}
+
+export function isRuntimeModelRouteSupportedForStreamingChat(route: RuntimeModelRoute | null): boolean {
+  return route !== null && isStreamingChatEndpointTypeSupported(route.snapshot.endpointType)
+}
+
+export function getRuntimeModelRouteStreamingSupportReason(route: RuntimeModelRoute | null): string | null {
+  if (route === null) {
+    return null
+  }
+
+  const endpointType = normalizeEndpointType(route.snapshot.endpointType)
+  if (endpointType === '' || isStreamingChatEndpointTypeSupported(endpointType)) {
+    return null
+  }
+
+  return `当前流式聊天暂不支持“${endpointType}”端点类型，请切换到 openai-compatible 模型路由。`
+}
+
 export function getCopilotModelById(
   modelId: string,
   models: CopilotModelOption[] = [],
@@ -293,6 +318,10 @@ function resolveProviderTitle(name: string, fallbackId: string): string {
 }
 
 function normalizeProviderIdentifier(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function normalizeEndpointType(value: string): string {
   return value.trim().toLowerCase()
 }
 
