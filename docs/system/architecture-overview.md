@@ -230,7 +230,7 @@ Python Desktop Runtime
 - Python runtime 当前不会主动读取统一配置中心或 settings workspace 文档。
 - 会话历史仍然保存在后端进程内的 `InMemorySessionStore` 中，runtime 重启后不会自动恢复。
 - hosted runtime 的状态变化还没有形成完整、持续的 renderer 实时推送流。
-- `info`、`agent/connect` 与 `agent/run` 仍然存在，但它们已经退到兼容位置。
+- 旧的 `info`、`agent/connect` 与 `agent/run` 已退役；仓库里若仍出现相关文字，应该理解为历史背景而不是当前可用入口。
 
 ## 相关文档
 

@@ -108,7 +108,7 @@ backend/app/
 - `message_runs.py` 负责请求级模型路由解析、流式事件编排、错误终态和最终归档。
 - `run_events.py` 负责定义 `run_started`、`text_delta`、`run_completed`、`run_failed`、`run_cancelled`、`run_diagnostic` 与 `tool_event_reserved` 这些事件，以及 SSE 编码。
 - `model_routes.py` 负责模型路由对象、解析结果和相关错误类型定义。
-- `bridge.py` 现在只保留会话能力查询、兼容 run 路径和最薄的流式桥接入口。
+- `bridge.py` 现在只保留会话能力查询和最薄的流式桥接入口。
 - `session_store.py` 负责当前的内存态会话存储。
 - `agent_registry.py` 和 `tool_registry.py` 负责目录真源。
 
@@ -130,16 +130,15 @@ backend/app/
 当前主线里，`bridge.py` 不再承担整条聊天执行主语义。它现在更适合作为：
 
 - 会话能力查询入口。
-- 兼容 `agent/run` 的桥接层。
 - 流式 [`message/send`](../system/chat-runtime-contract.md) 的最薄转发入口。
 
 如果文档仍然把 `RuntimeBridge.send_message()` 写成当前主线核心，那就已经落后于实现现实了。
 
 ### 旧兼容方法现在处在什么位置
 
-`info`、`agent/connect` 和 `agent/run` 仍然存在于 runtime 中，也仍然服务某些兼容链路和旧测试。但在 backend 分册里，它们不再和当前主路径并列叙述。
+`info`、`agent/connect` 和 `agent/run` 已从当前 runtime surface 退役。它们不再出现在 supported methods 中，也不再承担兼容职责；旧调用当前只会收到 `method_not_implemented`。
 
-更准确的说法是：这些方法仍然可见，但它们已经退到兼容位置；当前权威主路径仍然是 session-first 四方法，其中 `message/send` 已切到流式事件响应。
+当前权威主路径只剩 session-first 四方法，其中 [`message/send`](../system/chat-runtime-contract.md) 已切到流式事件响应。
 
 ## `blackboard/` 是成熟度最高的领域能力模块
 

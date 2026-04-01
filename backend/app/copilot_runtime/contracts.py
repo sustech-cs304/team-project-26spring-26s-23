@@ -11,13 +11,10 @@ from .model_routes import RuntimeModelRoute
 from .session_store import RuntimeSessionRecord
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
-INFO_METHOD = "info"
 AGENTS_LIST_METHOD = "agents/list"
 SESSION_CREATE_METHOD = "session/create"
 CAPABILITIES_GET_METHOD = "capabilities/get"
 MESSAGE_SEND_METHOD = "message/send"
-AGENT_CONNECT_METHOD = "agent/connect"
-AGENT_RUN_METHOD = "agent/run"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
 DEFAULT_RUNTIME_STAGE = "phase3-run-bridge"
 DEFAULT_TRANSPORT = {
@@ -29,12 +26,6 @@ DEFAULT_TRANSPORT = {
 class RuntimeContract:
     def to_dict(self) -> dict[str, Any]:
         return cast(dict[str, Any], _jsonable(asdict(cast(Any, self))))
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeAgentDescriptor(RuntimeContract):
-    name: str
-    description: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,17 +46,6 @@ class RuntimeBoundAgent(RuntimeContract):
     displayName: str | None = None
     description: str | None = None
     iconKey: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeInfoResponse(RuntimeContract):
-    actions: tuple[dict[str, Any], ...]
-    agents: dict[str, RuntimeAgentDescriptor]
-    defaultAgent: str
-    protocol: str
-    stage: str
-    supportedMethods: tuple[str, ...]
-    transport: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,92 +121,11 @@ class RuntimeMessageSendRequest(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeConnectRequest(RuntimeContract):
-    agent_name: str
-    thread_id: str
-    run_id: str
-    state: Any
-    messages: tuple[dict[str, Any], ...]
-    tools: tuple[dict[str, Any], ...] = ()
-    context: tuple[dict[str, Any], ...] = ()
-    forwarded_props: dict[str, Any] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def build_run_input(self) -> dict[str, Any]:
-        return {
-            "threadId": self.thread_id,
-            "runId": self.run_id,
-            "state": _jsonable(self.state),
-            "messages": _jsonable(self.messages),
-            "tools": _jsonable(self.tools),
-            "context": _jsonable(self.context),
-            "forwardedProps": _jsonable(self.forwarded_props),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeRunRequest(RuntimeContract):
-    agent_name: str
-    thread_id: str
-    run_id: str
-    user_message_text: str
-    state: Any
-    messages: tuple[dict[str, Any], ...]
-    actions: tuple[dict[str, Any], ...] = ()
-    meta_events: tuple[dict[str, Any], ...] = ()
-    node_name: str | None = None
-    forwarded_props: dict[str, Any] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def build_run_input(self) -> dict[str, Any]:
-        return {
-            "threadId": self.thread_id,
-            "runId": self.run_id,
-            "state": _jsonable(self.state),
-            "messages": _jsonable(self.messages),
-            "actions": _jsonable(self.actions),
-            "metaEvents": _jsonable(self.meta_events),
-            "nodeName": self.node_name,
-            "forwardedProps": _jsonable(self.forwarded_props),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeSessionDescriptor(RuntimeContract):
-    threadId: str
-    agentName: str
-    createdAt: datetime
-    updatedAt: datetime
-    newlyCreated: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeConnectResult(RuntimeContract):
-    ok: bool
-    threadId: str
-    runId: str
-    agentName: str
-    session: RuntimeSessionDescriptor
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeRunResult(RuntimeContract):
-    ok: bool
-    threadId: str
-    runId: str
-    agentName: str
-    output: str
-    session: RuntimeSessionDescriptor
-
-
-@dataclass(frozen=True, slots=True)
 class RuntimeScaffold(RuntimeContract):
     protocol: str
     stage: str
     supported_methods: tuple[str, ...]
     default_agent: str
-    remote_agent_registry: dict[str, RuntimeAgentDescriptor]
     agent_directory_version: str
     agent_directory: tuple[RuntimeAgentDirectoryEntry, ...]
     bound_agent_views: dict[str, RuntimeBoundAgent]
@@ -240,21 +139,6 @@ class RuntimeScaffold(RuntimeContract):
     model_configured: bool
     model_environment_keys: tuple[str, ...] = ()
     transport: dict[str, Any] = field(default_factory=dict)
-
-    def build_remote_agent_registry(self) -> dict[str, RuntimeAgentDescriptor]:
-        """Return the runtime info agent registry keyed by agent id."""
-        return dict(self.remote_agent_registry)
-
-    def build_info_response(self) -> RuntimeInfoResponse:
-        return RuntimeInfoResponse(
-            actions=(),
-            agents=self.build_remote_agent_registry(),
-            defaultAgent=self.default_agent,
-            protocol=self.protocol,
-            stage=self.stage,
-            supportedMethods=self.supported_methods,
-            transport=dict(self.transport),
-        )
 
     def build_agents_list_response(self) -> RuntimeAgentsListResponse:
         return RuntimeAgentsListResponse(
@@ -335,118 +219,6 @@ class RuntimeScaffold(RuntimeContract):
             if tools_by_id[tool_id].availability == "available"
         )
 
-    def build_session_descriptor(
-        self,
-        *,
-        session: RuntimeSessionRecord,
-        newly_created: bool,
-    ) -> RuntimeSessionDescriptor:
-        return RuntimeSessionDescriptor(
-            threadId=session.thread_id,
-            agentName=session.agent_name,
-            createdAt=session.created_at,
-            updatedAt=session.updated_at,
-            newlyCreated=newly_created,
-            metadata=dict(session.metadata),
-        )
-
-    def build_connect_result(
-        self,
-        *,
-        request: RuntimeConnectRequest,
-        session: RuntimeSessionDescriptor,
-    ) -> RuntimeConnectResult:
-        return RuntimeConnectResult(
-            ok=True,
-            threadId=request.thread_id,
-            runId=request.run_id,
-            agentName=request.agent_name,
-            session=session,
-        )
-
-    def build_run_result(
-        self,
-        *,
-        request: RuntimeRunRequest,
-        assistant_text: str,
-        session: RuntimeSessionDescriptor,
-    ) -> RuntimeRunResult:
-        return RuntimeRunResult(
-            ok=True,
-            threadId=request.thread_id,
-            runId=request.run_id,
-            agentName=request.agent_name,
-            output=assistant_text,
-            session=session,
-        )
-
-    def build_connect_events(
-        self,
-        *,
-        request: RuntimeConnectRequest,
-        result: RuntimeConnectResult,
-    ) -> tuple[dict[str, Any], ...]:
-        return (
-            {
-                "type": "RUN_STARTED",
-                "threadId": request.thread_id,
-                "runId": request.run_id,
-            },
-            {
-                "type": "STATE_SNAPSHOT",
-                "snapshot": _jsonable(request.state),
-            },
-            {
-                "type": "MESSAGES_SNAPSHOT",
-                "messages": [],
-            },
-            {
-                "type": "RUN_FINISHED",
-                "threadId": request.thread_id,
-                "runId": request.run_id,
-                "result": result.to_dict(),
-            },
-        )
-
-    def build_run_events(
-        self,
-        *,
-        request: RuntimeRunRequest,
-        result: RuntimeRunResult,
-        assistant_message_id: str,
-    ) -> tuple[dict[str, Any], ...]:
-        return (
-            {
-                "type": "RUN_STARTED",
-                "threadId": request.thread_id,
-                "runId": request.run_id,
-            },
-            {
-                "type": "STATE_SNAPSHOT",
-                "snapshot": _jsonable(request.state),
-            },
-            {
-                "type": "TEXT_MESSAGE_START",
-                "messageId": assistant_message_id,
-                "role": "assistant",
-            },
-            {
-                "type": "TEXT_MESSAGE_CONTENT",
-                "messageId": assistant_message_id,
-                "delta": result.output,
-            },
-            {
-                "type": "TEXT_MESSAGE_END",
-                "messageId": assistant_message_id,
-            },
-            {
-                "type": "RUN_FINISHED",
-                "threadId": request.thread_id,
-                "runId": request.run_id,
-                "result": result.to_dict(),
-            },
-        )
-
     def diagnostics_summary(self) -> dict[str, Any]:
         summary = {
             "chat_runtime_registered": True,
@@ -455,13 +227,10 @@ class RuntimeScaffold(RuntimeContract):
             "supported_methods": list(self.supported_methods),
             "chat_runtime_stage": self.stage,
             "session_store_type": self.session_store_type,
-            "current_stage_supports_info_only": self.supported_methods == (INFO_METHOD,),
             "current_stage_supports_agents_list": AGENTS_LIST_METHOD in self.supported_methods,
             "current_stage_supports_session_create": SESSION_CREATE_METHOD in self.supported_methods,
             "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD in self.supported_methods,
             "current_stage_supports_message_send": MESSAGE_SEND_METHOD in self.supported_methods,
-            "current_stage_supports_connect": AGENT_CONNECT_METHOD in self.supported_methods,
-            "current_stage_supports_run": AGENT_RUN_METHOD in self.supported_methods,
             "model_configured": self.model_configured,
             "model_environment_keys": list(self.model_environment_keys),
         }
@@ -509,16 +278,12 @@ def build_runtime_scaffold(
         protocol=DEFAULT_RUNTIME_PROTOCOL,
         stage=DEFAULT_RUNTIME_STAGE,
         supported_methods=(
-            INFO_METHOD,
             AGENTS_LIST_METHOD,
             SESSION_CREATE_METHOD,
             CAPABILITIES_GET_METHOD,
             MESSAGE_SEND_METHOD,
-            AGENT_CONNECT_METHOD,
-            AGENT_RUN_METHOD,
         ),
         default_agent=resolved_agent_registry.get_default().name,
-        remote_agent_registry=_build_runtime_agent_registry(resolved_agent_registry),
         agent_directory_version=resolved_agent_registry.directory_version,
         agent_directory=agent_directory,
         bound_agent_views=_build_runtime_bound_agent_views(agent_directory),
@@ -534,15 +299,6 @@ def build_runtime_scaffold(
         transport=dict(DEFAULT_TRANSPORT),
     )
 
-
-
-def _build_runtime_agent_registry(
-    agent_registry: AgentRegistry,
-) -> dict[str, RuntimeAgentDescriptor]:
-    return {
-        name: RuntimeAgentDescriptor(**agent_view)
-        for name, agent_view in agent_registry.build_info_view().items()
-    }
 
 
 

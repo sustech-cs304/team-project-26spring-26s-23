@@ -225,17 +225,17 @@ sidebar_position: 6
 - 当前 session store 仍然是内存态，runtime 重启后会话不会自动恢复。
 - 增量阶段只累积草稿，成功完成才归档 assistant 文本。
 
-## 当前兼容方法
+## 已退役的旧外层方法
 
-下面这些方法仍然存在于 supported methods 中，但它们当前更适合作为兼容和诊断参考：
+下面这些旧方法已经不再包含在 current supported methods 中，也不再构成当前 runtime surface：
 
-| 方法 | 当前定位 |
+| 方法 | 当前状态 |
 | --- | --- |
-| `info` | 返回 runtime 基本元数据，用于兼容和诊断。 |
-| `agent/connect` | 兼容的会话连接路径，仍服务旧链路和旧测试。 |
-| `agent/run` | 兼容的消息执行路径，仍服务旧链路和旧测试。 |
+| `info` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
+| `agent/connect` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
+| `agent/run` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
 
-backend 分册不再把它们当成当前正式主路径来描述。
+当前正式主路径只剩 session-first 四方法。
 
 ## 当前错误响应外壳
 
@@ -308,5 +308,5 @@ backend 分册不再把它们当成当前正式主路径来描述。
 
 - 当前正式聊天主路径仍然是四个 session-first 方法。
 - [`message/send`](../system/chat-runtime-contract.md) 已经切到流式事件主合同。
-- 兼容方法依然存在，但已经退到参考位置。
+- `info`、`agent/connect` 与 `agent/run` 已退役，不再属于当前 supported methods。
 - 当前错误外壳、流式事件集合与常见错误码已经足够支持联调与排错。

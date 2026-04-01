@@ -7,7 +7,7 @@ sidebar_label: 聊天运行时契约
 
 # 聊天运行时 HTTP 契约
 
-这篇文档只描述当前已经落地的 HTTP 契约：有哪些端点，前端真正怎样发请求，[`message/send`](./chat-runtime-contract.md) 现在怎样以流式事件工作，以及哪些旧方法只保留兼容位置。
+这篇文档只描述当前已经落地的 HTTP 契约：有哪些端点，前端真正怎样发请求，[`message/send`](./chat-runtime-contract.md) 现在怎样以流式事件工作，以及哪些旧方法已经退役。
 
 Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-lifecycle.md)。配置、会话、宿主状态和页面状态分别由谁持有，见 [会话与状态模型](./session-and-state-model.md)。
 
@@ -89,7 +89,7 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 - 会话在创建时绑定具体智能体。
 - 每次消息请求再显式给出本次模型路由、工具列表和请求选项。
 
-`info`、`agent/connect` 与 `agent/run` 仍然存在，但它们已经退到兼容位置，不再是当前前端主路径的权威入口。
+`info`、`agent/connect` 与 `agent/run` 已从当前 runtime surface 退役。如果仍有旧调用命中它们，当前应收到 `method_not_implemented`，并迁移到 session-first 四方法。
 
 ## 方法一 `agents/list`
 

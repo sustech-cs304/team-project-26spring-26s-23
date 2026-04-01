@@ -5,14 +5,9 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime import (
-    AgentExecutionError,
-    PydanticAIAgentExecutor,
     RuntimeBridge,
-    RuntimeBridgeResult,
-    RuntimeRunRequest,
     RuntimeScaffold,
     ToolDescriptor,
     ToolRegistry,
@@ -25,39 +20,101 @@ from app.copilot_runtime import (
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
-from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
+from app.copilot_runtime.session_store import InMemorySessionStore
 
 
 TEST_MODEL_REPLY = "Hello from the test model."
 SUPPORTED_METHODS = [
-    "info",
     "agents/list",
     "session/create",
     "capabilities/get",
     "message/send",
-    "agent/connect",
-    "agent/run",
 ]
 
 
-def test_root_post_info_request_returns_runtime_info() -> None:
-    app, scaffold, _ = _build_app()
+class _ImmediateTextStream:
+    def __init__(self, *, output: str, resolved_model_id: str) -> None:
+        self.resolved_model_id = resolved_model_id
+        self._output = output
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json={
-                "method": "info",
-                "properties": {"mode": "desktop"},
-                "frontendUrl": "http://localhost:5173",
-            },
+    async def __aenter__(self) -> "_ImmediateTextStream":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def iter_deltas(self):
+        yield self._output
+
+    async def get_output(self) -> str:
+        return self._output
+
+
+class _PermissiveExecutor:
+    def __init__(self, *, reply: str) -> None:
+        self.model_configured = True
+        self.model_environment_keys: tuple[str, ...] = ()
+        self._reply = reply
+
+    def open_text_stream(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: list[str] | tuple[str, ...] = (),
+        request_options: dict[str, object] | None = None,
+    ) -> _ImmediateTextStream:
+        return _ImmediateTextStream(output=self._reply, resolved_model_id=model_route.model_id)
+
+
+class _RecordingExecutor(_PermissiveExecutor):
+    def __init__(self, *, reply: str) -> None:
+        super().__init__(reply=reply)
+        self.calls: list[dict[str, object]] = []
+
+    def open_text_stream(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: list[str] | tuple[str, ...] = (),
+        request_options: dict[str, object] | None = None,
+    ) -> _ImmediateTextStream:
+        self.calls.append(
+            {
+                "agent_name": agent_name,
+                "user_prompt": user_prompt,
+                "message_history": list(message_history),
+                "resolved_model_id": model_route.model_id,
+                "enabled_tools": list(enabled_tools),
+                "request_options": dict(request_options or {}),
+            }
+        )
+        return super().open_text_stream(
+            agent_name=agent_name,
+            user_prompt=user_prompt,
+            message_history=message_history,
+            model_route=model_route,
+            enabled_tools=enabled_tools,
+            request_options=request_options,
         )
 
-    payload = response.json()
 
-    assert response.status_code == 200
-    assert payload == scaffold.build_info_response().to_dict()
-    assert list(payload["agents"]) == ["default"]
+class _EchoModelRouteResolver:
+    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+        return ResolvedRuntimeModelRoute(
+            provider_profile_id=model_route.provider_profile_id,
+            provider=model_route.snapshot.provider,
+            endpoint_type=model_route.snapshot.endpoint_type,
+            base_url=model_route.snapshot.base_url,
+            model_id=model_route.snapshot.model_id,
+            api_key="test-api-key",
+        )
+
 
 
 def test_root_post_agents_list_returns_backend_agent_directory() -> None:
@@ -68,6 +125,7 @@ def test_root_post_agents_list_returns_backend_agent_directory() -> None:
 
     assert response.status_code == 200
     assert response.json() == scaffold.build_agents_list_response().to_dict()
+
 
 
 def test_root_post_session_create_returns_bound_agent_session_payload() -> None:
@@ -90,6 +148,7 @@ def test_root_post_session_create_returns_bound_agent_session_payload() -> None:
     }
 
 
+
 def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool_catalog() -> None:
     app, scaffold, store = _build_app()
     session = store.create(bound_agent_id="default", session_id="session-1")
@@ -110,6 +169,7 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
 
 
+
 def test_root_post_capabilities_get_unknown_session_returns_structured_error() -> None:
     app, _scaffold, _store = _build_app()
 
@@ -119,13 +179,15 @@ def test_root_post_capabilities_get_unknown_session_returns_structured_error() -
             json={"method": "capabilities/get", "body": {"sessionId": "missing-session"}},
         )
 
-    assert response.status_code == 404
     payload = response.json()
+
+    assert response.status_code == 404
     assert payload["ok"] is False
     assert payload["error"]["code"] == "session_not_found"
     assert payload["error"]["requestedMethod"] == "capabilities/get"
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"sessionId": "missing-session"}
+
 
 
 def test_root_post_capabilities_get_unknown_agent_returns_structured_error() -> None:
@@ -138,8 +200,9 @@ def test_root_post_capabilities_get_unknown_agent_returns_structured_error() -> 
             json={"method": "capabilities/get", "body": {"sessionId": "session-1"}},
         )
 
-    assert response.status_code == 404
     payload = response.json()
+
+    assert response.status_code == 404
     assert payload["ok"] is False
     assert payload["error"]["code"] == "agent_not_found"
     assert payload["error"]["requestedMethod"] == "capabilities/get"
@@ -147,7 +210,8 @@ def test_root_post_capabilities_get_unknown_agent_returns_structured_error() -> 
     assert payload["error"]["details"] == {"agentName": "missing-agent"}
 
 
-def test_root_post_info_shape_without_method_returns_structured_bad_request() -> None:
+
+def test_root_post_missing_method_returns_structured_bad_request() -> None:
     app, _scaffold, _store = _build_app()
 
     with TestClient(app) as client:
@@ -159,35 +223,15 @@ def test_root_post_info_shape_without_method_returns_structured_bad_request() ->
             },
         )
 
-    assert response.status_code == 400
     payload = response.json()
+
+    assert response.status_code == 400
     assert payload["ok"] is False
     assert payload["error"]["code"] == "invalid_request"
     assert payload["error"]["requestedMethod"] is None
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
 
 
-
-def test_root_post_run_like_request_without_explicit_method_returns_structured_bad_request() -> None:
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json={
-                "threadId": "thread-1",
-                "runId": "run-1",
-                "messages": [_build_user_message("Hello")],
-                "state": {"mode": "chat"},
-            },
-        )
-
-    assert response.status_code == 400
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "invalid_request"
-    assert payload["error"]["requestedMethod"] is None
-    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
 
 def test_root_post_invalid_method_shape_returns_structured_bad_request() -> None:
     app, _scaffold, _store = _build_app()
@@ -195,9 +239,9 @@ def test_root_post_invalid_method_shape_returns_structured_bad_request() -> None
     with TestClient(app) as client:
         response = client.post("/", json={"method": 123})
 
-    assert response.status_code == 400
-
     payload = response.json()
+
+    assert response.status_code == 400
     assert payload["ok"] is False
     assert payload["error"]["code"] == "invalid_request"
     assert payload["error"]["requestedMethod"] is None
@@ -205,71 +249,53 @@ def test_root_post_invalid_method_shape_returns_structured_bad_request() -> None
     assert payload["error"]["stage"] == "phase3-run-bridge"
 
 
-def test_root_post_agent_connect_returns_sse_connect_result() -> None:
+
+def test_root_post_legacy_info_returns_method_not_implemented() -> None:
     app, _scaffold, _store = _build_app()
 
     with TestClient(app) as client:
-        response = client.post("/", json=_build_connect_request(state={"mode": "connect"}))
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-
-    events = _parse_sse_events(response.text)
-    assert events[-1]["result"]["session"]["metadata"] == {"last_connect_run_id": "run-1"}
-
-
-def test_root_post_agent_connect_unknown_agent_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_connect_request(agent_id="missing-agent"))
-
-    assert response.status_code == 404
+        response = client.post("/", json={"method": "info"})
 
     payload = response.json()
+
+    assert response.status_code == 501
     assert payload["ok"] is False
-    assert payload["error"]["code"] == "agent_not_found"
+    assert payload["error"]["code"] == "method_not_implemented"
+    assert payload["error"]["requestedMethod"] == "info"
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
+
+
+
+def test_root_post_legacy_agent_run_returns_method_not_implemented() -> None:
+    app, _scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "agent/run"})
+
+    payload = response.json()
+
+    assert response.status_code == 501
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "method_not_implemented"
+    assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
+
+
+
+def test_root_post_legacy_agent_connect_returns_method_not_implemented() -> None:
+    app, _scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "agent/connect"})
+
+    payload = response.json()
+
+    assert response.status_code == 501
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "method_not_implemented"
     assert payload["error"]["requestedMethod"] == "agent/connect"
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
-    assert payload["error"]["details"] == {"agentName": "missing-agent"}
 
-
-def test_root_post_agent_connect_existing_thread_is_reused() -> None:
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        first_response = client.post("/", json=_build_connect_request(run_id="run-1"))
-        second_response = client.post("/", json=_build_connect_request(run_id="run-2"))
-
-    first_events = _parse_sse_events(first_response.text)
-    second_events = _parse_sse_events(second_response.text)
-    first_session = first_events[-1]["result"]["session"]
-    second_session = second_events[-1]["result"]["session"]
-
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
-    assert second_session["threadId"] == "thread-1"
-    assert second_session["newlyCreated"] is False
-    assert second_session["createdAt"] == first_session["createdAt"]
-    assert second_session["metadata"] == {"last_connect_run_id": "run-2"}
-
-
-def test_root_post_agent_connect_rebinding_existing_thread_returns_agent_mismatch() -> None:
-    app, _scaffold, _store = _build_app_with_secondary_agent()
-
-    with TestClient(app) as client:
-        client.post("/", json=_build_connect_request(agent_id="default", run_id="run-1"))
-        response = client.post("/", json=_build_connect_request(agent_id="secondary", run_id="run-2"))
-
-    payload = response.json()
-
-    assert response.status_code == 409
-    assert payload["error"]["code"] == "agent_mismatch"
-    assert payload["error"]["details"] == {
-        "sessionId": "thread-1",
-        "boundAgentId": "default",
-        "requestedAgentId": "secondary",
-    }
 
 
 def test_root_post_message_send_streams_typed_events_and_persists_history() -> None:
@@ -325,6 +351,7 @@ def test_root_post_message_send_streams_typed_events_and_persists_history() -> N
     ]
 
 
+
 def test_root_post_message_send_agent_mismatch_streams_failed_terminal_event() -> None:
     app, _scaffold, store = _build_app_with_secondary_agent()
     store.create(bound_agent_id="default", session_id="session-1")
@@ -353,6 +380,7 @@ def test_root_post_message_send_agent_mismatch_streams_failed_terminal_event() -
     }
 
 
+
 def test_root_post_message_send_unknown_tool_streams_failed_terminal_event() -> None:
     app, _scaffold, store = _build_app()
     store.create(bound_agent_id="default", session_id="session-1")
@@ -375,6 +403,7 @@ def test_root_post_message_send_unknown_tool_streams_failed_terminal_event() -> 
         "message": "Unknown tool 'tool.missing'.",
         "details": {"toolId": "tool.missing"},
     }
+
 
 
 def test_root_post_message_send_intersects_requested_tools_with_available_tools() -> None:
@@ -402,272 +431,60 @@ def test_root_post_message_send_intersects_requested_tools_with_available_tools(
     assert executor.calls[0]["enabled_tools"] == ["tool.file-convert"]
 
 
-def test_root_post_agent_run_success_persists_history_across_same_thread() -> None:
-    app, _scaffold, store = _build_app()
 
-    with TestClient(app) as client:
-        first_response = client.post("/", json=_build_run_request(run_id="run-1", user_text="Hello"))
-        second_response = client.post("/", json=_build_run_request(run_id="run-2", user_text="Again"))
-
-    first_events = _parse_sse_events(first_response.text)
-    second_events = _parse_sse_events(second_response.text)
-
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
-    assert first_events[-1]["result"]["session"]["newlyCreated"] is True
-    assert second_events[-1]["result"]["session"]["newlyCreated"] is False
-    assert second_events[-1]["result"]["session"]["metadata"] == {"last_run_id": "run-2"}
-    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
-        ("user", "Hello"),
-        ("assistant", TEST_MODEL_REPLY),
-        ("user", "Again"),
-        ("assistant", TEST_MODEL_REPLY),
-    ]
-
-
-def test_root_post_agent_run_unknown_agent_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_run_request(agent_id="missing-agent", user_text="Hello"))
-
-    assert response.status_code == 404
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "agent_not_found"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["details"] == {"agentName": "missing-agent"}
-
-
-def test_root_post_agent_run_model_not_configured_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app(agent_executor=PydanticAIAgentExecutor(env={}))
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_run_request(user_text="Hello"))
-
-    assert response.status_code == 503
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "model_not_configured"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-
-
-def test_root_post_agent_run_corrupted_session_history_returns_structured_conflict() -> None:
-    app, _scaffold, store = _build_app()
-    session, _ = store.get_or_create(
-        session_id="thread-1",
-        bound_agent_id="default",
-        metadata={"last_run_id": "run-0"},
-    )
-    session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_run_request(user_text="Hello"))
-
-    assert response.status_code == 409
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "invalid_message_history"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
-
-
-def test_root_post_agent_run_rebinding_existing_thread_returns_agent_mismatch() -> None:
-    app, _scaffold, store = _build_app_with_secondary_agent()
-    store.create(bound_agent_id="default", session_id="thread-1")
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_run_request(agent_id="secondary", user_text="Hello"))
-
-    assert response.status_code == 409
-    payload = response.json()
-    assert payload["error"]["code"] == "agent_mismatch"
-    assert payload["error"]["details"] == {
-        "sessionId": "thread-1",
-        "boundAgentId": "default",
-        "requestedAgentId": "secondary",
-    }
-
-
-def test_root_post_agent_run_agent_execution_failure_returns_structured_error() -> None:
-    app, _scaffold, _store = _build_app(
-        runtime_bridge=_ExplodingRuntimeBridge(AgentExecutionError("executor boom"))
-    )
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_run_request(user_text="Hello"))
-
-    assert response.status_code == 500
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "agent_execution_failed"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
-
-
-def test_root_post_agent_run_unsupported_message_shape_returns_structured_error() -> None:
+def test_root_post_message_send_unsupported_message_shape_returns_structured_error() -> None:
     app, _scaffold, _store = _build_app()
 
     with TestClient(app) as client:
         response = client.post(
             "/",
-            json=_build_run_request(
-                user_text="ignored",
-                body_overrides={
-                    "messages": [
-                        {
-                            "id": "u1",
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "binary",
-                                    "mimeType": "text/plain",
-                                    "url": "https://example.com/file.txt",
-                                }
-                            ],
+            json={
+                "method": "message/send",
+                "body": {
+                    "sessionId": "session-1",
+                    "message": {"role": "assistant", "content": "ignored"},
+                    "policy": {
+                        "modelRoute": {
+                            "providerProfileId": "provider-1",
+                            "snapshot": {
+                                "provider": "openai",
+                                "endpointType": "openai-compatible",
+                                "baseUrl": "https://example.com/v1",
+                                "modelId": "gpt-4.1",
+                            },
                         }
-                    ]
+                    },
                 },
-            ),
+            },
         )
 
-    assert response.status_code == 400
     payload = response.json()
+    assert response.status_code == 400
     assert payload["ok"] is False
     assert payload["error"]["code"] == "unsupported_message_shape"
-    assert payload["error"]["requestedMethod"] == "agent/run"
+    assert payload["error"]["requestedMethod"] == "message/send"
 
 
-class _ExplodingRuntimeBridge(RuntimeBridge):
-    def __init__(self, error: Exception) -> None:
-        self._error = error
 
-    async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
-        raise self._error
+def test_root_post_message_send_requires_explicit_body_wrapper() -> None:
+    app, _scaffold, _store = _build_app()
 
-class _ImmediateTextStream:
-    def __init__(self, *, output: str, resolved_model_id: str) -> None:
-        self.resolved_model_id = resolved_model_id
-        self._output = output
-
-    async def __aenter__(self) -> "_ImmediateTextStream":
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        return None
-
-    async def iter_deltas(self):
-        yield self._output
-
-    async def get_output(self) -> str:
-        return self._output
-
-
-class _PermissiveExecutor:
-    def __init__(self, *, reply: str) -> None:
-        self.model_configured = True
-        self.model_environment_keys: tuple[str, ...] = ()
-        self._reply = reply
-
-    async def run(
-        self,
-        *,
-        agent_name: str,
-        user_prompt: str,
-        message_history: list[object],
-        model: object | None = None,
-        enabled_tools: list[str] | tuple[str, ...] = (),
-        request_options: dict[str, object] | None = None,
-    ) -> str:
-        return self._reply
-
-    def open_text_stream(
-        self,
-        *,
-        agent_name: str,
-        user_prompt: str,
-        message_history: list[object],
-        model_route: ResolvedRuntimeModelRoute,
-        enabled_tools: list[str] | tuple[str, ...] = (),
-        request_options: dict[str, object] | None = None,
-    ) -> _ImmediateTextStream:
-        return _ImmediateTextStream(output=self._reply, resolved_model_id=model_route.model_id)
-
-
-class _RecordingExecutor(_PermissiveExecutor):
-    def __init__(self, *, reply: str) -> None:
-        super().__init__(reply=reply)
-        self.calls: list[dict[str, object]] = []
-
-    async def run(
-        self,
-        *,
-        agent_name: str,
-        user_prompt: str,
-        message_history: list[object],
-        model: object | None = None,
-        enabled_tools: list[str] | tuple[str, ...] = (),
-        request_options: dict[str, object] | None = None,
-    ) -> str:
-        self.calls.append(
-            {
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-                "model": model,
-                "enabled_tools": list(enabled_tools),
-                "request_options": dict(request_options or {}),
-            }
-        )
-        return await super().run(
-            agent_name=agent_name,
-            user_prompt=user_prompt,
-            message_history=message_history,
-            model=model,
-            enabled_tools=enabled_tools,
-            request_options=request_options,
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json={
+                "method": "message/send",
+                "sessionId": "session-1",
+            },
         )
 
-    def open_text_stream(
-        self,
-        *,
-        agent_name: str,
-        user_prompt: str,
-        message_history: list[object],
-        model_route: ResolvedRuntimeModelRoute,
-        enabled_tools: list[str] | tuple[str, ...] = (),
-        request_options: dict[str, object] | None = None,
-    ) -> _ImmediateTextStream:
-        self.calls.append(
-            {
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-                "resolved_model_id": model_route.model_id,
-                "enabled_tools": list(enabled_tools),
-                "request_options": dict(request_options or {}),
-            }
-        )
-        return super().open_text_stream(
-            agent_name=agent_name,
-            user_prompt=user_prompt,
-            message_history=message_history,
-            model_route=model_route,
-            enabled_tools=enabled_tools,
-            request_options=request_options,
-        )
+    payload = response.json()
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_request"
+    assert payload["error"]["requestedMethod"] == "message/send"
+    assert payload["error"]["details"] == {"field": "body"}
 
-
-class _EchoModelRouteResolver:
-    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
-        return ResolvedRuntimeModelRoute(
-            provider_profile_id=model_route.provider_profile_id,
-            provider=model_route.snapshot.provider,
-            endpoint_type=model_route.snapshot.endpoint_type,
-            base_url=model_route.snapshot.base_url,
-            model_id=model_route.snapshot.model_id,
-            api_key="test-api-key",
-        )
 
 
 def _build_runtime_bridge(
@@ -690,14 +507,8 @@ def _build_runtime_bridge(
 
 
 
-def _build_app(
-    *,
-    agent_executor: PydanticAIAgentExecutor | None = None,
-    runtime_bridge: RuntimeBridge | None = None,
-) -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
-    executor = agent_executor or PydanticAIAgentExecutor(
-        model=TestModel(custom_output_text=TEST_MODEL_REPLY)
-    )
+def _build_app() -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
+    executor = _PermissiveExecutor(reply=TEST_MODEL_REPLY)
     store = InMemorySessionStore()
     tool_registry = build_default_tool_registry()
     agent_registry = build_default_agent_registry(
@@ -711,7 +522,7 @@ def _build_app(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
     )
-    bridge = runtime_bridge or _build_runtime_bridge(
+    bridge = _build_runtime_bridge(
         store=store,
         agent_registry=agent_registry,
         scaffold=scaffold,
@@ -719,6 +530,7 @@ def _build_app(
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))
     return app, scaffold, store
+
 
 
 def _build_app_with_secondary_agent() -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
@@ -758,6 +570,7 @@ def _build_app_with_secondary_agent() -> tuple[FastAPI, RuntimeScaffold, InMemor
     return app, scaffold, store
 
 
+
 def _build_app_with_recording_executor() -> tuple[
     FastAPI,
     RuntimeScaffold,
@@ -782,6 +595,7 @@ def _build_app_with_recording_executor() -> tuple[
     app = FastAPI()
     app.include_router(build_router(scaffold, store, bridge))
     return app, scaffold, store, executor
+
 
 
 def _build_app_with_unavailable_tool_catalog() -> tuple[
@@ -833,60 +647,6 @@ def _build_app_with_unavailable_tool_catalog() -> tuple[
     return app, scaffold, store, executor
 
 
-def _build_connect_request(
-    *,
-    agent_id: str = "default",
-    thread_id: str = "thread-1",
-    run_id: str = "run-1",
-    state: dict[str, object] | None = None,
-    body_overrides: dict[str, object] | None = None,
-) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "threadId": thread_id,
-        "runId": run_id,
-        "messages": [],
-        "state": state or {},
-        "tools": [],
-        "context": [],
-        "forwardedProps": {},
-    }
-    if body_overrides:
-        body.update(body_overrides)
-
-    return {
-        "method": "agent/connect",
-        "params": {"agentId": agent_id},
-        "body": body,
-    }
-
-
-def _build_run_request(
-    *,
-    agent_id: str = "default",
-    thread_id: str = "thread-1",
-    run_id: str = "run-1",
-    user_text: str,
-    state: dict[str, object] | None = None,
-    body_overrides: dict[str, object] | None = None,
-) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "threadId": thread_id,
-        "runId": run_id,
-        "messages": [_build_user_message(user_text)],
-        "state": state or {},
-        "actions": [],
-        "metaEvents": [],
-        "forwardedProps": {},
-    }
-    if body_overrides:
-        body.update(body_overrides)
-
-    return {
-        "method": "agent/run",
-        "params": {"agentId": agent_id},
-        "body": body,
-    }
-
 
 def _build_message_send_request(
     *,
@@ -918,13 +678,6 @@ def _build_message_send_request(
         body["agent"] = agent_id
     return {"method": "message/send", "body": body}
 
-
-def _build_user_message(user_text: str) -> dict[str, Any]:
-    return {
-        "id": "user-message-1",
-        "role": "user",
-        "content": user_text,
-    }
 
 
 def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:

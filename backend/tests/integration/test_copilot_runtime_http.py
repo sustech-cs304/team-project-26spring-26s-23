@@ -1,96 +1,155 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 
-from app.copilot_runtime import PydanticAIAgentExecutor
 from app.copilot_runtime.contracts import (
-    AGENT_CONNECT_METHOD,
-    AGENT_RUN_METHOD,
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
-    INFO_METHOD,
     MESSAGE_SEND_METHOD,
     SESSION_CREATE_METHOD,
 )
+from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.session_store import RuntimeTextMessage
 from app.desktop_runtime.server import create_app
 
 
-def test_post_root_info_returns_runtime_summary() -> None:
-    app = create_app(agent_executor=_build_stubbed_executor(outputs=["unused reply"]))
+class _ImmediateTextStream:
+    def __init__(self, *, output: str, resolved_model_id: str) -> None:
+        self.resolved_model_id = resolved_model_id
+        self._output = output
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json={
-                "method": "info",
-                "properties": {"mode": "desktop"},
-                "frontendUrl": "http://localhost:5173",
-            },
+    async def __aenter__(self) -> "_ImmediateTextStream":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def iter_deltas(self):
+        yield self._output
+
+    async def get_output(self) -> str:
+        return self._output
+
+
+class CapturingStreamingExecutor:
+    def __init__(self, *, outputs: list[str], model_configured: bool = True) -> None:
+        self.model_configured = model_configured
+        self.model_environment_keys: tuple[str, ...] = (
+            "COPILOT_RUNTIME_MODEL",
+            "COPILOT_MODEL",
+        )
+        self._outputs = list(outputs)
+        self.captured_calls: list[dict[str, object]] = []
+
+    def open_text_stream(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: tuple[str, ...] = (),
+        request_options: dict[str, object] | None = None,
+    ) -> _ImmediateTextStream:
+        self.captured_calls.append(
+            {
+                "agent_name": agent_name,
+                "user_prompt": user_prompt,
+                "message_history": list(message_history),
+                "resolved_model_id": model_route.model_id,
+                "enabled_tools": list(enabled_tools),
+                "request_options": dict(request_options or {}),
+            }
+        )
+        return _ImmediateTextStream(
+            output=self._outputs.pop(0),
+            resolved_model_id=model_route.model_id,
         )
 
-    payload = response.json()
 
-    assert response.status_code == 200
-    assert payload["protocol"] == "single-endpoint"
-    assert payload["defaultAgent"] == "default"
-    _assert_supported_methods(payload["supportedMethods"])
-
-
-def test_post_root_agent_connect_returns_connect_sse_result() -> None:
-    app = create_app(agent_executor=_build_stubbed_executor(outputs=["unused reply"]))
-
-    with TestClient(app) as client:
-        response = client.post("/", json=_build_connect_request(thread_id="thread-http", run_id="connect-1"))
-
-    events = _parse_sse_events(response.text)
-    result = events[-1]["result"]
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert [event["type"] for event in events] == [
-        "RUN_STARTED",
-        "STATE_SNAPSHOT",
-        "MESSAGES_SNAPSHOT",
-        "RUN_FINISHED",
-    ]
-    assert result["ok"] is True
-    assert result["threadId"] == "thread-http"
-    assert result["runId"] == "connect-1"
-    assert result["agentName"] == "default"
-    assert result["session"]["newlyCreated"] is True
-    assert result["session"]["metadata"] == {"last_connect_run_id": "connect-1"}
+class _ResolvedRouteResolver:
+    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+        return ResolvedRuntimeModelRoute(
+            provider_profile_id=model_route.provider_profile_id,
+            provider=model_route.snapshot.provider,
+            endpoint_type=model_route.snapshot.endpoint_type,
+            base_url=model_route.snapshot.base_url,
+            model_id=model_route.snapshot.model_id,
+            api_key="test-api-key",
+        )
 
 
-def test_post_root_agent_run_reuses_history_across_same_thread() -> None:
-    executor = _build_stubbed_executor(outputs=["First reply", "Second reply"])
-    app = create_app(agent_executor=executor)
+SUPPORTED_METHODS = [
+    AGENTS_LIST_METHOD,
+    SESSION_CREATE_METHOD,
+    CAPABILITIES_GET_METHOD,
+    MESSAGE_SEND_METHOD,
+]
+
+
+def test_post_root_legacy_methods_return_method_not_implemented() -> None:
+    app = _create_app(CapturingStreamingExecutor(outputs=["unused reply"]))
 
     with TestClient(app) as client:
+        for method_name in ("info", "agent/connect", "agent/run"):
+            response = client.post("/", json={"method": method_name})
+            payload = response.json()
+
+            assert response.status_code == 501
+            assert payload["ok"] is False
+            assert payload["error"]["code"] == "method_not_implemented"
+            assert payload["error"]["requestedMethod"] == method_name
+            _assert_supported_methods(payload["error"]["supportedMethods"])
+
+
+
+def test_post_root_session_first_flow_reuses_history_across_same_session() -> None:
+    executor = CapturingStreamingExecutor(outputs=["First reply", "Second reply"])
+    app = _create_app(executor)
+
+    with TestClient(app) as client:
+        agents_response = client.post("/", json={"method": "agents/list"})
+        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
+        session_payload = session_response.json()
+        capabilities_response = client.post(
+            "/",
+            json=_build_capabilities_get_request(session_id=session_payload["sessionId"]),
+        )
         first_response = client.post(
             "/",
-            json=_build_run_request(thread_id="thread-http", run_id="run-1", user_text="Hello"),
+            json=_build_message_send_request(
+                session_id=session_payload["sessionId"],
+                model_id="gpt-4.1",
+                user_text="Hello",
+            ),
         )
         second_response = client.post(
             "/",
-            json=_build_run_request(thread_id="thread-http", run_id="run-2", user_text="Follow up"),
+            json=_build_message_send_request(
+                session_id=session_payload["sessionId"],
+                model_id="gpt-4.1",
+                user_text="Follow up",
+            ),
         )
 
     first_events = _parse_sse_events(first_response.text)
     second_events = _parse_sse_events(second_response.text)
 
+    assert agents_response.status_code == 200
+    assert session_response.status_code == 200
+    assert capabilities_response.status_code == 200
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert first_events[-1]["result"]["output"] == "First reply"
-    assert second_events[-1]["result"]["output"] == "Second reply"
-    assert first_events[-1]["result"]["session"]["newlyCreated"] is True
-    assert second_events[-1]["result"]["session"]["newlyCreated"] is False
-    assert second_events[-1]["result"]["session"]["metadata"] == {"last_run_id": "run-2"}
+    assert agents_response.json()["defaultAgentId"] == "default"
+    assert capabilities_response.json()["sessionId"] == session_payload["sessionId"]
+    assert [event["type"] for event in first_events] == ["run_started", "text_delta", "run_completed"]
+    assert [event["type"] for event in second_events] == ["run_started", "text_delta", "run_completed"]
+    assert first_events[-1]["payload"]["assistantText"] == "First reply"
+    assert second_events[-1]["payload"]["assistantText"] == "Second reply"
 
     assert len(executor.captured_calls) == 2
     assert executor.captured_calls[0]["user_prompt"] == "Hello"
@@ -106,154 +165,112 @@ def test_post_root_agent_run_reuses_history_across_same_thread() -> None:
     assert isinstance(reused_history[1].parts[0], TextPart)
     assert reused_history[1].parts[0].content == "First reply"
 
-def test_post_root_agent_run_model_not_configured_returns_structured_error() -> None:
-    app = create_app(agent_executor=PydanticAIAgentExecutor(env={}))
+
+
+def test_post_root_message_send_succeeds_without_startup_model_when_route_is_present() -> None:
+    app = _create_app(CapturingStreamingExecutor(outputs=["Route scoped reply"], model_configured=False))
 
     with TestClient(app) as client:
-        response = client.post("/", json=_build_run_request(thread_id="thread-http", run_id="run-1", user_text="Hello"))
-
-    payload = response.json()
-
-    assert response.status_code == 503
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "model_not_configured"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    _assert_supported_methods(payload["error"]["supportedMethods"])
-    assert payload["error"]["stage"] == "phase3-run-bridge"
-    assert payload["error"]["details"] == {
-        "modelEnvironmentKeys": ["COPILOT_RUNTIME_MODEL", "COPILOT_MODEL"]
-    }
-
-
-
-def test_post_root_agent_run_unknown_agent_returns_structured_not_found_error() -> None:
-    app = create_app(agent_executor=_build_stubbed_executor(outputs=["unused reply"]))
-
-    with TestClient(app) as client:
+        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
+        session_id = session_response.json()["sessionId"]
         response = client.post(
             "/",
-            json=_build_run_request(
-                thread_id="thread-http",
-                run_id="run-1",
+            json=_build_message_send_request(
+                session_id=session_id,
+                model_id="gpt-4.1",
                 user_text="Hello",
-                agent_id="missing-agent",
             ),
         )
 
-    payload = response.json()
+    events = _parse_sse_events(response.text)
 
-    assert response.status_code == 404
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "agent_not_found"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    _assert_supported_methods(payload["error"]["supportedMethods"])
-    assert payload["error"]["stage"] == "phase3-run-bridge"
-    assert payload["error"]["details"] == {"agentName": "missing-agent"}
-    assert payload["error"]["message"] == "Unknown agent 'missing-agent'."
+    assert session_response.status_code == 200
+    assert response.status_code == 200
+    assert [event["type"] for event in events] == ["run_started", "text_delta", "run_completed"]
+    assert events[-1]["payload"]["assistantText"] == "Route scoped reply"
 
 
 
-def test_post_root_agent_run_corrupted_session_history_returns_explicit_error() -> None:
-    app = create_app(agent_executor=_build_stubbed_executor(outputs=["unused reply"]))
+def test_post_root_message_send_corrupted_session_history_returns_failed_event() -> None:
+    app = _create_app(CapturingStreamingExecutor(outputs=["unused reply"]))
 
     with TestClient(app) as client:
+        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
+        session_id = session_response.json()["sessionId"]
         store = app.state.copilot_runtime_session_store
-        session, _ = store.get_or_create(
-            session_id="thread-http",
-            bound_agent_id="default",
-            metadata={"last_run_id": "run-1"},
-        )
+        session = store.get(session_id)
+        assert session is not None
         session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
         response = client.post(
             "/",
-            json=_build_run_request(thread_id="thread-http", run_id="run-2", user_text="Hello again"),
+            json=_build_message_send_request(
+                session_id=session_id,
+                model_id="gpt-4.1",
+                user_text="Hello again",
+            ),
         )
 
-    payload = response.json()
+    events = _parse_sse_events(response.text)
 
-    assert response.status_code == 409
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "invalid_message_history"
-    assert payload["error"]["requestedMethod"] == "agent/run"
-    _assert_supported_methods(payload["error"]["supportedMethods"])
-    assert payload["error"]["stage"] == "phase3-run-bridge"
-    assert payload["error"]["details"] == {}
-    assert "expected role 'user'" in payload["error"]["message"]
+    assert response.status_code == 200
+    assert [event["type"] for event in events] == ["run_started", "run_failed"]
+    assert events[-1]["payload"]["code"] == "invalid_message_history"
+    assert "expected role 'user'" in events[-1]["payload"]["message"]
+    assert events[-1]["payload"]["details"] == {}
 
 
 
-class CapturingExecutor(PydanticAIAgentExecutor):
-    def __init__(self, *, outputs: list[str]) -> None:
-        super().__init__(model="stub-model")
-        self._outputs = list(outputs)
-        self.captured_calls: list[dict[str, object]] = []
+def _create_app(executor: CapturingStreamingExecutor):
+    return create_app(
+        agent_executor=executor,
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
 
 
 
-def _build_stubbed_executor(*, outputs: list[str]) -> CapturingExecutor:
-    executor = CapturingExecutor(outputs=outputs)
-
-    async def fake_run(
-        user_prompt: str,
-        *,
-        message_history: list[object],
-        model: object,
-    ) -> SimpleNamespace:
-        executor.captured_calls.append(
-            {
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-                "model": model,
-            }
-        )
-        return SimpleNamespace(output=executor._outputs.pop(0))
-
-    executor._agent.run = fake_run  # type: ignore[method-assign]
-    return executor
-
-
-
-def _build_connect_request(*, thread_id: str, run_id: str) -> dict[str, Any]:
+def _build_session_create_request(*, agent_id: str) -> dict[str, Any]:
     return {
-        "method": "agent/connect",
-        "params": {"agentId": "default"},
+        "method": "session/create",
         "body": {
-            "threadId": thread_id,
-            "runId": run_id,
-            "messages": [],
-            "state": {"mode": "connect"},
-            "tools": [],
-            "context": [],
-            "forwardedProps": {},
+            "agentId": agent_id,
         },
     }
 
 
 
-def _build_run_request(
-    *,
-    thread_id: str,
-    run_id: str,
-    user_text: str,
-    agent_id: str = "default",
-) -> dict[str, Any]:
+def _build_capabilities_get_request(*, session_id: str) -> dict[str, Any]:
     return {
-        "method": "agent/run",
-        "params": {"agentId": agent_id},
+        "method": "capabilities/get",
         "body": {
-            "threadId": thread_id,
-            "runId": run_id,
-            "messages": [
-                {
-                    "id": f"{run_id}:user",
-                    "role": "user",
-                    "content": user_text,
-                }
-            ],
-            "state": {"mode": "chat"},
-            "actions": [],
-            "metaEvents": [],
-            "forwardedProps": {},
+            "sessionId": session_id,
+        },
+    }
+
+
+
+def _build_message_send_request(*, session_id: str, model_id: str, user_text: str) -> dict[str, Any]:
+    return {
+        "method": "message/send",
+        "body": {
+            "sessionId": session_id,
+            "agent": "default",
+            "message": {
+                "role": "user",
+                "content": user_text,
+            },
+            "policy": {
+                "modelRoute": {
+                    "providerProfileId": "provider-1",
+                    "snapshot": {
+                        "provider": "openai",
+                        "endpointType": "openai-compatible",
+                        "baseUrl": "https://example.com/v1",
+                        "modelId": model_id,
+                    },
+                },
+                "enabledTools": [],
+                "requestOptions": {},
+            },
         },
     }
 
@@ -270,13 +287,6 @@ def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
     return events
 
 
+
 def _assert_supported_methods(supported_methods: list[str]) -> None:
-    assert set(supported_methods) >= {
-        INFO_METHOD,
-        AGENTS_LIST_METHOD,
-        SESSION_CREATE_METHOD,
-        CAPABILITIES_GET_METHOD,
-        MESSAGE_SEND_METHOD,
-        AGENT_CONNECT_METHOD,
-        AGENT_RUN_METHOD,
-    }
+    assert set(supported_methods) == set(SUPPORTED_METHODS)
