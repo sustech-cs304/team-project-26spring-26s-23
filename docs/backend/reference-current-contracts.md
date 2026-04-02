@@ -166,12 +166,12 @@ sidebar_position: 6
 | 事件类型 | 当前语义 |
 | --- | --- |
 | `run_started` | run 已建立，前端可以创建 assistant 占位项。 |
+| `tool_event` | 真实工具生命周期事件；通过 `phase` 区分 `started`、`completed` 与 `failed`。 |
 | `text_delta` | assistant 文本增量片段。 |
 | `run_completed` | 本轮成功完成，并带回最终 assistant 文本与解析后的路由回显。 |
 | `run_failed` | 本轮失败结束，并给出错误码、错误消息与细节。 |
 | `run_cancelled` | 本轮取消结束，并给出取消原因。 |
 | `run_diagnostic` | 非敏感诊断信息，通常出现在失败前。 |
-| `tool_event_reserved` | 协议预留事件，本期没有真实工具生命周期。 |
 
 #### 当前终态规则
 
@@ -216,6 +216,19 @@ sidebar_position: 6
 | `message` | 诊断消息 |
 | `details` | 非敏感诊断细节 |
 | `stage` | 诊断阶段 |
+
+#### `tool_event` 当前值得依赖的字段
+
+| 字段 | 含义 |
+| --- | --- |
+| `toolCallId` | 同一次工具调用的稳定标识 |
+| `toolId` | 当前调用的工具 ID |
+| `phase` | 工具生命周期阶段，当前为 `started`、`completed` 或 `failed` |
+| `title` | 面向用户的步骤标题 |
+| `summary` | 面向用户的步骤摘要 |
+| `inputSummary` | 可选的输入摘要 |
+| `resultSummary` | 可选的结果摘要 |
+| `errorSummary` | 可选的错误摘要 |
 
 #### 当前语义重点
 

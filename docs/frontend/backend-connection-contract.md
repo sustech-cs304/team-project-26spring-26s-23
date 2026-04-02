@@ -106,8 +106,8 @@ hosted runtime 快照提供的是宿主当前运行事实，例如：
 这意味着：
 
 - 工具目录仍然是正式能力面的一部分。
-- 当前流式主线的重点仍然是模型路由、宿主取密钥与文本流。
-- `tool_event_reserved` 目前只保留协议预留位，不代表前端已经在主线中依赖真实工具生命周期流。
+- 当前流式主线仍然以模型路由、宿主取密钥与文本流为骨架，但已经把真实工具生命周期并入同一条 run 事件流。
+- 前端当前已经依赖真实 `tool_event`，并会把同一 `toolCallId` 的 `started`、`completed`、`failed` 更新为聊天消息流中的工具步骤。
 
 ## 前端现在怎样消费流式响应
 
@@ -116,19 +116,20 @@ hosted runtime 快照提供的是宿主当前运行事实，例如：
 当前前端已经可以消费下面这些事件：
 
 - `run_started`
+- `tool_event`
 - `text_delta`
 - `run_completed`
 - `run_failed`
 - `run_cancelled`
 - `run_diagnostic`
-- `tool_event_reserved`
 
 对应的页面行为是：
 
 - 收到 `run_started` 时创建 assistant 占位项。
+- 收到 `tool_event` 时插入或更新当前 run 的工具步骤。
 - 收到 `text_delta` 时增量拼接 assistant 文本。
 - 收到 `run_completed` 时定稿最终 assistant 文本，并回填 `resolvedModelRoute` 等结果信息。
-- 收到 `run_failed` 或 `run_cancelled` 时进入对应终态。
+- 收到 `run_failed` 或 `run_cancelled` 时进入对应终态，并让未完成工具步骤在页面上收口为失败或取消显示。
 - 收到 `run_diagnostic` 时记录非敏感诊断摘要。
 
 ## 当前 run 状态机已经进入前端主链

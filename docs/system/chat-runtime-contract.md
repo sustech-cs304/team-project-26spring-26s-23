@@ -180,7 +180,7 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 - `toolSelectionMode`
 - `defaultModelPreference`
 
-需要注意的是，能力面会继续暴露工具目录和推荐工具，但当前流式主线里的工具事件只保留协议预留位，工具生命周期并不是本期主线的一部分。
+需要注意的是，能力面会继续暴露工具目录和推荐工具；当前流式主线已经包含真实 `tool_event`，用于承载工具调用的 `started`、`completed` 和 `failed` 生命周期阶段。
 
 ## 方法四 `message/send`
 
@@ -275,6 +275,8 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 
 ```
 
+上面示例展示的是未启用工具的最小成功路径。若本轮启用了工具并发生真实调用，事件流会在同一 `runId` 下插入 `tool_event`，并继续与 `text_delta` 一起遵守统一的 `sequence` 递增规则。
+
 ### 当前事件外壳
 
 每个运行时事件都带有同一层外壳：
@@ -299,7 +301,7 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 | `run_failed` | 这条事件表示本轮失败结束，并给出错误码、错误消息和细节对象。 |
 | `run_cancelled` | 这条事件表示本轮取消结束，并给出取消原因。 |
 | `run_diagnostic` | 这条事件承载非敏感诊断信息，当前常用于路由解析或执行阶段失败前的补充说明。 |
-| `tool_event_reserved` | 这条事件只保留协议预留位，本期没有真实工具生命周期输出。 |
+| `tool_event` | 这条事件承载真实工具生命周期步骤，并通过 `phase` 区分 `started`、`completed` 与 `failed`。 |
 
 ### 当前顺序规则
 
@@ -307,10 +309,11 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 
 1. 如果请求体本身不合法，服务端会直接返回 JSON 错误，不会开启事件流。
 2. 一旦事件流成功建立，首条事件必须是 `run_started`。
-3. `text_delta` 可以出现零次或多次。
-4. `run_diagnostic` 可以出现在失败前，用来补充非敏感诊断信息。
-5. 终态事件只能是 `run_completed`、`run_failed` 或 `run_cancelled` 三者之一。
-6. 终态事件发出后，流内不会再继续输出其他事件。
+3. `tool_event` 可以出现零次或多次，并与 `text_delta` 一起按 `sequence` 交错输出。
+4. `text_delta` 可以出现零次或多次。
+5. `run_diagnostic` 可以出现在失败前，用来补充非敏感诊断信息。
+6. 终态事件只能是 `run_completed`、`run_failed` 或 `run_cancelled` 三者之一。
+7. 终态事件发出后，流内不会再继续输出其他事件。
 
 ### 当前终态载荷
 
@@ -348,6 +351,19 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 - `message`
 - `details`
 - `stage`
+
+#### `tool_event`
+
+当前稳定字段主要包括：
+
+- `toolCallId`
+- `toolId`
+- `phase`
+- `title`
+- `summary`
+- 可选的 `inputSummary`
+- 可选的 `resultSummary`
+- 可选的 `errorSummary`
 
 ## 当前归档规则
 

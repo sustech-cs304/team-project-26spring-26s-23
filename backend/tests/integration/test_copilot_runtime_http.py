@@ -6,6 +6,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 
+from app.copilot_runtime.agent import RuntimeToolLifecycleEvent
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
@@ -14,13 +15,21 @@ from app.copilot_runtime.contracts import (
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.session_store import RuntimeTextMessage
+from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
 from app.desktop_runtime.server import create_app
 
 
 class _ImmediateTextStream:
-    def __init__(self, *, output: str, resolved_model_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        output: str,
+        resolved_model_id: str,
+        tool_events: list[RuntimeToolLifecycleEvent] | None = None,
+    ) -> None:
         self.resolved_model_id = resolved_model_id
         self._output = output
+        self._tool_events = list(tool_events or [])
 
     async def __aenter__(self) -> "_ImmediateTextStream":
         return self
@@ -34,15 +43,27 @@ class _ImmediateTextStream:
     async def get_output(self) -> str:
         return self._output
 
+    def drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]:
+        drained = tuple(self._tool_events)
+        self._tool_events.clear()
+        return drained
+
 
 class CapturingStreamingExecutor:
-    def __init__(self, *, outputs: list[str], model_configured: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        outputs: list[str],
+        model_configured: bool = True,
+        tool_events_by_call: list[list[RuntimeToolLifecycleEvent]] | None = None,
+    ) -> None:
         self.model_configured = model_configured
         self.model_environment_keys: tuple[str, ...] = (
             "COPILOT_RUNTIME_MODEL",
             "COPILOT_MODEL",
         )
         self._outputs = list(outputs)
+        self._tool_events_by_call = [list(events) for events in (tool_events_by_call or [])]
         self.captured_calls: list[dict[str, object]] = []
 
     def open_text_stream(
@@ -65,9 +86,11 @@ class CapturingStreamingExecutor:
                 "request_options": dict(request_options or {}),
             }
         )
+        tool_events = self._tool_events_by_call.pop(0) if self._tool_events_by_call else []
         return _ImmediateTextStream(
             output=self._outputs.pop(0),
             resolved_model_id=model_route.model_id,
+            tool_events=tool_events,
         )
 
 
@@ -191,6 +214,66 @@ def test_post_root_message_send_succeeds_without_startup_model_when_route_is_pre
 
 
 
+def test_post_root_message_send_emits_real_tool_lifecycle_events() -> None:
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取 Shenzhen 的天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="completed",
+            title="天气工具已返回结果",
+            summary="Shenzhen：晴 / 24°C / 湿度 60%",
+            input_summary='{"location": "Shenzhen"}',
+            result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+        ),
+    ]
+    executor = CapturingStreamingExecutor(
+        outputs=["Weather answer"],
+        tool_events_by_call=[tool_events],
+    )
+    app = _create_app(executor)
+
+    with TestClient(app) as client:
+        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
+        session_id = session_response.json()["sessionId"]
+        response = client.post(
+            "/",
+            json=_build_message_send_request(
+                session_id=session_id,
+                model_id="gpt-4.1",
+                user_text="Tell me the weather",
+                enabled_tools=[WEATHER_CURRENT_TOOL_ID],
+            ),
+        )
+
+    events = _parse_sse_events(response.text)
+
+    assert session_response.status_code == 200
+    assert response.status_code == 200
+    assert [event["type"] for event in events] == [
+        "run_started",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    assert [event["payload"]["phase"] for event in events[1:3]] == ["started", "completed"]
+    assert events[1]["payload"]["toolId"] == WEATHER_CURRENT_TOOL_ID
+    assert events[2]["payload"]["resultSummary"] == "Shenzhen：晴 / 24°C / 湿度 60%"
+    assert events[3]["payload"]["delta"] == "Weather answer"
+    assert events[-1]["payload"]["assistantText"] == "Weather answer"
+    assert events[-1]["payload"]["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
+    assert executor.captured_calls[0]["enabled_tools"] == [WEATHER_CURRENT_TOOL_ID]
+
+
+
 def test_post_root_message_send_corrupted_session_history_returns_failed_event() -> None:
     app = _create_app(CapturingStreamingExecutor(outputs=["unused reply"]))
 
@@ -248,7 +331,13 @@ def _build_capabilities_get_request(*, session_id: str) -> dict[str, Any]:
 
 
 
-def _build_message_send_request(*, session_id: str, model_id: str, user_text: str) -> dict[str, Any]:
+def _build_message_send_request(
+    *,
+    session_id: str,
+    model_id: str,
+    user_text: str,
+    enabled_tools: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "method": "message/send",
         "body": {
@@ -268,7 +357,7 @@ def _build_message_send_request(*, session_id: str, model_id: str, user_text: st
                         "modelId": model_id,
                     },
                 },
-                "enabledTools": [],
+                "enabledTools": list(enabled_tools or []),
                 "requestOptions": {},
             },
         },
