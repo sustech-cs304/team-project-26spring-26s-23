@@ -138,11 +138,12 @@ renderer 真正装配工作台时，会先读取两类输入：
 
 当用户真正发送一条 [`message/send`](./chat-runtime-contract.md) 时，当前主线会按下面顺序工作：
 
-1. 前端把 `providerProfileId + snapshot` 放进 `policy.modelRoute`。
-2. Python runtime 创建 run，并开始输出流式事件。
+1. 前端把 `providerProfileId + snapshot` 放进 `policy.modelRoute`，并在 `enabledTools` 中提交本轮启用工具 ID。
+2. Python runtime 创建 run，先发出 `run_started` 事件。
 3. run 编排层通过宿主私桥解析当前 provider profile 与 API key。
 4. 宿主私桥用请求中的路由快照校验 `provider`、`endpointType`、`baseUrl` 与 `modelId`。
 5. 校验通过后，Python runtime 才会真正打开上游模型流。
+6. 模型发生工具调用时，运行时会在同一条消息流中发出 `tool_event`，并按 `started`、`completed`、`failed` 回传生命周期阶段。
 
 因此，provider 状态与 secrets 的真源始终留在 Electron 主进程。Python runtime 拿到的是本轮执行所需的最小结果，而不是 settings workspace 的原始文档。
 

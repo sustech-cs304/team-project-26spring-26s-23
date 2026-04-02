@@ -288,6 +288,7 @@ sidebar_position: 6
 | `agent_not_found` | 请求中的 `agentId` 不在当前目录中。 |
 | `agent_mismatch` | `message/send` 里的 `agent` 与会话绑定智能体不一致。 |
 | `tool_not_found` | `enabledTools` 中出现后端不认识的工具 ID。 |
+| `tool_not_enabled` | 模型调用了本轮未在 `enabledTools` 中启用的工具。 |
 | `invalid_message_history` | 进程内会话历史损坏，无法继续拼装上下文。 |
 | `model_not_configured` | 当前 runtime 没有可用模型执行器配置。 |
 | `provider_profile_not_found` | 请求中的 `providerProfileId` 在宿主真源中不存在。 |
@@ -309,8 +310,10 @@ sidebar_position: 6
 - `capabilitiesVersion`
 - `toolSelectionMode`
 - `policy.modelRoute`
+- `policy.enabledTools`
 - `runId`
 - `sequence`
+- `tool_event.payload.phase`
 - `resolvedModelId`
 - `resolvedModelRoute`
 - `resolvedToolIds`

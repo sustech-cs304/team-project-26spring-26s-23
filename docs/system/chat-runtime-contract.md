@@ -182,6 +182,8 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 
 需要注意的是，能力面会继续暴露工具目录和推荐工具；当前流式主线已经包含真实 `tool_event`，用于承载工具调用的 `started`、`completed` 和 `failed` 生命周期阶段。
 
+工具语义当前已经稳定为三层边界：`capabilities/get` 负责下发工具目录，`message/send` 的 `policy.enabledTools` 只负责表达本轮启用的工具 ID，真实调用过程通过同一条 run 事件流里的 `tool_event` 回传。
+
 ## 方法四 `message/send`
 
 ### 作用
@@ -371,6 +373,7 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 
 - `text_delta` 阶段，前端只更新当前 assistant 草稿，后端也只在内存里累计本轮文本。
 - 只有 `run_completed` 到来后，后端才会把 user 文本和最终 assistant 文本一起写入会话存储。
+- `tool_event` 步骤不会写入正式后端会话历史。
 - `run_failed` 不会写入 assistant 成功消息。
 - `run_cancelled` 也不会写入 assistant 成功消息。
 
@@ -419,6 +422,7 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 - `provider_secret_missing`
 - `host_model_route_access_denied`
 - `host_model_route_unavailable`
+- `tool_not_enabled`
 - `agent_execution_failed`
 
 其中路由解析相关错误会优先反映请求级 `modelRoute` 与宿主真源之间的偏差，不会静默回退到别的 provider 或别的模型。
@@ -432,8 +436,9 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 3. 它以临时 bootstrap 信息拉起 Python runtime。
 4. 它执行 `session/create`。
 5. 它执行流式 `message/send`，并校验最终事件为 `run_completed`。
+6. 它在 `--enable-weather-tool` 模式下校验天气工具闭环，要求事件序列包含 `run_started → tool_event(started) → tool_event(completed) → text_delta → run_completed`。
 
-这条脚本已经可以覆盖真实 provider、请求级模型路由、宿主取密钥与 `text_delta` 主线。
+当前首个真实工具是 `tool.weather-current`。它是内建随机天气占位工具，不依赖外部天气 API；工具结果摘要会以 `Shenzhen：小雨 / 19°C / 湿度 84%` 这一类文本通过 `tool_event` 返回，再由 assistant 文本继续组织最终回答。
 
 ## 当前与 CopilotKit 的关系
 

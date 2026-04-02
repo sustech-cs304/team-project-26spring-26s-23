@@ -201,9 +201,10 @@ http://127.0.0.1:8765/diagnostics
 ```bash
 cd frontend-copilot
 node ./scripts/smoke-streaming-chat.mjs --provider-profile-id custom-provider-1
+node ./scripts/smoke-streaming-chat.mjs --provider-profile-id custom-provider-1 --enable-weather-tool
 ```
 
-这条 smoke 脚本会在本地创建宿主私桥、拉起 Python runtime，并验证真实 provider、请求级模型路由、宿主取密钥与流式 `text_delta` 主线。
+这条 smoke 脚本会在本地创建宿主私桥、拉起 Python runtime，并验证真实 provider、请求级模型路由、宿主取密钥与流式事件主线。启用 `--enable-weather-tool` 后，脚本会额外校验真实工具闭环，要求事件序列包含 `run_started → tool_event(started) → tool_event(completed) → text_delta → run_completed`。
 
 ## 这页想帮助你先建立什么判断
 

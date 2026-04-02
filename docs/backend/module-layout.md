@@ -92,11 +92,11 @@ backend/app/
 
 ### 这一层今天真正成熟到什么程度
 
-当前默认装配里，聊天 runtime 只注册了最小智能体目录和默认工具目录。默认工具目录里仍然有内建的 `tool.file-convert`，对应实现位于 `app/tools/file_convert.py`。
+当前默认装配里，聊天 runtime 只注册了最小智能体目录和默认工具目录。默认工具目录已经包含 `tool.file-convert` 和首个真实工具 `tool.weather-current`，其中天气工具是内建随机占位实现，不依赖外部天气 API。
 
 这意味着两件事：
 
-- `copilot_runtime/` 已经是一条能独立工作的流式聊天主路径。
+- `copilot_runtime/` 已经是一条能独立工作的流式聊天主路径，并且工具生命周期已经进入主流事件链路。
 - Blackboard 和 TIS 并不会因为目录存在，就自动成为当前正式聊天工具目录的一部分。
 
 ### 先看哪些文件
@@ -106,7 +106,7 @@ backend/app/
 - `router.py` 负责按 `method` 分发请求，并把 [`message/send`](../system/chat-runtime-contract.md) 转到流式响应路径。
 - `composition.py` 负责装配默认 session store、智能体目录、工具目录、run 编排层和 bridge。
 - `message_runs.py` 负责请求级模型路由解析、流式事件编排、错误终态和最终归档。
-- `run_events.py` 负责定义 `run_started`、`text_delta`、`run_completed`、`run_failed`、`run_cancelled`、`run_diagnostic` 与 `tool_event_reserved` 这些事件，以及 SSE 编码。
+- `run_events.py` 负责定义 `run_started`、`tool_event`、`text_delta`、`run_completed`、`run_failed`、`run_cancelled` 与 `run_diagnostic` 这些事件，以及 SSE 编码。
 - `model_routes.py` 负责模型路由对象、解析结果和相关错误类型定义。
 - `bridge.py` 现在只保留会话能力查询和最薄的流式桥接入口。
 - `session_store.py` 负责当前的内存态会话存储。
@@ -120,6 +120,7 @@ backend/app/
 - 先发 `run_started`。
 - 读取请求中的 `modelRoute`。
 - 通过 `RuntimeModelRouteResolver` 在执行前解析 provider route 与认证信息。
+- 在模型调用工具时输出真实 `tool_event`，并按 `started`、`completed`、`failed` 回传生命周期阶段。
 - 打开上游文本流并持续输出 `text_delta`。
 - 在失败前按需要输出 `run_diagnostic`。
 - 在成功结束时归档最终 assistant 文本，并发出 `run_completed`。

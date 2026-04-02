@@ -112,9 +112,10 @@ sidebar_label: 后端暴露契约与前端接入点
 2. run 编排层先发出 `run_started`。
 3. Python runtime 通过宿主私桥按 `providerProfileId` 解析 provider profile 与 API key。
 4. 宿主使用路由快照校验 `provider`、`endpointType`、`baseUrl` 与 `modelId`。
-5. 执行器打开真实上游模型流，后端持续发出 `text_delta`。
-6. 正常完成时，后端归档最终 assistant 文本，并发出 `run_completed`。
-7. 失败或取消时，后端发出 `run_failed` 或 `run_cancelled`，不会归档 assistant 成功消息。
+5. 执行器在模型调用工具时发出真实 `tool_event`，并在同一条事件流里回传 `started`、`completed` 或 `failed`。
+6. 执行器打开真实上游模型流，后端持续发出 `text_delta`。
+7. 正常完成时，后端归档最终 assistant 文本，并发出 `run_completed`。
+8. 失败或取消时，后端发出 `run_failed` 或 `run_cancelled`，不会归档 assistant 成功消息。
 
 这说明当前后端对前端真正暴露的，已经是一条 run 语义明确的流式聊天链路。
 
@@ -125,8 +126,8 @@ sidebar_label: 后端暴露契约与前端接入点
 - 智能体目录。
 - 会话绑定。
 - 能力面版本和工具目录。
-- 请求级 `modelRoute`。
-- 流式事件集合与终态规则。
+- 请求级 `modelRoute` 与 `enabledTools`。
+- 流式事件集合、`tool_event` 生命周期阶段与终态规则。
 - 成功归档与失败不归档的会话规则。
 
 ## 已退役的旧外层方法

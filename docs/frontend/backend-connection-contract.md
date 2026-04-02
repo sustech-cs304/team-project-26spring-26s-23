@@ -106,6 +106,7 @@ hosted runtime 快照提供的是宿主当前运行事实，例如：
 这意味着：
 
 - 工具目录仍然是正式能力面的一部分。
+- 请求层只通过 `enabledTools` 传本轮启用工具 ID，不会回传工具定义快照。
 - 当前流式主线仍然以模型路由、宿主取密钥与文本流为骨架，但已经把真实工具生命周期并入同一条 run 事件流。
 - 前端当前已经依赖真实 `tool_event`，并会把同一 `toolCallId` 的 `started`、`completed`、`failed` 更新为聊天消息流中的工具步骤。
 
@@ -195,7 +196,9 @@ hosted runtime 快照提供的是宿主当前运行事实，例如：
 4. 执行 `session/create`。
 5. 执行流式 [`message/send`](../system/chat-runtime-contract.md)，并校验最终事件为 `run_completed`。
 
-这条脚本已经能够覆盖真实 provider、请求级模型路由、宿主取密钥与 `text_delta` 主线。
+这条脚本已经能够覆盖真实 provider、请求级模型路由、宿主取密钥与流式主线。
+
+当脚本启用 `--enable-weather-tool` 时，它还会校验真实工具闭环，要求事件序列包含 `run_started → tool_event(started) → tool_event(completed) → text_delta → run_completed`。当前首刀真实工具是 `tool.weather-current`，它是内建随机天气占位工具，不依赖外部天气 API。
 
 ## 相关文档
 
