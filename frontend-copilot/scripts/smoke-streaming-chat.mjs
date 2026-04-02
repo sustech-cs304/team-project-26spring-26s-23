@@ -19,6 +19,7 @@ async function main() {
     label: 'legacy compat smoke',
     userDataDir: options.userDataDir,
     providerProfileId: options.providerProfileId,
+    runtimeChainDebug: options.runtimeChainDebug,
   })
 
   try {
@@ -83,6 +84,7 @@ async function main() {
         abortedByClient: abortController?.signal.aborted === true,
         eventTypes: events.map((event) => event.type),
         firstDelta: events.find((event) => event.type === 'text_delta')?.payload?.delta ?? null,
+        runtimeChainDebug: harness.runtimeChainDebug,
       }, null, 2))
       return
     }
@@ -108,6 +110,7 @@ async function main() {
       enabledTools,
       eventTypes: events.map((event) => event.type),
       assistantText: terminalEvent.payload?.assistantText ?? null,
+      runtimeChainDebug: harness.runtimeChainDebug,
     }, null, 2))
   } finally {
     await harness.stop()

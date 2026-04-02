@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .debug_logging import (
+    is_runtime_chain_debug_enabled,
+    log_runtime_chain_debug,
+    summarize_event_types,
+    summarize_runtime_execution_event,
+)
+
 RuntimeExecutionEventType = Literal[
     "assistant_segment_started",
     "assistant_segment_delta",
@@ -185,6 +192,13 @@ class RuntimeExecutionEventBuffer:
         if event.type != ASSISTANT_SEGMENT_DELTA_EVENT_TYPE:
             self.finish_assistant_segment()
         self._pending_events.append(event)
+        log_runtime_chain_debug(
+            "execution_buffer.record_event",
+            enabled=is_runtime_chain_debug_enabled(),
+            runId=self.event_factory.run_id,
+            recordedEvent=summarize_runtime_execution_event(event),
+            pendingEventTypes=summarize_event_types(self._pending_events),
+        )
 
     def finish_assistant_segment(self) -> None:
         if self._assistant_segment_id is None:

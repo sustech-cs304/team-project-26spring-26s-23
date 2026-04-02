@@ -15,6 +15,16 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.result import StreamedRunResult
 
+from .debug_logging import (
+    is_runtime_chain_debug_enabled,
+    log_runtime_chain_debug,
+    preview_text,
+    summarize_event_types,
+    summarize_exception,
+    summarize_runtime_execution_event,
+    summarize_runtime_model_route,
+    summarize_runtime_tool_event,
+)
 from .execution_event_graph import (
     TOOL_COMPLETED_EVENT_TYPE,
     TOOL_FAILED_EVENT_TYPE,
@@ -142,6 +152,7 @@ class _PydanticAIAgentRunDeps:
     tool_registry: ToolRegistry
     enabled_tool_ids: frozenset[str]
     emit_tool_event: ToolLifecycleSink
+    run_id: str | None = None
 
 
 class _PydanticAITextStream:
@@ -200,14 +211,21 @@ class _PydanticAIEventStream:
     def __init__(
         self,
         *,
+        run_id: str,
         stream_context: AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
         resolved_model_id: str,
         event_buffer: RuntimeExecutionEventBuffer,
+        model_route_summary: Mapping[str, Any] | None = None,
+        debug_enabled: bool = False,
     ) -> None:
         self.resolved_model_id = resolved_model_id
+        self._run_id = run_id
         self._stream_context = stream_context
         self._stream_result: StreamedRunResult[Any, Any] | None = None
         self._event_buffer = event_buffer
+        self._model_route_summary = dict(model_route_summary or {})
+        self._debug_enabled = debug_enabled
+        self._text_delta_index = 0
 
     async def __aenter__(self) -> _PydanticAIEventStream:
         self._stream_result = await self._stream_context.__aenter__()
@@ -223,25 +241,83 @@ class _PydanticAIEventStream:
 
     async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
         result = self._require_stream_result()
+        log_runtime_chain_debug(
+            "collector.stream_opened",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            modelRoute=self._model_route_summary,
+        )
         try:
-            for event in self._event_buffer.drain():
+            for event in self._drain_events(reason="pre_stream"):
                 yield event
             async for delta in result.stream_text(delta=True, debounce_by=None):
-                for event in self._event_buffer.drain():
+                for event in self._drain_events(reason="before_text_delta"):
                     yield event
-                if delta != "":
+                if delta == "":
+                    log_runtime_chain_debug(
+                        "collector.empty_text_delta",
+                        enabled=self._debug_enabled,
+                        runId=self._run_id,
+                        resolvedModelId=self.resolved_model_id,
+                    )
+                else:
+                    self._text_delta_index += 1
+                    log_runtime_chain_debug(
+                        "collector.text_delta",
+                        enabled=self._debug_enabled,
+                        runId=self._run_id,
+                        resolvedModelId=self.resolved_model_id,
+                        deltaIndex=self._text_delta_index,
+                        deltaLength=len(delta),
+                        deltaPreview=preview_text(delta),
+                    )
                     self._event_buffer.record_assistant_delta(delta)
-                for event in self._event_buffer.drain():
+                for event in self._drain_events(reason="after_text_delta"):
                     yield event
-        except Exception:
+        except Exception as exc:
+            log_runtime_chain_debug(
+                "collector.stream_exception",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                error=summarize_exception(exc),
+                observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
+                observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+            )
             self._event_buffer.finish_assistant_segment()
-            for event in self._event_buffer.drain():
+            for event in self._drain_events(reason="exception_finish_segment"):
                 yield event
             raise
 
         self._event_buffer.finish_assistant_segment()
-        for event in self._event_buffer.drain():
+        for event in self._drain_events(reason="stream_completed"):
             yield event
+        log_runtime_chain_debug(
+            "collector.stream_completed",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            totalTextDeltaCount=self._text_delta_index,
+            observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
+            observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+        )
+
+    def _drain_events(self, *, reason: str) -> tuple[RuntimeExecutionEvent, ...]:
+        drained = self._event_buffer.drain()
+        log_runtime_chain_debug(
+            "collector.execution_drain",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            reason=reason,
+            executionEventTypes=summarize_event_types(drained),
+            executionEvents=[
+                summarize_runtime_execution_event(event)
+                for event in drained
+            ],
+        )
+        return drained
 
     async def get_output(self) -> str:
         result = self._require_stream_result()
@@ -393,13 +469,26 @@ class PydanticAIAgentExecutor:
         event_buffer = RuntimeExecutionEventBuffer(
             event_factory=RuntimeExecutionEventFactory(run_id=run_id)
         )
+        debug_enabled = is_runtime_chain_debug_enabled()
+        model_route_summary = summarize_runtime_model_route(model_route)
+        log_runtime_chain_debug(
+            "collector.stream_created",
+            enabled=debug_enabled,
+            runId=run_id,
+            resolvedModelId=model_route.model_id,
+            modelRoute=model_route_summary,
+            enabledToolIds=list(enabled_tools),
+            userPromptPreview=preview_text(user_prompt),
+        )
         deps = self._build_runtime_deps(
             enabled_tools=enabled_tools,
             emit_tool_event=lambda tool_event: event_buffer.record_event(
                 tool_lifecycle_event_to_execution_event(tool_event)
             ),
+            run_id=run_id,
         )
         return _PydanticAIEventStream(
+            run_id=run_id,
             stream_context=cast(
                 AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
                 self._agent.run_stream(
@@ -411,6 +500,8 @@ class PydanticAIAgentExecutor:
             ),
             resolved_model_id=model_route.model_id,
             event_buffer=event_buffer,
+            model_route_summary=model_route_summary,
+            debug_enabled=debug_enabled,
         )
 
     def resolve_model(self, *, model_override: Any | None = None) -> Any:
@@ -441,11 +532,13 @@ class PydanticAIAgentExecutor:
         *,
         enabled_tools: Sequence[str],
         emit_tool_event: ToolLifecycleSink,
+        run_id: str | None = None,
     ) -> _PydanticAIAgentRunDeps:
         return _PydanticAIAgentRunDeps(
             tool_registry=self._tool_registry,
             enabled_tool_ids=frozenset(self._normalize_enabled_tools(enabled_tools)),
             emit_tool_event=emit_tool_event,
+            run_id=run_id,
         )
 
     def _normalize_enabled_tools(self, enabled_tools: Sequence[str]) -> tuple[str, ...]:
@@ -494,12 +587,21 @@ class PydanticAIAgentExecutor:
             key: value for key, value in dict(arguments or {}).items() if value is not None
         }
         input_summary = summarize_tool_arguments(normalized_arguments)
+        log_runtime_chain_debug(
+            "tool.execute_enter",
+            runId=ctx.deps.run_id,
+            toolCallId=tool_call_id,
+            toolId=tool_id,
+            enabledToolIds=sorted(ctx.deps.enabled_tool_ids),
+            inputSummary=preview_text(input_summary, limit=160),
+        )
 
         try:
             tool = ctx.deps.tool_registry.resolve_tool(tool_id)
         except LookupError as exc:
             error_message = f"Unknown tool '{tool_id}'."
-            ctx.deps.emit_tool_event(
+            self._emit_tool_event(
+                ctx,
                 RuntimeToolLifecycleEvent(
                     tool_call_id=tool_call_id,
                     tool_id=tool_id,
@@ -508,7 +610,7 @@ class PydanticAIAgentExecutor:
                     summary="工具未注册。",
                     input_summary=input_summary,
                     error_summary=error_message,
-                )
+                ),
             )
             raise ToolInvocationError(
                 code="tool_not_found",
@@ -522,7 +624,8 @@ class PydanticAIAgentExecutor:
             arguments=normalized_arguments,
             display_name=tool.descriptor.display_name or tool_id,
         )
-        ctx.deps.emit_tool_event(
+        self._emit_tool_event(
+            ctx,
             RuntimeToolLifecycleEvent(
                 tool_call_id=tool_call_id,
                 tool_id=tool_id,
@@ -530,12 +633,13 @@ class PydanticAIAgentExecutor:
                 title=started_title,
                 summary=started_summary,
                 input_summary=input_summary,
-            )
+            ),
         )
 
         if tool_id not in ctx.deps.enabled_tool_ids:
             error_message = f"Tool '{tool_id}' is not enabled for this run."
-            ctx.deps.emit_tool_event(
+            self._emit_tool_event(
+                ctx,
                 RuntimeToolLifecycleEvent(
                     tool_call_id=tool_call_id,
                     tool_id=tool_id,
@@ -544,7 +648,7 @@ class PydanticAIAgentExecutor:
                     summary="当前运行未启用该工具。",
                     input_summary=input_summary,
                     error_summary=error_message,
-                )
+                ),
             )
             raise ToolInvocationError(
                 code="tool_not_enabled",
@@ -559,7 +663,15 @@ class PydanticAIAgentExecutor:
             raise
         except Exception as exc:
             error_message = f"Tool '{tool_id}' failed: {exc}"
-            ctx.deps.emit_tool_event(
+            log_runtime_chain_debug(
+                "tool.execute_exception",
+                runId=ctx.deps.run_id,
+                toolCallId=tool_call_id,
+                toolId=tool_id,
+                error=summarize_exception(exc),
+            )
+            self._emit_tool_event(
+                ctx,
                 RuntimeToolLifecycleEvent(
                     tool_call_id=tool_call_id,
                     tool_id=tool_id,
@@ -568,7 +680,7 @@ class PydanticAIAgentExecutor:
                     summary="工具执行失败。",
                     input_summary=input_summary,
                     error_summary=str(exc),
-                )
+                ),
             )
             raise ToolInvocationError(
                 code="tool_execution_failed",
@@ -583,7 +695,8 @@ class PydanticAIAgentExecutor:
             display_name=tool.descriptor.display_name or tool_id,
             result_summary=result_summary,
         )
-        ctx.deps.emit_tool_event(
+        self._emit_tool_event(
+            ctx,
             RuntimeToolLifecycleEvent(
                 tool_call_id=tool_call_id,
                 tool_id=tool_id,
@@ -592,9 +705,21 @@ class PydanticAIAgentExecutor:
                 summary=completed_summary,
                 input_summary=input_summary,
                 result_summary=result_summary,
-            )
+            ),
         )
         return result
+
+    def _emit_tool_event(
+        self,
+        ctx: RunContext[_PydanticAIAgentRunDeps],
+        event: RuntimeToolLifecycleEvent,
+    ) -> None:
+        ctx.deps.emit_tool_event(event)
+        log_runtime_chain_debug(
+            "tool.lifecycle_event",
+            runId=ctx.deps.run_id,
+            toolEvent=summarize_runtime_tool_event(event),
+        )
 
     def _build_started_copy(
         self,

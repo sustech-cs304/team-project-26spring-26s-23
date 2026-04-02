@@ -19,6 +19,7 @@ async function main() {
     label: 'thread run smoke',
     userDataDir: options.userDataDir,
     providerProfileId: options.providerProfileId,
+    runtimeChainDebug: options.runtimeChainDebug,
   })
 
   try {
@@ -107,6 +108,7 @@ async function main() {
         cancelAccepted: cancelPayload?.cancelAccepted ?? null,
         eventTypes: events.map((event) => event.type),
         cancelTerminalReason: events.at(-1)?.payload?.reason ?? null,
+        runtimeChainDebug: harness.runtimeChainDebug,
       }, null, 2))
       return
     }
@@ -131,6 +133,7 @@ async function main() {
       enabledTools,
       eventTypes: events.map((event) => event.type),
       assistantText: terminalEvent.payload?.assistantText ?? null,
+      runtimeChainDebug: harness.runtimeChainDebug,
     }, null, 2))
   } finally {
     await harness.stop()

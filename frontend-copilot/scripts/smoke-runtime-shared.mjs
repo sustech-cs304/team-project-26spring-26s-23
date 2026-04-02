@@ -35,6 +35,7 @@ export function parseCommonArgs(argv) {
     messageProvided: false,
     cancelAfterFirstDelta: false,
     enableWeatherTool: false,
+    runtimeChainDebug: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -67,6 +68,11 @@ export function parseCommonArgs(argv) {
 
     if (token === '--enable-weather-tool') {
       options.enableWeatherTool = true
+      continue
+    }
+
+    if (token === '--runtime-chain-debug') {
+      options.runtimeChainDebug = true
       continue
     }
 
@@ -136,6 +142,15 @@ export async function createRuntimeSmokeHarness(input) {
     throw new Error(`Route resolution failed before smoke run: ${JSON.stringify(resolvedRoute)}`)
   }
 
+  const backendEnv = {
+    ...process.env,
+    ...(input.runtimeChainDebug ? { COPILOT_RUNTIME_CHAIN_DEBUG: '1' } : {}),
+  }
+  if (input.runtimeChainDebug) {
+    console.log(`=== ${label} runtime chain debug ===`)
+    console.log(JSON.stringify({ COPILOT_RUNTIME_CHAIN_DEBUG: '1' }, null, 2))
+  }
+
   let bridge = null
   let backendProcess = null
   try {
@@ -169,7 +184,7 @@ export async function createRuntimeSmokeHarness(input) {
       ],
       {
         cwd: backendRoot,
-        env: process.env,
+        env: backendEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       },
@@ -184,6 +199,7 @@ export async function createRuntimeSmokeHarness(input) {
       workspaceState,
       route,
       runtimeUrl,
+      runtimeChainDebug: input.runtimeChainDebug === true,
       stop: async () => {
         await Promise.allSettled([
           backendProcess === null ? Promise.resolve() : stopChildProcess(backendProcess),

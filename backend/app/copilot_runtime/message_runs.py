@@ -20,6 +20,17 @@ from .agent import (
 )
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import RuntimeMessageSendRequest, RuntimeScaffold
+from .debug_logging import (
+    is_runtime_chain_debug_enabled,
+    log_runtime_chain_debug,
+    preview_text,
+    summarize_event_types,
+    summarize_exception,
+    summarize_runtime_execution_event,
+    summarize_runtime_model_route,
+    summarize_runtime_run_event,
+    summarize_runtime_tool_event,
+)
 from .execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventBuffer, RuntimeExecutionEventFactory
 from .execution_support import (
     AgentNotFoundError,
@@ -124,36 +135,105 @@ class _LegacyTextExecutionEventStreamAdapter:
         return await self.stream.__aexit__(exc_type, exc, tb)
 
     async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
+        debug_enabled = is_runtime_chain_debug_enabled()
         try:
-            async for event in self._emit_pending_tool_events():
+            async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
                 yield event
             async for delta in self.stream.iter_deltas():
-                async for event in self._emit_pending_tool_events():
+                async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
                     yield event
                 self._event_buffer.record_assistant_delta(delta)
-                for event in self._event_buffer.drain():
+                drained = self._event_buffer.drain()
+                log_runtime_chain_debug(
+                    "legacy_adapter.execution_drain",
+                    enabled=debug_enabled,
+                    runId=self.run_id,
+                    resolvedModelId=self.resolved_model_id,
+                    reason="after_text_delta",
+                    executionEventTypes=summarize_event_types(drained),
+                    executionEvents=[
+                        summarize_runtime_execution_event(event)
+                        for event in drained
+                    ],
+                )
+                for event in drained:
                     yield event
-            async for event in self._emit_pending_tool_events():
+            async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
                 yield event
-        except Exception:
-            async for event in self._emit_pending_tool_events():
+        except Exception as exc:
+            log_runtime_chain_debug(
+                "legacy_adapter.stream_exception",
+                enabled=debug_enabled,
+                runId=self.run_id,
+                resolvedModelId=self.resolved_model_id,
+                error=summarize_exception(exc),
+            )
+            async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
                 yield event
             self._event_buffer.finish_assistant_segment()
-            for event in self._event_buffer.drain():
+            drained = self._event_buffer.drain()
+            log_runtime_chain_debug(
+                "legacy_adapter.execution_drain",
+                enabled=debug_enabled,
+                runId=self.run_id,
+                resolvedModelId=self.resolved_model_id,
+                reason="exception_finish_segment",
+                executionEventTypes=summarize_event_types(drained),
+                executionEvents=[
+                    summarize_runtime_execution_event(event)
+                    for event in drained
+                ],
+            )
+            for event in drained:
                 yield event
             raise
 
         self._event_buffer.finish_assistant_segment()
-        for event in self._event_buffer.drain():
+        drained = self._event_buffer.drain()
+        log_runtime_chain_debug(
+            "legacy_adapter.execution_drain",
+            enabled=debug_enabled,
+            runId=self.run_id,
+            resolvedModelId=self.resolved_model_id,
+            reason="stream_completed",
+            executionEventTypes=summarize_event_types(drained),
+            executionEvents=[
+                summarize_runtime_execution_event(event)
+                for event in drained
+            ],
+        )
+        for event in drained:
             yield event
 
     async def get_output(self) -> str:
         return await self.stream.get_output()
 
-    async def _emit_pending_tool_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
-        for tool_event in self._drain_tool_events():
+    async def _emit_pending_tool_events(self, *, debug_enabled: bool) -> AsyncIterator[RuntimeExecutionEvent]:
+        tool_events = self._drain_tool_events()
+        if len(tool_events) > 0:
+            log_runtime_chain_debug(
+                "legacy_adapter.tool_event_drain",
+                enabled=debug_enabled,
+                runId=self.run_id,
+                resolvedModelId=self.resolved_model_id,
+                toolEvents=[summarize_runtime_tool_event(event) for event in tool_events],
+            )
+        for tool_event in tool_events:
             self._event_buffer.record_event(tool_lifecycle_event_to_execution_event(tool_event))
-        for event in self._event_buffer.drain():
+        drained = self._event_buffer.drain()
+        log_runtime_chain_debug(
+            "legacy_adapter.execution_drain",
+            enabled=debug_enabled,
+            runId=self.run_id,
+            resolvedModelId=self.resolved_model_id,
+            reason="emit_pending_tool_events",
+            executionEventTypes=summarize_event_types(drained),
+            executionEvents=[
+                summarize_runtime_execution_event(event)
+                for event in drained
+            ],
+        )
+        for event in drained:
             yield event
 
     def _drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]:
@@ -190,6 +270,7 @@ class RuntimeMessageRunOrchestrator:
         run_id: str | None = None,
     ) -> AsyncIterator[RuntimeRunEvent]:
         resolved_run_id = run_id or _next_run_id()
+        debug_enabled = is_runtime_chain_debug_enabled()
         assistant_message_id = f"{resolved_run_id}:assistant"
         events = RuntimeRunEventFactory(session_id=request.session_id, run_id=resolved_run_id)
         projector = LegacyRuntimeRunEventProjector(
@@ -198,7 +279,17 @@ class RuntimeMessageRunOrchestrator:
         )
         execution_events = RuntimeExecutionEventFactory(run_id=resolved_run_id)
 
-        yield projector.build_run_started()
+        run_started = projector.build_run_started()
+        log_runtime_chain_debug(
+            "orchestrator.run_started",
+            enabled=debug_enabled,
+            runId=resolved_run_id,
+            threadId=request.session_id,
+            agentId=request.agent_id,
+            userPromptPreview=preview_text(request.message.content),
+            yieldedEvent=summarize_runtime_run_event(run_started),
+        )
+        yield run_started
 
         try:
             session = self._require_session(request)
@@ -212,6 +303,17 @@ class RuntimeMessageRunOrchestrator:
             )
             resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
             agent_executor = self._build_streaming_executor(agent_descriptor)
+            log_runtime_chain_debug(
+                "orchestrator.execution_prepared",
+                enabled=debug_enabled,
+                runId=resolved_run_id,
+                threadId=request.session_id,
+                boundAgentId=session.bound_agent_id,
+                enabledToolIds=list(resolved_tool_ids),
+                modelRoute=summarize_runtime_model_route(resolved_model_route),
+                historyMessageCount=len(message_history),
+                executorType=type(agent_executor).__name__,
+            )
         except RuntimeModelRouteResolutionError as exc:
             for event in self._build_failed_execution_events(
                 execution_events=execution_events,
@@ -328,30 +430,97 @@ class RuntimeMessageRunOrchestrator:
                 enabled_tools=resolved_tool_ids,
                 request_options=request.policy.requestOptions,
             ) as stream:
+                log_runtime_chain_debug(
+                    "orchestrator.stream_opened",
+                    enabled=debug_enabled,
+                    runId=resolved_run_id,
+                    threadId=request.session_id,
+                    resolvedModelId=stream.resolved_model_id,
+                )
                 async for event in stream.iter_events():
                     projected_events = projector.project(event)
+                    log_runtime_chain_debug(
+                        "orchestrator.execution_event_projected",
+                        enabled=debug_enabled,
+                        runId=resolved_run_id,
+                        threadId=request.session_id,
+                        executionEvent=summarize_runtime_execution_event(event),
+                        projectedEventTypes=[projected.type for projected in projected_events],
+                        projectedEvents=[
+                            summarize_runtime_run_event(projected)
+                            for projected in projected_events
+                        ],
+                    )
                     if len(projected_events) == 0:
                         continue
-                    await self._raise_if_client_disconnected(is_client_disconnected)
+                    await self._raise_if_client_disconnected(
+                        is_client_disconnected,
+                        run_id=resolved_run_id,
+                        thread_id=request.session_id,
+                    )
                     for projected in projected_events:
+                        log_runtime_chain_debug(
+                            "orchestrator.yield_projected_event",
+                            enabled=debug_enabled,
+                            runId=resolved_run_id,
+                            threadId=request.session_id,
+                            projectedEvent=summarize_runtime_run_event(projected),
+                        )
                         yield projected
-                await self._raise_if_client_disconnected(is_client_disconnected)
+                await self._raise_if_client_disconnected(
+                    is_client_disconnected,
+                    run_id=resolved_run_id,
+                    thread_id=request.session_id,
+                )
                 assistant_text = await stream.get_output()
-                await self._raise_if_client_disconnected(is_client_disconnected)
+                log_runtime_chain_debug(
+                    "orchestrator.stream_output",
+                    enabled=debug_enabled,
+                    runId=resolved_run_id,
+                    threadId=request.session_id,
+                    assistantTextLength=len(assistant_text),
+                    assistantTextPreview=preview_text(assistant_text),
+                )
+                await self._raise_if_client_disconnected(
+                    is_client_disconnected,
+                    run_id=resolved_run_id,
+                    thread_id=request.session_id,
+                )
         except asyncio.CancelledError:
-            for projected in projector.project(
+            projected_events = projector.project(
                 execution_events.build_run_cancelled(reason="cancelled")
-            ):
+            )
+            log_runtime_chain_debug(
+                "orchestrator.terminal",
+                enabled=debug_enabled,
+                runId=resolved_run_id,
+                threadId=request.session_id,
+                terminalReason="cancelled",
+                projectedEventTypes=[projected.type for projected in projected_events],
+                projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
+            )
+            for projected in projected_events:
                 yield projected
             return
         except ToolInvocationError as exc:
-            for projected in projector.project(
+            projected_events = projector.project(
                 execution_events.build_run_failed(
                     code=exc.code,
                     message=str(exc),
                     details=dict(exc.details),
                 )
-            ):
+            )
+            log_runtime_chain_debug(
+                "orchestrator.terminal",
+                enabled=debug_enabled,
+                runId=resolved_run_id,
+                threadId=request.session_id,
+                terminalReason="failed",
+                error=summarize_exception(exc),
+                projectedEventTypes=[projected.type for projected in projected_events],
+                projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
+            )
+            for projected in projected_events:
                 yield projected
             return
         except ModelNotConfiguredError as exc:
@@ -387,7 +556,11 @@ class RuntimeMessageRunOrchestrator:
                     yield projected
             return
 
-        await self._raise_if_client_disconnected(is_client_disconnected)
+        await self._raise_if_client_disconnected(
+            is_client_disconnected,
+            run_id=resolved_run_id,
+            thread_id=request.session_id,
+        )
         persisted_session, _created = self._session_store.append_turn(
             session_id=session.session_id,
             bound_agent_id=session.bound_agent_id,
@@ -405,9 +578,19 @@ class RuntimeMessageRunOrchestrator:
             resolved_tool_ids=resolved_tool_ids,
             request_options=dict(request.policy.requestOptions),
         )
-        for projected in projector.project(
+        projected_events = projector.project(
             execution_events.build_run_completed(assistant_text=success.assistant_text)
-        ):
+        )
+        log_runtime_chain_debug(
+            "orchestrator.terminal",
+            enabled=debug_enabled,
+            runId=resolved_run_id,
+            threadId=request.session_id,
+            terminalReason="completed",
+            projectedEventTypes=[projected.type for projected in projected_events],
+            projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
+        )
+        for projected in projected_events:
             yield projected
 
     def _require_session(self, request: RuntimeMessageSendRequest) -> RuntimeSessionRecord:
@@ -455,6 +638,14 @@ class RuntimeMessageRunOrchestrator:
     ) -> RuntimeAgentExecutionEventStream:
         open_event_stream = getattr(agent_executor, "open_event_stream", None)
         if callable(open_event_stream):
+            log_runtime_chain_debug(
+                "orchestrator.open_execution_stream",
+                runId=run_id,
+                agentName=agent_name,
+                streamKind="event_stream",
+                enabledToolIds=list(enabled_tools),
+                modelRoute=summarize_runtime_model_route(model_route),
+            )
             return cast(
                 RuntimeAgentExecutionEventStream,
                 open_event_stream(
@@ -470,6 +661,14 @@ class RuntimeMessageRunOrchestrator:
 
         open_text_stream = getattr(agent_executor, "open_text_stream", None)
         if callable(open_text_stream):
+            log_runtime_chain_debug(
+                "orchestrator.open_execution_stream",
+                runId=run_id,
+                agentName=agent_name,
+                streamKind="legacy_text_adapter",
+                enabledToolIds=list(enabled_tools),
+                modelRoute=summarize_runtime_model_route(model_route),
+            )
             legacy_stream = cast(
                 RuntimeAgentTextStream,
                 open_text_stream(
@@ -504,8 +703,16 @@ class RuntimeMessageRunOrchestrator:
     async def _raise_if_client_disconnected(
         self,
         is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+        *,
+        run_id: str,
+        thread_id: str,
     ) -> None:
         if await self._is_client_disconnected(is_client_disconnected):
+            log_runtime_chain_debug(
+                "orchestrator.client_disconnected",
+                runId=run_id,
+                threadId=thread_id,
+            )
             raise asyncio.CancelledError()
 
     async def _is_client_disconnected(
