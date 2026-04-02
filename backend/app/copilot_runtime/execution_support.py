@@ -21,12 +21,28 @@ class InvalidSessionHistoryError(RuntimeError):
     """Raised when persisted in-memory history cannot be converted into model messages."""
 
 
+class ThreadNotFoundError(LookupError):
+    """Raised when a requested thread does not exist."""
+
+    def __init__(self, thread_id: str) -> None:
+        self.thread_id = thread_id
+        super().__init__(f"Unknown thread '{thread_id}'.")
+
+
 class SessionNotFoundError(LookupError):
     """Raised when a requested session does not exist."""
 
     def __init__(self, session_id: str) -> None:
         self.session_id = session_id
         super().__init__(f"Unknown session '{session_id}'.")
+
+
+class RunNotFoundError(LookupError):
+    """Raised when a requested run does not exist."""
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"Unknown run '{run_id}'.")
 
 
 class ToolNotFoundError(LookupError):
@@ -81,7 +97,9 @@ def to_model_message(message: RuntimeTextMessage) -> ModelMessage:
 __all__ = [
     "AgentNotFoundError",
     "InvalidSessionHistoryError",
+    "RunNotFoundError",
     "SessionNotFoundError",
+    "ThreadNotFoundError",
     "ToolNotFoundError",
     "build_message_history",
     "extract_unknown_tool_id",

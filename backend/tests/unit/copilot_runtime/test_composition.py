@@ -87,6 +87,11 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert dependencies.scaffold.default_agent == default_agent.name
     assert dependencies.scaffold.supported_methods == (
         "agents/list",
+        "thread/create",
+        "thread/get",
+        "run/start",
+        "run/stream",
+        "run/cancel",
         "session/create",
         "capabilities/get",
         "message/send",

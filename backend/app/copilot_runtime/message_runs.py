@@ -108,10 +108,11 @@ class RuntimeMessageRunOrchestrator:
         *,
         request: RuntimeMessageSendRequest,
         is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
+        run_id: str | None = None,
     ) -> AsyncIterator[RuntimeRunEvent]:
-        run_id = _next_run_id()
-        assistant_message_id = f"{run_id}:assistant"
-        events = RuntimeRunEventFactory(session_id=request.session_id, run_id=run_id)
+        resolved_run_id = run_id or _next_run_id()
+        assistant_message_id = f"{resolved_run_id}:assistant"
+        events = RuntimeRunEventFactory(session_id=request.session_id, run_id=resolved_run_id)
         yield events.build(
             RUN_STARTED_EVENT_TYPE,
             payload={
