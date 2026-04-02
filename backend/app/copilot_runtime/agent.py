@@ -15,6 +15,14 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.result import StreamedRunResult
 
+from .execution_event_graph import (
+    TOOL_COMPLETED_EVENT_TYPE,
+    TOOL_FAILED_EVENT_TYPE,
+    TOOL_STARTED_EVENT_TYPE,
+    RuntimeExecutionEvent,
+    RuntimeExecutionEventBuffer,
+    RuntimeExecutionEventFactory,
+)
 from .model_routes import ResolvedRuntimeModelRoute
 from .tool_registry import (
     DEFAULT_WEATHER_LOCATION,
@@ -118,6 +126,17 @@ class RuntimeToolLifecycleEvent:
 ToolLifecycleSink = Callable[[RuntimeToolLifecycleEvent], None]
 
 
+def tool_lifecycle_event_to_execution_event(
+    tool_event: RuntimeToolLifecycleEvent,
+) -> RuntimeExecutionEvent:
+    event_type = {
+        "started": TOOL_STARTED_EVENT_TYPE,
+        "completed": TOOL_COMPLETED_EVENT_TYPE,
+        "failed": TOOL_FAILED_EVENT_TYPE,
+    }[tool_event.phase]
+    return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
+
+
 @dataclass(slots=True)
 class _PydanticAIAgentRunDeps:
     tool_registry: ToolRegistry
@@ -174,6 +193,68 @@ class _PydanticAITextStream:
     def _require_stream_result(self) -> StreamedRunResult[Any, Any]:
         if self._stream_result is None:
             raise RuntimeError("PydanticAI text stream has not been entered.")
+        return self._stream_result
+
+
+class _PydanticAIEventStream:
+    def __init__(
+        self,
+        *,
+        stream_context: AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
+        resolved_model_id: str,
+        event_buffer: RuntimeExecutionEventBuffer,
+    ) -> None:
+        self.resolved_model_id = resolved_model_id
+        self._stream_context = stream_context
+        self._stream_result: StreamedRunResult[Any, Any] | None = None
+        self._event_buffer = event_buffer
+
+    async def __aenter__(self) -> _PydanticAIEventStream:
+        self._stream_result = await self._stream_context.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any,
+    ) -> bool | None:
+        return await self._stream_context.__aexit__(exc_type, exc, tb)
+
+    async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
+        result = self._require_stream_result()
+        try:
+            for event in self._event_buffer.drain():
+                yield event
+            async for delta in result.stream_text(delta=True, debounce_by=None):
+                for event in self._event_buffer.drain():
+                    yield event
+                if delta != "":
+                    self._event_buffer.record_assistant_delta(delta)
+                for event in self._event_buffer.drain():
+                    yield event
+        except Exception:
+            self._event_buffer.finish_assistant_segment()
+            for event in self._event_buffer.drain():
+                yield event
+            raise
+
+        self._event_buffer.finish_assistant_segment()
+        for event in self._event_buffer.drain():
+            yield event
+
+    async def get_output(self) -> str:
+        result = self._require_stream_result()
+        output = await result.get_output()
+        if not isinstance(output, str):
+            raise AgentExecutionError("PydanticAI agent returned a non-text output.")
+        if output.strip() == "":
+            raise AgentExecutionError("PydanticAI agent returned an empty text response.")
+        return output
+
+    def _require_stream_result(self) -> StreamedRunResult[Any, Any]:
+        if self._stream_result is None:
+            raise RuntimeError("PydanticAI event stream has not been entered.")
         return self._stream_result
 
 
@@ -288,6 +369,48 @@ class PydanticAIAgentExecutor:
             ),
             resolved_model_id=model_route.model_id,
             tool_events=tool_events,
+        )
+
+    def open_event_stream(
+        self,
+        *,
+        run_id: str,
+        agent_name: str,
+        user_prompt: str,
+        message_history: Sequence[ModelMessage],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: Sequence[str] = (),
+        request_options: Mapping[str, Any] | None = None,
+    ) -> _PydanticAIEventStream:
+        if agent_name != self.agent_name:
+            raise AgentExecutionError(f"Unsupported agent '{agent_name}'.")
+
+        _ = dict(request_options or {})
+        stream_model = self._resolved_explicit_model()
+        if stream_model is None:
+            stream_model = self._build_stream_model(model_route)
+        resolved_model = self.resolve_model(model_override=stream_model)
+        event_buffer = RuntimeExecutionEventBuffer(
+            event_factory=RuntimeExecutionEventFactory(run_id=run_id)
+        )
+        deps = self._build_runtime_deps(
+            enabled_tools=enabled_tools,
+            emit_tool_event=lambda tool_event: event_buffer.record_event(
+                tool_lifecycle_event_to_execution_event(tool_event)
+            ),
+        )
+        return _PydanticAIEventStream(
+            stream_context=cast(
+                AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
+                self._agent.run_stream(
+                    user_prompt,
+                    message_history=message_history,
+                    model=resolved_model,
+                    deps=deps,
+                ),
+            ),
+            resolved_model_id=model_route.model_id,
+            event_buffer=event_buffer,
         )
 
     def resolve_model(self, *, model_override: Any | None = None) -> Any:

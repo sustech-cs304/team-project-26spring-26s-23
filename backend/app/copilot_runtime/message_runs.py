@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Protocol, cast
 from uuid import uuid4
@@ -16,9 +16,11 @@ from .agent import (
     ModelNotConfiguredError,
     RuntimeToolLifecycleEvent,
     ToolInvocationError,
+    tool_lifecycle_event_to_execution_event,
 )
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import RuntimeMessageSendRequest, RuntimeScaffold
+from .execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventBuffer, RuntimeExecutionEventFactory
 from .execution_support import (
     AgentNotFoundError,
     InvalidSessionHistoryError,
@@ -27,22 +29,13 @@ from .execution_support import (
     build_message_history,
     extract_unknown_tool_id,
 )
+from .legacy_event_projection import LegacyRuntimeRunEventProjector
 from .model_routes import (
     ResolvedRuntimeModelRoute,
     RuntimeModelRouteResolutionError,
     RuntimeModelRouteResolver,
 )
-from .run_events import (
-    RUN_CANCELLED_EVENT_TYPE,
-    RUN_COMPLETED_EVENT_TYPE,
-    RUN_DIAGNOSTIC_EVENT_TYPE,
-    RUN_FAILED_EVENT_TYPE,
-    RUN_STARTED_EVENT_TYPE,
-    TEXT_DELTA_EVENT_TYPE,
-    TOOL_EVENT_EVENT_TYPE,
-    RuntimeRunEvent,
-    RuntimeRunEventFactory,
-)
+from .run_events import RuntimeRunEvent, RuntimeRunEventFactory
 from .session_store import BoundAgentMismatchError, InMemorySessionStore, RuntimeSessionRecord
 
 
@@ -65,17 +58,35 @@ class RuntimeAgentTextStream(Protocol):
     def drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]: ...
 
 
+class RuntimeAgentExecutionEventStream(Protocol):
+    resolved_model_id: str
+
+    async def __aenter__(self) -> "RuntimeAgentExecutionEventStream": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None: ...
+
+    def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]: ...
+
+    async def get_output(self) -> str: ...
+
+
 class RuntimeStreamingAgentExecutor(Protocol):
-    def open_text_stream(
+    def open_event_stream(
         self,
         *,
+        run_id: str,
         agent_name: str,
         user_prompt: str,
         message_history: Sequence[ModelMessage],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: Sequence[str] = (),
         request_options: Mapping[str, Any] | None = None,
-    ) -> RuntimeAgentTextStream: ...
+    ) -> RuntimeAgentExecutionEventStream: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +96,74 @@ class RuntimeMessageRunSuccess:
     resolved_model_route: ResolvedRuntimeModelRoute
     resolved_tool_ids: tuple[str, ...]
     request_options: dict[str, Any]
+
+
+@dataclass(slots=True)
+class _LegacyTextExecutionEventStreamAdapter:
+    stream: RuntimeAgentTextStream
+    run_id: str
+    resolved_model_id: str = field(init=False)
+    _event_buffer: RuntimeExecutionEventBuffer = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.resolved_model_id = self.stream.resolved_model_id
+        self._event_buffer = RuntimeExecutionEventBuffer(
+            event_factory=RuntimeExecutionEventFactory(run_id=self.run_id)
+        )
+
+    async def __aenter__(self) -> "_LegacyTextExecutionEventStreamAdapter":
+        await self.stream.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        return await self.stream.__aexit__(exc_type, exc, tb)
+
+    async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
+        try:
+            async for event in self._emit_pending_tool_events():
+                yield event
+            async for delta in self.stream.iter_deltas():
+                async for event in self._emit_pending_tool_events():
+                    yield event
+                self._event_buffer.record_assistant_delta(delta)
+                for event in self._event_buffer.drain():
+                    yield event
+            async for event in self._emit_pending_tool_events():
+                yield event
+        except Exception:
+            async for event in self._emit_pending_tool_events():
+                yield event
+            self._event_buffer.finish_assistant_segment()
+            for event in self._event_buffer.drain():
+                yield event
+            raise
+
+        self._event_buffer.finish_assistant_segment()
+        for event in self._event_buffer.drain():
+            yield event
+
+    async def get_output(self) -> str:
+        return await self.stream.get_output()
+
+    async def _emit_pending_tool_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
+        for tool_event in self._drain_tool_events():
+            self._event_buffer.record_event(tool_lifecycle_event_to_execution_event(tool_event))
+        for event in self._event_buffer.drain():
+            yield event
+
+    def _drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]:
+        drain = getattr(self.stream, "drain_tool_events", None)
+        if drain is None:
+            return ()
+        drained = drain()
+        if not isinstance(drained, tuple):
+            return tuple(drained)
+        return drained
 
 
 class RuntimeMessageRunOrchestrator:
@@ -113,12 +192,13 @@ class RuntimeMessageRunOrchestrator:
         resolved_run_id = run_id or _next_run_id()
         assistant_message_id = f"{resolved_run_id}:assistant"
         events = RuntimeRunEventFactory(session_id=request.session_id, run_id=resolved_run_id)
-        yield events.build(
-            RUN_STARTED_EVENT_TYPE,
-            payload={
-                "assistantMessageId": assistant_message_id,
-            },
+        projector = LegacyRuntimeRunEventProjector(
+            events=events,
+            assistant_message_id=assistant_message_id,
         )
+        execution_events = RuntimeExecutionEventFactory(run_id=resolved_run_id)
+
+        yield projector.build_run_started()
 
         try:
             session = self._require_session(request)
@@ -131,26 +211,29 @@ class RuntimeMessageRunOrchestrator:
             resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
             agent_executor = self._build_streaming_executor(agent_descriptor)
         except RuntimeModelRouteResolutionError as exc:
-            async for event in self._build_failed_events(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code=exc.code,
                 message=str(exc),
                 details=exc.details,
                 diagnostic_stage="resolve_model_route",
             ):
-                yield event
+                for projected in projector.project(event):
+                    yield projected
             return
         except SessionNotFoundError as exc:
-            yield self._build_failed_event(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="session_not_found",
                 message=str(exc),
                 details={"sessionId": exc.session_id},
-            )
+            ):
+                for projected in projector.project(event):
+                    yield projected
             return
         except BoundAgentMismatchError as exc:
-            yield self._build_failed_event(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="agent_mismatch",
                 message=str(exc),
                 details={
@@ -158,64 +241,84 @@ class RuntimeMessageRunOrchestrator:
                     "boundAgentId": exc.expected_agent_id,
                     "requestedAgentId": exc.actual_agent_id,
                 },
-            )
+            ):
+                for projected in projector.project(event):
+                    yield projected
             return
         except ToolNotFoundError as exc:
-            yield self._build_failed_event(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="tool_not_found",
                 message=str(exc),
                 details={"toolId": exc.tool_id},
-            )
+            ):
+                for projected in projector.project(event):
+                    yield projected
             return
         except AgentNotFoundError as exc:
-            yield self._build_failed_event(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="agent_not_found",
                 message=str(exc),
                 details={"agentName": exc.agent_name},
-            )
+            ):
+                for projected in projector.project(event):
+                    yield projected
             return
         except InvalidSessionHistoryError as exc:
-            yield self._build_failed_event(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="invalid_message_history",
                 message=str(exc),
                 details={},
-            )
+            ):
+                for projected in projector.project(event):
+                    yield projected
             return
         except ModelNotConfiguredError as exc:
-            yield self._build_failed_event(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="model_not_configured",
                 message=str(exc),
                 details={"modelEnvironmentKeys": list(self._scaffold.model_environment_keys)},
-            )
+            ):
+                for projected in projector.project(event):
+                    yield projected
             return
         except AgentExecutionError as exc:
-            async for event in self._build_failed_events(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="agent_execution_failed",
                 message=str(exc),
                 details={},
                 diagnostic_stage="prepare_execution",
             ):
-                yield event
+                for projected in projector.project(event):
+                    yield projected
             return
         except Exception as exc:  # pragma: no cover - defensive fallback
-            async for event in self._build_failed_events(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="agent_execution_failed",
                 message=f"Unexpected agent execution failure: {exc}",
                 details={},
                 diagnostic_stage="prepare_execution",
             ):
-                yield event
+                for projected in projector.project(event):
+                    yield projected
             return
 
-        active_stream: RuntimeAgentTextStream | None = None
+        projector.configure_completion_context(
+            resolved_model_route=resolved_model_route,
+            resolved_tool_ids=resolved_tool_ids,
+            request_options=request.policy.requestOptions,
+        )
+
+        assistant_text: str
         try:
-            async with agent_executor.open_text_stream(
+            async with self._open_execution_stream(
+                agent_executor=agent_executor,
+                run_id=resolved_run_id,
                 agent_name=session.bound_agent_id,
                 user_prompt=request.message.content,
                 message_history=message_history,
@@ -223,82 +326,63 @@ class RuntimeMessageRunOrchestrator:
                 enabled_tools=resolved_tool_ids,
                 request_options=request.policy.requestOptions,
             ) as stream:
-                active_stream = cast(RuntimeAgentTextStream, stream)
-                async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
-                    yield tool_event
-                async for delta in active_stream.iter_deltas():
-                    await self._raise_if_client_disconnected(is_client_disconnected)
-                    async for tool_event in self._emit_pending_tool_events(
-                        events=events,
-                        stream=active_stream,
-                    ):
-                        yield tool_event
-                    if delta == "":
+                async for event in stream.iter_events():
+                    projected_events = projector.project(event)
+                    if len(projected_events) == 0:
                         continue
-                    yield events.build(
-                        TEXT_DELTA_EVENT_TYPE,
-                        payload={
-                            "assistantMessageId": assistant_message_id,
-                            "delta": delta,
-                        },
-                    )
+                    await self._raise_if_client_disconnected(is_client_disconnected)
+                    for projected in projected_events:
+                        yield projected
                 await self._raise_if_client_disconnected(is_client_disconnected)
-                async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
-                    yield tool_event
-                assistant_text = await active_stream.get_output()
-                async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
-                    yield tool_event
+                assistant_text = await stream.get_output()
                 await self._raise_if_client_disconnected(is_client_disconnected)
         except asyncio.CancelledError:
-            yield events.build(
-                RUN_CANCELLED_EVENT_TYPE,
-                payload={
-                    "assistantMessageId": assistant_message_id,
-                    "reason": "cancelled",
-                },
-            )
+            for projected in projector.project(
+                execution_events.build_run_cancelled(reason="cancelled")
+            ):
+                yield projected
             return
         except ToolInvocationError as exc:
-            async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
-                yield tool_event
-            yield self._build_failed_event(
-                events=events,
-                code=exc.code,
-                message=str(exc),
-                details=dict(exc.details),
-            )
+            for projected in projector.project(
+                execution_events.build_run_failed(
+                    code=exc.code,
+                    message=str(exc),
+                    details=dict(exc.details),
+                )
+            ):
+                yield projected
             return
         except ModelNotConfiguredError as exc:
-            yield self._build_failed_event(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="model_not_configured",
                 message=str(exc),
                 details={"modelEnvironmentKeys": list(self._scaffold.model_environment_keys)},
-            )
+            ):
+                for projected in projector.project(event):
+                    yield projected
             return
         except AgentExecutionError as exc:
-            async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
-                yield tool_event
-            async for event in self._build_failed_events(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="agent_execution_failed",
                 message=str(exc),
                 details={},
                 diagnostic_stage="execute_model",
             ):
-                yield event
+                for projected in projector.project(event):
+                    yield projected
             return
         except Exception as exc:  # pragma: no cover - defensive fallback
-            async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
-                yield tool_event
-            async for event in self._build_failed_events(
-                events=events,
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
                 code="agent_execution_failed",
                 message=f"Unexpected agent execution failure: {exc}",
                 details={},
                 diagnostic_stage="execute_model",
             ):
-                yield event
+                for projected in projector.project(event):
+                    yield projected
             return
 
         await self._raise_if_client_disconnected(is_client_disconnected)
@@ -316,17 +400,10 @@ class RuntimeMessageRunOrchestrator:
             resolved_tool_ids=resolved_tool_ids,
             request_options=dict(request.policy.requestOptions),
         )
-        yield events.build(
-            RUN_COMPLETED_EVENT_TYPE,
-            payload={
-                "assistantMessageId": assistant_message_id,
-                "assistantText": success.assistant_text,
-                "resolvedModelId": success.resolved_model_route.model_id,
-                "resolvedModelRoute": success.resolved_model_route.to_public_dict(),
-                "resolvedToolIds": list(success.resolved_tool_ids),
-                "requestOptions": dict(success.request_options),
-            },
-        )
+        for projected in projector.project(
+            execution_events.build_run_completed(assistant_text=success.assistant_text)
+        ):
+            yield projected
 
     def _require_session(self, request: RuntimeMessageSendRequest) -> RuntimeSessionRecord:
         session = self._session_store.get(request.session_id)
@@ -346,18 +423,64 @@ class RuntimeMessageRunOrchestrator:
             raise AgentNotFoundError(agent_name)
         return descriptor
 
-    def _build_streaming_executor(self, descriptor: AgentDescriptor) -> RuntimeStreamingAgentExecutor:
+    def _build_streaming_executor(self, descriptor: AgentDescriptor) -> Any:
         executor_factory = descriptor.executor_factory
         if executor_factory is None:
             raise AgentExecutionError(
                 f"Agent '{descriptor.name}' has no executor factory configured."
             )
         executor = executor_factory()
-        if not hasattr(executor, "open_text_stream"):
+        if not hasattr(executor, "open_event_stream") and not hasattr(executor, "open_text_stream"):
             raise AgentExecutionError(
-                f"Agent '{descriptor.name}' does not support streamed text execution."
+                f"Agent '{descriptor.name}' does not support streamed execution."
             )
-        return executor  # type: ignore[return-value]
+        return executor
+
+    def _open_execution_stream(
+        self,
+        *,
+        agent_executor: Any,
+        run_id: str,
+        agent_name: str,
+        user_prompt: str,
+        message_history: Sequence[ModelMessage],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: tuple[str, ...],
+        request_options: Mapping[str, Any] | None,
+    ) -> RuntimeAgentExecutionEventStream:
+        open_event_stream = getattr(agent_executor, "open_event_stream", None)
+        if callable(open_event_stream):
+            return cast(
+                RuntimeAgentExecutionEventStream,
+                open_event_stream(
+                    run_id=run_id,
+                    agent_name=agent_name,
+                    user_prompt=user_prompt,
+                    message_history=message_history,
+                    model_route=model_route,
+                    enabled_tools=enabled_tools,
+                    request_options=request_options,
+                ),
+            )
+
+        open_text_stream = getattr(agent_executor, "open_text_stream", None)
+        if callable(open_text_stream):
+            legacy_stream = cast(
+                RuntimeAgentTextStream,
+                open_text_stream(
+                    agent_name=agent_name,
+                    user_prompt=user_prompt,
+                    message_history=message_history,
+                    model_route=model_route,
+                    enabled_tools=enabled_tools,
+                    request_options=request_options,
+                ),
+            )
+            return _LegacyTextExecutionEventStreamAdapter(stream=legacy_stream, run_id=run_id)
+
+        raise AgentExecutionError(
+            f"Agent '{agent_name}' does not support streamed execution."
+        )
 
     def _resolve_enabled_tools(
         self,
@@ -372,32 +495,6 @@ class RuntimeMessageRunOrchestrator:
             )
         except LookupError as exc:
             raise ToolNotFoundError(extract_unknown_tool_id(exc)) from exc
-
-    async def _emit_pending_tool_events(
-        self,
-        *,
-        events: RuntimeRunEventFactory,
-        stream: RuntimeAgentTextStream | None,
-    ) -> AsyncIterator[RuntimeRunEvent]:
-        if stream is None:
-            return
-        for tool_event in self._drain_tool_events(stream):
-            yield events.build(
-                TOOL_EVENT_EVENT_TYPE,
-                payload=tool_event.to_payload(),
-            )
-
-    def _drain_tool_events(
-        self,
-        stream: RuntimeAgentTextStream,
-    ) -> tuple[RuntimeToolLifecycleEvent, ...]:
-        drain = getattr(stream, "drain_tool_events", None)
-        if drain is None:
-            return ()
-        drained = drain()
-        if not isinstance(drained, tuple):
-            return tuple(drained)
-        return drained
 
     async def _raise_if_client_disconnected(
         self,
@@ -414,46 +511,35 @@ class RuntimeMessageRunOrchestrator:
             return False
         return await is_client_disconnected()
 
-    async def _build_failed_events(
+    def _build_failed_execution_events(
         self,
         *,
-        events: RuntimeRunEventFactory,
+        execution_events: RuntimeExecutionEventFactory,
         code: str,
         message: str,
         details: dict[str, Any],
-        diagnostic_stage: str,
-    ) -> AsyncIterator[RuntimeRunEvent]:
-        yield events.build(
-            RUN_DIAGNOSTIC_EVENT_TYPE,
-            payload={
-                "code": code,
-                "message": message,
-                "details": dict(details),
-                "stage": diagnostic_stage,
-            },
-        )
-        yield self._build_failed_event(
-            events=events,
-            code=code,
-            message=message,
-            details=details,
-        )
-
-    def _build_failed_event(
-        self,
-        *,
-        events: RuntimeRunEventFactory,
-        code: str,
-        message: str,
-        details: dict[str, Any],
-    ) -> RuntimeRunEvent:
-        return events.build(
-            RUN_FAILED_EVENT_TYPE,
-            payload={
-                "code": code,
-                "message": message,
-                "details": dict(details),
-            },
+        diagnostic_stage: str | None = None,
+    ) -> tuple[RuntimeExecutionEvent, ...]:
+        if diagnostic_stage is None:
+            return (
+                execution_events.build_run_failed(
+                    code=code,
+                    message=message,
+                    details=details,
+                ),
+            )
+        return (
+            execution_events.build_diagnostic(
+                code=code,
+                message=message,
+                details=details,
+                stage=diagnostic_stage,
+            ),
+            execution_events.build_run_failed(
+                code=code,
+                message=message,
+                details=details,
+            ),
         )
 
 
@@ -462,6 +548,7 @@ def _next_run_id() -> str:
 
 
 __all__ = [
+    "RuntimeAgentExecutionEventStream",
     "RuntimeAgentTextStream",
     "RuntimeMessageRunOrchestrator",
     "RuntimeMessageRunSuccess",
