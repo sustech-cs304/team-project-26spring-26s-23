@@ -6,9 +6,13 @@ import type {
   RuntimeCapabilitiesGetResponse,
   RuntimeMessagePayload,
   RuntimeModelRoute,
+  RuntimeRunCancelResponse,
   RuntimeRunCompletedEvent,
   RuntimeRunEvent,
+  RuntimeRunStartResponse,
   RuntimeSessionCreateResponse,
+  RuntimeThreadCreateResponse,
+  RuntimeThreadGetResponse,
   RuntimeToolEvent,
 } from './chat-contract'
 
@@ -51,12 +55,12 @@ export function createRuntimeAgentsListResponse(
   }
 }
 
-export function createRuntimeSessionCreateResponse(
-  overrides: Partial<RuntimeSessionCreateResponse> = {},
-): RuntimeSessionCreateResponse {
+export function createRuntimeThreadCreateResponse(
+  overrides: Partial<RuntimeThreadCreateResponse> = {},
+): RuntimeThreadCreateResponse {
   return {
     ok: true,
-    sessionId,
+    threadId: sessionId,
     boundAgent: createBoundAgent(),
     createdAt: '2026-03-27T10:00:00Z',
     updatedAt: '2026-03-27T10:00:00Z',
@@ -71,13 +75,45 @@ export function createRuntimeSessionCreateResponse(
   }
 }
 
-export function createRuntimeCapabilitiesGetResponse(
-  overrides: Partial<RuntimeCapabilitiesGetResponse> = {},
-): RuntimeCapabilitiesGetResponse {
+export function createRuntimeSessionCreateResponse(
+  overrides: Partial<RuntimeSessionCreateResponse> = {},
+): RuntimeSessionCreateResponse {
+  const threadResponse = createRuntimeThreadCreateResponse({
+    threadId: overrides.sessionId ?? sessionId,
+    boundAgent: overrides.boundAgent ?? createBoundAgent(),
+    createdAt: overrides.createdAt ?? '2026-03-27T10:00:00Z',
+    updatedAt: overrides.updatedAt ?? '2026-03-27T10:00:00Z',
+    recommendedTools: overrides.recommendedTools ?? ['tool.file-convert'],
+    defaultModelPreference: overrides.defaultModelPreference ?? 'openai/gpt-4.1',
+    capabilities: overrides.capabilities ?? {
+      tools: {
+        selectionMode: 'recommendation-only',
+      },
+    },
+  })
+
   return {
     ok: true,
-    sessionId,
+    sessionId: threadResponse.threadId,
+    boundAgent: threadResponse.boundAgent,
+    createdAt: threadResponse.createdAt,
+    updatedAt: threadResponse.updatedAt,
+    recommendedTools: [...threadResponse.recommendedTools],
+    defaultModelPreference: threadResponse.defaultModelPreference,
+    capabilities: { ...threadResponse.capabilities },
+    ...overrides,
+  }
+}
+
+export function createRuntimeThreadGetResponse(
+  overrides: Partial<RuntimeThreadGetResponse> = {},
+): RuntimeThreadGetResponse {
+  return {
+    ok: true,
+    threadId: sessionId,
     boundAgent: createBoundAgent(),
+    createdAt: '2026-03-27T10:00:00Z',
+    updatedAt: '2026-03-27T10:00:00Z',
     capabilitiesVersion: 'cap-v12',
     tools: [
       {
@@ -98,6 +134,48 @@ export function createRuntimeCapabilitiesGetResponse(
     recommendedTools: ['tool.file-convert'],
     toolSelectionMode: 'recommendation-only',
     defaultModelPreference: 'openai/gpt-4.1',
+    latestRunId: null,
+    ...overrides,
+  }
+}
+
+export function createRuntimeCapabilitiesGetResponse(
+  overrides: Partial<RuntimeCapabilitiesGetResponse> = {},
+): RuntimeCapabilitiesGetResponse {
+  const threadResponse = createRuntimeThreadGetResponse({
+    threadId: overrides.sessionId ?? sessionId,
+    boundAgent: overrides.boundAgent ?? createBoundAgent(),
+    capabilitiesVersion: overrides.capabilitiesVersion ?? 'cap-v12',
+    tools: overrides.tools ?? [
+      {
+        toolId: 'tool.file-convert',
+        kind: 'builtin',
+        availability: 'available',
+        displayName: '文件转换',
+        description: 'DOCX/PDF/PPTX 转换工具',
+      },
+      {
+        toolId: 'tool.remote-search',
+        kind: 'external',
+        availability: 'disabled-by-global-setting',
+        displayName: '远程搜索',
+        description: '访问外部搜索服务',
+      },
+    ],
+    recommendedTools: overrides.recommendedTools ?? ['tool.file-convert'],
+    toolSelectionMode: overrides.toolSelectionMode ?? 'recommendation-only',
+    defaultModelPreference: overrides.defaultModelPreference ?? 'openai/gpt-4.1',
+  })
+
+  return {
+    ok: true,
+    sessionId: threadResponse.threadId,
+    boundAgent: threadResponse.boundAgent,
+    capabilitiesVersion: threadResponse.capabilitiesVersion,
+    tools: threadResponse.tools.map((tool) => ({ ...tool })),
+    recommendedTools: [...threadResponse.recommendedTools],
+    toolSelectionMode: threadResponse.toolSelectionMode,
+    defaultModelPreference: threadResponse.defaultModelPreference,
     ...overrides,
   }
 }
@@ -113,6 +191,56 @@ export function createRuntimeModelRoute(
       baseUrl: overrides.snapshot?.baseUrl ?? 'https://api.example.com/v1',
       modelId: overrides.snapshot?.modelId ?? 'qwen-plus',
     },
+  }
+}
+
+export function createRuntimeRunStartResponse(
+  overrides: Partial<RuntimeRunStartResponse> = {},
+): RuntimeRunStartResponse {
+  return {
+    ok: true,
+    run: {
+      runId: overrides.run?.runId ?? 'run-1',
+      threadId: overrides.run?.threadId ?? sessionId,
+      status: overrides.run?.status ?? 'pending',
+      createdAt: overrides.run?.createdAt ?? '2026-03-27T10:00:00Z',
+      updatedAt: overrides.run?.updatedAt ?? '2026-03-27T10:00:00Z',
+      startedAt: overrides.run?.startedAt ?? null,
+      terminalAt: overrides.run?.terminalAt ?? null,
+      cancelRequested: overrides.run?.cancelRequested ?? false,
+    },
+    assistantMessageId: overrides.assistantMessageId ?? 'run-1:assistant',
+    stream: overrides.stream ?? {
+      method: 'run/stream',
+      body: {
+        runId: overrides.run?.runId ?? 'run-1',
+      },
+    },
+    cancel: overrides.cancel ?? {
+      method: 'run/cancel',
+      body: {
+        runId: overrides.run?.runId ?? 'run-1',
+      },
+    },
+  }
+}
+
+export function createRuntimeRunCancelResponse(
+  overrides: Partial<RuntimeRunCancelResponse> = {},
+): RuntimeRunCancelResponse {
+  return {
+    ok: true,
+    run: {
+      runId: overrides.run?.runId ?? 'run-1',
+      threadId: overrides.run?.threadId ?? sessionId,
+      status: overrides.run?.status ?? 'cancelled',
+      createdAt: overrides.run?.createdAt ?? '2026-03-27T10:00:00Z',
+      updatedAt: overrides.run?.updatedAt ?? '2026-03-27T10:00:00Z',
+      startedAt: overrides.run?.startedAt ?? '2026-03-27T10:00:01Z',
+      terminalAt: overrides.run?.terminalAt ?? null,
+      cancelRequested: overrides.run?.cancelRequested ?? true,
+    },
+    cancelAccepted: overrides.cancelAccepted ?? true,
   }
 }
 
@@ -200,6 +328,18 @@ export async function* createRuntimeMessageEventStream(
   }
 }
 
+export function createSseEventStream(events: unknown[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const event of events) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      }
+      controller.close()
+    },
+  })
+}
+
 export function createUserMessage(
   overrides: Partial<RuntimeMessagePayload> = {},
 ): RuntimeMessagePayload {
@@ -210,7 +350,15 @@ export function createUserMessage(
   }
 }
 
-export function createFetchResponse(payload: unknown, init: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}) {
+export function createFetchResponse(
+  payload: unknown,
+  init: {
+    ok?: boolean
+    status?: number
+    headers?: Record<string, string>
+    body?: ReadableStream<Uint8Array> | null
+  } = {},
+) {
   return {
     ok: init.ok ?? true,
     status: init.status ?? 200,
@@ -223,12 +371,28 @@ export function createFetchResponse(payload: unknown, init: { ok?: boolean; stat
       },
     },
     json: async () => payload,
-    body: null,
+    body: init.body ?? null,
   }
 }
 
-export function createFetchFn(payload: unknown, init: { ok?: boolean; status?: number; headers?: Record<string, string> } = {}) {
+export function createFetchFn(
+  payload: unknown,
+  init: {
+    ok?: boolean
+    status?: number
+    headers?: Record<string, string>
+    body?: ReadableStream<Uint8Array> | null
+  } = {},
+) {
   return vi.fn().mockResolvedValue(createFetchResponse(payload, init))
+}
+
+export function createFetchSequence(...responses: Array<ReturnType<typeof createFetchResponse>>) {
+  const fetchFn = vi.fn()
+  for (const response of responses) {
+    fetchFn.mockResolvedValueOnce(response)
+  }
+  return fetchFn
 }
 
 export function createRuntimeErrorPayload(input: { code?: string; message?: string } = {}) {

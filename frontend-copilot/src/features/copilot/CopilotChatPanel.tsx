@@ -11,6 +11,7 @@ import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import { loadSettingsWorkspaceState } from '../../workbench/settings/workspace-state'
 import {
+  cancelRuntimeRun,
   sendRuntimeMessage,
   type RuntimeModelRoute,
 } from './chat-contract'
@@ -34,6 +35,7 @@ import {
   orchestrateCopilotSend,
 } from './copilot-send-controller'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
+import { projectConversationTurnsFromRunState } from './run-state-projection'
 import { useCopilotComposerResize } from './useCopilotComposerResize'
 import type { CopilotBootstrapState, CopilotRunState } from './types'
 import './copilot.css'
@@ -48,6 +50,7 @@ interface CopilotChatPanelProps {
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
   sendMessage?: typeof sendRuntimeMessage
+  cancelRun?: typeof cancelRuntimeRun
   loadWorkspaceState?: typeof loadSettingsWorkspaceState
 }
 
@@ -61,6 +64,7 @@ export function CopilotChatPanel({
   sessionStatus,
   sessionError,
   sendMessage = sendRuntimeMessage,
+  cancelRun = cancelRuntimeRun,
   loadWorkspaceState = loadSettingsWorkspaceState,
 }: CopilotChatPanelProps) {
   const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
@@ -135,6 +139,13 @@ export function CopilotChatPanel({
   const effectiveComposerDraft = useMemo(
     () => resolveComposerDraftModelSelection(composerDraft, modelCatalog.models),
     [composerDraft, modelCatalog.models],
+  )
+  const projectedConversation = useMemo(
+    () => projectConversationTurnsFromRunState({
+      userTurns: conversation,
+      runState,
+    }),
+    [conversation, runState],
   )
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
   const canCancelSend = activeAbortControllerRef.current !== null && sendStatus === 'sending'
@@ -286,6 +297,22 @@ export function CopilotChatPanel({
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (
+      sendDisabledReason === null
+      && runState.phase !== 'starting'
+      && runState.phase !== 'streaming'
+      && runState.segments.length > 0
+    ) {
+      setConversation((current) => [
+        ...current,
+        ...projectConversationTurnsFromRunState({
+          userTurns: [],
+          runState,
+        }),
+      ])
+    }
+
     const abortController = new AbortController()
     activeAbortControllerRef.current = abortController
 
@@ -310,7 +337,22 @@ export function CopilotChatPanel({
   }
 
   const handleCancelCurrentRun = () => {
-    activeAbortControllerRef.current?.abort()
+    const abortController = activeAbortControllerRef.current
+    if (abortController === null) {
+      return
+    }
+
+    if (isCopilotConnectableState(state) && runState.runId !== null) {
+      void cancelRun({
+        runtimeUrl: state.runtimeUrl,
+        runId: runState.runId,
+      }).catch(() => undefined).finally(() => {
+        abortController.abort()
+      })
+      return
+    }
+
+    abortController.abort()
   }
 
   return (
@@ -334,7 +376,7 @@ export function CopilotChatPanel({
         canCancelSend={canCancelSend}
         sendDisabledReason={sendDisabledReason}
         runNotice={runNotice}
-        conversation={conversation}
+        conversation={projectedConversation}
         composerInputRef={composerInputRef}
         composerHeight={composerHeight}
         onComposerResizeStart={onComposerResizeStart}

@@ -38,6 +38,7 @@ export type CopilotToolStepPhase = RuntimeToolEventPhase | 'cancelled'
 
 export interface CopilotConversationTurn {
   id: string
+  runId?: string
   kind: 'user' | 'assistant' | 'error' | 'tool'
   title: string
   content: string

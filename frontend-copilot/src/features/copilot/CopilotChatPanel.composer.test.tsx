@@ -4,9 +4,15 @@ import { act } from 'react'
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
-import { RuntimeRequestError, sendRuntimeMessage, type RuntimeRunEvent } from './chat-contract'
+import {
+  cancelRuntimeRun,
+  RuntimeRequestError,
+  sendRuntimeMessage,
+  type RuntimeRunEvent,
+} from './chat-contract'
 import {
   createRuntimeMessageEventStream,
+  createRuntimeRunCancelResponse,
   createRuntimeToolEvent,
 } from './chat-contract.test-support'
 import {
@@ -628,6 +634,19 @@ describe('CopilotChatPanel composer interactions', () => {
 
   it('allows cancelling an in-flight send, stops later deltas, and surfaces cancelled state', async () => {
     const sendMessage = createAbortableSendMessageSpy()
+    const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
+      run: {
+        runId: 'run-cancel',
+        threadId: 'session-1',
+        status: 'cancelling',
+        createdAt: '2026-03-27T10:00:00Z',
+        updatedAt: '2026-03-27T10:00:02Z',
+        startedAt: '2026-03-27T10:00:01Z',
+        terminalAt: null,
+        cancelRequested: true,
+      },
+      cancelAccepted: true,
+    }))
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
     const rendered = renderWithRoot(
@@ -641,6 +660,7 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionStatus="idle"
         sessionError={null}
         sendMessage={sendMessage}
+        cancelRun={cancelRun}
         loadWorkspaceState={loadWorkspaceState}
       />,
     )
@@ -670,6 +690,10 @@ describe('CopilotChatPanel composer interactions', () => {
     })
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(cancelRun).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      runId: 'run-cancel',
+    })
     expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
     expect(rendered.container.textContent).toContain('已取消')
     expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('当前响应已取消，未定稿为成功消息。')

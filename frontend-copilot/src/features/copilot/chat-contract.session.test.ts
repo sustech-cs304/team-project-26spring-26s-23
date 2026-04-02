@@ -5,13 +5,13 @@ import {
   agentId,
   createFetchFn,
   createRuntimeErrorPayload,
-  createRuntimeSessionCreateResponse,
+  createRuntimeThreadCreateResponse,
   runtimeUrl,
 } from './chat-contract.test-support'
 
 describe('createRuntimeSession', () => {
-  it('posts session/create and returns the bound session payload', async () => {
-    const fetchFn = createFetchFn(createRuntimeSessionCreateResponse())
+  it('posts thread/create and returns the projected session payload', async () => {
+    const fetchFn = createFetchFn(createRuntimeThreadCreateResponse())
 
     const response = await createRuntimeSession({
       runtimeUrl,
@@ -25,14 +25,16 @@ describe('createRuntimeSession', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        method: 'session/create',
+        method: 'thread/create',
         body: {
           agentId: 'general',
         },
       }),
+      signal: undefined,
     })
     expect(response.sessionId).toBe('session-1')
     expect(response.boundAgent.agentId).toBe('general')
+    expect(response.recommendedTools).toEqual(['tool.file-convert'])
   })
 
   it('surfaces structured runtime errors without silently continuing', async () => {
@@ -44,6 +46,9 @@ describe('createRuntimeSession', () => {
       {
         ok: false,
         status: 409,
+        headers: {
+          'content-type': 'application/json',
+        },
       },
     )
 

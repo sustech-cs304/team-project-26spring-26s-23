@@ -4,7 +4,12 @@ import type {
   CopilotRuntimeLoadResult,
   CopilotRuntimeRetryResult,
 } from '../../../electron/copilot-runtime'
-import type { RuntimeModelRoute } from './chat-contract'
+import type { RuntimeModelRoute } from './thread-run-contract'
+import type {
+  CopilotRunDiagnosticSummary,
+  CopilotRunFailureSummary,
+  CopilotRunSegment,
+} from './run-segment-types'
 
 export interface CopilotBootstrapFields {
   runtimeUrl: string | null
@@ -48,24 +53,12 @@ export interface CopilotDiagnosticsSummary {
   runtimeSource: CopilotRuntimeSource
 }
 
-export interface CopilotRunDiagnosticSummary {
-  code: string
-  message: string
-  stage: string
-  details: Record<string, unknown>
-}
-
-export interface CopilotRunFailureSummary {
-  code: string
-  message: string
-  details: Record<string, unknown>
-}
+export type { CopilotRunDiagnosticSummary, CopilotRunFailureSummary } from './run-segment-types'
 
 export interface CopilotRunState {
   phase: CopilotRunPhase
   runId: string | null
-  sessionId: string | null
-  assistantMessageId: string | null
+  threadId: string | null
   activeModelRoute: RuntimeModelRoute | null
   resolvedModelId: string | null
   resolvedModelRoute: RuntimeModelRoute | null
@@ -74,6 +67,7 @@ export interface CopilotRunState {
   diagnostic: CopilotRunDiagnosticSummary | null
   failure: CopilotRunFailureSummary | null
   cancelReason: string | null
+  segments: CopilotRunSegment[]
 }
 
 interface CopilotConfigResolvedStateBase {
