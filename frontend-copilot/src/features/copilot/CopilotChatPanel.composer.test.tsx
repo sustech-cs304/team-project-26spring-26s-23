@@ -4,7 +4,7 @@ import { act } from 'react'
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
-import { RuntimeRequestError, sendRuntimeMessage } from './chat-contract'
+import { RuntimeRequestError, sendRuntimeMessage, type RuntimeRunEvent } from './chat-contract'
 import {
   createRuntimeMessageEventStream,
   createRuntimeToolEvent,
@@ -850,7 +850,9 @@ function createPersistedWorkspaceStateLoader() {
 }
 
 function createAbortableSendMessageSpy() {
-  return vi.fn(async function* (input: Parameters<typeof sendRuntimeMessage>[0]) {
+  return vi.fn(async function* (
+    input: Parameters<typeof sendRuntimeMessage>[0],
+  ): AsyncGenerator<RuntimeRunEvent> {
     yield {
       type: 'run_started',
       runId: 'run-cancel',
