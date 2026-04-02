@@ -4,13 +4,16 @@ import type { AssistantSessionShell } from '../../workbench/types'
 import { sendRuntimeMessage } from './chat-contract'
 import {
   buildRuntimeMessageSendInput,
-  createUserTurn,
   formatRequestOptionsError,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
   type CopilotChatComposerDraft,
-  type CopilotConversationTurn,
 } from './copilot-chat-helpers'
+import {
+  buildCopilotRunSegmentViewModel,
+  createUserMessageListItem,
+  type CopilotMessageListItem,
+} from './run-segment-view-model'
 import { getRuntimeModelRouteStreamingSupportReason } from './model-picker'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import {
@@ -77,7 +80,7 @@ export async function orchestrateCopilotSend(input: {
   setRunState: Dispatch<SetStateAction<CopilotRunState>>
   setSendError: Dispatch<SetStateAction<string | null>>
   setComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>>
-  setConversation: Dispatch<SetStateAction<CopilotConversationTurn[]>>
+  setConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>>
   signal?: AbortSignal
 }) {
   if (!isCopilotConnectableState(input.state) || input.sessionShell === null) {
@@ -134,7 +137,11 @@ export async function orchestrateCopilotSend(input: {
     return
   }
 
-  input.setConversation((current) => [...current, createUserTurn(trimmedMessage)])
+  input.setConversation((current) => [
+    ...current,
+    ...buildCopilotRunSegmentViewModel(input.runState),
+    createUserMessageListItem(trimmedMessage),
+  ])
   input.setSendError(null)
   input.setRunState(createStartingCopilotRunState({
     threadId: input.sessionShell.sessionId,

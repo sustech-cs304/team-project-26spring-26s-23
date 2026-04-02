@@ -11,10 +11,8 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import { CopilotComposer } from './CopilotComposer'
 import { CopilotMessageList } from './CopilotMessageList'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
-import type {
-  CopilotChatComposerDraft,
-  CopilotConversationTurn,
-} from './copilot-chat-helpers'
+import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
+import type { CopilotMessageListItem } from './run-segment-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
 import type { CopilotBootstrapState } from './types'
@@ -38,7 +36,7 @@ export interface CopilotPanelShellProps {
   canCancelSend: boolean
   sendDisabledReason: string | null
   runNotice: string | null
-  conversation: CopilotConversationTurn[]
+  conversation: CopilotMessageListItem[]
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void

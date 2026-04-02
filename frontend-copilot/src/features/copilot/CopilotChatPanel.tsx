@@ -22,8 +22,11 @@ import {
   createComposerDraftFromSession,
   createEmptyComposerDraft,
   type CopilotChatComposerDraft,
-  type CopilotConversationTurn,
 } from './copilot-chat-helpers'
+import {
+  buildCopilotMessageListItems,
+  type CopilotMessageListItem,
+} from './run-segment-view-model'
 import {
   createCopilotModelCatalog,
   resolveCopilotPreferredModelId,
@@ -35,7 +38,6 @@ import {
   orchestrateCopilotSend,
 } from './copilot-send-controller'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
-import { projectConversationTurnsFromRunState } from './run-state-projection'
 import { useCopilotComposerResize } from './useCopilotComposerResize'
 import type { CopilotBootstrapState, CopilotRunState } from './types'
 import './copilot.css'
@@ -68,7 +70,7 @@ export function CopilotChatPanel({
   loadWorkspaceState = loadSettingsWorkspaceState,
 }: CopilotChatPanelProps) {
   const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
-  const [conversation, setConversation] = useState<CopilotConversationTurn[]>([])
+  const [conversation, setConversation] = useState<CopilotMessageListItem[]>([])
   const [runState, setRunState] = useState<CopilotRunState>(createIdleCopilotRunState)
   const [sendError, setSendError] = useState<string | null>(null)
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
@@ -141,8 +143,8 @@ export function CopilotChatPanel({
     [composerDraft, modelCatalog.models],
   )
   const projectedConversation = useMemo(
-    () => projectConversationTurnsFromRunState({
-      userTurns: conversation,
+    () => buildCopilotMessageListItems({
+      history: conversation,
       runState,
     }),
     [conversation, runState],
@@ -297,21 +299,6 @@ export function CopilotChatPanel({
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-
-    if (
-      sendDisabledReason === null
-      && runState.phase !== 'starting'
-      && runState.phase !== 'streaming'
-      && runState.segments.length > 0
-    ) {
-      setConversation((current) => [
-        ...current,
-        ...projectConversationTurnsFromRunState({
-          userTurns: [],
-          runState,
-        }),
-      ])
-    }
 
     const abortController = new AbortController()
     activeAbortControllerRef.current = abortController

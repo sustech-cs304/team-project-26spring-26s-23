@@ -1,7 +1,7 @@
-import type { CopilotConversationTurn } from './copilot-chat-helpers'
+import type { CopilotMessageListItem } from './run-segment-view-model'
 
 interface CopilotMessageListProps {
-  conversation: CopilotConversationTurn[]
+  conversation: CopilotMessageListItem[]
   emptyState?: {
     title: string
     description: string
@@ -27,8 +27,8 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
               )}
             </div>
           )
-        : conversation.map((turn) => {
-            const toolDetails = buildToolDetailRows(turn)
+        : conversation.map((turn, index) => {
+            const detailRows = buildDetailRows(turn)
             return (
               <article
                 key={turn.id}
@@ -37,6 +37,7 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
                   `copilot-chat__message--${turn.kind}`,
                   turn.status ? `copilot-chat__message--${turn.status}` : '',
                 ].filter((className) => className !== '').join(' ')}
+                data-testid={`chat-message-${turn.kind}-${index}`}
               >
                 {turn.kind !== 'user' && (
                   <div className="copilot-chat__message-header">
@@ -49,9 +50,9 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
                   </div>
                 )}
                 <p className="copilot-chat__message-text">{turn.content}</p>
-                {toolDetails.length > 0 && (
+                {detailRows.length > 0 && (
                   <div className="copilot-chat__message-detail-list">
-                    {toolDetails.map((detail) => (
+                    {detailRows.map((detail) => (
                       <p
                         key={`${turn.id}:${detail.label}`}
                         className={[
@@ -65,7 +66,7 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
                     ))}
                   </div>
                 )}
-                {turn.diagnostic !== null && turn.diagnostic !== undefined && (
+                {turn.kind === 'diagnostic' && (
                   <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
                     诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
                   </p>
@@ -77,7 +78,7 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
   )
 }
 
-function formatTurnStatus(status: NonNullable<CopilotConversationTurn['status']>): string {
+function formatTurnStatus(status: 'streaming' | 'completed' | 'failed' | 'cancelled'): string {
   switch (status) {
     case 'streaming':
       return '流式输出中'
@@ -90,20 +91,52 @@ function formatTurnStatus(status: NonNullable<CopilotConversationTurn['status']>
   }
 }
 
-function buildToolDetailRows(turn: CopilotConversationTurn): Array<{
+function buildDetailRows(turn: CopilotMessageListItem): Array<{
+  kind: 'input' | 'result' | 'error' | 'meta'
+  label: string
+  value: string
+}> {
+  switch (turn.kind) {
+    case 'tool':
+      return buildToolDetailRows(turn)
+    case 'diagnostic':
+      return [
+        {
+          kind: 'meta',
+          label: '阶段',
+          value: turn.diagnostic.stage,
+        },
+        {
+          kind: 'meta',
+          label: '代码',
+          value: turn.diagnostic.code,
+        },
+      ]
+    case 'terminal':
+      return turn.terminalPhase === 'failed' && turn.failure !== null
+        ? [{
+            kind: 'error',
+            label: '代码',
+            value: turn.failure.code,
+          }]
+        : []
+    case 'assistant':
+    case 'user':
+      return []
+  }
+}
+
+function buildToolDetailRows(turn: Extract<CopilotMessageListItem, { kind: 'tool' }>): Array<{
   kind: 'input' | 'result' | 'error'
   label: string
   value: string
 }> {
-  if (turn.kind !== 'tool') {
-    return []
-  }
-
   const details: Array<{
     kind: 'input' | 'result' | 'error'
     label: string
     value: string
   }> = []
+
   if (turn.inputSummary !== null && turn.inputSummary !== undefined && turn.inputSummary !== '') {
     details.push({
       kind: 'input',
@@ -125,5 +158,6 @@ function buildToolDetailRows(turn: CopilotConversationTurn): Array<{
       value: turn.errorSummary,
     })
   }
+
   return details
 }

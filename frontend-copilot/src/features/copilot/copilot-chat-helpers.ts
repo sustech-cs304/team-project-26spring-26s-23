@@ -39,7 +39,7 @@ export type CopilotToolStepPhase = RuntimeToolEventPhase | 'cancelled'
 export interface CopilotConversationTurn {
   id: string
   runId?: string
-  kind: 'user' | 'assistant' | 'error' | 'tool'
+  kind: 'user' | 'assistant' | 'error' | 'tool' | 'diagnostic' | 'terminal'
   title: string
   content: string
   status?: 'streaming' | 'completed' | 'failed' | 'cancelled'

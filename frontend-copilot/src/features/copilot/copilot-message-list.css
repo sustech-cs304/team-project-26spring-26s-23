@@ -99,7 +99,8 @@
 
 .copilot-chat__message--assistant,
 .copilot-chat__message--pending,
-.copilot-chat__message--tool {
+.copilot-chat__message--tool,
+.copilot-chat__message--diagnostic {
   align-self: flex-start;
 }
 
@@ -117,10 +118,25 @@
   border-style: dashed;
 }
 
+.copilot-chat__message--diagnostic {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface-bg) 84%, var(--surface-muted, rgba(148, 163, 184, 0.14)) 16%);
+}
+
+.copilot-chat__message--terminal,
 .copilot-chat__message--error {
   align-self: stretch;
+}
+
+.copilot-chat__message--terminal.copilot-chat__message--failed,
+.copilot-chat__message--error {
   border-color: var(--danger-border);
   background: var(--danger-soft);
+}
+
+.copilot-chat__message--terminal.copilot-chat__message--cancelled {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
 }
 
 .copilot-chat__message--error .copilot-chat__message-label,
@@ -188,4 +204,8 @@
 
 .copilot-chat__message-detail--error {
   color: var(--danger-text);
+}
+
+.copilot-chat__message-detail--meta {
+  color: var(--text-muted);
 }
