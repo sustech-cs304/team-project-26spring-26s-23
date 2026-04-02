@@ -15,6 +15,7 @@ from app.copilot_runtime.contracts import (
 )
 from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
 from app.copilot_runtime.run_events import (
+    RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
     RUN_STARTED_EVENT_TYPE,
     TEXT_DELTA_EVENT_TYPE,
@@ -41,6 +42,44 @@ class _StubMessageRunOrchestrator:
         self.received_disconnect_callbacks.append(is_client_disconnected)
         for event in self._events:
             yield event
+
+
+class _CancelAwareMessageRunOrchestrator:
+    def __init__(self, *, session_id: str, run_id: str, request_cancel) -> None:
+        self._events = RuntimeRunEventFactory(session_id=session_id, run_id=run_id)
+        self._request_cancel = request_cancel
+
+    async def stream_events(
+        self,
+        *,
+        request: RuntimeMessageSendRequest,
+        is_client_disconnected=None,
+    ):
+        assistant_message_id = f"{self._events.run_id}:assistant"
+        yield self._events.build(
+            RUN_STARTED_EVENT_TYPE,
+            payload={"assistantMessageId": assistant_message_id},
+        )
+        yield self._events.build(
+            TEXT_DELTA_EVENT_TYPE,
+            payload={"assistantMessageId": assistant_message_id, "delta": "partial"},
+        )
+        self._request_cancel()
+        if is_client_disconnected is not None and await is_client_disconnected():
+            yield self._events.build(
+                RUN_CANCELLED_EVENT_TYPE,
+                payload={"assistantMessageId": assistant_message_id, "reason": "cancelled"},
+            )
+            return
+        yield self._events.build(
+            RUN_COMPLETED_EVENT_TYPE,
+            payload={
+                "assistantMessageId": assistant_message_id,
+                "assistantText": "late completion",
+                "resolvedToolIds": [],
+                "requestOptions": {},
+            },
+        )
 
 
 def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> None:
@@ -138,6 +177,43 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
         ("user", "Hello"),
         ("assistant", "Hello back"),
     ]
+
+
+def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    seed_bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = seed_bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    orchestrator = _CancelAwareMessageRunOrchestrator(
+        session_id="thread-1",
+        run_id=run.run_id,
+        request_cancel=lambda: store.request_run_cancel(run.run_id),
+    )
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
+    )
+
+    events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
+    updated_run = bridge.get_run(run_id=run.run_id)
+
+    assert [event.type for event in events] == [
+        RUN_STARTED_EVENT_TYPE,
+        TEXT_DELTA_EVENT_TYPE,
+        RUN_CANCELLED_EVENT_TYPE,
+    ]
+    assert updated_run.status == "cancelled"
+    assert updated_run.cancel_requested is True
+    assert store.list_messages("thread-1") == ()
+
 
 
 def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:

@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { AssistantSessionShell } from '../../workbench/types'
-import { sendRuntimeMessage } from './chat-contract'
+import { sendRuntimeMessage } from './thread-run-contract'
 import {
   buildRuntimeMessageSendInput,
   formatRequestOptionsError,

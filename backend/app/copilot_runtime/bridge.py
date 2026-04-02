@@ -159,7 +159,10 @@ class RuntimeBridge:
         async for event in self._call_orchestrator_stream_events(
             request=request,
             run_id=run.run_id,
-            is_client_disconnected=is_client_disconnected,
+            is_client_disconnected=self._build_run_cancellation_checker(
+                run_id=run.run_id,
+                is_client_disconnected=is_client_disconnected,
+            ),
         ):
             self._update_run_state_from_event(run_id=run.run_id, event=event)
             if event.type in {RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE, RUN_CANCELLED_EVENT_TYPE}:
@@ -178,6 +181,20 @@ class RuntimeBridge:
                     },
                 },
             )
+
+    def _build_run_cancellation_checker(
+        self,
+        *,
+        run_id: str,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+    ) -> Callable[[], Awaitable[bool]]:
+        async def _checker() -> bool:
+            if is_client_disconnected is not None and await is_client_disconnected():
+                return True
+            run = self._session_store.get_run(run_id)
+            return run.cancel_requested if run is not None else False
+
+        return _checker
 
     async def _call_orchestrator_stream_events(
         self,

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { cancelRuntimeRun } from './chat-contract'
+import { cancelRuntimeRun } from './thread-run-contract'
 import {
   createFetchFn,
   createRuntimeRunCancelResponse,
   runtimeUrl,
-} from './chat-contract.test-support'
+} from './thread-run-contract.test-support'
 
 describe('cancelRuntimeRun', () => {
   it('posts run/cancel and returns the cancel acknowledgement payload', async () => {

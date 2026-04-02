@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { getRuntimeCapabilities } from './chat-contract'
+import { getRuntimeCapabilities } from './thread-run-contract'
 import {
   createFetchFn,
   createRuntimeErrorPayload,
   createRuntimeThreadGetResponse,
   runtimeUrl,
   sessionId,
-} from './chat-contract.test-support'
+} from './thread-run-contract.test-support'
 
 describe('getRuntimeCapabilities', () => {
   it('posts thread/get and returns the backend capability snapshot fields', async () => {

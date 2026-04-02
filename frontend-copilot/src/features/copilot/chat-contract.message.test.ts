@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { sendRuntimeMessage, type RuntimeRunEvent } from './chat-contract'
+import { sendRuntimeMessage, type RuntimeRunEvent } from './thread-run-contract'
 import {
   agentId,
   createFetchResponse,
@@ -13,7 +13,7 @@ import {
   createUserMessage,
   runtimeUrl,
   sessionId,
-} from './chat-contract.test-support'
+} from './thread-run-contract.test-support'
 
 describe('sendRuntimeMessage', () => {
   it('posts run/start then run/stream with request-scoped modelRoute, enabledTools and requestOptions', async () => {

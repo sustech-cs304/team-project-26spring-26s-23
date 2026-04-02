@@ -1,4 +1,4 @@
-import type { RuntimeToolDirectoryEntry } from './chat-contract'
+import type { RuntimeToolDirectoryEntry } from './thread-run-contract'
 
 export interface CopilotToolGroup {
   key: string

@@ -6,7 +6,7 @@ import {
   type RuntimeRunCompletedEvent,
   type RuntimeToolEvent,
   type RuntimeToolEventPhase,
-} from './chat-contract'
+} from './thread-run-contract'
 import type {
   CopilotBootstrapState,
   CopilotDiagnosticsSummary,

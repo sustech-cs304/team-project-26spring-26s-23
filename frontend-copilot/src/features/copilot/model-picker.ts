@@ -1,4 +1,4 @@
-import type { RuntimeModelRoute } from './chat-contract'
+import type { RuntimeModelRoute } from './thread-run-contract'
 import type { ModelCapability, ProviderProfile } from '../../workbench/types'
 
 export interface CopilotModelIconSpec {

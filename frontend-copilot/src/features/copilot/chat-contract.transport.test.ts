@@ -4,13 +4,13 @@ import {
   buildRuntimeEndpoint,
   createRuntimeSession,
   listRuntimeAgents,
-} from './chat-contract'
+} from './thread-run-contract'
 import {
   agentId,
   createFetchFn,
   createRuntimeErrorPayload,
   runtimeUrl,
-} from './chat-contract.test-support'
+} from './thread-run-contract.test-support'
 
 describe('chat contract transport helpers', () => {
   it('normalizes runtime endpoint paths to the root slash', () => {

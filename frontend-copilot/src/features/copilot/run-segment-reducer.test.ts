@@ -6,7 +6,7 @@ import {
   createStartingCopilotRunState,
   markCopilotRunCancelled,
 } from './run-segment-reducer'
-import { createRuntimeModelRoute, createRuntimeRunCompletedEvent, createRuntimeToolEvent } from './chat-contract.test-support'
+import { createRuntimeModelRoute, createRuntimeRunCompletedEvent, createRuntimeToolEvent } from './thread-run-contract.test-support'
 
 describe('run segment reducer', () => {
   it('merges compat events into a segment-ready run state with multiple assistant/tool segments', () => {

@@ -9,7 +9,7 @@ import type {
   RuntimeTextDeltaEvent,
   RuntimeToolEvent,
   RuntimeToolEventPhase,
-} from './chat-contract'
+} from './thread-run-contract'
 
 const TERMINAL_RUNTIME_RUN_EVENT_TYPES = new Set<RuntimeRunEvent['type']>([
   'run_completed',

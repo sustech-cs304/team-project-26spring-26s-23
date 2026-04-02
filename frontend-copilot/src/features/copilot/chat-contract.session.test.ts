@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { createRuntimeSession } from './chat-contract'
+import { createRuntimeSession } from './thread-run-contract'
 import {
   agentId,
   createFetchFn,
   createRuntimeErrorPayload,
   createRuntimeThreadCreateResponse,
   runtimeUrl,
-} from './chat-contract.test-support'
+} from './thread-run-contract.test-support'
 
 describe('createRuntimeSession', () => {
   it('posts thread/create and returns the projected session payload', async () => {

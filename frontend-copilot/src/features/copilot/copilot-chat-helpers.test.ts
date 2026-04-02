@@ -14,8 +14,8 @@ import {
   parseRequestOptionsText,
   upsertToolStepTurn,
 } from './copilot-chat-helpers'
-import { RuntimeRequestError } from './chat-contract'
-import { createRuntimeModelRoute, createRuntimeToolEvent } from './chat-contract.test-support'
+import { RuntimeRequestError } from './thread-run-contract'
+import { createRuntimeModelRoute, createRuntimeToolEvent } from './thread-run-contract.test-support'
 import {
   createDirectoryState,
   createReadyState,

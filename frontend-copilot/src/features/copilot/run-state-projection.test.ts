@@ -4,7 +4,7 @@ import { projectConversationTurnsFromRunState } from './run-state-projection'
 import { createIdleCopilotRunState } from './run-segment-reducer'
 import type { CopilotConversationTurn } from './copilot-chat-helpers'
 import type { CopilotRunState } from './types'
-import { createRuntimeModelRoute } from './chat-contract.test-support'
+import { createRuntimeModelRoute } from './thread-run-contract.test-support'
 
 describe('run state projection', () => {
   it('projects assistant/tool segments into stable legacy turns while preserving prior user turns', () => {
