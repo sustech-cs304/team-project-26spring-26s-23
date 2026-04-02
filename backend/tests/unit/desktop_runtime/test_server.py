@@ -165,14 +165,21 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
     assert toolset_summary["name"] == "default"
     assert toolset_summary["label"] == "Default"
     assert toolset_summary["default"] is True
-    assert toolset_summary["toolCount"] == 1
-    assert len(toolset_summary["tools"]) == 1
+    assert toolset_summary["toolCount"] == 2
+    assert len(toolset_summary["tools"]) == 2
     assert toolset_summary["tools"][0] == {
         "toolId": FILE_CONVERT_TOOL_ID,
         "kind": "builtin",
         "availability": "available",
         "displayName": "File Convert",
         "description": "Convert DOCX, PDF, and PPTX files into text.",
+    }
+    assert toolset_summary["tools"][1] == {
+        "toolId": "tool.weather-current",
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Current Weather",
+        "description": "Return a placeholder current-weather result for a requested location.",
     }
 
 

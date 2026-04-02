@@ -16,7 +16,7 @@ RuntimeRunEventType = Literal[
     "run_failed",
     "run_cancelled",
     "run_diagnostic",
-    "tool_event_reserved",
+    "tool_event",
 ]
 
 RUN_STARTED_EVENT_TYPE: RuntimeRunEventType = "run_started"
@@ -25,7 +25,7 @@ RUN_COMPLETED_EVENT_TYPE: RuntimeRunEventType = "run_completed"
 RUN_FAILED_EVENT_TYPE: RuntimeRunEventType = "run_failed"
 RUN_CANCELLED_EVENT_TYPE: RuntimeRunEventType = "run_cancelled"
 RUN_DIAGNOSTIC_EVENT_TYPE: RuntimeRunEventType = "run_diagnostic"
-TOOL_EVENT_RESERVED_EVENT_TYPE: RuntimeRunEventType = "tool_event_reserved"
+TOOL_EVENT_EVENT_TYPE: RuntimeRunEventType = "tool_event"
 TERMINAL_RUNTIME_RUN_EVENT_TYPES = frozenset(
     {
         RUN_COMPLETED_EVENT_TYPE,
@@ -83,7 +83,7 @@ __all__ = [
     "RUN_STARTED_EVENT_TYPE",
     "TERMINAL_RUNTIME_RUN_EVENT_TYPES",
     "TEXT_DELTA_EVENT_TYPE",
-    "TOOL_EVENT_RESERVED_EVENT_TYPE",
+    "TOOL_EVENT_EVENT_TYPE",
     "RuntimeRunEvent",
     "RuntimeRunEventFactory",
     "RuntimeRunEventType",

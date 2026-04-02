@@ -6,12 +6,17 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from pydantic_ai.messages import ModelMessage
 
-from .agent import AgentExecutionError, ModelNotConfiguredError
+from .agent import (
+    AgentExecutionError,
+    ModelNotConfiguredError,
+    RuntimeToolLifecycleEvent,
+    ToolInvocationError,
+)
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import RuntimeMessageSendRequest, RuntimeScaffold
 from .execution_support import (
@@ -22,7 +27,11 @@ from .execution_support import (
     build_message_history,
     extract_unknown_tool_id,
 )
-from .model_routes import ResolvedRuntimeModelRoute, RuntimeModelRouteResolutionError, RuntimeModelRouteResolver
+from .model_routes import (
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRouteResolutionError,
+    RuntimeModelRouteResolver,
+)
 from .run_events import (
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
@@ -30,6 +39,7 @@ from .run_events import (
     RUN_FAILED_EVENT_TYPE,
     RUN_STARTED_EVENT_TYPE,
     TEXT_DELTA_EVENT_TYPE,
+    TOOL_EVENT_EVENT_TYPE,
     RuntimeRunEvent,
     RuntimeRunEventFactory,
 )
@@ -51,6 +61,8 @@ class RuntimeAgentTextStream(Protocol):
     def iter_deltas(self) -> AsyncIterator[str]: ...
 
     async def get_output(self) -> str: ...
+
+    def drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]: ...
 
 
 class RuntimeStreamingAgentExecutor(Protocol):
@@ -200,6 +212,7 @@ class RuntimeMessageRunOrchestrator:
                 yield event
             return
 
+        active_stream: RuntimeAgentTextStream | None = None
         try:
             async with agent_executor.open_text_stream(
                 agent_name=session.bound_agent_id,
@@ -209,8 +222,16 @@ class RuntimeMessageRunOrchestrator:
                 enabled_tools=resolved_tool_ids,
                 request_options=request.policy.requestOptions,
             ) as stream:
-                async for delta in stream.iter_deltas():
+                active_stream = cast(RuntimeAgentTextStream, stream)
+                async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
+                    yield tool_event
+                async for delta in active_stream.iter_deltas():
                     await self._raise_if_client_disconnected(is_client_disconnected)
+                    async for tool_event in self._emit_pending_tool_events(
+                        events=events,
+                        stream=active_stream,
+                    ):
+                        yield tool_event
                     if delta == "":
                         continue
                     yield events.build(
@@ -221,7 +242,11 @@ class RuntimeMessageRunOrchestrator:
                         },
                     )
                 await self._raise_if_client_disconnected(is_client_disconnected)
-                assistant_text = await stream.get_output()
+                async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
+                    yield tool_event
+                assistant_text = await active_stream.get_output()
+                async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
+                    yield tool_event
                 await self._raise_if_client_disconnected(is_client_disconnected)
         except asyncio.CancelledError:
             yield events.build(
@@ -230,6 +255,16 @@ class RuntimeMessageRunOrchestrator:
                     "assistantMessageId": assistant_message_id,
                     "reason": "cancelled",
                 },
+            )
+            return
+        except ToolInvocationError as exc:
+            async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
+                yield tool_event
+            yield self._build_failed_event(
+                events=events,
+                code=exc.code,
+                message=str(exc),
+                details=dict(exc.details),
             )
             return
         except ModelNotConfiguredError as exc:
@@ -241,6 +276,8 @@ class RuntimeMessageRunOrchestrator:
             )
             return
         except AgentExecutionError as exc:
+            async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
+                yield tool_event
             async for event in self._build_failed_events(
                 events=events,
                 code="agent_execution_failed",
@@ -251,6 +288,8 @@ class RuntimeMessageRunOrchestrator:
                 yield event
             return
         except Exception as exc:  # pragma: no cover - defensive fallback
+            async for tool_event in self._emit_pending_tool_events(events=events, stream=active_stream):
+                yield tool_event
             async for event in self._build_failed_events(
                 events=events,
                 code="agent_execution_failed",
@@ -332,6 +371,32 @@ class RuntimeMessageRunOrchestrator:
             )
         except LookupError as exc:
             raise ToolNotFoundError(extract_unknown_tool_id(exc)) from exc
+
+    async def _emit_pending_tool_events(
+        self,
+        *,
+        events: RuntimeRunEventFactory,
+        stream: RuntimeAgentTextStream | None,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        if stream is None:
+            return
+        for tool_event in self._drain_tool_events(stream):
+            yield events.build(
+                TOOL_EVENT_EVENT_TYPE,
+                payload=tool_event.to_payload(),
+            )
+
+    def _drain_tool_events(
+        self,
+        stream: RuntimeAgentTextStream,
+    ) -> tuple[RuntimeToolLifecycleEvent, ...]:
+        drain = getattr(stream, "drain_tool_events", None)
+        if drain is None:
+            return ()
+        drained = drain()
+        if not isinstance(drained, tuple):
+            return tuple(drained)
+        return drained
 
     async def _raise_if_client_disconnected(
         self,

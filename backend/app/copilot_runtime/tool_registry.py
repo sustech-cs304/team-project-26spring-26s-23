@@ -1,8 +1,10 @@
-"""Tool metadata registry for the Copilot runtime."""
+"""Tool metadata registry and executable bindings for the Copilot runtime."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
+import random
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +19,34 @@ DEFAULT_TOOL_AVAILABILITY = "available"
 FILE_CONVERT_TOOL_ID = "tool.file-convert"
 FILE_CONVERT_TOOL_DISPLAY_NAME = "File Convert"
 FILE_CONVERT_TOOL_DESCRIPTION = "Convert DOCX, PDF, and PPTX files into text."
+WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
+WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
+WEATHER_CURRENT_TOOL_DESCRIPTION = (
+    "Return a placeholder current-weather result for a requested location."
+)
+DEFAULT_WEATHER_LOCATION = "Shenzhen"
+_WEATHER_SAMPLE_RESULTS: tuple[dict[str, Any], ...] = (
+    {
+        "condition": "晴",
+        "temperatureC": 24,
+        "humidity": 60,
+        "summary": "体感舒适，适合外出。",
+    },
+    {
+        "condition": "多云",
+        "temperatureC": 22,
+        "humidity": 68,
+        "summary": "云量较多，气温平稳。",
+    },
+    {
+        "condition": "小雨",
+        "temperatureC": 19,
+        "humidity": 84,
+        "summary": "空气偏湿润，出门建议带伞。",
+    },
+)
+
+ToolExecutor = Callable[[Mapping[str, Any] | None], Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,12 +82,28 @@ class ToolDescriptor:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutableTool:
+    descriptor: ToolDescriptor
+    execute: ToolExecutor
+
+    @property
+    def tool_id(self) -> str:
+        return self.descriptor.tool_id
+
+    def build_catalog_entry(self) -> dict[str, Any]:
+        return self.descriptor.build_catalog_entry()
+
+    def build_summary(self) -> dict[str, Any]:
+        return self.descriptor.build_summary()
+
+
+@dataclass(frozen=True, slots=True)
 class ToolsetDescriptor:
     name: str
     label: str
     description: str
     default: bool = False
-    tools: tuple[ToolDescriptor, ...] = ()
+    tools: tuple[ToolDescriptor | ExecutableTool, ...] = ()
 
     def build_view(self) -> dict[str, Any]:
         return {
@@ -81,6 +127,7 @@ class ToolRegistry:
     def __init__(self, descriptors: Iterable[ToolsetDescriptor] = ()) -> None:
         self._descriptors_by_name: dict[str, ToolsetDescriptor] = {}
         self._default_toolset_name: str | None = None
+        self._tools_by_id_by_toolset: dict[str, dict[str, ExecutableTool]] = {}
         for descriptor in descriptors:
             self.register(descriptor)
 
@@ -102,6 +149,9 @@ class ToolRegistry:
             self._default_toolset_name = descriptor.name
 
         self._descriptors_by_name[descriptor.name] = descriptor
+        self._tools_by_id_by_toolset[descriptor.name] = {
+            tool.tool_id: self._as_executable_tool(tool) for tool in descriptor.tools
+        }
         return descriptor
 
     def get(self, name: str) -> ToolsetDescriptor | None:
@@ -133,6 +183,13 @@ class ToolRegistry:
             raise LookupError(f"Unknown toolset '{toolset_name}'.")
         return tuple(tool.tool_id for tool in descriptor.tools)
 
+    def resolve_tool(self, tool_id: str, toolset_name: str | None = None) -> ExecutableTool:
+        resolved_toolset_name = self.get_default().name if toolset_name is None else toolset_name
+        try:
+            return self._tools_by_id_by_toolset[resolved_toolset_name][tool_id]
+        except KeyError as exc:
+            raise LookupError(f"Unknown tool '{tool_id}'.") from exc
+
     def build_diagnostics_summary(self) -> dict[str, Any]:
         return {
             "available_toolsets": [
@@ -159,6 +216,45 @@ class ToolRegistry:
                 )
             tool_ids.add(tool.tool_id)
 
+    def _as_executable_tool(self, tool: ToolDescriptor | ExecutableTool) -> ExecutableTool:
+        if isinstance(tool, ExecutableTool):
+            return tool
+        return ExecutableTool(
+            descriptor=tool,
+            execute=_execute_unimplemented_tool,
+        )
+
+
+async def _execute_unimplemented_tool(_arguments: Mapping[str, Any] | None) -> dict[str, Any]:
+    raise RuntimeError("Tool execution is not implemented for this tool.")
+
+
+async def execute_weather_current_tool(
+    arguments: Mapping[str, Any] | None,
+    *,
+    rng: random.Random | None = None,
+) -> dict[str, Any]:
+    payload = dict(arguments or {})
+    raw_location = payload.get("location")
+    if isinstance(raw_location, str):
+        location = raw_location.strip() or DEFAULT_WEATHER_LOCATION
+    else:
+        location = DEFAULT_WEATHER_LOCATION
+
+    random_source = rng or random.Random()
+    sample = dict(random_source.choice(_WEATHER_SAMPLE_RESULTS))
+    return {
+        "location": location,
+        "condition": sample["condition"],
+        "temperatureC": sample["temperatureC"],
+        "humidity": sample["humidity"],
+        "summary": sample["summary"],
+    }
+
+
+async def _execute_default_weather_tool(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
+    return await execute_weather_current_tool(arguments)
+
 
 def build_default_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
@@ -169,14 +265,90 @@ def build_default_tool_registry() -> ToolRegistry:
             description=DEFAULT_TOOLSET_DESCRIPTION,
             default=True,
             tools=(
-                ToolDescriptor(
-                    tool_id=FILE_CONVERT_TOOL_ID,
-                    kind=DEFAULT_TOOL_KIND,
-                    display_name=FILE_CONVERT_TOOL_DISPLAY_NAME,
-                    description=FILE_CONVERT_TOOL_DESCRIPTION,
-                    availability=DEFAULT_TOOL_AVAILABILITY,
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=FILE_CONVERT_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=FILE_CONVERT_TOOL_DISPLAY_NAME,
+                        description=FILE_CONVERT_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                    ),
+                    execute=_execute_unimplemented_tool,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=WEATHER_CURRENT_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+                        description=WEATHER_CURRENT_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                    ),
+                    execute=_execute_default_weather_tool,
                 ),
             ),
         )
     )
     return registry
+
+
+def summarize_tool_arguments(arguments: Mapping[str, Any] | None) -> str | None:
+    if arguments is None:
+        return None
+    normalized = {key: value for key, value in arguments.items()}
+    if not normalized:
+        return None
+    try:
+        return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(normalized)
+
+
+def summarize_tool_result(result: Any) -> str | None:
+    if result is None:
+        return None
+    if isinstance(result, str):
+        value = result.strip()
+        return value or None
+    if isinstance(result, Mapping):
+        location = result.get("location")
+        condition = result.get("condition")
+        temperature = result.get("temperatureC")
+        humidity = result.get("humidity")
+        if all(value is not None for value in (location, condition, temperature, humidity)):
+            return (
+                f"{location}：{condition} / {temperature}°C / 湿度 {humidity}%"
+            )
+        try:
+            return json.dumps(dict(result), ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            return str(dict(result))
+    try:
+        return json.dumps(result, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(result)
+
+
+__all__ = [
+    "DEFAULT_TOOLSET_DESCRIPTION",
+    "DEFAULT_TOOLSET_LABEL",
+    "DEFAULT_TOOLSET_NAME",
+    "DEFAULT_TOOL_DIRECTORY_VERSION",
+    "DEFAULT_TOOL_AVAILABILITY",
+    "DEFAULT_TOOL_KIND",
+    "DEFAULT_WEATHER_LOCATION",
+    "ExecutableTool",
+    "FILE_CONVERT_TOOL_DESCRIPTION",
+    "FILE_CONVERT_TOOL_DISPLAY_NAME",
+    "FILE_CONVERT_TOOL_ID",
+    "ToolDescriptor",
+    "ToolExecutor",
+    "ToolRegistry",
+    "ToolsetDescriptor",
+    "WEATHER_CURRENT_TOOL_DESCRIPTION",
+    "WEATHER_CURRENT_TOOL_DISPLAY_NAME",
+    "WEATHER_CURRENT_TOOL_ID",
+    "build_default_tool_registry",
+    "execute_weather_current_tool",
+    "summarize_tool_arguments",
+    "summarize_tool_result",
+]

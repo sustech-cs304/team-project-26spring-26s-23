@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from app.copilot_runtime.agent import RuntimeToolLifecycleEvent, ToolInvocationError
 from app.copilot_runtime.execution_support import SessionNotFoundError
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.run_events import encode_runtime_run_event
@@ -14,14 +15,21 @@ from app.copilot_runtime.model_routes import (
 from app.copilot_runtime.contracts import RuntimeMessageExecutionPolicy, RuntimeMessagePayload, RuntimeMessageSendRequest, build_runtime_scaffold
 from app.copilot_runtime.agent_registry import build_default_agent_registry
 from app.copilot_runtime.session_store import InMemorySessionStore
-from app.copilot_runtime.tool_registry import build_default_tool_registry
+from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 
 
 class _ImmediateTextStream:
-    def __init__(self, *, deltas: list[str], output: str | Exception) -> None:
+    def __init__(
+        self,
+        *,
+        deltas: list[str],
+        output: str | Exception,
+        tool_events: list[RuntimeToolLifecycleEvent] | None = None,
+    ) -> None:
         self.resolved_model_id = "gpt-4.1"
         self._deltas = list(deltas)
         self._output = output
+        self._tool_events = list(tool_events or [])
 
     async def __aenter__(self) -> _ImmediateTextStream:
         return self
@@ -38,11 +46,23 @@ class _ImmediateTextStream:
             raise self._output
         return self._output
 
+    def drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]:
+        drained = tuple(self._tool_events)
+        self._tool_events.clear()
+        return drained
+
 
 class _StreamingExecutor:
-    def __init__(self, *, deltas: list[str], output: str | Exception) -> None:
+    def __init__(
+        self,
+        *,
+        deltas: list[str],
+        output: str | Exception,
+        tool_events: list[RuntimeToolLifecycleEvent] | None = None,
+    ) -> None:
         self._deltas = deltas
         self._output = output
+        self._tool_events = list(tool_events or [])
         self.calls: list[dict[str, object]] = []
         self.model_configured = True
         self.model_environment_keys: tuple[str, ...] = ()
@@ -67,7 +87,11 @@ class _StreamingExecutor:
                 "request_options": dict(request_options or {}),
             }
         )
-        return _ImmediateTextStream(deltas=self._deltas, output=self._output)
+        return _ImmediateTextStream(
+            deltas=self._deltas,
+            output=self._output,
+            tool_events=self._tool_events,
+        )
 
 
 class _ResolvedRouteResolver:
@@ -116,6 +140,41 @@ class _CancellingExecutor(_StreamingExecutor):
         return _CancellingStream(deltas=self._deltas, output="unused")
 
 
+class _ToolFailingExecutor(_StreamingExecutor):
+    def __init__(self, *, code: str, message: str, tool_id: str) -> None:
+        tool_call_id = f"{tool_id}:call-1"
+        tool_events = [
+            RuntimeToolLifecycleEvent(
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                phase="started",
+                title="调用天气工具",
+                summary="正在获取天气。",
+                input_summary='{"location": "Shenzhen"}',
+            ),
+            RuntimeToolLifecycleEvent(
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                phase="failed",
+                title="工具调用失败",
+                summary="工具执行失败。",
+                input_summary='{"location": "Shenzhen"}',
+                error_summary=message,
+            ),
+        ]
+        super().__init__(
+            deltas=[],
+            output=ToolInvocationError(
+                code=code,
+                message=message,
+                tool_id=tool_id,
+                tool_call_id=tool_call_id,
+            ),
+            tool_events=tool_events,
+        )
+
+
+
 def test_stream_events_success_archives_only_completed_assistant_message() -> None:
     store = InMemorySessionStore()
     store.create(bound_agent_id="default", session_id="session-1")
@@ -154,6 +213,68 @@ def test_stream_events_success_archives_only_completed_assistant_message() -> No
     ]
 
 
+
+def test_stream_events_emits_tool_started_completed_before_terminal_success() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取 Shenzhen 的天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="completed",
+            title="天气工具已返回结果",
+            summary="Shenzhen：晴 / 24°C / 湿度 60%",
+            input_summary='{"location": "Shenzhen"}',
+            result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+        ),
+    ]
+    executor = _StreamingExecutor(
+        deltas=["Weather answer"],
+        output="Weather answer",
+        tool_events=tool_events,
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    assert events[1].payload["phase"] == "started"
+    assert events[2].payload["phase"] == "completed"
+    assert events[2].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
+    assert events[-1].payload["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
+
+
+
 def test_stream_events_host_resolution_failure_emits_diagnostic_and_failed_without_archive() -> None:
     store = InMemorySessionStore()
     store.create(bound_agent_id="default", session_id="session-1")
@@ -178,6 +299,43 @@ def test_stream_events_host_resolution_failure_emits_diagnostic_and_failed_witho
     assert events[2].payload["code"] == "provider_profile_not_found"
     assert executor.calls == []
     assert store.list_messages("session-1") == ()
+
+
+
+def test_stream_events_tool_failure_emits_failed_tool_event_then_failed_terminal_event() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _ToolFailingExecutor(
+        code="tool_execution_failed",
+        message="Tool 'tool.weather-current' failed: boom",
+        tool_id=WEATHER_CURRENT_TOOL_ID,
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == ["run_started", "tool_event", "tool_event", "run_failed"]
+    assert events[2].payload["phase"] == "failed"
+    assert events[-1].payload["code"] == "tool_execution_failed"
+    assert events[-1].payload["details"]["toolId"] == WEATHER_CURRENT_TOOL_ID
+    assert store.list_messages("session-1") == ()
+
 
 
 def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> None:
@@ -205,6 +363,7 @@ def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> No
         "reason": "cancelled",
     }
     assert store.list_messages("session-1") == ()
+
 
 
 def test_stream_events_client_disconnect_cancels_run_and_does_not_archive() -> None:
@@ -255,6 +414,7 @@ def test_encode_runtime_run_event_renders_sse_payload() -> None:
         'data: {"type": "run_started", "runId": "run-fixed", "sessionId": "session-1", '
         '"sequence": 1, "payload": {"assistantMessageId": "run-fixed:assistant"}}\n\n'
     )
+
 
 
 def test_stream_events_missing_session_emits_failed_terminal_event() -> None:
@@ -323,7 +483,12 @@ async def _collect_events_from_request(request: RuntimeMessageSendRequest):
         module._next_run_id = original_next_run_id
 
 
-def _build_request(*, session_id: str) -> RuntimeMessageSendRequest:
+
+def _build_request(
+    *,
+    session_id: str,
+    enabled_tools: tuple[str, ...] = (),
+) -> RuntimeMessageSendRequest:
     return RuntimeMessageSendRequest(
         session_id=session_id,
         message=RuntimeMessagePayload(role="user", content="Hello"),
@@ -337,7 +502,7 @@ def _build_request(*, session_id: str) -> RuntimeMessageSendRequest:
                     model_id="gpt-4.1",
                 ),
             ),
-            enabledTools=(),
+            enabledTools=enabled_tools,
             requestOptions={},
         ),
         agent_id="default",
