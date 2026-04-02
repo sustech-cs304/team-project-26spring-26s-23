@@ -27,33 +27,52 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
               )}
             </div>
           )
-        : conversation.map((turn) => (
-            <article
-              key={turn.id}
-              className={[
-                'copilot-chat__message',
-                `copilot-chat__message--${turn.kind}`,
-                turn.status ? `copilot-chat__message--${turn.status}` : '',
-              ].filter((className) => className !== '').join(' ')}
-            >
-              {turn.kind !== 'user' && (
-                <div className="copilot-chat__message-header">
-                  <p className="copilot-chat__message-label">{turn.title}</p>
-                  {turn.status !== undefined && (
-                    <span className={`copilot-chat__message-status copilot-chat__message-status--${turn.status}`}>
-                      {formatTurnStatus(turn.status)}
-                    </span>
-                  )}
-                </div>
-              )}
-              <p className="copilot-chat__message-text">{turn.content}</p>
-              {turn.diagnostic !== null && turn.diagnostic !== undefined && (
-                <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
-                  诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
-                </p>
-              )}
-            </article>
-          ))}
+        : conversation.map((turn) => {
+            const toolDetails = buildToolDetailRows(turn)
+            return (
+              <article
+                key={turn.id}
+                className={[
+                  'copilot-chat__message',
+                  `copilot-chat__message--${turn.kind}`,
+                  turn.status ? `copilot-chat__message--${turn.status}` : '',
+                ].filter((className) => className !== '').join(' ')}
+              >
+                {turn.kind !== 'user' && (
+                  <div className="copilot-chat__message-header">
+                    <p className="copilot-chat__message-label">{turn.title}</p>
+                    {turn.status !== undefined && (
+                      <span className={`copilot-chat__message-status copilot-chat__message-status--${turn.status}`}>
+                        {formatTurnStatus(turn.status)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <p className="copilot-chat__message-text">{turn.content}</p>
+                {toolDetails.length > 0 && (
+                  <div className="copilot-chat__message-detail-list">
+                    {toolDetails.map((detail) => (
+                      <p
+                        key={`${turn.id}:${detail.label}`}
+                        className={[
+                          'copilot-chat__message-detail',
+                          `copilot-chat__message-detail--${detail.kind}`,
+                        ].join(' ')}
+                      >
+                        <span className="copilot-chat__message-detail-label">{detail.label}</span>
+                        <span>{detail.value}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {turn.diagnostic !== null && turn.diagnostic !== undefined && (
+                  <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
+                    诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
+                  </p>
+                )}
+              </article>
+            )
+          })}
     </div>
   )
 }
@@ -69,4 +88,42 @@ function formatTurnStatus(status: NonNullable<CopilotConversationTurn['status']>
     case 'cancelled':
       return '已取消'
   }
+}
+
+function buildToolDetailRows(turn: CopilotConversationTurn): Array<{
+  kind: 'input' | 'result' | 'error'
+  label: string
+  value: string
+}> {
+  if (turn.kind !== 'tool') {
+    return []
+  }
+
+  const details: Array<{
+    kind: 'input' | 'result' | 'error'
+    label: string
+    value: string
+  }> = []
+  if (turn.inputSummary !== null && turn.inputSummary !== undefined && turn.inputSummary !== '') {
+    details.push({
+      kind: 'input',
+      label: '输入',
+      value: turn.inputSummary,
+    })
+  }
+  if (turn.resultSummary !== null && turn.resultSummary !== undefined && turn.resultSummary !== '' && turn.resultSummary !== turn.content) {
+    details.push({
+      kind: 'result',
+      label: '结果',
+      value: turn.resultSummary,
+    })
+  }
+  if (turn.errorSummary !== null && turn.errorSummary !== undefined && turn.errorSummary !== '') {
+    details.push({
+      kind: 'error',
+      label: '错误',
+      value: turn.errorSummary,
+    })
+  }
+  return details
 }

@@ -16,6 +16,8 @@ const backendRoot = path.resolve(workspaceRoot, 'backend')
 
 const DEFAULT_HOST = '127.0.0.1'
 const DEFAULT_MESSAGE = '请仅回复“stream smoke ok”。'
+const DEFAULT_WEATHER_TOOL_MESSAGE = '请先调用天气工具查询 Shenzhen 当前天气，再用一句话说明结果。'
+const WEATHER_TOOL_ID = 'tool.weather-current'
 const DEFAULT_USER_DATA_DIR = path.join(process.env.APPDATA ?? 'C:/Users/24352/AppData/Roaming', 'CanDue')
 const DEFAULT_AGENT_ID = 'default'
 const BRIDGE_PATH = '/host/private/provider-routes/resolve'
@@ -118,6 +120,8 @@ async function main() {
     }
 
     const abortController = options.cancelAfterFirstDelta ? new AbortController() : null
+    const enabledTools = options.enableWeatherTool ? [WEATHER_TOOL_ID] : []
+    const smokeMessage = resolveSmokeMessage(options)
     const messageResponse = await fetch(`${runtimeUrl}/`, {
       method: 'POST',
       headers: {
@@ -130,11 +134,11 @@ async function main() {
           sessionId: sessionPayload.sessionId,
           message: {
             role: 'user',
-            content: options.message,
+            content: smokeMessage,
           },
           policy: {
             modelRoute: route,
-            enabledTools: [],
+            enabledTools,
             requestOptions: {},
           },
         },
@@ -193,11 +197,16 @@ async function main() {
       throw new Error(`Streaming run did not complete successfully: ${JSON.stringify(terminalEvent)}`)
     }
 
+    if (options.enableWeatherTool) {
+      assertWeatherToolClosure(events)
+    }
+
     console.log('=== smoke summary ===')
     console.log(JSON.stringify({
       runtimeUrl,
       providerProfileId: route.providerProfileId,
       modelId: route.snapshot.modelId,
+      enabledTools,
       eventTypes: events.map((event) => event.type),
       assistantText: terminalEvent.payload?.assistantText ?? null,
     }, null, 2))
@@ -213,8 +222,10 @@ function parseArgs(argv) {
   const options = {
     userDataDir: DEFAULT_USER_DATA_DIR,
     providerProfileId: null,
-    message: DEFAULT_MESSAGE,
+    message: null,
+    messageProvided: false,
     cancelAfterFirstDelta: false,
+    enableWeatherTool: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -235,6 +246,7 @@ function parseArgs(argv) {
 
     if (token === '--message' && typeof nextValue === 'string') {
       options.message = nextValue
+      options.messageProvided = true
       index += 1
       continue
     }
@@ -244,10 +256,23 @@ function parseArgs(argv) {
       continue
     }
 
+    if (token === '--enable-weather-tool') {
+      options.enableWeatherTool = true
+      continue
+    }
+
     throw new Error(`Unknown or incomplete argument: ${token}`)
   }
 
   return options
+}
+
+function resolveSmokeMessage(options) {
+  if (options.messageProvided && typeof options.message === 'string') {
+    return options.message
+  }
+
+  return options.enableWeatherTool ? DEFAULT_WEATHER_TOOL_MESSAGE : DEFAULT_MESSAGE
 }
 
 async function loadWorkspaceState(userDataDir) {
@@ -567,7 +592,45 @@ function summarizeRuntimeEvent(event) {
     }
   }
 
+  if (event.type === 'tool_event') {
+    return {
+      type: event.type,
+      sequence: event.sequence,
+      toolCallId: event.payload?.toolCallId ?? null,
+      toolId: event.payload?.toolId ?? null,
+      phase: event.payload?.phase ?? null,
+      title: event.payload?.title ?? null,
+      summary: event.payload?.summary ?? null,
+      inputSummary: event.payload?.inputSummary ?? null,
+      resultSummary: event.payload?.resultSummary ?? null,
+      errorSummary: event.payload?.errorSummary ?? null,
+    }
+  }
+
   return event
+}
+
+function assertWeatherToolClosure(events) {
+  const toolEvents = events.filter((event) => event?.type === 'tool_event' && event.payload?.toolId === WEATHER_TOOL_ID)
+  if (toolEvents.length < 2) {
+    throw new Error(`Expected at least two ${WEATHER_TOOL_ID} tool_event entries, received ${toolEvents.length}.`)
+  }
+
+  const phases = toolEvents.map((event) => event.payload?.phase)
+  if (phases[0] !== 'started') {
+    throw new Error(`Expected first ${WEATHER_TOOL_ID} tool_event to be started, received ${String(phases[0])}.`)
+  }
+  if (!phases.includes('completed')) {
+    throw new Error(`Expected ${WEATHER_TOOL_ID} tool_event sequence to include completed, received ${JSON.stringify(phases)}.`)
+  }
+
+  const completedIndex = toolEvents.findIndex((event) => event.payload?.phase === 'completed')
+  const firstTextDeltaIndex = events.findIndex((event) => event.type === 'text_delta')
+  const completedSequence = toolEvents[completedIndex]?.sequence ?? Number.POSITIVE_INFINITY
+  const firstTextDeltaSequence = firstTextDeltaIndex >= 0 ? events[firstTextDeltaIndex].sequence : Number.POSITIVE_INFINITY
+  if (firstTextDeltaIndex >= 0 && completedSequence > firstTextDeltaSequence) {
+    throw new Error(`Expected ${WEATHER_TOOL_ID} completed tool_event before first text_delta, received completed sequence ${completedSequence} and first text_delta sequence ${firstTextDeltaSequence}.`)
+  }
 }
 
 async function waitForReady(readyUrl) {

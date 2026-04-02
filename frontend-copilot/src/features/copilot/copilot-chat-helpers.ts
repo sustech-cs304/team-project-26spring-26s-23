@@ -4,6 +4,8 @@ import {
   RuntimeRequestError,
   type RuntimeModelRoute,
   type RuntimeRunCompletedEvent,
+  type RuntimeToolEvent,
+  type RuntimeToolEventPhase,
 } from './chat-contract'
 import type {
   CopilotBootstrapState,
@@ -32,9 +34,11 @@ export interface RuntimeMessageSendInput {
   requestOptions: Record<string, unknown>
 }
 
+export type CopilotToolStepPhase = RuntimeToolEventPhase | 'cancelled'
+
 export interface CopilotConversationTurn {
   id: string
-  kind: 'user' | 'assistant' | 'error'
+  kind: 'user' | 'assistant' | 'error' | 'tool'
   title: string
   content: string
   status?: 'streaming' | 'completed' | 'failed' | 'cancelled'
@@ -43,6 +47,12 @@ export interface CopilotConversationTurn {
   resolvedToolIds?: string[]
   requestOptions?: Record<string, unknown>
   diagnostic?: CopilotRunDiagnosticSummary | null
+  toolCallId?: string
+  toolId?: string
+  toolPhase?: CopilotToolStepPhase
+  inputSummary?: string | null
+  resultSummary?: string | null
+  errorSummary?: string | null
 }
 
 export const DEFAULT_COPILOT_COMPOSER_HEIGHT = 160
@@ -246,6 +256,44 @@ export function completeAssistantTurn(
   })
 }
 
+export function upsertToolStepTurn(
+  turns: CopilotConversationTurn[],
+  event: RuntimeToolEvent,
+  input: {
+    assistantMessageId: string | null
+  },
+): CopilotConversationTurn[] {
+  const nextTurn = buildToolStepTurn(event)
+  const existingTurnIndex = turns.findIndex((turn) => turn.toolCallId === event.payload.toolCallId)
+  if (existingTurnIndex >= 0) {
+    return turns.map((turn, index) => (index === existingTurnIndex ? {
+      ...turn,
+      ...nextTurn,
+    } : turn))
+  }
+
+  const insertIndex = resolveToolTurnInsertIndex(turns, input.assistantMessageId)
+  return [
+    ...turns.slice(0, insertIndex),
+    nextTurn,
+    ...turns.slice(insertIndex),
+  ]
+}
+
+export function cancelStreamingToolTurns(turns: CopilotConversationTurn[]): CopilotConversationTurn[] {
+  return turns.map((turn) => {
+    if (turn.kind !== 'tool' || turn.status !== 'streaming') {
+      return turn
+    }
+
+    return {
+      ...turn,
+      status: 'cancelled',
+      toolPhase: 'cancelled',
+    }
+  })
+}
+
 export function failAssistantTurn(
   turns: CopilotConversationTurn[],
   input: {
@@ -352,6 +400,56 @@ function ensureAssistantTurnExists(
   return turns.some((currentTurn) => currentTurn.id === turn.id)
     ? turns
     : [...turns, turn]
+}
+
+function buildToolStepTurn(event: RuntimeToolEvent): CopilotConversationTurn {
+  return {
+    id: `tool:${event.payload.toolCallId}`,
+    kind: 'tool',
+    title: event.payload.title,
+    content: event.payload.summary,
+    status: mapToolPhaseToTurnStatus(event.payload.phase),
+    toolCallId: event.payload.toolCallId,
+    toolId: event.payload.toolId,
+    toolPhase: event.payload.phase,
+    inputSummary: event.payload.inputSummary ?? null,
+    resultSummary: event.payload.resultSummary ?? null,
+    errorSummary: event.payload.errorSummary ?? null,
+  }
+}
+
+function mapToolPhaseToTurnStatus(
+  phase: RuntimeToolEventPhase,
+): NonNullable<CopilotConversationTurn['status']> {
+  switch (phase) {
+    case 'started':
+      return 'streaming'
+    case 'completed':
+      return 'completed'
+    case 'failed':
+      return 'failed'
+  }
+}
+
+function resolveToolTurnInsertIndex(
+  turns: CopilotConversationTurn[],
+  assistantMessageId: string | null,
+): number {
+  if (assistantMessageId === null) {
+    return turns.length
+  }
+
+  const assistantTurnIndex = turns.findIndex((turn) => turn.id === assistantMessageId)
+  if (assistantTurnIndex < 0) {
+    return turns.length
+  }
+
+  const assistantTurn = turns[assistantTurnIndex]
+  if (assistantTurn.kind === 'assistant' && assistantTurn.status === 'streaming' && assistantTurn.content === '') {
+    return assistantTurnIndex
+  }
+
+  return turns.length
 }
 
 function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {

@@ -9,6 +9,7 @@ import type {
   RuntimeRunCompletedEvent,
   RuntimeRunEvent,
   RuntimeSessionCreateResponse,
+  RuntimeToolEvent,
 } from './chat-contract'
 
 export const runtimeUrl = 'http://127.0.0.1:8765'
@@ -130,6 +131,27 @@ export function createRuntimeRunCompletedEvent(
       resolvedModelRoute: overrides.payload?.resolvedModelRoute ?? createRuntimeModelRoute(),
       resolvedToolIds: overrides.payload?.resolvedToolIds ?? ['tool.file-convert'],
       requestOptions: overrides.payload?.requestOptions ?? { trace: true },
+    },
+  }
+}
+
+export function createRuntimeToolEvent(
+  overrides: Partial<RuntimeToolEvent> = {},
+): RuntimeToolEvent {
+  return {
+    type: 'tool_event',
+    runId: overrides.runId ?? 'run-1',
+    sessionId: overrides.sessionId ?? sessionId,
+    sequence: overrides.sequence ?? 2,
+    payload: {
+      toolCallId: overrides.payload?.toolCallId ?? 'tool.weather-current:call-1',
+      toolId: overrides.payload?.toolId ?? 'tool.weather-current',
+      phase: overrides.payload?.phase ?? 'started',
+      title: overrides.payload?.title ?? '调用天气工具',
+      summary: overrides.payload?.summary ?? '正在获取 Shenzhen 的天气。',
+      ...(overrides.payload?.inputSummary === undefined ? { inputSummary: '{"location":"Shenzhen"}' } : { inputSummary: overrides.payload.inputSummary }),
+      ...(overrides.payload?.resultSummary === undefined ? {} : { resultSummary: overrides.payload.resultSummary }),
+      ...(overrides.payload?.errorSummary === undefined ? {} : { errorSummary: overrides.payload.errorSummary }),
     },
   }
 }

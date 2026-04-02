@@ -119,7 +119,18 @@ export type RuntimeRunDiagnosticEvent = RuntimeRunEventBase<'run_diagnostic', {
   stage: string
 }>
 
-export type RuntimeToolEventReservedEvent = RuntimeRunEventBase<'tool_event_reserved', Record<string, unknown>>
+export type RuntimeToolEventPhase = 'started' | 'completed' | 'failed'
+
+export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
+  toolCallId: string
+  toolId: string
+  phase: RuntimeToolEventPhase
+  title: string
+  summary: string
+  inputSummary?: string
+  resultSummary?: string
+  errorSummary?: string
+}>
 
 export type RuntimeRunEvent =
   | RuntimeRunStartedEvent
@@ -128,7 +139,7 @@ export type RuntimeRunEvent =
   | RuntimeRunFailedEvent
   | RuntimeRunCancelledEvent
   | RuntimeRunDiagnosticEvent
-  | RuntimeToolEventReservedEvent
+  | RuntimeToolEvent
 
 export type RuntimeRunTerminalEvent =
   | RuntimeRunCompletedEvent

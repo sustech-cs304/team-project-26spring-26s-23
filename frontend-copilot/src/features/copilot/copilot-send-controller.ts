@@ -6,6 +6,7 @@ import {
   appendAssistantDelta,
   buildRuntimeMessageSendInput,
   cancelAssistantTurn,
+  cancelStreamingToolTurns,
   completeAssistantTurn,
   createPendingAssistantTurn,
   createUserTurn,
@@ -13,6 +14,7 @@ import {
   formatRequestOptionsError,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
+  upsertToolStepTurn,
   type CopilotChatComposerDraft,
   type CopilotConversationTurn,
 } from './copilot-chat-helpers'
@@ -218,6 +220,12 @@ export async function orchestrateCopilotSend(input: {
           }))
           break
         }
+        case 'tool_event': {
+          input.setConversation((current) => upsertToolStepTurn(current, event, {
+            assistantMessageId,
+          }))
+          break
+        }
         case 'run_completed': {
           assistantMessageId = event.payload.assistantMessageId
           didReachTerminal = true
@@ -266,7 +274,7 @@ export async function orchestrateCopilotSend(input: {
         case 'run_cancelled': {
           assistantMessageId = event.payload.assistantMessageId
           didReachTerminal = true
-          input.setConversation((current) => cancelAssistantTurn(current, {
+          input.setConversation((current) => cancelAssistantTurn(cancelStreamingToolTurns(current), {
             assistantMessageId,
             reason: event.payload.reason,
             diagnostic,
@@ -283,15 +291,12 @@ export async function orchestrateCopilotSend(input: {
           }))
           break
         }
-        case 'tool_event_reserved': {
-          break
-        }
       }
     }
   } catch (error) {
     if (isAbortError(error) || input.signal?.aborted === true) {
       input.setSendError(null)
-      input.setConversation((current) => cancelAssistantTurn(current, {
+      input.setConversation((current) => cancelAssistantTurn(cancelStreamingToolTurns(current), {
         assistantMessageId,
         reason: 'cancelled',
         diagnostic,

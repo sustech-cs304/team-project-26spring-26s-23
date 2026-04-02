@@ -7,12 +7,15 @@ import {
   buildRuntimeMessageSendInput,
   createEmptyComposerDraft,
   buildSessionDebugSummary,
+  cancelStreamingToolTurns,
   createComposerDraftFromSession,
+  createPendingAssistantTurn,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
+  upsertToolStepTurn,
 } from './copilot-chat-helpers'
 import { RuntimeRequestError } from './chat-contract'
-import { createRuntimeModelRoute } from './chat-contract.test-support'
+import { createRuntimeModelRoute, createRuntimeToolEvent } from './chat-contract.test-support'
 import {
   createDirectoryState,
   createReadyState,
@@ -126,6 +129,132 @@ describe('copilot chat helpers', () => {
   it('parses minimal requestOptions json object and rejects non-object payloads', () => {
     expect(parseRequestOptionsText('{"trace":true}')).toEqual({ trace: true })
     expect(() => parseRequestOptionsText('[]')).toThrow('requestOptions 必须是 JSON 对象。')
+  })
+
+  it('inserts tool steps ahead of the pending assistant turn and updates the same step on completion/failure', () => {
+    const assistantTurn = createPendingAssistantTurn({
+      assistantMessageId: 'run-1:assistant',
+    })
+    const startedEvent = createRuntimeToolEvent({
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location": "Shenzhen"}',
+      },
+    })
+    const completedEvent = createRuntimeToolEvent({
+      sequence: 3,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'completed',
+        title: '天气工具已返回结果',
+        summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        inputSummary: '{"location": "Shenzhen"}',
+        resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+      },
+    })
+    const failedEvent = createRuntimeToolEvent({
+      sequence: 4,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'failed',
+        title: '工具调用失败',
+        summary: '工具执行失败。',
+        inputSummary: '{"location": "Shenzhen"}',
+        errorSummary: 'boom',
+      },
+    })
+
+    const withStarted = upsertToolStepTurn([assistantTurn], startedEvent, {
+      assistantMessageId: 'run-1:assistant',
+    })
+    expect(withStarted).toHaveLength(2)
+    expect(withStarted[0]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'tool.weather-current:call-1',
+      toolPhase: 'started',
+      status: 'streaming',
+      content: '正在获取 Shenzhen 的天气。',
+    })
+    expect(withStarted[1].kind).toBe('assistant')
+
+    const withCompleted = upsertToolStepTurn(withStarted, completedEvent, {
+      assistantMessageId: 'run-1:assistant',
+    })
+    expect(withCompleted).toHaveLength(2)
+    expect(withCompleted[0]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'tool.weather-current:call-1',
+      toolPhase: 'completed',
+      status: 'completed',
+      title: '天气工具已返回结果',
+      resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+    })
+
+    const withFailed = upsertToolStepTurn(withStarted, failedEvent, {
+      assistantMessageId: 'run-1:assistant',
+    })
+    expect(withFailed).toHaveLength(2)
+    expect(withFailed[0]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'tool.weather-current:call-1',
+      toolPhase: 'failed',
+      status: 'failed',
+      title: '工具调用失败',
+      errorSummary: 'boom',
+    })
+  })
+
+  it('cancels only in-flight tool steps while keeping other turns unchanged', () => {
+    const cancelled = cancelStreamingToolTurns([
+      {
+        id: 'tool:pending',
+        kind: 'tool',
+        title: '调用天气工具',
+        content: '正在获取 Shenzhen 的天气。',
+        status: 'streaming',
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        toolPhase: 'started',
+      },
+      {
+        id: 'tool:done',
+        kind: 'tool',
+        title: '天气工具已返回结果',
+        content: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        status: 'completed',
+        toolCallId: 'tool.weather-current:call-2',
+        toolId: 'tool.weather-current',
+        toolPhase: 'completed',
+      },
+      {
+        id: 'assistant:1',
+        kind: 'assistant',
+        title: '助手响应',
+        content: '第一段',
+        status: 'streaming',
+      },
+    ])
+
+    expect(cancelled[0]).toMatchObject({
+      kind: 'tool',
+      status: 'cancelled',
+      toolPhase: 'cancelled',
+    })
+    expect(cancelled[1]).toMatchObject({
+      kind: 'tool',
+      status: 'completed',
+      toolPhase: 'completed',
+    })
+    expect(cancelled[2]).toMatchObject({
+      kind: 'assistant',
+      status: 'streaming',
+    })
   })
 
   it('formats structured backend errors into explicit user-facing messages', () => {

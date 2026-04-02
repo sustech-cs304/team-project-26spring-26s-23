@@ -7,6 +7,8 @@ import type {
   RuntimeRunStartedEvent,
   RuntimeRunTerminalEvent,
   RuntimeTextDeltaEvent,
+  RuntimeToolEvent,
+  RuntimeToolEventPhase,
 } from './chat-contract'
 
 const TERMINAL_RUNTIME_RUN_EVENT_TYPES = new Set<RuntimeRunEvent['type']>([
@@ -187,14 +189,34 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
           stage: requireNonEmptyString(payload.stage, 'runtime event payload.stage'),
         },
       } satisfies RuntimeRunDiagnosticEvent
-    case 'tool_event_reserved':
+    case 'tool_event': {
+      const toolEventPayload: RuntimeToolEvent['payload'] = {
+        toolCallId: requireNonEmptyString(payload.toolCallId, 'runtime event payload.toolCallId'),
+        toolId: requireNonEmptyString(payload.toolId, 'runtime event payload.toolId'),
+        phase: requireRuntimeToolEventPhase(payload.phase),
+        title: requireNonEmptyString(payload.title, 'runtime event payload.title'),
+        summary: requireNonEmptyString(payload.summary, 'runtime event payload.summary'),
+      }
+      const inputSummary = requireOptionalString(payload.inputSummary, 'runtime event payload.inputSummary')
+      const resultSummary = requireOptionalString(payload.resultSummary, 'runtime event payload.resultSummary')
+      const errorSummary = requireOptionalString(payload.errorSummary, 'runtime event payload.errorSummary')
+      if (inputSummary !== undefined) {
+        toolEventPayload.inputSummary = inputSummary
+      }
+      if (resultSummary !== undefined) {
+        toolEventPayload.resultSummary = resultSummary
+      }
+      if (errorSummary !== undefined) {
+        toolEventPayload.errorSummary = errorSummary
+      }
       return {
-        type: 'tool_event_reserved',
+        type: 'tool_event',
         runId,
         sessionId,
         sequence,
-        payload,
-      }
+        payload: toolEventPayload,
+      } satisfies RuntimeToolEvent
+    }
   }
 }
 
@@ -222,10 +244,22 @@ function requireRuntimeRunEventType(value: unknown): RuntimeRunEvent['type'] {
     case 'run_failed':
     case 'run_cancelled':
     case 'run_diagnostic':
-    case 'tool_event_reserved':
+    case 'tool_event':
       return eventType
     default:
       throw new Error(`Unsupported runtime event type: ${eventType}`)
+  }
+}
+
+function requireRuntimeToolEventPhase(value: unknown): RuntimeToolEventPhase {
+  const phase = requireNonEmptyString(value, 'runtime event payload.phase')
+  switch (phase) {
+    case 'started':
+    case 'completed':
+    case 'failed':
+      return phase
+    default:
+      throw new Error(`Unsupported runtime tool event phase: ${phase}`)
   }
 }
 
@@ -243,6 +277,14 @@ function requireStringArray(value: unknown, label: string): string[] {
   }
 
   return value.map((item, index) => requireString(item, `${label}[${index}]`))
+}
+
+function requireOptionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  return requireString(value, label)
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {

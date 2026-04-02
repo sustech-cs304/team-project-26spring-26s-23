@@ -98,8 +98,23 @@
 }
 
 .copilot-chat__message--assistant,
-.copilot-chat__message--pending {
+.copilot-chat__message--pending,
+.copilot-chat__message--tool {
   align-self: flex-start;
+}
+
+.copilot-chat__message--tool {
+  background: color-mix(in srgb, var(--surface-bg) 82%, var(--accent-soft, #dbeafe) 18%);
+  border-color: color-mix(in srgb, var(--border-color) 60%, var(--accent-border, #93c5fd) 40%);
+}
+
+.copilot-chat__message--tool.copilot-chat__message--failed {
+  border-color: var(--danger-border);
+  background: color-mix(in srgb, var(--danger-soft) 70%, var(--surface-bg) 30%);
+}
+
+.copilot-chat__message--tool.copilot-chat__message--cancelled {
+  border-style: dashed;
 }
 
 .copilot-chat__message--error {
@@ -110,5 +125,67 @@
 
 .copilot-chat__message--error .copilot-chat__message-label,
 .copilot-chat__message--error .copilot-chat__message-text {
+  color: var(--danger-text);
+}
+
+.copilot-chat__message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.copilot-chat__message-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--surface-muted, rgba(148, 163, 184, 0.14));
+  color: var(--text-muted);
+}
+
+.copilot-chat__message-status--completed {
+  color: var(--success-text);
+  background: var(--success-soft);
+}
+
+.copilot-chat__message-status--failed {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}
+
+.copilot-chat__message-status--cancelled {
+  color: var(--warning-text);
+  background: var(--warning-soft);
+}
+
+.copilot-chat__message-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.copilot-chat__message-detail,
+.copilot-chat__message-diagnostic {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.copilot-chat__message-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.copilot-chat__message-detail-label {
+  font-weight: 700;
+}
+
+.copilot-chat__message-detail--error {
   color: var(--danger-text);
 }

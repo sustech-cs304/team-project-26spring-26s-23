@@ -5,7 +5,10 @@ import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
 import { RuntimeRequestError, sendRuntimeMessage } from './chat-contract'
-import { createRuntimeMessageEventStream } from './chat-contract.test-support'
+import {
+  createRuntimeMessageEventStream,
+  createRuntimeToolEvent,
+} from './chat-contract.test-support'
 import {
   clickElement,
   createDirectoryState,
@@ -435,6 +438,81 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('renders tool lifecycle steps before assistant text and updates the same step on completion', async () => {
+    const sendMessage = createToolLifecycleSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先查询天气再回答')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '天气工具已返回结果')
+
+    const textContent = rendered.container.textContent ?? ''
+    expect(textContent).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(textContent).toContain('{"location":"Shenzhen"}')
+    expect(textContent).toContain('这是助手回显')
+    expect(textContent).not.toContain('正在获取 Shenzhen 的天气。')
+    expect(textContent.indexOf('天气工具已返回结果')).toBeLessThan(textContent.indexOf('这是助手回显'))
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--completed')).toHaveLength(1)
+
+    rendered.unmount()
+  })
+
+  it('keeps a failed tool step visible when the runtime emits tool_event failed', async () => {
+    const sendMessage = createToolFailureSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请调用天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '工具调用失败')
+
+    expect(rendered.container.textContent).toContain('工具执行失败。')
+    expect(rendered.container.textContent).toContain('boom')
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--failed')).toHaveLength(1)
+
+    rendered.unmount()
+  })
+
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {
       throw new RuntimeRequestError('tool_not_found: unknown tool', {
@@ -580,6 +658,7 @@ describe('CopilotChatPanel composer interactions', () => {
     const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
     expect(sendButton.title).toBe('取消当前响应')
     expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('响应生成中，可随时取消。')
+    expect(rendered.container.textContent).toContain('调用天气工具')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
 
@@ -594,9 +673,11 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
     expect(rendered.container.textContent).toContain('已取消')
     expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('当前响应已取消，未定稿为成功消息。')
+    expect(rendered.container.textContent).toContain('调用天气工具')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
     expect(rendered.container.textContent).not.toContain('已完成')
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--cancelled')).toHaveLength(1)
 
     rendered.unmount()
   })
@@ -640,6 +721,126 @@ function createResolvedSendMessageSpy() {
   ]))
 }
 
+function createToolLifecycleSendMessageSpy() {
+  return vi.fn((input: Parameters<typeof sendRuntimeMessage>[0]) => createRuntimeMessageEventStream([
+    {
+      type: 'run_started',
+      runId: 'run-tool-success',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-success:assistant',
+      },
+    },
+    createRuntimeToolEvent({
+      runId: 'run-tool-success',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    }),
+    createRuntimeToolEvent({
+      runId: 'run-tool-success',
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'completed',
+        title: '天气工具已返回结果',
+        summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        inputSummary: '{"location":"Shenzhen"}',
+        resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+      },
+    }),
+    {
+      type: 'text_delta',
+      runId: 'run-tool-success',
+      sessionId: input.sessionId,
+      sequence: 4,
+      payload: {
+        assistantMessageId: 'run-tool-success:assistant',
+        delta: '这是助手回显',
+      },
+    },
+    {
+      type: 'run_completed',
+      runId: 'run-tool-success',
+      sessionId: input.sessionId,
+      sequence: 5,
+      payload: {
+        assistantMessageId: 'run-tool-success:assistant',
+        assistantText: '这是助手回显',
+        resolvedModelId: input.modelRoute.snapshot.modelId,
+        resolvedModelRoute: input.modelRoute,
+        resolvedToolIds: ['tool.weather-current'],
+        requestOptions: input.requestOptions ?? {},
+      },
+    },
+  ]))
+}
+
+function createToolFailureSendMessageSpy() {
+  return vi.fn((input: Parameters<typeof sendRuntimeMessage>[0]) => createRuntimeMessageEventStream([
+    {
+      type: 'run_started',
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-failed:assistant',
+      },
+    },
+    createRuntimeToolEvent({
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    }),
+    createRuntimeToolEvent({
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'failed',
+        title: '工具调用失败',
+        summary: '工具执行失败。',
+        inputSummary: '{"location":"Shenzhen"}',
+        errorSummary: 'boom',
+      },
+    }),
+    {
+      type: 'run_failed',
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 4,
+      payload: {
+        code: 'tool_execution_failed',
+        message: 'Tool failed: boom',
+        details: {
+          toolId: 'tool.weather-current',
+          toolCallId: 'tool.weather-current:call-1',
+        },
+      },
+    },
+  ]))
+}
+
 function createPersistedWorkspaceStateLoader() {
   return vi.fn(async () => ({
     ok: true as const,
@@ -661,11 +862,26 @@ function createAbortableSendMessageSpy() {
     }
 
     await Promise.resolve()
+    yield createRuntimeToolEvent({
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    })
+
+    await Promise.resolve()
     yield {
       type: 'text_delta',
       runId: 'run-cancel',
       sessionId: input.sessionId,
-      sequence: 2,
+      sequence: 3,
       payload: {
         assistantMessageId: 'run-cancel:assistant',
         delta: '第一段',
@@ -691,7 +907,7 @@ function createAbortableSendMessageSpy() {
       type: 'text_delta',
       runId: 'run-cancel',
       sessionId: input.sessionId,
-      sequence: 3,
+      sequence: 4,
       payload: {
         assistantMessageId: 'run-cancel:assistant',
         delta: '第二段',
