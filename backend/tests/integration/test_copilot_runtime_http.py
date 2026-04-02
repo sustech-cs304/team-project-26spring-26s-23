@@ -19,7 +19,12 @@ from app.copilot_runtime.contracts import (
     THREAD_GET_METHOD,
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
-from app.copilot_runtime.session_store import RuntimeTextMessage
+from app.copilot_runtime.session_store import (
+    RuntimeStoredModelRoute,
+    RuntimeStoredModelRouteSnapshot,
+    RuntimeStoredRunInput,
+    RuntimeStoredRunPolicy,
+)
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
 from app.desktop_runtime.server import create_app
 
@@ -291,9 +296,27 @@ def test_post_root_message_send_corrupted_session_history_returns_failed_event()
         session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
         session_id = session_response.json()["sessionId"]
         store = app.state.copilot_runtime_session_store
-        session = store.get(session_id)
-        assert session is not None
-        session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
+        store.create_run(
+            thread_id=session_id,
+            run_id="run-corrupted",
+            request=RuntimeStoredRunInput(
+                message_role="assistant",
+                message_content="orphan assistant",
+                policy=RuntimeStoredRunPolicy(
+                    model_route=RuntimeStoredModelRoute(
+                        provider_profile_id="provider-1",
+                        snapshot=RuntimeStoredModelRouteSnapshot(
+                            provider="openai",
+                            endpoint_type="openai-compatible",
+                            base_url="https://example.com/v1",
+                            model_id="gpt-4.1",
+                        ),
+                    )
+                ),
+                agent_id="default",
+            ),
+        )
+        store.mark_run_completed("run-corrupted", assistant_text="projected assistant reply")
         response = client.post(
             "/",
             json=_build_message_send_request(

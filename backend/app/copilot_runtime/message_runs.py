@@ -207,7 +207,9 @@ class RuntimeMessageRunOrchestrator:
                 agent_id=session.bound_agent_id,
                 enabled_tools=request.policy.enabledTools,
             )
-            message_history = build_message_history(session.message_history())
+            message_history = build_message_history(
+                self._session_store.list_messages(session.session_id)
+            )
             resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
             agent_executor = self._build_streaming_executor(agent_descriptor)
         except RuntimeModelRouteResolutionError as exc:
@@ -391,7 +393,10 @@ class RuntimeMessageRunOrchestrator:
             bound_agent_id=session.bound_agent_id,
             user_text=request.message.content,
             assistant_text=assistant_text,
-            metadata={"last_model_id": resolved_model_route.model_id},
+            metadata={
+                "last_model_id": resolved_model_route.model_id,
+                "last_run_id": resolved_run_id,
+            },
         )
         success = RuntimeMessageRunSuccess(
             assistant_text=assistant_text,

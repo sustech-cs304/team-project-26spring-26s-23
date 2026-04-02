@@ -210,19 +210,34 @@ class RuntimeBridge:
         run: RuntimeRunRecord,
     ) -> AsyncIterator[RuntimeRunEvent]:
         events = RuntimeRunEventFactory(session_id=run.thread_id, run_id=run.run_id)
-        yield events.build(
+        event = events.build(
             RUN_CANCELLED_EVENT_TYPE,
             payload={
                 "assistantMessageId": self._assistant_message_id_for_run(run),
                 "reason": "cancelled",
             },
         )
+        self._session_store.record_run_event(
+            run.run_id,
+            event_type=event.type,
+            payload=event.payload,
+            sequence=event.sequence,
+        )
+        yield event
 
     def _update_run_state_from_event(self, *, run_id: str, event: RuntimeRunEvent) -> None:
+        self._session_store.record_run_event(
+            run_id,
+            event_type=event.type,
+            payload=event.payload,
+            sequence=event.sequence,
+        )
         metadata = {"last_event_type": event.type}
         if event.type == RUN_COMPLETED_EVENT_TYPE:
+            assistant_text = event.payload.get("assistantText")
             self._session_store.mark_run_completed(
                 run_id,
+                assistant_text=assistant_text if isinstance(assistant_text, str) else None,
                 metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
             )
             return

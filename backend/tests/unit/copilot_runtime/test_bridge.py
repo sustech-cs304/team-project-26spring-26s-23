@@ -10,10 +10,17 @@ from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
     RuntimeMessageSendRequest,
+    RuntimeRunStartRequest,
     build_runtime_scaffold,
 )
 from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
-from app.copilot_runtime.run_events import RUN_STARTED_EVENT_TYPE, RuntimeRunEvent, RuntimeRunEventFactory
+from app.copilot_runtime.run_events import (
+    RUN_COMPLETED_EVENT_TYPE,
+    RUN_STARTED_EVENT_TYPE,
+    TEXT_DELTA_EVENT_TYPE,
+    RuntimeRunEvent,
+    RuntimeRunEventFactory,
+)
 from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.tool_registry import build_default_tool_registry
 
@@ -34,7 +41,6 @@ class _StubMessageRunOrchestrator:
         self.received_disconnect_callbacks.append(is_client_disconnected)
         for event in self._events:
             yield event
-
 
 
 def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> None:
@@ -73,6 +79,66 @@ def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> Non
     assert orchestrator.received_disconnect_callbacks == [is_client_disconnected]
 
 
+def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    events_factory = RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id)
+    orchestrator = _StubMessageRunOrchestrator(
+        events=[
+            events_factory.build(
+                RUN_STARTED_EVENT_TYPE,
+                payload={"assistantMessageId": f"{run.run_id}:assistant"},
+            ),
+            events_factory.build(
+                TEXT_DELTA_EVENT_TYPE,
+                payload={"assistantMessageId": f"{run.run_id}:assistant", "delta": "Hello back"},
+            ),
+            events_factory.build(
+                RUN_COMPLETED_EVENT_TYPE,
+                payload={
+                    "assistantMessageId": f"{run.run_id}:assistant",
+                    "assistantText": "Hello back",
+                    "resolvedToolIds": [],
+                    "requestOptions": {},
+                },
+            ),
+        ]
+    )
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
+    )
+
+    events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
+    updated_run = bridge.get_run(run_id=run.run_id)
+
+    assert [event.type for event in events] == [
+        RUN_STARTED_EVENT_TYPE,
+        TEXT_DELTA_EVENT_TYPE,
+        RUN_COMPLETED_EVENT_TYPE,
+    ]
+    assert updated_run.status == "completed"
+    assert updated_run.assistant_text == "Hello back"
+    assert [(event.event_type, event.sequence) for event in store.list_run_events(run.run_id)] == [
+        (RUN_STARTED_EVENT_TYPE, 1),
+        (TEXT_DELTA_EVENT_TYPE, 2),
+        (RUN_COMPLETED_EVENT_TYPE, 3),
+    ]
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "Hello"),
+        ("assistant", "Hello back"),
+    ]
+
 
 def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:
     store = InMemorySessionStore()
@@ -96,7 +162,6 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.tools[0].displayName == "File Convert"
 
 
-
 def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -> None:
     store = InMemorySessionStore()
     registry = build_default_agent_registry()
@@ -109,7 +174,6 @@ def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -
 
     with pytest.raises(SessionNotFoundError, match="Unknown session 'missing-session'."):
         bridge.get_capabilities(session_id="missing-session")
-
 
 
 def test_get_capabilities_raises_agent_not_found_for_unknown_bound_agent() -> None:
@@ -131,7 +195,6 @@ async def _collect_events(events) -> list[RuntimeRunEvent]:
     return [event async for event in events]
 
 
-
 def _build_scaffold(
     *,
     agent_registry: AgentRegistry,
@@ -144,6 +207,26 @@ def _build_scaffold(
         tool_registry=build_default_tool_registry(),
     )
 
+
+def _build_run_start_request(*, thread_id: str) -> RuntimeRunStartRequest:
+    return RuntimeRunStartRequest(
+        thread_id=thread_id,
+        message=RuntimeMessagePayload(role="user", content="Hello"),
+        policy=RuntimeMessageExecutionPolicy(
+            modelRoute=RuntimeModelRoute(
+                provider_profile_id="provider-1",
+                snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://example.com/v1",
+                    model_id="gpt-4.1",
+                ),
+            ),
+            enabledTools=(),
+            requestOptions={},
+        ),
+        agent_id="default",
+    )
 
 
 def _build_message_send_request(*, session_id: str) -> RuntimeMessageSendRequest:
