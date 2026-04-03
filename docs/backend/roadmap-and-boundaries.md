@@ -58,9 +58,9 @@ backend 分册如果把这层关系写成“Python runtime 直接读取配置中
 
 ## 当前更适合写成“已实现但仍有边界”的内容
 
-### 兼容方法仍然存在
+### 旧外层方法已经退役
 
-`info`、`agent/connect` 和 `agent/run` 仍然存在于 runtime 中，也仍然可以在兼容链路和旧测试里看到。但这层事实只说明它们仍被保留，不说明它们仍是当前正式主路径。
+`info`、`agent/connect` 和 `agent/run` 已从 runtime surface 退役。它们不再属于当前 supported methods，也不再承担兼容链路职责；旧调用当前只会得到 `method_not_implemented`。
 
 ### Blackboard 与 TIS 已经有可调用能力
 

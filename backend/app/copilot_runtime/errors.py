@@ -9,6 +9,8 @@ from .contracts import RuntimeContract, RuntimeScaffold
 
 INVALID_REQUEST_CODE = "invalid_request"
 METHOD_NOT_IMPLEMENTED_CODE = "method_not_implemented"
+THREAD_NOT_FOUND_CODE = "thread_not_found"
+RUN_NOT_FOUND_CODE = "run_not_found"
 SESSION_NOT_FOUND_CODE = "session_not_found"
 AGENT_NOT_FOUND_CODE = "agent_not_found"
 AGENT_MISMATCH_CODE = "agent_mismatch"
@@ -49,6 +51,38 @@ def build_invalid_request_error(
         scaffold=scaffold,
         requested_method=requested_method,
         details=details,
+    )
+
+
+
+def build_thread_not_found_error(
+    *,
+    thread_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=THREAD_NOT_FOUND_CODE,
+        message=f"Unknown thread '{thread_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"threadId": thread_id},
+    )
+
+
+
+def build_run_not_found_error(
+    *,
+    run_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=RUN_NOT_FOUND_CODE,
+        message=f"Unknown run '{run_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"runId": run_id},
     )
 
 

@@ -1,52 +1,47 @@
 ---
 title: 运行时生命周期
-description: 说明桌面应用当前怎样命名宿主、准备持久化目录、延迟显示窗口，并托管 Python runtime。
+description: 说明桌面应用当前怎样托管 Python runtime、怎样注入宿主私桥 bootstrap，以及窗口怎样进入工作台。
 sidebar_position: 2
 ---
 
 # 运行时生命周期
 
-这篇文档只说明当前桌面应用怎样启动、怎样进入工作台、怎样托管 hosted backend，以及怎样在退出时回收资源。
-
-系统层结构见 [系统架构总览](./architecture-overview.md)，HTTP 端点与字段见 [聊天运行时契约](./chat-runtime-contract.md)，状态持有关系见 [会话与状态模型](./session-and-state-model.md)。
+这篇文档只说明当前桌面应用怎样启动、怎样托管 hosted backend，以及窗口怎样进入工作台。系统层结构见 [系统架构总览](./architecture-overview.md)，HTTP 契约见 [聊天运行时契约](./chat-runtime-contract.md)，状态分层见 [会话与状态模型](./session-and-state-model.md)。
 
 ## 先看当前启动主线
 
 ```text
 Electron main 模块加载
-  → 先设置应用名 CanDue
+  → 尽早设置应用名 CanDue
   → 注册应用生命周期处理器
   → app.whenReady()
-  → 注册主进程 IPC 处理器
+  → 注册主进程 IPC
   → 后台启动 hosted backend
+       → 创建宿主私有 provider route bridge
+       → 生成 bridge bootstrap
+       → 把路径、端口、local token 与 bridge bootstrap 传给 Python runtime
   → 创建主窗口，保持 show: false
-  → renderer 预热启动页主题
-  → renderer 渲染启动页
-  → renderer 等待下一次绘制后发送 bootstrap-window:ready
+  → renderer 预热启动页主题并渲染 BootstrapScreen
+  → renderer 发送 bootstrap-window:ready
   → main 收到 ready 信号后显示窗口
-  → renderer 继续装配公开配置、runtime 快照与工作台
+  → renderer 继续读取公开配置快照与 runtime 快照，装配工作台
 ```
 
-这条链路里有三个容易写错的点：
+这条链路里有三件事最容易写错：
 
-- `CanDue` 的命名收口发生得很早，早于 `userData` 路径解析。
-- 主窗口会先创建，但不会立即显示。
-- hosted backend 的启动与窗口可见时机不是同一个等待点。
+- 窗口显示等待的是启动页 ready，而不是 Python runtime ready。
+- Python runtime 的聊天执行配置不再来自 startup `model` 参数。
+- 宿主在启动阶段只注入 bridge bootstrap，真正的 provider 路由解析与取密钥发生在每次消息执行前。
 
-## 第一步：先完成产品命名与目录根路径收口
+## 第一步：先完成产品命名与运行目录收口
 
 ### Electron 命名已经统一到 `CanDue`
 
-`frontend-copilot/electron/main.ts` 在模块顶层就定义了 `ELECTRON_APPLICATION_NAME = 'CanDue'`，并在任何 `userData` 派生路径被读取前调用 `app.setName()`。`frontend-copilot/electron/main-window.ts` 里的窗口标题也已经统一为 `CanDue`。
+`frontend-copilot/electron/main.ts` 会在任何 `userData` 派生路径被读取前调用 `app.setName('CanDue')`，因此产品名、窗口标题与 `userData` 目录命名都会使用 `CanDue`。
 
-这一步的结果很直接：
+### hosted runtime 目录仍然由 `userData` 派生
 
-- Electron 的产品名、窗口标题和打包元数据使用同一组命名。
-- `app.getPath('userData')` 解析出的宿主目录也跟随这组命名一致。
-
-### hosted runtime 目录由 `userData` 派生
-
-主进程首次需要路径时，会调用 `createHostedRuntimePaths(app.getPath('userData'))`。当前目录结构会从 `userData` 根目录派生出下面几层：
+主进程准备运行路径时，会从 `userData` 根目录派生出下面这组目录：
 
 - `desktop-runtime/`
 - `desktop-runtime/config/`
@@ -54,157 +49,132 @@ Electron main 模块加载
 - `desktop-runtime/database/`
 - `desktop-runtime/state/`
 
-统一配置中心和 settings workspace 都挂在 `desktop-runtime/config/` 下面。当前统一配置中心会创建自己的 `config-center/` 根目录，settings workspace 的 `settings-workspace-state.json` 与 `settings-workspace-secrets.json` 也会写到这个根目录里。
+settings workspace 与统一配置中心都落在 `config/` 子树下。provider profiles 和 secrets 继续由 Electron 主进程持有，不会在启动阶段被整体下发给 Python runtime。
 
 ## 第二步：`app.whenReady()` 之后进入宿主装配
 
-### 生命周期处理器会更早注册
-
-主进程在模块加载阶段就调用应用生命周期注册逻辑，因此 `window-all-closed`、`activate` 和 `before-quit` 这些处理器会早于窗口创建完成注册。
-
-### `whenReady()` 后当前会做三件事
-
 `app.whenReady()` 成功后，主进程会依次执行下面这些动作：
 
-1. 它调用主进程 IPC 注册函数，把 renderer 需要的接口挂到 IPC 上。
-2. 它通过 `void startHostedBackend()` 在后台启动 Python hosted backend。
-3. 它立即创建主窗口。
+1. 它注册主进程 IPC，把公开配置、settings workspace 和 runtime 快照接口暴露给 renderer。
+2. 它在后台启动 hosted backend。
+3. 它立即创建主窗口，但窗口仍然保持隐藏。
 
-这三步的组合意味着，窗口创建不会等待 backend ready；backend 启动失败时，用户看到的也会是启动页或失败态壳层，而不是一个完全没有界面的进程。
+这三步并行推进，所以用户先看到的是启动页或失败态壳层，而不是“等待 backend ready 后再出现窗口”的流程。
 
-## 第三步：主窗口先创建，再等待启动页 ready
+## 第三步：主进程先创建宿主私有 provider route bridge
 
-### 主窗口当前采用延迟显示
+### 宿主私桥在 Electron main 里创建
 
-`frontend-copilot/electron/main-window.ts` 创建 `BrowserWindow` 时明确设置了 `show: false`。窗口创建后会开始加载 renderer，但不会在 `did-finish-load` 时直接显示。
+当前主进程会先创建一个只监听 loopback 的宿主私桥。桥的职责很单一：
 
-### renderer 会主动通知“启动页已经可以显示”
+- 它接收 Python runtime 发来的 `providerProfileId + snapshot` 请求。
+- 它调用 settings workspace 的 `resolveProviderRoute()` 读取当前 provider profile 与 secret。
+- 它返回本轮执行所需的连接信息与认证信息，或者返回稳定的解析错误。
 
-renderer 入口位于 `frontend-copilot/src/main.tsx`。当前链路是这样的：
+对应实现主要落在下面这些文件里：
 
-1. renderer 先调用 `primeStartupTheme()` 预热启动页主题。
-2. 它渲染 `BootstrapScreen`。
-3. 它等待两个 `requestAnimationFrame` 周期。
-4. 它再调用 `notifyBootstrapScreenReady()`，通过 `bootstrap-window:ready` 告诉主进程可以显示窗口。
+- `frontend-copilot/electron/runtime/host-model-route-bridge.ts`
+- `frontend-copilot/electron/main.ts`
+- `frontend-copilot/electron/settings-workspace/service.ts`
 
-主进程收到这个信号后，才会进入显示窗口的控制逻辑。
+### 启动阶段只下发 bridge bootstrap
 
-### 这一步等待的不是 runtime ready
+主进程启动 Python runtime 时，会把下面这些信息作为启动参数传入：
 
-当前窗口显示等待的是“启动页已经实际绘制”，而不是“Python runtime 已经健康就绪”或“工作台已经全部完成装配”。这也是当前启动体验比较稳定的原因：用户先看到的是已准备好的启动页，而不是白屏或闪烁主题。
+- host 与 port。
+- `app_mode` 与 `environment`。
+- 各类运行目录路径。
+- 可选的 `--local-token`。
+- `--host-model-route-bridge-url` 与 `--host-model-route-bridge-token`。
 
-## 第四步：公开配置快照先参与启动装配
+这里要分清边界：bridge bootstrap 只是让 Python 知道“去哪里、用什么 token 调宿主私桥”。聊天真正使用哪条 provider 路由，仍然要等 [`message/send`](./chat-runtime-contract.md) 到来后，由请求里的 `modelRoute` 决定。
 
-### 启动页主题会先读取公开配置
+## 第四步：Python runtime 在启动时只装配运行边界
 
-renderer 在真正渲染 React 根节点之前，会先从公开配置快照中尝试读取主题字段。这样做的结果是，启动页在首次可见前就能尽量贴近当前配置，而不是先显示默认主题再切换。
+### Python server 会创建宿主私桥客户端
 
-### 根装配会并行读取公开配置与 runtime 快照
+Python runtime 启动后，会先解析运行参数，再构造一个宿主私桥客户端：
 
-`frontend-copilot/src/features/copilot/config.ts` 中的 `loadCopilotConfigState()` 会并行做两件事：
+- `backend/app/desktop_runtime/config.py` 负责读取目录、网络参数、local token 与 bridge bootstrap。
+- `backend/app/desktop_runtime/host_model_route_bridge.py` 负责在消息执行阶段请求宿主私桥。
+- `backend/app/desktop_runtime/server.py` 会把这个客户端注入聊天运行时依赖。
 
-- 它读取统一配置中心投影出来的公开快照。
-- 它读取主进程整理后的 hosted runtime 快照。
+### startup 阶段不再传聊天模型执行配置
 
-renderer 会把这两部分信息合成为 `CopilotConfigState`。因此，当前启动状态不是单看配置文件，也不是单看 runtime，而是两类事实一起决定。
+当前启动层已经不再用 startup `model` 参数来决定聊天执行模型。对 Python runtime 来说，启动阶段只负责这些事情：
 
-### 公开配置已经具备订阅更新链路
+- 拉起 loopback HTTP 服务。
+- 装配控制面端点。
+- 准备聊天运行时依赖。
+- 保存 bridge bootstrap，以便后续按请求解析 provider 路由。
 
-主进程在公开补丁写回后，会广播新的公开快照。renderer 订阅到这类更新后，会重新计算根装配状态，并顺带再次读取当前 runtime 快照。
+如果文档仍然把“启动时传 `model` 给 runtime”写成当前主路径，那就已经落后于实现事实了。
 
-这条链路说明一件事：当前公开配置不是一次性快照。主题、动画、`runtimeUrl`、`agentName` 或宿主投影模型发生变化后，renderer 可以收到新的公开快照并刷新自己的根状态。
+## 第五步：renderer 先等待启动页 ready，再显示窗口
 
-### settings workspace 不参与根装配快照
+### 主窗口仍然采用延迟显示
 
-settings workspace 的普通状态与 secrets 也由主进程持久化，但它们不进入公开快照。启动主线里的根装配只消费公开配置中心与 hosted runtime 快照；设置页自己的完整状态会在进入设置工作区后通过独立 API 读取。
+主窗口创建时明确设置了 `show: false`。窗口创建后会开始加载 renderer，但不会在 `did-finish-load` 时直接显示。
 
-## 第五步：主进程托管 Python hosted backend
+### renderer 会主动发出 ready 信号
 
-### 启动前会先准备目录与启动参数
+renderer 入口会先预热启动页主题，再渲染 `BootstrapScreen`，随后通过 `bootstrap-window:ready` 告诉主进程启动页已经可以显示。主进程收到这个信号后，才会真正显示窗口。
 
-主进程在确保 hosted backend 服务时，会先准备 runtime 目录，再解析命令行参数，并从统一配置中心读取 `backendExposed.model` 作为已配置默认模型。
+这一步等待的是“启动页已经实际绘制”，不是“聊天后端已经 ready”。
 
-这一步说明两件事：
+## 第六步：根装配先读取公开配置快照与 runtime 快照
 
-- 公开配置中的模型字段会影响宿主启动 Python runtime 的参数。
-- Python runtime 当前不会自己去读取配置中心或 settings workspace 文档。
+renderer 真正装配工作台时，会先读取两类输入：
 
-### 启动模式仍然分 development 与 bundled
+- 统一配置中心投影出来的公开快照。
+- 主进程整理后的 hosted runtime 快照。
 
-主进程仍然根据 `app.isPackaged` 决定 Python runtime 的启动方式：
+这一步有两个边界：
 
-- 在 development 模式下，它会从工作区后端源码目录启动本地 Python runtime。
-- 在 bundled 模式下，它会从打包后的运行时清单解析 Python 可执行文件、工作目录与入口模块。
+- settings workspace 的完整 provider 状态与 secrets 不会直接进入公开快照。
+- 根装配当前判断连接可用，主要仍然看 `runtimeUrl`，而不是旧的全局 model 字段。
 
-### renderer 读取的是宿主整理后的 runtime 快照
+## 第七步：聊天执行阶段才发生真实路由解析
 
-preload 暴露给 renderer 的是 `copilotRuntime.load()` 与 `copilotRuntime.retry()` 两个接口。它们对应的是主进程整理后的 `CopilotRuntimeSnapshot`，而不是 Python 进程内部对象。
+当用户真正发送一条 [`message/send`](./chat-runtime-contract.md) 时，当前主线会按下面顺序工作：
 
-当前快照至少会告诉 renderer：
+1. 前端把 `providerProfileId + snapshot` 放进 `policy.modelRoute`，并在 `enabledTools` 中提交本轮启用工具 ID。
+2. Python runtime 创建 run，先发出 `run_started` 事件。
+3. run 编排层通过宿主私桥解析当前 provider profile 与 API key。
+4. 宿主私桥用请求中的路由快照校验 `provider`、`endpointType`、`baseUrl` 与 `modelId`。
+5. 校验通过后，Python runtime 才会真正打开上游模型流。
+6. 模型发生工具调用时，运行时会在同一条消息流中发出 `tool_event`，并按 `started`、`completed`、`failed` 回传生命周期阶段。
 
-- hosted backend 处于 `starting`、`ready`、`failed`、`degraded` 或 `stopped` 哪种状态。
-- 当前期望模式与已解析模式分别是什么。
-- 当前是否已经有可用的 `runtimeUrl`。
-- 最近一次失败摘要是什么。
+因此，provider 状态与 secrets 的真源始终留在 Electron 主进程。Python runtime 拿到的是本轮执行所需的最小结果，而不是 settings workspace 的原始文档。
 
-## 第六步：根装配怎样判断能否进入工作台
+## 第八步：退出、失败与恢复
 
-### hosted runtime ready 时，系统直接进入宿主管理路径
+### 正常退出时，主进程会先停止 Python runtime 和宿主私桥
 
-当 hosted runtime 处于 `ready` 或 `degraded`，并且主进程给出了可用 `runtimeUrl` 时，renderer 会把当前连接来源认定为宿主管理路径。
+应用进入退出序列后，主进程会先停止 hosted backend，再停止宿主私桥，最后继续真正退出。
 
-### development override 仍然保留
+### 失败摘要继续留在宿主快照里
 
-当前公开配置中的 `hostConfig.runtimeUrl` 仍然保留开发态 override 作用。在未打包的 development 场景里，如果 hosted backend 失败或停止，但公开配置里配置了可用 `runtimeUrl`，renderer 仍然可以用这个地址进入可连接状态。
+如果 runtime 在启动阶段失败，宿主快照会进入 `failed`；如果它曾经 ready，后来又退出，快照会进入 `degraded`。这些失败摘要会进入主进程日志与 runtime 快照，供 renderer 展示失败态。
 
-### 空白首次状态已经更明确
+### 用户仍然可以通过 retry 重新触发启动
 
-如果 hosted runtime 处于 `stopped`，同时公开配置里也没有 `runtimeUrl`，根装配会把当前系统视为 `empty`。这和最近的默认值收口是一致的：首次状态允许是空白的，而不是强行预填一组 provider 或模型。
-
-## 当前 preload 暴露面的职责
-
-当前 preload 负责把主进程受控能力暴露给 renderer，主要包括下面几组接口：
-
-| 能力 | 当前接口或信道 | 作用 |
-| --- | --- | --- |
-| 公开配置快照读取 | `configCenterPublicSnapshot.load()` | 读取公开配置快照。 |
-| 公开配置补丁写回 | `configCenterPublicPatch.apply()` | 提交公开字段补丁。 |
-| 公开配置订阅 | `configCenterPublicSnapshotSubscription` | 接收公开快照更新广播。 |
-| settings workspace 普通状态 | `settings-workspace-state:load` 与 `settings-workspace-state:save` | 读取和保存设置工作区普通状态。 |
-| settings workspace secrets | `settings-workspace-secrets:*` | 读取、保存和清除 provider API key 与 CAS 密码。 |
-| hosted runtime 快照 | `copilot-runtime:load` 与 `copilot-runtime:retry` | 读取当前 runtime 快照并触发重试。 |
-| 启动页 ready | `bootstrap-window:ready` | 告诉主进程启动页已经可显示。 |
-
-这套暴露面已经不再是早期单一 settings bridge 的结构，而是按公开配置、设置工作区、runtime 和启动控制四类职责分开。
-
-## 退出、失败与恢复
-
-### 正常退出时，主进程会先停止 hosted backend
-
-应用进入 `before-quit` 时，主进程会先启动清理序列，再停止 hosted backend。清理结束后才继续真正退出。
-
-### 失败摘要会保留在宿主快照里
-
-如果 runtime 在启动阶段失败，状态会进入 `failed`；如果它曾经 ready，后来又退出，状态会进入 `degraded`。这些失败摘要会进入主进程日志与 runtime 快照，供 renderer 展示失败态。
-
-### 用户可以通过 retry 重新触发启动
-
-renderer 当前可以调用 `copilotRuntime.retry()`，由主进程重新准备路径、复用 hosted backend 服务，并再次尝试拉起 Python runtime。
+renderer 当前可以调用重试接口，让主进程重新准备运行路径、重建宿主私桥，并再次尝试拉起 Python runtime。
 
 ## 当前已经成立的生命周期事实
 
 - 应用名、窗口标题与 `userData` 命名已经统一收口到 `CanDue`。
 - 主窗口已经采用延迟显示，显示时机由启动页 ready 信号决定。
-- 公开配置快照会参与启动页主题和根装配，并且已经有订阅更新链路。
-- settings workspace 已经形成独立的主进程持久化接口，但它不参与根装配公开快照。
-- hosted backend 的创建、启动、失败、重试与停止都由 Electron 主进程托管。
+- Electron 主进程会先创建宿主私有 provider route bridge，再启动 Python runtime。
+- Python runtime 在启动阶段只接收运行边界参数和 bridge bootstrap，不再接收聊天模型执行配置。
+- 真实 provider 路由解析、快照校验与取密钥发生在每次 [`message/send`](./chat-runtime-contract.md) 执行阶段。
 
 ## 当前仍然要保守描述的地方
 
-- hosted runtime 的全部状态变化还没有形成面向 renderer 的持续实时推送。
-- settings workspace 的变化当前也没有跨工作区的统一订阅流。
-- 窗口显示不等待 runtime ready，因此用户首次可见内容仍然可能是启动页或失败态壳层。
-- 会话历史仍然留在 Python 进程内存里，runtime 重启后不会自动恢复。
+- hosted runtime 的全部状态变化还没有形成完整、持续的 renderer 实时推送流。
+- settings workspace 的变化当前也没有跨窗口统一订阅流。
+- 会话历史仍然保存在 Python 进程内存里，runtime 重启后不会自动恢复。
+- 统一配置中心里仍然保留一些旧字段，但它们已经不再决定聊天主线执行。
 
 ## 相关文档
 

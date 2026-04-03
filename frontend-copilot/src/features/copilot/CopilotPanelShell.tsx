@@ -11,10 +11,8 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import { CopilotComposer } from './CopilotComposer'
 import { CopilotMessageList } from './CopilotMessageList'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
-import type {
-  CopilotChatComposerDraft,
-  CopilotConversationTurn,
-} from './copilot-chat-helpers'
+import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
+import type { CopilotMessageListItem } from './run-segment-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
 import type { CopilotBootstrapState } from './types'
@@ -28,13 +26,17 @@ export interface CopilotPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  sendError: string | null
   modelGroups: CopilotModelGroup[]
   composerDraft: CopilotChatComposerDraft
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
+  onCancelCurrentRun: () => void
   sendStatus: 'idle' | 'sending'
+  canCancelSend: boolean
   sendDisabledReason: string | null
-  conversation: CopilotConversationTurn[]
+  runNotice: string | null
+  conversation: CopilotMessageListItem[]
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -123,9 +125,12 @@ function renderSessionShell(props: CopilotPanelShellProps) {
           draft={props.composerDraft}
           onDraftChange={props.onComposerDraftChange}
           onSubmit={props.onSend}
+          onCancel={props.onCancelCurrentRun}
           sendStatus={props.sendStatus}
+          canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
-          sessionError={props.sessionError}
+          composerError={props.sendError ?? props.sessionError}
+          runNotice={props.runNotice}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}

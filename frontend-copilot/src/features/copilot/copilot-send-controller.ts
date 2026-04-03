@@ -1,25 +1,39 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { AssistantSessionShell } from '../../workbench/types'
-import { sendRuntimeMessage } from './chat-contract'
+import { sendRuntimeMessage } from './thread-run-contract'
 import {
   buildRuntimeMessageSendInput,
-  createAssistantTurn,
-  createErrorTurn,
-  createUserTurn,
   formatRequestOptionsError,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
   type CopilotChatComposerDraft,
-  type CopilotConversationTurn,
 } from './copilot-chat-helpers'
+import {
+  buildCopilotRunSegmentViewModel,
+  createUserMessageListItem,
+  type CopilotMessageListItem,
+} from './run-segment-view-model'
+import { getRuntimeModelRouteStreamingSupportReason } from './model-picker'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
-import type { CopilotBootstrapState } from './types'
+import {
+  applyRuntimeRunEventToCopilotRunState,
+  createStartingCopilotRunState,
+  markCopilotRunCancelled,
+  markCopilotRunTransportFailed,
+  registerCopilotRunStartResponse,
+} from './run-segment-reducer'
+import type {
+  CopilotBootstrapState,
+  CopilotRunState,
+} from './types'
+
+export { createIdleCopilotRunState } from './run-segment-reducer'
 
 export function getCopilotSendDisabledReason(input: {
   state: CopilotBootstrapState
   sessionShell: AssistantSessionShell | null
-  sendStatus: 'idle' | 'sending'
+  runState: CopilotRunState
   composerDraft: CopilotChatComposerDraft
   hasAvailableModels: boolean
 }): string | null {
@@ -31,7 +45,7 @@ export function getCopilotSendDisabledReason(input: {
     return '请先创建会话。'
   }
 
-  if (input.sendStatus === 'sending') {
+  if (input.runState.phase === 'starting' || input.runState.phase === 'streaming') {
     return '当前消息仍在发送中。'
   }
 
@@ -43,8 +57,13 @@ export function getCopilotSendDisabledReason(input: {
     return '请输入消息内容。'
   }
 
-  if (input.composerDraft.model.trim() === '') {
-    return '请提供本次发送要使用的模型 ID。'
+  if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
+    return '请先选择本次发送要使用的模型路由。'
+  }
+
+  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
+  if (streamingSupportReason !== null) {
+    return streamingSupportReason
   }
 
   return null
@@ -54,16 +73,21 @@ export async function orchestrateCopilotSend(input: {
   state: CopilotBootstrapState
   sessionShell: AssistantSessionShell | null
   composerDraft: CopilotChatComposerDraft
-  sendStatus: 'idle' | 'sending'
+  runState: CopilotRunState
   hasAvailableModels: boolean
   composerInputRef: RefObject<HTMLTextAreaElement>
   sendMessage: typeof sendRuntimeMessage
-  setSendStatus: Dispatch<SetStateAction<'idle' | 'sending'>>
+  setRunState: Dispatch<SetStateAction<CopilotRunState>>
   setSendError: Dispatch<SetStateAction<string | null>>
   setComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>>
-  setConversation: Dispatch<SetStateAction<CopilotConversationTurn[]>>
+  setConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>>
+  signal?: AbortSignal
 }) {
-  if (!isCopilotConnectableState(input.state) || input.sessionShell === null || input.sendStatus === 'sending') {
+  if (!isCopilotConnectableState(input.state) || input.sessionShell === null) {
+    return
+  }
+
+  if (input.runState.phase === 'starting' || input.runState.phase === 'streaming') {
     return
   }
 
@@ -78,8 +102,14 @@ export async function orchestrateCopilotSend(input: {
     return
   }
 
-  if (input.composerDraft.model.trim() === '') {
-    input.setSendError('请提供本次发送要使用的模型 ID。')
+  if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
+    input.setSendError('请先选择本次发送要使用的模型路由。')
+    return
+  }
+
+  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
+  if (streamingSupportReason !== null) {
+    input.setSendError(streamingSupportReason)
     return
   }
 
@@ -91,18 +121,33 @@ export async function orchestrateCopilotSend(input: {
     return
   }
 
-  const runtimeInput = buildRuntimeMessageSendInput({
-    runtimeUrl: input.state.runtimeUrl,
-    sessionShell: input.sessionShell,
-    draft: {
-      ...input.composerDraft,
-      messageText: trimmedMessage,
-    },
-    requestOptions,
-  })
+  let runtimeInput
+  try {
+    runtimeInput = buildRuntimeMessageSendInput({
+      runtimeUrl: input.state.runtimeUrl,
+      sessionShell: input.sessionShell,
+      draft: {
+        ...input.composerDraft,
+        messageText: trimmedMessage,
+      },
+      requestOptions,
+    })
+  } catch (error) {
+    input.setSendError(formatRuntimeMessageSendError(error))
+    return
+  }
 
-  input.setSendStatus('sending')
+  input.setConversation((current) => [
+    ...current,
+    ...buildCopilotRunSegmentViewModel(input.runState),
+    createUserMessageListItem(trimmedMessage),
+  ])
   input.setSendError(null)
+  input.setRunState(createStartingCopilotRunState({
+    threadId: input.sessionShell.sessionId,
+    activeModelRoute: runtimeInput.modelRoute,
+    requestOptions,
+  }))
   input.setComposerDraft((current) => ({
     ...current,
     messageText: '',
@@ -112,24 +157,49 @@ export async function orchestrateCopilotSend(input: {
   }
 
   try {
-    const response = await input.sendMessage(runtimeInput)
-    input.setConversation((current) => [
-      ...current,
-      createUserTurn(trimmedMessage),
-      createAssistantTurn(response),
-    ])
+    for await (const event of input.sendMessage({
+      ...runtimeInput,
+      signal: input.signal,
+      onRunStart: (response) => {
+        input.setRunState((current) => registerCopilotRunStartResponse(current, {
+          runId: response.run.runId,
+          threadId: response.run.threadId,
+        }))
+      },
+    })) {
+      if (event.type === 'run_failed') {
+        input.setSendError(`${event.payload.code}: ${event.payload.message}`)
+      } else if (event.type === 'run_completed' || event.type === 'run_cancelled') {
+        input.setSendError(null)
+      }
+
+      input.setRunState((current) => applyRuntimeRunEventToCopilotRunState(current, event))
+    }
   } catch (error) {
-    const formattedError = formatRuntimeMessageSendError(error)
-    input.setSendError(formattedError)
-    input.setConversation((current) => [
-      ...current,
-      createUserTurn(trimmedMessage),
-      createErrorTurn(formattedError),
-    ])
+    if (isAbortError(error) || input.signal?.aborted === true) {
+      input.setSendError(null)
+      input.setRunState((current) => markCopilotRunCancelled(current, {
+        reason: 'cancelled',
+      }))
+    } else {
+      const formattedError = formatRuntimeMessageSendError(error)
+      input.setSendError(formattedError)
+      input.setRunState((current) => markCopilotRunTransportFailed(current, {
+        code: 'stream_transport_failed',
+        message: formattedError,
+        details: {},
+      }))
+    }
   } finally {
-    input.setSendStatus('idle')
     requestAnimationFrame(() => {
       input.composerInputRef.current?.focus()
     })
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'name' in error
+    && error.name === 'AbortError'
 }

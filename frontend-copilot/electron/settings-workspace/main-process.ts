@@ -1,5 +1,6 @@
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 import { createSettingsWorkspacePaths } from './paths'
+import type { SettingsWorkspaceProviderRouteResolveRequest, SettingsWorkspaceProviderRouteResolveResult } from './provider-route-resolver'
 import { createSettingsWorkspaceStorage } from './service'
 import type {
   SettingsWorkspaceClearProviderApiKeyRequest,
@@ -45,6 +46,9 @@ export interface ElectronSettingsWorkspaceService {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  resolveProviderRoute: (
+    request: SettingsWorkspaceProviderRouteResolveRequest,
+  ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
 }
 
 export function createElectronSettingsWorkspaceService(
@@ -201,6 +205,13 @@ export function createElectronSettingsWorkspaceService(
     }
   }
 
+  const resolveProviderRoute = async (
+    request: SettingsWorkspaceProviderRouteResolveRequest,
+  ): Promise<SettingsWorkspaceProviderRouteResolveResult> => {
+    const storage = await createStorage(options)
+    return await storage.resolveProviderRoute(request)
+  }
+
   return {
     loadState,
     saveState,
@@ -210,6 +221,7 @@ export function createElectronSettingsWorkspaceService(
     clearProviderSecret,
     saveSustechCasSecret,
     clearSustechCasSecret,
+    resolveProviderRoute,
   }
 }
 

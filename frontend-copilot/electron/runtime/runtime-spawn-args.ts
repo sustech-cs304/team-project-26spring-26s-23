@@ -6,7 +6,8 @@ export interface DesktopRuntimeArgumentInput {
   host: string
   port: number
   localToken: string
-  model: string | null
+  hostModelRouteBridgeUrl: string | null
+  hostModelRouteBridgeToken: string | null
   appMode: string
   environment: string
   paths: HostedRuntimePaths
@@ -31,7 +32,16 @@ export function buildDesktopRuntimeArguments(input: DesktopRuntimeArgumentInput)
   appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.BACKEND_STDERR_LOG_FILE, input.paths.backendStderrLogFile)
   appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.RUNTIME_SNAPSHOT_FILE, input.paths.runtimeSnapshotFile)
   appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.LAST_FAILURE_FILE, input.paths.lastFailureFile)
-  appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.MODEL, input.model)
+  appendCommandLineArgument(
+    args,
+    DESKTOP_RUNTIME_ARGUMENT_NAMES.HOST_MODEL_ROUTE_BRIDGE_URL,
+    input.hostModelRouteBridgeUrl,
+  )
+  appendCommandLineArgument(
+    args,
+    DESKTOP_RUNTIME_ARGUMENT_NAMES.HOST_MODEL_ROUTE_BRIDGE_TOKEN,
+    input.hostModelRouteBridgeToken,
+  )
   appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.LOCAL_TOKEN, input.localToken)
 
   return args

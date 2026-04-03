@@ -8,7 +8,6 @@ import {
 } from './runtime-config-support'
 
 export interface HostedRuntimeCommandLineOptions {
-  model?: string | null
   host?: string
   appMode?: string
   environment?: string
@@ -32,14 +31,14 @@ export function collectForwardedElectronMainProcessArguments(
   argv: readonly string[],
 ): string[] {
   const separatorIndex = argv.indexOf('--')
-  if (separatorIndex !== -1) {
-    return argv.slice(separatorIndex + 1)
-  }
+  const candidateArgs = separatorIndex === -1
+    ? argv
+    : argv.slice(separatorIndex + 1)
 
   const forwardedArgs: string[] = []
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index]
+  for (let index = 0; index < candidateArgs.length; index += 1) {
+    const token = candidateArgs[index]
     if (typeof token !== 'string') {
       continue
     }
@@ -55,7 +54,7 @@ export function collectForwardedElectronMainProcessArguments(
       continue
     }
 
-    const nextValue = argv[index + 1]
+    const nextValue = candidateArgs[index + 1]
     if (typeof nextValue === 'string' && nextValue.trim() !== '' && !nextValue.startsWith('--')) {
       forwardedArgs.push(nextValue)
       index += 1
@@ -79,12 +78,6 @@ export function parseHostedRuntimeCommandLineArguments(
     const [flag, inlineValue] = splitCommandLineFlagValue(token)
 
     switch (flag) {
-      case HOSTED_RUNTIME_MAIN_PROCESS_ARGUMENT_NAMES.MODEL: {
-        const { nextIndex, value } = readCommandLineFlagValue(argv, index, flag, inlineValue)
-        options.model = value ?? null
-        index = nextIndex
-        break
-      }
       case HOSTED_RUNTIME_MAIN_PROCESS_ARGUMENT_NAMES.HOST: {
         const { nextIndex, value } = readCommandLineFlagValue(argv, index, flag, inlineValue)
         options.host = value

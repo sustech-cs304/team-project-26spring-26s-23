@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   resolve: {
-    extensions: ['.mjs', '.ts', '.js', '.mts', '.tsx', '.jsx', '.json'],
+    extensions: ['.mjs', '.mts', '.ts', '.tsx', '.js', '.jsx', '.json'],
   },
   test: {
     environment: 'node',

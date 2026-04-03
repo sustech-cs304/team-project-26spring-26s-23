@@ -10,7 +10,6 @@ import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
-import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/domain-schema'
 import {
   createElectronSettingsWorkspaceService,
   type ElectronSettingsWorkspaceService,
@@ -27,6 +26,7 @@ import type {
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
 } from './settings-workspace/ipc'
+import type { SettingsWorkspaceProviderRouteResolveRequest, SettingsWorkspaceProviderRouteResolveResult } from './settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/state-schema'
 import type { HostedRuntimePaths } from './runtime/runtime-paths'
 
@@ -63,7 +63,9 @@ export interface MainProcessServices {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
-  loadConfiguredHostedRuntimeModel: () => Promise<string | null>
+  resolveSettingsWorkspaceProviderRoute: (
+    request: SettingsWorkspaceProviderRouteResolveRequest,
+  ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
 }
 
 export function createMainProcessServices(
@@ -95,11 +97,6 @@ export function createMainProcessServices(
     })
 
     return settingsWorkspaceService
-  }
-
-  async function loadConfiguredHostedRuntimeModel(): Promise<string | null> {
-    const loadResult = await getUnifiedConfigService().loadSnapshot()
-    return loadResult.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].values.model
   }
 
   return {
@@ -145,6 +142,10 @@ export function createMainProcessServices(
     async clearSettingsWorkspaceSustechCasSecret(): Promise<SettingsWorkspaceSustechCasSecretMutationResult> {
       return await getSettingsWorkspaceService().clearSustechCasSecret()
     },
-    loadConfiguredHostedRuntimeModel,
+    async resolveSettingsWorkspaceProviderRoute(
+      request: SettingsWorkspaceProviderRouteResolveRequest,
+    ): Promise<SettingsWorkspaceProviderRouteResolveResult> {
+      return await getSettingsWorkspaceService().resolveProviderRoute(request)
+    },
   }
 }

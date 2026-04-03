@@ -1,4 +1,4 @@
-"""Protocol parsing and normalization for the minimal Copilot runtime run bridge."""
+"""Protocol parsing and normalization for the Copilot runtime thread/run bridge."""
 
 from __future__ import annotations
 
@@ -8,20 +8,25 @@ from typing import Any
 from fastapi import Request, status
 
 from .contracts import (
-    AGENT_CONNECT_METHOD,
-    AGENT_RUN_METHOD,
     CAPABILITIES_GET_METHOD,
-    INFO_METHOD,
     MESSAGE_SEND_METHOD,
+    RUN_CANCEL_METHOD,
+    RUN_START_METHOD,
+    RUN_STREAM_METHOD,
     SESSION_CREATE_METHOD,
+    THREAD_CREATE_METHOD,
+    THREAD_GET_METHOD,
     RuntimeCapabilitiesGetRequest,
-    RuntimeConnectRequest,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
     RuntimeMessageSendRequest,
-    RuntimeRunRequest,
+    RuntimeRunCancelRequest,
+    RuntimeRunStartRequest,
+    RuntimeRunStreamRequest,
     RuntimeScaffold,
     RuntimeSessionCreateRequest,
+    RuntimeThreadCreateRequest,
+    RuntimeThreadGetRequest,
 )
 from .errors import (
     RuntimeErrorResponse,
@@ -29,21 +34,7 @@ from .errors import (
     build_invalid_request_error,
     build_unsupported_message_shape_error,
 )
-
-INFO_REQUEST_KEYS = frozenset({"properties", "frontendUrl", "method"})
-RUN_LIKE_REQUEST_KEYS = frozenset(
-    {
-        "threadId",
-        "runId",
-        "messages",
-        "state",
-        "actions",
-        "metaEvents",
-        "nodeName",
-        "agentName",
-        "name",
-    }
-)
+from .model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
 
 
 class RuntimeProtocolError(RuntimeError):
@@ -92,29 +83,18 @@ class RuntimeProtocolParser:
         return payload
 
     def extract_method(self, payload: dict[str, Any] | None) -> str:
-        if payload is None or payload == {}:
-            return INFO_METHOD
-
-        request_keys = set(payload)
-        if request_keys.issubset(INFO_REQUEST_KEYS) and request_keys <= {"properties", "frontendUrl"}:
-            return INFO_METHOD
-
-        method = payload.get("method")
-        if method is None:
-            inferred_method = self._infer_implicit_method(payload)
-            if inferred_method is not None:
-                return inferred_method
-
+        if payload is None:
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
                     message=(
-                        "Runtime request must provide a supported info shape or an explicit 'method' field."
+                        "Runtime request must provide a JSON object with an explicit 'method' field."
                     ),
                     scaffold=self._scaffold,
                 ),
             )
 
+        method = payload.get("method")
         if not isinstance(method, str):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -134,146 +114,152 @@ class RuntimeProtocolParser:
                 ),
             )
 
-        if normalized_method == "run":
-            return AGENT_RUN_METHOD
-
         return normalized_method
 
-    def extract_connect_request(self, payload: dict[str, Any] | None) -> RuntimeConnectRequest:
-        if payload is None:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime method 'agent/connect' requires a JSON payload.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_CONNECT_METHOD,
-                ),
+    def extract_thread_create_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeThreadCreateRequest:
+        return RuntimeThreadCreateRequest(
+            agent_id=self._extract_agent_id_request(
+                payload=payload,
+                requested_method=THREAD_CREATE_METHOD,
             )
-
-        params = self._extract_params(payload, requested_method=AGENT_CONNECT_METHOD)
-        connect_body = self._extract_body(payload, requested_method=AGENT_CONNECT_METHOD)
-        agent_name = self._resolve_agent_name(
-            payload,
-            params,
-            connect_body,
-            requested_method=AGENT_CONNECT_METHOD,
-        )
-        thread_id = self._require_non_empty_string(
-            connect_body.get("threadId"),
-            field_name="threadId",
-            requested_method=AGENT_CONNECT_METHOD,
-        )
-        run_id = self._require_non_empty_string(
-            connect_body.get("runId"),
-            field_name="runId",
-            requested_method=AGENT_CONNECT_METHOD,
-        )
-        messages = self._require_list_of_objects(
-            connect_body.get("messages"),
-            field_name="messages",
-            requested_method=AGENT_CONNECT_METHOD,
-        )
-        tools = self._optional_list_of_objects(
-            connect_body.get("tools"),
-            field_name="tools",
-            requested_method=AGENT_CONNECT_METHOD,
-        )
-        context = self._optional_list_of_objects(
-            connect_body.get("context"),
-            field_name="context",
-            requested_method=AGENT_CONNECT_METHOD,
-        )
-        forwarded_props = self._optional_object(
-            connect_body.get("forwardedProps"),
-            field_name="forwardedProps",
-            requested_method=AGENT_CONNECT_METHOD,
-        )
-
-        return RuntimeConnectRequest(
-            agent_name=agent_name,
-            thread_id=thread_id,
-            run_id=run_id,
-            state=connect_body.get("state", {}),
-            messages=messages,
-            tools=tools,
-            context=context,
-            forwarded_props=forwarded_props,
-            metadata={},
         )
 
     def extract_session_create_request(
         self,
         payload: dict[str, Any] | None,
     ) -> RuntimeSessionCreateRequest:
-        if payload is None:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime method 'session/create' requires a JSON payload.",
-                    scaffold=self._scaffold,
-                    requested_method=SESSION_CREATE_METHOD,
-                ),
-            )
+        request = self._extract_agent_id_request(
+            payload=payload,
+            requested_method=SESSION_CREATE_METHOD,
+        )
+        return RuntimeSessionCreateRequest(agent_id=request)
 
-        request_body = self._extract_body(payload, requested_method=SESSION_CREATE_METHOD)
+    def extract_thread_get_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeThreadGetRequest:
+        thread_id = self._extract_identifier_request(
+            payload=payload,
+            requested_method=THREAD_GET_METHOD,
+            field_name="threadId",
+        )
+        return RuntimeThreadGetRequest(thread_id=thread_id)
+
+    def extract_capabilities_get_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeCapabilitiesGetRequest:
+        session_id = self._extract_identifier_request(
+            payload=payload,
+            requested_method=CAPABILITIES_GET_METHOD,
+            field_name="sessionId",
+        )
+        return RuntimeCapabilitiesGetRequest(session_id=session_id)
+
+    def extract_run_start_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeRunStartRequest:
+        return self._extract_chat_request(
+            payload=payload,
+            requested_method=RUN_START_METHOD,
+            id_field_name="threadId",
+            id_value_name="thread_id",
+        )
+
+    def extract_message_send_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeMessageSendRequest:
+        request = self._extract_chat_request(
+            payload=payload,
+            requested_method=MESSAGE_SEND_METHOD,
+            id_field_name="sessionId",
+            id_value_name="thread_id",
+        )
+        return RuntimeMessageSendRequest(
+            session_id=request.thread_id,
+            message=request.message,
+            policy=request.policy,
+            agent_id=request.agent_id,
+        )
+
+    def extract_run_stream_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeRunStreamRequest:
+        run_id = self._extract_identifier_request(
+            payload=payload,
+            requested_method=RUN_STREAM_METHOD,
+            field_name="runId",
+        )
+        return RuntimeRunStreamRequest(run_id=run_id)
+
+    def extract_run_cancel_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeRunCancelRequest:
+        run_id = self._extract_identifier_request(
+            payload=payload,
+            requested_method=RUN_CANCEL_METHOD,
+            field_name="runId",
+        )
+        return RuntimeRunCancelRequest(run_id=run_id)
+
+    def _extract_agent_id_request(
+        self,
+        *,
+        payload: dict[str, Any] | None,
+        requested_method: str,
+    ) -> str:
+        request_body = self._require_payload_body(payload, requested_method=requested_method)
         agent_id = self._require_non_empty_string(
             request_body.get("agentId"),
             field_name="agentId",
-            requested_method=SESSION_CREATE_METHOD,
+            requested_method=requested_method,
         )
         if self._scaffold.supports_agent(agent_id):
-            return RuntimeSessionCreateRequest(agent_id=agent_id)
+            return agent_id
 
         raise RuntimeProtocolError(
             status_code=status.HTTP_404_NOT_FOUND,
             error=build_agent_not_found_error(
                 agent_name=agent_id,
                 scaffold=self._scaffold,
-                requested_method=SESSION_CREATE_METHOD,
+                requested_method=requested_method,
             ),
         )
 
-    def extract_capabilities_get_request(
+    def _extract_identifier_request(
         self,
+        *,
         payload: dict[str, Any] | None,
-    ) -> RuntimeCapabilitiesGetRequest:
-        if payload is None:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime method 'capabilities/get' requires a JSON payload.",
-                    scaffold=self._scaffold,
-                    requested_method=CAPABILITIES_GET_METHOD,
-                ),
-            )
-
-        request_body = self._extract_body(payload, requested_method=CAPABILITIES_GET_METHOD)
-        session_id = self._require_non_empty_string(
-            request_body.get("sessionId"),
-            field_name="sessionId",
-            requested_method=CAPABILITIES_GET_METHOD,
+        requested_method: str,
+        field_name: str,
+    ) -> str:
+        request_body = self._require_payload_body(payload, requested_method=requested_method)
+        return self._require_non_empty_string(
+            request_body.get(field_name),
+            field_name=field_name,
+            requested_method=requested_method,
         )
-        return RuntimeCapabilitiesGetRequest(session_id=session_id)
 
-    def extract_message_send_request(
+    def _extract_chat_request(
         self,
+        *,
         payload: dict[str, Any] | None,
-    ) -> RuntimeMessageSendRequest:
-        if payload is None:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime method 'message/send' requires a JSON payload.",
-                    scaffold=self._scaffold,
-                    requested_method=MESSAGE_SEND_METHOD,
-                ),
-            )
-
-        request_body = self._extract_body(payload, requested_method=MESSAGE_SEND_METHOD)
-        session_id = self._require_non_empty_string(
-            request_body.get("sessionId"),
-            field_name="sessionId",
-            requested_method=MESSAGE_SEND_METHOD,
+        requested_method: str,
+        id_field_name: str,
+        id_value_name: str,
+    ) -> RuntimeRunStartRequest:
+        request_body = self._require_payload_body(payload, requested_method=requested_method)
+        identifier = self._require_non_empty_string(
+            request_body.get(id_field_name),
+            field_name=id_field_name,
+            requested_method=requested_method,
         )
 
         raw_agent_id = request_body.get("agent")
@@ -282,116 +268,45 @@ class RuntimeProtocolParser:
             agent_id = self._require_non_empty_string(
                 raw_agent_id,
                 field_name="agent",
-                requested_method=MESSAGE_SEND_METHOD,
+                requested_method=requested_method,
             )
 
-        message = self._extract_message_send_payload(request_body.get("message"))
-        policy = self._extract_message_execution_policy(request_body)
-        return RuntimeMessageSendRequest(
-            session_id=session_id,
+        message = self._extract_message_payload(
+            request_body.get("message"),
+            requested_method=requested_method,
+        )
+        policy = self._extract_message_execution_policy(
+            request_body,
+            requested_method=requested_method,
+        )
+        return RuntimeRunStartRequest(
+            **{id_value_name: identifier},
             message=message,
             policy=policy,
             agent_id=agent_id,
         )
 
-    def extract_run_request(self, payload: dict[str, Any] | None) -> RuntimeRunRequest:
+    def _require_payload_body(
+        self,
+        payload: dict[str, Any] | None,
+        *,
+        requested_method: str,
+    ) -> dict[str, Any]:
         if payload is None:
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
-                    message="Runtime method 'agent/run' requires a JSON payload.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                ),
-            )
-
-        params = self._extract_params(payload, requested_method=AGENT_RUN_METHOD)
-        run_body = self._extract_body(payload, requested_method=AGENT_RUN_METHOD)
-        agent_name = self._resolve_agent_name(
-            payload,
-            params,
-            run_body,
-            requested_method=AGENT_RUN_METHOD,
-        )
-        thread_id = self._require_non_empty_string(
-            run_body.get("threadId"),
-            field_name="threadId",
-            requested_method=AGENT_RUN_METHOD,
-        )
-        run_id = self._require_non_empty_string(
-            run_body.get("runId"),
-            field_name="runId",
-            requested_method=AGENT_RUN_METHOD,
-        )
-        messages = self._require_list_of_objects(
-            run_body.get("messages"),
-            field_name="messages",
-            requested_method=AGENT_RUN_METHOD,
-        )
-        actions = self._optional_list_of_objects(
-            run_body.get("actions"),
-            field_name="actions",
-            requested_method=AGENT_RUN_METHOD,
-        )
-        meta_events = self._optional_list_of_objects(
-            run_body.get("metaEvents"),
-            field_name="metaEvents",
-            requested_method=AGENT_RUN_METHOD,
-        )
-        forwarded_props = self._optional_object(
-            run_body.get("forwardedProps"),
-            field_name="forwardedProps",
-            requested_method=AGENT_RUN_METHOD,
-        )
-
-        node_name = run_body.get("nodeName")
-        if node_name is not None and (not isinstance(node_name, str) or node_name.strip() == ""):
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime request field 'nodeName' must be a non-empty string when provided.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                    details={"field": "nodeName"},
-                ),
-            )
-
-        user_message_text = self._extract_latest_user_message_text(messages)
-
-        return RuntimeRunRequest(
-            agent_name=agent_name,
-            thread_id=thread_id,
-            run_id=run_id,
-            user_message_text=user_message_text,
-            state=run_body.get("state", {}),
-            messages=messages,
-            actions=actions,
-            meta_events=meta_events,
-            node_name=node_name.strip() if isinstance(node_name, str) else None,
-            forwarded_props=forwarded_props,
-            metadata={},
-        )
-
-    def _extract_params(self, payload: dict[str, Any], *, requested_method: str) -> dict[str, Any]:
-        params = payload.get("params")
-        if params is None:
-            return {}
-        if not isinstance(params, dict):
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime request field 'params' must be an object when provided.",
+                    message=f"Runtime method '{requested_method}' requires a JSON payload.",
                     scaffold=self._scaffold,
                     requested_method=requested_method,
-                    details={"field": "params"},
                 ),
             )
-        return dict(params)
+
+        return self._extract_body(payload, requested_method=requested_method)
 
     def _extract_body(self, payload: dict[str, Any], *, requested_method: str) -> dict[str, Any]:
         raw_body = payload.get("body")
-        request_body = payload if raw_body is None else raw_body
-        if not isinstance(request_body, dict):
+        if not isinstance(raw_body, dict):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
@@ -401,49 +316,7 @@ class RuntimeProtocolParser:
                     details={"field": "body"},
                 ),
             )
-        return dict(request_body)
-
-    def _resolve_agent_name(
-        self,
-        payload: dict[str, Any],
-        params: dict[str, Any],
-        request_body: dict[str, Any],
-        *,
-        requested_method: str,
-    ) -> str:
-        raw_agent_name = params.get(
-            "agentId",
-            request_body.get(
-                "agentName",
-                request_body.get(
-                    "name",
-                    payload.get("agentName", payload.get("name", self._scaffold.default_agent)),
-                ),
-            ),
-        )
-        if not isinstance(raw_agent_name, str) or raw_agent_name.strip() == "":
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime request must resolve a non-empty agent name.",
-                    scaffold=self._scaffold,
-                    requested_method=requested_method,
-                    details={"field": "agentId"},
-                ),
-            )
-
-        agent_name = raw_agent_name.strip()
-        if self._scaffold.supports_agent(agent_name):
-            return agent_name
-
-        raise RuntimeProtocolError(
-            status_code=status.HTTP_404_NOT_FOUND,
-            error=build_agent_not_found_error(
-                agent_name=agent_name,
-                scaffold=self._scaffold,
-                requested_method=requested_method,
-            ),
-        )
+        return dict(raw_body)
 
     def _require_non_empty_string(
         self,
@@ -464,55 +337,6 @@ class RuntimeProtocolParser:
             )
         return value.strip()
 
-    def _require_list_of_objects(
-        self,
-        value: Any,
-        *,
-        field_name: str,
-        requested_method: str,
-    ) -> tuple[dict[str, Any], ...]:
-        if not isinstance(value, list):
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message=f"Runtime request field '{field_name}' must be an array of objects.",
-                    scaffold=self._scaffold,
-                    requested_method=requested_method,
-                    details={"field": field_name},
-                ),
-            )
-
-        normalized_items: list[dict[str, Any]] = []
-        for index, item in enumerate(value):
-            if not isinstance(item, dict):
-                raise RuntimeProtocolError(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    error=build_invalid_request_error(
-                        message=(f"Runtime request field '{field_name}' must contain only JSON objects."),
-                        scaffold=self._scaffold,
-                        requested_method=requested_method,
-                        details={"field": f"{field_name}[{index}]"},
-                    ),
-                )
-            normalized_items.append(dict(item))
-
-        return tuple(normalized_items)
-
-    def _optional_list_of_objects(
-        self,
-        value: Any,
-        *,
-        field_name: str,
-        requested_method: str,
-    ) -> tuple[dict[str, Any], ...]:
-        if value is None:
-            return ()
-        return self._require_list_of_objects(
-            value,
-            field_name=field_name,
-            requested_method=requested_method,
-        )
-
     def _optional_object(
         self,
         value: Any,
@@ -522,11 +346,24 @@ class RuntimeProtocolParser:
     ) -> dict[str, Any]:
         if value is None:
             return {}
+        return self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+
+    def _require_object(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
-                    message=f"Runtime request field '{field_name}' must be an object when provided.",
+                    message=f"Runtime request field '{field_name}' must be an object.",
                     scaffold=self._scaffold,
                     requested_method=requested_method,
                     details={"field": field_name},
@@ -571,14 +408,19 @@ class RuntimeProtocolParser:
             normalized_items.append(item.strip())
         return tuple(normalized_items)
 
-    def _extract_message_send_payload(self, value: Any) -> RuntimeMessagePayload:
+    def _extract_message_payload(
+        self,
+        value: Any,
+        *,
+        requested_method: str,
+    ) -> RuntimeMessagePayload:
         if not isinstance(value, dict):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
                     message="Runtime request field 'message' must be an object.",
                     scaffold=self._scaffold,
-                    requested_method=MESSAGE_SEND_METHOD,
+                    requested_method=requested_method,
                     details={"field": "message"},
                 ),
             )
@@ -586,16 +428,16 @@ class RuntimeProtocolParser:
         role = self._require_non_empty_string(
             value.get("role"),
             field_name="message.role",
-            requested_method=MESSAGE_SEND_METHOD,
+            requested_method=requested_method,
         )
         normalized_role = role.lower()
         if normalized_role != "user":
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_unsupported_message_shape_error(
-                    message="Runtime method 'message/send' currently requires a user text message.",
+                    message=f"Runtime method '{requested_method}' currently requires a user text message.",
                     scaffold=self._scaffold,
-                    requested_method=MESSAGE_SEND_METHOD,
+                    requested_method=requested_method,
                     details={"field": "message.role", "role": normalized_role},
                 ),
             )
@@ -603,185 +445,86 @@ class RuntimeProtocolParser:
         content = self._require_non_empty_string(
             value.get("content"),
             field_name="message.content",
-            requested_method=MESSAGE_SEND_METHOD,
+            requested_method=requested_method,
         )
         return RuntimeMessagePayload(role=normalized_role, content=content)
 
     def _extract_message_execution_policy(
         self,
         request_body: dict[str, Any],
+        *,
+        requested_method: str,
     ) -> RuntimeMessageExecutionPolicy:
-        model = self._require_non_empty_string(
-            request_body.get("model"),
-            field_name="model",
-            requested_method=MESSAGE_SEND_METHOD,
+        policy = self._require_object(
+            request_body.get("policy"),
+            field_name="policy",
+            requested_method=requested_method,
         )
-
+        model_route = self._extract_model_route(
+            policy.get("modelRoute"),
+            field_name="policy.modelRoute",
+            requested_method=requested_method,
+        )
         enabled_tools = self._optional_list_of_strings(
-            request_body.get("enabledTools"),
-            field_name="enabledTools",
-            requested_method=MESSAGE_SEND_METHOD,
+            policy.get("enabledTools"),
+            field_name="policy.enabledTools",
+            requested_method=requested_method,
         )
         request_options = self._optional_object(
-            request_body.get("requestOptions"),
-            field_name="requestOptions",
-            requested_method=MESSAGE_SEND_METHOD,
+            policy.get("requestOptions"),
+            field_name="policy.requestOptions",
+            requested_method=requested_method,
         )
         return RuntimeMessageExecutionPolicy(
-            model=model,
+            modelRoute=model_route,
             enabledTools=enabled_tools,
             requestOptions=request_options,
         )
 
-    def _extract_latest_user_message_text(self, messages: tuple[dict[str, Any], ...]) -> str:
-        if not messages:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime method 'agent/run' requires at least one message.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                    details={"field": "messages"},
-                ),
-            )
-
-        for index, message in enumerate(messages):
-            self._validate_supported_message_shape(message, index=index)
-
-        last_message = messages[-1]
-        last_role = str(last_message["role"]).strip().lower()
-        if last_role != "user":
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_unsupported_message_shape_error(
-                    message="Runtime method 'agent/run' requires the last message to be a text user message.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                    details={"field": f"messages[{len(messages) - 1}]", "role": last_role},
-                ),
-            )
-
-        return self._extract_user_text_content(
-            last_message.get("content"),
-            field_name=f"messages[{len(messages) - 1}].content",
+    def _extract_model_route(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeModelRoute:
+        route = self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
         )
-
-    def _validate_supported_message_shape(self, message: dict[str, Any], *, index: int) -> None:
-        role = message.get("role")
-        if not isinstance(role, str) or role.strip() == "":
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message="Runtime run message role must be a non-empty string.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                    details={"field": f"messages[{index}].role"},
+        provider_profile_id = self._require_non_empty_string(
+            route.get("providerProfileId"),
+            field_name=f"{field_name}.providerProfileId",
+            requested_method=requested_method,
+        )
+        snapshot = self._require_object(
+            route.get("snapshot"),
+            field_name=f"{field_name}.snapshot",
+            requested_method=requested_method,
+        )
+        return RuntimeModelRoute(
+            provider_profile_id=provider_profile_id,
+            snapshot=RuntimeModelRouteSnapshot(
+                provider=self._require_non_empty_string(
+                    snapshot.get("provider"),
+                    field_name=f"{field_name}.snapshot.provider",
+                    requested_method=requested_method,
                 ),
-            )
-
-        normalized_role = role.strip().lower()
-        if normalized_role not in {"user", "assistant", "system", "developer"}:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_unsupported_message_shape_error(
-                    message=f"Runtime run message role '{normalized_role}' is not supported in the MVP text-only bridge.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                    details={"field": f"messages[{index}].role", "role": normalized_role},
+                endpoint_type=self._require_non_empty_string(
+                    snapshot.get("endpointType"),
+                    field_name=f"{field_name}.snapshot.endpointType",
+                    requested_method=requested_method,
                 ),
-            )
-
-        tool_calls = message.get("toolCalls", message.get("tool_calls"))
-        if tool_calls not in (None, [], ()):  # pragma: no branch - simple MVP guard
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_unsupported_message_shape_error(
-                    message="Runtime run does not support assistant tool calls in request messages.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                    details={"field": f"messages[{index}].toolCalls"},
+                base_url=self._require_non_empty_string(
+                    snapshot.get("baseUrl"),
+                    field_name=f"{field_name}.snapshot.baseUrl",
+                    requested_method=requested_method,
                 ),
-            )
-
-        content = message.get("content")
-        if normalized_role == "user":
-            self._extract_user_text_content(content, field_name=f"messages[{index}].content")
-            return
-
-        if normalized_role in {"system", "developer"}:
-            if not isinstance(content, str) or content.strip() == "":
-                raise RuntimeProtocolError(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    error=build_unsupported_message_shape_error(
-                        message=f"Runtime run message '{normalized_role}' must contain non-empty text content.",
-                        scaffold=self._scaffold,
-                        requested_method=AGENT_RUN_METHOD,
-                        details={"field": f"messages[{index}].content", "role": normalized_role},
-                    ),
-                )
-            return
-
-        if content is None:
-            return
-        if not isinstance(content, str):
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_unsupported_message_shape_error(
-                    message="Runtime run assistant history must contain plain text content when provided.",
-                    scaffold=self._scaffold,
-                    requested_method=AGENT_RUN_METHOD,
-                    details={"field": f"messages[{index}].content", "role": normalized_role},
+                model_id=self._require_non_empty_string(
+                    snapshot.get("modelId"),
+                    field_name=f"{field_name}.snapshot.modelId",
+                    requested_method=requested_method,
                 ),
-            )
-
-    def _extract_user_text_content(self, content: Any, *, field_name: str) -> str:
-        if isinstance(content, str):
-            normalized_text = content.strip()
-            if normalized_text != "":
-                return normalized_text
-
-        if isinstance(content, list):
-            text_parts: list[str] = []
-            for index, item in enumerate(content):
-                if not isinstance(item, dict) or item.get("type") != "text":
-                    raise RuntimeProtocolError(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        error=build_unsupported_message_shape_error(
-                            message="Runtime run supports only text user message parts in the MVP bridge.",
-                            scaffold=self._scaffold,
-                            requested_method=AGENT_RUN_METHOD,
-                            details={"field": f"{field_name}[{index}]"},
-                        ),
-                    )
-                text = item.get("text")
-                if not isinstance(text, str) or text.strip() == "":
-                    raise RuntimeProtocolError(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        error=build_unsupported_message_shape_error(
-                            message="Runtime run text message parts must include a non-empty 'text' field.",
-                            scaffold=self._scaffold,
-                            requested_method=AGENT_RUN_METHOD,
-                            details={"field": f"{field_name}[{index}].text"},
-                        ),
-                    )
-                text_parts.append(text.strip())
-            if text_parts:
-                return "\n".join(text_parts)
-
-        raise RuntimeProtocolError(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error=build_unsupported_message_shape_error(
-                message="Runtime run currently supports only non-empty text user messages.",
-                scaffold=self._scaffold,
-                requested_method=AGENT_RUN_METHOD,
-                details={"field": field_name},
             ),
         )
-
-    def _infer_implicit_method(self, payload: dict[str, Any]) -> str | None:
-        body = payload.get("body")
-        if any(key in payload for key in RUN_LIKE_REQUEST_KEYS):
-            return AGENT_RUN_METHOD
-        if isinstance(body, dict) and any(key in body for key in RUN_LIKE_REQUEST_KEYS):
-            return AGENT_RUN_METHOD
-        return None

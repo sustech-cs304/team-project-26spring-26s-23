@@ -6,12 +6,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:hosted": "vite -- --runtime-model=test",
     "generate:icons": "node ./scripts/generate-icons.mjs",
     "prebuild": "npm run generate:icons",
-    "typecheck": "npm run typecheck:check && npm run typecheck:clean",
-    "typecheck:check": "tsc -b",
-    "typecheck:clean": "tsc -b --clean",
+    "typecheck": "npm run typecheck:check",
+    "typecheck:check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "build": "npm run typecheck && npm run build:app",
     "build:app": "vite build",
     "stage:bundled-runtime": "node ./scripts/prepare-bundled-runtime.mjs",
@@ -23,9 +21,6 @@
     "test": "node ./scripts/run-vitest.mjs"
   },
   "dependencies": {
-    "@copilotkit/react-core": "^1.53.0",
-    "@copilotkit/react-ui": "^0.2.0",
-    "@copilotkit/shared": "^1.53.0",
     "lucide-react": "^0.577.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"

@@ -156,6 +156,11 @@
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
 }
 
+.copilot-chat__send-button--cancel {
+  background: color-mix(in srgb, var(--surface-bg) 24%, #ef4444);
+  color: #fff;
+}
+
 .copilot-chat__send-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -172,6 +177,13 @@
 .copilot-chat__send-button-spinner {
   font-size: 1rem;
   line-height: 1;
+}
+
+.copilot-chat__composer-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 @media (max-width: 900px) {

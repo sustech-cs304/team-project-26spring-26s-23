@@ -7,12 +7,67 @@ from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime.agent import DEFAULT_AGENT_NAME, PydanticAIAgentExecutor
 from app.copilot_runtime.composition import RuntimeDependencies, build_default_runtime_dependencies
-from app.copilot_runtime.contracts import RuntimeRunRequest
+from app.copilot_runtime.contracts import (
+    RuntimeMessageExecutionPolicy,
+    RuntimeMessagePayload,
+    RuntimeMessageSendRequest,
+)
+from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteSnapshot
 from app.copilot_runtime.session_store import InMemorySessionStore
 from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
 
 
 TEST_MODEL_REPLY = "Hello from the composition test model."
+
+
+class _ImmediateTextStream:
+    def __init__(self, *, output: str, resolved_model_id: str) -> None:
+        self.resolved_model_id = resolved_model_id
+        self._output = output
+
+    async def __aenter__(self) -> "_ImmediateTextStream":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def iter_deltas(self):
+        yield self._output
+
+    async def get_output(self) -> str:
+        return self._output
+
+
+class _StreamingExecutor:
+    def __init__(self, *, output: str, model_configured: bool = True) -> None:
+        self.model_configured = model_configured
+        self.model_environment_keys: tuple[str, ...] = ()
+        self._output = output
+
+    def open_text_stream(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: tuple[str, ...] = (),
+        request_options: dict[str, object] | None = None,
+    ) -> _ImmediateTextStream:
+        return _ImmediateTextStream(output=self._output, resolved_model_id=model_route.model_id)
+
+
+class _ResolvedRouteResolver:
+    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+        return ResolvedRuntimeModelRoute(
+            provider_profile_id=model_route.provider_profile_id,
+            provider=model_route.snapshot.provider,
+            endpoint_type=model_route.snapshot.endpoint_type,
+            base_url=model_route.snapshot.base_url,
+            model_id=model_route.snapshot.model_id,
+            api_key="test-api-key",
+        )
+
 
 
 def test_build_default_runtime_dependencies_returns_complete_default_graph() -> None:
@@ -30,31 +85,49 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert executor_factory() is dependencies.agent_executor
 
     assert dependencies.scaffold.default_agent == default_agent.name
-    assert dependencies.scaffold.remote_agent_registry[DEFAULT_AGENT_NAME].name == DEFAULT_AGENT_NAME
+    assert dependencies.scaffold.supported_methods == (
+        "agents/list",
+        "thread/create",
+        "thread/get",
+        "run/start",
+        "run/stream",
+        "run/cancel",
+        "session/create",
+        "capabilities/get",
+        "message/send",
+    )
     assert dependencies.scaffold.diagnostics_summary()["available_agents"] == [DEFAULT_AGENT_NAME]
     assert dependencies.scaffold.diagnostics_summary()["available_toolsets"] == ["default"]
 
 
-def test_build_default_runtime_dependencies_wires_bridge_to_registry_backed_factory() -> None:
-    dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
 
-    result = asyncio.run(
-        dependencies.runtime_bridge.run(
-            request=_build_run_request(
-                thread_id="thread-1",
-                run_id="run-1",
-                user_message_text="Hello",
+def test_build_default_runtime_dependencies_streams_message_through_orchestrator() -> None:
+    dependencies = build_default_runtime_dependencies(
+        agent_executor=_StreamingExecutor(output=TEST_MODEL_REPLY),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    dependencies.session_store.create(bound_agent_id=DEFAULT_AGENT_NAME, session_id="session-1")
+
+    events = asyncio.run(
+        _collect_events(
+            dependencies.runtime_bridge.stream_message(
+                request=_build_message_request(session_id="session-1")
             )
         )
     )
 
-    assert result.assistant_text == TEST_MODEL_REPLY
-    assert result.session.agent_name == DEFAULT_AGENT_NAME
-    assert result.session.metadata == {"last_run_id": "run-1"}
-    assert [(message.role, message.content) for message in dependencies.session_store.list_messages("thread-1")] == [
+    assert events[0].type == "run_started"
+    assert any(event.type == "text_delta" for event in events)
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == TEST_MODEL_REPLY
+    assert [
+        (message.role, message.content)
+        for message in dependencies.session_store.list_messages("session-1")
+    ] == [
         ("user", "Hello"),
         ("assistant", TEST_MODEL_REPLY),
     ]
+
 
 
 def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor() -> None:
@@ -75,7 +148,7 @@ def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor()
 
 
 
-def test_build_default_runtime_dependencies_prefers_runtime_config_model_over_environment(
+def test_build_default_runtime_dependencies_uses_environment_backed_executor_even_with_runtime_config(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -83,11 +156,15 @@ def test_build_default_runtime_dependencies_prefers_runtime_config_model_over_en
     monkeypatch.setenv("COPILOT_MODEL", "legacy-env-model")
 
     dependencies = build_default_runtime_dependencies(
-        runtime_config=_build_runtime_config(tmp_path, model="cli-model")
+        runtime_config=_build_runtime_config(tmp_path)
     )
 
-    assert dependencies.agent_executor.resolve_model() == "cli-model"
+    assert dependencies.agent_executor.resolve_model() == "runtime-env-model"
     assert dependencies.scaffold.model_configured is True
+
+
+async def _collect_events(events):
+    return [event async for event in events]
 
 
 
@@ -96,7 +173,29 @@ def _build_test_agent_executor() -> PydanticAIAgentExecutor:
 
 
 
-def _build_runtime_config(tmp_path: Path, *, model: str | None = None) -> DesktopRuntimeConfig:
+def _build_message_request(*, session_id: str) -> RuntimeMessageSendRequest:
+    return RuntimeMessageSendRequest(
+        session_id=session_id,
+        message=RuntimeMessagePayload(role="user", content="Hello"),
+        policy=RuntimeMessageExecutionPolicy(
+            modelRoute=RuntimeModelRoute(
+                provider_profile_id="provider-1",
+                snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://example.com/v1",
+                    model_id="gpt-4.1",
+                ),
+            ),
+            enabledTools=(),
+            requestOptions={},
+        ),
+        agent_id=DEFAULT_AGENT_NAME,
+    )
+
+
+
+def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
     return DesktopRuntimeConfig(
@@ -119,20 +218,4 @@ def _build_runtime_config(tmp_path: Path, *, model: str | None = None) -> Deskto
         ),
         app_mode="desktop",
         environment="test",
-        model=model,
-    )
-
-def _build_run_request(*, thread_id: str, run_id: str, user_message_text: str) -> RuntimeRunRequest:
-    return RuntimeRunRequest(
-        agent_name=DEFAULT_AGENT_NAME,
-        thread_id=thread_id,
-        run_id=run_id,
-        user_message_text=user_message_text,
-        state={},
-        messages=(),
-        actions=(),
-        meta_events=(),
-        node_name=None,
-        forwarded_props={},
-        metadata={},
     )
