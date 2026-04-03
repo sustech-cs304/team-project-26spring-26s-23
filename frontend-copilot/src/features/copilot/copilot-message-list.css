@@ -100,6 +100,97 @@
   line-height: 1.55;
 }
 
+.copilot-chat__message-text--plain {
+  white-space: pre-wrap;
+}
+
+.copilot-chat__message-text--markdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.copilot-chat__message-text--markdown > :where(h1, h2, h3, h4, h5, h6, p, ul, ol, pre, blockquote, table) {
+  margin: 0;
+}
+
+.copilot-chat__message-text--markdown :where(h1, h2, h3, h4, h5, h6) {
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.copilot-chat__message-text--markdown h1 {
+  font-size: 1.12rem;
+}
+
+.copilot-chat__message-text--markdown h2 {
+  font-size: 1.02rem;
+}
+
+.copilot-chat__message-text--markdown h3,
+.copilot-chat__message-text--markdown h4,
+.copilot-chat__message-text--markdown h5,
+.copilot-chat__message-text--markdown h6 {
+  font-size: 0.95rem;
+}
+
+.copilot-chat__message-text--markdown :where(ul, ol) {
+  padding-left: 1.35rem;
+}
+
+.copilot-chat__message-text--markdown li + li {
+  margin-top: 0.2rem;
+}
+
+.copilot-chat__message-text--markdown blockquote {
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.copilot-chat__message-text--markdown pre {
+  overflow-x: auto;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  background: var(--surface-muted, rgba(148, 163, 184, 0.14));
+}
+
+.copilot-chat__message-text--markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.copilot-chat__message-text--markdown :not(pre) > code {
+  padding: 0.12rem 0.35rem;
+  border-radius: 6px;
+  background: var(--surface-muted, rgba(148, 163, 184, 0.14));
+  font-size: 0.92em;
+}
+
+.copilot-chat__message-text--markdown a {
+  color: var(--accent-text, #2563eb);
+  text-decoration: underline;
+}
+
+.copilot-chat__message-text--markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.copilot-chat__message-text--markdown :where(th, td) {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.copilot-chat__message-text--markdown th {
+  color: var(--text-primary);
+  background: var(--surface-muted, rgba(148, 163, 184, 0.14));
+}
+
 .copilot-chat__message {
   display: flex;
   flex-direction: column;

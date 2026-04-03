@@ -1,3 +1,6 @@
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
 import { ModelPickerIcon } from './components/ModelPicker'
 import {
   createEmptyCopilotModel,
@@ -61,7 +64,7 @@ export function CopilotMessageList({
                 data-testid={`chat-message-${turn.kind}-${index}`}
               >
                 {turn.kind !== 'user' && renderMessageHeader(turn, index, models)}
-                <p className="copilot-chat__message-text">{turn.content}</p>
+                {renderMessageBody(turn)}
                 {detailRows.length > 0 && (
                   <div className="copilot-chat__message-detail-list">
                     {detailRows.map((detail) => (
@@ -174,6 +177,22 @@ function findFirstNonEmptyValue(...values: Array<string | null | undefined>): st
   }
 
   return null
+}
+
+function renderMessageBody(turn: CopilotMessageListItem) {
+  if (turn.kind === 'assistant') {
+    return (
+      <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
+      </div>
+    )
+  }
+
+  if (turn.kind === 'user') {
+    return <p className="copilot-chat__message-text copilot-chat__message-text--plain">{turn.content}</p>
+  }
+
+  return <p className="copilot-chat__message-text">{turn.content}</p>
 }
 
 function buildDetailRows(turn: CopilotMessageListItem): Array<{

@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -346,6 +350,67 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('已取消')
     expect(html).toContain('本次响应已取消：user_cancelled')
     expect(html.indexOf('已保留的回答前半段')).toBeLessThan(html.indexOf('本次响应已取消：user_cancelled'))
+  })
+  it('renders assistant content as structured markdown instead of escaping markdown syntax as plain text', () => {
+    const modelCatalog = createTestModelCatalog()
+    const conversation: CopilotMessageListItem[] = [{
+      id: 'assistant:run-markdown:1',
+      kind: 'assistant',
+      runId: 'run-markdown',
+      sequence: 1,
+      title: '助手响应',
+      content: '# 标题\n\n- 列表项\n\n**加粗** 与 `代码`\n\n| 列 | 值 |\n| --- | --- |\n| A | B |',
+      status: 'completed',
+      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openai',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: 'openai/gpt-4.1',
+        },
+      }),
+      resolvedToolIds: [],
+      requestOptions: {},
+    }]
+
+    const html = renderToStaticMarkup(
+      <CopilotMessageList conversation={conversation} models={modelCatalog.models} />,
+    )
+
+    expect(html).toContain('<h1>标题</h1>')
+    expect(html).toContain('<ul>')
+    expect(html).toContain('<li>列表项</li>')
+    expect(html).toContain('<strong>加粗</strong>')
+    expect(html).toContain('<code>代码</code>')
+    expect(html).toContain('<table>')
+    expect(html).not.toContain('**加粗**')
+    expect(html).not.toContain('| --- |')
+    expect(html).toContain('copilot-chat__message-text--markdown')
+  })
+
+  it('keeps user content as plain text and does not render markdown syntax as html', () => {
+    const html = renderToStaticMarkup(
+      <CopilotMessageList
+        conversation={[createUserMessageListItem('**用户原文**\n第二行')]}
+        models={createTestModelCatalog().models}
+      />,
+    )
+
+    expect(html).toContain(`**用户原文**
+第二行`)
+    expect(html).toContain('copilot-chat__message-text--plain')
+    expect(html).not.toContain('<strong>用户原文</strong>')
+    expect(html).not.toContain('<br/>')
+  })
+
+  it('uses pre-wrap semantics for multiline user messages', () => {
+    const cssFilePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), './copilot-message-list.css')
+    const css = readFileSync(cssFilePath, 'utf8')
+
+    expect(css).toContain('.copilot-chat__message-text--plain')
+    expect(css).toContain('white-space: pre-wrap;')
   })
 })
 
