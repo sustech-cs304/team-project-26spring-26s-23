@@ -112,6 +112,7 @@ function renderSessionShell(props: CopilotPanelShellProps) {
       <section className="copilot-chat" data-testid="chat-send-shell">
         <CopilotMessageList
           conversation={props.conversation}
+          showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
           emptyState={hasAvailableModels
             ? null
             : {

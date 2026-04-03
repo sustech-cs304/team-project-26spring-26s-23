@@ -2,20 +2,29 @@ import type { CopilotMessageListItem } from './run-segment-view-model'
 
 interface CopilotMessageListProps {
   conversation: CopilotMessageListItem[]
+  showDiagnostics?: boolean
   emptyState?: {
     title: string
     description: string
   } | null
 }
+ 
+export function CopilotMessageList({
+  conversation,
+  showDiagnostics = true,
+  emptyState = null,
+}: CopilotMessageListProps) {
+  const visibleConversation = showDiagnostics
+    ? conversation
+    : conversation.filter((turn) => turn.kind !== 'diagnostic')
 
-export function CopilotMessageList({ conversation, emptyState = null }: CopilotMessageListProps) {
   return (
     <div
       className="copilot-chat__stream copilot-chat__stream--scrollbarless"
       data-testid="chat-message-scroll-region"
       data-scrollbar-visibility="hidden"
     >
-      {conversation.length === 0
+      {visibleConversation.length === 0
         ? (
             <div
               className="copilot-chat__empty"
@@ -27,7 +36,7 @@ export function CopilotMessageList({ conversation, emptyState = null }: CopilotM
               )}
             </div>
           )
-        : conversation.map((turn, index) => {
+        : visibleConversation.map((turn, index) => {
             const detailRows = buildDetailRows(turn)
             return (
               <article
