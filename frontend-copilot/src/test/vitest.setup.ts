@@ -21,6 +21,9 @@ const registerVitestCleanup = () => {
         return
       }
 
+      delete (window as Partial<Window>).configCenterPublicSnapshot
+      delete (window as Partial<Window>).configCenterPublicSnapshotSubscription
+      delete (window as Partial<Window>).configCenterPublicPatch
       delete (window as Partial<Window>).settingsWorkspaceState
       delete (window as Partial<Window>).settingsWorkspaceSecrets
     })

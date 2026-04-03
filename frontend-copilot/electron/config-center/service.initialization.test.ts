@@ -45,6 +45,7 @@ describe('createUnifiedConfigCenter initialization', () => {
           UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR,
           {
             agentName: 'planner',
+            debugModeEnabled: false,
           },
         ),
       })
@@ -62,6 +63,7 @@ describe('createUnifiedConfigCenter initialization', () => {
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: 'planner',
+          debugModeEnabled: false,
         }),
       )
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG]).toEqual(

@@ -69,6 +69,7 @@ class _PermissiveExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: list[str] | tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         return _ImmediateTextStream(output=self._reply, resolved_model_id=model_route.model_id)
@@ -87,6 +88,7 @@ class _RecordingExecutor(_PermissiveExecutor):
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: list[str] | tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.calls.append(
@@ -96,6 +98,7 @@ class _RecordingExecutor(_PermissiveExecutor):
                 "message_history": list(message_history),
                 "resolved_model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -105,6 +108,7 @@ class _RecordingExecutor(_PermissiveExecutor):
             message_history=message_history,
             model_route=model_route,
             enabled_tools=enabled_tools,
+            debug_enabled=debug_enabled,
             request_options=request_options,
         )
 
@@ -216,6 +220,7 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
                 thread_id="thread-1",
                 model="gpt-4.1",
                 enabled_tools=["tool.file-convert"],
+                debug_mode_enabled=True,
                 request_options={"temperature": 0.2},
             ),
         )
@@ -244,6 +249,7 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
             "message_history": [],
             "resolved_model_id": "gpt-4.1",
             "enabled_tools": ["tool.file-convert"],
+            "debug_enabled": True,
             "request_options": {"temperature": 0.2},
         }
     ]
@@ -371,6 +377,7 @@ def test_root_post_message_send_streams_typed_events_and_persists_history() -> N
                 session_id="session-1",
                 model="gpt-4.1",
                 enabled_tools=["tool.file-convert"],
+                debug_mode_enabled=True,
                 request_options={"temperature": 0.2},
             ),
         )
@@ -396,6 +403,7 @@ def test_root_post_message_send_streams_typed_events_and_persists_history() -> N
             "message_history": [],
             "resolved_model_id": "gpt-4.1",
             "enabled_tools": ["tool.file-convert"],
+            "debug_enabled": True,
             "request_options": {"temperature": 0.2},
         }
     ]
@@ -705,6 +713,7 @@ def _build_run_start_request(
     user_text: str = "Hello",
     agent_id: str | None = "default",
     enabled_tools: list[str] | None = None,
+    debug_mode_enabled: bool = False,
     request_options: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
@@ -713,6 +722,7 @@ def _build_run_start_request(
         "policy": _build_policy(
             model=model,
             enabled_tools=enabled_tools,
+            debug_mode_enabled=debug_mode_enabled,
             request_options=request_options,
         ),
     }
@@ -749,6 +759,7 @@ def _build_message_send_request(
     user_text: str = "Hello",
     agent_id: str | None = "default",
     enabled_tools: list[str] | None = None,
+    debug_mode_enabled: bool = False,
     request_options: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
@@ -757,6 +768,7 @@ def _build_message_send_request(
         "policy": _build_policy(
             model=model,
             enabled_tools=enabled_tools,
+            debug_mode_enabled=debug_mode_enabled,
             request_options=request_options,
         ),
     }
@@ -770,6 +782,7 @@ def _build_policy(
     *,
     model: str,
     enabled_tools: list[str] | None = None,
+    debug_mode_enabled: bool = False,
     request_options: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
@@ -783,6 +796,7 @@ def _build_policy(
             },
         },
         "enabledTools": list(enabled_tools or []),
+        "debugModeEnabled": debug_mode_enabled,
         "requestOptions": dict(request_options or {}),
     }
 

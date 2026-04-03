@@ -312,6 +312,7 @@ export function CopilotChatPanel({
         hasAvailableModels,
         composerInputRef,
         sendMessage,
+        debugModeEnabled: isCopilotConnectableState(state) ? state.bootstrapFields.debugModeEnabled : false,
         setRunState,
         setSendError,
         setComposerDraft,

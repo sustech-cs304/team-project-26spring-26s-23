@@ -151,6 +151,7 @@ class RuntimeMessagePayload(RuntimeContract):
 class RuntimeMessageExecutionPolicy(RuntimeContract):
     modelRoute: RuntimeModelRoute
     enabledTools: tuple[str, ...] = ()
+    debugModeEnabled: bool = False
     requestOptions: dict[str, Any] = field(default_factory=dict)
 
 

@@ -84,6 +84,7 @@ class CapturingStreamingExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.captured_calls.append(
@@ -93,6 +94,7 @@ class CapturingStreamingExecutor:
                 "message_history": list(message_history),
                 "resolved_model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -370,6 +372,7 @@ def _build_message_send_request(
     model_id: str,
     user_text: str,
     enabled_tools: list[str] | None = None,
+    debug_mode_enabled: bool = False,
 ) -> dict[str, Any]:
     return {
         "method": "message/send",
@@ -391,6 +394,7 @@ def _build_message_send_request(
                     },
                 },
                 "enabledTools": list(enabled_tools or []),
+                "debugModeEnabled": debug_mode_enabled,
                 "requestOptions": {},
             },
         },

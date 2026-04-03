@@ -19,6 +19,7 @@ export function normalizeCopilotBootstrapFields(
   return {
     runtimeUrl: normalizeOptionalString(fields?.runtimeUrl),
     agentName: normalizeOptionalString(fields?.agentName),
+    debugModeEnabled: fields?.debugModeEnabled === true,
   }
 }
 
@@ -242,6 +243,7 @@ export function loadBootstrapFieldsFromConfigCenterPublicSnapshot(
   const fields = normalizeCopilotBootstrapFields({
     runtimeUrl: snapshot.domains.hostConfig.runtimeUrl,
     agentName: snapshot.domains.assistantBehavior.agentName,
+    debugModeEnabled: snapshot.domains.assistantBehavior.debugModeEnabled,
   })
 
   return {

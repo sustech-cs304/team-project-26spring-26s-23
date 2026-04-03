@@ -352,6 +352,27 @@ class RuntimeProtocolParser:
             requested_method=requested_method,
         )
 
+    def _optional_boolean(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> bool:
+        if value is None:
+            return False
+        if not isinstance(value, bool):
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be a boolean.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        return value
+
     def _require_object(
         self,
         value: Any,
@@ -470,6 +491,11 @@ class RuntimeProtocolParser:
             field_name="policy.enabledTools",
             requested_method=requested_method,
         )
+        debug_mode_enabled = self._optional_boolean(
+            policy.get("debugModeEnabled"),
+            field_name="policy.debugModeEnabled",
+            requested_method=requested_method,
+        )
         request_options = self._optional_object(
             policy.get("requestOptions"),
             field_name="policy.requestOptions",
@@ -478,6 +504,7 @@ class RuntimeProtocolParser:
         return RuntimeMessageExecutionPolicy(
             modelRoute=model_route,
             enabledTools=enabled_tools,
+            debugModeEnabled=debug_mode_enabled,
             requestOptions=request_options,
         )
 

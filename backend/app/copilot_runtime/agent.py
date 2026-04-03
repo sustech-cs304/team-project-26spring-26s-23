@@ -32,7 +32,6 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.result import StreamedRunResult
 
 from .debug_logging import (
-    is_runtime_chain_debug_enabled,
     log_runtime_chain_debug,
     preview_text,
     summarize_event_types,
@@ -182,6 +181,7 @@ class _PydanticAIAgentRunDeps:
     enabled_tool_ids: frozenset[str]
     emit_tool_event: ToolLifecycleSink
     run_id: str | None = None
+    debug_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -1043,6 +1043,7 @@ class PydanticAIAgentExecutor:
         message_history: Sequence[ModelMessage],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: Sequence[str] = (),
+        debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
     ) -> _PydanticAITextStream:
         if agent_name != self.agent_name:
@@ -1057,6 +1058,7 @@ class PydanticAIAgentExecutor:
         deps = self._build_runtime_deps(
             enabled_tools=enabled_tools,
             emit_tool_event=tool_events.append,
+            debug_enabled=debug_enabled,
         )
         return _PydanticAITextStream(
             stream_context=cast(
@@ -1081,6 +1083,7 @@ class PydanticAIAgentExecutor:
         message_history: Sequence[ModelMessage],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: Sequence[str] = (),
+        debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
     ) -> _PydanticAIEventStream:
         if agent_name != self.agent_name:
@@ -1092,9 +1095,9 @@ class PydanticAIAgentExecutor:
             stream_model = self._build_stream_model(model_route)
         resolved_model = self.resolve_model(model_override=stream_model)
         event_buffer = RuntimeExecutionEventBuffer(
-            event_factory=RuntimeExecutionEventFactory(run_id=run_id)
+            event_factory=RuntimeExecutionEventFactory(run_id=run_id),
+            debug_enabled=debug_enabled,
         )
-        debug_enabled = is_runtime_chain_debug_enabled()
         model_route_summary = summarize_runtime_model_route(model_route)
         log_runtime_chain_debug(
             "collector.stream_created",
@@ -1116,6 +1119,7 @@ class PydanticAIAgentExecutor:
             enabled_tools=enabled_tools,
             emit_tool_event=emit_tool_event,
             run_id=run_id,
+            debug_enabled=debug_enabled,
         )
         stream = _PydanticAIEventStream(
             run_id=run_id,
@@ -1160,12 +1164,14 @@ class PydanticAIAgentExecutor:
         enabled_tools: Sequence[str],
         emit_tool_event: ToolLifecycleSink,
         run_id: str | None = None,
+        debug_enabled: bool = False,
     ) -> _PydanticAIAgentRunDeps:
         return _PydanticAIAgentRunDeps(
             tool_registry=self._tool_registry,
             enabled_tool_ids=frozenset(self._normalize_enabled_tools(enabled_tools)),
             emit_tool_event=emit_tool_event,
             run_id=run_id,
+            debug_enabled=debug_enabled,
         )
 
     def _normalize_enabled_tools(self, enabled_tools: Sequence[str]) -> tuple[str, ...]:
@@ -1216,6 +1222,7 @@ class PydanticAIAgentExecutor:
         input_summary = summarize_tool_arguments(normalized_arguments)
         log_runtime_chain_debug(
             "tool.execute_enter",
+            enabled=ctx.deps.debug_enabled,
             runId=ctx.deps.run_id,
             toolCallId=tool_call_id,
             toolId=tool_id,
@@ -1292,6 +1299,7 @@ class PydanticAIAgentExecutor:
             error_message = f"Tool '{tool_id}' failed: {exc}"
             log_runtime_chain_debug(
                 "tool.execute_exception",
+                enabled=ctx.deps.debug_enabled,
                 runId=ctx.deps.run_id,
                 toolCallId=tool_call_id,
                 toolId=tool_id,
@@ -1344,6 +1352,7 @@ class PydanticAIAgentExecutor:
         ctx.deps.emit_tool_event(event)
         log_runtime_chain_debug(
             "tool.lifecycle_event",
+            enabled=ctx.deps.debug_enabled,
             runId=ctx.deps.run_id,
             toolEvent=summarize_runtime_tool_event(event),
         )

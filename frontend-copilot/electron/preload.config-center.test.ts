@@ -30,6 +30,7 @@ describe('preload config center bridge', () => {
       domains: {
         assistantBehavior: {
           agentName: 'planner',
+          debugModeEnabled: true,
         },
       },
     }

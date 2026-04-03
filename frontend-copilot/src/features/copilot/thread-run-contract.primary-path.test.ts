@@ -52,6 +52,7 @@ describe('thread run primary path', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       enabledTools: ['tool.file-convert'],
+      debugModeEnabled: true,
       requestOptions: {
         trace: true,
       },
@@ -75,6 +76,7 @@ describe('thread run primary path', () => {
           policy: {
             modelRoute: createRuntimeModelRoute(),
             enabledTools: ['tool.file-convert'],
+            debugModeEnabled: true,
             requestOptions: {
               trace: true,
             },

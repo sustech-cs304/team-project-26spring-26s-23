@@ -16,6 +16,7 @@ export interface ConfigCenterPublicSnapshot {
     }
     assistantBehavior: {
       agentName: string | null
+      debugModeEnabled?: boolean
     }
     hostConfig: {
       runtimeUrl: string | null
@@ -63,6 +64,7 @@ export function projectConfigCenterPublicSnapshot(
       },
       assistantBehavior: {
         agentName: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,
+        debugModeEnabled: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.debugModeEnabled,
       },
       hostConfig: {
         runtimeUrl: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG].values.runtimeUrl,

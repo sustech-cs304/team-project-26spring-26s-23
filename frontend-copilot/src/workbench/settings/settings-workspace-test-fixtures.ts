@@ -27,6 +27,7 @@ export function createBootstrapController(): CopilotBootstrapController {
       bootstrapFields: {
         runtimeUrl: 'http://127.0.0.1:8765',
         agentName: 'campus-agent',
+        debugModeEnabled: false,
       },
       storageState: 'stored',
       runtime: {

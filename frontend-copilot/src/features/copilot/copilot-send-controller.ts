@@ -77,6 +77,7 @@ export async function orchestrateCopilotSend(input: {
   hasAvailableModels: boolean
   composerInputRef: RefObject<HTMLTextAreaElement>
   sendMessage: typeof sendRuntimeMessage
+  debugModeEnabled: boolean
   setRunState: Dispatch<SetStateAction<CopilotRunState>>
   setSendError: Dispatch<SetStateAction<string | null>>
   setComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>>
@@ -159,6 +160,7 @@ export async function orchestrateCopilotSend(input: {
   try {
     for await (const event of input.sendMessage({
       ...runtimeInput,
+      debugModeEnabled: input.debugModeEnabled,
       signal: input.signal,
       onRunStart: (response) => {
         input.setRunState((current) => registerCopilotRunStartResponse(current, {

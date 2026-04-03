@@ -62,6 +62,7 @@ describe('config center public bridge', () => {
           },
           assistantBehavior: {
             agentName: 'campus-agent',
+            debugModeEnabled: false,
           },
           hostConfig: {
             runtimeUrl: 'http://127.0.0.1:8765',
@@ -96,6 +97,7 @@ describe('config center public bridge', () => {
           },
           assistantBehavior: {
             agentName: 'planner',
+            debugModeEnabled: false,
           },
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
@@ -183,6 +185,7 @@ describe('config center public bridge', () => {
         },
         assistantBehavior: {
           agentName: 'planner',
+          debugModeEnabled: false,
         },
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
@@ -203,6 +206,7 @@ describe('config center public bridge', () => {
         },
         assistantBehavior: {
           agentName: 'planner',
+          debugModeEnabled: false,
         },
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
@@ -228,6 +232,7 @@ describe('config center public bridge', () => {
         },
         assistantBehavior: {
           agentName: 'planner',
+          debugModeEnabled: false,
         },
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',
@@ -249,6 +254,7 @@ describe('config center public bridge', () => {
         },
         assistantBehavior: {
           agentName: 'planner',
+          debugModeEnabled: false,
         },
         hostConfig: {
           runtimeUrl: 'http://localhost:4400',

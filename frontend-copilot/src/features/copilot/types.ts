@@ -14,6 +14,7 @@ import type {
 export interface CopilotBootstrapFields {
   runtimeUrl: string | null
   agentName: string | null
+  debugModeEnabled: boolean
 }
 
 export interface CopilotBootstrapFieldsLoadSuccess {

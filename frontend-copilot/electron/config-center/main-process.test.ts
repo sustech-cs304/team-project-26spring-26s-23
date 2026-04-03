@@ -37,6 +37,7 @@ describe('createElectronUnifiedConfigService', () => {
             },
             assistantBehavior: {
               agentName: null,
+              debugModeEnabled: false,
             },
             hostConfig: {
               runtimeUrl: null,
@@ -67,6 +68,7 @@ describe('createElectronUnifiedConfigService', () => {
           },
           assistantBehavior: {
             agentName: '  planner  ',
+            debugModeEnabled: true,
           },
           hostConfig: {
             runtimeUrl: '  http://127.0.0.1:4400  ',
@@ -88,6 +90,7 @@ describe('createElectronUnifiedConfigService', () => {
             },
             assistantBehavior: {
               agentName: 'planner',
+              debugModeEnabled: true,
             },
             hostConfig: {
               runtimeUrl: 'http://127.0.0.1:4400',
@@ -119,6 +122,7 @@ describe('createElectronUnifiedConfigService', () => {
           },
           assistantBehavior: {
             agentName: '  planner  ',
+            debugModeEnabled: false,
           },
         },
       })

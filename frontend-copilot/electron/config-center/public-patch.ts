@@ -18,6 +18,7 @@ type ConfigCenterPublicPatchFrontendPreferences = RequireAtLeastOne<{
 
 type ConfigCenterPublicPatchAssistantBehavior = RequireAtLeastOne<{
   agentName: string | null
+  debugModeEnabled: boolean
 }>
 
 type ConfigCenterPublicPatchHostConfig = RequireAtLeastOne<{
@@ -71,6 +72,7 @@ const CONFIG_CENTER_PUBLIC_PATCH_DOMAIN_REGISTRY: Record<string, ConfigCenterPub
   assistantBehavior: {
     fields: {
       agentName: 'agentName',
+      debugModeEnabled: 'debugModeEnabled',
     },
   },
   hostConfig: {

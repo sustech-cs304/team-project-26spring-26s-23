@@ -9,7 +9,7 @@ import type {
 export type RuntimeModule = typeof import('./runtime')
 
 export function createBootstrapFieldsResult(
-  fields: Partial<{ runtimeUrl: string | null; agentName: string | null }> = {},
+  fields: Partial<{ runtimeUrl: string | null; agentName: string | null; debugModeEnabled: boolean }> = {},
   storageState: CopilotBootstrapFieldsStorageState = 'stored',
 ): CopilotBootstrapFieldsLoadResult {
   return {
@@ -17,6 +17,7 @@ export function createBootstrapFieldsResult(
     fields: {
       runtimeUrl: fields.runtimeUrl ?? null,
       agentName: fields.agentName ?? null,
+      debugModeEnabled: fields.debugModeEnabled ?? false,
     },
     storageState,
   }
@@ -46,6 +47,7 @@ export function createConfigCenterPublicSnapshot(
     theme: ConfigCenterPublicSnapshot['domains']['frontendPreferences']['theme']
     animationsEnabled: boolean
     agentName: string | null
+    debugModeEnabled: boolean
     runtimeUrl: string | null
     model: string | null
   }> = {},
@@ -59,6 +61,7 @@ export function createConfigCenterPublicSnapshot(
       },
       assistantBehavior: {
         agentName: overrides.agentName ?? null,
+        debugModeEnabled: overrides.debugModeEnabled ?? false,
       },
       hostConfig: {
         runtimeUrl: overrides.runtimeUrl ?? null,

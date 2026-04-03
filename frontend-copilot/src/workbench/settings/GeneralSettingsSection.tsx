@@ -7,10 +7,12 @@ interface GeneralSettingsSectionProps {
   proxyMode: string
   assistantNotificationsEnabled: boolean
   backupEnabled: boolean
+  debugModeEnabled: boolean
   onLanguageChange: (value: string) => void
   onProxyModeChange: (value: string) => void
   onAssistantNotificationsEnabledChange: (value: boolean) => void
   onBackupEnabledChange: (value: boolean) => void
+  onDebugModeEnabledChange: (value: boolean) => void
 }
 
 export function GeneralSettingsSection({
@@ -18,10 +20,12 @@ export function GeneralSettingsSection({
   proxyMode,
   assistantNotificationsEnabled,
   backupEnabled,
+  debugModeEnabled,
   onLanguageChange,
   onProxyModeChange,
   onAssistantNotificationsEnabledChange,
   onBackupEnabledChange,
+  onDebugModeEnabledChange,
 }: GeneralSettingsSectionProps) {
   return (
     <div className="settings-page">
@@ -45,6 +49,12 @@ export function GeneralSettingsSection({
               onChange={onAssistantNotificationsEnabledChange}
             />
             <ToggleSwitch label="自动备份" checked={backupEnabled} onChange={onBackupEnabledChange} />
+            <ToggleSwitch
+              label="启用调试模式"
+              description="显示运行诊断，并让新的聊天运行自动开启后端 runtime chain debug 日志。"
+              checked={debugModeEnabled}
+              onChange={onDebugModeEnabledChange}
+            />
           </div>
         </div>
       </section>

@@ -87,6 +87,7 @@ describe('sendRuntimeMessage', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       enabledTools: ['tool.file-convert'],
+      debugModeEnabled: true,
       requestOptions: {
         trace: true,
       },
@@ -123,6 +124,7 @@ describe('sendRuntimeMessage', () => {
           policy: {
             modelRoute: createRuntimeModelRoute(),
             enabledTools: ['tool.file-convert'],
+            debugModeEnabled: true,
             requestOptions: {
               trace: true,
             },

@@ -87,3 +87,9 @@ export function projectAnimationsEnabledFromConfigCenterPublicSnapshot(
   return snapshot.domains.frontendPreferences.animationsEnabled
 }
 
+export function projectDebugModeEnabledFromConfigCenterPublicSnapshot(
+  snapshot: ConfigCenterPublicSnapshot,
+): boolean {
+  return snapshot.domains.assistantBehavior.debugModeEnabled ?? false
+}
+

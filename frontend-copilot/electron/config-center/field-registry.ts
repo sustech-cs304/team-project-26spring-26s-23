@@ -7,6 +7,7 @@ import {
 } from './domain-schema'
 import {
   normalizeBoolean,
+  normalizeBooleanWithDefault,
   normalizeOptionalString,
   normalizeThemeMode,
   parseBooleanPatchValue,
@@ -22,6 +23,7 @@ export interface UnifiedConfigFieldValueMap {
   theme: UnifiedConfigTheme
   animationsEnabled: boolean
   agentName: string | null
+  debugModeEnabled: boolean
   runtimeUrl: string | null
   model: string | null
 }
@@ -87,6 +89,19 @@ export const UNIFIED_CONFIG_FIELD_REGISTRY: UnifiedConfigFieldRegistry = {
     uiSection: 'assistant',
     normalize: normalizeOptionalString,
     parsePatchValue: parseOptionalStringPatchValue,
+  },
+  debugModeEnabled: {
+    key: 'debugModeEnabled',
+    storageKey: 'debugModeEnabled',
+    domain: UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR,
+    defaultValue: false,
+    valueType: 'boolean',
+    effectLevel: 'immediate',
+    rendererEditable: true,
+    runtimeProjectable: true,
+    uiSection: 'assistant',
+    normalize: (value) => normalizeBooleanWithDefault(value, false),
+    parsePatchValue: parseBooleanPatchValue,
   },
   runtimeUrl: {
     key: 'runtimeUrl',

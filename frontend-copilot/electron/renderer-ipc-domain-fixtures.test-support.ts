@@ -4,13 +4,14 @@ import type { SettingsWorkspaceEditableState } from './settings-workspace/state-
 
 export interface ConfigCenterPublicSnapshotFixtureOptions {
   theme?: 'light' | 'dark'
+  debugModeEnabled?: boolean
   model?: string | null
 }
 
 export function createConfigCenterPublicSnapshotFixture(
   options: ConfigCenterPublicSnapshotFixtureOptions = {},
 ): ConfigCenterPublicSnapshot {
-  const { theme = 'dark', model = 'qwen-plus' } = options
+  const { theme = 'dark', debugModeEnabled = false, model = 'qwen-plus' } = options
 
   return {
     version: 1,
@@ -21,6 +22,7 @@ export function createConfigCenterPublicSnapshotFixture(
       },
       assistantBehavior: {
         agentName: 'planner',
+        debugModeEnabled,
       },
       hostConfig: {
         runtimeUrl: 'http://127.0.0.1:4400',
@@ -50,6 +52,7 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
       proxyMode: 'system',
       assistantNotificationsEnabled: false,
       backupEnabled: true,
+      debugModeEnabled: false,
     },
     data: {
       dataPath: 'D:/workspace/copilot-data',

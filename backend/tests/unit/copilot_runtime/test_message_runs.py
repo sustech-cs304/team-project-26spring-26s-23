@@ -103,6 +103,7 @@ class _StreamingExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.calls.append(
@@ -112,6 +113,7 @@ class _StreamingExecutor:
                 "message_history": list(message_history),
                 "model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -144,6 +146,7 @@ class _EventStreamingExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateEventStream:
         self.calls.append(
@@ -154,6 +157,7 @@ class _EventStreamingExecutor:
                 "message_history": list(message_history),
                 "model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -191,6 +195,7 @@ class _CancellingExecutor(_StreamingExecutor):
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.calls.append(
@@ -200,6 +205,7 @@ class _CancellingExecutor(_StreamingExecutor):
                 "message_history": list(message_history),
                 "model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -258,7 +264,7 @@ def test_stream_events_success_archives_only_completed_assistant_message() -> No
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
-    events = asyncio.run(_collect_events(orchestrator, _build_request(session_id="session-1")))
+    events = asyncio.run(_collect_events(orchestrator, _build_request(session_id="session-1", debug_mode_enabled=True)))
 
     assert [event.type for event in events] == ["run_started", "text_delta", "text_delta", "run_completed"]
     assert [event.sequence for event in events] == [1, 2, 3, 4]
@@ -270,6 +276,7 @@ def test_stream_events_success_archives_only_completed_assistant_message() -> No
             "message_history": [],
             "model_id": "gpt-4.1",
             "enabled_tools": [],
+            "debug_enabled": True,
             "request_options": {},
         }
     ]
@@ -483,6 +490,7 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
             "message_history": [],
             "model_id": "gpt-4.1",
             "enabled_tools": [WEATHER_CURRENT_TOOL_ID],
+            "debug_enabled": False,
             "request_options": {},
         }
     ]
@@ -830,6 +838,7 @@ def _build_request(
     *,
     session_id: str,
     enabled_tools: tuple[str, ...] = (),
+    debug_mode_enabled: bool = False,
 ) -> RuntimeMessageSendRequest:
     return RuntimeMessageSendRequest(
         session_id=session_id,
@@ -845,6 +854,7 @@ def _build_request(
                 ),
             ),
             enabledTools=enabled_tools,
+            debugModeEnabled=debug_mode_enabled,
             requestOptions={},
         ),
         agent_id="default",

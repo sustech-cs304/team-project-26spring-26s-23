@@ -96,6 +96,7 @@ class RuntimeStreamingAgentExecutor(Protocol):
         message_history: Sequence[ModelMessage],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: Sequence[str] = (),
+        debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
     ) -> RuntimeAgentExecutionEventStream: ...
 
@@ -113,13 +114,15 @@ class RuntimeMessageRunSuccess:
 class _LegacyTextExecutionEventStreamAdapter:
     stream: RuntimeAgentTextStream
     run_id: str
+    debug_enabled: bool = False
     resolved_model_id: str = field(init=False)
     _event_buffer: RuntimeExecutionEventBuffer = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.resolved_model_id = self.stream.resolved_model_id
         self._event_buffer = RuntimeExecutionEventBuffer(
-            event_factory=RuntimeExecutionEventFactory(run_id=self.run_id)
+            event_factory=RuntimeExecutionEventFactory(run_id=self.run_id),
+            debug_enabled=self.debug_enabled,
         )
 
     async def __aenter__(self) -> "_LegacyTextExecutionEventStreamAdapter":
@@ -135,7 +138,7 @@ class _LegacyTextExecutionEventStreamAdapter:
         return await self.stream.__aexit__(exc_type, exc, tb)
 
     async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
-        debug_enabled = is_runtime_chain_debug_enabled()
+        debug_enabled = self.debug_enabled
         try:
             async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
                 yield event
@@ -270,7 +273,7 @@ class RuntimeMessageRunOrchestrator:
         run_id: str | None = None,
     ) -> AsyncIterator[RuntimeRunEvent]:
         resolved_run_id = run_id or _next_run_id()
-        debug_enabled = is_runtime_chain_debug_enabled()
+        debug_enabled = request.policy.debugModeEnabled or is_runtime_chain_debug_enabled()
         assistant_message_id = f"{resolved_run_id}:assistant"
         events = RuntimeRunEventFactory(session_id=request.session_id, run_id=resolved_run_id)
         projector = LegacyRuntimeRunEventProjector(
@@ -428,6 +431,7 @@ class RuntimeMessageRunOrchestrator:
                 message_history=message_history,
                 model_route=resolved_model_route,
                 enabled_tools=resolved_tool_ids,
+                debug_enabled=debug_enabled,
                 request_options=request.policy.requestOptions,
             ) as stream:
                 log_runtime_chain_debug(
@@ -634,6 +638,7 @@ class RuntimeMessageRunOrchestrator:
         message_history: Sequence[ModelMessage],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...],
+        debug_enabled: bool,
         request_options: Mapping[str, Any] | None,
     ) -> RuntimeAgentExecutionEventStream:
         open_event_stream = getattr(agent_executor, "open_event_stream", None)
@@ -655,6 +660,7 @@ class RuntimeMessageRunOrchestrator:
                     message_history=message_history,
                     model_route=model_route,
                     enabled_tools=enabled_tools,
+                    debug_enabled=debug_enabled,
                     request_options=request_options,
                 ),
             )
@@ -677,10 +683,15 @@ class RuntimeMessageRunOrchestrator:
                     message_history=message_history,
                     model_route=model_route,
                     enabled_tools=enabled_tools,
+                    debug_enabled=debug_enabled,
                     request_options=request_options,
                 ),
             )
-            return _LegacyTextExecutionEventStreamAdapter(stream=legacy_stream, run_id=run_id)
+            return _LegacyTextExecutionEventStreamAdapter(
+                stream=legacy_stream,
+                run_id=run_id,
+                debug_enabled=debug_enabled,
+            )
 
         raise AgentExecutionError(
             f"Agent '{agent_name}' does not support streamed execution."

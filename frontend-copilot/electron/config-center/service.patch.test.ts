@@ -14,7 +14,7 @@ import {
   writeRawDomainDocuments,
 } from './service.test-support'
 
-function createExpectedPublicSnapshot(): ConfigCenterPublicSnapshot {
+function createExpectedPublicSnapshot(debugModeEnabled = false): ConfigCenterPublicSnapshot {
   return {
     version: 1,
     domains: {
@@ -24,6 +24,7 @@ function createExpectedPublicSnapshot(): ConfigCenterPublicSnapshot {
       },
       assistantBehavior: {
         agentName: 'planner',
+        debugModeEnabled,
       },
       hostConfig: {
         runtimeUrl: 'http://localhost:4400',
@@ -74,6 +75,7 @@ describe('createUnifiedConfigCenter patching', () => {
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: null,
+          debugModeEnabled: false,
         }),
       )
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG]).toEqual(
@@ -98,6 +100,7 @@ describe('createUnifiedConfigCenter patching', () => {
       expect(updated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: null,
+          debugModeEnabled: false,
         }),
       )
       expect(updated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG]).toEqual(
@@ -118,6 +121,7 @@ describe('createUnifiedConfigCenter patching', () => {
       ).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: null,
+          debugModeEnabled: false,
         }),
       )
       expect(await readStoredDomainDocument(fixture, UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG)).toEqual(
@@ -138,6 +142,7 @@ describe('createUnifiedConfigCenter patching', () => {
           },
           assistantBehavior: {
             agentName: '  planner  ',
+            debugModeEnabled: true,
           },
           hostConfig: {
             runtimeUrl: '  http://localhost:4400  ',
@@ -148,7 +153,7 @@ describe('createUnifiedConfigCenter patching', () => {
         },
       })
 
-      const expectedSnapshot = createExpectedPublicSnapshot()
+      const expectedSnapshot = createExpectedPublicSnapshot(true)
 
       expect(result.snapshot).toEqual(expectedSnapshot)
       expect(
@@ -164,6 +169,7 @@ describe('createUnifiedConfigCenter patching', () => {
       ).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: 'planner',
+          debugModeEnabled: true,
         }),
       )
       expect(await readStoredDomainDocument(fixture, UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG)).toEqual(
@@ -208,6 +214,7 @@ describe('createUnifiedConfigCenter patching', () => {
         animationsEnabled: false,
         runtimeUrl: '  http://localhost:4400  ',
         agentName: '  planner  ',
+        debugModeEnabled: false,
         model: '  qwen-plus  ',
       })
 
