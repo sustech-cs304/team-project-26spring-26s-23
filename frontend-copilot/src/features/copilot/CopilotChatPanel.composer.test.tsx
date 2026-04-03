@@ -478,7 +478,8 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.container.textContent).toContain('请回显本条消息')
     expect(rendered.container.textContent).toContain('助手响应')
     expect(rendered.container.textContent).toContain('这是助手回显')
-    expect(rendered.container.textContent).toContain('已完成')
+    expect(rendered.container.textContent).not.toContain('已完成')
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--assistant.copilot-chat__message--completed')).toHaveLength(1)
 
     rendered.unmount()
   })

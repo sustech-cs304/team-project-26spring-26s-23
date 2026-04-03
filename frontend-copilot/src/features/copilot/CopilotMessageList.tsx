@@ -51,11 +51,6 @@ export function CopilotMessageList({
                 {turn.kind !== 'user' && (
                   <div className="copilot-chat__message-header">
                     <p className="copilot-chat__message-label">{turn.title}</p>
-                    {turn.status !== undefined && (
-                      <span className={`copilot-chat__message-status copilot-chat__message-status--${turn.status}`}>
-                        {formatTurnStatus(turn.status)}
-                      </span>
-                    )}
                   </div>
                 )}
                 <p className="copilot-chat__message-text">{turn.content}</p>
@@ -85,19 +80,6 @@ export function CopilotMessageList({
           })}
     </div>
   )
-}
-
-function formatTurnStatus(status: 'streaming' | 'completed' | 'failed' | 'cancelled'): string {
-  switch (status) {
-    case 'streaming':
-      return '流式输出中'
-    case 'completed':
-      return '已完成'
-    case 'failed':
-      return '失败'
-    case 'cancelled':
-      return '已取消'
-  }
 }
 
 function buildDetailRows(turn: CopilotMessageListItem): Array<{

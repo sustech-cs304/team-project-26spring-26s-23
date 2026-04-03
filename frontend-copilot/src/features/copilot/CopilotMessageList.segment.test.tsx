@@ -7,10 +7,57 @@ import { createIdleCopilotRunState } from './run-segment-reducer'
 import {
   buildCopilotMessageListItems,
   createUserMessageListItem,
+  type CopilotMessageListItem,
 } from './run-segment-view-model'
 import type { CopilotRunState } from './types'
 
 describe('CopilotMessageList segment rendering', () => {
+  it('renders messages while omitting status badge text', () => {
+    const conversation: CopilotMessageListItem[] = [
+      {
+        id: 'assistant:run-streaming:1',
+        kind: 'assistant',
+        runId: 'run-streaming',
+        sequence: 1,
+        title: '助手响应',
+        content: '正在生成内容',
+        status: 'streaming',
+        resolvedModelId: null,
+        resolvedModelRoute: null,
+        resolvedToolIds: [],
+        requestOptions: {},
+      },
+      {
+        id: 'tool:run-streaming:tool.weather-current:call-1',
+        kind: 'tool',
+        runId: 'run-streaming',
+        sequence: 2,
+        status: 'completed',
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        toolPhase: 'completed',
+        title: '天气工具已返回结果',
+        content: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        inputSummary: null,
+        resultSummary: null,
+        errorSummary: null,
+      },
+    ]
+
+    const html = renderToStaticMarkup(
+      <CopilotMessageList conversation={conversation} />,
+    )
+
+    expect(html).toContain('助手响应')
+    expect(html).toContain('正在生成内容')
+    expect(html).toContain('天气工具已返回结果')
+    expect(html).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(html).toContain('copilot-chat__message--streaming')
+    expect(html).toContain('copilot-chat__message--completed')
+    expect(html).not.toContain('流式输出中')
+    expect(html).not.toContain('已完成')
+  })
+
   it('renders assistant → tool → assistant in segment order', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),
