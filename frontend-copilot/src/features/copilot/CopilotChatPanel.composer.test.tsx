@@ -448,9 +448,36 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('echoes user and assistant messages after a successful send', async () => {
+  it('echoes user and assistant messages after a successful send with model icon and model name in the assistant header', async () => {
     const sendMessage = createResolvedSendMessageSpy()
-    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'openai/gpt-4.1',
+        },
+      }),
+    }))
 
     const rendered = renderWithRoot(
       <CopilotChatPanel
@@ -475,9 +502,16 @@ describe('CopilotChatPanel composer interactions', () => {
     await setFormControlValue(messageInput, '请回显本条消息')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
 
+    const assistantHeader = rendered.getByTestId('chat-message-assistant-label-1')
+    const assistantIcon = rendered.getByTestId('chat-message-assistant-icon-1')
+    const renderedIcon = assistantIcon.querySelector('.copilot-model-picker__icon')
+
     expect(rendered.container.textContent).toContain('请回显本条消息')
-    expect(rendered.container.textContent).toContain('助手响应')
+    expect(rendered.container.textContent).not.toContain('助手响应')
     expect(rendered.container.textContent).toContain('这是助手回显')
+    expect(assistantHeader.textContent).toContain('GPT 4.1')
+    expect(renderedIcon?.textContent).toBe('O')
+    expect(renderedIcon?.getAttribute('aria-label')).toBe('GPT 4.1 图标')
     expect(rendered.container.textContent).not.toContain('已完成')
     expect(rendered.container.querySelectorAll('.copilot-chat__message--assistant.copilot-chat__message--completed')).toHaveLength(1)
 
@@ -561,6 +595,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {
+      yield* []
       throw new RuntimeRequestError('tool_not_found: unknown tool', {
         code: 'tool_not_found',
         status: 400,

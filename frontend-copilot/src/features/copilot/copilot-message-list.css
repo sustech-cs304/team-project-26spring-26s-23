@@ -68,6 +68,32 @@
   font-weight: 700;
 }
 
+.copilot-chat__message-label--assistant {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.copilot-chat__message-model-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.copilot-chat__message-label--assistant .copilot-model-picker__icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  font-size: 0.62rem;
+}
+
+.copilot-chat__message-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .copilot-chat__message-text {
   margin: 0;
   color: var(--text-secondary);

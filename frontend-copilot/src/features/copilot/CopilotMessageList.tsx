@@ -1,7 +1,18 @@
-import type { CopilotMessageListItem } from './run-segment-view-model'
+import { ModelPickerIcon } from './components/ModelPicker'
+import {
+  createEmptyCopilotModel,
+  createFallbackCopilotModel,
+  resolveCopilotModelOption,
+  type CopilotModelOption,
+} from './model-picker'
+import type {
+  CopilotAssistantMessageItem,
+  CopilotMessageListItem,
+} from './run-segment-view-model'
 
 interface CopilotMessageListProps {
   conversation: CopilotMessageListItem[]
+  models?: CopilotModelOption[]
   showDiagnostics?: boolean
   emptyState?: {
     title: string
@@ -11,6 +22,7 @@ interface CopilotMessageListProps {
  
 export function CopilotMessageList({
   conversation,
+  models = [],
   showDiagnostics = true,
   emptyState = null,
 }: CopilotMessageListProps) {
@@ -48,11 +60,7 @@ export function CopilotMessageList({
                 ].filter((className) => className !== '').join(' ')}
                 data-testid={`chat-message-${turn.kind}-${index}`}
               >
-                {turn.kind !== 'user' && (
-                  <div className="copilot-chat__message-header">
-                    <p className="copilot-chat__message-label">{turn.title}</p>
-                  </div>
-                )}
+                {turn.kind !== 'user' && renderMessageHeader(turn, index, models)}
                 <p className="copilot-chat__message-text">{turn.content}</p>
                 {detailRows.length > 0 && (
                   <div className="copilot-chat__message-detail-list">
@@ -80,6 +88,92 @@ export function CopilotMessageList({
           })}
     </div>
   )
+}
+
+function renderMessageHeader(
+  turn: Exclude<CopilotMessageListItem, { kind: 'user' }>,
+  index: number,
+  models: CopilotModelOption[],
+) {
+  if (turn.kind !== 'assistant') {
+    return (
+      <div className="copilot-chat__message-header">
+        <p className="copilot-chat__message-label">{turn.title}</p>
+      </div>
+    )
+  }
+
+  const assistantHeader = resolveAssistantMessageHeader(turn, models)
+
+  return (
+    <div className="copilot-chat__message-header">
+      <p
+        className="copilot-chat__message-label copilot-chat__message-label--assistant"
+        data-testid={`chat-message-assistant-label-${index}`}
+      >
+        <span className="copilot-chat__message-model-icon" data-testid={`chat-message-assistant-icon-${index}`}>
+          <ModelPickerIcon icon={assistantHeader.icon} title={assistantHeader.name} />
+        </span>
+        <span className="copilot-chat__message-model-name">{assistantHeader.name}</span>
+      </p>
+    </div>
+  )
+}
+
+function resolveAssistantMessageHeader(
+  turn: CopilotAssistantMessageItem,
+  models: CopilotModelOption[],
+): {
+  name: string
+  icon: CopilotModelOption['icon']
+} {
+  const resolvedModel = resolveCopilotModelOption({
+    models,
+    resolvedModelId: turn.resolvedModelId,
+    resolvedModelRoute: turn.resolvedModelRoute,
+  })
+  if (resolvedModel !== null) {
+    return {
+      name: resolvedModel.name,
+      icon: resolvedModel.icon,
+    }
+  }
+
+  const resolvedModelId = findFirstNonEmptyValue(
+    turn.resolvedModelId,
+    turn.resolvedModelRoute?.snapshot.modelId,
+  )
+  if (resolvedModelId !== null) {
+    const fallbackModel = createFallbackCopilotModel(resolvedModelId)
+    return {
+      name: fallbackModel.name,
+      icon: fallbackModel.icon,
+    }
+  }
+
+  const fallbackTitle = findFirstNonEmptyValue(turn.title)
+  if (fallbackTitle !== null) {
+    return {
+      name: fallbackTitle,
+      icon: createEmptyCopilotModel().icon,
+    }
+  }
+
+  return {
+    name: '助手响应',
+    icon: createEmptyCopilotModel().icon,
+  }
+}
+
+function findFirstNonEmptyValue(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmedValue = value?.trim() ?? ''
+    if (trimmedValue !== '') {
+      return trimmedValue
+    }
+  }
+
+  return null
 }
 
 function buildDetailRows(turn: CopilotMessageListItem): Array<{

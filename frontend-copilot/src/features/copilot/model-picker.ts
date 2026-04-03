@@ -60,6 +60,42 @@ export function getCopilotModelById(
   return models.find((model) => model.id === modelId) ?? null
 }
 
+export function resolveCopilotModelOption(input: {
+  models?: CopilotModelOption[]
+  resolvedModelId?: string | null
+  resolvedModelRoute?: RuntimeModelRoute | null
+}): CopilotModelOption | null {
+  const models = input.models ?? []
+  const normalizedResolvedModelId = normalizeModelId(input.resolvedModelId ?? '')
+  const normalizedResolvedRouteModelId = normalizeModelId(input.resolvedModelRoute?.snapshot.modelId ?? '')
+
+  const exactIdMatch = normalizedResolvedModelId === ''
+    ? null
+    : getCopilotModelById(normalizedResolvedModelId, models)
+  if (exactIdMatch !== null) {
+    return exactIdMatch
+  }
+
+  const exactRouteMatch = findCopilotModelByRoute(input.resolvedModelRoute ?? null, models)
+  if (exactRouteMatch !== null) {
+    return exactRouteMatch
+  }
+
+  for (const candidate of [normalizedResolvedModelId, normalizedResolvedRouteModelId]) {
+    if (candidate === '') {
+      continue
+    }
+
+    const modelIdMatch = models.find((model) => model.modelId === candidate || model.id === candidate)
+    if (modelIdMatch !== undefined) {
+      return modelIdMatch
+    }
+  }
+
+  const fallbackModelId = normalizedResolvedModelId || normalizedResolvedRouteModelId
+  return fallbackModelId === '' ? null : createFallbackCopilotModel(fallbackModelId)
+}
+
 export function createEmptyCopilotModel(): CopilotModelOption {
   return {
     id: '',
@@ -233,6 +269,26 @@ export function groupCopilotModels(models: CopilotModelOption[]): CopilotModelGr
     title: key,
     models: groupedModels,
   }))
+}
+
+function findCopilotModelByRoute(
+  route: RuntimeModelRoute | null,
+  models: CopilotModelOption[],
+): CopilotModelOption | null {
+  if (route === null) {
+    return null
+  }
+
+  const providerProfileId = route.providerProfileId.trim()
+  const routeModelId = normalizeModelId(route.snapshot.modelId)
+  if (providerProfileId === '' || routeModelId === '') {
+    return null
+  }
+
+  return models.find((model) => (
+    model.route.providerProfileId === providerProfileId
+    && model.route.snapshot.modelId === routeModelId
+  )) ?? null
 }
 
 function createCopilotModelOption(

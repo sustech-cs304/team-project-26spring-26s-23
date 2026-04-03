@@ -15,7 +15,7 @@ import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
 import type { CopilotMessageListItem } from './run-segment-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
-import type { CopilotBootstrapState } from './types'
+import type { CopilotBootstrapState, CopilotConnectableState } from './types'
 
 export interface CopilotPanelShellProps {
   state: CopilotBootstrapState
@@ -42,6 +42,10 @@ export interface CopilotPanelShellProps {
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
+type ConnectableCopilotPanelShellProps = Omit<CopilotPanelShellProps, 'state'> & {
+  state: CopilotConnectableState
+}
+
 export function CopilotPanelShell(props: CopilotPanelShellProps) {
   if (!isCopilotConnectableState(props.state)) {
     return (
@@ -53,10 +57,13 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
     )
   }
 
-  return renderSessionShell(props)
+  return renderSessionShell({
+    ...props,
+    state: props.state,
+  })
 }
 
-function renderSessionShell(props: CopilotPanelShellProps) {
+function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   const hasAvailableModels = props.modelGroups.some((group) => group.models.length > 0)
 
   if (props.directoryState.status === 'loading' || props.directoryState.status === 'idle') {
@@ -112,6 +119,7 @@ function renderSessionShell(props: CopilotPanelShellProps) {
       <section className="copilot-chat" data-testid="chat-send-shell">
         <CopilotMessageList
           conversation={props.conversation}
+          models={props.modelGroups.flatMap((group) => group.models)}
           showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
           emptyState={hasAvailableModels
             ? null

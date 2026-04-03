@@ -4,15 +4,18 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { CopilotMessageList } from './CopilotMessageList'
 import { createRuntimeModelRoute } from './chat-contract.test-support'
 import { createIdleCopilotRunState } from './run-segment-reducer'
+import { createCopilotModelCatalog } from './model-picker'
 import {
   buildCopilotMessageListItems,
   createUserMessageListItem,
   type CopilotMessageListItem,
 } from './run-segment-view-model'
 import type { CopilotRunState } from './types'
+import { createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
 describe('CopilotMessageList segment rendering', () => {
-  it('renders messages while omitting status badge text', () => {
+  it('renders assistant headers with catalog icon and model name instead of the fixed assistant label', () => {
+    const modelCatalog = createTestModelCatalog()
     const conversation: CopilotMessageListItem[] = [
       {
         id: 'assistant:run-streaming:1',
@@ -22,8 +25,16 @@ describe('CopilotMessageList segment rendering', () => {
         title: '助手响应',
         content: '正在生成内容',
         status: 'streaming',
-        resolvedModelId: null,
-        resolvedModelRoute: null,
+        resolvedModelId: 'openai/gpt-4.1',
+        resolvedModelRoute: createRuntimeModelRoute({
+          providerProfileId: 'provider-openai',
+          snapshot: {
+            provider: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: 'openai/gpt-4.1',
+          },
+        }),
         resolvedToolIds: [],
         requestOptions: {},
       },
@@ -45,10 +56,13 @@ describe('CopilotMessageList segment rendering', () => {
     ]
 
     const html = renderToStaticMarkup(
-      <CopilotMessageList conversation={conversation} />,
+      <CopilotMessageList conversation={conversation} models={modelCatalog.models} />,
     )
 
-    expect(html).toContain('助手响应')
+    expect(html).not.toContain('助手响应')
+    expect(html).toContain('GPT 4.1')
+    expect(html).toContain('chat-message-assistant-icon-0')
+    expect(html).toContain('GPT 4.1 图标')
     expect(html).toContain('正在生成内容')
     expect(html).toContain('天气工具已返回结果')
     expect(html).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
@@ -56,6 +70,38 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('copilot-chat__message--completed')
     expect(html).not.toContain('流式输出中')
     expect(html).not.toContain('已完成')
+  })
+
+  it('falls back to resolved model id when the catalog entry no longer exists', () => {
+    const conversation: CopilotMessageListItem[] = [{
+      id: 'assistant:run-fallback:1',
+      kind: 'assistant',
+      runId: 'run-fallback',
+      sequence: 1,
+      title: '助手响应',
+      content: '模型目录已经变更。',
+      status: 'completed',
+      resolvedModelId: 'legacy/retired-model',
+      resolvedModelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-legacy',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: 'legacy/retired-model',
+        },
+      }),
+      resolvedToolIds: [],
+      requestOptions: {},
+    }]
+
+    const html = renderToStaticMarkup(
+      <CopilotMessageList conversation={conversation} models={createTestModelCatalog().models} />,
+    )
+
+    expect(html).not.toContain('助手响应')
+    expect(html).toContain('legacy/retired-model')
+    expect(html).toContain('legacy/retired-model 图标')
   })
 
   it('renders assistant → tool → assistant in segment order', () => {
@@ -303,6 +349,28 @@ describe('CopilotMessageList segment rendering', () => {
   })
 })
 
+function createTestModelCatalog() {
+  return createCopilotModelCatalog([
+    createProviderProfile({
+      id: 'provider-openai',
+      name: 'OpenAI Compatible',
+      availableModels: [
+        {
+          id: 'provider-openai:openai/gpt-4.1',
+          modelId: 'openai/gpt-4.1',
+          displayName: 'GPT 4.1',
+          groupName: 'OpenAI',
+          capabilities: ['reasoning', 'tools'],
+          supportsStreaming: true,
+          currency: 'usd',
+          inputPrice: '1',
+          outputPrice: '2',
+        },
+      ],
+    }),
+  ])
+}
+
 function renderConversation(runState: CopilotRunState): string {
   const conversation = buildCopilotMessageListItems({
     history: [createUserMessageListItem('请先查天气再回答')],
@@ -310,6 +378,6 @@ function renderConversation(runState: CopilotRunState): string {
   })
 
   return renderToStaticMarkup(
-    <CopilotMessageList conversation={conversation} />,
+    <CopilotMessageList conversation={conversation} models={createTestModelCatalog().models} />,
   )
 }
