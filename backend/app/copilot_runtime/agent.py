@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
@@ -10,7 +11,16 @@ from typing import Any, Literal, Protocol, cast
 
 from pydantic_ai import Agent
 from pydantic_ai._run_context import RunContext
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import (
+    FinalResultEvent,
+    ModelMessage,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+    ToolCallPart,
+    ToolCallPartDelta,
+)
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.result import StreamedRunResult
@@ -155,6 +165,16 @@ class _PydanticAIAgentRunDeps:
     run_id: str | None = None
 
 
+@dataclass(slots=True)
+class _ObservedToolCall:
+    part_index: int
+    tool_name: str | None = None
+    tool_call_id: str | None = None
+    args: str | dict[str, Any] | None = None
+    observation_emitted: bool = False
+    arguments_completed_emitted: bool = False
+
+
 class _PydanticAITextStream:
     def __init__(
         self,
@@ -226,6 +246,10 @@ class _PydanticAIEventStream:
         self._model_route_summary = dict(model_route_summary or {})
         self._debug_enabled = debug_enabled
         self._text_delta_index = 0
+        self._cached_output: str | None = None
+        self._observed_tool_calls: dict[int, _ObservedToolCall] = {}
+        self._raw_tool_call_observation_count = 0
+        self._raw_tool_call_arguments_completed_count = 0
 
     async def __aenter__(self) -> _PydanticAIEventStream:
         self._stream_result = await self._stream_context.__aenter__()
@@ -241,13 +265,80 @@ class _PydanticAIEventStream:
 
     async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
         result = self._require_stream_result()
+        raw_stream = self._resolve_raw_stream(result)
+        collector_mode = "raw" if raw_stream is not None else "text_fallback"
         log_runtime_chain_debug(
             "collector.stream_opened",
             enabled=self._debug_enabled,
             runId=self._run_id,
             resolvedModelId=self.resolved_model_id,
             modelRoute=self._model_route_summary,
+            collectorMode=collector_mode,
         )
+        if raw_stream is not None:
+            async for event in self._iter_raw_events(result=result, raw_stream=raw_stream):
+                yield event
+            return
+        async for event in self._iter_text_events(result=result):
+            yield event
+
+    async def _iter_raw_events(
+        self,
+        *,
+        result: StreamedRunResult[Any, Any],
+        raw_stream: AsyncIterator[Any],
+    ) -> AsyncIterator[RuntimeExecutionEvent]:
+        try:
+            for event in self._drain_events(reason="pre_stream"):
+                yield event
+            async for raw_event in raw_stream:
+                self._process_raw_stream_event(raw_event)
+                for event in self._drain_events(
+                    reason=f"after_raw_{self._raw_event_reason(raw_event)}"
+                ):
+                    yield event
+            self._cached_output = await self._read_output(result)
+            for event in self._drain_events(reason="after_raw_stream_output"):
+                yield event
+        except Exception as exc:
+            log_runtime_chain_debug(
+                "collector.stream_exception",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                collectorMode="raw",
+                error=summarize_exception(exc),
+                observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
+                observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+                rawToolCallObservationCount=self._raw_tool_call_observation_count,
+                rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
+            )
+            self._event_buffer.finish_assistant_segment()
+            for event in self._drain_events(reason="exception_finish_segment"):
+                yield event
+            raise
+
+        self._event_buffer.finish_assistant_segment()
+        for event in self._drain_events(reason="stream_completed"):
+            yield event
+        log_runtime_chain_debug(
+            "collector.stream_completed",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            collectorMode="raw",
+            totalTextDeltaCount=self._text_delta_index,
+            observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
+            observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+            rawToolCallObservationCount=self._raw_tool_call_observation_count,
+            rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
+        )
+
+    async def _iter_text_events(
+        self,
+        *,
+        result: StreamedRunResult[Any, Any],
+    ) -> AsyncIterator[RuntimeExecutionEvent]:
         try:
             for event in self._drain_events(reason="pre_stream"):
                 yield event
@@ -260,19 +351,14 @@ class _PydanticAIEventStream:
                         enabled=self._debug_enabled,
                         runId=self._run_id,
                         resolvedModelId=self.resolved_model_id,
+                        collectorMode="text_fallback",
                     )
                 else:
-                    self._text_delta_index += 1
-                    log_runtime_chain_debug(
-                        "collector.text_delta",
-                        enabled=self._debug_enabled,
-                        runId=self._run_id,
-                        resolvedModelId=self.resolved_model_id,
-                        deltaIndex=self._text_delta_index,
-                        deltaLength=len(delta),
-                        deltaPreview=preview_text(delta),
+                    self._record_text_delta(
+                        delta,
+                        part_index=None,
+                        source_event_kind="stream_text",
                     )
-                    self._event_buffer.record_assistant_delta(delta)
                 for event in self._drain_events(reason="after_text_delta"):
                     yield event
         except Exception as exc:
@@ -281,6 +367,7 @@ class _PydanticAIEventStream:
                 enabled=self._debug_enabled,
                 runId=self._run_id,
                 resolvedModelId=self.resolved_model_id,
+                collectorMode="text_fallback",
                 error=summarize_exception(exc),
                 observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
                 observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
@@ -298,10 +385,319 @@ class _PydanticAIEventStream:
             enabled=self._debug_enabled,
             runId=self._run_id,
             resolvedModelId=self.resolved_model_id,
+            collectorMode="text_fallback",
             totalTextDeltaCount=self._text_delta_index,
             observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
             observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
         )
+
+    def _process_raw_stream_event(self, raw_event: Any) -> None:
+        log_runtime_chain_debug(
+            "collector.raw_event",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            rawEvent=self._summarize_raw_event(raw_event),
+        )
+        if isinstance(raw_event, PartStartEvent):
+            self._handle_part_start(raw_event)
+            return
+        if isinstance(raw_event, PartDeltaEvent):
+            self._handle_part_delta(raw_event)
+            return
+        if isinstance(raw_event, FinalResultEvent):
+            log_runtime_chain_debug(
+                "collector.final_result_event",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                toolName=raw_event.tool_name,
+                toolCallId=raw_event.tool_call_id,
+            )
+
+    def _handle_part_start(self, raw_event: PartStartEvent) -> None:
+        part = raw_event.part
+        if isinstance(part, TextPart):
+            self._record_text_delta(
+                part.content,
+                part_index=raw_event.index,
+                source_event_kind=raw_event.event_kind,
+            )
+            return
+        if isinstance(part, ToolCallPart):
+            state = self._observed_tool_calls.get(raw_event.index)
+            if state is None:
+                state = _ObservedToolCall(part_index=raw_event.index)
+            state.tool_name = part.tool_name or state.tool_name
+            state.tool_call_id = part.tool_call_id or state.tool_call_id
+            if part.args is not None:
+                state.args = part.args
+            self._observed_tool_calls[raw_event.index] = state
+            self._emit_tool_call_observation_if_needed(
+                state=state,
+                observation_source=raw_event.event_kind,
+            )
+
+    def _handle_part_delta(self, raw_event: PartDeltaEvent) -> None:
+        delta = raw_event.delta
+        if isinstance(delta, TextPartDelta):
+            self._record_text_delta(
+                delta.content_delta,
+                part_index=raw_event.index,
+                source_event_kind=raw_event.event_kind,
+            )
+            return
+        if isinstance(delta, ToolCallPartDelta):
+            state = self._observed_tool_calls.get(raw_event.index)
+            if state is None:
+                state = _ObservedToolCall(part_index=raw_event.index)
+            if delta.tool_name_delta:
+                state.tool_name = f"{state.tool_name or ''}{delta.tool_name_delta}"
+            if delta.tool_call_id:
+                state.tool_call_id = delta.tool_call_id
+            if delta.args_delta is not None:
+                state.args = self._merge_tool_call_arguments(
+                    current=state.args,
+                    update=delta.args_delta,
+                )
+            self._observed_tool_calls[raw_event.index] = state
+            self._emit_tool_call_observation_if_needed(
+                state=state,
+                observation_source=raw_event.event_kind,
+            )
+
+    def _record_text_delta(
+        self,
+        delta: str,
+        *,
+        part_index: int | None,
+        source_event_kind: str,
+    ) -> None:
+        if delta == "":
+            log_runtime_chain_debug(
+                "collector.empty_text_delta",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                collectorMode="raw" if part_index is not None else "text_fallback",
+                partIndex=part_index,
+                rawEventKind=source_event_kind,
+            )
+            return
+        self._text_delta_index += 1
+        log_runtime_chain_debug(
+            "collector.text_delta",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            collectorMode="raw" if part_index is not None else "text_fallback",
+            rawEventKind=source_event_kind,
+            partIndex=part_index,
+            deltaIndex=self._text_delta_index,
+            deltaLength=len(delta),
+            deltaPreview=preview_text(delta),
+        )
+        self._event_buffer.record_assistant_delta(delta)
+
+    def _emit_tool_call_observation_if_needed(
+        self,
+        *,
+        state: _ObservedToolCall,
+        observation_source: str,
+    ) -> None:
+        parsed_arguments = self._parse_tool_call_arguments(state.args)
+        arguments_complete = parsed_arguments is not None or isinstance(state.args, dict)
+        log_runtime_chain_debug(
+            "collector.tool_call_chunk",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            partIndex=state.part_index,
+            observationSource=observation_source,
+            toolCallId=state.tool_call_id,
+            toolName=state.tool_name,
+            argumentsComplete=arguments_complete,
+            argumentsPreview=self._tool_call_arguments_preview(state.args),
+        )
+        if not state.observation_emitted and self._is_tool_call_identified(state):
+            self._emit_tool_call_diagnostic(
+                state=state,
+                observation_kind="observed",
+                parsed_arguments=parsed_arguments,
+            )
+            state.observation_emitted = True
+            self._raw_tool_call_observation_count += 1
+            if arguments_complete:
+                state.arguments_completed_emitted = True
+                self._raw_tool_call_arguments_completed_count += 1
+            return
+        if state.observation_emitted and not state.arguments_completed_emitted and arguments_complete:
+            self._emit_tool_call_diagnostic(
+                state=state,
+                observation_kind="arguments_completed",
+                parsed_arguments=parsed_arguments,
+            )
+            state.arguments_completed_emitted = True
+            self._raw_tool_call_arguments_completed_count += 1
+
+    def _emit_tool_call_diagnostic(
+        self,
+        *,
+        state: _ObservedToolCall,
+        observation_kind: str,
+        parsed_arguments: dict[str, Any] | None,
+    ) -> None:
+        details: dict[str, Any] = {
+            "source": "pydantic_raw_stream",
+            "providerEndpointType": self._model_route_summary.get("endpointType"),
+            "observationKind": observation_kind,
+            "partIndex": state.part_index,
+            "toolCallId": state.tool_call_id,
+            "toolName": state.tool_name,
+            "argumentsComplete": parsed_arguments is not None or isinstance(state.args, dict),
+        }
+        if parsed_arguments is not None:
+            details["toolArguments"] = parsed_arguments
+        elif isinstance(state.args, dict):
+            details["toolArguments"] = dict(state.args)
+        elif isinstance(state.args, str) and state.args.strip() != "":
+            details["toolArgumentsJson"] = state.args
+        self._event_buffer.record_event(
+            self._event_buffer.event_factory.build_diagnostic(
+                code=(
+                    "raw_tool_call_observed"
+                    if observation_kind == "observed"
+                    else "raw_tool_call_arguments_completed"
+                ),
+                message=(
+                    "Observed provider tool call in raw collector."
+                    if observation_kind == "observed"
+                    else "Provider tool call arguments became complete in raw collector."
+                ),
+                details=details,
+                stage="collect_raw_stream",
+            )
+        )
+
+    def _resolve_raw_stream(
+        self,
+        result: StreamedRunResult[Any, Any],
+    ) -> AsyncIterator[Any] | None:
+        endpoint_type = str(self._model_route_summary.get("endpointType") or "")
+        if endpoint_type not in _SUPPORTED_STREAM_ENDPOINT_TYPES:
+            log_runtime_chain_debug(
+                "collector.raw_stream_unavailable",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                reason="unsupported_endpoint_type",
+                endpointType=endpoint_type,
+            )
+            return None
+        raw_stream = getattr(result, "_stream_response", None)
+        if raw_stream is None or not hasattr(raw_stream, "__aiter__"):
+            log_runtime_chain_debug(
+                "collector.raw_stream_unavailable",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                reason="missing_stream_response",
+                endpointType=endpoint_type,
+            )
+            return None
+        log_runtime_chain_debug(
+            "collector.raw_stream_selected",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            endpointType=endpoint_type,
+        )
+        return cast(AsyncIterator[Any], raw_stream)
+
+    def _raw_event_reason(self, raw_event: Any) -> str:
+        return str(getattr(raw_event, "event_kind", type(raw_event).__name__)).replace("-", "_")
+
+    def _summarize_raw_event(self, raw_event: Any) -> dict[str, Any]:
+        summary: dict[str, Any] = {
+            "eventKind": getattr(raw_event, "event_kind", type(raw_event).__name__),
+        }
+        part_index = getattr(raw_event, "index", None)
+        if part_index is not None:
+            summary["partIndex"] = part_index
+        previous_part_kind = getattr(raw_event, "previous_part_kind", None)
+        if previous_part_kind is not None:
+            summary["previousPartKind"] = previous_part_kind
+        part = getattr(raw_event, "part", None)
+        if isinstance(part, TextPart):
+            summary["partKind"] = "text"
+            summary["deltaPreview"] = preview_text(part.content)
+        elif isinstance(part, ToolCallPart):
+            summary["partKind"] = "tool-call"
+            summary["toolCallId"] = part.tool_call_id
+            summary["toolName"] = part.tool_name
+            summary["argumentsPreview"] = self._tool_call_arguments_preview(part.args)
+        delta = getattr(raw_event, "delta", None)
+        if isinstance(delta, TextPartDelta):
+            summary["deltaKind"] = "text"
+            summary["deltaPreview"] = preview_text(delta.content_delta)
+        elif isinstance(delta, ToolCallPartDelta):
+            summary["deltaKind"] = "tool-call"
+            if delta.tool_call_id is not None:
+                summary["toolCallId"] = delta.tool_call_id
+            if delta.tool_name_delta is not None:
+                summary["toolNameDelta"] = delta.tool_name_delta
+            summary["argumentsPreview"] = self._tool_call_arguments_preview(delta.args_delta)
+        if isinstance(raw_event, FinalResultEvent):
+            summary["toolCallId"] = raw_event.tool_call_id
+            summary["toolName"] = raw_event.tool_name
+        return summary
+
+    def _merge_tool_call_arguments(
+        self,
+        *,
+        current: str | dict[str, Any] | None,
+        update: str | dict[str, Any] | None,
+    ) -> str | dict[str, Any] | None:
+        if update is None:
+            return current
+        if current is None:
+            return update
+        if isinstance(current, str) and isinstance(update, str):
+            return current + update
+        if isinstance(current, dict) and isinstance(update, dict):
+            merged = dict(current)
+            merged.update(update)
+            return merged
+        return update
+
+    def _parse_tool_call_arguments(
+        self,
+        value: str | dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return dict(value)
+        normalized_value = value.strip()
+        if normalized_value == "":
+            return None
+        try:
+            parsed = json.loads(normalized_value)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, dict):
+            return cast(dict[str, Any], parsed)
+        return None
+
+    def _tool_call_arguments_preview(self, value: str | dict[str, Any] | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return preview_text(json.dumps(value, ensure_ascii=False, sort_keys=True))
+        return preview_text(value)
+
+    def _is_tool_call_identified(self, state: _ObservedToolCall) -> bool:
+        return bool(state.tool_name) and bool(state.tool_call_id)
 
     def _drain_events(self, *, reason: str) -> tuple[RuntimeExecutionEvent, ...]:
         drained = self._event_buffer.drain()
@@ -320,7 +716,13 @@ class _PydanticAIEventStream:
         return drained
 
     async def get_output(self) -> str:
+        if self._cached_output is not None:
+            return self._cached_output
         result = self._require_stream_result()
+        self._cached_output = await self._read_output(result)
+        return self._cached_output
+
+    async def _read_output(self, result: StreamedRunResult[Any, Any]) -> str:
         output = await result.get_output()
         if not isinstance(output, str):
             raise AgentExecutionError("PydanticAI agent returned a non-text output.")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from app.copilot_runtime.agent import RuntimeToolLifecycleEvent, ToolInvocationError
+from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.execution_support import SessionNotFoundError
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.run_events import encode_runtime_run_event
@@ -52,6 +53,33 @@ class _ImmediateTextStream:
         return drained
 
 
+class _ImmediateEventStream:
+    def __init__(
+        self,
+        *,
+        events: list[RuntimeExecutionEvent],
+        output: str | Exception,
+    ) -> None:
+        self.resolved_model_id = "gpt-4.1"
+        self._events = list(events)
+        self._output = output
+
+    async def __aenter__(self) -> _ImmediateEventStream:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def iter_events(self):
+        for event in self._events:
+            yield event
+
+    async def get_output(self) -> str:
+        if isinstance(self._output, Exception):
+            raise self._output
+        return self._output
+
+
 class _StreamingExecutor:
     def __init__(
         self,
@@ -92,6 +120,44 @@ class _StreamingExecutor:
             output=self._output,
             tool_events=self._tool_events,
         )
+
+
+class _EventStreamingExecutor:
+    def __init__(
+        self,
+        *,
+        events: list[RuntimeExecutionEvent],
+        output: str | Exception,
+    ) -> None:
+        self._events = list(events)
+        self._output = output
+        self.calls: list[dict[str, object]] = []
+        self.model_configured = True
+        self.model_environment_keys: tuple[str, ...] = ()
+
+    def open_event_stream(
+        self,
+        *,
+        run_id: str,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: tuple[str, ...] = (),
+        request_options: dict[str, object] | None = None,
+    ) -> _ImmediateEventStream:
+        self.calls.append(
+            {
+                "run_id": run_id,
+                "agent_name": agent_name,
+                "user_prompt": user_prompt,
+                "message_history": list(message_history),
+                "model_id": model_route.model_id,
+                "enabled_tools": list(enabled_tools),
+                "request_options": dict(request_options or {}),
+            }
+        )
+        return _ImmediateEventStream(events=self._events, output=self._output)
 
 
 class _ResolvedRouteResolver:
@@ -272,6 +338,154 @@ def test_stream_events_emits_tool_started_completed_before_terminal_success() ->
     assert events[2].payload["phase"] == "completed"
     assert events[2].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
     assert events[-1].payload["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
+
+
+
+def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    tool_call_id = "tool.weather-current:call-1"
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="assistant_segment_started",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_delta",
+                payload={
+                    "segmentId": "run-test:assistant-segment-1",
+                    "delta": "我先查一下。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_completed",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_observed",
+                    "message": "Observed provider tool call in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "observed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": False,
+                        "toolArgumentsJson": '{"location":"Shen',
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_arguments_completed",
+                    "message": "Provider tool call arguments became complete in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "arguments_completed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": True,
+                        "toolArguments": {"location": "Shenzhen"},
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="tool_started",
+                payload={
+                    "toolCallId": tool_call_id,
+                    "toolId": WEATHER_CURRENT_TOOL_ID,
+                    "phase": "started",
+                    "title": "调用天气工具",
+                    "summary": "正在获取 Shenzhen 的天气。",
+                    "inputSummary": '{"location": "Shenzhen"}',
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="tool_completed",
+                payload={
+                    "toolCallId": tool_call_id,
+                    "toolId": WEATHER_CURRENT_TOOL_ID,
+                    "phase": "completed",
+                    "title": "天气工具已返回结果",
+                    "summary": "Shenzhen：晴 / 24°C / 湿度 60%",
+                    "inputSummary": '{"location": "Shenzhen"}',
+                    "resultSummary": "Shenzhen：晴 / 24°C / 湿度 60%",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_started",
+                payload={"segmentId": "run-test:assistant-segment-2"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_delta",
+                payload={
+                    "segmentId": "run-test:assistant-segment-2",
+                    "delta": "查到了。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_completed",
+                payload={"segmentId": "run-test:assistant-segment-2"},
+            ),
+        ],
+        output="我先查一下。查到了。",
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "text_delta",
+        "run_diagnostic",
+        "run_diagnostic",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    assert events[2].payload["code"] == "raw_tool_call_observed"
+    assert events[2].payload["details"]["toolCallId"] == tool_call_id
+    assert events[3].payload["code"] == "raw_tool_call_arguments_completed"
+    assert events[4].payload["phase"] == "started"
+    assert events[5].payload["phase"] == "completed"
+    assert events[-1].payload["assistantText"] == "我先查一下。查到了。"
+    assert executor.calls == [
+        {
+            "run_id": events[0].runId,
+            "agent_name": "default",
+            "user_prompt": "Hello",
+            "message_history": [],
+            "model_id": "gpt-4.1",
+            "enabled_tools": [WEATHER_CURRENT_TOOL_ID],
+            "request_options": {},
+        }
+    ]
 
 
 
