@@ -1,13 +1,13 @@
 ---
 title: 聊天运行时 HTTP 契约
-description: 说明 desktop runtime 当前控制面端点，以及 session-first 流式聊天主契约。
+description: 说明 desktop runtime 当前控制面端点，以及 thread/run 主链与兼容聊天契约。
 sidebar_position: 3
 sidebar_label: 聊天运行时契约
 ---
 
 # 聊天运行时 HTTP 契约
 
-这篇文档只描述当前已经落地的 HTTP 契约：有哪些端点，前端真正怎样发请求，[`message/send`](./chat-runtime-contract.md) 现在怎样以流式事件工作，以及哪些旧方法已经退役。
+这篇文档只描述当前已经落地的 HTTP 契约：有哪些端点，thread/run 主链怎样工作，兼容入口怎样映射，以及哪些旧方法已经退役。
 
 Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-lifecycle.md)。配置、会话、宿主状态和页面状态分别由谁持有，见 [会话与状态模型](./session-and-state-model.md)。
 
@@ -74,22 +74,33 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 - `body` 应当是对象。
 - 新代码应继续使用显式 `body`，当前主路径不再依赖顶层旧兼容写法。
 
-## 当前前端正式主路径
+## 当前真实主链
 
-当前前端正式主路径已经收口为下面四个方法：
+当前真实主链已经收口为 thread/run 六方法：
 
-1. `agents/list`
-2. `session/create`
-3. `capabilities/get`
-4. `message/send`
+1. `thread/create`
+2. `thread/get`
+3. `run/start`
+4. `run/stream`
+5. `run/cancel`
+6. `agents/list`
 
 这条链路对应一组已经稳定下来的职责划分：
 
 - 后端目录先给出当前有哪些智能体。
-- 会话在创建时绑定具体智能体。
-- 每次消息请求再显式给出本次模型路由、工具列表和请求选项。
+- thread 在创建时绑定具体智能体。
+- run 在启动时显式携带本次模型路由、工具列表和请求选项。
+- run 事件流负责同一轮内的文本增量、工具生命周期与终态收口。
 
-`info`、`agent/connect` 与 `agent/run` 已从当前 runtime surface 退役。如果仍有旧调用命中它们，当前应收到 `method_not_implemented`，并迁移到 session-first 四方法。
+## 当前兼容壳
+
+`session/create`、`capabilities/get`、`message/send` 仍然保留，并继续对外可用，但它们当前是 thread/run 的兼容投影层：
+
+- `session/create` 对应 `thread/create`。
+- `capabilities/get` 对应 `thread/get` 的能力面投影。
+- `message/send` 对应 `run/start + run/stream` 的兼容封装。
+
+`info`、`agent/connect` 与 `agent/run` 已从当前 runtime surface 退役。如果仍有旧调用命中它们，当前应收到 `method_not_implemented`。
 
 ## 方法一 `agents/list`
 
@@ -122,6 +133,8 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 
 ## 方法二 `session/create`
 
+这条方法属于兼容壳，对应真实主链里的 `thread/create`。
+
 ### 作用
 
 这条方法会创建一个新会话，并在创建时把选中的智能体绑定到会话上。
@@ -152,6 +165,8 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 其中 `capabilities` 目前只是一份轻量回显。正式能力面仍然由下一步 `capabilities/get` 提供。
 
 ## 方法三 `capabilities/get`
+
+这条方法属于兼容壳，对应真实主链里的 `thread/get` 能力面投影。
 
 ### 作用
 
@@ -186,9 +201,15 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 
 ## 方法四 `message/send`
 
+这条方法属于兼容壳，对应真实主链里的 `run/start + run/stream`。
+
 ### 作用
 
-这条方法用于向某个已绑定会话发送一条消息，并以 SSE 事件流返回本轮 run 的全过程。当前正式主路径已经不再把 [`message/send`](./chat-runtime-contract.md) 当成“整包 JSON 响应”接口。
+这条方法用于向某个已绑定会话发送一条消息，并以 SSE 事件流返回本轮 run 的全过程。它仍然对外可用，但当前不再承担新增主语义。
+
+### 与 thread/run 的对应关系
+
+`message/send` 在运行时内部会创建一条 run 记录，并调用与 `run/stream` 同源的事件编排路径。前端如果直接走 `run/start` 与 `run/stream`，得到的事件语义与终态规则保持一致。
 
 ### 请求头
 
@@ -314,8 +335,9 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 3. `tool_event` 可以出现零次或多次，并与 `text_delta` 一起按 `sequence` 交错输出。
 4. `text_delta` 可以出现零次或多次。
 5. `run_diagnostic` 可以出现在失败前，用来补充非敏感诊断信息。
-6. 终态事件只能是 `run_completed`、`run_failed` 或 `run_cancelled` 三者之一。
-7. 终态事件发出后，流内不会再继续输出其他事件。
+6. 当后端已经观察到 raw tool-call 参数完备，却没有发生真实工具执行时，流内会先出现 `run_diagnostic`，再以 `run_failed` 终止。
+7. 终态事件只能是 `run_completed`、`run_failed` 或 `run_cancelled` 三者之一。
+8. 终态事件发出后，流内不会再继续输出其他事件。
 
 ### 当前终态载荷
 
@@ -406,6 +428,8 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 - 需要补充诊断时，先发 `run_diagnostic`。
 - 然后再发 `run_failed` 作为终态。
 
+当前还存在一条专门的收紧语义：如果 raw collector 观察到 provider tool-call 参数已完备，但后续没有真实工具执行，后端会发出 `raw_tool_call_unexecuted` 诊断并以失败终止，不会静默落成 `run_completed`。
+
 ## 当前常见错误码
 
 当前联调中较常见的错误码包括：
@@ -429,16 +453,20 @@ data: {"type":"run_completed","runId":"run-123","sessionId":"session-123","seque
 
 ## 当前本地主线验收资产
 
-当前已经有一条可以直接用于本地主线验收的 smoke 脚本，也就是 `frontend-copilot/scripts/smoke-streaming-chat.mjs`。这条脚本会完成下面这些动作：
+当前 smoke 资产是双轨：
 
-1. 它从 settings workspace 文档读取 provider profiles 与 secrets。
-2. 它在本地创建宿主私有 provider route bridge。
-3. 它以临时 bootstrap 信息拉起 Python runtime。
-4. 它执行 `session/create`。
-5. 它执行流式 `message/send`，并校验最终事件为 `run_completed`。
-6. 它在 `--enable-weather-tool` 模式下校验天气工具闭环，要求事件序列包含 `run_started → tool_event(started) → tool_event(completed) → text_delta → run_completed`。
+1. `frontend-copilot/scripts/smoke-thread-run-chat.mjs` 是 thread/run 主链 smoke。
+2. `frontend-copilot/scripts/smoke-streaming-chat.mjs` 是兼容壳 smoke。
+
+两条脚本都会读取 settings workspace，创建宿主私桥，拉起 Python runtime，并校验流式事件终态规则。thread/run smoke 直接覆盖 `thread/create + run/start + run/stream (+ run/cancel)`，兼容 smoke 覆盖 `session/create + message/send` 的兼容映射。
 
 当前首个真实工具是 `tool.weather-current`。它是内建随机天气占位工具，不依赖外部天气 API；工具结果摘要会以 `Shenzhen：小雨 / 19°C / 湿度 84%` 这一类文本通过 `tool_event` 返回，再由 assistant 文本继续组织最终回答。
+
+## 当前 collector 与调试开关
+
+后端默认 collector 已经切到 provider-native 的 raw stream 路径，用于更早观察并驱动 tool-call 链。`result.stream_text()` 文本流路径仍然保留，但当前仅作为 fallback。
+
+链路调试开关是环境变量 `COPILOT_RUNTIME_CHAIN_DEBUG`。打开后，后端会输出 collector 选择、raw tool-call 观察、工具生命周期与终态收口等结构化日志，便于复盘 text → tool → text 的交错过程。
 
 ## 当前与 CopilotKit 的关系
 

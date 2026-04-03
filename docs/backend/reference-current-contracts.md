@@ -40,6 +40,8 @@ sidebar_position: 6
 
 ## 当前正式主路径方法
 
+当前真实主链是 `thread/create`、`thread/get`、`run/start`、`run/stream`、`run/cancel`，并与 `agents/list` 一起构成运行时主入口。`session/create`、`capabilities/get`、`message/send` 作为兼容壳保留。
+
 ### `agents/list`
 
 #### 当前用途
@@ -71,7 +73,7 @@ sidebar_position: 6
 
 #### 当前用途
 
-这条方法用于创建会话，并在创建时把会话绑定到某个智能体。
+这条方法属于兼容壳，用于创建会话视图，并在创建时把底层 thread 绑定到某个智能体。
 
 #### 当前请求字段
 
@@ -96,7 +98,7 @@ sidebar_position: 6
 
 #### 当前用途
 
-这条方法用于读取某个会话当前的能力面。
+这条方法属于兼容壳，用于读取某个会话视图当前的能力面投影。底层数据来自同一条 thread 记录。
 
 #### 当前请求字段
 
@@ -131,7 +133,7 @@ sidebar_position: 6
 
 #### 当前用途
 
-这条方法用于向某个已绑定会话发送一条消息，并以流式事件返回本轮 run 的执行过程。
+这条方法属于兼容壳，用于向某个会话视图发送一条消息，并以流式事件返回本轮 run 的执行过程。底层会映射到 `run/start + run/stream`。
 
 #### 当前请求字段
 
@@ -237,6 +239,7 @@ sidebar_position: 6
 - provider secrets 不进入请求体，也不进入事件流。
 - 当前 session store 仍然是内存态，runtime 重启后会话不会自动恢复。
 - 增量阶段只累积草稿，成功完成才归档 assistant 文本。
+- 当 raw collector 观察到 tool-call 参数完备却没有真实工具执行时，会先发诊断，再以失败终态收口。
 
 ## 已退役的旧外层方法
 
@@ -248,7 +251,7 @@ sidebar_position: 6
 | `agent/connect` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
 | `agent/run` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
 
-当前正式主路径只剩 session-first 四方法。
+当前正式主链已经是 thread/run；session-first 三方法当前属于兼容壳。
 
 ## 当前错误响应外壳
 
@@ -322,7 +325,7 @@ sidebar_position: 6
 
 ## 快速结论
 
-- 当前正式聊天主路径仍然是四个 session-first 方法。
-- [`message/send`](../system/chat-runtime-contract.md) 已经切到流式事件主合同。
+- 当前正式聊天主路径已经是 thread/run 六方法，加上 `agents/list`。
+- `session/create`、`capabilities/get`、[`message/send`](../system/chat-runtime-contract.md) 已降级为兼容壳。
 - `info`、`agent/connect` 与 `agent/run` 已退役，不再属于当前 supported methods。
 - 当前错误外壳、流式事件集合与常见错误码已经足够支持联调与排错。
