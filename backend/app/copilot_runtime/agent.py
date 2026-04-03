@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
@@ -13,11 +13,14 @@ from typing import Any, Literal, Protocol, cast
 from pydantic_ai import Agent
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
+    BuiltinToolCallEvent,
+    BuiltinToolResultEvent,
     FinalResultEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelMessage,
     PartDeltaEvent,
+    PartEndEvent,
     PartStartEvent,
     TextPart,
     TextPartDelta,
@@ -45,6 +48,7 @@ from .execution_event_graph import (
     RuntimeExecutionEvent,
     RuntimeExecutionEventBuffer,
     RuntimeExecutionEventFactory,
+    RuntimeExecutionEventType,
 )
 from .model_routes import ResolvedRuntimeModelRoute
 from .tool_registry import (
@@ -67,6 +71,16 @@ MODEL_ENVIRONMENT_KEYS = ("COPILOT_RUNTIME_MODEL", "COPILOT_MODEL")
 _SUPPORTED_STREAM_ENDPOINT_TYPES = frozenset({"openai-compatible"})
 ToolLifecyclePhase = Literal["started", "completed", "failed"]
 _EVENT_STREAM_DONE = object()
+AgentStreamEvent = (
+    PartStartEvent
+    | PartDeltaEvent
+    | PartEndEvent
+    | FinalResultEvent
+    | FunctionToolCallEvent
+    | FunctionToolResultEvent
+    | BuiltinToolCallEvent
+    | BuiltinToolResultEvent
+)
 
 
 class RuntimeAgentExecutor(Protocol):
@@ -153,11 +167,12 @@ ToolLifecycleSink = Callable[[RuntimeToolLifecycleEvent], None]
 def tool_lifecycle_event_to_execution_event(
     tool_event: RuntimeToolLifecycleEvent,
 ) -> RuntimeExecutionEvent:
-    event_type = {
-        "started": TOOL_STARTED_EVENT_TYPE,
-        "completed": TOOL_COMPLETED_EVENT_TYPE,
-        "failed": TOOL_FAILED_EVENT_TYPE,
-    }[tool_event.phase]
+    if tool_event.phase == "started":
+        event_type: RuntimeExecutionEventType = TOOL_STARTED_EVENT_TYPE
+    elif tool_event.phase == "completed":
+        event_type = TOOL_COMPLETED_EVENT_TYPE
+    else:
+        event_type = TOOL_FAILED_EVENT_TYPE
     return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
 
 
@@ -386,7 +401,7 @@ class _PydanticAIEventStream:
     async def _handle_runtime_events(
         self,
         _ctx: RunContext[_PydanticAIAgentRunDeps],
-        stream: AsyncIterator[Any],
+        stream: AsyncIterable[AgentStreamEvent],
     ) -> None:
         async for runtime_event in stream:
             self._process_runtime_stream_event(runtime_event)

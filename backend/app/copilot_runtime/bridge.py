@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import cast
 
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import (
@@ -30,6 +31,7 @@ from .run_events import (
 )
 from .session_store import (
     InMemorySessionStore,
+    RuntimeMessageRole,
     RuntimeRunRecord,
     RuntimeStoredModelRoute,
     RuntimeStoredModelRouteSnapshot,
@@ -295,7 +297,7 @@ class RuntimeBridge:
 
     def _to_stored_run_input(self, request: RuntimeRunStartRequest) -> RuntimeStoredRunInput:
         return RuntimeStoredRunInput(
-            message_role=request.message.role,
+            message_role=cast(RuntimeMessageRole, request.message.role),
             message_content=request.message.content,
             policy=RuntimeStoredRunPolicy(
                 model_route=RuntimeStoredModelRoute(

@@ -24,7 +24,12 @@ from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
     MESSAGE_SEND_METHOD,
+    RUN_CANCEL_METHOD,
+    RUN_START_METHOD,
+    RUN_STREAM_METHOD,
     SESSION_CREATE_METHOD,
+    THREAD_CREATE_METHOD,
+    THREAD_GET_METHOD,
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
@@ -99,6 +104,11 @@ class _ResolvedRouteResolver:
 
 SUPPORTED_METHODS = [
     AGENTS_LIST_METHOD,
+    THREAD_CREATE_METHOD,
+    THREAD_GET_METHOD,
+    RUN_START_METHOD,
+    RUN_STREAM_METHOD,
+    RUN_CANCEL_METHOD,
     SESSION_CREATE_METHOD,
     CAPABILITIES_GET_METHOD,
     MESSAGE_SEND_METHOD,

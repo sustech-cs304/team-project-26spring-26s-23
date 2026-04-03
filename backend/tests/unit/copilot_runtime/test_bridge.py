@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 
 import pytest
 
@@ -30,13 +31,13 @@ class _StubMessageRunOrchestrator:
     def __init__(self, *, events: list[RuntimeRunEvent]) -> None:
         self._events = list(events)
         self.received_requests: list[RuntimeMessageSendRequest] = []
-        self.received_disconnect_callbacks: list[object] = []
+        self.received_disconnect_callbacks: list[Callable[[], Awaitable[bool]] | None] = []
 
     async def stream_events(
         self,
         *,
         request: RuntimeMessageSendRequest,
-        is_client_disconnected=None,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
     ):
         self.received_requests.append(request)
         self.received_disconnect_callbacks.append(is_client_disconnected)
@@ -101,8 +102,10 @@ def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> Non
         message_run_orchestrator=orchestrator,
     )
 
+    disconnected = False
+
     async def is_client_disconnected() -> bool:
-        return False
+        return disconnected
 
     events = asyncio.run(
         _collect_events(
@@ -115,7 +118,17 @@ def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> Non
 
     assert events == expected_events
     assert orchestrator.received_requests == [request]
-    assert orchestrator.received_disconnect_callbacks == [is_client_disconnected]
+
+    checker = orchestrator.received_disconnect_callbacks[0]
+    assert checker is not None
+    assert checker is not is_client_disconnected
+    assert asyncio.run(checker()) is False
+
+    disconnected = True
+    assert asyncio.run(checker()) is True
+
+    disconnected = False
+    assert asyncio.run(checker()) is False
 
 
 def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
