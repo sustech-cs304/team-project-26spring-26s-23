@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
@@ -13,6 +14,8 @@ from pydantic_ai import Agent
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
     FinalResultEvent,
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
     ModelMessage,
     PartDeltaEvent,
     PartStartEvent,
@@ -63,6 +66,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
 MODEL_ENVIRONMENT_KEYS = ("COPILOT_RUNTIME_MODEL", "COPILOT_MODEL")
 _SUPPORTED_STREAM_ENDPOINT_TYPES = frozenset({"openai-compatible"})
 ToolLifecyclePhase = Literal["started", "completed", "failed"]
+_EVENT_STREAM_DONE = object()
 
 
 class RuntimeAgentExecutor(Protocol):
@@ -232,7 +236,11 @@ class _PydanticAIEventStream:
         self,
         *,
         run_id: str,
-        stream_context: AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
+        agent: Agent[Any, Any],
+        user_prompt: str,
+        message_history: Sequence[ModelMessage],
+        resolved_model: Any,
+        deps: _PydanticAIAgentRunDeps,
         resolved_model_id: str,
         event_buffer: RuntimeExecutionEventBuffer,
         model_route_summary: Mapping[str, Any] | None = None,
@@ -240,7 +248,12 @@ class _PydanticAIEventStream:
     ) -> None:
         self.resolved_model_id = resolved_model_id
         self._run_id = run_id
-        self._stream_context = stream_context
+        self._agent = agent
+        self._user_prompt = user_prompt
+        self._message_history = tuple(message_history)
+        self._resolved_model = resolved_model
+        self._deps = deps
+        self._stream_context: AbstractAsyncContextManager[StreamedRunResult[Any, Any]] | None = None
         self._stream_result: StreamedRunResult[Any, Any] | None = None
         self._event_buffer = event_buffer
         self._model_route_summary = dict(model_route_summary or {})
@@ -250,9 +263,19 @@ class _PydanticAIEventStream:
         self._observed_tool_calls: dict[int, _ObservedToolCall] = {}
         self._raw_tool_call_observation_count = 0
         self._raw_tool_call_arguments_completed_count = 0
+        self._event_queue: asyncio.Queue[RuntimeExecutionEvent | object] = asyncio.Queue()
+        self._run_task: asyncio.Task[None] | None = None
+        self._run_exception: BaseException | None = None
+        self._tool_lifecycle_emitted_ids: set[str] = set()
+        self._function_tool_call_ids: set[str] = set()
+        self._function_tool_result_ids: set[str] = set()
 
     async def __aenter__(self) -> _PydanticAIEventStream:
-        self._stream_result = await self._stream_context.__aenter__()
+        if self._run_task is None:
+            self._run_task = asyncio.create_task(
+                self._run_agent(),
+                name=f"copilot-runtime-run:{self._run_id}",
+            )
         return self
 
     async def __aexit__(
@@ -261,26 +284,201 @@ class _PydanticAIEventStream:
         exc: BaseException | None,
         tb: Any,
     ) -> bool | None:
-        return await self._stream_context.__aexit__(exc_type, exc, tb)
+        run_task = self._run_task
+        if run_task is None:
+            return None
+        if not run_task.done():
+            run_task.cancel()
+        try:
+            await run_task
+        except BaseException:
+            return None
+        return None
 
     async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
-        result = self._require_stream_result()
-        raw_stream = self._resolve_raw_stream(result)
-        collector_mode = "raw" if raw_stream is not None else "text_fallback"
+        run_task = self._require_run_task()
         log_runtime_chain_debug(
             "collector.stream_opened",
             enabled=self._debug_enabled,
             runId=self._run_id,
             resolvedModelId=self.resolved_model_id,
             modelRoute=self._model_route_summary,
-            collectorMode=collector_mode,
+            collectorMode="agent_graph",
         )
-        if raw_stream is not None:
-            async for event in self._iter_raw_events(result=result, raw_stream=raw_stream):
-                yield event
+        while True:
+            queued = await self._event_queue.get()
+            if queued is _EVENT_STREAM_DONE:
+                break
+            yield cast(RuntimeExecutionEvent, queued)
+        try:
+            await run_task
+        except BaseException:
+            pass
+        if self._run_exception is not None:
+            log_runtime_chain_debug(
+                "collector.stream_exception",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                collectorMode="agent_graph",
+                error=summarize_exception(self._run_exception),
+                observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
+                observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+                rawToolCallObservationCount=self._raw_tool_call_observation_count,
+                rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
+                toolLifecycleEmissionCount=len(self._tool_lifecycle_emitted_ids),
+                functionToolCallCount=len(self._function_tool_call_ids),
+                functionToolResultCount=len(self._function_tool_result_ids),
+            )
+            raise self._run_exception
+        log_runtime_chain_debug(
+            "collector.stream_completed",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            collectorMode="agent_graph",
+            totalTextDeltaCount=self._text_delta_index,
+            observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
+            observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+            rawToolCallObservationCount=self._raw_tool_call_observation_count,
+            rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
+            toolLifecycleEmissionCount=len(self._tool_lifecycle_emitted_ids),
+            functionToolCallCount=len(self._function_tool_call_ids),
+            functionToolResultCount=len(self._function_tool_result_ids),
+        )
+
+    def record_tool_lifecycle_event(
+        self,
+        tool_event: RuntimeToolLifecycleEvent,
+    ) -> None:
+        self._tool_lifecycle_emitted_ids.add(tool_event.tool_call_id)
+        self._event_buffer.record_event(tool_lifecycle_event_to_execution_event(tool_event))
+        self._flush_pending_events_to_queue(
+            reason=f"tool_lifecycle_{tool_event.phase}"
+        )
+
+    async def _run_agent(self) -> None:
+        try:
+            result = await self._agent.run(
+                self._user_prompt,
+                message_history=self._message_history,
+                model=self._resolved_model,
+                deps=self._deps,
+                event_stream_handler=self._handle_runtime_events,
+            )
+            output = result.output
+            if not isinstance(output, str):
+                raise AgentExecutionError("PydanticAI agent returned a non-text output.")
+            if output.strip() == "":
+                raise AgentExecutionError("PydanticAI agent returned an empty text response.")
+            self._cached_output = output
+            self._raise_if_raw_tool_call_left_unexecuted()
+        except BaseException as exc:
+            self._run_exception = exc
+        finally:
+            self._event_buffer.finish_assistant_segment()
+            self._flush_pending_events_to_queue(reason="run_finished")
+            self._event_queue.put_nowait(_EVENT_STREAM_DONE)
+
+    async def _handle_runtime_events(
+        self,
+        _ctx: RunContext[_PydanticAIAgentRunDeps],
+        stream: AsyncIterator[Any],
+    ) -> None:
+        async for runtime_event in stream:
+            self._process_runtime_stream_event(runtime_event)
+            self._flush_pending_events_to_queue(
+                reason=f"after_runtime_{self._raw_event_reason(runtime_event)}"
+            )
+
+    def _process_runtime_stream_event(self, runtime_event: Any) -> None:
+        if isinstance(runtime_event, (PartStartEvent, PartDeltaEvent, FinalResultEvent)):
+            self._process_raw_stream_event(runtime_event)
             return
-        async for event in self._iter_text_events(result=result):
-            yield event
+        if isinstance(runtime_event, FunctionToolCallEvent):
+            self._function_tool_call_ids.add(runtime_event.tool_call_id)
+            log_runtime_chain_debug(
+                "collector.function_tool_call",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                toolCallId=runtime_event.tool_call_id,
+                toolName=runtime_event.part.tool_name,
+                argsValid=runtime_event.args_valid,
+                argumentsPreview=self._tool_call_arguments_preview(runtime_event.part.args),
+            )
+            return
+        if isinstance(runtime_event, FunctionToolResultEvent):
+            self._function_tool_result_ids.add(runtime_event.tool_call_id)
+            log_runtime_chain_debug(
+                "collector.function_tool_result",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                toolCallId=runtime_event.tool_call_id,
+                resultKind=getattr(
+                    runtime_event.result,
+                    "part_kind",
+                    type(runtime_event.result).__name__,
+                ),
+                contentPreview=preview_text(getattr(runtime_event, "content", None)),
+            )
+            return
+        log_runtime_chain_debug(
+            "collector.runtime_event_ignored",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            eventKind=getattr(runtime_event, "event_kind", type(runtime_event).__name__),
+        )
+
+    def _flush_pending_events_to_queue(self, *, reason: str) -> None:
+        for event in self._drain_events(reason=reason):
+            self._event_queue.put_nowait(event)
+
+    def _raise_if_raw_tool_call_left_unexecuted(self) -> None:
+        pending_states = [
+            state
+            for state in self._observed_tool_calls.values()
+            if state.arguments_completed_emitted
+            and state.tool_call_id is not None
+            and state.tool_call_id not in self._tool_lifecycle_emitted_ids
+        ]
+        if not pending_states:
+            return
+        for state in pending_states:
+            parsed_arguments = self._parse_tool_call_arguments(state.args)
+            details: dict[str, Any] = {
+                "source": "pydantic_raw_stream",
+                "providerEndpointType": self._model_route_summary.get("endpointType"),
+                "observationKind": "execution_missing",
+                "partIndex": state.part_index,
+                "toolCallId": state.tool_call_id,
+                "toolName": state.tool_name,
+                "argumentsComplete": True,
+            }
+            if parsed_arguments is not None:
+                details["toolArguments"] = parsed_arguments
+            elif isinstance(state.args, dict):
+                details["toolArguments"] = dict(state.args)
+            elif isinstance(state.args, str) and state.args.strip() != "":
+                details["toolArgumentsJson"] = state.args
+            self._event_buffer.record_event(
+                self._event_buffer.event_factory.build_diagnostic(
+                    code="raw_tool_call_unexecuted",
+                    message="Provider tool call arguments became complete, but no actual tool execution followed.",
+                    details=details,
+                    stage="drive_raw_tool_call",
+                )
+            )
+        raise AgentExecutionError(
+            "Observed provider tool call arguments became complete, but no actual tool execution followed."
+        )
+
+    def _require_run_task(self) -> asyncio.Task[None]:
+        if self._run_task is None:
+            raise RuntimeError("PydanticAI event stream has not been entered.")
+        return self._run_task
 
     async def _iter_raw_events(
         self,
@@ -718,8 +916,15 @@ class _PydanticAIEventStream:
     async def get_output(self) -> str:
         if self._cached_output is not None:
             return self._cached_output
-        result = self._require_stream_result()
-        self._cached_output = await self._read_output(result)
+        run_task = self._require_run_task()
+        try:
+            await run_task
+        except BaseException:
+            pass
+        if self._run_exception is not None:
+            raise self._run_exception
+        if self._cached_output is None:
+            raise AgentExecutionError("PydanticAI event stream did not produce a text output.")
         return self._cached_output
 
     async def _read_output(self, result: StreamedRunResult[Any, Any]) -> str:
@@ -882,29 +1087,31 @@ class PydanticAIAgentExecutor:
             enabledToolIds=list(enabled_tools),
             userPromptPreview=preview_text(user_prompt),
         )
+        stream: _PydanticAIEventStream | None = None
+
+        def emit_tool_event(tool_event: RuntimeToolLifecycleEvent) -> None:
+            if stream is None:
+                raise RuntimeError("PydanticAI event stream is not initialized.")
+            stream.record_tool_lifecycle_event(tool_event)
+
         deps = self._build_runtime_deps(
             enabled_tools=enabled_tools,
-            emit_tool_event=lambda tool_event: event_buffer.record_event(
-                tool_lifecycle_event_to_execution_event(tool_event)
-            ),
+            emit_tool_event=emit_tool_event,
             run_id=run_id,
         )
-        return _PydanticAIEventStream(
+        stream = _PydanticAIEventStream(
             run_id=run_id,
-            stream_context=cast(
-                AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
-                self._agent.run_stream(
-                    user_prompt,
-                    message_history=message_history,
-                    model=resolved_model,
-                    deps=deps,
-                ),
-            ),
+            agent=self._agent,
+            user_prompt=user_prompt,
+            message_history=message_history,
+            resolved_model=resolved_model,
+            deps=deps,
             resolved_model_id=model_route.model_id,
             event_buffer=event_buffer,
             model_route_summary=model_route_summary,
             debug_enabled=debug_enabled,
         )
+        return stream
 
     def resolve_model(self, *, model_override: Any | None = None) -> Any:
         explicit_model = self._resolved_explicit_model(model_override)

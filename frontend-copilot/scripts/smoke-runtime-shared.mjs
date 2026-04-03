@@ -347,11 +347,10 @@ export function assertWeatherToolClosure(events) {
   }
 
   const completedIndex = toolEvents.findIndex((event) => event.payload?.phase === 'completed')
-  const firstTextDeltaIndex = events.findIndex((event) => event.type === 'text_delta')
   const completedSequence = toolEvents[completedIndex]?.sequence ?? Number.POSITIVE_INFINITY
-  const firstTextDeltaSequence = firstTextDeltaIndex >= 0 ? events[firstTextDeltaIndex].sequence : Number.POSITIVE_INFINITY
-  if (firstTextDeltaIndex >= 0 && completedSequence > firstTextDeltaSequence) {
-    throw new Error(`Expected ${WEATHER_TOOL_ID} completed tool_event before first text_delta, received completed sequence ${completedSequence} and first text_delta sequence ${firstTextDeltaSequence}.`)
+  const postToolTextEvent = events.find((event) => event.type === 'text_delta' && event.sequence > completedSequence)
+  if (postToolTextEvent === undefined) {
+    throw new Error(`Expected ${WEATHER_TOOL_ID} completed tool_event to be followed by assistant text, received completed sequence ${completedSequence} without any later text_delta.`)
   }
 }
 

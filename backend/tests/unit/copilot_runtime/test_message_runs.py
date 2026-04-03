@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.copilot_runtime.agent import RuntimeToolLifecycleEvent, ToolInvocationError
+from app.copilot_runtime.agent import AgentExecutionError, RuntimeToolLifecycleEvent, ToolInvocationError
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.execution_support import SessionNotFoundError
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
@@ -486,6 +486,134 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
             "request_options": {},
         }
     ]
+
+
+
+def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_executes() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    tool_call_id = "tool.weather-current:call-unexecuted"
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="assistant_segment_started",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_delta",
+                payload={
+                    "segmentId": "run-test:assistant-segment-1",
+                    "delta": "我先查一下。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_completed",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_observed",
+                    "message": "Observed provider tool call in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "observed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": False,
+                        "toolArgumentsJson": '{"location":"Shen',
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_arguments_completed",
+                    "message": "Provider tool call arguments became complete in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "arguments_completed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": True,
+                        "toolArguments": {"location": "Shenzhen"},
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_unexecuted",
+                    "message": "Provider tool call arguments became complete, but no actual tool execution followed.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "execution_missing",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": True,
+                        "toolArguments": {"location": "Shenzhen"},
+                    },
+                    "stage": "drive_raw_tool_call",
+                },
+            ),
+        ],
+        output=AgentExecutionError(
+            "Observed provider tool call arguments became complete, but no actual tool execution followed."
+        ),
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "text_delta",
+        "run_diagnostic",
+        "run_diagnostic",
+        "run_diagnostic",
+        "run_diagnostic",
+        "run_failed",
+    ]
+    assert events[2].payload["code"] == "raw_tool_call_observed"
+    assert events[3].payload["code"] == "raw_tool_call_arguments_completed"
+    assert events[4].payload["code"] == "raw_tool_call_unexecuted"
+    assert events[4].payload["details"]["toolCallId"] == tool_call_id
+    assert events[5].payload == {
+        "code": "agent_execution_failed",
+        "message": "Observed provider tool call arguments became complete, but no actual tool execution followed.",
+        "details": {},
+        "stage": "execute_model",
+    }
+    assert events[6].payload == {
+        "code": "agent_execution_failed",
+        "message": "Observed provider tool call arguments became complete, but no actual tool execution followed.",
+        "details": {},
+    }
+    assert store.list_messages("session-1") == ()
 
 
 

@@ -225,57 +225,52 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
     executor = PydanticAIAgentExecutor(model="test-model")
     tool_call_id = "tool.weather-current:call-1"
 
-    def fake_run_stream(user_prompt: str, **kwargs) -> _FakeRawStreamContext:
+    async def fake_run(user_prompt: str, **kwargs) -> SimpleNamespace:
         _ = user_prompt
         deps = kwargs["deps"]
+        event_stream_handler = kwargs["event_stream_handler"]
 
-        def emit_tool_events() -> None:
-            deps.emit_tool_event(
-                RuntimeToolLifecycleEvent(
-                    tool_call_id=tool_call_id,
-                    tool_id=WEATHER_CURRENT_TOOL_ID,
-                    phase="started",
-                    title="调用天气工具",
-                    summary="正在获取 Shenzhen 的天气。",
-                    input_summary='{"location": "Shenzhen"}',
-                )
+        async def runtime_events() -> AsyncIterator[object]:
+            yield PartStartEvent(index=0, part=TextPart(content="我先查一下。"))
+            yield PartStartEvent(
+                index=1,
+                part=ToolCallPart(
+                    "weather_current",
+                    '{"location":"Shen',
+                    tool_call_id,
+                ),
             )
-            deps.emit_tool_event(
-                RuntimeToolLifecycleEvent(
-                    tool_call_id=tool_call_id,
-                    tool_id=WEATHER_CURRENT_TOOL_ID,
-                    phase="completed",
-                    title="天气工具已返回结果",
-                    summary="Shenzhen：晴 / 24°C / 湿度 60%",
-                    input_summary='{"location": "Shenzhen"}',
-                    result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
-                )
+            yield PartDeltaEvent(
+                index=1,
+                delta=ToolCallPartDelta(args_delta='zhen"}'),
             )
+            yield PartStartEvent(index=2, part=TextPart(content="查到了。"))
 
-        return _FakeRawStreamContext(
-            _FakeRawStreamResult(
-                raw_events=[
-                    PartStartEvent(index=0, part=TextPart(content="我先查一下。")),
-                    PartStartEvent(
-                        index=1,
-                        part=ToolCallPart(
-                            "weather_current",
-                            '{"location":"Shen',
-                            tool_call_id,
-                        ),
-                    ),
-                    PartDeltaEvent(
-                        index=1,
-                        delta=ToolCallPartDelta(args_delta='zhen"}'),
-                    ),
-                    PartStartEvent(index=2, part=TextPart(content="查到了。")),
-                ],
-                output="我先查一下。查到了。",
-                on_output=emit_tool_events,
+        await event_stream_handler(SimpleNamespace(), runtime_events())
+        deps.emit_tool_event(
+            RuntimeToolLifecycleEvent(
+                tool_call_id=tool_call_id,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                phase="started",
+                title="调用天气工具",
+                summary="正在获取 Shenzhen 的天气。",
+                input_summary='{"location": "Shenzhen"}',
             )
         )
+        deps.emit_tool_event(
+            RuntimeToolLifecycleEvent(
+                tool_call_id=tool_call_id,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                phase="completed",
+                title="天气工具已返回结果",
+                summary="Shenzhen：晴 / 24°C / 湿度 60%",
+                input_summary='{"location": "Shenzhen"}',
+                result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+            )
+        )
+        return SimpleNamespace(output="我先查一下。查到了。")
 
-    monkeypatch.setattr(executor._agent, "run_stream", fake_run_stream)
+    monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
         _collect_event_stream(
@@ -338,6 +333,78 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
     assert result["events"][8].payload["phase"] == "started"
     assert result["events"][9].payload["phase"] == "completed"
     assert result["events"][9].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
+
+
+def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = PydanticAIAgentExecutor(model="test-model")
+    tool_call_id = "tool.weather-current:call-2"
+
+    async def fake_run(user_prompt: str, **kwargs) -> SimpleNamespace:
+        _ = user_prompt
+        event_stream_handler = kwargs["event_stream_handler"]
+
+        async def runtime_events() -> AsyncIterator[object]:
+            yield PartStartEvent(index=0, part=TextPart(content="我先查一下。"))
+            yield PartStartEvent(
+                index=1,
+                part=ToolCallPart(
+                    "weather_current",
+                    '{"location":"Shen',
+                    tool_call_id,
+                ),
+            )
+            yield PartDeltaEvent(
+                index=1,
+                delta=ToolCallPartDelta(args_delta='zhen"}'),
+            )
+
+        await event_stream_handler(SimpleNamespace(), runtime_events())
+        return SimpleNamespace(output="我先查一下。")
+
+    monkeypatch.setattr(executor._agent, "run", fake_run)
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-2",
+                agent_name="default",
+                user_prompt="请先查一下天气。",
+                message_history=[],
+                model_route=_build_resolved_route(),
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                request_options={},
+            )
+        )
+    )
+
+    assert result["output"] is None
+    assert isinstance(result["error"], AgentExecutionError)
+    assert "no actual tool execution followed" in str(result["error"])
+    assert [event.type for event in result["events"]] == [
+        "assistant_segment_started",
+        "assistant_segment_delta",
+        "assistant_segment_completed",
+        "diagnostic",
+        "diagnostic",
+        "diagnostic",
+    ]
+    assert result["events"][-1].payload == {
+        "code": "raw_tool_call_unexecuted",
+        "message": "Provider tool call arguments became complete, but no actual tool execution followed.",
+        "details": {
+            "source": "pydantic_raw_stream",
+            "providerEndpointType": "openai-compatible",
+            "observationKind": "execution_missing",
+            "partIndex": 1,
+            "toolCallId": tool_call_id,
+            "toolName": "weather_current",
+            "argumentsComplete": True,
+            "toolArguments": {"location": "Shenzhen"},
+        },
+        "stage": "drive_raw_tool_call",
+    }
 
 
 class _FakeRawStreamContext:
