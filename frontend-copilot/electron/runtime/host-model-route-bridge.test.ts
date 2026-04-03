@@ -119,6 +119,52 @@ describe('createHostModelRouteBridge', () => {
     })
   })
 
+  it('accepts repeated token headers when every supplied value matches the bootstrap token', async () => {
+    let resolverCalls = 0
+    const bridge = await createHostModelRouteBridge({
+      resolveProviderRoute() {
+        resolverCalls += 1
+        return {
+          ok: true,
+          route: {
+            providerProfileId: 'provider-1',
+            provider: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: 'gpt-4.1',
+            auth: {
+              apiKey: 'secret-value',
+            },
+          },
+        }
+      },
+    })
+    activeStops.push(bridge.stop)
+
+    const headers = new Headers({
+      'content-type': 'application/json',
+    })
+    headers.append(HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER, bridge.bootstrap.token)
+    headers.append(HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER, bridge.bootstrap.token)
+
+    const response = await fetch(bridge.bootstrap.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        providerProfileId: 'provider-1',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: 'gpt-4.1',
+        },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(resolverCalls).toBe(1)
+  })
+
   it('rejects malformed request bodies before resolver execution', async () => {
     let resolverCalls = 0
     const bridge = await createHostModelRouteBridge({

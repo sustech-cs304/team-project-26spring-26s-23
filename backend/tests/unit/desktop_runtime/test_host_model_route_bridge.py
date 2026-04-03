@@ -72,6 +72,61 @@ def test_host_model_route_bridge_client_resolves_provider_route_successfully() -
     assert captured_headers == ["bridge-token-123"]
 
 
+
+def test_host_model_route_bridge_client_reuses_client_until_closed() -> None:
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "route": {
+                    "providerProfileId": "provider-1",
+                    "provider": "openai",
+                    "endpointType": "openai-compatible",
+                    "baseUrl": "https://api.example.com/v1",
+                    "modelId": "gpt-4.1",
+                    "auth": {
+                        "apiKey": "resolved-secret",
+                    },
+                },
+            },
+            request=request,
+        )
+
+    client = HostModelRouteBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/provider-routes/resolve",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+    route = RuntimeModelRoute(
+        provider_profile_id="provider-1",
+        snapshot=RuntimeModelRouteSnapshot(
+            provider="openai",
+            endpoint_type="openai-compatible",
+            base_url="https://api.example.com/v1",
+            model_id="gpt-4.1",
+        ),
+    )
+
+    async def exercise() -> None:
+        await client.resolve(route)
+        first_http_client = client._get_client()
+        await client.resolve(route)
+        assert client._get_client() is first_http_client
+        await client.aclose()
+        await client.resolve(route)
+        assert client._get_client() is not first_http_client
+        await client.aclose()
+
+    asyncio.run(exercise())
+
+    assert request_count == 3
+
+
 def test_host_model_route_bridge_client_requires_bootstrap_configuration() -> None:
     client = HostModelRouteBridgeClient(
         bridge_url=None,

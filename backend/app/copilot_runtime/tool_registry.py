@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from app.tools.file_convert import convert_file_to_str
+
 DEFAULT_TOOLSET_NAME = "default"
 DEFAULT_TOOLSET_LABEL = "Default"
 DEFAULT_TOOLSET_DESCRIPTION = (
@@ -44,6 +46,21 @@ _WEATHER_SAMPLE_RESULTS: tuple[dict[str, Any], ...] = (
         "humidity": 84,
         "summary": "空气偏湿润，出门建议带伞。",
     },
+)
+_REDACTED_TOOL_ARGUMENT_VALUE = "***"
+_MAX_TOOL_ARGUMENT_VALUE_LENGTH = 120
+_MAX_TOOL_ARGUMENT_SUMMARY_LENGTH = 512
+_SENSITIVE_TOOL_ARGUMENT_KEYWORDS = frozenset(
+    {
+        "apikey",
+        "authorization",
+        "cookie",
+        "credential",
+        "password",
+        "secret",
+        "session",
+        "token",
+    }
 )
 
 ToolExecutor = Callable[[Mapping[str, Any] | None], Awaitable[dict[str, Any]]]
@@ -229,6 +246,30 @@ async def _execute_unimplemented_tool(_arguments: Mapping[str, Any] | None) -> d
     raise RuntimeError("Tool execution is not implemented for this tool.")
 
 
+async def _execute_default_file_convert_tool(
+    arguments: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload = dict(arguments or {})
+    raw_path = payload.get("path")
+    if not isinstance(raw_path, str) or raw_path.strip() == "":
+        raise ValueError("File Convert tool requires a non-empty 'path' string argument.")
+
+    path = raw_path.strip()
+    raw_suffix = payload.get("suffix")
+    suffix = (
+        raw_suffix.strip()
+        if isinstance(raw_suffix, str) and raw_suffix.strip() != ""
+        else None
+    )
+    result: dict[str, Any] = {
+        "path": path,
+        "text": convert_file_to_str(path, suffix=suffix),
+    }
+    if suffix is not None:
+        result["suffix"] = suffix
+    return result
+
+
 async def execute_weather_current_tool(
     arguments: Mapping[str, Any] | None,
     *,
@@ -273,7 +314,7 @@ def build_default_tool_registry() -> ToolRegistry:
                         description=FILE_CONVERT_TOOL_DESCRIPTION,
                         availability=DEFAULT_TOOL_AVAILABILITY,
                     ),
-                    execute=_execute_unimplemented_tool,
+                    execute=_execute_default_file_convert_tool,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(
@@ -294,13 +335,57 @@ def build_default_tool_registry() -> ToolRegistry:
 def summarize_tool_arguments(arguments: Mapping[str, Any] | None) -> str | None:
     if arguments is None:
         return None
-    normalized = {key: value for key, value in arguments.items()}
+    normalized = {str(key): value for key, value in arguments.items()}
     if not normalized:
         return None
+
+    sanitized = _sanitize_tool_argument_value(normalized)
     try:
-        return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+        summary = json.dumps(sanitized, ensure_ascii=False, sort_keys=True)
     except TypeError:
-        return str(normalized)
+        summary = str(sanitized)
+    return _truncate_tool_argument_text(
+        summary,
+        limit=_MAX_TOOL_ARGUMENT_SUMMARY_LENGTH,
+    )
+
+
+def _sanitize_tool_argument_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for key, nested_value in value.items():
+            normalized_key = str(key)
+            if _is_sensitive_tool_argument_key(normalized_key):
+                sanitized[normalized_key] = _REDACTED_TOOL_ARGUMENT_VALUE
+            else:
+                sanitized[normalized_key] = _sanitize_tool_argument_value(nested_value)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_tool_argument_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_tool_argument_value(item) for item in value)
+    if isinstance(value, str):
+        return _truncate_tool_argument_text(
+            value,
+            limit=_MAX_TOOL_ARGUMENT_VALUE_LENGTH,
+        )
+    return value
+
+
+def _is_sensitive_tool_argument_key(key: str) -> bool:
+    normalized_key = "".join(character for character in key.lower() if character.isalnum())
+    return any(
+        keyword in normalized_key
+        for keyword in _SENSITIVE_TOOL_ARGUMENT_KEYWORDS
+    )
+
+
+def _truncate_tool_argument_text(value: str, *, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    if limit <= 1:
+        return value[:limit]
+    return f"{value[: limit - 1]}…"
 
 
 def summarize_tool_result(result: Any) -> str | None:

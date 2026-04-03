@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import (

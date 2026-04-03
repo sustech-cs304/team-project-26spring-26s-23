@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +21,7 @@ from app.copilot_runtime.tool_registry import (
     WEATHER_CURRENT_TOOL_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_ID,
     execute_weather_current_tool,
+    summarize_tool_arguments,
 )
 
 
@@ -233,3 +235,43 @@ def test_tool_registry_resolve_tool_upgrades_metadata_only_descriptor_to_executa
     assert resolved_tool.tool_id == "tool.lookup"
     with pytest.raises(RuntimeError, match="not implemented"):
         asyncio.run(resolved_tool.execute(None))
+
+
+
+def test_default_tool_registry_executes_file_convert_tool() -> None:
+    registry = build_default_tool_registry()
+    resolved_tool = registry.resolve_tool(FILE_CONVERT_TOOL_ID)
+    file_path = Path(__file__).resolve().parents[1] / "tools" / "test_file.docx"
+
+    result = asyncio.run(resolved_tool.execute({"path": str(file_path)}))
+
+    assert result["path"] == str(file_path)
+    assert "Transformer模型" in result["text"]
+
+
+
+def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_large_text() -> None:
+    summary = summarize_tool_arguments(
+        {
+            "path": "a" * 200,
+            "apiKey": "secret-value",
+            "nested": {
+                "session_token": "nested-secret",
+                "note": "b" * 160,
+            },
+            "items": [
+                {"password": "hidden"},
+                {"value": "kept"},
+            ],
+        }
+    )
+
+    assert summary is not None
+    assert '"apiKey": "***"' in summary
+    assert '"session_token": "***"' in summary
+    assert '"password": "***"' in summary
+    assert "secret-value" not in summary
+    assert "nested-secret" not in summary
+    assert "hidden" not in summary
+    assert len(summary) <= 512
+    assert "…" in summary

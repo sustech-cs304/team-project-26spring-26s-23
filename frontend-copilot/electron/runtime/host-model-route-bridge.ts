@@ -111,7 +111,7 @@ async function handleHostModelRouteBridgeRequest(
     return
   }
 
-  if (request.headers[HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER.toLowerCase()] !== options.token) {
+  if (!isValidHostModelRouteBridgeToken(request, options.token)) {
     writeJsonResponse(response, 401, {
       ok: false,
       error: {
@@ -154,6 +154,20 @@ async function handleHostModelRouteBridgeRequest(
 
   const result = await options.resolveProviderRoute(requestBody)
   writeJsonResponse(response, 200, result)
+}
+
+function isValidHostModelRouteBridgeToken(request: IncomingMessage, token: string): boolean {
+  const rawHeader = request.headers[HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER.toLowerCase()]
+  if (rawHeader === undefined) {
+    return false
+  }
+
+  const headerValues = (Array.isArray(rawHeader) ? rawHeader : [rawHeader])
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter((value) => value !== '')
+
+  return headerValues.length > 0 && headerValues.every((value) => value === token)
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {

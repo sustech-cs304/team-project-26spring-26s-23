@@ -407,6 +407,34 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
     }
 
 
+
+def test_open_event_stream_propagates_cancelled_error_from_agent_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = PydanticAIAgentExecutor(model="test-model")
+
+    async def fake_run(user_prompt: str, **kwargs) -> SimpleNamespace:
+        _ = (user_prompt, kwargs)
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(executor._agent, "run", fake_run)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            _collect_event_stream(
+                executor.open_event_stream(
+                    run_id="run-cancelled",
+                    agent_name="default",
+                    user_prompt="请取消这次运行。",
+                    message_history=[],
+                    model_route=_build_resolved_route(),
+                    enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                    request_options={},
+                )
+            )
+        )
+
+
 class _FakeRawStreamContext:
     def __init__(self, result: _FakeRawStreamResult) -> None:
         self._result = result

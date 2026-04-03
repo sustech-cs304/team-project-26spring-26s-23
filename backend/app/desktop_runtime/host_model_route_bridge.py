@@ -40,6 +40,14 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
         self._header_name = _normalize_optional_text(header_name) or HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME
         self._transport = transport
         self._timeout = timeout
+        self._client: httpx.AsyncClient | None = None
+
+    async def aclose(self) -> None:
+        client = self._client
+        if client is None:
+            return
+        self._client = None
+        await client.aclose()
 
     async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
         if self._bridge_url is None or self._bridge_token is None:
@@ -48,23 +56,19 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
             )
 
         try:
-            async with httpx.AsyncClient(
-                transport=self._transport,
-                timeout=self._timeout,
-            ) as client:
-                response = await client.post(
-                    self._bridge_url,
-                    json={
-                        "providerProfileId": model_route.provider_profile_id,
-                        "snapshot": {
-                            "provider": model_route.snapshot.provider,
-                            "endpointType": model_route.snapshot.endpoint_type,
-                            "baseUrl": model_route.snapshot.base_url,
-                            "modelId": model_route.snapshot.model_id,
-                        },
+            response = await self._get_client().post(
+                self._bridge_url,
+                json={
+                    "providerProfileId": model_route.provider_profile_id,
+                    "snapshot": {
+                        "provider": model_route.snapshot.provider,
+                        "endpointType": model_route.snapshot.endpoint_type,
+                        "baseUrl": model_route.snapshot.base_url,
+                        "modelId": model_route.snapshot.model_id,
                     },
-                    headers={self._header_name: self._bridge_token},
-                )
+                },
+                headers={self._header_name: self._bridge_token},
+            )
         except httpx.HTTPError as exc:
             raise HostModelRouteUnavailableError(detail=str(exc)) from exc
 
@@ -96,6 +100,17 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
         raise HostModelRouteUnavailableError(
             detail="Host model route bridge returned an unrecognized response shape."
         )
+
+
+    def _get_client(self) -> httpx.AsyncClient:
+        client = self._client
+        if client is None:
+            client = httpx.AsyncClient(
+                transport=self._transport,
+                timeout=self._timeout,
+            )
+            self._client = client
+        return client
 
 
 def _parse_resolved_route_payload(payload: Mapping[str, Any]) -> ResolvedRuntimeModelRoute:

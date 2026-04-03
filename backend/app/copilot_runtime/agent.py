@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
@@ -291,7 +291,7 @@ class _PydanticAIEventStream:
             run_task.cancel()
         try:
             await run_task
-        except BaseException:
+        except asyncio.CancelledError:
             return None
         return None
 
@@ -312,7 +312,7 @@ class _PydanticAIEventStream:
             yield cast(RuntimeExecutionEvent, queued)
         try:
             await run_task
-        except BaseException:
+        except asyncio.CancelledError:
             pass
         if self._run_exception is not None:
             log_runtime_chain_debug(
@@ -373,7 +373,10 @@ class _PydanticAIEventStream:
                 raise AgentExecutionError("PydanticAI agent returned an empty text response.")
             self._cached_output = output
             self._raise_if_raw_tool_call_left_unexecuted()
-        except BaseException as exc:
+        except asyncio.CancelledError as exc:
+            self._run_exception = exc
+            raise
+        except Exception as exc:
             self._run_exception = exc
         finally:
             self._event_buffer.finish_assistant_segment()
@@ -919,7 +922,7 @@ class _PydanticAIEventStream:
         run_task = self._require_run_task()
         try:
             await run_task
-        except BaseException:
+        except asyncio.CancelledError:
             pass
         if self._run_exception is not None:
             raise self._run_exception

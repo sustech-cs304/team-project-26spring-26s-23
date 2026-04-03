@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -471,6 +472,21 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
     assert events[-1]["payload"]["assistantText"] == "Hello from the desktop runtime test model."
     assert diagnostics_response.status_code == 200
     assert diagnostics_response.json()["capabilities"]["model_configured"] is False
+
+
+
+def test_create_app_closes_host_model_route_bridge_client_on_shutdown(tmp_path: Path) -> None:
+    app = _create_test_app(tmp_path)
+
+    with TestClient(app):
+        bridge_client = app.state.host_model_route_bridge_client
+        http_client = bridge_client._get_client()
+        assert isinstance(http_client, httpx.AsyncClient)
+        assert bridge_client._client is http_client
+        assert http_client.is_closed is False
+
+    assert bridge_client._client is None
+    assert http_client.is_closed is True
 
 
 

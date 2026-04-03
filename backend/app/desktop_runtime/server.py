@@ -118,7 +118,10 @@ def create_app(
         try:
             yield
         finally:
-            lifecycle_manager.shutdown()
+            try:
+                await host_model_route_bridge_client.aclose()
+            finally:
+                lifecycle_manager.shutdown()
 
     app = FastAPI(
         title=DESKTOP_RUNTIME_SERVICE_NAME,
