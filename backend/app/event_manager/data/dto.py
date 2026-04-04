@@ -1,5 +1,4 @@
-
-
+from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from typing import Any

@@ -41,5 +41,5 @@ class CourseEventModel(TimestampSoftDeleteMixin, Base):
     week_end: Mapped[int] = mapped_column(Integer, nullable=False)
     week_type: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    place: Mapped[str] = mapped_column(String(255), nullable=True)
-    teacher: Mapped[str] = mapped_column(String(255), nullable=True)
+    place: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    teacher: Mapped[str | None] = mapped_column(String(255), nullable=True)

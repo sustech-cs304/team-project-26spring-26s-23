@@ -1,9 +1,10 @@
+from pathlib import Path
 from app.event_manager.data.db_manager import DatabaseManager
 from app.event_manager.data.dto import CourseEvent
 
 
-def test_course_event():
-    db_manager = DatabaseManager(reset_schema=True)
+def test_course_event(tmp_path: Path):
+    db_manager = DatabaseManager(tmp_path / "event_manager.db", reset_schema=True)
     event1 = CourseEvent(
         course_name="test class1",
         semester_id="2024春季",

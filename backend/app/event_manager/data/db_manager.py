@@ -77,6 +77,8 @@ class DatabaseManager:
                 if course_event_model.is_deleted:
                     return False
                 for key, value in payload.items():
+                    if key == "id":
+                        continue
                     setattr(course_event_model, key, value)
                 course_event_model.updated_at = now
             else:
@@ -102,7 +104,7 @@ class DatabaseManager:
         with self._session_scope() as session:
             course_event_models = (
                 session.query(CourseEventModel)
-                .filter(CourseEventModel.is_deleted == False)
+                .filter(CourseEventModel.is_deleted.is_(False))
                 .order_by(CourseEventModel.created_at.desc())
                 .all()
             )
