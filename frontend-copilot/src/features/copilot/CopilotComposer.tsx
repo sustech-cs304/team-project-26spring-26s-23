@@ -42,7 +42,7 @@ export function CopilotComposer({
   canCancel,
   sendDisabledReason,
   composerError,
-  runNotice,
+  runNotice: _runNotice,
   composerInputRef,
   composerHeight,
   onResizeStart,
@@ -140,7 +140,6 @@ export function CopilotComposer({
             name="messageText"
             aria-label="消息内容"
             value={draft.messageText}
-            disabled={controlsDisabled}
             onChange={(event) => {
               const nextValue = event.currentTarget.value
               onDraftChange((current) => ({
@@ -170,12 +169,6 @@ export function CopilotComposer({
             : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
         </button>
       </div>
-
-      {runNotice !== null && (
-        <p className="copilot-chat__composer-status" data-testid="chat-composer-run-status" role="status">
-          {runNotice}
-        </p>
-      )}
 
       {composerError !== null && (
         <p className="copilot-panel__error" role="alert">

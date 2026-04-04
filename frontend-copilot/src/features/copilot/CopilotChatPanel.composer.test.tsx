@@ -972,7 +972,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('allows cancelling an in-flight send, stops later deltas, and surfaces cancelled state', async () => {
+  it('keeps the input editable during an in-flight send, hides composer status text, and still allows cancellation', async () => {
     const sendMessage = createAbortableSendMessageSpy()
     const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
       run: {
@@ -1017,10 +1017,18 @@ describe('CopilotChatPanel composer interactions', () => {
 
     const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
     expect(sendButton.title).toBe('取消当前响应')
-    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('响应生成中')
+    expect(sendButton.type).toBe('button')
+    expect(messageInput.disabled).toBe(false)
+    expect(rendered.queryByTestId('chat-composer-run-status')).toBeNull()
     expect(rendered.container.textContent).toContain('天气工具调用中')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
+
+    await setFormControlValue(messageInput, '生成期间继续编辑')
+    expect(messageInput.value).toBe('生成期间继续编辑')
+
+    await pressTextareaKey(messageInput, 'Enter')
+    expect(sendMessage).toHaveBeenCalledTimes(1)
 
     await clickElement(sendButton)
 
@@ -1036,7 +1044,7 @@ describe('CopilotChatPanel composer interactions', () => {
     })
     expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
     expect(rendered.container.textContent).toContain('已取消')
-    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('当前响应已取消')
+    expect(rendered.queryByTestId('chat-composer-run-status')).toBeNull()
     expect(rendered.container.textContent).toContain('天气工具已取消')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
