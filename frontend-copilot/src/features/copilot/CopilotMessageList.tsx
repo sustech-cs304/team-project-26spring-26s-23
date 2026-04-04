@@ -1,5 +1,7 @@
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 
 import { ModelPickerIcon } from './components/ModelPicker'
 import {
@@ -12,6 +14,23 @@ import type {
   CopilotAssistantMessageItem,
   CopilotMessageListItem,
 } from './run-segment-view-model'
+
+const assistantMarkdownComponents: Components = {
+  hr({ node: _node, className, ...props }) {
+    return (
+      <hr
+        {...props}
+        className={[
+          'copilot-chat__markdown-divider',
+          className,
+        ].filter((value) => value !== undefined && value !== '').join(' ')}
+      />
+    )
+  },
+}
+
+const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
+const assistantMarkdownRehypePlugins = [rehypeMathjax]
 
 interface CopilotMessageListProps {
   conversation: CopilotMessageListItem[]
@@ -183,7 +202,13 @@ function renderMessageBody(turn: CopilotMessageListItem) {
   if (turn.kind === 'assistant') {
     return (
       <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
+        <ReactMarkdown
+          components={assistantMarkdownComponents}
+          remarkPlugins={assistantMarkdownRemarkPlugins}
+          rehypePlugins={assistantMarkdownRehypePlugins}
+        >
+          {turn.content}
+        </ReactMarkdown>
       </div>
     )
   }

@@ -361,7 +361,7 @@ function createProviderIconSpec(providerId: string, providerTitle: string, model
     hash = (hash * 31) + char.charCodeAt(0)
   }
 
-  const iconLabelSource = providerTitle.trim() || modelName.trim()
+  const iconLabelSource = modelName.trim() || providerTitle.trim() || providerId.trim()
 
   return {
     label: iconLabelSource.slice(0, 1).toUpperCase() || '?',

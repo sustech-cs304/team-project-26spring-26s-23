@@ -351,7 +351,7 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('本次响应已取消：user_cancelled')
     expect(html.indexOf('已保留的回答前半段')).toBeLessThan(html.indexOf('本次响应已取消：user_cancelled'))
   })
-  it('renders assistant content as structured markdown instead of escaping markdown syntax as plain text', () => {
+  it('renders assistant content as structured markdown with dividers and MathJax formulas', () => {
     const modelCatalog = createTestModelCatalog()
     const conversation: CopilotMessageListItem[] = [{
       id: 'assistant:run-markdown:1',
@@ -359,7 +359,7 @@ describe('CopilotMessageList segment rendering', () => {
       runId: 'run-markdown',
       sequence: 1,
       title: '助手响应',
-      content: '# 标题\n\n- 列表项\n\n**加粗** 与 `代码`\n\n| 列 | 值 |\n| --- | --- |\n| A | B |',
+      content: '# 标题\n\n---\n\n- 列表项\n\n**加粗** 与 `代码`\n\n行内公式 $E = mc^2$\n\n$$\na^2+b^2=c^2\n$$\n\n| 列 | 值 |\n| --- | --- |\n| A | B |',
       status: 'completed',
       resolvedModelId: 'openai/gpt-4.1',
       resolvedModelRoute: createRuntimeModelRoute({
@@ -380,11 +380,16 @@ describe('CopilotMessageList segment rendering', () => {
     )
 
     expect(html).toContain('<h1>标题</h1>')
+    expect(html).toContain('<hr')
+    expect(html).toContain('copilot-chat__markdown-divider')
     expect(html).toContain('<ul>')
     expect(html).toContain('<li>列表项</li>')
     expect(html).toContain('<strong>加粗</strong>')
     expect(html).toContain('<code>代码</code>')
     expect(html).toContain('<table>')
+    expect(html).toContain('mjx-container')
+    expect(html).toContain('className="MathJax"')
+    expect(html).toContain('jax="SVG"')
     expect(html).not.toContain('**加粗**')
     expect(html).not.toContain('| --- |')
     expect(html).toContain('copilot-chat__message-text--markdown')
@@ -403,6 +408,16 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('copilot-chat__message-text--plain')
     expect(html).not.toContain('<strong>用户原文</strong>')
     expect(html).not.toContain('<br/>')
+  })
+
+  it('uses a dedicated assistant markdown divider style instead of the old dotted visual', () => {
+    const cssFilePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), './copilot-message-list.css')
+    const css = readFileSync(cssFilePath, 'utf8')
+
+    expect(css).toContain('.copilot-chat__markdown-divider')
+    expect(css).toContain('border-top: 1px solid')
+    expect(css).not.toContain('radial-gradient')
+    expect(css).not.toContain('border-style: dotted')
   })
 
   it('uses pre-wrap semantics for multiline user messages', () => {

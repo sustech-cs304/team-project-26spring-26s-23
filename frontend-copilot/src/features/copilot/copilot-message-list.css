@@ -111,7 +111,7 @@
   overflow-wrap: anywhere;
 }
 
-.copilot-chat__message-text--markdown > :where(h1, h2, h3, h4, h5, h6, p, ul, ol, pre, blockquote, table) {
+.copilot-chat__message-text--markdown > :where(h1, h2, h3, h4, h5, h6, p, ul, ol, pre, blockquote, table, hr, mjx-container) {
   margin: 0;
 }
 
@@ -133,6 +133,30 @@
 .copilot-chat__message-text--markdown h5,
 .copilot-chat__message-text--markdown h6 {
   font-size: 0.95rem;
+}
+
+.copilot-chat__markdown-divider {
+  align-self: stretch;
+  width: 100%;
+  height: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 62%, transparent);
+  background: none;
+  opacity: 0.72;
+}
+
+.copilot-chat__message-text--markdown mjx-container[jax='SVG'] {
+  max-width: 100%;
+}
+
+.copilot-chat__message-text--markdown mjx-container[jax='SVG'][display='true'] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.12rem;
+}
+
+.copilot-chat__message-text--markdown mjx-container[jax='SVG'] > svg {
+  max-width: 100%;
 }
 
 .copilot-chat__message-text--markdown :where(ul, ol) {

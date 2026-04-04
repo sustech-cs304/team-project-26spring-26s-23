@@ -117,7 +117,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(loadWorkspaceState).toHaveBeenCalledTimes(1)
     expect(modelTrigger.textContent).toContain('GPT 4.1')
-    expect(getTriggerIconText(modelTrigger)).toBe('O')
+    expect(getTriggerIconText(modelTrigger)).toBe('G')
 
     await clickElement(modelTrigger)
     expect(rendered.container.textContent).toContain('OpenAI Compatible')
@@ -125,7 +125,7 @@ describe('CopilotChatPanel composer interactions', () => {
     await clickElement(rendered.getByTestId('chat-model-option-provider-beta-provider-beta:openai/gpt-4.1-mini'))
 
     expect(modelTrigger.textContent).toContain('GPT 4.1 Mini')
-    expect(getTriggerIconText(modelTrigger)).toBe('B')
+    expect(getTriggerIconText(modelTrigger)).toBe('G')
 
     await setFormControlValue(messageInput, '请总结刚才的内容')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
@@ -510,7 +510,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.container.textContent).not.toContain('助手响应')
     expect(rendered.container.textContent).toContain('这是助手回显')
     expect(assistantHeader.textContent).toContain('GPT 4.1')
-    expect(renderedIcon?.textContent).toBe('O')
+    expect(renderedIcon?.textContent).toBe('G')
     expect(renderedIcon?.getAttribute('aria-label')).toBe('GPT 4.1 图标')
     expect(rendered.container.textContent).not.toContain('已完成')
     expect(rendered.container.querySelectorAll('.copilot-chat__message--assistant.copilot-chat__message--completed')).toHaveLength(1)
