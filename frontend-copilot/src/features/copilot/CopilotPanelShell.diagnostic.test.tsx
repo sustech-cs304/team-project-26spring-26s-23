@@ -114,6 +114,10 @@ function renderShell(debugModeEnabled: boolean): string {
       sendDisabledReason={null}
       runNotice={null}
       conversation={conversation}
+      assistantPlaceholder={{
+        shouldRender: false,
+        dismissReason: 'inactive',
+      }}
       composerInputRef={createRef<HTMLTextAreaElement>()}
       composerHeight={160}
       onComposerResizeStart={vi.fn()}

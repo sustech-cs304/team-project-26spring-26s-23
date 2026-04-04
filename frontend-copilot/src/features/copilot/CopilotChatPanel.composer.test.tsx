@@ -518,6 +518,239 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('shows an assistant placeholder immediately after send with spinner feedback', async () => {
+    const sendMessage = createStartOnlyPendingSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先准备响应')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible after send',
+    )
+
+    const placeholder = rendered.getByTestId('chat-assistant-placeholder')
+    expect(placeholder.getAttribute('data-dismiss-reason')).toBe('pending')
+    expect(rendered.getByTestId('chat-assistant-placeholder-spinner')).not.toBeNull()
+    expect(placeholder.textContent).toContain('助手正在准备响应')
+    expect(rendered.container.textContent).toContain('请先准备响应')
+
+    rendered.unmount()
+  })
+
+  it('removes the assistant placeholder when a tool card arrives before assistant text', async () => {
+    const toolEventControl = createDeferredSignal()
+    const sendMessage = createToolFirstPendingSendMessageSpy(toolEventControl)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先查天气再继续')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before tool card',
+    )
+
+    toolEventControl.release()
+
+    await waitForText(rendered.container, '调用天气工具')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after tool card',
+    )
+
+    expect(rendered.container.textContent).toContain('正在获取 Shenzhen 的天气。')
+
+    rendered.unmount()
+  })
+
+  it('fades out and removes the assistant placeholder after the first assistant text arrives', async () => {
+    const sendMessage = createTextFirstPendingSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请直接回答')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before assistant text',
+    )
+    await waitForText(rendered.container, '这是助手回显')
+    await waitForCondition(() => {
+      const placeholder = rendered.queryByTestId('chat-assistant-placeholder') as HTMLElement | null
+      return placeholder?.className.includes('copilot-chat__message--placeholder-fading') ?? false
+    }, 'assistant placeholder fading after assistant text')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after assistant text',
+    )
+
+    rendered.unmount()
+  })
+
+  it('does not keep the assistant placeholder after a failed run with no assistant text', async () => {
+    const failureControl = createDeferredSignal()
+    const sendMessage = createFailedBeforeAssistantSendMessageSpy(failureControl)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请在失败前开始')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before failure',
+    )
+
+    failureControl.release()
+
+    await waitForText(rendered.container, '发送失败')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after failed run',
+    )
+
+    expect(rendered.container.textContent).toContain('tool_execution_failed: Tool failed: boom')
+
+    rendered.unmount()
+  })
+
+  it('does not keep the assistant placeholder after cancelling before any assistant text arrives', async () => {
+    const sendMessage = createStartOnlyPendingSendMessageSpy()
+    const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
+      run: {
+        runId: 'run-placeholder-pending',
+        threadId: 'session-1',
+        status: 'cancelling',
+        createdAt: '2026-03-27T10:00:00Z',
+        updatedAt: '2026-03-27T10:00:02Z',
+        startedAt: '2026-03-27T10:00:01Z',
+        terminalAt: null,
+        cancelRequested: true,
+      },
+      cancelAccepted: true,
+    }))
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        cancelRun={cancelRun}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先开始然后取消')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before cancellation',
+    )
+
+    await clickElement(rendered.getByTestId('chat-composer-send-button'))
+    await waitForText(rendered.container, '已取消')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after cancellation',
+    )
+
+    expect(cancelRun).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      runId: 'run-placeholder-pending',
+    })
+
+    rendered.unmount()
+  })
+
   it('renders tool lifecycle steps before assistant text and updates the same step on completion', async () => {
     const sendMessage = createToolLifecycleSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -752,7 +985,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
     expect(sendButton.title).toBe('取消当前响应')
-    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('响应生成中，可随时取消。')
+    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('响应生成中')
     expect(rendered.container.textContent).toContain('调用天气工具')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
@@ -771,7 +1004,7 @@ describe('CopilotChatPanel composer interactions', () => {
     })
     expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
     expect(rendered.container.textContent).toContain('已取消')
-    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('当前响应已取消，未定稿为成功消息。')
+    expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('当前响应已取消')
     expect(rendered.container.textContent).toContain('调用天气工具')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
@@ -781,6 +1014,118 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 })
+
+function createStartOnlyPendingSendMessageSpy() {
+  return vi.fn(async function* (
+    input: Parameters<typeof sendRuntimeMessage>[0],
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-placeholder-pending',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-placeholder-pending:assistant',
+      },
+    }
+
+    await waitForAbort(input.signal)
+  })
+}
+
+function createToolFirstPendingSendMessageSpy(control: DeferredSignal) {
+  return vi.fn(async function* (
+    input: Parameters<typeof sendRuntimeMessage>[0],
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-tool-placeholder',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-placeholder:assistant',
+      },
+    }
+
+    await control.wait()
+    yield createRuntimeToolEvent({
+      runId: 'run-tool-placeholder',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-placeholder',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    })
+
+    await waitForAbort(input.signal)
+  })
+}
+
+function createTextFirstPendingSendMessageSpy() {
+  return vi.fn(async function* (
+    input: Parameters<typeof sendRuntimeMessage>[0],
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-text-placeholder',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-text-placeholder:assistant',
+      },
+    }
+
+    await Promise.resolve()
+    yield {
+      type: 'text_delta',
+      runId: 'run-text-placeholder',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        assistantMessageId: 'run-text-placeholder:assistant',
+        delta: '这是助手回显',
+      },
+    }
+
+    await waitForAbort(input.signal)
+  })
+}
+
+function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
+  return vi.fn(async function* (
+    input: Parameters<typeof sendRuntimeMessage>[0],
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-no-text-failed',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-no-text-failed:assistant',
+      },
+    }
+
+    await control.wait()
+    yield {
+      type: 'run_failed',
+      runId: 'run-no-text-failed',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        code: 'tool_execution_failed',
+        message: 'Tool failed: boom',
+        details: {
+          toolId: 'tool.weather-current',
+        },
+      },
+    }
+  })
+}
 
 function createResolvedSendMessageSpy() {
   return vi.fn((input: Parameters<typeof sendRuntimeMessage>[0]) => createRuntimeMessageEventStream([
@@ -1015,6 +1360,57 @@ function createAbortableSendMessageSpy() {
       },
     }
   })
+}
+
+interface DeferredSignal {
+  wait: () => Promise<void>
+  release: () => void
+}
+
+async function waitForAbort(signal?: AbortSignal) {
+  await new Promise<never>((_resolve, reject) => {
+    const abort = () => {
+      const error = new Error('The operation was aborted.')
+      error.name = 'AbortError'
+      reject(error)
+    }
+
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+
+    signal?.addEventListener('abort', abort, { once: true })
+  })
+}
+
+function createDeferredSignal(): DeferredSignal {
+  let releaseResolver: (() => void) | null = null
+  const wait = new Promise<void>((resolve) => {
+    releaseResolver = resolve
+  })
+
+  return {
+    wait: () => wait,
+    release: () => {
+      releaseResolver?.()
+    },
+  }
+}
+
+async function waitForCondition(condition: () => boolean, label: string) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (condition()) {
+      return
+    }
+
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+  }
+
+  throw new Error(`Timed out waiting for condition: ${label}`)
 }
 
 async function waitForText(container: HTMLElement, expectedText: string) {

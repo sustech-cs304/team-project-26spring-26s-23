@@ -12,7 +12,10 @@ import { CopilotComposer } from './CopilotComposer'
 import { CopilotMessageList } from './CopilotMessageList'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
 import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
-import type { CopilotMessageListItem } from './run-segment-view-model'
+import type {
+  CopilotAssistantPlaceholderState,
+  CopilotMessageListItem,
+} from './run-segment-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
 import type { CopilotBootstrapState, CopilotConnectableState } from './types'
@@ -37,6 +40,7 @@ export interface CopilotPanelShellProps {
   sendDisabledReason: string | null
   runNotice: string | null
   conversation: CopilotMessageListItem[]
+  assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -119,6 +123,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
       <section className="copilot-chat" data-testid="chat-send-shell">
         <CopilotMessageList
           conversation={props.conversation}
+          assistantPlaceholder={props.assistantPlaceholder}
           models={props.modelGroups.flatMap((group) => group.models)}
           showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
           emptyState={hasAvailableModels

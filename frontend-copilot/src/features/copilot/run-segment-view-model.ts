@@ -78,11 +78,53 @@ export function createUserMessageListItem(content: string): CopilotUserMessageIt
   }
 }
 
+export interface CopilotAssistantPlaceholderState {
+  shouldRender: boolean
+  dismissReason: 'assistant' | 'tool' | 'terminal' | 'inactive' | null
+}
+
 export function buildCopilotMessageListItems(input: {
   history: CopilotMessageListItem[]
   runState: CopilotRunState
 }): CopilotMessageListItem[] {
   return [...input.history, ...buildCopilotRunSegmentViewModel(input.runState)]
+}
+
+export function resolveCopilotAssistantPlaceholderState(
+  runState: Pick<CopilotRunState, 'phase' | 'segments'>,
+): CopilotAssistantPlaceholderState {
+  if (runState.segments.some(isRenderableAssistantSegment)) {
+    return {
+      shouldRender: false,
+      dismissReason: 'assistant',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'tool')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'tool',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'terminal')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'terminal',
+    }
+  }
+
+  if (runState.phase === 'starting' || runState.phase === 'streaming') {
+    return {
+      shouldRender: true,
+      dismissReason: null,
+    }
+  }
+
+  return {
+    shouldRender: false,
+    dismissReason: 'inactive',
+  }
 }
 
 export function buildCopilotRunSegmentViewModel(
@@ -113,7 +155,7 @@ function projectAssistantSegment(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
   runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
 ): CopilotRunSegmentViewItem[] {
-  if (segment.text === '') {
+  if (!isRenderableAssistantSegment(segment)) {
     return []
   }
 
@@ -286,6 +328,10 @@ function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRo
       modelId: route.snapshot.modelId,
     },
   }
+}
+
+function isRenderableAssistantSegment(segment: CopilotRunSegment): boolean {
+  return segment.kind === 'assistant' && segment.text !== ''
 }
 
 function formatFailureMessage(failure: CopilotRunFailureSummary | null): string {

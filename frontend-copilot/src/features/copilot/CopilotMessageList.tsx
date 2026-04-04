@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
@@ -12,6 +13,7 @@ import {
 } from './model-picker'
 import type {
   CopilotAssistantMessageItem,
+  CopilotAssistantPlaceholderState,
   CopilotMessageListItem,
 } from './run-segment-view-model'
 
@@ -32,8 +34,11 @@ const assistantMarkdownComponents: Components = {
 const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
 const assistantMarkdownRehypePlugins = [rehypeMathjax]
 
+const assistantPlaceholderExitMs = 180
+
 interface CopilotMessageListProps {
   conversation: CopilotMessageListItem[]
+  assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
   showDiagnostics?: boolean
   emptyState?: {
@@ -41,9 +46,16 @@ interface CopilotMessageListProps {
     description: string
   } | null
 }
- 
+
+interface RenderedAssistantPlaceholderState {
+  visible: boolean
+  fading: boolean
+  dismissReason: CopilotAssistantPlaceholderState['dismissReason']
+}
+
 export function CopilotMessageList({
   conversation,
+  assistantPlaceholder = null,
   models = [],
   showDiagnostics = true,
   emptyState = null,
@@ -51,6 +63,67 @@ export function CopilotMessageList({
   const visibleConversation = showDiagnostics
     ? conversation
     : conversation.filter((turn) => turn.kind !== 'diagnostic')
+  const [renderedAssistantPlaceholder, setRenderedAssistantPlaceholder] = useState<RenderedAssistantPlaceholderState>(
+    () => createRenderedAssistantPlaceholderState(assistantPlaceholder),
+  )
+
+  useEffect(() => {
+    if (assistantPlaceholder?.shouldRender === true) {
+      setRenderedAssistantPlaceholder((current) => (
+        current.visible && !current.fading && current.dismissReason === null
+          ? current
+          : {
+              visible: true,
+              fading: false,
+              dismissReason: null,
+            }
+      ))
+      return
+    }
+
+    if (!renderedAssistantPlaceholder.visible) {
+      return
+    }
+
+    const dismissReason = assistantPlaceholder?.dismissReason ?? 'inactive'
+    if (dismissReason !== 'assistant') {
+      setRenderedAssistantPlaceholder({
+        visible: false,
+        fading: false,
+        dismissReason,
+      })
+      return
+    }
+
+    if (
+      !renderedAssistantPlaceholder.fading
+      || renderedAssistantPlaceholder.dismissReason !== dismissReason
+    ) {
+      setRenderedAssistantPlaceholder({
+        visible: true,
+        fading: true,
+        dismissReason,
+      })
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRenderedAssistantPlaceholder({
+        visible: false,
+        fading: false,
+        dismissReason,
+      })
+    }, assistantPlaceholderExitMs)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    assistantPlaceholder?.dismissReason,
+    assistantPlaceholder?.shouldRender,
+    renderedAssistantPlaceholder.dismissReason,
+    renderedAssistantPlaceholder.fading,
+    renderedAssistantPlaceholder.visible,
+  ])
 
   return (
     <div
@@ -58,7 +131,7 @@ export function CopilotMessageList({
       data-testid="chat-message-scroll-region"
       data-scrollbar-visibility="hidden"
     >
-      {visibleConversation.length === 0
+      {visibleConversation.length === 0 && !renderedAssistantPlaceholder.visible
         ? (
             <div
               className="copilot-chat__empty"
@@ -108,6 +181,7 @@ export function CopilotMessageList({
               </article>
             )
           })}
+      {renderedAssistantPlaceholder.visible && renderAssistantPlaceholder(renderedAssistantPlaceholder)}
     </div>
   )
 }
@@ -289,4 +363,39 @@ function buildToolDetailRows(turn: Extract<CopilotMessageListItem, { kind: 'tool
   }
 
   return details
+}
+
+function createRenderedAssistantPlaceholderState(
+  assistantPlaceholder: CopilotAssistantPlaceholderState | null,
+): RenderedAssistantPlaceholderState {
+  return {
+    visible: assistantPlaceholder?.shouldRender === true,
+    fading: false,
+    dismissReason: null,
+  }
+}
+
+function renderAssistantPlaceholder(state: RenderedAssistantPlaceholderState) {
+  return (
+    <article
+      className={[
+        'copilot-chat__message',
+        'copilot-chat__message--assistant',
+        'copilot-chat__message--placeholder',
+        state.fading ? 'copilot-chat__message--placeholder-fading' : '',
+      ].filter((className) => className !== '').join(' ')}
+      data-testid="chat-assistant-placeholder"
+      data-dismiss-reason={state.dismissReason ?? 'pending'}
+      aria-live="polite"
+    >
+      <div className="copilot-chat__assistant-placeholder" data-testid="chat-assistant-placeholder-content">
+        <span
+          className="copilot-chat__assistant-placeholder-spinner"
+          data-testid="chat-assistant-placeholder-spinner"
+          aria-hidden="true"
+        />
+        <span className="copilot-chat__assistant-placeholder-text">助手正在准备响应…</span>
+      </div>
+    </article>
+  )
 }

@@ -1,4 +1,5 @@
 import { spawnSync, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { defineConfig } from 'vite'
 import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
@@ -13,6 +14,10 @@ type ElectronStartup = ((argv?: string[], options?: SpawnOptions, customElectron
 type ProcessWithElectronApp = NodeJS.Process & {
   electronApp?: ChildProcess
 }
+
+const require = createRequire(import.meta.url)
+const mathJaxPackageVersion = (require('mathjax-full/package.json') as { version: string }).version
+const mathJaxPackageVersionDefine = JSON.stringify(mathJaxPackageVersion)
 
 function createElectronChildEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env }
@@ -67,6 +72,16 @@ function patchElectronDevStartupExit(startup: ElectronStartup): void {
 export default defineConfig({
   resolve: {
     extensions: ['.mjs', '.mts', '.ts', '.tsx', '.js', '.jsx', '.json'],
+  },
+  define: {
+    PACKAGE_VERSION: mathJaxPackageVersionDefine,
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        PACKAGE_VERSION: mathJaxPackageVersionDefine,
+      },
+    },
   },
   plugins: [
     react(),

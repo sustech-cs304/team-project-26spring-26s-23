@@ -245,6 +245,42 @@
   align-self: flex-start;
 }
 
+.copilot-chat__message--placeholder {
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.copilot-chat__message--placeholder-fading {
+  opacity: 0;
+}
+
+.copilot-chat__assistant-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text-muted);
+}
+
+.copilot-chat__assistant-placeholder-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-top-color: var(--accent-text, #2563eb);
+  border-radius: 999px;
+  animation: copilot-chat__assistant-placeholder-spin 0.8s linear infinite;
+}
+
+.copilot-chat__assistant-placeholder-text {
+  color: var(--text-muted);
+}
+
+@keyframes copilot-chat__assistant-placeholder-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .copilot-chat__message--tool {
   background: color-mix(in srgb, var(--surface-bg) 82%, var(--accent-soft, #dbeafe) 18%);
   border-color: color-mix(in srgb, var(--border-color) 60%, var(--accent-border, #93c5fd) 40%);
