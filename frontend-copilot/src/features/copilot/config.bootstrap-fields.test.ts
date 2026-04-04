@@ -8,6 +8,7 @@ describe('loadBootstrapFieldsFromConfigCenterPublicSnapshot', () => {
     expect(loadBootstrapFieldsFromConfigCenterPublicSnapshot(createConfigCenterPublicSnapshot({
       runtimeUrl: 'http://localhost:4400',
       agentName: 'planner',
+      debugModeEnabled: true,
       theme: 'dark',
       model: null,
     }))).toEqual({
@@ -15,6 +16,7 @@ describe('loadBootstrapFieldsFromConfigCenterPublicSnapshot', () => {
       fields: {
         runtimeUrl: 'http://localhost:4400',
         agentName: 'planner',
+        debugModeEnabled: true,
       },
       storageState: 'stored',
     })
@@ -31,6 +33,7 @@ describe('loadBootstrapFieldsFromConfigCenterPublicSnapshot', () => {
       fields: {
         runtimeUrl: null,
         agentName: 'planner',
+        debugModeEnabled: false,
       },
       storageState: 'empty',
     })

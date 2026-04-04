@@ -28,6 +28,7 @@ export function normalizeUnifiedConfigDomainDocument<TDomain extends UnifiedConf
         UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR,
         {
           agentName: UNIFIED_CONFIG_FIELD_REGISTRY.agentName.normalize(values.agentName),
+          debugModeEnabled: UNIFIED_CONFIG_FIELD_REGISTRY.debugModeEnabled.normalize(values.debugModeEnabled),
         },
       ) as UnifiedConfigDomainDocument<TDomain>
 

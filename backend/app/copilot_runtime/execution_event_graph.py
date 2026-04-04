@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from .debug_logging import (
-    is_runtime_chain_debug_enabled,
     log_runtime_chain_debug,
     summarize_event_types,
     summarize_runtime_execution_event,
@@ -160,6 +159,7 @@ class RuntimeExecutionEventFactory:
 @dataclass(slots=True)
 class RuntimeExecutionEventBuffer:
     event_factory: RuntimeExecutionEventFactory
+    debug_enabled: bool = False
     _pending_events: list[RuntimeExecutionEvent] = field(default_factory=list)
     _assistant_segment_id: str | None = None
     _assistant_text_chunks: list[str] = field(default_factory=list)
@@ -194,7 +194,7 @@ class RuntimeExecutionEventBuffer:
         self._pending_events.append(event)
         log_runtime_chain_debug(
             "execution_buffer.record_event",
-            enabled=is_runtime_chain_debug_enabled(),
+            enabled=self.debug_enabled,
             runId=self.event_factory.run_id,
             recordedEvent=summarize_runtime_execution_event(event),
             pendingEventTypes=summarize_event_types(self._pending_events),

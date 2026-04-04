@@ -52,6 +52,7 @@ class _StreamingExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         return _ImmediateTextStream(output=self._output, resolved_model_id=model_route.model_id)

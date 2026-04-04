@@ -25,6 +25,7 @@ export interface FrontendPreferencesConfigValues {
 
 export interface AssistantBehaviorConfigValues {
   agentName: string | null
+  debugModeEnabled: boolean
 }
 
 export interface HostConfigValues {

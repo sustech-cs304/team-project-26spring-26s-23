@@ -35,6 +35,7 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
           },
           assistantBehavior: {
             agentName: null,
+            debugModeEnabled: false,
           },
           hostConfig: {
             runtimeUrl: 'http://localhost:4400',
@@ -67,6 +68,7 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
           },
           assistantBehavior: {
             agentName: null,
+            debugModeEnabled: false,
           },
           hostConfig: {
             runtimeUrl: null,
@@ -111,6 +113,7 @@ function createBaseResolvedState(
     bootstrapFields: {
       runtimeUrl: 'http://127.0.0.1:8765',
       agentName: null,
+      debugModeEnabled: false,
     },
     storageState: 'stored',
     runtime: {

@@ -28,6 +28,7 @@ function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status
     bootstrapFields: {
       runtimeUrl: 'http://127.0.0.1:8765',
       agentName: null,
+      debugModeEnabled: false,
     },
     storageState: 'stored',
     runtime: {
@@ -48,10 +49,13 @@ function createBaseResolvedState(): Omit<Extract<CopilotBootstrapState, { status
   }
 }
 
-export function createReadyState(): CopilotBootstrapState {
+export function createReadyState(
+  overrides: Partial<Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'>> = {},
+): CopilotBootstrapState {
   return {
     status: 'ready',
     ...createBaseResolvedState(),
+    ...overrides,
   }
 }
 

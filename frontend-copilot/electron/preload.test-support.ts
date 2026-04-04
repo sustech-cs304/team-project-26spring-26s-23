@@ -79,6 +79,7 @@ export function createConfigCenterPublicSnapshotFixture(): ConfigCenterPublicSna
       },
       assistantBehavior: {
         agentName: 'planner',
+        debugModeEnabled: false,
       },
       hostConfig: {
         runtimeUrl: 'http://localhost:4400',

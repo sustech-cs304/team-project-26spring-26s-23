@@ -338,6 +338,7 @@ export async function startRuntimeRun(input: {
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
   enabledTools: string[]
+  debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
   fetchFn?: FetchLike
   signal?: AbortSignal
@@ -352,6 +353,9 @@ export async function startRuntimeRun(input: {
       policy: {
         modelRoute: input.modelRoute,
         enabledTools: input.enabledTools,
+        ...(input.debugModeEnabled === undefined
+          ? {}
+          : { debugModeEnabled: input.debugModeEnabled }),
         requestOptions: input.requestOptions ?? {},
       },
     },
@@ -470,6 +474,7 @@ export async function* sendRuntimeMessage(input: {
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
   enabledTools: string[]
+  debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
   fetchFn?: FetchLike
   signal?: AbortSignal
@@ -482,6 +487,7 @@ export async function* sendRuntimeMessage(input: {
     message: input.message,
     modelRoute: input.modelRoute,
     enabledTools: input.enabledTools,
+    debugModeEnabled: input.debugModeEnabled,
     requestOptions: input.requestOptions,
     fetchFn: input.fetchFn,
     signal: input.signal,

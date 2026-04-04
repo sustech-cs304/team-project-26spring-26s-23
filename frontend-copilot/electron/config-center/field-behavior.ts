@@ -13,7 +13,11 @@ export function parseThemeModePatchValue(value: unknown): UnifiedConfigTheme {
 }
 
 export function normalizeBoolean(value: unknown): boolean {
-  return typeof value === 'boolean' ? value : true
+  return normalizeBooleanWithDefault(value, true)
+}
+
+export function normalizeBooleanWithDefault(value: unknown, defaultValue: boolean): boolean {
+  return typeof value === 'boolean' ? value : defaultValue
 }
 
 export function parseBooleanPatchValue(value: unknown): boolean {

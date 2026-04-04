@@ -78,6 +78,11 @@ export function createUserMessageListItem(content: string): CopilotUserMessageIt
   }
 }
 
+export interface CopilotAssistantPlaceholderState {
+  shouldRender: boolean
+  dismissReason: 'assistant' | 'tool' | 'terminal' | 'inactive' | null
+}
+
 export function buildCopilotMessageListItems(input: {
   history: CopilotMessageListItem[]
   runState: CopilotRunState
@@ -85,16 +90,56 @@ export function buildCopilotMessageListItems(input: {
   return [...input.history, ...buildCopilotRunSegmentViewModel(input.runState)]
 }
 
-export function buildCopilotRunSegmentViewModel(
-  runState: Pick<CopilotRunState, 'segments'>,
-): CopilotRunSegmentViewItem[] {
-  return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment))
+export function resolveCopilotAssistantPlaceholderState(
+  runState: Pick<CopilotRunState, 'phase' | 'segments'>,
+): CopilotAssistantPlaceholderState {
+  if (runState.segments.some(isRenderableAssistantSegment)) {
+    return {
+      shouldRender: false,
+      dismissReason: 'assistant',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'tool')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'tool',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'terminal')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'terminal',
+    }
+  }
+
+  if (runState.phase === 'starting' || runState.phase === 'streaming') {
+    return {
+      shouldRender: true,
+      dismissReason: null,
+    }
+  }
+
+  return {
+    shouldRender: false,
+    dismissReason: 'inactive',
+  }
 }
 
-function projectSegmentToViewItems(segment: CopilotRunSegment): CopilotRunSegmentViewItem[] {
+export function buildCopilotRunSegmentViewModel(
+  runState: Pick<CopilotRunState, 'segments' | 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+): CopilotRunSegmentViewItem[] {
+  return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment, runState))
+}
+
+function projectSegmentToViewItems(
+  segment: CopilotRunSegment,
+  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+): CopilotRunSegmentViewItem[] {
   switch (segment.kind) {
     case 'assistant':
-      return projectAssistantSegment(segment)
+      return projectAssistantSegment(segment, runState)
     case 'tool':
       return [projectToolSegment(segment)]
     case 'diagnostic':
@@ -108,21 +153,25 @@ function projectSegmentToViewItems(segment: CopilotRunSegment): CopilotRunSegmen
 
 function projectAssistantSegment(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
+  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
 ): CopilotRunSegmentViewItem[] {
-  if (segment.text === '') {
+  if (!isRenderableAssistantSegment(segment)) {
     return []
   }
+
+  const resolvedModelId = resolveAssistantModelId(segment, runState)
+  const resolvedModelRoute = resolveAssistantModelRoute(segment, runState)
 
   return [{
     id: segment.id,
     kind: 'assistant',
     runId: segment.runId,
     sequence: segment.startedSequence,
-    title: '助手响应',
+    title: resolvedModelId ?? resolvedModelRoute?.snapshot.modelId ?? '助手响应',
     content: segment.text,
     status: mapSegmentStatus(segment.status),
-    resolvedModelId: segment.resolvedModelId,
-    resolvedModelRoute: cloneRuntimeModelRoute(segment.resolvedModelRoute),
+    resolvedModelId,
+    resolvedModelRoute,
     resolvedToolIds: [...segment.resolvedToolIds],
     requestOptions: { ...segment.requestOptions },
   }]
@@ -223,6 +272,48 @@ function mapSegmentStatus(
   }
 }
 
+function resolveAssistantModelId(
+  segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
+  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+): string | null {
+  const modelIdCandidates = [
+    segment.resolvedModelId,
+    runState.resolvedModelId,
+    segment.resolvedModelRoute?.snapshot.modelId ?? null,
+    runState.resolvedModelRoute?.snapshot.modelId ?? null,
+    runState.activeModelRoute?.snapshot.modelId ?? null,
+  ]
+
+  for (const candidate of modelIdCandidates) {
+    const trimmedCandidate = candidate?.trim() ?? ''
+    if (trimmedCandidate !== '') {
+      return trimmedCandidate
+    }
+  }
+
+  return null
+}
+
+function resolveAssistantModelRoute(
+  segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
+  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+): RuntimeModelRoute | null {
+  const routeCandidates = [
+    segment.resolvedModelRoute,
+    runState.resolvedModelRoute,
+    runState.activeModelRoute,
+  ]
+
+  for (const route of routeCandidates) {
+    const clonedRoute = cloneRuntimeModelRoute(route)
+    if (clonedRoute !== null) {
+      return clonedRoute
+    }
+  }
+
+  return null
+}
+
 function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRoute | null {
   if (route === null) {
     return null
@@ -237,6 +328,10 @@ function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRo
       modelId: route.snapshot.modelId,
     },
   }
+}
+
+function isRenderableAssistantSegment(segment: CopilotRunSegment): boolean {
+  return segment.kind === 'assistant' && segment.text !== ''
 }
 
 function formatFailureMessage(failure: CopilotRunFailureSummary | null): string {

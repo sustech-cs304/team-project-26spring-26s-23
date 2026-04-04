@@ -139,6 +139,7 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
     assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
     assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
     assert request.policy.enabledTools == ("tool.file-convert",)
+    assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
 
 
@@ -168,7 +169,28 @@ def test_extract_message_send_request_reads_model_route_policy_fields() -> None:
     assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
     assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
     assert request.policy.enabledTools == ("tool.file-convert",)
+    assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
+
+
+
+def test_extract_message_send_request_leaves_debug_mode_unset_when_field_omitted() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy.pop("debugModeEnabled")
+
+    request = parser.extract_message_send_request(
+        {
+            "method": "message/send",
+            "body": {
+                "sessionId": "session-123",
+                "message": {"role": "user", "content": "Hello"},
+                "policy": policy,
+            },
+        }
+    )
+
+    assert request.policy.debugModeEnabled is None
 
 
 
@@ -284,5 +306,6 @@ def _build_policy_payload() -> dict[str, object]:
             },
         },
         "enabledTools": ["tool.file-convert"],
+        "debugModeEnabled": True,
         "requestOptions": {"temperature": 0.2},
     }

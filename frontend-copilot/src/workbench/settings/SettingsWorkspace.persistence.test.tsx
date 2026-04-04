@@ -4,6 +4,7 @@ import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  clickElement,
   createPersistedWorkspaceState,
   flushAsyncEffects,
   installSettingsWorkspaceBridge,
@@ -119,6 +120,98 @@ describe('SettingsWorkspace persistence', () => {
 
     const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
     expect(lastSaveCall?.externalSource.wakeupShareLink).toBe('https://wakeup.example.com/share/new')
+
+    rendered.unmount()
+  })
+
+  it('reads debug mode from config center and persists toggle updates through the public patch bridge', async () => {
+    installSettingsWorkspaceBridge()
+
+    const loadPublicSnapshot = vi.fn(async () => ({
+      ok: true as const,
+      snapshot: {
+        version: 1,
+        domains: {
+          frontendPreferences: {
+            theme: 'light' as const,
+            animationsEnabled: true,
+          },
+          assistantBehavior: {
+            agentName: null,
+            debugModeEnabled: false,
+          },
+          hostConfig: {
+            runtimeUrl: null,
+          },
+          backendExposed: {
+            model: null,
+          },
+        },
+      },
+    }))
+    const applyPublicPatch = vi.fn(async () => ({
+      ok: true as const,
+      snapshot: {
+        version: 1,
+        domains: {
+          frontendPreferences: {
+            theme: 'light' as const,
+            animationsEnabled: true,
+          },
+          assistantBehavior: {
+            agentName: null,
+            debugModeEnabled: true,
+          },
+          hostConfig: {
+            runtimeUrl: null,
+          },
+          backendExposed: {
+            model: null,
+          },
+        },
+      },
+    }))
+    const subscribe = vi.fn(() => (() => undefined))
+
+    Object.assign(window, {
+      configCenterPublicSnapshot: {
+        load: loadPublicSnapshot,
+      },
+      configCenterPublicPatch: {
+        apply: applyPublicPatch,
+      },
+      configCenterPublicSnapshotSubscription: {
+        subscribe,
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'general',
+    })
+
+    await flushAsyncEffects()
+
+    const debugToggleLabel = rendered.getByText('启用调试模式')
+    const debugToggle = debugToggleLabel.closest('button')
+    if (!(debugToggle instanceof HTMLButtonElement)) {
+      throw new Error('Expected debug mode toggle button.')
+    }
+
+    expect(loadPublicSnapshot).toHaveBeenCalledOnce()
+    expect(debugToggle.getAttribute('aria-checked')).toBe('false')
+
+    await clickElement(debugToggle)
+    await flushAsyncEffects()
+
+    expect(applyPublicPatch).toHaveBeenCalledOnce()
+    expect(applyPublicPatch).toHaveBeenCalledWith({
+      domains: {
+        assistantBehavior: {
+          debugModeEnabled: true,
+        },
+      },
+    })
+    expect(debugToggle.getAttribute('aria-checked')).toBe('true')
 
     rendered.unmount()
   })

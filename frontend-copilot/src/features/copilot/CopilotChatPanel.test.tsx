@@ -76,6 +76,7 @@ describe('CopilotChatPanel', () => {
     expect(html).toContain('data-testid="chat-composer-resize-handle"')
     expect(html).toContain('data-testid="chat-composer-surface"')
     expect(html).toContain('data-testid="chat-composer-send-button"')
+    expect(html).not.toContain('data-testid="chat-composer-run-status"')
     expect(html).toContain('data-testid="chat-tool-picker-trigger"')
     expect(html).toContain('按 Enter 发送，按 Ctrl + Enter 换行')
     expect(html).toContain('copilot-chat__send-button')

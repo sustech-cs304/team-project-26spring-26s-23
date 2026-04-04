@@ -56,6 +56,7 @@ function isConfigCenterPublicSnapshot(value: unknown): value is ConfigCenterPubl
     && typeof frontendPreferences.animationsEnabled === 'boolean'
     && isPlainRecord(assistantBehavior)
     && isNullableString(assistantBehavior.agentName)
+    && (assistantBehavior.debugModeEnabled === undefined || typeof assistantBehavior.debugModeEnabled === 'boolean')
     && isPlainRecord(hostConfig)
     && isNullableString(hostConfig.runtimeUrl)
     && isPlainRecord(backendExposed)

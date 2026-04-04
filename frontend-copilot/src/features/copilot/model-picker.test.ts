@@ -86,6 +86,9 @@ describe('copilot model picker bridge', () => {
         models: [],
       }),
     ])
+    expect(catalog.models[0]?.icon.label).toBe('G')
+    expect(catalog.models[0]?.icon.label).not.toBe('A')
+    expect(catalog.models[1]?.icon.label).toBe('G')
     expect(resolveCopilotPreferredModelId({
       preferredModelId: 'openai/gpt-4.1',
       models: catalog.models,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from app.copilot_runtime.agent import AgentExecutionError, RuntimeToolLifecycleEvent, ToolInvocationError
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.execution_support import SessionNotFoundError
@@ -103,6 +105,7 @@ class _StreamingExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.calls.append(
@@ -112,6 +115,7 @@ class _StreamingExecutor:
                 "message_history": list(message_history),
                 "model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -144,6 +148,7 @@ class _EventStreamingExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateEventStream:
         self.calls.append(
@@ -154,6 +159,7 @@ class _EventStreamingExecutor:
                 "message_history": list(message_history),
                 "model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -191,6 +197,7 @@ class _CancellingExecutor(_StreamingExecutor):
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.calls.append(
@@ -200,6 +207,7 @@ class _CancellingExecutor(_StreamingExecutor):
                 "message_history": list(message_history),
                 "model_id": model_route.model_id,
                 "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
             }
         )
@@ -258,7 +266,7 @@ def test_stream_events_success_archives_only_completed_assistant_message() -> No
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
-    events = asyncio.run(_collect_events(orchestrator, _build_request(session_id="session-1")))
+    events = asyncio.run(_collect_events(orchestrator, _build_request(session_id="session-1", debug_mode_enabled=True)))
 
     assert [event.type for event in events] == ["run_started", "text_delta", "text_delta", "run_completed"]
     assert [event.sequence for event in events] == [1, 2, 3, 4]
@@ -270,6 +278,7 @@ def test_stream_events_success_archives_only_completed_assistant_message() -> No
             "message_history": [],
             "model_id": "gpt-4.1",
             "enabled_tools": [],
+            "debug_enabled": True,
             "request_options": {},
         }
     ]
@@ -483,6 +492,7 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
             "message_history": [],
             "model_id": "gpt-4.1",
             "enabled_tools": [WEATHER_CURRENT_TOOL_ID],
+            "debug_enabled": False,
             "request_options": {},
         }
     ]
@@ -748,6 +758,66 @@ def test_stream_events_client_disconnect_cancels_run_and_does_not_archive() -> N
 
 
 
+def test_stream_events_explicit_false_overrides_runtime_debug_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", debug_mode_enabled=False),
+        )
+    )
+
+    assert executor.calls[0]["debug_enabled"] is False
+
+
+
+def test_stream_events_uses_runtime_debug_env_when_request_debug_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", debug_mode_enabled=None),
+        )
+    )
+
+    assert executor.calls[0]["debug_enabled"] is True
+
+
+
 def test_encode_runtime_run_event_renders_sse_payload() -> None:
     request = _build_request(session_id="session-1")
     event = asyncio.run(_collect_events_from_request(request))[0]
@@ -830,6 +900,7 @@ def _build_request(
     *,
     session_id: str,
     enabled_tools: tuple[str, ...] = (),
+    debug_mode_enabled: bool | None = None,
 ) -> RuntimeMessageSendRequest:
     return RuntimeMessageSendRequest(
         session_id=session_id,
@@ -845,6 +916,7 @@ def _build_request(
                 ),
             ),
             enabledTools=enabled_tools,
+            debugModeEnabled=debug_mode_enabled,
             requestOptions={},
         ),
         agent_id="default",

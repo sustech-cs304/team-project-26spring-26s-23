@@ -12,10 +12,13 @@ import { CopilotComposer } from './CopilotComposer'
 import { CopilotMessageList } from './CopilotMessageList'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
 import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
-import type { CopilotMessageListItem } from './run-segment-view-model'
+import type {
+  CopilotAssistantPlaceholderState,
+  CopilotMessageListItem,
+} from './run-segment-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
-import type { CopilotBootstrapState } from './types'
+import type { CopilotBootstrapState, CopilotConnectableState } from './types'
 
 export interface CopilotPanelShellProps {
   state: CopilotBootstrapState
@@ -35,11 +38,15 @@ export interface CopilotPanelShellProps {
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
-  runNotice: string | null
   conversation: CopilotMessageListItem[]
+  assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
+}
+
+type ConnectableCopilotPanelShellProps = Omit<CopilotPanelShellProps, 'state'> & {
+  state: CopilotConnectableState
 }
 
 export function CopilotPanelShell(props: CopilotPanelShellProps) {
@@ -53,10 +60,13 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
     )
   }
 
-  return renderSessionShell(props)
+  return renderSessionShell({
+    ...props,
+    state: props.state,
+  })
 }
 
-function renderSessionShell(props: CopilotPanelShellProps) {
+function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   const hasAvailableModels = props.modelGroups.some((group) => group.models.length > 0)
 
   if (props.directoryState.status === 'loading' || props.directoryState.status === 'idle') {
@@ -112,6 +122,9 @@ function renderSessionShell(props: CopilotPanelShellProps) {
       <section className="copilot-chat" data-testid="chat-send-shell">
         <CopilotMessageList
           conversation={props.conversation}
+          assistantPlaceholder={props.assistantPlaceholder}
+          models={props.modelGroups.flatMap((group) => group.models)}
+          showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
           emptyState={hasAvailableModels
             ? null
             : {
@@ -130,7 +143,6 @@ function renderSessionShell(props: CopilotPanelShellProps) {
           canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
           composerError={props.sendError ?? props.sessionError}
-          runNotice={props.runNotice}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}

@@ -84,6 +84,7 @@ class _StreamingExecutor:
         message_history: list[object],
         model_route: ResolvedRuntimeModelRoute,
         enabled_tools: tuple[str, ...] = (),
+        debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         _ = (agent_name, user_prompt, message_history, enabled_tools, request_options)
@@ -519,7 +520,7 @@ def _build_session_create_request() -> dict[str, Any]:
 
 
 
-def _build_message_send_request(*, session_id: str) -> dict[str, Any]:
+def _build_message_send_request(*, session_id: str, debug_mode_enabled: bool = False) -> dict[str, Any]:
     return {
         "method": "message/send",
         "body": {
@@ -540,6 +541,7 @@ def _build_message_send_request(*, session_id: str) -> dict[str, Any]:
                     },
                 },
                 "enabledTools": [],
+                "debugModeEnabled": debug_mode_enabled,
                 "requestOptions": {},
             },
         },

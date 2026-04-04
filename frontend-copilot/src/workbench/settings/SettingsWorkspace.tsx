@@ -1,5 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
+import {
+  applyConfigCenterPublicPatch,
+  loadConfigCenterPublicSnapshot,
+  projectDebugModeEnabledFromConfigCenterPublicSnapshot,
+  subscribeToConfigCenterPublicSnapshotUpdates,
+} from '../../features/copilot/config-center'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { settingsItems } from '../config'
 import type { SettingsSection, ThemeMode } from '../types'
@@ -29,6 +35,7 @@ export function SettingsWorkspace({
 }: SettingsWorkspaceProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? settingsItems[0]?.id ?? 'sustech-info')
   const [sustechEmailFocused, setSustechEmailFocused] = useState(false)
+  const [debugModeEnabled, setDebugModeEnabled] = useState(false)
 
   const workspaceState = useSettingsWorkspaceState(initialSettingsWorkspaceActiveProviderId)
   const {
@@ -142,6 +149,51 @@ export function SettingsWorkspace({
 
   const displayedSustechEmail = formState.sustechEmail.trim() || (!sustechEmailFocused ? derivedSustechEmail : '')
 
+  useEffect(() => {
+    let cancelled = false
+
+    void loadConfigCenterPublicSnapshot().then((result) => {
+      if (cancelled || !result.ok) {
+        return
+      }
+
+      setDebugModeEnabled(projectDebugModeEnabledFromConfigCenterPublicSnapshot(result.snapshot))
+    })
+
+    const unsubscribe = subscribeToConfigCenterPublicSnapshotUpdates((snapshot) => {
+      if (cancelled) {
+        return
+      }
+
+      setDebugModeEnabled(projectDebugModeEnabledFromConfigCenterPublicSnapshot(snapshot))
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [])
+
+  const handleDebugModeEnabledChange = (value: boolean) => {
+    const previousValue = debugModeEnabled
+    setDebugModeEnabled(value)
+
+    void applyConfigCenterPublicPatch({
+      domains: {
+        assistantBehavior: {
+          debugModeEnabled: value,
+        },
+      },
+    }).then((result) => {
+      if (!result.ok) {
+        setDebugModeEnabled(previousValue)
+        return
+      }
+
+      setDebugModeEnabled(projectDebugModeEnabledFromConfigCenterPublicSnapshot(result.snapshot))
+    })
+  }
+
   const providerSectionDomain: ProviderProfilesSectionDomain = {
     providerProfiles: formState.providerProfiles,
     activeProviderId,
@@ -213,10 +265,12 @@ export function SettingsWorkspace({
       proxyMode: formState.proxyMode,
       assistantNotificationsEnabled: formState.assistantNotificationsEnabled,
       backupEnabled: formState.backupEnabled,
+      debugModeEnabled,
       onLanguageChange: setLanguage,
       onProxyModeChange: setProxyMode,
       onAssistantNotificationsEnabledChange: setAssistantNotificationsEnabled,
       onBackupEnabledChange: setBackupEnabled,
+      onDebugModeEnabledChange: handleDebugModeEnabledChange,
     },
     display: {
       themeMode,

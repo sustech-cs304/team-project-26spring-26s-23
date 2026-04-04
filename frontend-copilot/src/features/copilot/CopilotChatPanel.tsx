@@ -25,6 +25,7 @@ import {
 } from './copilot-chat-helpers'
 import {
   buildCopilotMessageListItems,
+  resolveCopilotAssistantPlaceholderState,
   type CopilotMessageListItem,
 } from './run-segment-view-model'
 import {
@@ -149,17 +150,12 @@ export function CopilotChatPanel({
     }),
     [conversation, runState],
   )
+  const assistantPlaceholder = useMemo(
+    () => resolveCopilotAssistantPlaceholderState(runState),
+    [runState],
+  )
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
   const canCancelSend = activeAbortControllerRef.current !== null && sendStatus === 'sending'
-  const runNotice = useMemo(() => {
-    if (runState.phase === 'starting' || runState.phase === 'streaming') {
-      return '响应生成中，可随时取消。'
-    }
-    if (runState.phase === 'cancelled') {
-      return '当前响应已取消，未定稿为成功消息。'
-    }
-    return null
-  }, [runState.phase])
 
   useEffect(() => {
     activeAbortControllerRef.current?.abort()
@@ -312,6 +308,7 @@ export function CopilotChatPanel({
         hasAvailableModels,
         composerInputRef,
         sendMessage,
+        debugModeEnabled: isCopilotConnectableState(state) ? state.bootstrapFields.debugModeEnabled : false,
         setRunState,
         setSendError,
         setComposerDraft,
@@ -362,8 +359,8 @@ export function CopilotChatPanel({
         sendStatus={sendStatus}
         canCancelSend={canCancelSend}
         sendDisabledReason={sendDisabledReason}
-        runNotice={runNotice}
         conversation={projectedConversation}
+        assistantPlaceholder={assistantPlaceholder}
         composerInputRef={composerInputRef}
         composerHeight={composerHeight}
         onComposerResizeStart={onComposerResizeStart}
