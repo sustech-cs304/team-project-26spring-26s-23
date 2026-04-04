@@ -156,15 +156,6 @@ export function CopilotChatPanel({
   )
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
   const canCancelSend = activeAbortControllerRef.current !== null && sendStatus === 'sending'
-  const runNotice = useMemo(() => {
-    if (runState.phase === 'starting' || runState.phase === 'streaming') {
-      return '响应生成中'
-    }
-    if (runState.phase === 'cancelled') {
-      return '当前响应已取消'
-    }
-    return null
-  }, [runState.phase])
 
   useEffect(() => {
     activeAbortControllerRef.current?.abort()
@@ -368,7 +359,6 @@ export function CopilotChatPanel({
         sendStatus={sendStatus}
         canCancelSend={canCancelSend}
         sendDisabledReason={sendDisabledReason}
-        runNotice={runNotice}
         conversation={projectedConversation}
         assistantPlaceholder={assistantPlaceholder}
         composerInputRef={composerInputRef}

@@ -25,7 +25,6 @@ interface CopilotComposerProps {
   canCancel: boolean
   sendDisabledReason: string | null
   composerError: string | null
-  runNotice: string | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -42,7 +41,6 @@ export function CopilotComposer({
   canCancel,
   sendDisabledReason,
   composerError,
-  runNotice: _runNotice,
   composerInputRef,
   composerHeight,
   onResizeStart,

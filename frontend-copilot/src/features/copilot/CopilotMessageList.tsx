@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useState, type ComponentType } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
@@ -516,7 +516,7 @@ function ToolStructuredContent({
   kind: 'input' | 'result' | 'error'
   testIdPrefix: string
 }) {
-  const structuredValue = parseStructuredToolValue(value)
+  const structuredValue = useMemo(() => parseStructuredToolValue(value), [value])
   const [jsonViewComponent, setJsonViewComponent] = useState<JsonViewComponent | null>(null)
 
   useEffect(() => {

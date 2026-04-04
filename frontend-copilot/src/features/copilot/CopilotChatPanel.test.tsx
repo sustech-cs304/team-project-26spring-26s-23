@@ -1,5 +1,9 @@
 /** @vitest-environment jsdom */
 
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -26,6 +30,12 @@ beforeAll(() => {
 afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
 })
+
+const copilotFeatureDir = path.dirname(fileURLToPath(import.meta.url))
+
+function readCopilotFeatureSource(fileName: string): string {
+  return readFileSync(path.join(copilotFeatureDir, fileName), 'utf8')
+}
 
 describe('CopilotChatPanel', () => {
   it('renders the session-first placeholder when runtime is ready but no session has been created yet', () => {
@@ -110,6 +120,12 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('总体可用工具集合（后端能力面真源）')
     expect(html).not.toContain('当前默认启用来源')
     expect(html).not.toContain('当前 threadId')
+  })
+
+  it('removes the obsolete runNotice prop pipe across chat panel composition', () => {
+    expect(readCopilotFeatureSource('CopilotChatPanel.tsx')).not.toContain('runNotice')
+    expect(readCopilotFeatureSource('CopilotPanelShell.tsx')).not.toContain('runNotice')
+    expect(readCopilotFeatureSource('CopilotComposer.tsx')).not.toContain('runNotice')
   })
 
   it('keeps the non-connected branch intact for empty state', () => {

@@ -112,7 +112,6 @@ function renderShell(debugModeEnabled: boolean): string {
       sendStatus="idle"
       canCancelSend={false}
       sendDisabledReason={null}
-      runNotice={null}
       conversation={conversation}
       assistantPlaceholder={{
         shouldRender: false,

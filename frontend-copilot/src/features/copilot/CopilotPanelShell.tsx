@@ -38,7 +38,6 @@ export interface CopilotPanelShellProps {
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
-  runNotice: string | null
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
@@ -144,7 +143,6 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
           composerError={props.sendError ?? props.sessionError}
-          runNotice={props.runNotice}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}
