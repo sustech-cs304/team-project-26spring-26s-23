@@ -592,13 +592,15 @@ describe('CopilotChatPanel composer interactions', () => {
 
     toolEventControl.release()
 
-    await waitForText(rendered.container, '调用天气工具')
+    await waitForText(rendered.container, '天气工具调用中')
     await waitForCondition(
       () => rendered.queryByTestId('chat-assistant-placeholder') === null,
       'assistant placeholder removed after tool card',
     )
 
-    expect(rendered.container.textContent).toContain('正在获取 Shenzhen 的天气。')
+    expect(rendered.getByTestId('chat-message-tool-spinner-1')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-message-tool-panel-1')).toBeNull()
+    expect(rendered.container.textContent).not.toContain('正在获取 Shenzhen 的天气。')
 
     rendered.unmount()
   })
@@ -777,15 +779,37 @@ describe('CopilotChatPanel composer interactions', () => {
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请先查询天气再回答')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
-    await waitForText(rendered.container, '天气工具已返回结果')
+    await waitForText(rendered.container, '天气工具被调用')
 
     const textContent = rendered.container.textContent ?? ''
-    expect(textContent).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
-    expect(textContent).toContain('{"location":"Shenzhen"}')
     expect(textContent).toContain('这是助手回显')
     expect(textContent).not.toContain('正在获取 Shenzhen 的天气。')
-    expect(textContent.indexOf('天气工具已返回结果')).toBeLessThan(textContent.indexOf('这是助手回显'))
+    expect(textContent).not.toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(textContent).not.toContain('{"location":"Shenzhen"}')
+    expect(textContent.indexOf('天气工具被调用')).toBeLessThan(textContent.indexOf('这是助手回显'))
+    expect(rendered.queryByTestId('chat-message-tool-panel-1')).toBeNull()
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--completed')).toHaveLength(1)
+
+    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      'tool panel visible after expanding card',
+    )
+
+    expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').textContent).toContain('输入')
+    expect(rendered.queryByTestId('chat-message-tool-input-panel-1')).toBeNull()
+
+    await clickElement(rendered.getByTestId('chat-message-tool-input-toggle-1'))
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-input-panel-1') !== null,
+      'tool input panel visible after expanding nested input section',
+    )
+
+    const inputJson = rendered.getByTestId('chat-message-tool-input-1-json')
+    expect(inputJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
+    expect(inputJson.textContent).toContain('location')
+    expect(inputJson.textContent).toContain('Shenzhen')
 
     rendered.unmount()
   })
@@ -818,10 +842,18 @@ describe('CopilotChatPanel composer interactions', () => {
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
     await waitForText(rendered.container, '工具调用失败')
 
-    expect(rendered.container.textContent).toContain('工具执行失败。')
-    expect(rendered.container.textContent).toContain('boom')
+    expect(rendered.container.textContent).not.toContain('工具执行失败。')
     expect(rendered.container.textContent).toContain('发送失败')
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--failed')).toHaveLength(1)
+
+    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      'failed tool panel visible after expanding card',
+    )
+
+    expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('工具执行失败。')
+    expect(rendered.getByTestId('chat-message-tool-extra-1-1-text').textContent).toContain('boom')
 
     rendered.unmount()
   })
@@ -986,7 +1018,7 @@ describe('CopilotChatPanel composer interactions', () => {
     const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
     expect(sendButton.title).toBe('取消当前响应')
     expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('响应生成中')
-    expect(rendered.container.textContent).toContain('调用天气工具')
+    expect(rendered.container.textContent).toContain('天气工具调用中')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
 
@@ -1005,7 +1037,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
     expect(rendered.container.textContent).toContain('已取消')
     expect(rendered.getByTestId('chat-composer-run-status').textContent).toContain('当前响应已取消')
-    expect(rendered.container.textContent).toContain('调用天气工具')
+    expect(rendered.container.textContent).toContain('天气工具已取消')
     expect(rendered.container.textContent).toContain('第一段')
     expect(rendered.container.textContent).not.toContain('第二段')
     expect(rendered.container.textContent).not.toContain('已完成')

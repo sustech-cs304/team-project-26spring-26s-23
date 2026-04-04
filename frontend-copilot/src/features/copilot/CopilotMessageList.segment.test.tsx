@@ -68,8 +68,11 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('chat-message-assistant-icon-0')
     expect(html).toContain('GPT 4.1 图标')
     expect(html).toContain('正在生成内容')
-    expect(html).toContain('天气工具已返回结果')
-    expect(html).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(html).toContain('天气工具被调用')
+    expect(html).not.toContain('天气工具已返回结果')
+    expect(html).not.toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(html).toContain('chat-message-tool-toggle-1')
+    expect(html).not.toContain('chat-message-tool-panel-1')
     expect(html).toContain('copilot-chat__message--streaming')
     expect(html).toContain('copilot-chat__message--completed')
     expect(html).not.toContain('流式输出中')
@@ -185,10 +188,10 @@ describe('CopilotMessageList segment rendering', () => {
     })
 
     expect(html).toContain('第一段')
-    expect(html).toContain('天气工具已返回结果')
+    expect(html).toContain('天气工具被调用')
     expect(html).toContain('第二段')
-    expect(html.indexOf('第一段')).toBeLessThan(html.indexOf('天气工具已返回结果'))
-    expect(html.indexOf('天气工具已返回结果')).toBeLessThan(html.indexOf('第二段'))
+    expect(html.indexOf('第一段')).toBeLessThan(html.indexOf('天气工具被调用'))
+    expect(html.indexOf('天气工具被调用')).toBeLessThan(html.indexOf('第二段'))
   })
 
   it('keeps rendered segments visible when a run fails and adds diagnostic plus terminal markers', () => {
@@ -346,7 +349,7 @@ describe('CopilotMessageList segment rendering', () => {
     })
 
     expect(html).toContain('已保留的回答前半段')
-    expect(html).toContain('调用天气工具')
+    expect(html).toContain('天气工具已取消')
     expect(html).toContain('已取消')
     expect(html).toContain('本次响应已取消：user_cancelled')
     expect(html.indexOf('已保留的回答前半段')).toBeLessThan(html.indexOf('本次响应已取消：user_cancelled'))
