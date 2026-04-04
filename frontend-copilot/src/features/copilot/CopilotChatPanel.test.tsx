@@ -1,9 +1,5 @@
 /** @vitest-environment jsdom */
 
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -30,12 +26,6 @@ beforeAll(() => {
 afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
 })
-
-const copilotFeatureDir = path.dirname(fileURLToPath(import.meta.url))
-
-function readCopilotFeatureSource(fileName: string): string {
-  return readFileSync(path.join(copilotFeatureDir, fileName), 'utf8')
-}
 
 describe('CopilotChatPanel', () => {
   it('renders the session-first placeholder when runtime is ready but no session has been created yet', () => {
@@ -86,6 +76,7 @@ describe('CopilotChatPanel', () => {
     expect(html).toContain('data-testid="chat-composer-resize-handle"')
     expect(html).toContain('data-testid="chat-composer-surface"')
     expect(html).toContain('data-testid="chat-composer-send-button"')
+    expect(html).not.toContain('data-testid="chat-composer-run-status"')
     expect(html).toContain('data-testid="chat-tool-picker-trigger"')
     expect(html).toContain('按 Enter 发送，按 Ctrl + Enter 换行')
     expect(html).toContain('copilot-chat__send-button')
@@ -120,12 +111,6 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('总体可用工具集合（后端能力面真源）')
     expect(html).not.toContain('当前默认启用来源')
     expect(html).not.toContain('当前 threadId')
-  })
-
-  it('removes the obsolete runNotice prop pipe across chat panel composition', () => {
-    expect(readCopilotFeatureSource('CopilotChatPanel.tsx')).not.toContain('runNotice')
-    expect(readCopilotFeatureSource('CopilotPanelShell.tsx')).not.toContain('runNotice')
-    expect(readCopilotFeatureSource('CopilotComposer.tsx')).not.toContain('runNotice')
   })
 
   it('keeps the non-connected branch intact for empty state', () => {

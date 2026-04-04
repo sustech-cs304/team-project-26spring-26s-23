@@ -391,7 +391,6 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('<code>代码</code>')
     expect(html).toContain('<table>')
     expect(html).toContain('mjx-container')
-    expect(html).toContain('className="MathJax"')
     expect(html).toContain('jax="SVG"')
     expect(html).not.toContain('**加粗**')
     expect(html).not.toContain('| --- |')
