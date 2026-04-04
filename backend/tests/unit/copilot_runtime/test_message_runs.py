@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from app.copilot_runtime.agent import AgentExecutionError, RuntimeToolLifecycleEvent, ToolInvocationError
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.execution_support import SessionNotFoundError
@@ -756,6 +758,66 @@ def test_stream_events_client_disconnect_cancels_run_and_does_not_archive() -> N
 
 
 
+def test_stream_events_explicit_false_overrides_runtime_debug_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", debug_mode_enabled=False),
+        )
+    )
+
+    assert executor.calls[0]["debug_enabled"] is False
+
+
+
+def test_stream_events_uses_runtime_debug_env_when_request_debug_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", debug_mode_enabled=None),
+        )
+    )
+
+    assert executor.calls[0]["debug_enabled"] is True
+
+
+
 def test_encode_runtime_run_event_renders_sse_payload() -> None:
     request = _build_request(session_id="session-1")
     event = asyncio.run(_collect_events_from_request(request))[0]
@@ -838,7 +900,7 @@ def _build_request(
     *,
     session_id: str,
     enabled_tools: tuple[str, ...] = (),
-    debug_mode_enabled: bool = False,
+    debug_mode_enabled: bool | None = None,
 ) -> RuntimeMessageSendRequest:
     return RuntimeMessageSendRequest(
         session_id=session_id,

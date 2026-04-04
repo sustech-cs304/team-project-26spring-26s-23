@@ -99,6 +99,53 @@ describe('thread run primary path', () => {
     })
   })
 
+  it('omits debugModeEnabled from run/start when the caller leaves it undefined', async () => {
+    const fetchFn = createFetchFn(createRuntimeRunStartResponse(), {
+      headers: {
+        'content-type': 'application/json',
+      },
+    })
+
+    await startRuntimeRun({
+      runtimeUrl,
+      threadId: sessionId,
+      agent: agentId,
+      message: createUserMessage(),
+      modelRoute: createRuntimeModelRoute(),
+      enabledTools: ['tool.file-convert'],
+      requestOptions: {
+        trace: true,
+      },
+      fetchFn,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        method: 'run/start',
+        body: {
+          threadId: 'session-1',
+          agent: 'general',
+          message: {
+            role: 'user',
+            content: '请总结这份文档',
+          },
+          policy: {
+            modelRoute: createRuntimeModelRoute(),
+            enabledTools: ['tool.file-convert'],
+            requestOptions: {
+              trace: true,
+            },
+          },
+        },
+      }),
+      signal: undefined,
+    })
+  })
+
   it('streams ordered runtime events from run/stream', async () => {
     const events: RuntimeRunEvent[] = [
       {

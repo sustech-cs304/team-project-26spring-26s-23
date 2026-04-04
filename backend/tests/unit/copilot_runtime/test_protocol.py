@@ -174,6 +174,26 @@ def test_extract_message_send_request_reads_model_route_policy_fields() -> None:
 
 
 
+def test_extract_message_send_request_leaves_debug_mode_unset_when_field_omitted() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy.pop("debugModeEnabled")
+
+    request = parser.extract_message_send_request(
+        {
+            "method": "message/send",
+            "body": {
+                "sessionId": "session-123",
+                "message": {"role": "user", "content": "Hello"},
+                "policy": policy,
+            },
+        }
+    )
+
+    assert request.policy.debugModeEnabled is None
+
+
+
 def test_extract_run_start_request_requires_model_route_policy_object() -> None:
     parser = _build_parser()
 

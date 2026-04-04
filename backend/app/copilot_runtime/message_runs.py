@@ -273,7 +273,12 @@ class RuntimeMessageRunOrchestrator:
         run_id: str | None = None,
     ) -> AsyncIterator[RuntimeRunEvent]:
         resolved_run_id = run_id or _next_run_id()
-        debug_enabled = request.policy.debugModeEnabled or is_runtime_chain_debug_enabled()
+        request_debug_enabled = request.policy.debugModeEnabled
+        debug_enabled = (
+            is_runtime_chain_debug_enabled()
+            if request_debug_enabled is None
+            else request_debug_enabled
+        )
         assistant_message_id = f"{resolved_run_id}:assistant"
         events = RuntimeRunEventFactory(session_id=request.session_id, run_id=resolved_run_id)
         projector = LegacyRuntimeRunEventProjector(

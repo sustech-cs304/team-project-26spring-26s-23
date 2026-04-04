@@ -353,7 +353,9 @@ export async function startRuntimeRun(input: {
       policy: {
         modelRoute: input.modelRoute,
         enabledTools: input.enabledTools,
-        debugModeEnabled: input.debugModeEnabled ?? false,
+        ...(input.debugModeEnabled === undefined
+          ? {}
+          : { debugModeEnabled: input.debugModeEnabled }),
         requestOptions: input.requestOptions ?? {},
       },
     },

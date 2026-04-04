@@ -358,9 +358,9 @@ class RuntimeProtocolParser:
         *,
         field_name: str,
         requested_method: str,
-    ) -> bool:
+    ) -> bool | None:
         if value is None:
-            return False
+            return None
         if not isinstance(value, bool):
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,

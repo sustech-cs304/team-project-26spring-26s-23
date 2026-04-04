@@ -789,6 +789,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(textContent.indexOf('天气工具被调用')).toBeLessThan(textContent.indexOf('这是助手回显'))
     expect(rendered.queryByTestId('chat-message-tool-panel-1')).toBeNull()
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--completed')).toHaveLength(1)
+    expect(rendered.getByTestId('chat-message-tool-toggle-1').getAttribute('aria-expanded')).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
     await waitForCondition(
@@ -796,8 +797,10 @@ describe('CopilotChatPanel composer interactions', () => {
       'tool panel visible after expanding card',
     )
 
+    expect(rendered.getByTestId('chat-message-tool-toggle-1').getAttribute('aria-expanded')).toBe('true')
     expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
     expect(rendered.getByTestId('chat-message-tool-input-toggle-1').textContent).toContain('输入')
+    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').getAttribute('aria-expanded')).toBe('false')
     expect(rendered.queryByTestId('chat-message-tool-input-panel-1')).toBeNull()
 
     await clickElement(rendered.getByTestId('chat-message-tool-input-toggle-1'))
@@ -805,6 +808,8 @@ describe('CopilotChatPanel composer interactions', () => {
       () => rendered.queryByTestId('chat-message-tool-input-panel-1') !== null,
       'tool input panel visible after expanding nested input section',
     )
+
+    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').getAttribute('aria-expanded')).toBe('true')
 
     const inputJson = rendered.getByTestId('chat-message-tool-input-1-json')
     expect(inputJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)

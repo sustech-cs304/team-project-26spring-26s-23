@@ -110,7 +110,7 @@ class RuntimeStoredModelRoute:
 class RuntimeStoredRunPolicy:
     model_route: RuntimeStoredModelRoute
     enabled_tools: tuple[str, ...] = ()
-    debug_mode_enabled: bool = False
+    debug_mode_enabled: bool | None = None
     request_options: dict[str, Any] = field(default_factory=dict)
 
 

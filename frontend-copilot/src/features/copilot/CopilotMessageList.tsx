@@ -364,28 +364,57 @@ function ToolMessageCard({
 
   return (
     <div className="copilot-chat__tool-card" data-testid={`chat-message-tool-card-${index}`}>
-      <button
-        type="button"
-        className="copilot-chat__tool-toggle"
-        aria-controls={panelId}
-        data-expanded={expanded ? 'true' : 'false'}
-        data-testid={`chat-message-tool-toggle-${index}`}
-        onClick={() => {
-          setExpanded((current) => !current)
-        }}
-      >
-        <span className="copilot-chat__tool-toggle-main">
-          <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-          <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
-        </span>
-        {turn.status === 'streaming' && (
-          <span
-            className="copilot-chat__tool-spinner"
-            data-testid={`chat-message-tool-spinner-${index}`}
-            aria-label="工具调用进行中"
-          />
-        )}
-      </button>
+      {expanded
+        ? (
+            <button
+              type="button"
+              className="copilot-chat__tool-toggle"
+              aria-controls={panelId}
+              aria-expanded="true"
+              data-expanded="true"
+              data-testid={`chat-message-tool-toggle-${index}`}
+              onClick={() => {
+                setExpanded((current) => !current)
+              }}
+            >
+              <span className="copilot-chat__tool-toggle-main">
+                <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
+                <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
+              </span>
+              {turn.status === 'streaming' && (
+                <span
+                  className="copilot-chat__tool-spinner"
+                  data-testid={`chat-message-tool-spinner-${index}`}
+                  aria-label="工具调用进行中"
+                />
+              )}
+            </button>
+          )
+        : (
+            <button
+              type="button"
+              className="copilot-chat__tool-toggle"
+              aria-controls={panelId}
+              aria-expanded="false"
+              data-expanded="false"
+              data-testid={`chat-message-tool-toggle-${index}`}
+              onClick={() => {
+                setExpanded((current) => !current)
+              }}
+            >
+              <span className="copilot-chat__tool-toggle-main">
+                <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
+                <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
+              </span>
+              {turn.status === 'streaming' && (
+                <span
+                  className="copilot-chat__tool-spinner"
+                  data-testid={`chat-message-tool-spinner-${index}`}
+                  aria-label="工具调用进行中"
+                />
+              )}
+            </button>
+          )}
       {expanded && (
         <div className="copilot-chat__tool-panel" id={panelId} data-testid={`chat-message-tool-panel-${index}`}>
           {contentSections.map((section, sectionIndex) => (
@@ -401,21 +430,43 @@ function ToolMessageCard({
           ))}
           {inputSummary !== null && (
             <div className="copilot-chat__tool-nested">
-              <button
-                type="button"
-                className="copilot-chat__tool-nested-toggle"
-                aria-controls={inputPanelId}
-                data-expanded={inputExpanded ? 'true' : 'false'}
-                data-testid={`chat-message-tool-input-toggle-${index}`}
-                onClick={() => {
-                  setInputExpanded((current) => !current)
-                }}
-              >
-                <span className="copilot-chat__tool-toggle-main">
-                  <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">{inputExpanded ? '▾' : '▸'}</span>
-                  <span className="copilot-chat__tool-section-label">输入</span>
-                </span>
-              </button>
+              {inputExpanded
+                ? (
+                    <button
+                      type="button"
+                      className="copilot-chat__tool-nested-toggle"
+                      aria-controls={inputPanelId}
+                      aria-expanded="true"
+                      data-expanded="true"
+                      data-testid={`chat-message-tool-input-toggle-${index}`}
+                      onClick={() => {
+                        setInputExpanded((current) => !current)
+                      }}
+                    >
+                      <span className="copilot-chat__tool-toggle-main">
+                        <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
+                        <span className="copilot-chat__tool-section-label">输入</span>
+                      </span>
+                    </button>
+                  )
+                : (
+                    <button
+                      type="button"
+                      className="copilot-chat__tool-nested-toggle"
+                      aria-controls={inputPanelId}
+                      aria-expanded="false"
+                      data-expanded="false"
+                      data-testid={`chat-message-tool-input-toggle-${index}`}
+                      onClick={() => {
+                        setInputExpanded((current) => !current)
+                      }}
+                    >
+                      <span className="copilot-chat__tool-toggle-main">
+                        <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
+                        <span className="copilot-chat__tool-section-label">输入</span>
+                      </span>
+                    </button>
+                  )}
               {inputExpanded && (
                 <div
                   className="copilot-chat__tool-nested-panel"
