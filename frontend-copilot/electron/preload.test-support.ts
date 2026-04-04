@@ -109,7 +109,6 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
       proxyMode: 'system',
       assistantNotificationsEnabled: false,
       backupEnabled: true,
-      debugModeEnabled: false,
     },
     data: {
       dataPath: 'D:/workspace/copilot-data',
