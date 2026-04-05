@@ -195,6 +195,7 @@ export function CopilotComposer({
               aria-label="选择思考档位"
               data-testid="chat-thinking-panel"
             >
+              <p className="copilot-panel__eyebrow">推理强度</p>
               <div className="copilot-chat__thinking-option-list">
                 {thinkingOptions.map((option) => {
                   const selected = option.value === thinkingValue

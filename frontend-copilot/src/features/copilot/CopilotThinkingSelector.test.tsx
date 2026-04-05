@@ -99,8 +99,10 @@ describe('Copilot thinking selector', () => {
     expect(thinkingTrigger.title).toBe('思考档位')
 
     await clickElement(thinkingTrigger)
-    expect(rendered.getByTestId('chat-thinking-panel').textContent).toContain('无')
-    expect(rendered.getByTestId('chat-thinking-panel').textContent).toContain('自动')
+    const thinkingPanel = rendered.getByTestId('chat-thinking-panel')
+    expect(thinkingPanel.textContent).toContain('推理强度')
+    expect(thinkingPanel.textContent).toContain('无')
+    expect(thinkingPanel.textContent).toContain('自动')
     expect(rendered.container.textContent).not.toContain('当前模型不支持')
 
     await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
