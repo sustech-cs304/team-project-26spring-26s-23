@@ -32,6 +32,15 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   requestOptions: Record<string, unknown>
 }
 
+export interface CopilotReasoningMessageItem extends CopilotRunSegmentViewItemBase {
+  kind: 'reasoning'
+  title: string
+  content: string
+  observedStartedAt: number
+  observedFinishedAt: number | null
+  isCollapsedByDefault: true
+}
+
 export interface CopilotToolMessageItem extends CopilotRunSegmentViewItemBase {
   kind: 'tool'
   title: string
@@ -62,6 +71,7 @@ export interface CopilotTerminalMessageItem extends CopilotRunSegmentViewItemBas
 
 export type CopilotRunSegmentViewItem =
   | CopilotAssistantMessageItem
+  | CopilotReasoningMessageItem
   | CopilotToolMessageItem
   | CopilotDiagnosticMessageItem
   | CopilotTerminalMessageItem
@@ -80,7 +90,7 @@ export function createUserMessageListItem(content: string): CopilotUserMessageIt
 
 export interface CopilotAssistantPlaceholderState {
   shouldRender: boolean
-  dismissReason: 'assistant' | 'tool' | 'terminal' | 'inactive' | null
+  dismissReason: 'assistant' | 'reasoning' | 'tool' | 'terminal' | 'inactive' | null
 }
 
 export function buildCopilotMessageListItems(input: {
@@ -97,6 +107,13 @@ export function resolveCopilotAssistantPlaceholderState(
     return {
       shouldRender: false,
       dismissReason: 'assistant',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'reasoning')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'reasoning',
     }
   }
 
@@ -133,6 +150,22 @@ export function buildCopilotRunSegmentViewModel(
   return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment, runState))
 }
 
+export function formatCopilotReasoningDurationLabel(
+  reasoning: Pick<CopilotReasoningMessageItem, 'title' | 'observedStartedAt' | 'observedFinishedAt'>,
+  observedNow: number,
+): string {
+  return `${reasoning.title} ${formatCopilotReasoningElapsedSeconds(resolveCopilotReasoningElapsedMs(reasoning, observedNow))}s`
+}
+
+export function resolveCopilotReasoningElapsedMs(
+  reasoning: Pick<CopilotReasoningMessageItem, 'observedStartedAt' | 'observedFinishedAt'>,
+  observedNow: number,
+): number {
+  const observedEndedAt = reasoning.observedFinishedAt ?? observedNow
+
+  return Math.max(0, observedEndedAt - reasoning.observedStartedAt)
+}
+
 function projectSegmentToViewItems(
   segment: CopilotRunSegment,
   runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
@@ -140,6 +173,8 @@ function projectSegmentToViewItems(
   switch (segment.kind) {
     case 'assistant':
       return projectAssistantSegment(segment, runState)
+    case 'reasoning':
+      return [projectReasoningSegment(segment)]
     case 'tool':
       return [projectToolSegment(segment)]
     case 'diagnostic':
@@ -175,6 +210,23 @@ function projectAssistantSegment(
     resolvedToolIds: [...segment.resolvedToolIds],
     requestOptions: { ...segment.requestOptions },
   }]
+}
+
+function projectReasoningSegment(
+  segment: Extract<CopilotRunSegment, { kind: 'reasoning' }>,
+): CopilotReasoningMessageItem {
+  return {
+    id: segment.id,
+    kind: 'reasoning',
+    runId: segment.runId,
+    sequence: segment.startedSequence,
+    title: '思考',
+    content: segment.text,
+    observedStartedAt: segment.observedStartedAt,
+    observedFinishedAt: segment.observedFinishedAt,
+    status: mapSegmentStatus(segment.status),
+    isCollapsedByDefault: true,
+  }
 }
 
 function projectToolSegment(
@@ -345,4 +397,8 @@ function formatFailureMessage(failure: CopilotRunFailureSummary | null): string 
 function formatCancelledReason(reason: string): string {
   const trimmedReason = reason.trim()
   return trimmedReason === '' ? '本次响应已取消。' : `本次响应已取消：${trimmedReason}`
+}
+
+function formatCopilotReasoningElapsedSeconds(elapsedMs: number): string {
+  return (Math.floor(Math.max(0, elapsedMs) / 100) / 10).toFixed(1)
 }

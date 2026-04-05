@@ -11,11 +11,13 @@ import {
   resolveCopilotModelOption,
   type CopilotModelOption,
 } from './model-picker'
-import type {
-  CopilotAssistantMessageItem,
-  CopilotAssistantPlaceholderState,
-  CopilotMessageListItem,
-  CopilotToolMessageItem,
+import {
+  formatCopilotReasoningDurationLabel,
+  type CopilotAssistantMessageItem,
+  type CopilotAssistantPlaceholderState,
+  type CopilotMessageListItem,
+  type CopilotReasoningMessageItem,
+  type CopilotToolMessageItem,
 } from './run-segment-view-model'
 
 const assistantMarkdownComponents: Components = {
@@ -36,6 +38,7 @@ const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
 const assistantMarkdownRehypePlugins = [rehypeMathjax]
 
 const assistantPlaceholderExitMs = 180
+const reasoningTimerRefreshMs = 100
 
 interface JsonViewComponentProps {
   src: unknown
@@ -170,33 +173,37 @@ export function CopilotMessageList({
                   ? (
                       <ToolMessageCard turn={turn} index={index} />
                     )
-                  : (
-                      <>
-                        {turn.kind !== 'user' && renderMessageHeader(turn, index, models)}
-                        {renderMessageBody(turn)}
-                        {detailRows.length > 0 && (
-                          <div className="copilot-chat__message-detail-list">
-                            {detailRows.map((detail) => (
-                              <p
-                                key={`${turn.id}:${detail.label}`}
-                                className={[
-                                  'copilot-chat__message-detail',
-                                  `copilot-chat__message-detail--${detail.kind}`,
-                                ].join(' ')}
-                              >
-                                <span className="copilot-chat__message-detail-label">{detail.label}</span>
-                                <span>{detail.value}</span>
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                        {turn.kind === 'diagnostic' && (
-                          <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
-                            诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
-                          </p>
-                        )}
-                      </>
-                    )}
+                  : turn.kind === 'reasoning'
+                    ? (
+                        <ReasoningMessageCard turn={turn} index={index} />
+                      )
+                    : (
+                        <>
+                          {turn.kind !== 'user' && renderMessageHeader(turn, index, models)}
+                          {renderMessageBody(turn)}
+                          {detailRows.length > 0 && (
+                            <div className="copilot-chat__message-detail-list">
+                              {detailRows.map((detail) => (
+                                <p
+                                  key={`${turn.id}:${detail.label}`}
+                                  className={[
+                                    'copilot-chat__message-detail',
+                                    `copilot-chat__message-detail--${detail.kind}`,
+                                  ].join(' ')}
+                                >
+                                  <span className="copilot-chat__message-detail-label">{detail.label}</span>
+                                  <span>{detail.value}</span>
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                          {turn.kind === 'diagnostic' && (
+                            <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
+                              诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
+                            </p>
+                          )}
+                        </>
+                      )}
               </article>
             )
           })}
@@ -291,19 +298,23 @@ function findFirstNonEmptyValue(...values: Array<string | null | undefined>): st
   return null
 }
 
+function renderMarkdownMessageBody(content: string) {
+  return (
+    <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
+      <ReactMarkdown
+        components={assistantMarkdownComponents}
+        remarkPlugins={assistantMarkdownRemarkPlugins}
+        rehypePlugins={assistantMarkdownRehypePlugins}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 function renderMessageBody(turn: CopilotMessageListItem) {
   if (turn.kind === 'assistant') {
-    return (
-      <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
-        <ReactMarkdown
-          components={assistantMarkdownComponents}
-          remarkPlugins={assistantMarkdownRemarkPlugins}
-          rehypePlugins={assistantMarkdownRehypePlugins}
-        >
-          {turn.content}
-        </ReactMarkdown>
-      </div>
-    )
+    return renderMarkdownMessageBody(turn.content)
   }
 
   if (turn.kind === 'user') {
@@ -319,6 +330,7 @@ function buildDetailRows(turn: CopilotMessageListItem): Array<{
   value: string
 }> {
   switch (turn.kind) {
+    case 'reasoning':
     case 'tool':
       return []
     case 'diagnostic':
@@ -346,6 +358,95 @@ function buildDetailRows(turn: CopilotMessageListItem): Array<{
     case 'user':
       return []
   }
+}
+
+function ReasoningMessageCard({
+  turn,
+  index,
+}: {
+  turn: CopilotReasoningMessageItem
+  index: number
+}) {
+  const [expanded, setExpanded] = useState(turn.isCollapsedByDefault !== true)
+  const [observedNow, setObservedNow] = useState(() => turn.observedFinishedAt ?? Date.now())
+  const panelId = `chat-message-reasoning-panel-${turn.id}`
+
+  useEffect(() => {
+    setObservedNow(turn.observedFinishedAt ?? Date.now())
+  }, [turn.observedFinishedAt, turn.observedStartedAt])
+
+  useEffect(() => {
+    if (turn.observedFinishedAt !== null || turn.status !== 'streaming') {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      setObservedNow(Date.now())
+    }, reasoningTimerRefreshMs)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [turn.observedFinishedAt, turn.status])
+
+  const reasoningTitle = formatCopilotReasoningDurationLabel(turn, observedNow)
+
+  return (
+    <div className="copilot-chat__reasoning-card" data-testid={`chat-message-reasoning-card-${index}`}>
+      {expanded
+        ? (
+            <button
+              type="button"
+              className="copilot-chat__reasoning-toggle"
+              aria-controls={panelId}
+              aria-expanded="true"
+              data-expanded="true"
+              data-testid={`chat-message-reasoning-toggle-${index}`}
+              onClick={() => {
+                setExpanded((current) => !current)
+              }}
+            >
+              <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▾</span>
+                <span className="copilot-chat__message-label">{reasoningTitle}</span>
+              </span>
+              {turn.status === 'streaming' && (
+                <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
+                  生成中
+                </span>
+              )}
+            </button>
+          )
+        : (
+            <button
+              type="button"
+              className="copilot-chat__reasoning-toggle"
+              aria-controls={panelId}
+              aria-expanded="false"
+              data-expanded="false"
+              data-testid={`chat-message-reasoning-toggle-${index}`}
+              onClick={() => {
+                setExpanded((current) => !current)
+              }}
+            >
+              <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▸</span>
+                <span className="copilot-chat__message-label">{reasoningTitle}</span>
+              </span>
+              {turn.status === 'streaming' && (
+                <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
+                  生成中
+                </span>
+              )}
+            </button>
+          )}
+      {expanded && (
+        <div className="copilot-chat__reasoning-panel" id={panelId} data-testid={`chat-message-reasoning-panel-${index}`}>
+          {renderMarkdownMessageBody(turn.content)}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ToolMessageCard({
