@@ -26,6 +26,7 @@ from .run_events import (
     RUN_COMPLETED_EVENT_TYPE,
     RUN_DIAGNOSTIC_EVENT_TYPE,
     RUN_FAILED_EVENT_TYPE,
+    RUN_METADATA_EVENT_TYPE,
     RUN_STARTED_EVENT_TYPE,
     TEXT_DELTA_EVENT_TYPE,
     TOOL_EVENT_EVENT_TYPE,
@@ -58,6 +59,22 @@ class LegacyRuntimeRunEventProjector:
             RUN_STARTED_EVENT_TYPE,
             payload={
                 "assistantMessageId": self.assistant_message_id,
+            },
+        )
+
+    def build_run_metadata(
+        self,
+        *,
+        requested_thinking_level: str | None,
+        applied_thinking_level: str | None,
+        thinking_capability_snapshot: Mapping[str, Any],
+    ) -> RuntimeRunEvent:
+        return self.events.build(
+            RUN_METADATA_EVENT_TYPE,
+            payload={
+                "requestedThinkingLevel": requested_thinking_level,
+                "appliedThinkingLevel": applied_thinking_level,
+                "thinkingCapabilitySnapshot": dict(thinking_capability_snapshot),
             },
         )
 

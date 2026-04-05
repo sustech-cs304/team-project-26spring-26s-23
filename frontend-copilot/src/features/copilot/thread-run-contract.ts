@@ -72,6 +72,32 @@ export interface RuntimeThreadGetResponse {
   latestRunId: string | null
 }
 
+export type RuntimeThinkingCapabilityStatus =
+  | 'verified-supported'
+  | 'verified-unsupported'
+  | 'unknown-without-override'
+  | 'unknown-with-override'
+
+export type RuntimeThinkingCapabilitySource = 'verified' | 'override' | 'unknown'
+
+export interface RuntimeThinkingCapability {
+  status: RuntimeThinkingCapabilityStatus
+  source: RuntimeThinkingCapabilitySource
+  supported: boolean
+  supportedLevels: Array<'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'>
+  defaultLevel: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
+  reasonCode: string
+  providerHint: string | null
+  routeFingerprint: {
+    providerProfileId: string
+    provider: string
+    endpointType: string
+    baseUrl: string
+    modelId: string
+  }
+  overrideLevels: Array<'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'>
+}
+
 export interface RuntimeCapabilitiesGetResponse {
   ok: true
   sessionId: string
@@ -81,6 +107,12 @@ export interface RuntimeCapabilitiesGetResponse {
   recommendedTools: string[]
   toolSelectionMode: string
   defaultModelPreference: string | null
+}
+
+export interface RuntimeThinkingCapabilityGetResponse {
+  ok: true
+  sessionId: string
+  capability: RuntimeThinkingCapability
 }
 
 export interface RuntimeMessagePayload {
@@ -109,6 +141,9 @@ export interface RuntimeRunView {
   startedAt: string | null
   terminalAt: string | null
   cancelRequested: boolean
+  requestedThinkingLevel: RuntimeRunMetadataEvent['payload']['requestedThinkingLevel']
+  appliedThinkingLevel: RuntimeRunMetadataEvent['payload']['appliedThinkingLevel']
+  thinkingCapabilitySnapshot: RuntimeThinkingCapability | null
 }
 
 export interface RuntimeRunStartResponse {
@@ -145,6 +180,12 @@ export interface RuntimeRunEventBase<TType extends string, TPayload extends Reco
 
 export type RuntimeRunStartedEvent = RuntimeRunEventBase<'run_started', {
   assistantMessageId: string
+}>
+
+export type RuntimeRunMetadataEvent = RuntimeRunEventBase<'run_metadata', {
+  requestedThinkingLevel: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
+  appliedThinkingLevel: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
+  thinkingCapabilitySnapshot: RuntimeThinkingCapability
 }>
 
 export type RuntimeTextDeltaEvent = RuntimeRunEventBase<'text_delta', {
@@ -198,6 +239,7 @@ export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
 
 export type RuntimeRunEvent =
   | RuntimeRunStartedEvent
+  | RuntimeRunMetadataEvent
   | RuntimeTextDeltaEvent
   | RuntimeReasoningDeltaEvent
   | RuntimeRunCompletedEvent
@@ -229,6 +271,7 @@ interface RuntimeMethodRequest {
     | 'run/cancel'
     | 'session/create'
     | 'capabilities/get'
+    | 'thinking/capability/get'
     | 'message/send'
   body?: Record<string, unknown>
 }
@@ -336,13 +379,37 @@ export async function getRuntimeCapabilities(input: {
   }
 }
 
+export async function getRuntimeThinkingCapability(input: {
+  runtimeUrl: string
+  sessionId: string
+  modelRoute: RuntimeModelRoute
+  thinkingCapabilityOverride?: Record<string, unknown> | null
+  fetchFn?: FetchLike
+  signal?: AbortSignal
+}): Promise<RuntimeThinkingCapabilityGetResponse> {
+  return postRuntimeMethod<RuntimeThinkingCapabilityGetResponse>({
+    runtimeUrl: input.runtimeUrl,
+    method: 'thinking/capability/get',
+    body: {
+      sessionId: input.sessionId,
+      modelRoute: input.modelRoute,
+      ...(input.thinkingCapabilityOverride === undefined || input.thinkingCapabilityOverride === null
+        ? {}
+        : { thinkingCapabilityOverride: input.thinkingCapabilityOverride }),
+    },
+    fetchFn: input.fetchFn,
+    signal: input.signal,
+  })
+}
+
 export async function startRuntimeRun(input: {
   runtimeUrl: string
   threadId: string
   agent?: string
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
-  thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'max' | null
+  thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
+  thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
   debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
@@ -361,6 +428,9 @@ export async function startRuntimeRun(input: {
         ...(input.thinkingLevelIntent === undefined || input.thinkingLevelIntent === null
           ? {}
           : { thinkingLevelIntent: input.thinkingLevelIntent }),
+        ...(input.thinkingCapabilityOverride === undefined || input.thinkingCapabilityOverride === null
+          ? {}
+          : { thinkingCapabilityOverride: input.thinkingCapabilityOverride }),
         enabledTools: input.enabledTools,
         ...(input.debugModeEnabled === undefined
           ? {}
@@ -482,7 +552,8 @@ export async function* sendRuntimeMessage(input: {
   agent?: string
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
-  thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'max' | null
+  thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
+  thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
   debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
@@ -497,6 +568,7 @@ export async function* sendRuntimeMessage(input: {
     message: input.message,
     modelRoute: input.modelRoute,
     thinkingLevelIntent: input.thinkingLevelIntent,
+    thinkingCapabilityOverride: input.thinkingCapabilityOverride,
     enabledTools: input.enabledTools,
     debugModeEnabled: input.debugModeEnabled,
     requestOptions: input.requestOptions,
@@ -657,6 +729,27 @@ function cloneRunStartResponse(response: RuntimeRunStartResponse): RuntimeRunSta
       startedAt: response.run.startedAt,
       terminalAt: response.run.terminalAt,
       cancelRequested: response.run.cancelRequested,
+      requestedThinkingLevel: response.run.requestedThinkingLevel,
+      appliedThinkingLevel: response.run.appliedThinkingLevel,
+      thinkingCapabilitySnapshot: response.run.thinkingCapabilitySnapshot === null
+        ? null
+        : {
+            status: response.run.thinkingCapabilitySnapshot.status,
+            source: response.run.thinkingCapabilitySnapshot.source,
+            supported: response.run.thinkingCapabilitySnapshot.supported,
+            supportedLevels: [...response.run.thinkingCapabilitySnapshot.supportedLevels],
+            defaultLevel: response.run.thinkingCapabilitySnapshot.defaultLevel,
+            reasonCode: response.run.thinkingCapabilitySnapshot.reasonCode,
+            providerHint: response.run.thinkingCapabilitySnapshot.providerHint,
+            routeFingerprint: {
+              providerProfileId: response.run.thinkingCapabilitySnapshot.routeFingerprint.providerProfileId,
+              provider: response.run.thinkingCapabilitySnapshot.routeFingerprint.provider,
+              endpointType: response.run.thinkingCapabilitySnapshot.routeFingerprint.endpointType,
+              baseUrl: response.run.thinkingCapabilitySnapshot.routeFingerprint.baseUrl,
+              modelId: response.run.thinkingCapabilitySnapshot.routeFingerprint.modelId,
+            },
+            overrideLevels: [...response.run.thinkingCapabilitySnapshot.overrideLevels],
+          },
     },
     assistantMessageId: response.assistantMessageId,
     stream: {

@@ -29,6 +29,7 @@ from .debug_logging import (
     summarize_runtime_execution_event,
     summarize_runtime_model_route,
     summarize_runtime_run_event,
+    summarize_runtime_thinking_capability,
     summarize_runtime_tool_event,
 )
 from .execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventBuffer, RuntimeExecutionEventFactory
@@ -315,20 +316,67 @@ class RuntimeMessageRunOrchestrator:
             thinking_adaptation = adapt_thinking_intent(
                 intent=request.policy.thinkingLevelIntent,
                 model_route=resolved_model_route,
+                thinking_capability_override=request.policy.thinkingCapabilityOverride,
             )
             agent_executor = self._build_streaming_executor(agent_descriptor)
             log_runtime_chain_debug(
-                "orchestrator.thinking_adaptation",
+                "thinking.capability_resolved",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
                 threadId=request.session_id,
-                intent=request.policy.thinkingLevelIntent,
+                requestedThinkingLevel=thinking_adaptation.requested_intent,
+                appliedThinkingLevel=thinking_adaptation.applied_intent,
+                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+            )
+            log_runtime_chain_debug(
+                "thinking.request_validated",
+                enabled=debug_enabled,
+                runId=resolved_run_id,
+                threadId=request.session_id,
+                requestedThinkingLevel=thinking_adaptation.requested_intent,
+                appliedThinkingLevel=thinking_adaptation.applied_intent,
                 applied=thinking_adaptation.applied,
                 reason=thinking_adaptation.reason,
-                diagnostics=thinking_adaptation.diagnostics,
-                modelSettings=thinking_adaptation.model_settings,
+                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
             )
+            log_runtime_chain_debug(
+                "thinking.provider_mapping_resolved",
+                enabled=debug_enabled,
+                runId=resolved_run_id,
+                threadId=request.session_id,
+                requestedThinkingLevel=thinking_adaptation.requested_intent,
+                appliedThinkingLevel=thinking_adaptation.applied_intent,
+                providerMapping=thinking_adaptation.provider_mapping,
+                modelSettings=thinking_adaptation.model_settings,
+                reason=thinking_adaptation.reason,
+                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+            )
+            run_metadata = projector.build_run_metadata(
+                requested_thinking_level=thinking_adaptation.requested_intent,
+                applied_thinking_level=thinking_adaptation.applied_intent,
+                thinking_capability_snapshot=thinking_adaptation.capability.to_public_dict(),
+            )
+            log_runtime_chain_debug(
+                "thinking.run_metadata_attached",
+                enabled=debug_enabled,
+                runId=resolved_run_id,
+                threadId=request.session_id,
+                yieldedEvent=summarize_runtime_run_event(run_metadata),
+            )
+            yield run_metadata
             if request.policy.thinkingLevelIntent not in (None, "off") and not thinking_adaptation.applied:
+                log_runtime_chain_debug(
+                    "thinking.fail_fast",
+                    enabled=debug_enabled,
+                    runId=resolved_run_id,
+                    threadId=request.session_id,
+                    code="thinking_not_supported_for_route",
+                    requestedThinkingLevel=thinking_adaptation.requested_intent,
+                    appliedThinkingLevel=thinking_adaptation.applied_intent,
+                    reason=thinking_adaptation.reason,
+                    capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                    diagnostics=thinking_adaptation.diagnostics,
+                )
                 for event in self._build_failed_execution_events(
                     execution_events=execution_events,
                     code="thinking_not_supported_for_route",

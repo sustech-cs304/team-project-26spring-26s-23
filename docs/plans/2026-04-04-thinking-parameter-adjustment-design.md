@@ -1,416 +1,504 @@
 ---
-title: 思考参数调整机制设计
-description: 在首版思考参数控制基础上，扩展 reasoning 展示链路，并补充思考卡片计时与 Markdown 渲染边界。
+title: Thinking 能力单一事实来源重构设计
+description: 将 thinking 能力真相收敛到后端运行时，统一 canonical capability、unknown+override、fail-fast 与 reasoning 抑制链路。
 ---
 
-# 2026-04-04 思考参数调整机制设计
+# 2026-04-04 Thinking 能力单一事实来源重构设计
 
 ## 文档定位
 
-本文是对上一轮首版方案的扩展，不推翻首版已经确定的数据模型与请求级参数语义。上一版扩展已经完成低噪音交互、reasoning 展示链路与规则库一致性；当前版本在此基础上，再补充思考卡片计时与 Markdown 渲染边界。
+本文替换此前以“前后端各自维护 thinking 规则并尽量对齐”为核心的方案，改为以**后端运行时 resolved route** 为锚点，统一产出 **canonical thinking capability**，并让前端聊天 UI 只消费该结果，不再把本地规则当作能力真相。
 
-上一轮首版方案已经确定三件事：
+本轮目标不是继续扩充前端推断规则，而是正本清源地解决以下问题：
 
-1. 模型档案层存在统一的思考能力声明。
-2. 聊天请求通过统一离散 thinking intent 表达用户选择。
-3. 后端在发送前适配层决定是否真实下发 provider 参数，不支持时 no-op。
-
-上一版扩展已经新增三件事：
-
-1. 聊天输入区思考控件从文本下拉改为灯泡图标按钮与小型上拉浮层。
-2. reasoning 内容从 provider 返回到消息列表的整条 runtime event 或 segment 链路落地。
-3. 前端内置规则与后端适配矩阵按同一批已验证模型扩展并保持一致。
-
-本次补充再新增两件事：
-
-1. 每张思考卡片在头部显示计时；reasoning 进行中实时增长，结束后冻结为最终总耗时。
-2. 思考正文复用助手正文现有 Markdown 渲染栈，不再走纯文本 `<pre>` 或普通段落渲染。
-
-## 背景事实
-
-- 部分 provider 与模型已经真实支持 thinking 或 reasoning 参数。
-- 上一轮用户看不到思考消息，不是单点渲染 bug，而是此前根本没有实现 reasoning 内容展示链路。系统只有思考参数控制壳，没有从后端到前端的 reasoning event 或 segment 贯通。
-- 因此，本轮新增的不是把 reasoning 文本塞进助手正文，而是新增独立 reasoning 事件与 segment 类型。
-- 聊天工具栏当前的长期占位文本下拉视觉噪音偏高。本轮 UI 目标是降低工具栏噪音，不是再增加一个新的设置区，也不是在主布局里增加解释性文字。
-- 本次思考卡片计时采用前端观察到的流式时间，不新增后端权威时间戳协议；目标是在最小侵入前提下提升可观察性。
-- 本次 reasoning Markdown 直接复用助手正文现有渲染栈与样式能力；目标是保持一致性并减少双份渲染逻辑。
-- 显式模型声明仍然优先于内置规则，但它只影响能力解析与前端显示，不绕过后端真实适配边界。后端无法映射时仍然 no-op，并留下可观测诊断。
+1. thinking 能力在前后端存在分叉。
+2. `xhigh -> auto` 一类串错由多处推断与映射造成，难以定位。
+3. 用户选择 `off` 时，运行中仍可能出现 reasoning 展示。
+4. UI 展示的能力面与运行时真实能力不一致。
+5. unknown 路由没有受控降级路径，既不安全也不透明。
 
 ## 设计目标
 
-1. 继续保留统一的思考能力声明与请求级 thinking intent。
-2. 用更低噪音的聊天交互承载思考档位选择。
-3. 在运行时事件模型中把 reasoning 作为与 assistant、tool、diagnostic 平级的一类输出。
-4. 在前端消息列表中以轻量、可折叠方式展示 reasoning 内容。
-5. 在每张思考卡头部显示基于前端观察时间的计时；reasoning 进行中实时增长，结束后冻结为最终总耗时。
-6. 思考正文复用助手正文现有 Markdown 渲染栈与样式能力。
-7. 扩充一批前后端都已验证的模型规则，并保持支持性、档位集合、默认档位尽量一致。
-8. 所有新增能力都必须兼容旧模型档案、旧会话与不支持 reasoning 的路由。
+1. 把 thinking 能力的单一事实来源锚定在后端运行时。
+2. 后端基于 **resolved route** 统一计算 canonical capability，并用同一结果驱动：
+   - 聊天 UI 能力回显
+   - requested thinking intent 校验
+   - provider 参数映射
+   - fail-fast
+3. 设置页中的 thinking 声明降级为 **override 输入**，仅作为 unknown 路由的候选信息。
+4. unknown 路由采用“受控 override”策略：可展示、可诊断、不可突破真实适配边界。
+5. 每次 run 都带上 `requestedThinkingLevel`、`appliedThinkingLevel`、`thinkingCapabilitySnapshot`。
+6. 前端 run state 消费后端元数据，并在 `appliedThinkingLevel = off` 时防御性抑制 reasoning 卡片。
+7. 增加结构化日志，保证 capability 来源、判定链、映射结果与失败原因可追踪。
+8. 分阶段迁移，最终移除前端把本地 thinking 规则当聊天真相的职责。
 
 ## 非目标
 
 本轮不做以下事项：
 
-- 结构化思维链展示。
-- reasoning token 面板。
-- 复杂时序可视化。
-- provider 原生参数透传 UI。
-- 针对未知路由的乐观下发。
-- 在主布局中增加“当前模型不支持”的常驻说明。
-- 没有 reasoning 内容时显示空占位卡。
-- 后端新增 reasoning 开始/结束的权威时间戳协议。
-- 整次 run 的全局思考总耗时汇总。
-- 单独维护一套 reasoning Markdown 渲染栈或简化版语法。
+- 新增 provider 原生参数透传 UI。
+- 让设置页 override 直接突破后端真实适配边界。
+- 为 unknown 路由做乐观下发或静默容错发送。
+- 新增大段解释型 UI 文案。
+- 围绕本任务以外的通用配置中心、消息列表或工具系统重构。
 
-## 上一轮首版方案与本轮扩展边界
-
-### 上一轮首版方案边界
-
-上一轮首版方案只覆盖以下范围：
-
-1. 模型档案层新增思考能力声明。
-2. 显式模型声明优先，否则走内置规则解析。
-3. 聊天区使用文本下拉承载请求级思考档位。
-4. 请求级策略信封增加统一离散 thinking intent。
-5. 后端发送前适配层在已验证路由上真实下发参数，其他路径统一 no-op。
-
-上一轮明确没有覆盖以下事项：
-
-1. reasoning 内容采集。
-2. runtime reasoning event 或 segment 模型。
-3. 前端 reasoning 渲染。
-4. 规则库与后端适配矩阵的成体系对齐。
-5. 低噪音图标交互。
-
-### 本轮扩展边界
-
-本轮是对首版方案的扩展，不重写首版的参数模型。本轮新增范围如下：
-
-1. 聊天工具栏中的思考控件改为灯泡图标按钮与小型上拉浮层。
-2. 后端流式事件处理新增 reasoning 内容采集与独立事件建模。
-3. 前端 reducer、view-model 与 message list 新增 reasoning segment 解析与渲染。
-4. reasoning 在聊天 UI 中展示为默认折叠的轻量思考卡片。
-5. 前端规则库与后端适配矩阵按同一批已验证模型同步扩展。
-6. reasoning segment 在前端记录观察开始时间与观察结束时间，并在思考卡片头部显示 0.1 秒精度计时。
-7. 思考正文复用助手正文现有 Markdown 渲染栈与样式能力，但语义仍与 assistant 正文分离。
-
-因此，首版继续负责能力声明与请求级参数；本轮负责交互降噪、reasoning 展示链路、思考卡片计时、正文 Markdown 渲染与规则一致性补齐。
-
-## 术语与核心数据
+## 术语
 
 | 术语 | 含义 |
 | --- | --- |
-| 思考能力声明 | 模型档案中的事实描述，只表达是否支持、支持哪些离散档位、默认档位。 |
-| thinking intent | 统一的请求级离散值域，用于表达用户本轮消息的思考选择。 |
-| 发送前适配层 | 把统一 thinking intent 映射为真实 provider 参数的边界。 |
-| reasoning event | 运行时事件流中的独立事件类型，用于承载 provider 返回的 reasoning 增量。 |
-| reasoning segment | 前端消息投影中的独立片段类型，用于渲染 reasoning 内容。 |
-| 观察开始时间 | 前端首次收到 reasoning 增量并创建 segment 的时间，用于计时起点。 |
-| 观察结束时间 | 前端确认 reasoning segment 完成的时间，用于冻结最终耗时。 |
+| resolved route | 后端经过配置、默认值与路由解析后得到的实际 provider / endpoint / model 路由。 |
+| canonical thinking capability | 后端基于 resolved route 产出的 thinking 能力权威快照。 |
+| verified | 后端已知并可真实适配的路由结论。 |
+| unknown | 后端无法从内置适配矩阵中确认真实支持性的路由结论。 |
+| override | 设置页提供的候选 thinking 声明，仅供 unknown 路由参考。 |
+| requestedThinkingLevel | 用户本次发送意图选择的 thinking intent。 |
+| appliedThinkingLevel | 后端实际接受并用于 provider 参数映射的 thinking intent。 |
+| capability snapshot | 本次 run 固化保存的 canonical capability。 |
 
-思考离散值域继续沿用上一轮定义：
+## 核心原则
+
+### 1. 单一事实来源在后端
+
+thinking 能力真相只由后端运行时计算。
+
+前端聊天页不得再将本地 `resolveThinkingCapability()` 的输出作为聊天能力真相。前端可以保留最小遗留工具函数用于：
+
+- 设置页编辑与表单归一化。
+- 测试夹具。
+- 与后端契约兼容的输入校验。
+
+但这些逻辑都不再直接驱动聊天页“当前模型支持哪些 thinking 档位”的判断。
+
+### 2. 同一份 canonical 结果贯穿整条发送链路
+
+每次发送开始时，后端必须先完成以下步骤：
+
+1. 解析 resolved route。
+2. 结合 override 输入，计算 canonical capability。
+3. 用该 capability 校验 requested intent。
+4. 基于同一 capability 计算 applied intent 与 provider 参数映射。
+5. 将 capability snapshot 与 requested/applied 元数据写入 run 生命周期。
+
+禁止出现“UI 用一套判断，发送时再用另一套判断”的双轨制。
+
+### 3. override 只能收敛 unknown，不能突破 verified 边界
+
+设置页 override 的职责从“前端模型能力声明”降级为“unknown 路由的候选输入”：
+
+- 对 verified-supported 路由，override 不能扩大或缩小后端已验证支持集。
+- 对 verified-unsupported 路由，override 不能强行改成支持。
+- 只有对 unknown 路由，override 才能把候选档位带入 canonical capability，并明确标记来源为 override。
+- 即使 unknown + override 成立，真正发送时仍由后端统一校验与 fail-fast。
+
+## Canonical Capability 契约
+
+### 状态枚举
+
+canonical capability 至少包含如下状态：
+
+- `verified-supported`
+- `verified-unsupported`
+- `unknown-without-override`
+- `unknown-with-override`
+
+同时保留来源字段，便于 UI 与日志低成本消费：
+
+- `verified`
+- `override`
+- `unknown`
+
+### 建议数据结构
 
 ```ts
-type ThinkingLevelIntent = 'off' | 'auto' | 'low' | 'medium' | 'high' | 'max'
-```
+export type CanonicalThinkingCapabilityStatus =
+  | 'verified-supported'
+  | 'verified-unsupported'
+  | 'unknown-without-override'
+  | 'unknown-with-override'
 
-模型档案层的思考能力声明不变，仍只表达支持事实，不表达 provider 参数细节。
+export type CanonicalThinkingCapabilitySource = 'verified' | 'override' | 'unknown'
 
-## 思考能力声明与请求级参数
-
-### 能力声明原则
-
-- 显式模型声明优先。
-- 未显式声明时，走内置规则解析。
-- 规则无法确认时，视为不支持。
-- `off` 仍然是统一 UI 层提供的关闭项，不要求写进模型声明的正向支持集。
-- 模型声明只能定义前端可展示的支持面，不能强制后端绕过真实适配边界。
-
-### 请求级表达
-
-聊天区的当前选择继续通过请求级策略信封传递，例如：
-
-```ts
-interface RuntimeMessageExecutionPolicy {
-  thinkingLevelIntent?: ThinkingLevelIntent | null
+export interface CanonicalThinkingCapability {
+  status: CanonicalThinkingCapabilityStatus
+  source: CanonicalThinkingCapabilitySource
+  supported: boolean
+  supportedLevels: ThinkingLevelIntent[]
+  defaultLevel: ThinkingLevelIntent | null
+  reasonCode: string
+  providerHint?: string | null
+  routeFingerprint: {
+    providerProfileId: string
+    provider: string
+    endpointType: string
+    baseUrl: string
+    modelId: string
+  }
+  overrideLevels?: ThinkingLevelIntent[]
 }
 ```
 
-约束保持不变：
+### 字段语义
 
-- 字段可选，空值安全。
-- `off` 或空值表示本轮不下发 reasoning 参数。
-- `message/send` 与 `run/start` 继续共用同一语义。
-- provider 原生参数不回显到前端。
+- `supported`
+  - 只表达“当前 UI 是否可展示 thinking 选择”。
+- `supportedLevels`
+  - canonical 的最终允许集合；若支持则必须包含统一关闭项 `off`。
+- `defaultLevel`
+  - 当前 capability 下前端默认建议值。
+- `reasonCode`
+  - 面向诊断的稳定原因码，例如 `zai_glm_verified_supported`、`route_not_verified`、`override_levels_applied`、`override_ignored_verified_unsupported`。
+- `providerHint`
+  - 面向调试的人类可读提示，例如 `zai-glm-openai-compatible`。
+- `overrideLevels`
+  - 仅在 unknown + override 场景下用于回显候选来源，不作为突破真实边界的证据。
 
-## 聊天 UI 交互更新
+## 后端单一事实来源设计
 
-### 控件形态
+### 输入
 
-聊天输入区工具栏中的思考控件从文本下拉改为灯泡图标按钮，位置保持不变。该控件只承担请求级选择，不引入新的设置区，不在主布局中增加解释性文案。
+后端 capability resolver 的输入应只包含：
 
-### 交互规则
+1. resolved route
+2. 可选 override 声明
 
-1. 点击灯泡按钮后，弹出一个小型上拉浮层。
-2. 浮层中展示的选项只来自当前模型真实可用的思考档位。
-3. UI 仍保留一个统一关闭项，用于把当前请求显式切回 `off`；除此之外，其余选项只展示当前模型真实支持集。
-4. 当前值通过勾选或高亮表示，不再使用长期占位的原生下拉框。
-5. 浮层只在模型支持 reasoning 时可打开。
-6. 模型不支持时，工具栏仍保留灯泡按钮，但点击不展开选择面板。
-7. 对不支持的模型，不在主布局中显示任何“当前模型不支持”解释文字；只在 hover 灯泡按钮时显示一个很小的浮动提示“当前模型不支持”。
+其中 override 输入来自设置页模型声明的最小必要归一化结果，例如：
 
-### 视觉状态
+```ts
+interface ThinkingCapabilityOverrideInput {
+  supported: boolean
+  levels?: ThinkingLevelIntent[]
+  defaultLevel?: ThinkingLevelIntent | null
+}
+```
 
-灯泡按钮需要以轻量方式表达当前状态：
+### 输出
 
-| 状态 | 视觉要求 |
-| --- | --- |
-| 当前模型不支持 | 保持中性外观，只在 hover 时出现极小提示。 |
-| 当前模型支持且 `thinking = off` | 保持中性或接近中性外观，不制造高噪音。 |
-| 当前模型支持且 `thinking != off` | 灯泡轻度点亮，用低饱和度或低对比方式表示已启用。 |
+后端输出 canonical capability，并作为：
 
-设计目标是降低工具栏视觉噪音，而不是增加新的强调性设置入口。
+- 发送前校验依据
+- provider 参数映射依据
+- 对前端回显的聊天能力依据
+- run 元数据快照
 
-### 状态记忆
+### 解析顺序
 
-聊天中的当前选择继续只在 renderer 会话内按模型路由身份记忆，不进入公共全局配置。
+1. resolved route 命中已验证适配矩阵：返回 `verified-supported` 或 `verified-unsupported`。
+2. resolved route 未命中已验证矩阵：进入 `unknown`。
+3. 若 unknown 且存在合法 override 候选档位：返回 `unknown-with-override`。
+4. 若 unknown 且无 override：返回 `unknown-without-override`。
 
-- 回切同一路由时，优先恢复本次 renderer 会话的上次选择。
-- 当前路由第一次出现时，回落到模型默认档位。
-- 新模型不支持时，按钮进入不可展开态，当前选择重置为 `off` 或空值。
-- 旧值不在新模型支持集内时，自动回退到新默认值。
+### 已验证路由的约束
 
-## reasoning 展示链路扩展
+已验证路由由后端适配层维护真实矩阵，至少定义：
+
+- 是否支持 thinking。
+- 真实支持的档位集合。
+- 默认档位。
+- provider 参数映射规则。
+- 稳定 reason code / provider hint。
+
+前端不再复制该矩阵来驱动聊天 UI。
+
+## Unknown + Override 策略
 
 ### 设计结论
 
-本轮要把系统从“只有思考参数控制壳，没有思考内容展示链路”升级为“reasoning 内容独立建模并从后端到前端贯通”，并把思考卡片计时与 Markdown 渲染一起落到同一条展示链路上。
+对 unknown 路由不再直接视为“前端不支持且后端静默 no-op”，而是改为“受控 override”：
 
-核心要求如下：
+1. 后端允许返回 unknown 状态。
+2. 设置页若提供 override 候选档位，后端可把这些候选档位纳入 canonical capability。
+3. UI 在展示这些候选档位时，必须能识别其来源为 override。
+4. 真正发送时仍由后端统一校验与 fail-fast。
 
-1. 后端在流式事件处理处采集 provider 返回的 reasoning 或 thinking 内容。
-2. reasoning 内容作为独立 runtime 事件处理，不混入普通 assistant 文本。
-3. 运行时事件模型增加 reasoning 专用事件或投影类型，与 assistant、tool、diagnostic 平级。
-4. 前端 reducer、view-model 与 message list 增加 reasoning segment 的解析与渲染。
-5. reducer 在 reasoning segment 首次创建时写入观察开始时间，在 segment 完成时写入观察结束时间；reasoning 仍在进行时结束时间保持空值。
-6. view-model 与 UI 根据观察开始时间、观察结束时间投影思考卡片头部计时。
-7. 聊天 UI 将 reasoning 展示为轻量、可折叠的“思考”卡片。
-8. 卡片头部计时在 reasoning 进行中实时刷新，结束后冻结为最终总耗时。
-9. 思考正文复用助手正文已有 Markdown 渲染栈与样式能力。
-10. 只有实际收到 reasoning 内容时才显示卡片；没有 reasoning 内容时不显示任何占位。
+### 行为矩阵
 
-### 运行时模型
+| 场景 | canonical status | UI 展示 | 发送校验 |
+| --- | --- | --- | --- |
+| verified-supported | `verified-supported` | 展示真实支持集 | 按真实支持集校验 |
+| verified-unsupported | `verified-unsupported` | 不展示 thinking 档位 | 非 `off` / `null` 直接 fail-fast |
+| unknown + 无 override | `unknown-without-override` | 不展示 thinking 档位 | 非 `off` / `null` 直接 fail-fast |
+| unknown + 有 override | `unknown-with-override` | 展示 override 候选档位，并标记来源 | 仍由后端统一校验；无法映射时 fail-fast |
 
-建议把 reasoning 明确建模为独立输出类型，例如：
+### unknown + override 的边界
 
-```ts
-type RuntimeOutputKind = 'assistant' | 'tool' | 'diagnostic' | 'reasoning'
+- 可以让聊天页在 unknown 路由下呈现候选档位。
+- 不代表 provider 一定真实支持。
+- 不允许静默把非法 requested intent 改写成 `auto`、`off` 或其他档位继续发送。
+- 一旦 requested intent 不被 canonical capability 允许，必须直接失败。
 
-interface RuntimeReasoningDeltaEvent {
-  kind: 'reasoning'
-  textDelta: string
-}
-```
+## 请求链路、校验与 fail-fast
 
-前端消息投影层对应增加 reasoning segment，例如：
+### 统一链路
 
-```ts
-interface ChatMessageReasoningSegment {
-  kind: 'reasoning'
-  text: string
-  observedStartedAt: number
-  observedFinishedAt?: number | null
-  isCollapsedByDefault: true
-}
-```
-
-这里的关键不是具体字段名，而是 reasoning 在运行时语义上独立存在。assistant 正文与 reasoning 必须分开累计、分开投影、分开渲染。
-
-同时补充两个职责约束：
-
-- reducer 负责在 reasoning segment 首次创建时写入 `observedStartedAt`，并在 segment 完成时写入 `observedFinishedAt`。
-- view-model 与 UI 负责把这两个时间投影为思考卡片头部计时信息，不把计时计算逻辑下沉回协议层或后端。
-
-### 流式处理路径
+每次消息发送必须遵循以下顺序：
 
 ```mermaid
 flowchart LR
-A[聊天工具栏灯泡按钮] --> B[请求级 thinking intent]
-B --> C[发送前适配层]
-C --> D[provider 请求]
-D --> E[provider reasoning 增量]
-E --> F[runtime reasoning 事件]
-F --> G[前端 reasoning segment 记录观察时间]
-G --> H[view-model 投影计时与 Markdown 正文]
-H --> I[消息列表思考卡片]
+A[前端选择 requestedThinkingLevel] --> B[后端 resolve route]
+B --> C[后端计算 canonical thinking capability]
+C --> D[UI capability 回显 / snapshot]
+C --> E[requested intent 校验]
+C --> F[provider 参数映射]
+E --> G{是否合法}
+G -- 否 --> H[fail-fast 返回错误与诊断]
+G -- 是 --> I[执行 run]
+I --> J[run metadata 写入 requested / applied / snapshot]
 ```
 
-### 计时语义
+### 校验规则
 
-- 本轮不新增后端时间戳协议，不要求 provider 提供权威开始时间与结束时间。
-- 计时只基于前端 reasoning segment 中记录的两个观察时间：首个 reasoning 增量到达时刻、reasoning 完成时刻。
-- 该语义用于在不改后端协议的前提下，以最小侵入方式提升思考过程可观察性，不用于表达服务端精确执行耗时或计费时间。
-- reasoning 进行中时，UI 使用当前时刻与观察开始时间计算实时耗时；结束后改用观察结束时间减观察开始时间。
-- 计时显示精度固定到 0.1 秒，例如 `思考 3.2s`，避免跳动过于频繁。
-- 本轮只做每张思考卡各自的计时，不做整次 run 的全局思考总耗时汇总。
+1. `requestedThinkingLevel = null`：视为未显式请求。
+2. `requestedThinkingLevel = off`：合法，`appliedThinkingLevel = off`，并应映射为“显式关闭”或“不下发 reasoning 参数”的 provider 行为。
+3. `requestedThinkingLevel` 为正向档位时：
+   - 必须属于 canonical `supportedLevels`；否则直接 fail-fast。
+4. 禁止把不支持的 `xhigh` 静默降为 `auto`。
+5. 禁止 unknown 路由在无法确认真实支持时带着非法档位继续发送。
 
-### Markdown 渲染
+### fail-fast 要求
 
-- 思考正文不再走纯文本 `<pre>` 或普通段落渲染。
-- 直接复用当前助手正文已有的 Markdown 渲染栈与样式能力。
-- reasoning 内容应支持与助手正文一致的 Markdown 能力范围，包括现有列表、代码块、公式等支持面。
-- 复用的是渲染能力，不是语义合并；reasoning 仍作为独立 segment 累计、投影与渲染，不混入最终 assistant 正文。
-- 本轮不单独设计一套简化版 reasoning Markdown。
+若用户选择的 intent 不在 canonical capability 的允许集内：
 
-### 最小可用范围
+- 直接终止本次发送。
+- 返回明确错误码与必要诊断。
+- 不继续执行 agent stream。
+- 不做 silent fallback。
 
-本轮 reasoning 展示只做最小可用能力：
+建议错误码至少包括：
 
-- 支持 Markdown 文本增量流。
-- 支持在同一条消息中持续追加 reasoning 文本。
-- 支持每张思考卡头部显示 0.1 秒精度计时。
-- 支持最终通过助手正文已有 Markdown 栈渲染为一个可折叠思考卡片。
+- `thinking_not_supported_for_route`
+- `thinking_level_not_allowed`
+- `thinking_capability_resolution_failed`
 
-本轮明确不做：
+## Provider 参数映射
 
-- 结构化思维步骤。
-- token 级度量。
-- 后端权威耗时协议。
-- 整次 run 的全局思考总耗时汇总。
-- 推理耗时仪表板。
-- 多段 reasoning 树形展开。
-- 与 assistant 正文的复杂对照视图。
-- 独立的 reasoning Markdown 引擎或简化语法子集。
+provider 参数映射必须消费 canonical capability 与 appliedThinkingLevel，而不是再次独立推断。
 
-## 规则库扩展与一致性
+映射层输出至少包含：
 
-### 解析原则保持不变
+- `appliedThinkingLevel`
+- `providerParameters` / `modelSettings`
+- `mappingReasonCode`
+- `providerHint`
 
-规则优先级继续采用以下顺序：
+当 `appliedThinkingLevel = off` 时，映射层必须显式表达“关闭”或“不要下发 reasoning 参数”的结果，避免后续链路因为默认值漏掉而触发 reasoning。
 
-1. 显式模型声明优先。
-2. 未显式声明时，走内置规则解析。
-3. 无法确认时，视为不支持。
+## Run 元数据与前端消费
 
-### 本轮扩展原则
+### 每次 run 必带元数据
 
-本轮新增的内置规则只覆盖前端能识别，且后端也能真实适配的那一批模型与档位，避免出现 UI 可选但发送端无法映射的错位。
+本次 run 的元数据必须至少包含：
 
-因此，规则扩展必须满足：
+```ts
+interface RuntimeThinkingRunMetadata {
+  requestedThinkingLevel: ThinkingLevelIntent | null
+  appliedThinkingLevel: ThinkingLevelIntent | null
+  thinkingCapabilitySnapshot: CanonicalThinkingCapability
+}
+```
 
-- 前端支持性判断与后端适配矩阵尽量一致。
-- 前端可选档位集合与后端真实映射集合尽量一致。
-- 前端默认档位与后端推荐默认行为尽量一致。
-- 无法在后端稳定映射的模型，不进入前端新增规则白名单。
+### 传递位置
 
-### 首批扩展范围
+最小可用方案如下：
 
-首批优先补齐以下方向：
+1. 发送前若聊天 UI 需要展示能力面，前端通过新增的最小后端契约获取 canonical capability。
+2. run 开始时，后端在 `run_started` 事件中回传本次 run 的 thinking 元数据。
+3. terminal 事件与 diagnostic 事件在需要时复用同一 snapshot 或引用其中的 `reasonCode`。
 
-1. 已验证可用的 GLM 系列变体。
-2. 同一 provider 家族下稳定、可归类的命名规则。
-3. 与现有适配逻辑已经验证闭环的模型别名。
+### 前端状态收敛
 
-可以借鉴 Cherry Studio 的规则分层与命名归类思路，但本文不直接复制其规则表，也不把其 provider 原生配置模型原样搬入本项目。
+前端聊天相关状态只保留：
 
-### 显式声明与真实边界
+- 用户偏好（当前想要的 requested intent）
+- 本次 run 的 `requestedThinkingLevel`
+- 本次 run 的 `appliedThinkingLevel`
+- 本次 run 的 `thinkingCapabilitySnapshot`
 
-显式模型声明仍可覆盖前端显示结果，但不能绕过后端真实适配边界。
+前端不再独立维护一份“模型真实 thinking 能力真相”。
 
-也就是说：
+## 前端 UI / 状态迁移
 
-- 前端可因为显式声明而展示灯泡按钮可用态与可选档位。
-- 后端仍必须按真实路由事实判断是否存在合法参数映射。
-- 若后端无法真实映射，则继续 no-op，并写入可观测诊断。
-- 聊天请求不能因为 reasoning 适配失败而失败。
+### 聊天浮层
 
-## 降级与兼容
+聊天浮层只消费后端 canonical capability：
 
-### 降级规则
+- `supported = false`：不展开 thinking 选项。
+- `supported = true`：展示 `supportedLevels`。
+- `source = override`：以低噪音方式标记候选来源为 override。
 
-1. 用户未选或选择 `off` 时，不下发 reasoning 参数，也不显示 reasoning 卡片与计时。
-2. 前端判断支持，但后端无法映射时，请求正常发送，只是不携带 reasoning 参数，并写入诊断。
-3. provider 未返回 reasoning 内容时，不生成 reasoning event，不显示思考卡片。
-4. 旧会话、旧模型档案、未知模型与未知路由继续按空值安全方式工作。
+不增加大段解释文案，只在必要处做轻量来源提示。
+
+### 设置页
+
+设置页中的 thinking 声明继续存在，但职责变为：
+
+- 作为 override 输入来源。
+- 供后端 unknown 路由参考。
+- 供测试与配置编辑使用。
+
+设置页不再被视为聊天页的能力真相来源。
+
+### 前端本地规则的迁移策略
+
+分三步迁移：
+
+1. **第一步**：引入后端 canonical capability 契约，聊天页开始消费后端结果。
+2. **第二步**：移除前端本地 thinking 规则作为聊天真相的职责，仅保留设置页输入与测试辅助所需最小遗留。
+3. **第三步**：清理旧分叉逻辑、旧命名与无效兜底。
+
+## Reasoning 抑制
+
+### 背景
+
+即使前端已选择 `off`，仍可能因为 provider 或中间链路异常返回 reasoning delta。为避免 UI 与本次 applied intent 不一致，前端需要做防御性抑制。
+
+### 规则
+
+- run state 收到 `run_started` 后，保存 `appliedThinkingLevel`。
+- 若 `appliedThinkingLevel = off`，则即使流中收到 reasoning delta：
+  - reducer / view-model 也不得渲染 reasoning 卡片；
+  - 同时写入结构化调试日志，标记 reasoning suppression 已触发。
+
+该抑制是**展示层防御**，不替代后端映射与校验责任。
+
+## 后端契约建议
+
+### 聊天页发送前能力查询
+
+若聊天 UI 在发送前需要 capability 回显，应新增最小必要后端契约，例如：
+
+```ts
+method: 'thinking/capability/get'
+body: {
+  sessionId: string
+  modelRoute: RuntimeModelRoute
+}
+response: {
+  ok: true
+  capability: CanonicalThinkingCapability
+}
+```
+
+实现要求：
+
+- 后端内部必须复用与发送链路同一套 capability resolver。
+- 不能在查询接口里复制第二套规则。
+- 返回结果应与同一路由在真正发送时看到的 snapshot 保持一致，除非运行时配置发生变化。
+
+### 运行事件扩展
+
+`run_started` 至少补充：
+
+```ts
+payload: {
+  assistantMessageId: string
+  requestedThinkingLevel: ThinkingLevelIntent | null
+  appliedThinkingLevel: ThinkingLevelIntent | null
+  thinkingCapabilitySnapshot: CanonicalThinkingCapability
+}
+```
+
+这样前端可以在收到任意 reasoning delta 前就确定本次 run 的真实能力与应用结果。
+
+## 日志与诊断
+
+必须新增结构化日志，至少覆盖以下维度：
+
+1. resolved route 对应的 canonical capability。
+2. capability 来源与状态：`verified` / `override` / `unknown`。
+3. `requestedThinkingLevel`。
+4. `appliedThinkingLevel`。
+5. provider 参数映射结果。
+6. fail-fast 原因、错误码与 reason code。
+7. reasoning suppression 是否触发。
+
+### 建议日志点
+
+- `thinking.capability_resolved`
+- `thinking.request_validated`
+- `thinking.provider_mapping_resolved`
+- `thinking.fail_fast`
+- `thinking.run_metadata_attached`
+- `thinking.reasoning_suppressed`
+
+### 用户可见性
+
+- 普通用户：只看到必要错误信息。
+- 调试模式：可看到 capability 来源、判定链、reason code、provider hint 等诊断字段。
+
+## 兼容与迁移
 
 ### 兼容要求
 
-- 不破坏现有模型档案结构的读取。
-- 不要求旧数据迁移出完整 reasoning 配置。
-- 不新增后端时间戳字段或存量协议升级要求。
-- 不要求所有 provider 同时支持 reasoning 展示。
-- reasoning 正文复用助手正文既有 Markdown 栈，但 reasoning 仍作为新增平级 segment 接入，不改变 assistant 正文渲染契约。
+- 保持现有请求级 `thinkingLevelIntent` 值域不变。
+- 设置页已有 thinking 声明数据结构尽量兼容读取。
+- 旧会话与旧 run 在没有 thinking metadata 时按空值安全处理。
+- reasoning 事件协议保持增量兼容，新增字段优先挂在 run metadata，而不是破坏现有 delta 结构。
+
+### 清理目标
+
+最终需要清理：
+
+- 前端把本地 `resolveThinkingCapability()` 当聊天真相的调用点。
+- 与后端 canonical capability 冲突的前端 built-in thinking 规则分支。
+- 把不支持档位静默改写或降级继续发送的历史行为。
 
 ## 测试关注点
 
-### 前端
-
-1. 灯泡按钮在支持态、不支持态、启用态下的视觉与交互分支。
-2. 不支持模型只出现 hover 浮动提示，不在主布局生成解释文字。
-3. 浮层选项严格受当前模型支持集约束，且包含统一关闭项。
-4. 模型切换后，当前选择按支持集与默认值正确回退。
-5. reducer 与 view-model 能把 reasoning event 投影为 reasoning segment，并正确写入观察开始时间与观察结束时间。
-6. 思考卡片头部计时在进行中按 0.1 秒精度实时增长，完成后冻结。
-7. reasoning 正文复用助手正文 Markdown 栈后，列表、代码块、公式等已支持能力可正常显示。
-8. reasoning Markdown 渲染不会把内容并入 assistant 正文，也不会破坏卡片折叠行为。
-9. 只有收到 reasoning 内容时，消息列表才显示折叠思考卡片。
-
 ### 后端
 
-1. `message/send` 与 `run/start` 都能解析统一的 `thinkingLevelIntent`。
-2. 已验证路由能把 thinking intent 映射为真实 provider 参数。
-3. provider 返回 reasoning 或 thinking 增量时，流式事件处理能抽取为独立 reasoning event。
-4. 后端无需新增时间戳字段，现有流式 contract 保持兼容。
-5. reasoning 内容不会混入 assistant 正文流。
-6. 适配失败或无 reasoning 内容时，聊天主链继续成功。
+1. verified-supported 路由能产出正确 canonical capability。
+2. verified-unsupported 路由会拒绝非 `off` 请求。
+3. unknown + 无 override 返回 `unknown-without-override`。
+4. unknown + override 返回 `unknown-with-override`，并保留 override 候选信息。
+5. 非法 requested intent 触发 fail-fast，不进入执行流。
+6. `requestedThinkingLevel` / `appliedThinkingLevel` / `thinkingCapabilitySnapshot` 能进入 run 元数据。
+7. provider 参数映射只消费 canonical capability，不再重复推断。
+8. 结构化日志包含 capability、来源、映射与失败原因。
 
-### 一致性
+### 前端
 
-1. 前端规则库与后端适配矩阵在支持性、档位集合、默认档位上保持对齐。
-2. GLM 首批规则存在前后端配套验证。
-3. 显式声明命中但后端无合法映射时，能观察到 no-op 诊断而不是请求失败。
-4. reasoning 复用 assistant Markdown 栈时，渲染能力一致但数据语义仍保持分离。
+1. 聊天浮层只展示后端 canonical capability 提供的档位。
+2. unknown + override 时，UI 能展示候选档位并标记来源。
+3. 前端本地 route 切换不再自行推断 thinking 真相。
+4. `run_started` thinking metadata 能进入 run state。
+5. `appliedThinkingLevel = off` 时 reasoning delta 被防御性抑制。
+6. fail-fast 错误能在 UI 中保持低噪音但可诊断的反馈。
+7. 前后端契约字段新增后，旧数据路径仍可空值安全运行。
 
-## 主要风险
+## 风险与缓解
 
-### 前后端规则漂移
+### 风险一：查询 capability 与发送 capability 不一致
 
-如果前端新增规则快于后端适配矩阵，UI 会暴露不可发送的档位。缓解方式是把规则扩展限制在前后端都已验证的模型集合内，并把不一致路径统一降级为 no-op 与诊断。
+若发送前查询与发送时解析走了不同代码路径，仍会重新引入双轨问题。
 
-### provider reasoning 格式分化
+缓解：统一抽出后端 capability resolver，查询接口与发送链路必须复用同一实现。
 
-不同 provider 返回 reasoning 内容的字段名、增量形态和结束语义可能不同。缓解方式是先只支持纯文本 reasoning 增量，把结构化处理留到后续版本。
+### 风险二：override 被误当成 verified 真相
 
-### reasoning 被误并入 assistant 正文
+若 UI 不区分来源，用户会误以为 unknown + override 等于已验证支持。
 
-如果事件边界不清晰，前端可能把 reasoning 误投影为助手正文。缓解方式是从后端事件模型开始明确引入独立 reasoning 类型，并在 reducer 与 message list 层保持分离。
+缓解：canonical capability 明确暴露 `status` 与 `source`，UI 用低噪音方式标记 override 来源。
 
-### 前端观察计时与后端真实耗时不一致
+### 风险三：off 仍展示 reasoning
 
-前端计时会受到网络延迟、批量刷帧与渲染调度影响，不能等同于 provider 或服务端的权威执行耗时。缓解方式是明确文档与 UI 语义为“前端观察到的思考时长”，并把该计时限制在单卡可观察性范围，不用于计费、诊断 SLA 或全局统计。
+若运行事件先到、run metadata 后到，可能短暂闪出 reasoning 卡片。
 
-### Markdown 栈复用带来样式与语义串扰
+缓解：在 `run_started` 中尽早下发 thinking metadata；前端 reducer / view-model 对 `appliedThinkingLevel = off` 做硬性抑制。
 
-如果 reasoning 直接复用 assistant Markdown 组件但边界处理不清，可能出现样式泄漏或正文语义混并。缓解方式是复用渲染栈与样式能力，但继续维持独立 reasoning segment、独立卡片容器与独立累计链路。
+### 风险四：历史前端规则残留造成行为漂移
+
+缓解：分阶段迁移后清理旧分叉逻辑，并用契约测试覆盖聊天页只消费后端 canonical capability 的关键调用点。
 
 ## 结论
 
-上一轮首版方案解决的是思考参数能否被正确声明、正确选择、正确下发的问题。
+本次重构的核心不是再扩充一轮 thinking 规则，而是把 thinking 能力的**真相、校验、映射、元数据与展示**统一收束到后端运行时的 canonical capability 上。
 
-本轮扩展方案解决的是另外五件事：
+最终系统边界如下：
 
-1. 把聊天工具栏中的思考交互改成低噪音的灯泡按钮与上拉浮层。
-2. 把 reasoning 内容以独立 runtime event 或 segment 形式从后端贯通到前端。
-3. 为每张思考卡补充基于前端观察时间的头部计时。
-4. 让思考正文复用助手正文 Markdown 渲染栈，同时保持语义分离。
-5. 把前端规则库扩展与后端适配矩阵收敛到同一批已验证模型上。
-
-最终边界如下：
-
-- 思考参数仍然是请求级离散 intent。
-- provider 原生参数仍由发送前适配层决定是否真实下发。
-- reasoning 内容不混入 assistant 正文，而是单独展示为默认折叠的思考卡片。
-- 思考卡片头部计时基于前端观察时间，精度为 0.1 秒；进行中实时刷新，结束后冻结。
-- 思考正文复用 assistant 正文已有 Markdown 渲染栈与样式能力，但不并入最终回答正文。
-- 不支持模型仍保留灯泡入口，但不在主布局放解释文字。
-- 后端无法真实映射时仍然 no-op，并保留可观测诊断。
+- 后端基于 resolved route 产出 canonical thinking capability。
+- 前端聊天 UI 只消费 canonical capability，不再自己猜。
+- 设置页 thinking 声明降级为 override 输入，仅在 unknown 路由下受控生效。
+- requested / applied / capability snapshot 贯穿每次 run。
+- 非法 thinking intent 统一 fail-fast，不再 silent fallback。
+- `appliedThinkingLevel = off` 时前端防御性抑制 reasoning 展示。
+- 所有关键判定点都有结构化日志可供诊断。

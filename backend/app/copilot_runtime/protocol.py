@@ -14,6 +14,7 @@ from .contracts import (
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
     SESSION_CREATE_METHOD,
+    THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
     RuntimeCapabilitiesGetRequest,
@@ -25,6 +26,7 @@ from .contracts import (
     RuntimeRunStreamRequest,
     RuntimeScaffold,
     RuntimeSessionCreateRequest,
+    RuntimeThinkingCapabilityGetRequest,
     RuntimeThreadCreateRequest,
     RuntimeThreadGetRequest,
 )
@@ -37,7 +39,7 @@ from .errors import (
 from .model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
 
 
-_THINKING_LEVEL_INTENTS = frozenset({"off", "auto", "low", "medium", "high", "max"})
+_THINKING_LEVEL_INTENTS = frozenset({"off", "auto", "low", "medium", "high", "xhigh"})
 
 
 class RuntimeProtocolError(RuntimeError):
@@ -161,6 +163,35 @@ class RuntimeProtocolParser:
             field_name="sessionId",
         )
         return RuntimeCapabilitiesGetRequest(session_id=session_id)
+
+    def extract_thinking_capability_get_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeThinkingCapabilityGetRequest:
+        request_body = self._require_payload_body(
+            payload,
+            requested_method=THINKING_CAPABILITY_GET_METHOD,
+        )
+        session_id = self._require_non_empty_string(
+            request_body.get("sessionId"),
+            field_name="sessionId",
+            requested_method=THINKING_CAPABILITY_GET_METHOD,
+        )
+        model_route = self._extract_model_route(
+            request_body.get("modelRoute"),
+            field_name="modelRoute",
+            requested_method=THINKING_CAPABILITY_GET_METHOD,
+        )
+        thinking_capability_override = self._optional_object(
+            request_body.get("thinkingCapabilityOverride"),
+            field_name="thinkingCapabilityOverride",
+            requested_method=THINKING_CAPABILITY_GET_METHOD,
+        )
+        return RuntimeThinkingCapabilityGetRequest(
+            session_id=session_id,
+            model_route=model_route,
+            thinking_capability_override=thinking_capability_override,
+        )
 
     def extract_run_start_request(
         self,
@@ -529,6 +560,11 @@ class RuntimeProtocolParser:
             field_name="policy.thinkingLevelIntent",
             requested_method=requested_method,
         )
+        thinking_capability_override = self._optional_object(
+            policy.get("thinkingCapabilityOverride"),
+            field_name="policy.thinkingCapabilityOverride",
+            requested_method=requested_method,
+        )
         enabled_tools = self._optional_list_of_strings(
             policy.get("enabledTools"),
             field_name="policy.enabledTools",
@@ -547,6 +583,7 @@ class RuntimeProtocolParser:
         return RuntimeMessageExecutionPolicy(
             modelRoute=model_route,
             thinkingLevelIntent=thinking_level_intent,
+            thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
             debugModeEnabled=debug_mode_enabled,
             requestOptions=request_options,

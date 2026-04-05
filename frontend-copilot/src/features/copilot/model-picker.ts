@@ -1,5 +1,10 @@
 import type { RuntimeModelRoute } from './thread-run-contract'
-import type { ModelCapability, ProviderProfile, ResolvedThinkingCapability } from '../../workbench/types'
+import type {
+  ModelCapability,
+  ProviderProfile,
+  ResolvedThinkingCapability,
+  ThinkingCapabilityDeclaration,
+} from '../../workbench/types'
 import { resolveThinkingCapability } from '../../workbench/thinking-capabilities'
 
 export interface CopilotModelIconSpec {
@@ -17,6 +22,7 @@ export interface CopilotModelOption {
   icon: CopilotModelIconSpec
   route: RuntimeModelRoute
   thinkingCapability: ResolvedThinkingCapability
+  thinkingCapabilityOverride: ThinkingCapabilityDeclaration | null
 }
 
 export interface CopilotModelGroup {
@@ -124,6 +130,7 @@ export function createEmptyCopilotModel(): CopilotModelOption {
       levels: [],
       defaultLevel: null,
     },
+    thinkingCapabilityOverride: null,
   }
 }
 
@@ -159,6 +166,7 @@ export function createFallbackCopilotModel(modelId: string): CopilotModelOption 
       levels: [],
       defaultLevel: null,
     },
+    thinkingCapabilityOverride: null,
   }
 }
 
@@ -337,6 +345,7 @@ function createCopilotModelOption(
         thinkingCapability: model.thinkingCapability,
       },
     }),
+    thinkingCapabilityOverride: cloneThinkingCapabilityOverride(model.thinkingCapability),
   }
 }
 
@@ -392,6 +401,20 @@ function createProviderIconSpec(providerId: string, providerTitle: string, model
 
 function resolveProviderTitle(name: string, fallbackId: string): string {
   return name.trim() || fallbackId.trim() || '未命名服务商'
+}
+
+function cloneThinkingCapabilityOverride(
+  declaration: ThinkingCapabilityDeclaration | undefined,
+): ThinkingCapabilityDeclaration | null {
+  if (declaration === undefined) {
+    return null
+  }
+
+  return {
+    supported: declaration.supported,
+    ...(declaration.levels === undefined ? {} : { levels: [...declaration.levels] }),
+    ...(declaration.defaultLevel === undefined ? {} : { defaultLevel: declaration.defaultLevel }),
+  }
 }
 
 function normalizeProviderIdentifier(value: string): string {

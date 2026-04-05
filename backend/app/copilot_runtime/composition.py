@@ -77,6 +77,7 @@ def build_default_runtime_dependencies(
         agent_registry=agent_registry,
         scaffold=scaffold,
         message_run_orchestrator=message_run_orchestrator,
+        model_route_resolver=resolved_model_route_resolver,
     )
     return RuntimeDependencies(
         session_store=resolved_session_store,

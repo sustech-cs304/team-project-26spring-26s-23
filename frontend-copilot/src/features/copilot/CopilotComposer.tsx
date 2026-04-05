@@ -13,7 +13,7 @@ import {
 } from 'react'
 import { ArrowUp, Lightbulb, Square } from 'lucide-react'
 
-import { buildThinkingLevelOptions } from '../../workbench/thinking-capabilities'
+import { THINKING_LEVEL_LABELS } from '../../workbench/thinking-capabilities'
 import type { AssistantSessionShell, ThinkingLevelIntent } from '../../workbench/types'
 import {
   applyModelSelectionToComposerDraft,
@@ -21,12 +21,14 @@ import {
   type CopilotChatComposerDraft,
 } from './copilot-chat-helpers'
 import type { CopilotModelGroup } from './model-picker'
+import type { RuntimeThinkingCapability } from './thread-run-contract'
 import { ModelPicker } from './components/ModelPicker'
 import { ToolPicker } from './components/ToolPicker'
 
 interface CopilotComposerProps {
   capabilities: AssistantSessionShell['capabilities']
   modelGroups: CopilotModelGroup[]
+  thinkingCapability: RuntimeThinkingCapability | null
   draft: CopilotChatComposerDraft
   onDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -42,6 +44,7 @@ interface CopilotComposerProps {
 export function CopilotComposer({
   capabilities,
   modelGroups,
+  thinkingCapability,
   draft,
   onDraftChange,
   onSubmit,
@@ -56,19 +59,17 @@ export function CopilotComposer({
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
   const isSending = sendStatus === 'sending'
   const controlsDisabled = isSending
-  const models = modelGroups.flatMap((group) => group.models)
-  const selectedModel = models.find((model) => (
-    model.id === draft.selectedModelId || model.modelId === draft.selectedModelId
-  )) ?? null
-  const thinkingCapability = selectedModel?.thinkingCapability ?? {
-    supported: false as const,
-    levels: [],
-    defaultLevel: null,
-  }
-  const thinkingSupported = thinkingCapability.supported
-  const thinkingOptions = thinkingSupported ? buildThinkingLevelOptions(thinkingCapability) : []
-  const thinkingValue = draft.thinkingLevelIntent ?? thinkingCapability.defaultLevel ?? 'off'
-  const unsupportedThinkingHint = selectedModel !== null && !thinkingSupported ? '当前模型不支持' : null
+  const thinkingSupported = thinkingCapability?.supported === true
+  const thinkingOptions = thinkingSupported && thinkingCapability !== null
+    ? buildRuntimeThinkingLevelOptions(thinkingCapability)
+    : []
+  const thinkingValue = draft.thinkingLevelIntent ?? thinkingCapability?.defaultLevel ?? 'off'
+  const unsupportedThinkingHint = draft.selectedModelRoute !== null && thinkingCapability !== null && !thinkingSupported
+    ? '当前模型不支持'
+    : null
+  const thinkingSourceHint = thinkingCapability?.source === 'override'
+    ? '候选来源：设置页 override'
+    : null
   const thinkingControlRef = useRef<HTMLDivElement | null>(null)
   const thinkingPanelId = useId()
   const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
@@ -153,7 +154,6 @@ export function CopilotComposer({
             onDraftChange((current) => applyModelSelectionToComposerDraft(current, {
               modelId: model.id,
               modelRoute: model.route,
-              thinkingCapability: model.thinkingCapability,
             }))
           }}
         />
@@ -194,6 +194,11 @@ export function CopilotComposer({
               data-testid="chat-thinking-panel"
             >
               <p className="copilot-panel__eyebrow">推理强度</p>
+              {thinkingSourceHint !== null && (
+                <p className="copilot-chat__thinking-hint" data-testid="chat-thinking-override-hint">
+                  {thinkingSourceHint}
+                </p>
+              )}
               <div className="copilot-chat__thinking-option-list">
                 {thinkingOptions.map((option) => {
                   const selected = option.value === thinkingValue
@@ -209,7 +214,7 @@ export function CopilotComposer({
                       data-testid={`chat-thinking-option-${option.value}`}
                       onClick={() => {
                         onDraftChange((current) => applyThinkingLevelSelectionToComposerDraft(current, {
-                          modelRoute: selectedModel?.route ?? null,
+                          modelRoute: draft.selectedModelRoute,
                           thinkingLevelIntent: option.value as ThinkingLevelIntent,
                         }))
                         setThinkingPanelOpen(false)
@@ -293,4 +298,11 @@ export function CopilotComposer({
 
     </form>
   )
+}
+
+function buildRuntimeThinkingLevelOptions(capability: RuntimeThinkingCapability) {
+  return capability.supportedLevels.map((level) => ({
+    value: level,
+    label: THINKING_LEVEL_LABELS[level],
+  }))
 }

@@ -1,4 +1,5 @@
 import type { CopilotConversationTurn } from './copilot-chat-helpers'
+import type { RuntimeThinkingCapability } from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
   CopilotRunState,
@@ -14,20 +15,23 @@ export function projectConversationTurnsFromRunState(input: {
   userTurns: CopilotConversationTurn[]
   runState: CopilotRunState
 }): CopilotConversationTurn[] {
-  const projectedRunTurns = input.runState.segments.flatMap((segment) => projectSegmentToTurn(segment))
+  const projectedRunTurns = input.runState.segments.flatMap((segment) => projectSegmentToTurn(segment, input.runState))
   const terminalSegment = findTerminalSegment(input.runState.segments)
   const turnsWithTerminal = terminalSegment === null
     ? projectedRunTurns
-    : applyTerminalSegment(projectedRunTurns, terminalSegment)
+    : applyTerminalSegment(projectedRunTurns, terminalSegment, input.runState)
   const turnsWithDiagnostic = applyDiagnosticToTurns(turnsWithTerminal, input.runState.diagnostic)
 
   return [...input.userTurns, ...turnsWithDiagnostic]
 }
 
-function projectSegmentToTurn(segment: CopilotRunSegment): CopilotConversationTurn[] {
+function projectSegmentToTurn(
+  segment: CopilotRunSegment,
+  runState: Pick<CopilotRunState, 'requestedThinkingLevel' | 'appliedThinkingLevel' | 'thinkingCapabilitySnapshot'>,
+): CopilotConversationTurn[] {
   switch (segment.kind) {
     case 'assistant':
-      return segment.text === '' ? [] : [projectAssistantSegment(segment)]
+      return segment.text === '' ? [] : [projectAssistantSegment(segment, runState)]
     case 'reasoning':
       return []
     case 'tool':
@@ -38,7 +42,10 @@ function projectSegmentToTurn(segment: CopilotRunSegment): CopilotConversationTu
   }
 }
 
-function projectAssistantSegment(segment: CopilotAssistantSegment): CopilotConversationTurn {
+function projectAssistantSegment(
+  segment: CopilotAssistantSegment,
+  runState: Pick<CopilotRunState, 'requestedThinkingLevel' | 'appliedThinkingLevel' | 'thinkingCapabilitySnapshot'>,
+): CopilotConversationTurn {
   return {
     id: segment.id,
     runId: segment.runId,
@@ -50,6 +57,9 @@ function projectAssistantSegment(segment: CopilotAssistantSegment): CopilotConve
     resolvedModelRoute: segment.resolvedModelRoute ?? undefined,
     resolvedToolIds: [...segment.resolvedToolIds],
     requestOptions: { ...segment.requestOptions },
+    requestedThinkingLevel: runState.requestedThinkingLevel,
+    appliedThinkingLevel: runState.appliedThinkingLevel,
+    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
   }
 }
 
@@ -73,6 +83,7 @@ function projectToolSegment(segment: CopilotToolSegment): CopilotConversationTur
 function applyTerminalSegment(
   turns: CopilotConversationTurn[],
   terminal: CopilotTerminalSegment,
+  runState: Pick<CopilotRunState, 'requestedThinkingLevel' | 'appliedThinkingLevel' | 'thinkingCapabilitySnapshot'>,
 ): CopilotConversationTurn[] {
   switch (terminal.terminalPhase) {
     case 'completed':
@@ -91,6 +102,9 @@ function applyTerminalSegment(
             content: turn.content === ''
               ? formatCancelledReason(terminal.cancelReason ?? '')
               : turn.content,
+            requestedThinkingLevel: runState.requestedThinkingLevel,
+            appliedThinkingLevel: runState.appliedThinkingLevel,
+            thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
           }
         : turn))
     }
@@ -101,6 +115,9 @@ function applyTerminalSegment(
         return [...turns, createErrorTurn({
           runId: terminal.runId,
           content: failureMessage,
+          requestedThinkingLevel: runState.requestedThinkingLevel,
+          appliedThinkingLevel: runState.appliedThinkingLevel,
+          thinkingCapabilitySnapshot: runState.thinkingCapabilitySnapshot,
         })]
       }
 
@@ -111,6 +128,9 @@ function applyTerminalSegment(
             title: '发送失败',
             content: failureMessage,
             status: 'failed',
+            requestedThinkingLevel: runState.requestedThinkingLevel,
+            appliedThinkingLevel: runState.appliedThinkingLevel,
+            thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
           }
         : turn))
     }
@@ -174,6 +194,9 @@ function findLastTurnIndex(
 function createErrorTurn(input: {
   runId: string
   content: string
+  requestedThinkingLevel: CopilotRunState['requestedThinkingLevel']
+  appliedThinkingLevel: CopilotRunState['appliedThinkingLevel']
+  thinkingCapabilitySnapshot: CopilotRunState['thinkingCapabilitySnapshot']
 }): CopilotConversationTurn {
   return {
     id: `error:${input.runId}`,
@@ -182,6 +205,35 @@ function createErrorTurn(input: {
     title: '发送失败',
     content: input.content,
     status: 'failed',
+    requestedThinkingLevel: input.requestedThinkingLevel,
+    appliedThinkingLevel: input.appliedThinkingLevel,
+    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(input.thinkingCapabilitySnapshot),
+  }
+}
+
+function cloneRuntimeThinkingCapability(
+  capability: RuntimeThinkingCapability | null | undefined,
+): RuntimeThinkingCapability | null | undefined {
+  if (capability === null || capability === undefined) {
+    return capability
+  }
+
+  return {
+    status: capability.status,
+    source: capability.source,
+    supported: capability.supported,
+    supportedLevels: [...capability.supportedLevels],
+    defaultLevel: capability.defaultLevel,
+    reasonCode: capability.reasonCode,
+    providerHint: capability.providerHint,
+    routeFingerprint: {
+      providerProfileId: capability.routeFingerprint.providerProfileId,
+      provider: capability.routeFingerprint.provider,
+      endpointType: capability.routeFingerprint.endpointType,
+      baseUrl: capability.routeFingerprint.baseUrl,
+      modelId: capability.routeFingerprint.modelId,
+    },
+    overrideLevels: [...capability.overrideLevels],
   }
 }
 

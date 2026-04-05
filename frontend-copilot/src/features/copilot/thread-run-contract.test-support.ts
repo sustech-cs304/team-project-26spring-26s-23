@@ -9,8 +9,11 @@ import type {
   RuntimeRunCancelResponse,
   RuntimeRunCompletedEvent,
   RuntimeRunEvent,
+  RuntimeRunMetadataEvent,
   RuntimeRunStartResponse,
+  RuntimeRunView,
   RuntimeSessionCreateResponse,
+  RuntimeThinkingCapability,
   RuntimeThreadCreateResponse,
   RuntimeThreadGetResponse,
   RuntimeToolEvent,
@@ -194,8 +197,16 @@ export function createRuntimeModelRoute(
   }
 }
 
+type RuntimeRunStartResponseOverrides = Omit<Partial<RuntimeRunStartResponse>, 'run'> & {
+  run?: Partial<RuntimeRunView>
+}
+
+type RuntimeRunCancelResponseOverrides = Omit<Partial<RuntimeRunCancelResponse>, 'run'> & {
+  run?: Partial<RuntimeRunView>
+}
+
 export function createRuntimeRunStartResponse(
-  overrides: Partial<RuntimeRunStartResponse> = {},
+  overrides: RuntimeRunStartResponseOverrides = {},
 ): RuntimeRunStartResponse {
   return {
     ok: true,
@@ -208,6 +219,9 @@ export function createRuntimeRunStartResponse(
       startedAt: overrides.run?.startedAt ?? null,
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? false,
+      requestedThinkingLevel: overrides.run?.requestedThinkingLevel ?? null,
+      appliedThinkingLevel: overrides.run?.appliedThinkingLevel ?? null,
+      thinkingCapabilitySnapshot: overrides.run?.thinkingCapabilitySnapshot ?? null,
     },
     assistantMessageId: overrides.assistantMessageId ?? 'run-1:assistant',
     stream: overrides.stream ?? {
@@ -226,7 +240,7 @@ export function createRuntimeRunStartResponse(
 }
 
 export function createRuntimeRunCancelResponse(
-  overrides: Partial<RuntimeRunCancelResponse> = {},
+  overrides: RuntimeRunCancelResponseOverrides = {},
 ): RuntimeRunCancelResponse {
   return {
     ok: true,
@@ -239,8 +253,49 @@ export function createRuntimeRunCancelResponse(
       startedAt: overrides.run?.startedAt ?? '2026-03-27T10:00:01Z',
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? true,
+      requestedThinkingLevel: overrides.run?.requestedThinkingLevel ?? null,
+      appliedThinkingLevel: overrides.run?.appliedThinkingLevel ?? null,
+      thinkingCapabilitySnapshot: overrides.run?.thinkingCapabilitySnapshot ?? null,
     },
     cancelAccepted: overrides.cancelAccepted ?? true,
+  }
+}
+
+export function createRuntimeThinkingCapability(
+  overrides: Partial<RuntimeThinkingCapability> = {},
+): RuntimeThinkingCapability {
+  return {
+    status: overrides.status ?? 'verified-supported',
+    source: overrides.source ?? 'verified',
+    supported: overrides.supported ?? true,
+    supportedLevels: overrides.supportedLevels ?? ['off', 'auto', 'low', 'medium', 'high', 'xhigh'],
+    defaultLevel: overrides.defaultLevel ?? 'auto',
+    reasonCode: overrides.reasonCode ?? 'verified_supported',
+    providerHint: overrides.providerHint ?? 'openai-compatible',
+    routeFingerprint: overrides.routeFingerprint ?? {
+      providerProfileId: 'provider-openai',
+      provider: 'openai',
+      endpointType: 'openai-compatible',
+      baseUrl: 'https://api.example.com/v1',
+      modelId: 'qwen-plus',
+    },
+    overrideLevels: overrides.overrideLevels ?? [],
+  }
+}
+
+export function createRuntimeRunMetadataEvent(
+  overrides: Partial<RuntimeRunMetadataEvent> = {},
+): RuntimeRunMetadataEvent {
+  return {
+    type: 'run_metadata',
+    runId: overrides.runId ?? 'run-1',
+    sessionId: overrides.sessionId ?? sessionId,
+    sequence: overrides.sequence ?? 2,
+    payload: {
+      requestedThinkingLevel: overrides.payload?.requestedThinkingLevel ?? 'auto',
+      appliedThinkingLevel: overrides.payload?.appliedThinkingLevel ?? 'auto',
+      thinkingCapabilitySnapshot: overrides.payload?.thinkingCapabilitySnapshot ?? createRuntimeThinkingCapability(),
+    },
   }
 }
 

@@ -19,6 +19,7 @@ RUN_STREAM_METHOD = "run/stream"
 RUN_CANCEL_METHOD = "run/cancel"
 SESSION_CREATE_METHOD = "session/create"
 CAPABILITIES_GET_METHOD = "capabilities/get"
+THINKING_CAPABILITY_GET_METHOD = "thinking/capability/get"
 MESSAGE_SEND_METHOD = "message/send"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
 DEFAULT_RUNTIME_STAGE = "phase3-run-bridge"
@@ -28,7 +29,7 @@ DEFAULT_TRANSPORT = {
 }
 
 
-ThinkingLevelIntent = Literal["off", "auto", "low", "medium", "high", "max"]
+ThinkingLevelIntent = Literal["off", "auto", "low", "medium", "high", "xhigh"]
 
 
 class RuntimeContract:
@@ -82,6 +83,13 @@ class RuntimeThreadGetRequest(RuntimeContract):
 @dataclass(frozen=True, slots=True)
 class RuntimeCapabilitiesGetRequest(RuntimeContract):
     session_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeThinkingCapabilityGetRequest(RuntimeContract):
+    session_id: str
+    model_route: RuntimeModelRoute
+    thinking_capability_override: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +153,13 @@ class RuntimeCapabilitiesResponse(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeThinkingCapabilityResponse(RuntimeContract):
+    ok: bool
+    sessionId: str
+    capability: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeMessagePayload(RuntimeContract):
     role: str
     content: str
@@ -154,6 +169,7 @@ class RuntimeMessagePayload(RuntimeContract):
 class RuntimeMessageExecutionPolicy(RuntimeContract):
     modelRoute: RuntimeModelRoute
     thinkingLevelIntent: ThinkingLevelIntent | None = None
+    thinkingCapabilityOverride: dict[str, Any] | None = None
     enabledTools: tuple[str, ...] = ()
     debugModeEnabled: bool | None = None
     requestOptions: dict[str, Any] = field(default_factory=dict)
@@ -195,6 +211,9 @@ class RuntimeRunView(RuntimeContract):
     startedAt: datetime | None = None
     terminalAt: datetime | None = None
     cancelRequested: bool = False
+    requestedThinkingLevel: ThinkingLevelIntent | None = None
+    appliedThinkingLevel: ThinkingLevelIntent | None = None
+    thinkingCapabilitySnapshot: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,7 +340,22 @@ class RuntimeScaffold(RuntimeContract):
             defaultModelPreference=thread_response.defaultModelPreference,
         )
 
+    def build_thinking_capability_response(
+        self,
+        *,
+        session_id: str,
+        capability: dict[str, Any],
+    ) -> RuntimeThinkingCapabilityResponse:
+        return RuntimeThinkingCapabilityResponse(
+            ok=True,
+            sessionId=session_id,
+            capability=dict(capability),
+        )
+
     def build_run_view(self, *, run: RuntimeRunRecord) -> RuntimeRunView:
+        requested_thinking_level = run.metadata.get("requestedThinkingLevel")
+        applied_thinking_level = run.metadata.get("appliedThinkingLevel")
+        thinking_capability_snapshot = run.metadata.get("thinkingCapabilitySnapshot")
         return RuntimeRunView(
             runId=run.run_id,
             threadId=run.thread_id,
@@ -331,6 +365,13 @@ class RuntimeScaffold(RuntimeContract):
             startedAt=run.started_at,
             terminalAt=run.terminal_at,
             cancelRequested=run.cancel_requested,
+            requestedThinkingLevel=requested_thinking_level if isinstance(requested_thinking_level, str) else None,
+            appliedThinkingLevel=applied_thinking_level if isinstance(applied_thinking_level, str) else None,
+            thinkingCapabilitySnapshot=(
+                dict(thinking_capability_snapshot)
+                if isinstance(thinking_capability_snapshot, dict)
+                else None
+            ),
         )
 
     def build_run_start_response(self, *, run: RuntimeRunRecord) -> RuntimeRunStartResponse:
@@ -404,6 +445,7 @@ class RuntimeScaffold(RuntimeContract):
             "current_stage_supports_run_cancel": RUN_CANCEL_METHOD in self.supported_methods,
             "current_stage_supports_session_create": SESSION_CREATE_METHOD in self.supported_methods,
             "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD in self.supported_methods,
+            "current_stage_supports_thinking_capability_get": THINKING_CAPABILITY_GET_METHOD in self.supported_methods,
             "current_stage_supports_message_send": MESSAGE_SEND_METHOD in self.supported_methods,
             "model_configured": self.model_configured,
             "model_environment_keys": list(self.model_environment_keys),
@@ -460,6 +502,7 @@ def build_runtime_scaffold(
             RUN_CANCEL_METHOD,
             SESSION_CREATE_METHOD,
             CAPABILITIES_GET_METHOD,
+            THINKING_CAPABILITY_GET_METHOD,
             MESSAGE_SEND_METHOD,
         ),
         default_agent=resolved_agent_registry.get_default().name,

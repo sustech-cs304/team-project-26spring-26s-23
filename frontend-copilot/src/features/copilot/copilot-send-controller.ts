@@ -83,6 +83,7 @@ export async function orchestrateCopilotSend(input: {
   setComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   setConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>>
   signal?: AbortSignal
+  thinkingCapabilityOverride?: Record<string, unknown> | null
 }) {
   if (!isCopilotConnectableState(input.state) || input.sessionShell === null) {
     return
@@ -132,6 +133,7 @@ export async function orchestrateCopilotSend(input: {
         messageText: trimmedMessage,
       },
       requestOptions,
+      thinkingCapabilityOverride: input.thinkingCapabilityOverride,
     })
   } catch (error) {
     input.setSendError(formatRuntimeMessageSendError(error))

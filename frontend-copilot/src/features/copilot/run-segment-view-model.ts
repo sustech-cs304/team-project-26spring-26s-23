@@ -1,4 +1,7 @@
-import type { RuntimeModelRoute } from './thread-run-contract'
+import type {
+  RuntimeModelRoute,
+  RuntimeThinkingCapability,
+} from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
   CopilotRunFailureSummary,
@@ -30,6 +33,9 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   resolvedModelRoute: RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
+  requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
+  appliedThinkingLevel?: CopilotRunState['appliedThinkingLevel']
+  thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
 }
 
 export interface CopilotReasoningMessageItem extends CopilotRunSegmentViewItemBase {
@@ -67,6 +73,9 @@ export interface CopilotTerminalMessageItem extends CopilotRunSegmentViewItemBas
   terminalPhase: 'failed' | 'cancelled'
   cancelReason: string | null
   failure: CopilotRunFailureSummary | null
+  requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
+  appliedThinkingLevel?: CopilotRunState['appliedThinkingLevel']
+  thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
 }
 
 export type CopilotRunSegmentViewItem =
@@ -145,7 +154,16 @@ export function resolveCopilotAssistantPlaceholderState(
 }
 
 export function buildCopilotRunSegmentViewModel(
-  runState: Pick<CopilotRunState, 'segments' | 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+  runState: Pick<
+    CopilotRunState,
+    | 'segments'
+    | 'activeModelRoute'
+    | 'resolvedModelId'
+    | 'resolvedModelRoute'
+    | 'requestedThinkingLevel'
+    | 'appliedThinkingLevel'
+    | 'thinkingCapabilitySnapshot'
+  >,
 ): CopilotRunSegmentViewItem[] {
   return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment, runState))
 }
@@ -168,7 +186,15 @@ export function resolveCopilotReasoningElapsedMs(
 
 function projectSegmentToViewItems(
   segment: CopilotRunSegment,
-  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+  runState: Pick<
+    CopilotRunState,
+    | 'activeModelRoute'
+    | 'resolvedModelId'
+    | 'resolvedModelRoute'
+    | 'requestedThinkingLevel'
+    | 'appliedThinkingLevel'
+    | 'thinkingCapabilitySnapshot'
+  >,
 ): CopilotRunSegmentViewItem[] {
   switch (segment.kind) {
     case 'assistant':
@@ -180,7 +206,7 @@ function projectSegmentToViewItems(
     case 'diagnostic':
       return [projectDiagnosticSegment(segment)]
     case 'terminal': {
-      const terminalItem = projectTerminalSegment(segment)
+      const terminalItem = projectTerminalSegment(segment, runState)
       return terminalItem === null ? [] : [terminalItem]
     }
   }
@@ -188,7 +214,15 @@ function projectSegmentToViewItems(
 
 function projectAssistantSegment(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
-  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+  runState: Pick<
+    CopilotRunState,
+    | 'activeModelRoute'
+    | 'resolvedModelId'
+    | 'resolvedModelRoute'
+    | 'requestedThinkingLevel'
+    | 'appliedThinkingLevel'
+    | 'thinkingCapabilitySnapshot'
+  >,
 ): CopilotRunSegmentViewItem[] {
   if (!isRenderableAssistantSegment(segment)) {
     return []
@@ -209,6 +243,9 @@ function projectAssistantSegment(
     resolvedModelRoute,
     resolvedToolIds: [...segment.resolvedToolIds],
     requestOptions: { ...segment.requestOptions },
+    requestedThinkingLevel: runState.requestedThinkingLevel,
+    appliedThinkingLevel: runState.appliedThinkingLevel,
+    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
   }]
 }
 
@@ -271,6 +308,12 @@ function projectDiagnosticSegment(
 
 function projectTerminalSegment(
   segment: Extract<CopilotRunSegment, { kind: 'terminal' }>,
+  runState: Pick<
+    CopilotRunState,
+    | 'requestedThinkingLevel'
+    | 'appliedThinkingLevel'
+    | 'thinkingCapabilitySnapshot'
+  >,
 ): CopilotTerminalMessageItem | null {
   switch (segment.terminalPhase) {
     case 'completed':
@@ -287,6 +330,9 @@ function projectTerminalSegment(
         terminalPhase: 'cancelled',
         cancelReason: segment.cancelReason,
         failure: null,
+        requestedThinkingLevel: runState.requestedThinkingLevel,
+        appliedThinkingLevel: runState.appliedThinkingLevel,
+        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
       }
     case 'failed':
       return {
@@ -306,6 +352,9 @@ function projectTerminalSegment(
               message: segment.failure.message,
               details: { ...segment.failure.details },
             },
+        requestedThinkingLevel: runState.requestedThinkingLevel,
+        appliedThinkingLevel: runState.appliedThinkingLevel,
+        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
       }
   }
 }
@@ -379,6 +428,32 @@ function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRo
       baseUrl: route.snapshot.baseUrl,
       modelId: route.snapshot.modelId,
     },
+  }
+}
+
+function cloneRuntimeThinkingCapability(
+  capability: RuntimeThinkingCapability | null,
+): RuntimeThinkingCapability | null {
+  if (capability === null) {
+    return null
+  }
+
+  return {
+    status: capability.status,
+    source: capability.source,
+    supported: capability.supported,
+    supportedLevels: [...capability.supportedLevels],
+    defaultLevel: capability.defaultLevel,
+    reasonCode: capability.reasonCode,
+    providerHint: capability.providerHint,
+    routeFingerprint: {
+      providerProfileId: capability.routeFingerprint.providerProfileId,
+      provider: capability.routeFingerprint.provider,
+      endpointType: capability.routeFingerprint.endpointType,
+      baseUrl: capability.routeFingerprint.baseUrl,
+      modelId: capability.routeFingerprint.modelId,
+    },
+    overrideLevels: [...capability.overrideLevels],
   }
 }
 

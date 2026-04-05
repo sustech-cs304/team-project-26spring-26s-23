@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { CopilotMessageList } from './CopilotMessageList'
-import { createRuntimeModelRoute } from './chat-contract.test-support'
+import {
+  createRuntimeModelRoute,
+  createRuntimeThinkingCapability,
+} from './chat-contract.test-support'
 import { createIdleCopilotRunState } from './run-segment-reducer'
 import { createCopilotModelCatalog } from './model-picker'
 import {
@@ -288,6 +291,74 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('发送失败')
     expect(html).toContain('tool_execution_failed: Tool failed: boom')
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
+  })
+
+  it('renders thinking metadata detail rows for assistant and terminal items in diagnostic mode', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'failed',
+      runId: 'run-thinking-details',
+      threadId: 'session-1',
+      requestedThinkingLevel: 'medium',
+      appliedThinkingLevel: 'auto',
+      thinkingCapabilitySnapshot: createRuntimeThinkingCapability({
+        status: 'unknown-with-override',
+        source: 'override',
+        supportedLevels: ['off', 'auto', 'medium'],
+        defaultLevel: 'auto',
+        reasonCode: 'override_candidate_levels_applied',
+        providerHint: 'unknown-route-override',
+        overrideLevels: ['off', 'auto', 'medium'],
+      }),
+      segments: [
+        {
+          id: 'assistant:run-thinking-details:1',
+          kind: 'assistant',
+          runId: 'run-thinking-details',
+          assistantMessageId: 'run-thinking-details:assistant',
+          text: '这是一条回答。',
+          firstContentSequence: 1,
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'completed',
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+        {
+          id: 'terminal:run-thinking-details:failed',
+          kind: 'terminal',
+          runId: 'run-thinking-details',
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'failed',
+          terminalPhase: 'failed',
+          assistantMessageId: 'run-thinking-details:assistant',
+          cancelReason: null,
+          failure: {
+            code: 'thinking_not_supported_for_route',
+            message: 'route rejected',
+            details: {},
+          },
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).toContain('请求思考')
+    expect(html).toContain('medium')
+    expect(html).toContain('应用思考')
+    expect(html).toContain('auto')
+    expect(html).toContain('能力来源')
+    expect(html).toContain('override / unknown-with-override')
+    expect(html).toContain('原因码')
+    expect(html).toContain('override_candidate_levels_applied')
+    expect(html).toContain('Provider Hint')
+    expect(html).toContain('unknown-route-override')
   })
 
   it('keeps completed segments visible when a run is cancelled and appends a terminal marker', () => {

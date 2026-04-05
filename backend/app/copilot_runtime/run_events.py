@@ -11,6 +11,7 @@ from .contracts import RuntimeContract
 
 RuntimeRunEventType = Literal[
     "run_started",
+    "run_metadata",
     "text_delta",
     "reasoning_delta",
     "run_completed",
@@ -21,6 +22,7 @@ RuntimeRunEventType = Literal[
 ]
 
 RUN_STARTED_EVENT_TYPE: RuntimeRunEventType = "run_started"
+RUN_METADATA_EVENT_TYPE: RuntimeRunEventType = "run_metadata"
 TEXT_DELTA_EVENT_TYPE: RuntimeRunEventType = "text_delta"
 REASONING_DELTA_EVENT_TYPE: RuntimeRunEventType = "reasoning_delta"
 RUN_COMPLETED_EVENT_TYPE: RuntimeRunEventType = "run_completed"
@@ -83,6 +85,7 @@ __all__ = [
     "RUN_COMPLETED_EVENT_TYPE",
     "RUN_DIAGNOSTIC_EVENT_TYPE",
     "RUN_FAILED_EVENT_TYPE",
+    "RUN_METADATA_EVENT_TYPE",
     "RUN_STARTED_EVENT_TYPE",
     "TERMINAL_RUNTIME_RUN_EVENT_TYPES",
     "TEXT_DELTA_EVENT_TYPE",

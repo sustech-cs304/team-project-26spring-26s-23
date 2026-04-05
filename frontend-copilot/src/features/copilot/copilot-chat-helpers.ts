@@ -1,15 +1,14 @@
 import type {
   AgentType,
   AssistantSessionShell,
-  ResolvedThinkingCapability,
   ThinkingLevelIntent,
 } from '../../workbench/types'
-import { resolveThinkingLevelIntent } from '../../workbench/thinking-capabilities'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   RuntimeRequestError,
   type RuntimeModelRoute,
   type RuntimeRunCompletedEvent,
+  type RuntimeThinkingCapability,
   type RuntimeToolEvent,
   type RuntimeToolEventPhase,
 } from './thread-run-contract'
@@ -39,6 +38,7 @@ export interface RuntimeMessageSendInput {
   }
   modelRoute: RuntimeModelRoute
   thinkingLevelIntent: ThinkingLevelIntent | null
+  thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
   requestOptions: Record<string, unknown>
 }
@@ -56,6 +56,9 @@ export interface CopilotConversationTurn {
   resolvedModelRoute?: RuntimeModelRoute
   resolvedToolIds?: string[]
   requestOptions?: Record<string, unknown>
+  requestedThinkingLevel?: ThinkingLevelIntent | null
+  appliedThinkingLevel?: ThinkingLevelIntent | null
+  thinkingCapabilitySnapshot?: RuntimeThinkingCapability | null
   diagnostic?: CopilotRunDiagnosticSummary | null
   toolCallId?: string
   toolId?: string
@@ -100,6 +103,7 @@ export function buildRuntimeMessageSendInput(input: {
   sessionShell: AssistantSessionShell
   draft: CopilotChatComposerDraft
   requestOptions: Record<string, unknown>
+  thinkingCapabilityOverride?: Record<string, unknown> | null
 }): RuntimeMessageSendInput {
   if (input.draft.selectedModelRoute === null) {
     throw new Error('请先选择可发送的模型路由。')
@@ -115,6 +119,13 @@ export function buildRuntimeMessageSendInput(input: {
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
     thinkingLevelIntent: input.draft.thinkingLevelIntent,
+    ...(input.thinkingCapabilityOverride === undefined
+      ? {}
+      : {
+          thinkingCapabilityOverride: input.thinkingCapabilityOverride === null
+            ? null
+            : { ...input.thinkingCapabilityOverride },
+        }),
     enabledTools: dedupeToolIds(input.draft.enabledTools),
     requestOptions: { ...input.requestOptions },
   }
@@ -135,27 +146,16 @@ export function applyModelSelectionToComposerDraft(
   input: {
     modelId: string
     modelRoute: RuntimeModelRoute
-    thinkingCapability: ResolvedThinkingCapability
   },
 ): CopilotChatComposerDraft {
   const nextRoute = cloneRuntimeModelRoute(input.modelRoute)
   const memoryKey = buildThinkingSessionMemoryKey(nextRoute)
-  const nextThinkingLevelIntent = resolveThinkingLevelIntent(
-    input.thinkingCapability,
-    draft.thinkingLevelByModelKey[memoryKey],
-  )
 
   return {
     ...draft,
     selectedModelId: input.modelId,
     selectedModelRoute: nextRoute,
-    thinkingLevelIntent: nextThinkingLevelIntent,
-    thinkingLevelByModelKey: nextThinkingLevelIntent === null
-      ? { ...draft.thinkingLevelByModelKey }
-      : {
-          ...draft.thinkingLevelByModelKey,
-          [memoryKey]: nextThinkingLevelIntent,
-        },
+    thinkingLevelIntent: draft.thinkingLevelByModelKey[memoryKey] ?? null,
   }
 }
 
@@ -189,7 +189,7 @@ export function syncComposerDraftThinkingSelection(
   draft: CopilotChatComposerDraft,
   input: {
     modelRoute: RuntimeModelRoute | null
-    thinkingCapability: ResolvedThinkingCapability | null
+    thinkingCapability: RuntimeThinkingCapability | null
   },
 ): CopilotChatComposerDraft {
   if (input.modelRoute === null || input.thinkingCapability === null) {
@@ -202,7 +202,7 @@ export function syncComposerDraftThinkingSelection(
   }
 
   const memoryKey = buildThinkingSessionMemoryKey(input.modelRoute)
-  const nextThinkingLevelIntent = resolveThinkingLevelIntent(
+  const nextThinkingLevelIntent = resolveThinkingLevelIntentFromCapability(
     input.thinkingCapability,
     draft.thinkingLevelByModelKey[memoryKey],
   )
@@ -221,6 +221,21 @@ export function syncComposerDraftThinkingSelection(
           [memoryKey]: nextThinkingLevelIntent,
         },
   }
+}
+
+function resolveThinkingLevelIntentFromCapability(
+  capability: RuntimeThinkingCapability,
+  value: ThinkingLevelIntent | null | undefined,
+): ThinkingLevelIntent | null {
+  if (!capability.supported || capability.supportedLevels.length === 0) {
+    return null
+  }
+
+  if (value !== null && value !== undefined && capability.supportedLevels.includes(value)) {
+    return value
+  }
+
+  return capability.defaultLevel ?? capability.supportedLevels[0] ?? null
 }
 
 export function parseRequestOptionsText(requestOptionsText: string): Record<string, unknown> {

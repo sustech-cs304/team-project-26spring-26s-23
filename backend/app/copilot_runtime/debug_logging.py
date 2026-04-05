@@ -99,6 +99,32 @@ def summarize_runtime_execution_event(event: Any | None) -> dict[str, Any] | Non
     return summary
 
 
+def summarize_runtime_thinking_capability(capability: Any | None) -> dict[str, Any] | None:
+    if capability is None:
+        return None
+    summary = {
+        "status": _lookup_value(capability, attr_name="status", key_name="status"),
+        "source": _lookup_value(capability, attr_name="source", key_name="source"),
+        "supported": _lookup_value(capability, attr_name="supported", key_name="supported"),
+        "defaultLevel": _lookup_value(capability, attr_name="default_level", key_name="defaultLevel"),
+        "reasonCode": _lookup_value(capability, attr_name="reason_code", key_name="reasonCode"),
+        "providerHint": _lookup_value(capability, attr_name="provider_hint", key_name="providerHint"),
+    }
+    supported_levels = _lookup_value(capability, attr_name="supported_levels", key_name="supportedLevels")
+    if isinstance(supported_levels, Sequence) and not isinstance(supported_levels, str):
+        summary["supportedLevels"] = [_sanitize_value(level) for level in supported_levels]
+    route_fingerprint = _lookup_value(capability, attr_name="route_fingerprint", key_name="routeFingerprint")
+    if isinstance(route_fingerprint, Mapping):
+        summary["routeFingerprint"] = {
+            str(key): _sanitize_value(value)
+            for key, value in route_fingerprint.items()
+        }
+    override_levels = _lookup_value(capability, attr_name="override_levels", key_name="overrideLevels")
+    if isinstance(override_levels, Sequence) and not isinstance(override_levels, str):
+        summary["overrideLevels"] = [_sanitize_value(level) for level in override_levels]
+    return summary
+
+
 def summarize_runtime_run_event(event: Any | None) -> dict[str, Any] | None:
     if event is None:
         return None
@@ -135,9 +161,23 @@ def summarize_runtime_run_event(event: Any | None) -> dict[str, Any] | None:
     code = _lookup_mapping_value(payload, "code")
     if code is not None:
         summary["code"] = code
+    stage = _lookup_mapping_value(payload, "stage")
+    if stage is not None:
+        summary["stage"] = stage
     reason = _lookup_mapping_value(payload, "reason")
     if reason is not None:
         summary["reason"] = reason
+    requested_thinking_level = _lookup_mapping_value(payload, "requestedThinkingLevel")
+    if requested_thinking_level is not None:
+        summary["requestedThinkingLevel"] = requested_thinking_level
+    applied_thinking_level = _lookup_mapping_value(payload, "appliedThinkingLevel")
+    if applied_thinking_level is not None:
+        summary["appliedThinkingLevel"] = applied_thinking_level
+    thinking_capability_snapshot = summarize_runtime_thinking_capability(
+        _lookup_mapping_value(payload, "thinkingCapabilitySnapshot")
+    )
+    if thinking_capability_snapshot is not None:
+        summary["thinkingCapability"] = thinking_capability_snapshot
     assistant_text = _lookup_mapping_value(payload, "assistantText")
     if assistant_text not in (None, ""):
         summary["assistantTextLength"] = len(str(assistant_text))
@@ -233,5 +273,6 @@ __all__ = [
     "summarize_runtime_execution_event",
     "summarize_runtime_model_route",
     "summarize_runtime_run_event",
+    "summarize_runtime_thinking_capability",
     "summarize_runtime_tool_event",
 ]

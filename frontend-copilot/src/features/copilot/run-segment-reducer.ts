@@ -3,6 +3,8 @@ import type {
   RuntimeRunCompletedEvent,
   RuntimeRunEvent,
   RuntimeRunFailedEvent,
+  RuntimeRunMetadataEvent,
+  RuntimeThinkingCapability,
   RuntimeToolEvent,
 } from './thread-run-contract'
 import type {
@@ -27,6 +29,10 @@ export function createIdleCopilotRunState(): CopilotRunState {
     resolvedModelRoute: null,
     resolvedToolIds: [],
     requestOptions: {},
+    requestedThinkingLevel: null,
+    appliedThinkingLevel: null,
+    thinkingCapabilitySnapshot: null,
+    reasoningSuppressed: false,
     diagnostic: null,
     failure: null,
     cancelReason: null,
@@ -62,6 +68,24 @@ export function registerCopilotRunStartResponse(
   }
 }
 
+function applyRunMetadataToState(
+  state: CopilotRunState,
+  event: RuntimeRunMetadataEvent,
+): CopilotRunState {
+  const reasoningSuppressed = state.reasoningSuppressed || event.payload.appliedThinkingLevel === 'off'
+
+  return {
+    ...state,
+    runId: event.runId,
+    threadId: event.sessionId,
+    requestedThinkingLevel: event.payload.requestedThinkingLevel,
+    appliedThinkingLevel: event.payload.appliedThinkingLevel,
+    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(event.payload.thinkingCapabilitySnapshot),
+    reasoningSuppressed,
+    segments: reasoningSuppressed ? stripReasoningSegments(state.segments) : state.segments,
+  }
+}
+
 export function applyRuntimeRunEventToCopilotRunState(
   state: CopilotRunState,
   event: RuntimeRunEvent,
@@ -74,6 +98,8 @@ export function applyRuntimeRunEventToCopilotRunState(
         runId: event.runId,
         threadId: event.sessionId,
       }
+    case 'run_metadata':
+      return applyRunMetadataToState(state, event)
     case 'text_delta': {
       const observedAt = Date.now()
       const segmentsWithCompletedReasoning = completeStreamingReasoningSegments(
@@ -90,6 +116,17 @@ export function applyRuntimeRunEventToCopilotRunState(
       }
     }
     case 'reasoning_delta': {
+      if (state.appliedThinkingLevel === 'off') {
+        return {
+          ...state,
+          phase: 'streaming',
+          runId: event.runId,
+          threadId: event.sessionId,
+          reasoningSuppressed: true,
+          segments: stripReasoningSegments(state.segments),
+        }
+      }
+
       const observedAt = Date.now()
       return {
         ...state,
@@ -558,6 +595,10 @@ function appendTerminalSegment(
   ]
 }
 
+function stripReasoningSegments(segments: CopilotRunSegment[]): CopilotRunSegment[] {
+  return segments.filter((segment) => segment.kind !== 'reasoning')
+}
+
 function buildCompletedTerminalSegment(input: {
   runId: string
   sequence: number
@@ -698,6 +739,26 @@ function mapToolPhaseToSegmentStatus(
       return 'completed'
     case 'failed':
       return 'failed'
+  }
+}
+
+function cloneRuntimeThinkingCapability(capability: RuntimeThinkingCapability): RuntimeThinkingCapability {
+  return {
+    status: capability.status,
+    source: capability.source,
+    supported: capability.supported,
+    supportedLevels: [...capability.supportedLevels],
+    defaultLevel: capability.defaultLevel,
+    reasonCode: capability.reasonCode,
+    providerHint: capability.providerHint,
+    routeFingerprint: {
+      providerProfileId: capability.routeFingerprint.providerProfileId,
+      provider: capability.routeFingerprint.provider,
+      endpointType: capability.routeFingerprint.endpointType,
+      baseUrl: capability.routeFingerprint.baseUrl,
+      modelId: capability.routeFingerprint.modelId,
+    },
+    overrideLevels: [...capability.overrideLevels],
   }
 }
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
+import {
+  createRuntimeRunMetadataEvent,
+  createRuntimeThinkingCapability,
+} from './thread-run-contract.test-support'
 import { parseRuntimeRunEventStream } from './runtime-message-stream'
 
 describe('parseRuntimeRunEventStream', () => {
@@ -124,6 +128,45 @@ describe('parseRuntimeRunEventStream', () => {
         delta: '先思考。',
       },
     })
+  })
+
+  it('parses run_metadata payloads with canonical thinking snapshot', async () => {
+    const capability = createRuntimeThinkingCapability({
+      status: 'unknown-with-override',
+      source: 'override',
+      supportedLevels: ['off', 'auto', 'low'],
+      defaultLevel: 'auto',
+      reasonCode: 'override_levels_applied',
+      providerHint: null,
+      overrideLevels: ['off', 'auto', 'low'],
+    })
+
+    const events = await collectEvents(createSseEventStream([
+      createRuntimeRunMetadataEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          requestedThinkingLevel: 'low',
+          appliedThinkingLevel: 'auto',
+          thinkingCapabilitySnapshot: capability,
+        },
+      }),
+    ]))
+
+    expect(events).toEqual([
+      {
+        type: 'run_metadata',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          requestedThinkingLevel: 'low',
+          appliedThinkingLevel: 'auto',
+          thinkingCapabilitySnapshot: capability,
+        },
+      },
+    ])
   })
 
   it('rejects unsupported tool_event phases', async () => {

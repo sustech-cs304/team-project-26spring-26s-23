@@ -165,7 +165,7 @@ export function CopilotMessageList({
             </div>
           )
         : visibleConversation.map((turn, index) => {
-            const detailRows = buildDetailRows(turn)
+            const detailRows = buildDetailRows(turn, showDiagnostics)
             return (
               <article
                 key={turn.id}
@@ -369,11 +369,16 @@ function renderMessageBody(turn: CopilotMessageListItem) {
   return <p className="copilot-chat__message-text">{turn.content}</p>
 }
 
-function buildDetailRows(turn: CopilotMessageListItem): Array<{
+function buildDetailRows(
+  turn: CopilotMessageListItem,
+  showDiagnostics: boolean,
+): Array<{
   kind: 'input' | 'result' | 'error' | 'meta'
   label: string
   value: string
 }> {
+  const thinkingDetailRows = buildThinkingDetailRows(turn, showDiagnostics)
+
   switch (turn.kind) {
     case 'reasoning':
     case 'tool':
@@ -391,18 +396,81 @@ function buildDetailRows(turn: CopilotMessageListItem): Array<{
           value: turn.diagnostic.code,
         },
       ]
-    case 'terminal':
-      return turn.terminalPhase === 'failed' && turn.failure !== null
+    case 'terminal': {
+      const terminalRows = turn.terminalPhase === 'failed' && turn.failure !== null
         ? [{
-            kind: 'error',
+            kind: 'error' as const,
             label: '代码',
             value: turn.failure.code,
           }]
         : []
+      return [...terminalRows, ...thinkingDetailRows]
+    }
     case 'assistant':
+      return thinkingDetailRows
     case 'user':
       return []
   }
+}
+
+function buildThinkingDetailRows(
+  turn: Pick<
+    CopilotMessageListItem,
+    'requestedThinkingLevel' | 'appliedThinkingLevel' | 'thinkingCapabilitySnapshot'
+  >,
+  showDiagnostics: boolean,
+): Array<{
+  kind: 'meta'
+  label: string
+  value: string
+}> {
+  if (!showDiagnostics) {
+    return []
+  }
+
+  const rows: Array<{
+    kind: 'meta'
+    label: string
+    value: string
+  }> = []
+
+  if (turn.requestedThinkingLevel !== undefined) {
+    rows.push({
+      kind: 'meta',
+      label: '请求思考',
+      value: turn.requestedThinkingLevel ?? '未请求',
+    })
+  }
+
+  if (turn.appliedThinkingLevel !== undefined) {
+    rows.push({
+      kind: 'meta',
+      label: '应用思考',
+      value: turn.appliedThinkingLevel ?? '未应用',
+    })
+  }
+
+  if (turn.thinkingCapabilitySnapshot !== undefined && turn.thinkingCapabilitySnapshot !== null) {
+    rows.push({
+      kind: 'meta',
+      label: '能力来源',
+      value: `${turn.thinkingCapabilitySnapshot.source} / ${turn.thinkingCapabilitySnapshot.status}`,
+    })
+    rows.push({
+      kind: 'meta',
+      label: '原因码',
+      value: turn.thinkingCapabilitySnapshot.reasonCode,
+    })
+    if (turn.thinkingCapabilitySnapshot.providerHint !== null) {
+      rows.push({
+        kind: 'meta',
+        label: 'Provider Hint',
+        value: turn.thinkingCapabilitySnapshot.providerHint,
+      })
+    }
+  }
+
+  return rows
 }
 
 function ReasoningMessageCard({

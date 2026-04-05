@@ -12,8 +12,10 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import { loadSettingsWorkspaceState } from '../../workbench/settings/workspace-state'
 import {
   cancelRuntimeRun,
+  getRuntimeThinkingCapability,
   sendRuntimeMessage,
   type RuntimeModelRoute,
+  type RuntimeThinkingCapability,
 } from './chat-contract'
 import { CopilotPanelShell } from './CopilotPanelShell'
 import {
@@ -56,6 +58,7 @@ interface CopilotChatPanelProps {
   sessionError: string | null
   sendMessage?: typeof sendRuntimeMessage
   cancelRun?: typeof cancelRuntimeRun
+  getThinkingCapability?: typeof getRuntimeThinkingCapability
   loadWorkspaceState?: typeof loadSettingsWorkspaceState
 }
 
@@ -70,11 +73,13 @@ export function CopilotChatPanel({
   sessionError,
   sendMessage = sendRuntimeMessage,
   cancelRun = cancelRuntimeRun,
+  getThinkingCapability = getRuntimeThinkingCapability,
   loadWorkspaceState = loadSettingsWorkspaceState,
 }: CopilotChatPanelProps) {
   const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
   const [conversation, setConversation] = useState<CopilotMessageListItem[]>([])
   const [runState, setRunState] = useState<CopilotRunState>(createIdleCopilotRunState)
+  const [thinkingCapability, setThinkingCapability] = useState<RuntimeThinkingCapability | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
   const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
@@ -142,8 +147,14 @@ export function CopilotChatPanel({
   )
   const hasAvailableModels = modelCatalog.models.length > 0
   const effectiveComposerDraft = useMemo(
-    () => resolveComposerDraftModelSelection(composerDraft, modelCatalog.models),
-    [composerDraft, modelCatalog.models],
+    () => resolveComposerDraftModelSelection(composerDraft, modelCatalog.models, thinkingCapability),
+    [composerDraft, modelCatalog.models, thinkingCapability],
+  )
+  const selectedModelOption = useMemo(
+    () => modelCatalog.models.find((model) => (
+      model.id === effectiveComposerDraft.selectedModelId || model.modelId === effectiveComposerDraft.selectedModelId
+    )) ?? null,
+    [effectiveComposerDraft.selectedModelId, modelCatalog.models],
   )
   const projectedConversation = useMemo(
     () => buildCopilotMessageListItems({
@@ -166,12 +177,14 @@ export function CopilotChatPanel({
     if (sessionShell === null) {
       setComposerDraft(createEmptyComposerDraft())
       setRunState(createIdleCopilotRunState())
+      setThinkingCapability(null)
       setSendError(null)
       return
     }
 
     setComposerDraft(createComposerDraftFromSession(sessionShell))
     setRunState(createIdleCopilotRunState())
+    setThinkingCapability(null)
     setSendError(null)
   }, [sessionIdentity, sessionShell])
 
@@ -236,16 +249,12 @@ export function CopilotChatPanel({
           current.selectedModelId === selectedModel.id
           && isSameModelRoute(current.selectedModelRoute, selectedModel.route)
         ) {
-          return syncComposerDraftThinkingSelection(current, {
-            modelRoute: selectedModel.route,
-            thinkingCapability: selectedModel.thinkingCapability,
-          })
+          return current
         }
 
         return applyModelSelectionToComposerDraft(current, {
           modelId: selectedModel.id,
           modelRoute: selectedModel.route,
-          thinkingCapability: selectedModel.thinkingCapability,
         })
       }
 
@@ -260,16 +269,12 @@ export function CopilotChatPanel({
       }
 
       if (preferredWorkspaceModel === null) {
-        return syncComposerDraftThinkingSelection(current, {
-          modelRoute: current.selectedModelRoute,
-          thinkingCapability: null,
-        })
+        return current
       }
 
       return applyModelSelectionToComposerDraft(current, {
         modelId: preferredWorkspaceModel.id,
         modelRoute: preferredWorkspaceModel.route,
-        thinkingCapability: preferredWorkspaceModel.thinkingCapability,
       })
     })
   }, [hasAvailableModels, modelCatalog.models, preferredWorkspaceModel, workspaceStateLoaded])
@@ -279,8 +284,58 @@ export function CopilotChatPanel({
     activeAbortControllerRef.current = null
     setConversation([])
     setRunState(createIdleCopilotRunState())
+    setThinkingCapability(null)
     setSendError(null)
   }, [sessionShell?.sessionId])
+
+  useEffect(() => {
+    if (!workspaceStateLoaded || !isCopilotConnectableState(state) || sessionShell === null || effectiveComposerDraft.selectedModelRoute === null) {
+      setThinkingCapability(null)
+      return
+    }
+
+    let cancelled = false
+    setThinkingCapability(null)
+
+    void (async () => {
+      try {
+        const response = await getThinkingCapability({
+          runtimeUrl: state.runtimeUrl,
+          sessionId: sessionShell.sessionId,
+          modelRoute: effectiveComposerDraft.selectedModelRoute,
+          thinkingCapabilityOverride: selectedModelOption?.thinkingCapabilityOverride ?? null,
+        })
+
+        if (!cancelled) {
+          setThinkingCapability(response.capability)
+        }
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+
+        console.debug('[copilot-chat-shell] thinking-capability-query-failed', {
+          sessionId: sessionShell.sessionId,
+          modelId: effectiveComposerDraft.selectedModelId,
+          route: effectiveComposerDraft.selectedModelRoute,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        setThinkingCapability(null)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    effectiveComposerDraft.selectedModelId,
+    effectiveComposerDraft.selectedModelRoute,
+    getThinkingCapability,
+    selectedModelOption?.thinkingCapabilityOverride,
+    sessionShell,
+    state,
+    workspaceStateLoaded,
+  ])
 
   useEffect(() => {
     if (runtimeDebugSummary !== null) {
@@ -326,6 +381,7 @@ export function CopilotChatPanel({
         setComposerDraft,
         setConversation,
         signal: abortController.signal,
+        thinkingCapabilityOverride: selectedModelOption?.thinkingCapabilityOverride ?? null,
       })
     } finally {
       clearAbortController(activeAbortControllerRef, abortController)
@@ -364,6 +420,7 @@ export function CopilotChatPanel({
         sessionError={sessionError}
         sendError={sendError}
         modelGroups={modelCatalog.groups}
+        thinkingCapability={thinkingCapability}
         composerDraft={effectiveComposerDraft}
         onComposerDraftChange={setComposerDraft}
         onSend={handleSend}
@@ -396,6 +453,7 @@ function isSameModelRoute(left: RuntimeModelRoute | null, right: RuntimeModelRou
 function resolveComposerDraftModelSelection(
   draft: CopilotChatComposerDraft,
   models: CopilotModelOption[],
+  thinkingCapability: RuntimeThinkingCapability | null,
 ): CopilotChatComposerDraft {
   if (draft.selectedModelId.trim() === '') {
     return draft.selectedModelRoute === null && draft.thinkingLevelIntent === null
@@ -424,16 +482,19 @@ function resolveComposerDraftModelSelection(
     draft.selectedModelId === matchedModel.id
     && isSameModelRoute(draft.selectedModelRoute, matchedModel.route)
   ) {
+    if (thinkingCapability === null) {
+      return draft
+    }
+
     return syncComposerDraftThinkingSelection(draft, {
       modelRoute: matchedModel.route,
-      thinkingCapability: matchedModel.thinkingCapability,
+      thinkingCapability,
     })
   }
 
   return applyModelSelectionToComposerDraft(draft, {
     modelId: matchedModel.id,
     modelRoute: matchedModel.route,
-    thinkingCapability: matchedModel.thinkingCapability,
   })
 }
 

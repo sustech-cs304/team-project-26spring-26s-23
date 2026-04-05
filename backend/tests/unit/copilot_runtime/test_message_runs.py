@@ -274,8 +274,9 @@ def test_stream_events_success_archives_only_completed_assistant_message() -> No
 
     events = asyncio.run(_collect_events(orchestrator, _build_request(session_id="session-1", debug_mode_enabled=True)))
 
-    assert [event.type for event in events] == ["run_started", "text_delta", "text_delta", "run_completed"]
-    assert [event.sequence for event in events] == [1, 2, 3, 4]
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "text_delta", "run_completed"]
+    assert [event.sequence for event in events] == [1, 2, 3, 4, 5]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
     assert events[-1].payload["assistantText"] == "Hello world"
     assert executor.calls == [
         {
@@ -345,14 +346,16 @@ def test_stream_events_emits_tool_started_completed_before_terminal_success() ->
 
     assert [event.type for event in events] == [
         "run_started",
+        "run_metadata",
         "tool_event",
         "tool_event",
         "text_delta",
         "run_completed",
     ]
-    assert events[1].payload["phase"] == "started"
-    assert events[2].payload["phase"] == "completed"
-    assert events[2].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert events[2].payload["phase"] == "started"
+    assert events[3].payload["phase"] == "completed"
+    assert events[3].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
     assert events[-1].payload["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
 
 
@@ -477,6 +480,7 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
 
     assert [event.type for event in events] == [
         "run_started",
+        "run_metadata",
         "text_delta",
         "run_diagnostic",
         "run_diagnostic",
@@ -485,11 +489,12 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
         "text_delta",
         "run_completed",
     ]
-    assert events[2].payload["code"] == "raw_tool_call_observed"
-    assert events[2].payload["details"]["toolCallId"] == tool_call_id
-    assert events[3].payload["code"] == "raw_tool_call_arguments_completed"
-    assert events[4].payload["phase"] == "started"
-    assert events[5].payload["phase"] == "completed"
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert events[3].payload["code"] == "raw_tool_call_observed"
+    assert events[3].payload["details"]["toolCallId"] == tool_call_id
+    assert events[4].payload["code"] == "raw_tool_call_arguments_completed"
+    assert events[5].payload["phase"] == "started"
+    assert events[6].payload["phase"] == "completed"
     assert events[-1].payload["assistantText"] == "我先查一下。查到了。"
     assert executor.calls == [
         {
@@ -609,6 +614,7 @@ def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_execut
 
     assert [event.type for event in events] == [
         "run_started",
+        "run_metadata",
         "text_delta",
         "run_diagnostic",
         "run_diagnostic",
@@ -616,17 +622,18 @@ def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_execut
         "run_diagnostic",
         "run_failed",
     ]
-    assert events[2].payload["code"] == "raw_tool_call_observed"
-    assert events[3].payload["code"] == "raw_tool_call_arguments_completed"
-    assert events[4].payload["code"] == "raw_tool_call_unexecuted"
-    assert events[4].payload["details"]["toolCallId"] == tool_call_id
-    assert events[5].payload == {
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert events[3].payload["code"] == "raw_tool_call_observed"
+    assert events[4].payload["code"] == "raw_tool_call_arguments_completed"
+    assert events[5].payload["code"] == "raw_tool_call_unexecuted"
+    assert events[5].payload["details"]["toolCallId"] == tool_call_id
+    assert events[6].payload == {
         "code": "agent_execution_failed",
         "message": "Observed provider tool call arguments became complete, but no actual tool execution followed.",
         "details": {},
         "stage": "execute_model",
     }
-    assert events[6].payload == {
+    assert events[7].payload == {
         "code": "agent_execution_failed",
         "message": "Observed provider tool call arguments became complete, but no actual tool execution followed.",
         "details": {},
@@ -690,8 +697,9 @@ def test_stream_events_tool_failure_emits_failed_tool_event_then_failed_terminal
         )
     )
 
-    assert [event.type for event in events] == ["run_started", "tool_event", "tool_event", "run_failed"]
-    assert events[2].payload["phase"] == "failed"
+    assert [event.type for event in events] == ["run_started", "run_metadata", "tool_event", "tool_event", "run_failed"]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert events[3].payload["phase"] == "failed"
     assert events[-1].payload["code"] == "tool_execution_failed"
     assert events[-1].payload["details"]["toolId"] == WEATHER_CURRENT_TOOL_ID
     assert store.list_messages("session-1") == ()
@@ -717,7 +725,8 @@ def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> No
 
     events = asyncio.run(_collect_events(orchestrator, _build_request(session_id="session-1")))
 
-    assert [event.type for event in events] == ["run_started", "text_delta", "run_cancelled"]
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_cancelled"]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
     assert events[-1].payload == {
         "assistantMessageId": events[0].payload["assistantMessageId"],
         "reason": "cancelled",
@@ -757,7 +766,8 @@ def test_stream_events_client_disconnect_cancels_run_and_does_not_archive() -> N
         )
     )
 
-    assert [event.type for event in events] == ["run_started", "text_delta", "run_cancelled"]
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_cancelled"]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
     assert events[-1].payload == {
         "assistantMessageId": events[0].payload["assistantMessageId"],
         "reason": "cancelled",
@@ -903,23 +913,99 @@ def test_stream_events_fails_when_thinking_intent_cannot_be_mapped() -> None:
         "endpointType": "openai-compatible",
         "baseUrl": "https://example.com/v1",
         "modelId": "gpt-4.1",
+        "status": "unknown-without-override",
+        "source": "unknown",
+        "supported": False,
+        "supportedLevels": [],
+        "defaultLevel": None,
+        "reasonCode": "route_not_verified",
+        "providerHint": "unknown-route",
+        "requestedThinkingLevel": "medium",
+        "appliedThinkingLevel": None,
+        "providerMapping": None,
         "intent": "medium",
-        "reason": "route_not_mapped",
+        "reason": "requested_level_not_in_capability",
     }
 
-    assert [event.type for event in events] == ["run_started", "run_diagnostic", "run_failed"]
-    assert events[1].payload == {
+    assert [event.type for event in events] == ["run_started", "run_metadata", "run_diagnostic", "run_failed"]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level="medium", applied_thinking_level=None)
+    assert events[2].payload == {
         "code": "thinking_not_supported_for_route",
         "message": expected_message,
         "details": expected_details,
         "stage": "adapt_thinking",
     }
-    assert events[2].payload == {
+    assert events[3].payload == {
         "code": "thinking_not_supported_for_route",
         "message": expected_message,
         "details": expected_details,
     }
     assert executor.calls == []
+
+
+
+def test_stream_events_logs_thinking_diagnostics_when_debug_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    captured_logs: list[tuple[str, dict[str, object]]] = []
+    module = __import__("app.copilot_runtime.message_runs", fromlist=["log_runtime_chain_debug"])
+
+    def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
+        captured_logs.append((event_name, payload))
+
+    monkeypatch.setattr(module, "log_runtime_chain_debug", _capture_log)
+
+    asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                session_id="session-1",
+                thinking_level_intent="medium",
+                debug_mode_enabled=True,
+            ),
+        )
+    )
+
+    thinking_logs = {
+        name: payload
+        for name, payload in captured_logs
+        if name.startswith("thinking.")
+    }
+
+    assert set(thinking_logs) >= {
+        "thinking.capability_resolved",
+        "thinking.request_validated",
+        "thinking.provider_mapping_resolved",
+        "thinking.run_metadata_attached",
+        "thinking.fail_fast",
+    }
+    assert thinking_logs["thinking.capability_resolved"]["capability"] == _unknown_route_thinking_snapshot()
+    assert thinking_logs["thinking.request_validated"]["requestedThinkingLevel"] == "medium"
+    assert thinking_logs["thinking.request_validated"]["applied"] is False
+    assert thinking_logs["thinking.request_validated"]["reason"] == "requested_level_not_in_capability"
+    assert thinking_logs["thinking.provider_mapping_resolved"]["reason"] == "requested_level_not_in_capability"
+    assert thinking_logs["thinking.run_metadata_attached"]["yieldedEvent"] == _unknown_route_run_metadata_summary(
+        sequence=2,
+        requested_thinking_level="medium",
+        applied_thinking_level=None,
+    )
+    assert thinking_logs["thinking.fail_fast"]["code"] == "thinking_not_supported_for_route"
+    assert thinking_logs["thinking.fail_fast"]["reason"] == "requested_level_not_in_capability"
+    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["requestedThinkingLevel"] == "medium"
+    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["reasonCode"] == "route_not_verified"
 
 
 
@@ -957,6 +1043,61 @@ def test_stream_events_missing_session_emits_failed_terminal_event() -> None:
         "code": "session_not_found",
         "message": str(SessionNotFoundError("missing-session")),
         "details": {"sessionId": "missing-session"},
+    }
+
+
+
+def _unknown_route_thinking_snapshot() -> dict[str, object]:
+    return {
+        "status": "unknown-without-override",
+        "source": "unknown",
+        "supported": False,
+        "supportedLevels": [],
+        "defaultLevel": None,
+        "reasonCode": "route_not_verified",
+        "providerHint": "unknown-route",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+        "overrideLevels": [],
+    }
+
+
+
+def _unknown_route_run_metadata_summary(
+    *,
+    sequence: int,
+    requested_thinking_level: str | None,
+    applied_thinking_level: str | None,
+) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "type": "run_metadata",
+        "sequence": sequence,
+        "thinkingCapability": _unknown_route_thinking_snapshot(),
+    }
+    if requested_thinking_level is not None:
+        summary["requestedThinkingLevel"] = requested_thinking_level
+    if applied_thinking_level is not None:
+        summary["appliedThinkingLevel"] = applied_thinking_level
+    return summary
+
+
+
+def _assert_unknown_route_run_metadata(
+    event,
+    *,
+    requested_thinking_level: str | None,
+    applied_thinking_level: str | None,
+) -> None:
+    assert event.type == "run_metadata"
+    assert event.payload == {
+        "requestedThinkingLevel": requested_thinking_level,
+        "appliedThinkingLevel": applied_thinking_level,
+        "thinkingCapabilitySnapshot": _unknown_route_thinking_snapshot(),
     }
 
 

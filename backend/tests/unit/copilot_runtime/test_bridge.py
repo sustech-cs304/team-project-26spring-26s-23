@@ -18,6 +18,7 @@ from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRout
 from app.copilot_runtime.run_events import (
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
+    RUN_METADATA_EVENT_TYPE,
     RUN_STARTED_EVENT_TYPE,
     TEXT_DELTA_EVENT_TYPE,
     RuntimeRunEvent,
@@ -143,11 +144,36 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
     )
     run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
     events_factory = RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id)
+    thinking_capability_snapshot = {
+        "status": "unknown-without-override",
+        "source": "unknown",
+        "supported": False,
+        "supportedLevels": [],
+        "defaultLevel": None,
+        "reasonCode": "route_not_verified",
+        "providerHint": "unknown-route",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+        "overrideLevels": [],
+    }
     orchestrator = _StubMessageRunOrchestrator(
         events=[
             events_factory.build(
                 RUN_STARTED_EVENT_TYPE,
                 payload={"assistantMessageId": f"{run.run_id}:assistant"},
+            ),
+            events_factory.build(
+                RUN_METADATA_EVENT_TYPE,
+                payload={
+                    "requestedThinkingLevel": "medium",
+                    "appliedThinkingLevel": None,
+                    "thinkingCapabilitySnapshot": thinking_capability_snapshot,
+                },
             ),
             events_factory.build(
                 TEXT_DELTA_EVENT_TYPE,
@@ -176,15 +202,24 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
 
     assert [event.type for event in events] == [
         RUN_STARTED_EVENT_TYPE,
+        RUN_METADATA_EVENT_TYPE,
         TEXT_DELTA_EVENT_TYPE,
         RUN_COMPLETED_EVENT_TYPE,
     ]
     assert updated_run.status == "completed"
     assert updated_run.assistant_text == "Hello back"
+    assert updated_run.metadata["requestedThinkingLevel"] == "medium"
+    assert updated_run.metadata["appliedThinkingLevel"] is None
+    assert updated_run.metadata["thinkingCapabilitySnapshot"] == thinking_capability_snapshot
+    run_view = scaffold.build_run_view(run=updated_run)
+    assert run_view.requestedThinkingLevel == "medium"
+    assert run_view.appliedThinkingLevel is None
+    assert run_view.thinkingCapabilitySnapshot == thinking_capability_snapshot
     assert [(event.event_type, event.sequence) for event in store.list_run_events(run.run_id)] == [
         (RUN_STARTED_EVENT_TYPE, 1),
-        (TEXT_DELTA_EVENT_TYPE, 2),
-        (RUN_COMPLETED_EVENT_TYPE, 3),
+        (RUN_METADATA_EVENT_TYPE, 2),
+        (TEXT_DELTA_EVENT_TYPE, 3),
+        (RUN_COMPLETED_EVENT_TYPE, 4),
     ]
     assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
         ("user", "Hello"),

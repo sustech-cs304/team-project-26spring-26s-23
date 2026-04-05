@@ -33,6 +33,7 @@ SUPPORTED_METHODS = [
     "run/cancel",
     "session/create",
     "capabilities/get",
+    "thinking/capability/get",
     "message/send",
 ]
 
@@ -206,6 +207,9 @@ def test_root_post_run_start_returns_run_shell_payload() -> None:
     assert run is not None
     assert payload == scaffold.build_run_start_response(run=run).to_dict()
     assert payload["run"]["status"] == "pending"
+    assert payload["run"]["requestedThinkingLevel"] is None
+    assert payload["run"]["appliedThinkingLevel"] is None
+    assert payload["run"]["thinkingCapabilitySnapshot"] is None
 
 
 
@@ -235,10 +239,32 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
     assert response.headers["content-type"].startswith("text/event-stream")
     assert [event["type"] for event in events] == [
         "run_started",
+        "run_metadata",
         "text_delta",
         "run_completed",
     ]
-    assert events[1]["payload"]["delta"] == TEST_MODEL_REPLY
+    assert events[1]["payload"] == {
+        "requestedThinkingLevel": None,
+        "appliedThinkingLevel": None,
+        "thinkingCapabilitySnapshot": {
+            "status": "unknown-without-override",
+            "source": "unknown",
+            "supported": False,
+            "supportedLevels": [],
+            "defaultLevel": None,
+            "reasonCode": "route_not_verified",
+            "providerHint": "unknown-route",
+            "routeFingerprint": {
+                "providerProfileId": "provider-1",
+                "provider": "openai",
+                "endpointType": "openai-compatible",
+                "baseUrl": "https://example.com/v1",
+                "modelId": "gpt-4.1",
+            },
+            "overrideLevels": [],
+        },
+    }
+    assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
     assert completed["resolvedModelId"] == "gpt-4.1"
     assert completed["resolvedToolIds"] == ["tool.file-convert"]
     assert completed["requestOptions"] == {"temperature": 0.2}
@@ -282,6 +308,9 @@ def test_root_post_run_cancel_marks_pending_run_cancelled_and_stream_returns_can
     assert cancel_payload["run"]["runId"] == run_id
     assert cancel_payload["run"]["status"] == "cancelled"
     assert cancel_payload["run"]["cancelRequested"] is True
+    assert cancel_payload["run"]["requestedThinkingLevel"] is None
+    assert cancel_payload["run"]["appliedThinkingLevel"] is None
+    assert cancel_payload["run"]["thinkingCapabilitySnapshot"] is None
 
     assert stream_response.status_code == 200
     assert [event["type"] for event in events] == ["run_cancelled"]
@@ -389,10 +418,32 @@ def test_root_post_message_send_streams_typed_events_and_persists_history() -> N
     assert response.headers["content-type"].startswith("text/event-stream")
     assert [event["type"] for event in events] == [
         "run_started",
+        "run_metadata",
         "text_delta",
         "run_completed",
     ]
-    assert events[1]["payload"]["delta"] == TEST_MODEL_REPLY
+    assert events[1]["payload"] == {
+        "requestedThinkingLevel": None,
+        "appliedThinkingLevel": None,
+        "thinkingCapabilitySnapshot": {
+            "status": "unknown-without-override",
+            "source": "unknown",
+            "supported": False,
+            "supportedLevels": [],
+            "defaultLevel": None,
+            "reasonCode": "route_not_verified",
+            "providerHint": "unknown-route",
+            "routeFingerprint": {
+                "providerProfileId": "provider-1",
+                "provider": "openai",
+                "endpointType": "openai-compatible",
+                "baseUrl": "https://example.com/v1",
+                "modelId": "gpt-4.1",
+            },
+            "overrideLevels": [],
+        },
+    }
+    assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
     assert completed["resolvedModelId"] == "gpt-4.1"
     assert completed["resolvedToolIds"] == ["tool.file-convert"]
     assert completed["requestOptions"] == {"temperature": 0.2}

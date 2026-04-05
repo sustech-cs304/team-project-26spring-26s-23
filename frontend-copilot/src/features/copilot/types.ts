@@ -4,7 +4,11 @@ import type {
   CopilotRuntimeLoadResult,
   CopilotRuntimeRetryResult,
 } from '../../../electron/copilot-runtime'
-import type { RuntimeModelRoute } from './thread-run-contract'
+import type {
+  RuntimeModelRoute,
+  RuntimeRunMetadataEvent,
+  RuntimeThinkingCapability,
+} from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
   CopilotRunFailureSummary,
@@ -65,6 +69,10 @@ export interface CopilotRunState {
   resolvedModelRoute: RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
+  requestedThinkingLevel: RuntimeRunMetadataEvent['payload']['requestedThinkingLevel']
+  appliedThinkingLevel: RuntimeRunMetadataEvent['payload']['appliedThinkingLevel']
+  thinkingCapabilitySnapshot: RuntimeThinkingCapability | null
+  reasoningSuppressed: boolean
   diagnostic: CopilotRunDiagnosticSummary | null
   failure: CopilotRunFailureSummary | null
   cancelReason: string | null

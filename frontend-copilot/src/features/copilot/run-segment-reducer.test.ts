@@ -6,7 +6,13 @@ import {
   createStartingCopilotRunState,
   markCopilotRunCancelled,
 } from './run-segment-reducer'
-import { createRuntimeModelRoute, createRuntimeRunCompletedEvent, createRuntimeToolEvent } from './thread-run-contract.test-support'
+import {
+  createRuntimeModelRoute,
+  createRuntimeRunCompletedEvent,
+  createRuntimeRunMetadataEvent,
+  createRuntimeThinkingCapability,
+  createRuntimeToolEvent,
+} from './thread-run-contract.test-support'
 
 describe('run segment reducer', () => {
   it('merges compat events into a segment-ready run state with multiple assistant/tool segments', () => {
@@ -238,6 +244,92 @@ describe('run segment reducer', () => {
     })
 
     nowSpy.mockRestore()
+  })
+
+  it('stores run metadata and suppresses reasoning segments when applied thinking is off', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const capabilitySnapshot = createRuntimeThinkingCapability({
+      supportedLevels: ['off', 'auto'],
+      defaultLevel: 'off',
+      reasonCode: 'verified_off_only',
+    })
+
+    const stateAfterEvents = [
+      {
+        type: 'run_started' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+        },
+      },
+      {
+        type: 'reasoning_delta' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          delta: '这段推理不应保留。',
+        },
+      },
+      createRuntimeRunMetadataEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 3,
+        payload: {
+          requestedThinkingLevel: 'high',
+          appliedThinkingLevel: 'off',
+          thinkingCapabilitySnapshot: capabilitySnapshot,
+        },
+      }),
+      {
+        type: 'reasoning_delta' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 4,
+        payload: {
+          delta: '这段推理也不应显示。',
+        },
+      },
+      {
+        type: 'text_delta' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 5,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          delta: '最终回答',
+        },
+      },
+      createRuntimeRunCompletedEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 6,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          assistantText: '最终回答',
+          resolvedModelId: 'qwen-plus',
+          resolvedModelRoute: createRuntimeModelRoute(),
+          resolvedToolIds: [],
+          requestOptions: { trace: true },
+        },
+      }),
+    ].reduce(applyRuntimeRunEventToCopilotRunState, initialState)
+
+    expect(stateAfterEvents.requestedThinkingLevel).toBe('high')
+    expect(stateAfterEvents.appliedThinkingLevel).toBe('off')
+    expect(stateAfterEvents.reasoningSuppressed).toBe(true)
+    expect(stateAfterEvents.thinkingCapabilitySnapshot).toEqual(capabilitySnapshot)
+    expect(stateAfterEvents.segments.map((segment) => segment.kind)).toEqual([
+      'assistant',
+      'terminal',
+    ])
   })
 
   it('marks streaming segments cancelled when transport abort happens before terminal event', () => {

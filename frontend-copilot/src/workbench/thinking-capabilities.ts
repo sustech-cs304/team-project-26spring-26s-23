@@ -14,7 +14,7 @@ const POSITIVE_THINKING_LEVEL_ORDER: Array<Exclude<ThinkingLevelIntent, 'off'>> 
   'low',
   'medium',
   'high',
-  'max',
+  'xhigh',
 ]
 
 const POSITIVE_THINKING_LEVEL_SET = new Set<Exclude<ThinkingLevelIntent, 'off'>>(POSITIVE_THINKING_LEVEL_ORDER)
@@ -27,7 +27,7 @@ export const THINKING_LEVEL_LABELS: Record<ThinkingLevelIntent, string> = {
   low: '低',
   medium: '中',
   high: '高',
-  max: '超高',
+  xhigh: '超高',
 }
 
 export const THINKING_DECLARATION_MODE_OPTIONS: SelectOption[] = [

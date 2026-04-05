@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import cast
+from typing import Any, cast
 
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import (
@@ -13,6 +13,7 @@ from .contracts import (
     RuntimeMessageSendRequest,
     RuntimeRunStartRequest,
     RuntimeScaffold,
+    RuntimeThinkingCapabilityResponse,
 )
 from .execution_support import (
     AgentNotFoundError,
@@ -21,7 +22,7 @@ from .execution_support import (
     ThreadNotFoundError,
 )
 from .message_runs import RuntimeMessageRunOrchestrator
-from .model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
+from .model_routes import RuntimeModelRoute, RuntimeModelRouteResolver, RuntimeModelRouteSnapshot
 from .run_events import (
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
@@ -41,6 +42,9 @@ from .session_store import (
 )
 
 
+from .thinking_adapter import resolve_canonical_thinking_capability
+
+
 class RuntimeBridge:
     """Coordinates thread/run state, executor resolution, and compat projections."""
 
@@ -51,11 +55,13 @@ class RuntimeBridge:
         agent_registry: AgentRegistry,
         scaffold: RuntimeScaffold | None = None,
         message_run_orchestrator: RuntimeMessageRunOrchestrator | None = None,
+        model_route_resolver: RuntimeModelRouteResolver | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
         self._scaffold = scaffold
         self._message_run_orchestrator = message_run_orchestrator
+        self._model_route_resolver = model_route_resolver
 
     def create_thread(self, *, agent_id: str) -> RuntimeThreadRecord:
         self._resolve_agent(agent_id)
@@ -119,6 +125,30 @@ class RuntimeBridge:
             raise SessionNotFoundError(session_id)
         self._resolve_agent(session.bound_agent_id)
         return self._scaffold.build_capabilities_response(session=session)
+
+    async def get_thinking_capability(
+        self,
+        *,
+        session_id: str,
+        model_route: RuntimeModelRoute,
+        thinking_capability_override: dict[str, Any] | None = None,
+    ) -> RuntimeThinkingCapabilityResponse:
+        if self._scaffold is None:
+            raise RuntimeError("Runtime scaffold is required for thinking capability queries.")
+        session = self._session_store.get(session_id)
+        if session is None:
+            raise SessionNotFoundError(session_id)
+        self._resolve_agent(session.bound_agent_id)
+        resolver = self._require_model_route_resolver()
+        resolved_model_route = await resolver.resolve(model_route)
+        capability = resolve_canonical_thinking_capability(
+            model_route=resolved_model_route,
+            thinking_capability_override=thinking_capability_override,
+        )
+        return self._scaffold.build_thinking_capability_response(
+            session_id=session_id,
+            capability=capability.to_public_dict(),
+        )
 
     def get_run(self, *, run_id: str) -> RuntimeRunRecord:
         run = self._session_store.get_run(run_id)
@@ -251,6 +281,17 @@ class RuntimeBridge:
             sequence=event.sequence,
         )
         metadata = {"last_event_type": event.type}
+        if event.type == "run_metadata":
+            self._session_store.mark_run_streaming(
+                run_id,
+                metadata={
+                    **metadata,
+                    "requestedThinkingLevel": event.payload.get("requestedThinkingLevel"),
+                    "appliedThinkingLevel": event.payload.get("appliedThinkingLevel"),
+                    "thinkingCapabilitySnapshot": dict(event.payload.get("thinkingCapabilitySnapshot", {})),
+                },
+            )
+            return
         if event.type == RUN_COMPLETED_EVENT_TYPE:
             assistant_text = event.payload.get("assistantText")
             self._session_store.mark_run_completed(
@@ -310,6 +351,9 @@ class RuntimeBridge:
                     ),
                 ),
                 thinking_level_intent=request.policy.thinkingLevelIntent,
+                thinking_capability_override=None
+                if request.policy.thinkingCapabilityOverride is None
+                else dict(request.policy.thinkingCapabilityOverride),
                 enabled_tools=tuple(request.policy.enabledTools),
                 debug_mode_enabled=request.policy.debugModeEnabled,
                 request_options=dict(request.policy.requestOptions),
@@ -338,6 +382,9 @@ class RuntimeBridge:
                     ),
                 ),
                 thinkingLevelIntent=stored_policy.thinking_level_intent,
+                thinkingCapabilityOverride=None
+                if stored_policy.thinking_capability_override is None
+                else dict(stored_policy.thinking_capability_override),
                 enabledTools=tuple(stored_policy.enabled_tools),
                 debugModeEnabled=stored_policy.debug_mode_enabled,
                 requestOptions=dict(stored_policy.request_options),
@@ -349,6 +396,11 @@ class RuntimeBridge:
         if self._message_run_orchestrator is None:
             raise RuntimeError("Runtime message run orchestrator is not configured.")
         return self._message_run_orchestrator
+
+    def _require_model_route_resolver(self) -> RuntimeModelRouteResolver:
+        if self._model_route_resolver is None:
+            raise RuntimeError("Runtime model route resolver is not configured.")
+        return self._model_route_resolver
 
     def _resolve_agent(self, agent_name: str) -> AgentDescriptor:
         descriptor = self._agent_registry.get(agent_name)

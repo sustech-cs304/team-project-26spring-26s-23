@@ -23,6 +23,7 @@ from .contracts import (
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
     SESSION_CREATE_METHOD,
+    THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
     RuntimeScaffold,
@@ -112,6 +113,14 @@ def build_router(
 
         if requested_method == CAPABILITIES_GET_METHOD:
             return _handle_capabilities_get_request(
+                parser=parser,
+                payload=payload,
+                scaffold=scaffold,
+                runtime_bridge=runtime_bridge,
+            )
+
+        if requested_method == THINKING_CAPABILITY_GET_METHOD:
+            return await _handle_thinking_capability_get_request(
                 parser=parser,
                 payload=payload,
                 scaffold=scaffold,
@@ -363,6 +372,52 @@ def _handle_capabilities_get_request(
 
     return JSONResponse(content=capabilities.to_dict())
 
+
+async def _handle_thinking_capability_get_request(
+    *,
+    parser: RuntimeProtocolParser,
+    payload: dict[str, Any] | None,
+    scaffold: RuntimeScaffold,
+    runtime_bridge: RuntimeBridge,
+) -> JSONResponse:
+    try:
+        thinking_request = parser.extract_thinking_capability_get_request(payload)
+        response = await runtime_bridge.get_thinking_capability(
+            session_id=thinking_request.session_id,
+            model_route=thinking_request.model_route,
+            thinking_capability_override=thinking_request.thinking_capability_override,
+        )
+    except RuntimeProtocolError as exc:
+        return _error_response(exc.status_code, exc.error)
+    except SessionNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_session_not_found_error(
+                session_id=exc.session_id,
+                scaffold=scaffold,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+            ),
+        )
+    except AgentNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_agent_not_found_error(
+                agent_name=exc.agent_name,
+                scaffold=scaffold,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+            ),
+        )
+    except RuntimeError as exc:
+        return _error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            build_agent_execution_failed_error(
+                message=str(exc),
+                scaffold=scaffold,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+            ),
+        )
+
+    return JSONResponse(content=response.to_dict())
 
 
 async def _handle_message_send_request(

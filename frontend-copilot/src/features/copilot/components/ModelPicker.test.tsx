@@ -187,6 +187,7 @@ function createOption(input: {
       levels: [],
       defaultLevel: null,
     },
+    thinkingCapabilityOverride: null,
   }
 }
 

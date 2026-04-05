@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
 import type { RuntimeRunEvent } from './chat-contract'
+import { createRuntimeThinkingCapability } from './chat-contract.test-support'
 import {
   clickElement,
   createDirectoryState,
@@ -32,6 +33,7 @@ afterAll(() => {
 
 describe('Copilot thinking selector', () => {
   it('shows supported thinking options in the floating panel and exposes a short unsupported tooltip', async () => {
+    const getThinkingCapability = createThinkingCapabilityGetterSpy()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
       source: 'stored' as const,
@@ -89,6 +91,7 @@ describe('Copilot thinking selector', () => {
         sessionStatus="idle"
         sessionError={null}
         loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
       />,
     )
 
@@ -107,6 +110,7 @@ describe('Copilot thinking selector', () => {
 
     await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
     await clickElement(rendered.getByTestId('chat-model-option-provider-zai-provider-zai:openai/gpt-4.1'))
+    await flushUi()
 
     expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
     expect(thinkingTrigger.title).toContain('当前模型不支持')
@@ -115,6 +119,7 @@ describe('Copilot thinking selector', () => {
   })
 
   it('remembers the latest thinking selection per model and falls back when the next model does not support that level', async () => {
+    const getThinkingCapability = createThinkingCapabilityGetterSpy()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
       source: 'stored' as const,
@@ -197,6 +202,7 @@ describe('Copilot thinking selector', () => {
         sessionStatus="idle"
         sessionError={null}
         loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
       />,
     )
 
@@ -210,16 +216,19 @@ describe('Copilot thinking selector', () => {
 
     await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
     await clickElement(rendered.getByTestId('chat-model-option-provider-thinking-provider-thinking:model-c'))
+    await flushUi()
     expect(thinkingTrigger.getAttribute('aria-label')).toContain('低')
 
     await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
     await clickElement(rendered.getByTestId('chat-model-option-provider-thinking-provider-thinking:model-a'))
+    await flushUi()
     expect(thinkingTrigger.getAttribute('aria-label')).toContain('高')
 
     rendered.unmount()
   })
 
   it('forwards the selected thinking level through the request build chain', async () => {
+    const getThinkingCapability = createThinkingCapabilityGetterSpy()
     const sendMessage = vi.fn(async function* (
       _input: Parameters<typeof import('./chat-contract').sendRuntimeMessage>[0],
     ): AsyncGenerator<RuntimeRunEvent> {
@@ -276,20 +285,29 @@ describe('Copilot thinking selector', () => {
         sessionError={null}
         sendMessage={sendMessage}
         loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
       />,
     )
 
     await flushUi()
+    await flushUi()
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
 
-    await selectThinkingOption(rendered, 'medium')
+    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
+    expect(rendered.getByTestId('chat-thinking-override-hint').textContent).toContain('设置页 override')
+    await clickElement(rendered.getByTestId('chat-thinking-option-medium'))
     await setFormControlValue(messageInput, '测试思考档位透传')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
       thinkingLevelIntent: 'medium',
+      thinkingCapabilityOverride: {
+        supported: true,
+        levels: ['low', 'medium', 'high'],
+        defaultLevel: 'low',
+      },
       message: {
         content: '测试思考档位透传',
       },
@@ -299,6 +317,7 @@ describe('Copilot thinking selector', () => {
   })
 
   it('shows a failed chat message when the backend rejects the selected thinking level for the current route', async () => {
+    const getThinkingCapability = createThinkingCapabilityGetterSpy()
     const sendMessage = vi.fn(async function* (
       input: Parameters<typeof import('./chat-contract').sendRuntimeMessage>[0],
     ): AsyncGenerator<RuntimeRunEvent> {
@@ -392,6 +411,7 @@ describe('Copilot thinking selector', () => {
         sessionError={null}
         sendMessage={sendMessage}
         loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
       />,
     )
 
@@ -420,9 +440,96 @@ async function flushUi() {
   })
 }
 
+function createThinkingCapabilityGetterSpy() {
+  return vi.fn(async (input: {
+    sessionId: string
+    modelRoute: {
+      snapshot: {
+        modelId: string
+      }
+    }
+    thinkingCapabilityOverride?: Record<string, unknown> | null
+  }) => ({
+    ok: true as const,
+    sessionId: input.sessionId,
+    capability: resolveRuntimeThinkingCapability(input),
+  }))
+}
+
+function resolveRuntimeThinkingCapability(input: {
+  modelRoute: {
+    snapshot: {
+      modelId: string
+    }
+  }
+  thinkingCapabilityOverride?: Record<string, unknown> | null
+}) {
+  const override = input.thinkingCapabilityOverride
+  if (override?.supported === false) {
+    return createRuntimeThinkingCapability({
+      status: 'unknown-without-override',
+      source: 'unknown',
+      supported: false,
+      supportedLevels: [],
+      defaultLevel: null,
+      reasonCode: 'override_declares_unsupported_for_unknown_route',
+      providerHint: 'unknown-route',
+      overrideLevels: [],
+    })
+  }
+
+  const overrideLevels = Array.isArray(override?.levels)
+    ? override.levels.filter((level): level is 'auto' | 'low' | 'medium' | 'high' | 'xhigh' => (
+      level === 'auto' || level === 'low' || level === 'medium' || level === 'high' || level === 'xhigh'
+    ))
+    : []
+
+  if (override?.supported === true && overrideLevels.length > 0) {
+    const supportedLevels = ['off', ...overrideLevels] as const
+    const defaultLevel = typeof override.defaultLevel === 'string' && supportedLevels.includes(override.defaultLevel as typeof supportedLevels[number])
+      ? override.defaultLevel as typeof supportedLevels[number]
+      : (overrideLevels.includes('auto') ? 'auto' : supportedLevels[0])
+
+    return createRuntimeThinkingCapability({
+      status: 'unknown-with-override',
+      source: 'override',
+      supported: true,
+      supportedLevels: [...supportedLevels],
+      defaultLevel,
+      reasonCode: 'override_candidate_levels_applied',
+      providerHint: 'unknown-route-override',
+      overrideLevels: [...supportedLevels],
+    })
+  }
+
+  if (input.modelRoute.snapshot.modelId === 'glm-5' || input.modelRoute.snapshot.modelId === 'glm-5-turbo') {
+    return createRuntimeThinkingCapability({
+      status: 'verified-supported',
+      source: 'verified',
+      supported: true,
+      supportedLevels: ['off', 'auto'],
+      defaultLevel: 'auto',
+      reasonCode: 'zai_glm_verified_supported',
+      providerHint: 'zai-glm-openai-compatible',
+      overrideLevels: [],
+    })
+  }
+
+  return createRuntimeThinkingCapability({
+    status: 'unknown-without-override',
+    source: 'unknown',
+    supported: false,
+    supportedLevels: [],
+    defaultLevel: null,
+    reasonCode: 'route_not_verified',
+    providerHint: 'unknown-route',
+    overrideLevels: [],
+  })
+}
+
 async function selectThinkingOption(
   rendered: ReturnType<typeof renderWithRoot>,
-  value: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'max',
+  value: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh',
 ) {
   await act(async () => {
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
