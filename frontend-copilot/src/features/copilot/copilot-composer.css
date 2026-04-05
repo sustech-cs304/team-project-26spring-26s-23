@@ -90,12 +90,14 @@
   width: 38px;
   height: 38px;
   padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
   border: none;
   border-radius: 0;
   background: var(--surface-muted);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-color) 84%, transparent);
   transition:
     background-color 0.16s ease,
     color 0.16s ease,
@@ -105,6 +107,7 @@
 
 .copilot-chat__thinking-trigger:hover:not(:disabled) {
   background: var(--interactive-hover-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, var(--border-color));
   transform: translateY(-1px);
 }
 
@@ -120,16 +123,21 @@
   transform: none;
 }
 
+.copilot-chat__thinking-trigger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--interactive-active-bg) 88%, var(--surface-muted));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, var(--border-color));
+}
+
 .copilot-chat__thinking-trigger--active {
   color: color-mix(in srgb, var(--accent-text, #2563eb) 72%, var(--text-secondary));
   background: color-mix(in srgb, var(--accent-soft, #dbeafe) 36%, var(--surface-muted));
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, var(--border-color));
 }
 
 .copilot-chat__thinking-trigger-icon {
-  width: 1.08rem;
-  height: 1.08rem;
-  stroke-width: 2.15;
+  width: 1.14rem;
+  height: 1.14rem;
+  stroke-width: 2.2;
 }
 
 .copilot-chat__thinking-panel {
