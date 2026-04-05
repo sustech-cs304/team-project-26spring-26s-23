@@ -281,5 +281,10 @@ describe('copilot chat helpers', () => {
       code: 'invalid_request',
       status: 400,
     }))).toContain('invalid_request：消息请求结构无效')
+
+    expect(formatRuntimeMessageSendError(new RuntimeRequestError('thinking_not_supported_for_route: unsupported thinking selection', {
+      code: 'thinking_not_supported_for_route',
+      status: 400,
+    }))).toContain('thinking_not_supported_for_route：当前模型路由不支持所选思考档位')
   })
 })

@@ -869,7 +869,7 @@ def test_stream_events_applies_glm_5_turbo_thinking_settings_for_mapped_routes()
 
 
 
-def test_stream_events_emits_diagnostic_when_thinking_intent_cannot_be_mapped() -> None:
+def test_stream_events_fails_when_thinking_intent_cannot_be_mapped() -> None:
     store = InMemorySessionStore()
     store.create(bound_agent_id="default", session_id="session-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
@@ -893,22 +893,33 @@ def test_stream_events_emits_diagnostic_when_thinking_intent_cannot_be_mapped() 
         )
     )
 
-    assert [event.type for event in events] == ["run_started", "run_diagnostic", "text_delta", "run_completed"]
+    expected_message = (
+        "Selected thinking level 'medium' is not supported by the current model route. "
+        "This request was cancelled instead of continuing without provider thinking parameters."
+    )
+    expected_details = {
+        "providerProfileId": "provider-1",
+        "provider": "openai",
+        "endpointType": "openai-compatible",
+        "baseUrl": "https://example.com/v1",
+        "modelId": "gpt-4.1",
+        "intent": "medium",
+        "reason": "route_not_mapped",
+    }
+
+    assert [event.type for event in events] == ["run_started", "run_diagnostic", "run_failed"]
     assert events[1].payload == {
-        "code": "thinking_not_applied",
-        "message": "Thinking intent could not be mapped for the current route; continuing without provider thinking parameters.",
-        "details": {
-            "providerProfileId": "provider-1",
-            "provider": "openai",
-            "endpointType": "openai-compatible",
-            "baseUrl": "https://example.com/v1",
-            "modelId": "gpt-4.1",
-            "intent": "medium",
-            "reason": "route_not_mapped",
-        },
+        "code": "thinking_not_supported_for_route",
+        "message": expected_message,
+        "details": expected_details,
         "stage": "adapt_thinking",
     }
-    assert executor.calls[0]["model_settings"] == {}
+    assert events[2].payload == {
+        "code": "thinking_not_supported_for_route",
+        "message": expected_message,
+        "details": expected_details,
+    }
+    assert executor.calls == []
 
 
 

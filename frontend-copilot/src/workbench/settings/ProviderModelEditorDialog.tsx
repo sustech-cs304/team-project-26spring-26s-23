@@ -310,7 +310,6 @@ export function ProviderModelEditorDialog({
                     )
                   })}
                 </div>
-                <p className="form-field__description">仅保存当前模型允许的离散档位。</p>
               </>
             ) : null}
           </div>

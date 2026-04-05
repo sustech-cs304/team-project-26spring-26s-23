@@ -93,4 +93,28 @@ describe('ProviderModelEditorDialog', () => {
 
     rendered.unmount()
   })
+
+  it('does not render the removed discrete-level hint copy', () => {
+    const rendered = renderWithRoot(
+      <ProviderModelEditorDialog
+        modelEditorState={createModelEditorState({
+          thinkingCapability: {
+            supported: true,
+            levels: ['auto'],
+            defaultLevel: 'auto',
+          },
+        })}
+        modelEditorError={null}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onStateChange={vi.fn()}
+        onToggleCapability={vi.fn()}
+        onClearError={vi.fn()}
+      />,
+    )
+
+    expect(rendered.queryByText('仅保存当前模型允许的离散档位。')).toBeNull()
+
+    rendered.unmount()
+  })
 })

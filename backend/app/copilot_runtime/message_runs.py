@@ -329,21 +329,23 @@ class RuntimeMessageRunOrchestrator:
                 modelSettings=thinking_adaptation.model_settings,
             )
             if request.policy.thinkingLevelIntent not in (None, "off") and not thinking_adaptation.applied:
-                for projected in projector.project(
-                    execution_events.build_diagnostic(
-                        code="thinking_not_applied",
-                        message=(
-                            "Thinking intent could not be mapped for the current route; continuing without provider thinking parameters."
-                        ),
-                        details={
-                            **thinking_adaptation.diagnostics,
-                            "intent": request.policy.thinkingLevelIntent,
-                            "reason": thinking_adaptation.reason,
-                        },
-                        stage="adapt_thinking",
-                    )
+                for event in self._build_failed_execution_events(
+                    execution_events=execution_events,
+                    code="thinking_not_supported_for_route",
+                    message=(
+                        f"Selected thinking level '{request.policy.thinkingLevelIntent}' is not supported by the current model route. "
+                        "This request was cancelled instead of continuing without provider thinking parameters."
+                    ),
+                    details={
+                        **thinking_adaptation.diagnostics,
+                        "intent": request.policy.thinkingLevelIntent,
+                        "reason": thinking_adaptation.reason,
+                    },
+                    diagnostic_stage="adapt_thinking",
                 ):
-                    yield projected
+                    for projected in projector.project(event):
+                        yield projected
+                return
             log_runtime_chain_debug(
                 "orchestrator.execution_prepared",
                 enabled=debug_enabled,

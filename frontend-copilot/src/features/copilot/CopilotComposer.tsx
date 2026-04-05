@@ -34,7 +34,6 @@ interface CopilotComposerProps {
   sendStatus: 'idle' | 'sending'
   canCancel: boolean
   sendDisabledReason: string | null
-  composerError: string | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -50,7 +49,6 @@ export function CopilotComposer({
   sendStatus,
   canCancel,
   sendDisabledReason,
-  composerError,
   composerInputRef,
   composerHeight,
   onResizeStart,
@@ -293,11 +291,6 @@ export function CopilotComposer({
         </button>
       </div>
 
-      {composerError !== null && (
-        <p className="copilot-panel__error" role="alert">
-          {composerError}
-        </p>
-      )}
     </form>
   )
 }

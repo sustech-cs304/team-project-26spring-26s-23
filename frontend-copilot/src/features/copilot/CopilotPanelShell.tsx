@@ -125,6 +125,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           assistantPlaceholder={props.assistantPlaceholder}
           models={props.modelGroups.flatMap((group) => group.models)}
           showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
+          transientError={props.sendError ?? props.sessionError}
           emptyState={hasAvailableModels
             ? null
             : {
@@ -142,7 +143,6 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           sendStatus={props.sendStatus}
           canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
-          composerError={props.sendError ?? props.sessionError}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}

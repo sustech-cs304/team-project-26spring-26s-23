@@ -250,6 +250,8 @@ export function formatRuntimeMessageSendError(error: unknown): string {
         return `invalid_request：消息请求结构无效。${error.message}`
       case 'capabilities_version_stale':
         return `capabilities_version_stale：当前能力面版本已过期，需要重新拉取 capabilities 后再发。${error.message}`
+      case 'thinking_not_supported_for_route':
+        return `thinking_not_supported_for_route：当前模型路由不支持所选思考档位。${error.message}`
       default:
         return error.message
     }

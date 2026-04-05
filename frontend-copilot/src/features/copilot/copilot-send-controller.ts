@@ -169,9 +169,11 @@ export async function orchestrateCopilotSend(input: {
         }))
       },
     })) {
-      if (event.type === 'run_failed') {
-        input.setSendError(`${event.payload.code}: ${event.payload.message}`)
-      } else if (event.type === 'run_completed' || event.type === 'run_cancelled') {
+      if (
+        event.type === 'run_failed'
+        || event.type === 'run_completed'
+        || event.type === 'run_cancelled'
+      ) {
         input.setSendError(null)
       }
 
@@ -185,7 +187,7 @@ export async function orchestrateCopilotSend(input: {
       }))
     } else {
       const formattedError = formatRuntimeMessageSendError(error)
-      input.setSendError(formattedError)
+      input.setSendError(null)
       input.setRunState((current) => markCopilotRunTransportFailed(current, {
         code: 'stream_transport_failed',
         message: formattedError,

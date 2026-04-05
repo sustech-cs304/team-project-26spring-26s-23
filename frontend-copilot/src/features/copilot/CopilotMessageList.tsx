@@ -55,6 +55,7 @@ interface CopilotMessageListProps {
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
   showDiagnostics?: boolean
+  transientError?: string | null
   emptyState?: {
     title: string
     description: string
@@ -72,11 +73,17 @@ export function CopilotMessageList({
   assistantPlaceholder = null,
   models = [],
   showDiagnostics = true,
+  transientError = null,
   emptyState = null,
 }: CopilotMessageListProps) {
-  const visibleConversation = showDiagnostics
-    ? conversation
-    : conversation.filter((turn) => turn.kind !== 'diagnostic')
+  const visibleConversation = useMemo(
+    () => buildVisibleConversation({
+      conversation,
+      showDiagnostics,
+      transientError,
+    }),
+    [conversation, showDiagnostics, transientError],
+  )
   const [renderedAssistantPlaceholder, setRenderedAssistantPlaceholder] = useState<RenderedAssistantPlaceholderState>(
     () => createRenderedAssistantPlaceholderState(assistantPlaceholder),
   )
@@ -210,6 +217,44 @@ export function CopilotMessageList({
       {renderedAssistantPlaceholder.visible && renderAssistantPlaceholder(renderedAssistantPlaceholder)}
     </div>
   )
+}
+
+function buildVisibleConversation(input: {
+  conversation: CopilotMessageListItem[]
+  showDiagnostics: boolean
+  transientError: string | null
+}): CopilotMessageListItem[] {
+  const filteredConversation = input.showDiagnostics
+    ? input.conversation
+    : input.conversation.filter((turn) => turn.kind !== 'diagnostic')
+  const trimmedTransientError = input.transientError?.trim() ?? ''
+
+  if (trimmedTransientError === '') {
+    return filteredConversation
+  }
+
+  return [
+    ...filteredConversation,
+    createTransientErrorMessage(trimmedTransientError, filteredConversation.length + 1),
+  ]
+}
+
+function createTransientErrorMessage(
+  content: string,
+  sequence: number,
+): Extract<CopilotMessageListItem, { kind: 'terminal' }> {
+  return {
+    id: `transient-error:${sequence}`,
+    kind: 'terminal',
+    runId: 'transient-error',
+    sequence,
+    title: '发送失败',
+    content,
+    status: 'failed',
+    terminalPhase: 'failed',
+    cancelReason: null,
+    failure: null,
+  }
 }
 
 function renderMessageHeader(

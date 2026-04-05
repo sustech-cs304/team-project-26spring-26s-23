@@ -297,6 +297,120 @@ describe('Copilot thinking selector', () => {
 
     rendered.unmount()
   })
+
+  it('shows a failed chat message when the backend rejects the selected thinking level for the current route', async () => {
+    const sendMessage = vi.fn(async function* (
+      input: Parameters<typeof import('./chat-contract').sendRuntimeMessage>[0],
+    ): AsyncGenerator<RuntimeRunEvent> {
+      yield {
+        type: 'run_started',
+        runId: 'run-thinking-invalid',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-thinking-invalid:assistant',
+        },
+      }
+      yield {
+        type: 'run_diagnostic',
+        runId: 'run-thinking-invalid',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          code: 'thinking_not_supported_for_route',
+          message: "Selected thinking level 'medium' is not supported by the current model route. This request was cancelled instead of continuing without provider thinking parameters.",
+          details: {
+            intent: 'medium',
+            reason: 'route_not_mapped',
+          },
+          stage: 'adapt_thinking',
+        },
+      }
+      yield {
+        type: 'run_failed',
+        runId: 'run-thinking-invalid',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          code: 'thinking_not_supported_for_route',
+          message: "Selected thinking level 'medium' is not supported by the current model route. This request was cancelled instead of continuing without provider thinking parameters.",
+          details: {
+            intent: 'medium',
+            reason: 'route_not_mapped',
+          },
+        },
+      }
+    })
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-thinking-fail',
+            name: 'Thinking Fail Provider',
+            defaultModel: 'model-thinking-fail',
+            availableModels: [
+              {
+                id: 'provider-thinking-fail:model-thinking-fail',
+                modelId: 'model-thinking-fail',
+                displayName: 'Thinking Fail Model',
+                groupName: 'Thinking',
+                capabilities: ['reasoning', 'tools'],
+                thinkingCapability: {
+                  supported: true,
+                  levels: ['medium'],
+                  defaultLevel: 'medium',
+                },
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'model-thinking-fail',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => undefined}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            defaultModelPreference: 'model-thinking-fail',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await flushUi()
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await selectThinkingOption(rendered, 'medium')
+    await setFormControlValue(messageInput, '测试不支持的思考档位失败')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await flushUi()
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).toContain('thinking_not_supported_for_route: Selected thinking level')
+    expect(rendered.container.textContent).toContain('测试不支持的思考档位失败')
+    expect(rendered.container.textContent).not.toContain('当前模型不支持')
+
+    rendered.unmount()
+  })
 })
 
 async function flushUi() {
