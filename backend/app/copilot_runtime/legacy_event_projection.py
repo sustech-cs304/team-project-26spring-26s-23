@@ -11,6 +11,9 @@ from .execution_event_graph import (
     ASSISTANT_SEGMENT_DELTA_EVENT_TYPE,
     ASSISTANT_SEGMENT_STARTED_EVENT_TYPE,
     DIAGNOSTIC_EVENT_TYPE,
+    REASONING_SEGMENT_COMPLETED_EVENT_TYPE,
+    REASONING_SEGMENT_DELTA_EVENT_TYPE,
+    REASONING_SEGMENT_STARTED_EVENT_TYPE,
     RUN_CANCELLED_EVENT_TYPE as EXECUTION_RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE as EXECUTION_RUN_COMPLETED_EVENT_TYPE,
     RUN_FAILED_EVENT_TYPE as EXECUTION_RUN_FAILED_EVENT_TYPE,
@@ -18,6 +21,7 @@ from .execution_event_graph import (
 )
 from .model_routes import ResolvedRuntimeModelRoute
 from .run_events import (
+    REASONING_DELTA_EVENT_TYPE,
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
     RUN_DIAGNOSTIC_EVENT_TYPE,
@@ -61,6 +65,8 @@ class LegacyRuntimeRunEventProjector:
         if event.type in {
             ASSISTANT_SEGMENT_STARTED_EVENT_TYPE,
             ASSISTANT_SEGMENT_COMPLETED_EVENT_TYPE,
+            REASONING_SEGMENT_STARTED_EVENT_TYPE,
+            REASONING_SEGMENT_COMPLETED_EVENT_TYPE,
         }:
             return ()
 
@@ -70,6 +76,16 @@ class LegacyRuntimeRunEventProjector:
                     TEXT_DELTA_EVENT_TYPE,
                     payload={
                         "assistantMessageId": self.assistant_message_id,
+                        "delta": str(event.payload.get("delta", "")),
+                    },
+                ),
+            )
+
+        if event.type == REASONING_SEGMENT_DELTA_EVENT_TYPE:
+            return (
+                self.events.build(
+                    REASONING_DELTA_EVENT_TYPE,
+                    payload={
                         "delta": str(event.payload.get("delta", "")),
                     },
                 ),

@@ -48,6 +48,7 @@ from .model_routes import (
 )
 from .run_events import RuntimeRunEvent, RuntimeRunEventFactory
 from .session_store import BoundAgentMismatchError, InMemorySessionStore, RuntimeSessionRecord
+from .thinking_adapter import adapt_thinking_intent
 
 
 class RuntimeAgentTextStream(Protocol):
@@ -98,6 +99,7 @@ class RuntimeStreamingAgentExecutor(Protocol):
         enabled_tools: Sequence[str] = (),
         debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
+        model_settings: Mapping[str, Any] | None = None,
     ) -> RuntimeAgentExecutionEventStream: ...
 
 
@@ -310,7 +312,38 @@ class RuntimeMessageRunOrchestrator:
                 self._session_store.list_messages(session.session_id)
             )
             resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
+            thinking_adaptation = adapt_thinking_intent(
+                intent=request.policy.thinkingLevelIntent,
+                model_route=resolved_model_route,
+            )
             agent_executor = self._build_streaming_executor(agent_descriptor)
+            log_runtime_chain_debug(
+                "orchestrator.thinking_adaptation",
+                enabled=debug_enabled,
+                runId=resolved_run_id,
+                threadId=request.session_id,
+                intent=request.policy.thinkingLevelIntent,
+                applied=thinking_adaptation.applied,
+                reason=thinking_adaptation.reason,
+                diagnostics=thinking_adaptation.diagnostics,
+                modelSettings=thinking_adaptation.model_settings,
+            )
+            if request.policy.thinkingLevelIntent not in (None, "off") and not thinking_adaptation.applied:
+                for projected in projector.project(
+                    execution_events.build_diagnostic(
+                        code="thinking_not_applied",
+                        message=(
+                            "Thinking intent could not be mapped for the current route; continuing without provider thinking parameters."
+                        ),
+                        details={
+                            **thinking_adaptation.diagnostics,
+                            "intent": request.policy.thinkingLevelIntent,
+                            "reason": thinking_adaptation.reason,
+                        },
+                        stage="adapt_thinking",
+                    )
+                ):
+                    yield projected
             log_runtime_chain_debug(
                 "orchestrator.execution_prepared",
                 enabled=debug_enabled,
@@ -438,6 +471,7 @@ class RuntimeMessageRunOrchestrator:
                 enabled_tools=resolved_tool_ids,
                 debug_enabled=debug_enabled,
                 request_options=request.policy.requestOptions,
+                model_settings=thinking_adaptation.model_settings,
             ) as stream:
                 log_runtime_chain_debug(
                     "orchestrator.stream_opened",
@@ -645,6 +679,7 @@ class RuntimeMessageRunOrchestrator:
         enabled_tools: tuple[str, ...],
         debug_enabled: bool,
         request_options: Mapping[str, Any] | None,
+        model_settings: Mapping[str, Any] | None,
     ) -> RuntimeAgentExecutionEventStream:
         open_event_stream = getattr(agent_executor, "open_event_stream", None)
         if callable(open_event_stream):
@@ -656,9 +691,8 @@ class RuntimeMessageRunOrchestrator:
                 enabledToolIds=list(enabled_tools),
                 modelRoute=summarize_runtime_model_route(model_route),
             )
-            return cast(
-                RuntimeAgentExecutionEventStream,
-                open_event_stream(
+            try:
+                stream = open_event_stream(
                     run_id=run_id,
                     agent_name=agent_name,
                     user_prompt=user_prompt,
@@ -667,8 +701,22 @@ class RuntimeMessageRunOrchestrator:
                     enabled_tools=enabled_tools,
                     debug_enabled=debug_enabled,
                     request_options=request_options,
-                ),
-            )
+                    model_settings=model_settings,
+                )
+            except TypeError as exc:
+                if "model_settings" not in str(exc):
+                    raise
+                stream = open_event_stream(
+                    run_id=run_id,
+                    agent_name=agent_name,
+                    user_prompt=user_prompt,
+                    message_history=message_history,
+                    model_route=model_route,
+                    enabled_tools=enabled_tools,
+                    debug_enabled=debug_enabled,
+                    request_options=request_options,
+                )
+            return cast(RuntimeAgentExecutionEventStream, stream)
 
         open_text_stream = getattr(agent_executor, "open_text_stream", None)
         if callable(open_text_stream):
@@ -680,9 +728,8 @@ class RuntimeMessageRunOrchestrator:
                 enabledToolIds=list(enabled_tools),
                 modelRoute=summarize_runtime_model_route(model_route),
             )
-            legacy_stream = cast(
-                RuntimeAgentTextStream,
-                open_text_stream(
+            try:
+                raw_legacy_stream = open_text_stream(
                     agent_name=agent_name,
                     user_prompt=user_prompt,
                     message_history=message_history,
@@ -690,8 +737,21 @@ class RuntimeMessageRunOrchestrator:
                     enabled_tools=enabled_tools,
                     debug_enabled=debug_enabled,
                     request_options=request_options,
-                ),
-            )
+                    model_settings=model_settings,
+                )
+            except TypeError as exc:
+                if "model_settings" not in str(exc):
+                    raise
+                raw_legacy_stream = open_text_stream(
+                    agent_name=agent_name,
+                    user_prompt=user_prompt,
+                    message_history=message_history,
+                    model_route=model_route,
+                    enabled_tools=enabled_tools,
+                    debug_enabled=debug_enabled,
+                    request_options=request_options,
+                )
+            legacy_stream = cast(RuntimeAgentTextStream, raw_legacy_stream)
             return _LegacyTextExecutionEventStreamAdapter(
                 stream=legacy_stream,
                 run_id=run_id,

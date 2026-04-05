@@ -1,5 +1,6 @@
 import type { ProviderModelProfile, ProviderProfile } from '../types'
 
+import { cloneThinkingCapabilityDeclaration } from '../thinking-capabilities'
 import type { SettingsWorkspaceFormState } from './settings-workspace-form-state'
 
 export function cloneSettingsWorkspaceFormState(state: SettingsWorkspaceFormState): SettingsWorkspaceFormState {
@@ -20,5 +21,6 @@ export function cloneProviderModelProfile(model: ProviderModelProfile): Provider
   return {
     ...model,
     capabilities: [...model.capabilities],
+    thinkingCapability: cloneThinkingCapabilityDeclaration(model.thinkingCapability),
   }
 }

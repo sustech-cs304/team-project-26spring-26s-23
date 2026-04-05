@@ -55,6 +55,46 @@ def test_execution_event_buffer_represents_interleaved_assistant_tool_assistant_
 
 
 
+def test_execution_event_buffer_keeps_reasoning_distinct_from_tool_and_assistant_segments() -> None:
+    factory = RuntimeExecutionEventFactory(run_id="run-1")
+    buffer = RuntimeExecutionEventBuffer(event_factory=factory)
+
+    buffer.record_reasoning_delta("先思考。")
+    buffer.record_event(
+        RuntimeExecutionEvent(
+            type=TOOL_STARTED_EVENT_TYPE,
+            payload=_build_tool_payload(phase="started"),
+        )
+    )
+    buffer.record_event(
+        RuntimeExecutionEvent(
+            type=TOOL_COMPLETED_EVENT_TYPE,
+            payload=_build_tool_payload(
+                phase="completed",
+                result_summary="done",
+            ),
+        )
+    )
+    buffer.record_assistant_delta("再回答。")
+    buffer.finish_assistant_segment()
+
+    events = buffer.drain()
+
+    assert [event.type for event in events] == [
+        "reasoning_segment_started",
+        "reasoning_segment_delta",
+        "reasoning_segment_completed",
+        "tool_started",
+        "tool_completed",
+        "assistant_segment_started",
+        "assistant_segment_delta",
+        "assistant_segment_completed",
+    ]
+    assert buffer.observed_reasoning_text == "先思考。"
+    assert buffer.observed_assistant_text == "再回答。"
+
+
+
 def test_legacy_runtime_projector_projects_interleaved_chain_without_early_terminal() -> None:
     execution_factory = RuntimeExecutionEventFactory(run_id="run-1")
     events = RuntimeRunEventFactory(session_id="session-1", run_id="run-1")
@@ -109,6 +149,49 @@ def test_legacy_runtime_projector_projects_interleaved_chain_without_early_termi
     assert projected[-1].type in TERMINAL_RUNTIME_RUN_EVENT_TYPES
     assert all(event.type != "run_completed" for event in projected[:-1])
     assert [event.sequence for event in projected] == [1, 2, 3, 4, 5, 6]
+
+
+
+def test_legacy_runtime_projector_projects_reasoning_as_standalone_delta_event() -> None:
+    execution_factory = RuntimeExecutionEventFactory(run_id="run-1")
+    events = RuntimeRunEventFactory(session_id="session-1", run_id="run-1")
+    projector = LegacyRuntimeRunEventProjector(
+        events=events,
+        assistant_message_id="run-1:assistant",
+    )
+    projector.configure_completion_context(
+        resolved_model_route=_build_resolved_route(),
+        resolved_tool_ids=(),
+        request_options={},
+    )
+
+    reasoning_segment = execution_factory.next_reasoning_segment_id()
+    assistant_segment = execution_factory.next_assistant_segment_id()
+    execution_events = [
+        execution_factory.build_reasoning_segment_started(segment_id=reasoning_segment),
+        execution_factory.build_reasoning_segment_delta(segment_id=reasoning_segment, delta="先思考。"),
+        execution_factory.build_reasoning_segment_completed(segment_id=reasoning_segment),
+        execution_factory.build_assistant_segment_started(segment_id=assistant_segment),
+        execution_factory.build_assistant_segment_delta(segment_id=assistant_segment, delta="再回答。"),
+        execution_factory.build_assistant_segment_completed(segment_id=assistant_segment),
+        execution_factory.build_run_completed(assistant_text="再回答。"),
+    ]
+
+    projected = [projector.build_run_started()]
+    for event in execution_events:
+        projected.extend(projector.project(event))
+
+    assert [event.type for event in projected] == [
+        "run_started",
+        "reasoning_delta",
+        "text_delta",
+        "run_completed",
+    ]
+    assert projected[1].payload == {"delta": "先思考。"}
+    assert projected[2].payload == {
+        "assistantMessageId": "run-1:assistant",
+        "delta": "再回答。",
+    }
 
 
 

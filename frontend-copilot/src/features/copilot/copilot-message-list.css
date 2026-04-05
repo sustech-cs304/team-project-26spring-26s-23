@@ -242,6 +242,7 @@
 
 .copilot-chat__message--assistant,
 .copilot-chat__message--pending,
+.copilot-chat__message--reasoning,
 .copilot-chat__message--tool,
 .copilot-chat__message--diagnostic {
   align-self: flex-start;
@@ -283,6 +284,11 @@
   }
 }
 
+.copilot-chat__message--reasoning {
+  background: color-mix(in srgb, var(--surface-bg) 88%, rgba(245, 158, 11, 0.08) 12%);
+  border-color: color-mix(in srgb, var(--border-color) 72%, rgba(245, 158, 11, 0.22) 28%);
+}
+
 .copilot-chat__message--tool {
   background: color-mix(in srgb, var(--surface-bg) 82%, var(--accent-soft, #dbeafe) 18%);
   border-color: color-mix(in srgb, var(--border-color) 60%, var(--accent-border, #93c5fd) 40%);
@@ -295,6 +301,60 @@
 
 .copilot-chat__message--tool.copilot-chat__message--cancelled {
   border-style: dashed;
+}
+
+.copilot-chat__reasoning-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.copilot-chat__reasoning-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.copilot-chat__reasoning-toggle:focus-visible {
+  outline: 2px solid var(--accent-border, #93c5fd);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.copilot-chat__reasoning-toggle-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.copilot-chat__reasoning-toggle-icon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.copilot-chat__reasoning-status {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.copilot-chat__reasoning-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-left: 1.45rem;
 }
 
 .copilot-chat__tool-card {

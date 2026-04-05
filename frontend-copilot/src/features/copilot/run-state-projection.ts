@@ -28,6 +28,8 @@ function projectSegmentToTurn(segment: CopilotRunSegment): CopilotConversationTu
   switch (segment.kind) {
     case 'assistant':
       return segment.text === '' ? [] : [projectAssistantSegment(segment)]
+    case 'reasoning':
+      return []
     case 'tool':
       return [projectToolSegment(segment)]
     case 'diagnostic':

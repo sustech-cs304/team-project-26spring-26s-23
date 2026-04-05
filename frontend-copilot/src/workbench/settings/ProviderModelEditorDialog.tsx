@@ -1,7 +1,16 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import { SelectField, TextField } from '../components/FormFields'
-import type { ModelCapability } from '../types'
+import type { ModelCapability, ThinkingLevelIntent } from '../types'
+import {
+  buildThinkingDeclarationDefaultLevelOptions,
+  getThinkingCapabilityDeclarationMode,
+  setThinkingCapabilityDeclarationDefaultLevel,
+  setThinkingCapabilityDeclarationMode,
+  THINKING_DECLARATION_MODE_OPTIONS,
+  THINKING_LEVEL_OPTIONS,
+  toggleThinkingCapabilityDeclarationLevel,
+} from '../thinking-capabilities'
 import { currencyOptions, modelCapabilityOptions } from './config'
 import type { ModelEditorState } from './provider-profiles'
 
@@ -110,6 +119,8 @@ export function ProviderModelEditorDialog({
     return null
   }
 
+  const thinkingDeclarationMode = getThinkingCapabilityDeclarationMode(modelEditorState.thinkingCapability)
+  const thinkingDefaultLevelOptions = buildThinkingDeclarationDefaultLevelOptions(modelEditorState.thinkingCapability)
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -231,6 +242,77 @@ export function ProviderModelEditorDialog({
                 )
               })}
             </div>
+          </div>
+
+          <div className="model-editor-section">
+            <div className="form-grid form-grid--two">
+              <SelectField
+                label="思考能力"
+                value={thinkingDeclarationMode}
+                options={THINKING_DECLARATION_MODE_OPTIONS}
+                onChange={(value) => {
+                  onClearError()
+                  onStateChange({
+                    thinkingCapability: setThinkingCapabilityDeclarationMode(
+                      modelEditorState.thinkingCapability,
+                      value as 'inherit' | 'unsupported' | 'supported',
+                    ),
+                  })
+                }}
+              />
+              {thinkingDeclarationMode === 'supported' ? (
+                <SelectField
+                  label="默认档位"
+                  value={modelEditorState.thinkingCapability?.defaultLevel ?? 'off'}
+                  options={thinkingDefaultLevelOptions}
+                  onChange={(value) => {
+                    onClearError()
+                    onStateChange({
+                      thinkingCapability: setThinkingCapabilityDeclarationDefaultLevel(
+                        modelEditorState.thinkingCapability,
+                        value as ThinkingLevelIntent,
+                      ),
+                    })
+                  }}
+                />
+              ) : <div />}
+            </div>
+
+            {thinkingDeclarationMode === 'supported' ? (
+              <>
+                <div className="model-editor-section__header">
+                  <span className="form-field__label">可用思考档位</span>
+                </div>
+                <div className="model-capability-picker">
+                  {THINKING_LEVEL_OPTIONS.filter((option) => option.value !== 'off').map((option) => {
+                    const active = modelEditorState.thinkingCapability?.supported === true
+                      && (modelEditorState.thinkingCapability.levels ?? []).includes(option.value as Exclude<ThinkingLevelIntent, 'off'>)
+                    const capabilityClassName = active ? ' model-capability-button--reasoning' : ' model-capability-button--inactive'
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={active}
+                        className={`model-capability-button${capabilityClassName}${active ? ' model-capability-button--active' : ''}`}
+                        onClick={() => {
+                          onClearError()
+                          onStateChange({
+                            thinkingCapability: toggleThinkingCapabilityDeclarationLevel(
+                              modelEditorState.thinkingCapability,
+                              option.value as Exclude<ThinkingLevelIntent, 'off'>,
+                            ),
+                          })
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="form-field__description">仅保存当前模型允许的离散档位。</p>
+              </>
+            ) : null}
           </div>
 
           <div className="model-editor-advanced">

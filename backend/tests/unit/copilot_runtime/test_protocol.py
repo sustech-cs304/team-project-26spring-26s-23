@@ -138,6 +138,7 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
     assert request.policy.modelRoute.snapshot.endpoint_type == "openai-compatible"
     assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
     assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
+    assert request.policy.thinkingLevelIntent == "auto"
     assert request.policy.enabledTools == ("tool.file-convert",)
     assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
@@ -168,6 +169,7 @@ def test_extract_message_send_request_reads_model_route_policy_fields() -> None:
     assert request.policy.modelRoute.snapshot.endpoint_type == "openai-compatible"
     assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
     assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
+    assert request.policy.thinkingLevelIntent == "auto"
     assert request.policy.enabledTools == ("tool.file-convert",)
     assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
@@ -305,6 +307,7 @@ def _build_policy_payload() -> dict[str, object]:
                 "modelId": "gpt-4.1",
             },
         },
+        "thinkingLevelIntent": "auto",
         "enabledTools": ["tool.file-convert"],
         "debugModeEnabled": True,
         "requestOptions": {"temperature": 0.2},

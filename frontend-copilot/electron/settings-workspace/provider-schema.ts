@@ -1,5 +1,9 @@
 import type { ModelCapability, ProviderModelProfile, ProviderProfile } from '../../src/workbench/types'
 import { initialProviderProfiles } from '../../src/workbench/settings/config'
+import {
+  cloneThinkingCapabilityDeclaration,
+  normalizeThinkingCapabilityDeclaration,
+} from '../../src/workbench/thinking-capabilities'
 import { asRecord, normalizeBoolean, normalizeNonEmptyString, normalizeString } from './normalize'
 
 export interface SettingsWorkspaceStoredProviderProfile {
@@ -59,6 +63,7 @@ export function cloneProviderModelProfile(model: ProviderModelProfile): Provider
   return {
     ...model,
     capabilities: [...model.capabilities],
+    thinkingCapability: cloneThinkingCapabilityDeclaration(model.thinkingCapability),
   }
 }
 
@@ -133,6 +138,7 @@ function normalizeProviderModelProfile(
     displayName: normalizeNonEmptyString(record.displayName, modelId),
     groupName: normalizeNonEmptyString(record.groupName, providerId),
     capabilities: normalizeModelCapabilities(record.capabilities),
+    thinkingCapability: normalizeThinkingCapabilityDeclaration(record.thinkingCapability),
     supportsStreaming: normalizeBoolean(record.supportsStreaming, true),
     currency: normalizeNonEmptyString(record.currency, 'usd'),
     inputPrice: normalizeNonEmptyString(record.inputPrice, '0.50'),

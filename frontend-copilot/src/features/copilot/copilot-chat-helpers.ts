@@ -1,4 +1,10 @@
-import type { AgentType, AssistantSessionShell } from '../../workbench/types'
+import type {
+  AgentType,
+  AssistantSessionShell,
+  ResolvedThinkingCapability,
+  ThinkingLevelIntent,
+} from '../../workbench/types'
+import { resolveThinkingLevelIntent } from '../../workbench/thinking-capabilities'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   RuntimeRequestError,
@@ -17,6 +23,8 @@ export interface CopilotChatComposerDraft {
   messageText: string
   selectedModelId: string
   selectedModelRoute: RuntimeModelRoute | null
+  thinkingLevelIntent: ThinkingLevelIntent | null
+  thinkingLevelByModelKey: Record<string, ThinkingLevelIntent>
   enabledTools: string[]
   requestOptionsText: string
 }
@@ -30,6 +38,7 @@ export interface RuntimeMessageSendInput {
     content: string
   }
   modelRoute: RuntimeModelRoute
+  thinkingLevelIntent: ThinkingLevelIntent | null
   enabledTools: string[]
   requestOptions: Record<string, unknown>
 }
@@ -65,6 +74,8 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
     messageText: '',
     selectedModelId: '',
     selectedModelRoute: null,
+    thinkingLevelIntent: null,
+    thinkingLevelByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
   }
@@ -77,6 +88,8 @@ export function createComposerDraftFromSession(
     messageText: '',
     selectedModelId: sessionShell?.capabilities.defaultModelPreference ?? '',
     selectedModelRoute: null,
+    thinkingLevelIntent: null,
+    thinkingLevelByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
   }
@@ -101,8 +114,112 @@ export function buildRuntimeMessageSendInput(input: {
       content: input.draft.messageText.trim(),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
+    thinkingLevelIntent: input.draft.thinkingLevelIntent,
     enabledTools: dedupeToolIds(input.draft.enabledTools),
     requestOptions: { ...input.requestOptions },
+  }
+}
+
+export function buildThinkingSessionMemoryKey(route: RuntimeModelRoute): string {
+  return [
+    route.providerProfileId,
+    route.snapshot.provider,
+    route.snapshot.endpointType,
+    route.snapshot.baseUrl,
+    route.snapshot.modelId,
+  ].join('|')
+}
+
+export function applyModelSelectionToComposerDraft(
+  draft: CopilotChatComposerDraft,
+  input: {
+    modelId: string
+    modelRoute: RuntimeModelRoute
+    thinkingCapability: ResolvedThinkingCapability
+  },
+): CopilotChatComposerDraft {
+  const nextRoute = cloneRuntimeModelRoute(input.modelRoute)
+  const memoryKey = buildThinkingSessionMemoryKey(nextRoute)
+  const nextThinkingLevelIntent = resolveThinkingLevelIntent(
+    input.thinkingCapability,
+    draft.thinkingLevelByModelKey[memoryKey],
+  )
+
+  return {
+    ...draft,
+    selectedModelId: input.modelId,
+    selectedModelRoute: nextRoute,
+    thinkingLevelIntent: nextThinkingLevelIntent,
+    thinkingLevelByModelKey: nextThinkingLevelIntent === null
+      ? { ...draft.thinkingLevelByModelKey }
+      : {
+          ...draft.thinkingLevelByModelKey,
+          [memoryKey]: nextThinkingLevelIntent,
+        },
+  }
+}
+
+export function applyThinkingLevelSelectionToComposerDraft(
+  draft: CopilotChatComposerDraft,
+  input: {
+    modelRoute: RuntimeModelRoute | null
+    thinkingLevelIntent: ThinkingLevelIntent | null
+  },
+): CopilotChatComposerDraft {
+  if (input.modelRoute === null || input.thinkingLevelIntent === null) {
+    return {
+      ...draft,
+      thinkingLevelIntent: null,
+    }
+  }
+
+  const memoryKey = buildThinkingSessionMemoryKey(input.modelRoute)
+
+  return {
+    ...draft,
+    thinkingLevelIntent: input.thinkingLevelIntent,
+    thinkingLevelByModelKey: {
+      ...draft.thinkingLevelByModelKey,
+      [memoryKey]: input.thinkingLevelIntent,
+    },
+  }
+}
+
+export function syncComposerDraftThinkingSelection(
+  draft: CopilotChatComposerDraft,
+  input: {
+    modelRoute: RuntimeModelRoute | null
+    thinkingCapability: ResolvedThinkingCapability | null
+  },
+): CopilotChatComposerDraft {
+  if (input.modelRoute === null || input.thinkingCapability === null) {
+    return draft.thinkingLevelIntent === null
+      ? draft
+      : {
+          ...draft,
+          thinkingLevelIntent: null,
+        }
+  }
+
+  const memoryKey = buildThinkingSessionMemoryKey(input.modelRoute)
+  const nextThinkingLevelIntent = resolveThinkingLevelIntent(
+    input.thinkingCapability,
+    draft.thinkingLevelByModelKey[memoryKey],
+  )
+
+  if (nextThinkingLevelIntent === draft.thinkingLevelIntent) {
+    return draft
+  }
+
+  return {
+    ...draft,
+    thinkingLevelIntent: nextThinkingLevelIntent,
+    thinkingLevelByModelKey: nextThinkingLevelIntent === null
+      ? { ...draft.thinkingLevelByModelKey }
+      : {
+          ...draft.thinkingLevelByModelKey,
+          [memoryKey]: nextThinkingLevelIntent,
+        },
   }
 }
 

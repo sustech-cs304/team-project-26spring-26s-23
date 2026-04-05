@@ -109,6 +109,7 @@ class RuntimeStoredModelRoute:
 @dataclass(frozen=True, slots=True)
 class RuntimeStoredRunPolicy:
     model_route: RuntimeStoredModelRoute
+    thinking_level_intent: str | None = None
     enabled_tools: tuple[str, ...] = ()
     debug_mode_enabled: bool | None = None
     request_options: dict[str, Any] = field(default_factory=dict)

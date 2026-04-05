@@ -1,4 +1,9 @@
 import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
   type Dispatch,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -6,10 +11,15 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import { ArrowUp, Square } from 'lucide-react'
+import { ArrowUp, Lightbulb, Square } from 'lucide-react'
 
-import type { AssistantSessionShell } from '../../workbench/types'
-import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
+import { buildThinkingLevelOptions } from '../../workbench/thinking-capabilities'
+import type { AssistantSessionShell, ThinkingLevelIntent } from '../../workbench/types'
+import {
+  applyModelSelectionToComposerDraft,
+  applyThinkingLevelSelectionToComposerDraft,
+  type CopilotChatComposerDraft,
+} from './copilot-chat-helpers'
 import type { CopilotModelGroup } from './model-picker'
 import { ModelPicker } from './components/ModelPicker'
 import { ToolPicker } from './components/ToolPicker'
@@ -48,6 +58,60 @@ export function CopilotComposer({
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
   const isSending = sendStatus === 'sending'
   const controlsDisabled = isSending
+  const models = modelGroups.flatMap((group) => group.models)
+  const selectedModel = models.find((model) => (
+    model.id === draft.selectedModelId || model.modelId === draft.selectedModelId
+  )) ?? null
+  const thinkingCapability = selectedModel?.thinkingCapability ?? {
+    supported: false as const,
+    levels: [],
+    defaultLevel: null,
+  }
+  const thinkingSupported = thinkingCapability.supported
+  const thinkingOptions = thinkingSupported ? buildThinkingLevelOptions(thinkingCapability) : []
+  const thinkingValue = draft.thinkingLevelIntent ?? thinkingCapability.defaultLevel ?? 'off'
+  const unsupportedThinkingHint = selectedModel !== null && !thinkingSupported ? '当前模型不支持' : null
+  const thinkingControlRef = useRef<HTMLDivElement | null>(null)
+  const thinkingPanelId = useId()
+  const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
+  const currentThinkingLabel = useMemo(
+    () => thinkingOptions.find((option) => option.value === thinkingValue)?.label ?? '思考',
+    [thinkingOptions, thinkingValue],
+  )
+
+  useEffect(() => {
+    if (!thinkingPanelOpen) {
+      return undefined
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (thinkingControlRef.current?.contains(event.target as Node)) {
+        return
+      }
+
+      setThinkingPanelOpen(false)
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setThinkingPanelOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [thinkingPanelOpen])
+
+  useEffect(() => {
+    if (controlsDisabled || !thinkingSupported) {
+      setThinkingPanelOpen(false)
+    }
+  }, [controlsDisabled, thinkingSupported])
 
   const handleMessageInputKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
@@ -88,21 +152,81 @@ export function CopilotComposer({
           groups={modelGroups}
           disabled={!hasAvailableModels || controlsDisabled}
           onSelectModel={(model) => {
-            onDraftChange((current) => ({
-              ...current,
-              selectedModelId: model.id,
-              selectedModelRoute: {
-                providerProfileId: model.route.providerProfileId,
-                snapshot: {
-                  provider: model.route.snapshot.provider,
-                  endpointType: model.route.snapshot.endpointType,
-                  baseUrl: model.route.snapshot.baseUrl,
-                  modelId: model.route.snapshot.modelId,
-                },
-              },
+            onDraftChange((current) => applyModelSelectionToComposerDraft(current, {
+              modelId: model.id,
+              modelRoute: model.route,
+              thinkingCapability: model.thinkingCapability,
             }))
           }}
         />
+        <div
+          className="copilot-chat__thinking-control"
+          data-testid="chat-thinking-control"
+          ref={thinkingControlRef}
+        >
+          <button
+            type="button"
+            className={[
+              'copilot-chat__thinking-trigger',
+              controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
+              thinkingSupported && thinkingValue !== 'off' ? 'copilot-chat__thinking-trigger--active' : '',
+            ].filter((className) => className !== '').join(' ')}
+            data-testid="chat-thinking-trigger"
+            aria-label={unsupportedThinkingHint ?? `思考档位：${currentThinkingLabel}`}
+            title={unsupportedThinkingHint ?? '思考档位'}
+            aria-controls={thinkingSupported ? thinkingPanelId : undefined}
+            disabled={controlsDisabled}
+            onClick={() => {
+              if (!thinkingSupported) {
+                setThinkingPanelOpen(false)
+                return
+              }
+
+              setThinkingPanelOpen((current) => !current)
+            }}
+          >
+            <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
+          </button>
+          {thinkingSupported && thinkingPanelOpen && (
+            <section
+              id={thinkingPanelId}
+              className="copilot-model-picker__panel copilot-chat__thinking-panel"
+              role="dialog"
+              aria-label="选择思考档位"
+              data-testid="chat-thinking-panel"
+            >
+              <div className="copilot-chat__thinking-option-list">
+                {thinkingOptions.map((option) => {
+                  const selected = option.value === thinkingValue
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={[
+                        'copilot-model-picker__option',
+                        'copilot-chat__thinking-option',
+                        selected ? 'copilot-model-picker__option--selected copilot-chat__thinking-option--selected' : '',
+                      ].filter((className) => className !== '').join(' ')}
+                      data-testid={`chat-thinking-option-${option.value}`}
+                      onClick={() => {
+                        onDraftChange((current) => applyThinkingLevelSelectionToComposerDraft(current, {
+                          modelRoute: selectedModel?.route ?? null,
+                          thinkingLevelIntent: option.value as ThinkingLevelIntent,
+                        }))
+                        setThinkingPanelOpen(false)
+                      }}
+                    >
+                      <span className="copilot-chat__thinking-option-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+                      <span className="copilot-model-picker__option-body">
+                        <span className="copilot-model-picker__option-name">{option.label}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+        </div>
         <ToolPicker
           tools={capabilities.allAvailableTools}
           selectedToolIds={draft.enabledTools}

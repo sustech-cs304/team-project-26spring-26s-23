@@ -37,6 +37,9 @@ from .errors import (
 from .model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
 
 
+_THINKING_LEVEL_INTENTS = frozenset({"off", "auto", "low", "medium", "high", "max"})
+
+
 class RuntimeProtocolError(RuntimeError):
     """Structured protocol parsing failure that the HTTP router can render directly."""
 
@@ -373,6 +376,41 @@ class RuntimeProtocolParser:
             )
         return value
 
+    def _optional_thinking_level_intent(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value.strip() == "":
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be a non-empty string.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        normalized_value = value.strip().lower()
+        if normalized_value not in _THINKING_LEVEL_INTENTS:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=(
+                        f"Runtime request field '{field_name}' must be one of "
+                        f"{', '.join(sorted(_THINKING_LEVEL_INTENTS))}."
+                    ),
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        return normalized_value
+
     def _require_object(
         self,
         value: Any,
@@ -486,6 +524,11 @@ class RuntimeProtocolParser:
             field_name="policy.modelRoute",
             requested_method=requested_method,
         )
+        thinking_level_intent = self._optional_thinking_level_intent(
+            policy.get("thinkingLevelIntent"),
+            field_name="policy.thinkingLevelIntent",
+            requested_method=requested_method,
+        )
         enabled_tools = self._optional_list_of_strings(
             policy.get("enabledTools"),
             field_name="policy.enabledTools",
@@ -503,6 +546,7 @@ class RuntimeProtocolParser:
         )
         return RuntimeMessageExecutionPolicy(
             modelRoute=model_route,
+            thinkingLevelIntent=thinking_level_intent,
             enabledTools=enabled_tools,
             debugModeEnabled=debug_mode_enabled,
             requestOptions=request_options,

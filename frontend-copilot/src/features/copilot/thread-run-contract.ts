@@ -152,6 +152,10 @@ export type RuntimeTextDeltaEvent = RuntimeRunEventBase<'text_delta', {
   delta: string
 }>
 
+export type RuntimeReasoningDeltaEvent = RuntimeRunEventBase<'reasoning_delta', {
+  delta: string
+}>
+
 export type RuntimeRunCompletedEvent = RuntimeRunEventBase<'run_completed', {
   assistantMessageId: string
   assistantText: string
@@ -195,6 +199,7 @@ export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
 export type RuntimeRunEvent =
   | RuntimeRunStartedEvent
   | RuntimeTextDeltaEvent
+  | RuntimeReasoningDeltaEvent
   | RuntimeRunCompletedEvent
   | RuntimeRunFailedEvent
   | RuntimeRunCancelledEvent
@@ -337,6 +342,7 @@ export async function startRuntimeRun(input: {
   agent?: string
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
+  thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'max' | null
   enabledTools: string[]
   debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
@@ -352,6 +358,9 @@ export async function startRuntimeRun(input: {
       message: input.message,
       policy: {
         modelRoute: input.modelRoute,
+        ...(input.thinkingLevelIntent === undefined || input.thinkingLevelIntent === null
+          ? {}
+          : { thinkingLevelIntent: input.thinkingLevelIntent }),
         enabledTools: input.enabledTools,
         ...(input.debugModeEnabled === undefined
           ? {}
@@ -473,6 +482,7 @@ export async function* sendRuntimeMessage(input: {
   agent?: string
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
+  thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'max' | null
   enabledTools: string[]
   debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
@@ -486,6 +496,7 @@ export async function* sendRuntimeMessage(input: {
     agent: input.agent,
     message: input.message,
     modelRoute: input.modelRoute,
+    thinkingLevelIntent: input.thinkingLevelIntent,
     enabledTools: input.enabledTools,
     debugModeEnabled: input.debugModeEnabled,
     requestOptions: input.requestOptions,

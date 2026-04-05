@@ -71,6 +71,61 @@ describe('parseRuntimeRunEventStream', () => {
     })
   })
 
+  it('parses standalone reasoning_delta payloads', async () => {
+    const events = await collectEvents(createSseEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+        },
+      },
+      {
+        type: 'reasoning_delta',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          delta: '先思考。',
+        },
+      },
+      {
+        type: 'run_completed',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 3,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          assistantText: '最终答案',
+          resolvedModelId: 'qwen-plus',
+          resolvedModelRoute: {
+            providerProfileId: 'provider-openai',
+            snapshot: {
+              provider: 'openai',
+              endpointType: 'openai-compatible',
+              baseUrl: 'https://api.example.com/v1',
+              modelId: 'qwen-plus',
+            },
+          },
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      },
+    ]))
+
+    expect(events[1]).toEqual({
+      type: 'reasoning_delta',
+      runId: 'run-1',
+      sessionId: 'session-1',
+      sequence: 2,
+      payload: {
+        delta: '先思考。',
+      },
+    })
+  })
+
   it('rejects unsupported tool_event phases', async () => {
     const stream = createSseEventStream([
       {

@@ -62,6 +62,8 @@ describe('copilot chat helpers', () => {
       messageText: '',
       selectedModelId: '',
       selectedModelRoute: null,
+      thinkingLevelIntent: null,
+      thinkingLevelByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
     })
@@ -72,6 +74,8 @@ describe('copilot chat helpers', () => {
       messageText: '',
       selectedModelId: 'openai/gpt-4.1',
       selectedModelRoute: null,
+      thinkingLevelIntent: null,
+      thinkingLevelByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
     })
@@ -94,6 +98,10 @@ describe('copilot chat helpers', () => {
             modelId: 'qwen-plus',
           },
         }),
+        thinkingLevelIntent: 'auto',
+        thinkingLevelByModelKey: {
+          'provider-openai|openai|openai-compatible|https://api.example.com/v1|qwen-plus': 'auto',
+        },
         enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
       },
@@ -119,6 +127,7 @@ describe('copilot chat helpers', () => {
           modelId: 'qwen-plus',
         },
       },
+      thinkingLevelIntent: 'auto',
       enabledTools: ['tool.remote-search', 'tool.file-convert'],
       requestOptions: {
         trace: true,

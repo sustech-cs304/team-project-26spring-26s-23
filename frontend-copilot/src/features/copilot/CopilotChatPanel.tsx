@@ -17,10 +17,12 @@ import {
 } from './chat-contract'
 import { CopilotPanelShell } from './CopilotPanelShell'
 import {
+  applyModelSelectionToComposerDraft,
   buildRuntimeDebugSummary,
   buildSessionDebugSummary,
   createComposerDraftFromSession,
   createEmptyComposerDraft,
+  syncComposerDraftThinkingSelection,
   type CopilotChatComposerDraft,
 } from './copilot-chat-helpers'
 import {
@@ -214,12 +216,15 @@ export function CopilotChatPanel({
 
     setComposerDraft((current) => {
       if (!hasAvailableModels) {
-        return current.selectedModelId === '' && current.selectedModelRoute === null
+        return current.selectedModelId === ''
+          && current.selectedModelRoute === null
+          && current.thinkingLevelIntent === null
           ? current
           : {
               ...current,
               selectedModelId: '',
               selectedModelRoute: null,
+              thinkingLevelIntent: null,
             }
       }
 
@@ -231,34 +236,41 @@ export function CopilotChatPanel({
           current.selectedModelId === selectedModel.id
           && isSameModelRoute(current.selectedModelRoute, selectedModel.route)
         ) {
-          return current
+          return syncComposerDraftThinkingSelection(current, {
+            modelRoute: selectedModel.route,
+            thinkingCapability: selectedModel.thinkingCapability,
+          })
         }
 
-        return {
-          ...current,
-          selectedModelId: selectedModel.id,
-          selectedModelRoute: cloneRuntimeModelRoute(selectedModel.route),
-        }
+        return applyModelSelectionToComposerDraft(current, {
+          modelId: selectedModel.id,
+          modelRoute: selectedModel.route,
+          thinkingCapability: selectedModel.thinkingCapability,
+        })
       }
 
       if (current.selectedModelId.trim() !== '') {
-        return current.selectedModelRoute === null
+        return current.selectedModelRoute === null && current.thinkingLevelIntent === null
           ? current
           : {
               ...current,
               selectedModelRoute: null,
+              thinkingLevelIntent: null,
             }
       }
 
       if (preferredWorkspaceModel === null) {
-        return current
+        return syncComposerDraftThinkingSelection(current, {
+          modelRoute: current.selectedModelRoute,
+          thinkingCapability: null,
+        })
       }
 
-      return {
-        ...current,
-        selectedModelId: preferredWorkspaceModel.id,
-        selectedModelRoute: cloneRuntimeModelRoute(preferredWorkspaceModel.route),
-      }
+      return applyModelSelectionToComposerDraft(current, {
+        modelId: preferredWorkspaceModel.id,
+        modelRoute: preferredWorkspaceModel.route,
+        thinkingCapability: preferredWorkspaceModel.thinkingCapability,
+      })
     })
   }, [hasAvailableModels, modelCatalog.models, preferredWorkspaceModel, workspaceStateLoaded])
 
@@ -386,11 +398,12 @@ function resolveComposerDraftModelSelection(
   models: CopilotModelOption[],
 ): CopilotChatComposerDraft {
   if (draft.selectedModelId.trim() === '') {
-    return draft.selectedModelRoute === null
+    return draft.selectedModelRoute === null && draft.thinkingLevelIntent === null
       ? draft
       : {
           ...draft,
           selectedModelRoute: null,
+          thinkingLevelIntent: null,
         }
   }
 
@@ -398,11 +411,12 @@ function resolveComposerDraftModelSelection(
     model.id === draft.selectedModelId || model.modelId === draft.selectedModelId
   ))
   if (matchedModel === undefined) {
-    return draft.selectedModelRoute === null
+    return draft.selectedModelRoute === null && draft.thinkingLevelIntent === null
       ? draft
       : {
           ...draft,
           selectedModelRoute: null,
+          thinkingLevelIntent: null,
         }
   }
 
@@ -410,26 +424,17 @@ function resolveComposerDraftModelSelection(
     draft.selectedModelId === matchedModel.id
     && isSameModelRoute(draft.selectedModelRoute, matchedModel.route)
   ) {
-    return draft
+    return syncComposerDraftThinkingSelection(draft, {
+      modelRoute: matchedModel.route,
+      thinkingCapability: matchedModel.thinkingCapability,
+    })
   }
 
-  return {
-    ...draft,
-    selectedModelId: matchedModel.id,
-    selectedModelRoute: cloneRuntimeModelRoute(matchedModel.route),
-  }
-}
-
-function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
-  return {
-    providerProfileId: route.providerProfileId,
-    snapshot: {
-      provider: route.snapshot.provider,
-      endpointType: route.snapshot.endpointType,
-      baseUrl: route.snapshot.baseUrl,
-      modelId: route.snapshot.modelId,
-    },
-  }
+  return applyModelSelectionToComposerDraft(draft, {
+    modelId: matchedModel.id,
+    modelRoute: matchedModel.route,
+    thinkingCapability: matchedModel.thinkingCapability,
+  })
 }
 
 function clearAbortController(

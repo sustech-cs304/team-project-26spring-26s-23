@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .model_routes import RuntimeModelRoute
@@ -26,6 +26,9 @@ DEFAULT_TRANSPORT = {
     "root_path": "/",
     "method": "POST",
 }
+
+
+ThinkingLevelIntent = Literal["off", "auto", "low", "medium", "high", "max"]
 
 
 class RuntimeContract:
@@ -150,6 +153,7 @@ class RuntimeMessagePayload(RuntimeContract):
 @dataclass(frozen=True, slots=True)
 class RuntimeMessageExecutionPolicy(RuntimeContract):
     modelRoute: RuntimeModelRoute
+    thinkingLevelIntent: ThinkingLevelIntent | None = None
     enabledTools: tuple[str, ...] = ()
     debugModeEnabled: bool | None = None
     requestOptions: dict[str, Any] = field(default_factory=dict)

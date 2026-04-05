@@ -1,5 +1,6 @@
 import type { RuntimeModelRoute } from './thread-run-contract'
-import type { ModelCapability, ProviderProfile } from '../../workbench/types'
+import type { ModelCapability, ProviderProfile, ResolvedThinkingCapability } from '../../workbench/types'
+import { resolveThinkingCapability } from '../../workbench/thinking-capabilities'
 
 export interface CopilotModelIconSpec {
   label: string
@@ -15,6 +16,7 @@ export interface CopilotModelOption {
   tags: string[]
   icon: CopilotModelIconSpec
   route: RuntimeModelRoute
+  thinkingCapability: ResolvedThinkingCapability
 }
 
 export interface CopilotModelGroup {
@@ -117,6 +119,11 @@ export function createEmptyCopilotModel(): CopilotModelOption {
         modelId: '',
       },
     },
+    thinkingCapability: {
+      supported: false,
+      levels: [],
+      defaultLevel: null,
+    },
   }
 }
 
@@ -147,6 +154,11 @@ export function createFallbackCopilotModel(modelId: string): CopilotModelOption 
         modelId: trimmedModelId,
       },
     },
+    thinkingCapability: {
+      supported: false,
+      levels: [],
+      defaultLevel: null,
+    },
   }
 }
 
@@ -159,6 +171,7 @@ export function createCopilotModelCatalog(providerProfiles: ProviderProfile[]): 
       modelId: model.modelId,
       displayName: model.displayName,
       capabilities: model.capabilities,
+      thinkingCapability: model.thinkingCapability,
     })),
   }))
 
@@ -298,6 +311,7 @@ function createCopilotModelOption(
     modelId: string
     displayName: string
     capabilities: ModelCapability[]
+    thinkingCapability?: ProviderProfile['availableModels'][number]['thinkingCapability']
   },
 ): CopilotModelOption {
   const providerTitle = resolveProviderTitle(profile.name, profile.id)
@@ -316,6 +330,13 @@ function createCopilotModelOption(
     tags: mapCapabilitiesToTags(model.capabilities),
     icon: createProviderIconSpec(profile.id, providerTitle, modelName),
     route: createRuntimeModelRoute(profile, trimmedModelId),
+    thinkingCapability: resolveThinkingCapability({
+      providerProfile: profile,
+      modelProfile: {
+        modelId: model.modelId,
+        thinkingCapability: model.thinkingCapability,
+      },
+    }),
   }
 }
 

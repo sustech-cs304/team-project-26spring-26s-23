@@ -107,6 +107,7 @@ class _StreamingExecutor:
         enabled_tools: tuple[str, ...] = (),
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
+        model_settings: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.calls.append(
             {
@@ -117,6 +118,7 @@ class _StreamingExecutor:
                 "enabled_tools": list(enabled_tools),
                 "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
+                "model_settings": dict(model_settings or {}),
             }
         )
         return _ImmediateTextStream(
@@ -150,6 +152,7 @@ class _EventStreamingExecutor:
         enabled_tools: tuple[str, ...] = (),
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
+        model_settings: dict[str, object] | None = None,
     ) -> _ImmediateEventStream:
         self.calls.append(
             {
@@ -161,6 +164,7 @@ class _EventStreamingExecutor:
                 "enabled_tools": list(enabled_tools),
                 "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
+                "model_settings": dict(model_settings or {}),
             }
         )
         return _ImmediateEventStream(events=self._events, output=self._output)
@@ -199,6 +203,7 @@ class _CancellingExecutor(_StreamingExecutor):
         enabled_tools: tuple[str, ...] = (),
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
+        model_settings: dict[str, object] | None = None,
     ) -> _ImmediateTextStream:
         self.calls.append(
             {
@@ -209,6 +214,7 @@ class _CancellingExecutor(_StreamingExecutor):
                 "enabled_tools": list(enabled_tools),
                 "debug_enabled": debug_enabled,
                 "request_options": dict(request_options or {}),
+                "model_settings": dict(model_settings or {}),
             }
         )
         return _CancellingStream(deltas=self._deltas, output="unused")
@@ -280,6 +286,7 @@ def test_stream_events_success_archives_only_completed_assistant_message() -> No
             "enabled_tools": [],
             "debug_enabled": True,
             "request_options": {},
+            "model_settings": {},
         }
     ]
     assert [(message.role, message.content) for message in store.list_messages("session-1")] == [
@@ -494,6 +501,7 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
             "enabled_tools": [WEATHER_CURRENT_TOOL_ID],
             "debug_enabled": False,
             "request_options": {},
+            "model_settings": {},
         }
     ]
 
@@ -818,6 +826,92 @@ def test_stream_events_uses_runtime_debug_env_when_request_debug_omitted(
 
 
 
+def test_stream_events_applies_glm_5_turbo_thinking_settings_for_mapped_routes() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                session_id="session-1",
+                thinking_level_intent="auto",
+                route_snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://api.z.ai/api/paas/v4",
+                    model_id="glm-5-turbo",
+                ),
+            ),
+        )
+    )
+
+    assert executor.calls[0]["model_settings"] == {
+        "extra_body": {
+            "thinking": {
+                "type": "enabled",
+            }
+        }
+    }
+
+
+
+def test_stream_events_emits_diagnostic_when_thinking_intent_cannot_be_mapped() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(session_id="session-1", thinking_level_intent="medium"),
+        )
+    )
+
+    assert [event.type for event in events] == ["run_started", "run_diagnostic", "text_delta", "run_completed"]
+    assert events[1].payload == {
+        "code": "thinking_not_applied",
+        "message": "Thinking intent could not be mapped for the current route; continuing without provider thinking parameters.",
+        "details": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+            "intent": "medium",
+            "reason": "route_not_mapped",
+        },
+        "stage": "adapt_thinking",
+    }
+    assert executor.calls[0]["model_settings"] == {}
+
+
+
 def test_encode_runtime_run_event_renders_sse_payload() -> None:
     request = _build_request(session_id="session-1")
     event = asyncio.run(_collect_events_from_request(request))[0]
@@ -901,6 +995,8 @@ def _build_request(
     session_id: str,
     enabled_tools: tuple[str, ...] = (),
     debug_mode_enabled: bool | None = None,
+    thinking_level_intent: str | None = None,
+    route_snapshot: RuntimeModelRouteSnapshot | None = None,
 ) -> RuntimeMessageSendRequest:
     return RuntimeMessageSendRequest(
         session_id=session_id,
@@ -908,13 +1004,15 @@ def _build_request(
         policy=RuntimeMessageExecutionPolicy(
             modelRoute=RuntimeModelRoute(
                 provider_profile_id="provider-1",
-                snapshot=RuntimeModelRouteSnapshot(
+                snapshot=route_snapshot
+                or RuntimeModelRouteSnapshot(
                     provider="openai",
                     endpoint_type="openai-compatible",
                     base_url="https://example.com/v1",
                     model_id="gpt-4.1",
                 ),
             ),
+            thinkingLevelIntent=thinking_level_intent,
             enabledTools=enabled_tools,
             debugModeEnabled=debug_mode_enabled,
             requestOptions={},

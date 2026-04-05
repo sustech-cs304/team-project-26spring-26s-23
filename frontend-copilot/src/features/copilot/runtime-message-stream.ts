@@ -1,5 +1,6 @@
 import type {
   RuntimeModelRoute,
+  RuntimeReasoningDeltaEvent,
   RuntimeRunCompletedEvent,
   RuntimeRunDiagnosticEvent,
   RuntimeRunEvent,
@@ -126,6 +127,16 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
           delta: requireString(payload.delta, 'runtime event payload.delta'),
         },
       } satisfies RuntimeTextDeltaEvent
+    case 'reasoning_delta':
+      return {
+        type: 'reasoning_delta',
+        runId,
+        sessionId,
+        sequence,
+        payload: {
+          delta: requireString(payload.delta, 'runtime event payload.delta'),
+        },
+      } satisfies RuntimeReasoningDeltaEvent
     case 'run_completed':
       return {
         type: 'run_completed',
@@ -240,6 +251,7 @@ function requireRuntimeRunEventType(value: unknown): RuntimeRunEvent['type'] {
   switch (eventType) {
     case 'run_started':
     case 'text_delta':
+    case 'reasoning_delta':
     case 'run_completed':
     case 'run_failed':
     case 'run_cancelled':

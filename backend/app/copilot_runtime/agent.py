@@ -24,6 +24,8 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPart,
     TextPartDelta,
+    ThinkingPart,
+    ThinkingPartDelta,
     ToolCallPart,
     ToolCallPartDelta,
 )
@@ -258,6 +260,7 @@ class _PydanticAIEventStream:
         deps: _PydanticAIAgentRunDeps,
         resolved_model_id: str,
         event_buffer: RuntimeExecutionEventBuffer,
+        model_settings: Mapping[str, Any] | None = None,
         model_route_summary: Mapping[str, Any] | None = None,
         debug_enabled: bool = False,
     ) -> None:
@@ -268,12 +271,14 @@ class _PydanticAIEventStream:
         self._message_history = tuple(message_history)
         self._resolved_model = resolved_model
         self._deps = deps
+        self._model_settings = dict(model_settings or {})
         self._stream_context: AbstractAsyncContextManager[StreamedRunResult[Any, Any]] | None = None
         self._stream_result: StreamedRunResult[Any, Any] | None = None
         self._event_buffer = event_buffer
         self._model_route_summary = dict(model_route_summary or {})
         self._debug_enabled = debug_enabled
         self._text_delta_index = 0
+        self._reasoning_delta_index = 0
         self._cached_output: str | None = None
         self._observed_tool_calls: dict[int, _ObservedToolCall] = {}
         self._raw_tool_call_observation_count = 0
@@ -339,6 +344,8 @@ class _PydanticAIEventStream:
                 error=summarize_exception(self._run_exception),
                 observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
                 observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+                observedReasoningTextLength=len(self._event_buffer.observed_reasoning_text),
+                observedReasoningTextPreview=preview_text(self._event_buffer.observed_reasoning_text),
                 rawToolCallObservationCount=self._raw_tool_call_observation_count,
                 rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
                 toolLifecycleEmissionCount=len(self._tool_lifecycle_emitted_ids),
@@ -353,8 +360,11 @@ class _PydanticAIEventStream:
             resolvedModelId=self.resolved_model_id,
             collectorMode="agent_graph",
             totalTextDeltaCount=self._text_delta_index,
+            totalReasoningDeltaCount=self._reasoning_delta_index,
             observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
             observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+            observedReasoningTextLength=len(self._event_buffer.observed_reasoning_text),
+            observedReasoningTextPreview=preview_text(self._event_buffer.observed_reasoning_text),
             rawToolCallObservationCount=self._raw_tool_call_observation_count,
             rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
             toolLifecycleEmissionCount=len(self._tool_lifecycle_emitted_ids),
@@ -379,6 +389,7 @@ class _PydanticAIEventStream:
                 message_history=self._message_history,
                 model=self._resolved_model,
                 deps=self._deps,
+                model_settings=self._model_settings or None,
                 event_stream_handler=self._handle_runtime_events,
             )
             output = result.output
@@ -395,6 +406,7 @@ class _PydanticAIEventStream:
             self._run_exception = exc
         finally:
             self._event_buffer.finish_assistant_segment()
+            self._event_buffer.finish_reasoning_segment()
             self._flush_pending_events_to_queue(reason="run_finished")
             self._event_queue.put_nowait(_EVENT_STREAM_DONE)
 
@@ -640,6 +652,13 @@ class _PydanticAIEventStream:
                 source_event_kind=raw_event.event_kind,
             )
             return
+        if isinstance(part, ThinkingPart):
+            self._record_reasoning_delta(
+                part.content,
+                part_index=raw_event.index,
+                source_event_kind=raw_event.event_kind,
+            )
+            return
         if isinstance(part, ToolCallPart):
             state = self._observed_tool_calls.get(raw_event.index)
             if state is None:
@@ -658,6 +677,13 @@ class _PydanticAIEventStream:
         delta = raw_event.delta
         if isinstance(delta, TextPartDelta):
             self._record_text_delta(
+                delta.content_delta,
+                part_index=raw_event.index,
+                source_event_kind=raw_event.event_kind,
+            )
+            return
+        if isinstance(delta, ThinkingPartDelta):
+            self._record_reasoning_delta(
                 delta.content_delta,
                 part_index=raw_event.index,
                 source_event_kind=raw_event.event_kind,
@@ -714,6 +740,39 @@ class _PydanticAIEventStream:
             deltaPreview=preview_text(delta),
         )
         self._event_buffer.record_assistant_delta(delta)
+
+    def _record_reasoning_delta(
+        self,
+        delta: str | None,
+        *,
+        part_index: int | None,
+        source_event_kind: str,
+    ) -> None:
+        if delta in (None, ""):
+            log_runtime_chain_debug(
+                "collector.empty_reasoning_delta",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                collectorMode="raw",
+                partIndex=part_index,
+                rawEventKind=source_event_kind,
+            )
+            return
+        self._reasoning_delta_index += 1
+        log_runtime_chain_debug(
+            "collector.reasoning_delta",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            collectorMode="raw",
+            rawEventKind=source_event_kind,
+            partIndex=part_index,
+            deltaIndex=self._reasoning_delta_index,
+            deltaLength=len(delta),
+            deltaPreview=preview_text(delta),
+        )
+        self._event_buffer.record_reasoning_delta(delta)
 
     def _emit_tool_call_observation_if_needed(
         self,
@@ -847,6 +906,9 @@ class _PydanticAIEventStream:
         if isinstance(part, TextPart):
             summary["partKind"] = "text"
             summary["deltaPreview"] = preview_text(part.content)
+        elif isinstance(part, ThinkingPart):
+            summary["partKind"] = "thinking"
+            summary["deltaPreview"] = preview_text(part.content)
         elif isinstance(part, ToolCallPart):
             summary["partKind"] = "tool-call"
             summary["toolCallId"] = part.tool_call_id
@@ -855,6 +917,9 @@ class _PydanticAIEventStream:
         delta = getattr(raw_event, "delta", None)
         if isinstance(delta, TextPartDelta):
             summary["deltaKind"] = "text"
+            summary["deltaPreview"] = preview_text(delta.content_delta)
+        elif isinstance(delta, ThinkingPartDelta):
+            summary["deltaKind"] = "thinking"
             summary["deltaPreview"] = preview_text(delta.content_delta)
         elif isinstance(delta, ToolCallPartDelta):
             summary["deltaKind"] = "tool-call"
@@ -1045,6 +1110,7 @@ class PydanticAIAgentExecutor:
         enabled_tools: Sequence[str] = (),
         debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
+        model_settings: Mapping[str, Any] | None = None,
     ) -> _PydanticAITextStream:
         if agent_name != self.agent_name:
             raise AgentExecutionError(f"Unsupported agent '{agent_name}'.")
@@ -1068,6 +1134,7 @@ class PydanticAIAgentExecutor:
                     message_history=message_history,
                     model=resolved_model,
                     deps=deps,
+                    model_settings=dict(model_settings or {}) or None,
                 ),
             ),
             resolved_model_id=model_route.model_id,
@@ -1085,6 +1152,7 @@ class PydanticAIAgentExecutor:
         enabled_tools: Sequence[str] = (),
         debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
+        model_settings: Mapping[str, Any] | None = None,
     ) -> _PydanticAIEventStream:
         if agent_name != self.agent_name:
             raise AgentExecutionError(f"Unsupported agent '{agent_name}'.")
@@ -1130,6 +1198,7 @@ class PydanticAIAgentExecutor:
             deps=deps,
             resolved_model_id=model_route.model_id,
             event_buffer=event_buffer,
+            model_settings=model_settings,
             model_route_summary=model_route_summary,
             debug_enabled=debug_enabled,
         )

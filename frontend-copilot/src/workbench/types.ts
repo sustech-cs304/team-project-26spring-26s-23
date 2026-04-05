@@ -28,6 +28,19 @@ export interface SelectOption {
 export type ThemeMode = 'light' | 'dark'
 
 export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
+export type ThinkingLevelIntent = 'off' | 'auto' | 'low' | 'medium' | 'high' | 'max'
+
+export interface ThinkingCapabilityDeclaration {
+  supported: boolean
+  levels?: Array<Exclude<ThinkingLevelIntent, 'off'>>
+  defaultLevel?: ThinkingLevelIntent
+}
+
+export interface ResolvedThinkingCapability {
+  supported: boolean
+  levels: ThinkingLevelIntent[]
+  defaultLevel: ThinkingLevelIntent | null
+}
 
 export interface ProviderModelProfile {
   id: string
@@ -35,6 +48,7 @@ export interface ProviderModelProfile {
   displayName: string
   groupName: string
   capabilities: ModelCapability[]
+  thinkingCapability?: ThinkingCapabilityDeclaration
   supportsStreaming: boolean
   currency: string
   inputPrice: string
