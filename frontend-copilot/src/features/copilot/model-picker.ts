@@ -2,10 +2,8 @@ import type { RuntimeModelRoute } from './thread-run-contract'
 import type {
   ModelCapability,
   ProviderProfile,
-  ResolvedThinkingCapability,
-  ThinkingCapabilityDeclaration,
 } from '../../workbench/types'
-import { resolveThinkingCapability } from '../../workbench/thinking-capabilities'
+import { serializeThinkingCapabilityOverrideInput } from '../../workbench/thinking-capabilities'
 
 export interface CopilotModelIconSpec {
   label: string
@@ -21,8 +19,7 @@ export interface CopilotModelOption {
   tags: string[]
   icon: CopilotModelIconSpec
   route: RuntimeModelRoute
-  thinkingCapability: ResolvedThinkingCapability
-  thinkingCapabilityOverride: ThinkingCapabilityDeclaration | null
+  thinkingCapabilityOverride: Record<string, unknown> | null
 }
 
 export interface CopilotModelGroup {
@@ -125,11 +122,6 @@ export function createEmptyCopilotModel(): CopilotModelOption {
         modelId: '',
       },
     },
-    thinkingCapability: {
-      supported: false,
-      levels: [],
-      defaultLevel: null,
-    },
     thinkingCapabilityOverride: null,
   }
 }
@@ -160,11 +152,6 @@ export function createFallbackCopilotModel(modelId: string): CopilotModelOption 
         baseUrl: '',
         modelId: trimmedModelId,
       },
-    },
-    thinkingCapability: {
-      supported: false,
-      levels: [],
-      defaultLevel: null,
     },
     thinkingCapabilityOverride: null,
   }
@@ -338,14 +325,7 @@ function createCopilotModelOption(
     tags: mapCapabilitiesToTags(model.capabilities),
     icon: createProviderIconSpec(profile.id, providerTitle, modelName),
     route: createRuntimeModelRoute(profile, trimmedModelId),
-    thinkingCapability: resolveThinkingCapability({
-      providerProfile: profile,
-      modelProfile: {
-        modelId: model.modelId,
-        thinkingCapability: model.thinkingCapability,
-      },
-    }),
-    thinkingCapabilityOverride: cloneThinkingCapabilityOverride(model.thinkingCapability),
+    thinkingCapabilityOverride: serializeThinkingCapabilityOverrideInput(model.thinkingCapability),
   }
 }
 
@@ -401,20 +381,6 @@ function createProviderIconSpec(providerId: string, providerTitle: string, model
 
 function resolveProviderTitle(name: string, fallbackId: string): string {
   return name.trim() || fallbackId.trim() || '未命名服务商'
-}
-
-function cloneThinkingCapabilityOverride(
-  declaration: ThinkingCapabilityDeclaration | undefined,
-): ThinkingCapabilityDeclaration | null {
-  if (declaration === undefined) {
-    return null
-  }
-
-  return {
-    supported: declaration.supported,
-    ...(declaration.levels === undefined ? {} : { levels: [...declaration.levels] }),
-    ...(declaration.defaultLevel === undefined ? {} : { defaultLevel: declaration.defaultLevel }),
-  }
 }
 
 function normalizeProviderIdentifier(value: string): string {

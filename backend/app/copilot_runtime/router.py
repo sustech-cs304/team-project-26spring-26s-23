@@ -78,7 +78,7 @@ def build_router(
             )
 
         if requested_method == RUN_START_METHOD:
-            return _handle_run_start_request(
+            return await _handle_run_start_request(
                 parser=parser,
                 payload=payload,
                 scaffold=scaffold,
@@ -207,7 +207,7 @@ def _handle_thread_get_request(
 
 
 
-def _handle_run_start_request(
+async def _handle_run_start_request(
     *,
     parser: RuntimeProtocolParser,
     payload: dict[str, Any] | None,
@@ -217,6 +217,7 @@ def _handle_run_start_request(
     try:
         run_start_request = parser.extract_run_start_request(payload)
         run = runtime_bridge.start_run(request=run_start_request)
+        run = await runtime_bridge.prime_run_metadata(run_id=run.run_id)
     except RuntimeProtocolError as exc:
         return _error_response(exc.status_code, exc.error)
     except ThreadNotFoundError as exc:

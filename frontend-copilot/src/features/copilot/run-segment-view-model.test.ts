@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createRuntimeModelRoute,
+  createRuntimeReasoningSuppressionBasis,
   createRuntimeThinkingCapability,
 } from './chat-contract.test-support'
 import {
@@ -28,6 +29,12 @@ describe('run segment view model', () => {
       activeModelRoute: createRuntimeModelRoute(),
       resolvedModelId: null,
       resolvedModelRoute: null,
+      requestedThinkingLevel: null,
+      appliedThinkingLevel: null,
+      thinkingCapabilitySnapshot: null,
+      reasoningSuppressed: false,
+      reasoningTraceState: 'visible',
+      reasoningSuppressionBasis: null,
     })
 
     expect(items).toEqual([{
@@ -99,6 +106,15 @@ describe('run segment view model', () => {
       requestedThinkingLevel: 'medium',
       appliedThinkingLevel: 'auto',
       thinkingCapabilitySnapshot,
+      reasoningSuppressed: true,
+      reasoningTraceState: 'suppressed',
+      reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
+        shouldSuppress: true,
+        source: 'capability-visibility',
+        reasonCode: 'capability_visibility_suppressed',
+        appliedThinkingLevel: 'auto',
+        reasoningVisibility: 'suppressed',
+      }),
     })
 
     expect(items[0]).toMatchObject({
@@ -106,13 +122,97 @@ describe('run segment view model', () => {
       requestedThinkingLevel: 'medium',
       appliedThinkingLevel: 'auto',
       thinkingCapabilitySnapshot,
+      reasoningTraceState: 'suppressed',
+      reasoningSuppressionBasis: {
+        shouldSuppress: true,
+        source: 'capability-visibility',
+        reasonCode: 'capability_visibility_suppressed',
+        appliedThinkingLevel: 'auto',
+        reasoningVisibility: 'suppressed',
+      },
     })
     expect(items[1]).toMatchObject({
       kind: 'terminal',
       requestedThinkingLevel: 'medium',
       appliedThinkingLevel: 'auto',
       thinkingCapabilitySnapshot,
+      reasoningTraceState: 'suppressed',
+      reasoningSuppressionBasis: {
+        shouldSuppress: true,
+        source: 'capability-visibility',
+        reasonCode: 'capability_visibility_suppressed',
+        appliedThinkingLevel: 'auto',
+        reasoningVisibility: 'suppressed',
+      },
     })
+  })
+
+  it('omits reasoning cards when run state marks the trace as suppressed but keeps visible reasoning unchanged otherwise', () => {
+    const suppressedItems = buildCopilotRunSegmentViewModel({
+      segments: [{
+        id: 'reasoning:run-hidden:1',
+        kind: 'reasoning',
+        runId: 'run-hidden',
+        startedSequence: 1,
+        lastSequence: 1,
+        status: 'completed',
+        text: '这段思考不应显示。',
+        observedStartedAt: 1_000,
+        observedFinishedAt: 1_500,
+        isCollapsedByDefault: true,
+      }],
+      activeModelRoute: createRuntimeModelRoute(),
+      resolvedModelId: null,
+      resolvedModelRoute: null,
+      requestedThinkingLevel: 'auto',
+      appliedThinkingLevel: 'auto',
+      thinkingCapabilitySnapshot: null,
+      reasoningSuppressed: true,
+      reasoningTraceState: 'suppressed',
+      reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
+        shouldSuppress: true,
+        source: 'capability-visibility',
+        reasonCode: 'capability_visibility_suppressed',
+        appliedThinkingLevel: 'auto',
+        reasoningVisibility: 'suppressed',
+      }),
+    })
+
+    const visibleItems = buildCopilotRunSegmentViewModel({
+      segments: [{
+        id: 'reasoning:run-visible:1',
+        kind: 'reasoning',
+        runId: 'run-visible',
+        startedSequence: 1,
+        lastSequence: 1,
+        status: 'completed',
+        text: '这段思考应该显示。',
+        observedStartedAt: 2_000,
+        observedFinishedAt: 2_500,
+        isCollapsedByDefault: true,
+      }],
+      activeModelRoute: createRuntimeModelRoute(),
+      resolvedModelId: null,
+      resolvedModelRoute: null,
+      requestedThinkingLevel: 'auto',
+      appliedThinkingLevel: 'auto',
+      thinkingCapabilitySnapshot: null,
+      reasoningSuppressed: false,
+      reasoningTraceState: 'visible',
+      reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
+        shouldSuppress: false,
+        source: 'none',
+        appliedThinkingLevel: 'auto',
+      }),
+    })
+
+    expect(suppressedItems).toEqual([])
+    expect(visibleItems).toMatchObject([{
+      kind: 'reasoning',
+      content: '这段思考应该显示。',
+      observedStartedAt: 2_000,
+      observedFinishedAt: 2_500,
+    }])
   })
 
   it('formats reasoning duration labels at 0.1 second precision for streaming and finished cards', () => {

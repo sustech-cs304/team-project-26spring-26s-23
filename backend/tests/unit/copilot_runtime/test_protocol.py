@@ -138,7 +138,13 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
     assert request.policy.modelRoute.snapshot.endpoint_type == "openai-compatible"
     assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
     assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
-    assert request.policy.thinkingLevelIntent == "auto"
+    assert request.policy.thinkingSelection is not None
+    assert request.policy.thinkingSelection.series == "compat-discrete-selection-v1"
+    assert request.policy.thinkingSelection.mode == "preset"
+    assert request.policy.thinkingSelection.level == "auto"
+    assert request.policy.thinkingSelection.budgetTokens is None
+    assert request.policy.thinkingLevelIntent is None
+    assert request.policy.resolve_thinking_level_intent() == "auto"
     assert request.policy.enabledTools == ("tool.file-convert",)
     assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
@@ -169,7 +175,13 @@ def test_extract_message_send_request_reads_model_route_policy_fields() -> None:
     assert request.policy.modelRoute.snapshot.endpoint_type == "openai-compatible"
     assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
     assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
-    assert request.policy.thinkingLevelIntent == "auto"
+    assert request.policy.thinkingSelection is not None
+    assert request.policy.thinkingSelection.series == "compat-discrete-selection-v1"
+    assert request.policy.thinkingSelection.mode == "preset"
+    assert request.policy.thinkingSelection.level == "auto"
+    assert request.policy.thinkingSelection.budgetTokens is None
+    assert request.policy.thinkingLevelIntent is None
+    assert request.policy.resolve_thinking_level_intent() == "auto"
     assert request.policy.enabledTools == ("tool.file-convert",)
     assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
@@ -193,6 +205,36 @@ def test_extract_message_send_request_leaves_debug_mode_unset_when_field_omitted
     )
 
     assert request.policy.debugModeEnabled is None
+
+
+
+def test_extract_message_send_request_accepts_structured_thinking_selection_and_derives_legacy_alias() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["thinkingSelection"] = {
+        "series": "budget-v2",
+        "mode": "budget",
+        "budgetTokens": 512,
+    }
+    policy["thinkingLevelIntent"] = "high"
+
+    request = parser.extract_message_send_request(
+        {
+            "method": "message/send",
+            "body": {
+                "sessionId": "session-123",
+                "message": {"role": "user", "content": "Hello"},
+                "policy": policy,
+            },
+        }
+    )
+
+    assert request.policy.thinkingSelection is not None
+    assert request.policy.thinkingSelection.series == "budget-v2"
+    assert request.policy.thinkingSelection.mode == "budget"
+    assert request.policy.thinkingSelection.level is None
+    assert request.policy.thinkingSelection.budgetTokens == 512
+    assert request.policy.thinkingLevelIntent is None
 
 
 

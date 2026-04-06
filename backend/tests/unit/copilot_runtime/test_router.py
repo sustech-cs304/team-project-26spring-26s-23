@@ -207,9 +207,41 @@ def test_root_post_run_start_returns_run_shell_payload() -> None:
     assert run is not None
     assert payload == scaffold.build_run_start_response(run=run).to_dict()
     assert payload["run"]["status"] == "pending"
+    assert payload["run"]["requestedThinkingSelection"] is None
+    assert payload["run"]["appliedThinkingSelection"] is None
     assert payload["run"]["requestedThinkingLevel"] is None
     assert payload["run"]["appliedThinkingLevel"] is None
-    assert payload["run"]["thinkingCapabilitySnapshot"] is None
+    assert payload["run"]["thinkingCapabilitySnapshot"]["status"] == "unknown-without-override"
+    assert payload["run"]["thinkingSelectionResult"] == {
+        "requestedSelection": None,
+        "appliedSelection": None,
+        "requestedThinkingLevel": None,
+        "appliedThinkingLevel": None,
+        "applied": False,
+        "reasonCode": "intent_missing",
+        "errorCode": None,
+        "mappingReasonCode": "selection_missing",
+        "providerMapping": None,
+        "capabilityStatus": "unknown-without-override",
+        "capabilitySource": "unknown",
+        "capabilitySeries": "fixed-off-v1",
+        "capabilityReasonCode": "route_not_verified",
+        "overridePresent": False,
+        "overrideApplied": False,
+        "overrideSource": None,
+        "reasoningVisibility": "visible",
+        "supportsSuppression": True,
+    }
+    assert payload["run"]["reasoningSuppressionBasis"] == {
+        "shouldSuppress": False,
+        "source": "none",
+        "reasonCode": None,
+        "appliedThinkingLevel": None,
+        "reasoningVisibility": "visible",
+        "supportsSuppression": True,
+        "capabilitySource": "unknown",
+        "capabilitySeries": "fixed-off-v1",
+    }
 
 
 
@@ -244,12 +276,22 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
         "run_completed",
     ]
     assert events[1]["payload"] == {
+        "requestedThinkingSelection": None,
+        "appliedThinkingSelection": None,
         "requestedThinkingLevel": None,
         "appliedThinkingLevel": None,
         "thinkingCapabilitySnapshot": {
             "status": "unknown-without-override",
             "source": "unknown",
             "supported": False,
+            "series": "fixed-off-v1",
+            "controlSpec": {
+                "kind": "fixed",
+                "selectionKind": "preset",
+                "presetOptions": [{"kind": "preset", "value": "off"}],
+                "fixedSelection": {"kind": "preset", "value": "off"},
+            },
+            "defaultSelection": {"kind": "preset", "value": "off"},
             "supportedLevels": [],
             "defaultLevel": None,
             "reasonCode": "route_not_verified",
@@ -261,7 +303,50 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
                 "baseUrl": "https://example.com/v1",
                 "modelId": "gpt-4.1",
             },
+            "provenance": {
+                "routeStatus": "unknown",
+                "override": {
+                    "present": False,
+                    "applied": False,
+                    "source": None,
+                    "format": None,
+                },
+            },
+            "visibility": {
+                "reasoning": "visible",
+                "supportsSuppression": True,
+            },
             "overrideLevels": [],
+        },
+        "thinkingSelectionResult": {
+            "requestedSelection": None,
+            "appliedSelection": None,
+            "requestedThinkingLevel": None,
+            "appliedThinkingLevel": None,
+            "applied": False,
+            "reasonCode": "intent_missing",
+            "errorCode": None,
+            "mappingReasonCode": "selection_missing",
+            "providerMapping": None,
+            "capabilityStatus": "unknown-without-override",
+            "capabilitySource": "unknown",
+            "capabilitySeries": "fixed-off-v1",
+            "capabilityReasonCode": "route_not_verified",
+            "overridePresent": False,
+            "overrideApplied": False,
+            "overrideSource": None,
+            "reasoningVisibility": "visible",
+            "supportsSuppression": True,
+        },
+        "reasoningSuppressionBasis": {
+            "shouldSuppress": False,
+            "source": "none",
+            "reasonCode": None,
+            "appliedThinkingLevel": None,
+            "reasoningVisibility": "visible",
+            "supportsSuppression": True,
+            "capabilitySource": "unknown",
+            "capabilitySeries": "fixed-off-v1",
         },
     }
     assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
@@ -308,9 +393,41 @@ def test_root_post_run_cancel_marks_pending_run_cancelled_and_stream_returns_can
     assert cancel_payload["run"]["runId"] == run_id
     assert cancel_payload["run"]["status"] == "cancelled"
     assert cancel_payload["run"]["cancelRequested"] is True
+    assert cancel_payload["run"]["requestedThinkingSelection"] is None
+    assert cancel_payload["run"]["appliedThinkingSelection"] is None
     assert cancel_payload["run"]["requestedThinkingLevel"] is None
     assert cancel_payload["run"]["appliedThinkingLevel"] is None
-    assert cancel_payload["run"]["thinkingCapabilitySnapshot"] is None
+    assert cancel_payload["run"]["thinkingCapabilitySnapshot"]["status"] == "unknown-without-override"
+    assert cancel_payload["run"]["thinkingSelectionResult"] == {
+        "requestedSelection": None,
+        "appliedSelection": None,
+        "requestedThinkingLevel": None,
+        "appliedThinkingLevel": None,
+        "applied": False,
+        "reasonCode": "intent_missing",
+        "errorCode": None,
+        "mappingReasonCode": "selection_missing",
+        "providerMapping": None,
+        "capabilityStatus": "unknown-without-override",
+        "capabilitySource": "unknown",
+        "capabilitySeries": "fixed-off-v1",
+        "capabilityReasonCode": "route_not_verified",
+        "overridePresent": False,
+        "overrideApplied": False,
+        "overrideSource": None,
+        "reasoningVisibility": "visible",
+        "supportsSuppression": True,
+    }
+    assert cancel_payload["run"]["reasoningSuppressionBasis"] == {
+        "shouldSuppress": False,
+        "source": "none",
+        "reasonCode": None,
+        "appliedThinkingLevel": None,
+        "reasoningVisibility": "visible",
+        "supportsSuppression": True,
+        "capabilitySource": "unknown",
+        "capabilitySeries": "fixed-off-v1",
+    }
 
     assert stream_response.status_code == 200
     assert [event["type"] for event in events] == ["run_cancelled"]
@@ -358,6 +475,87 @@ def test_root_post_session_create_returns_bound_agent_session_payload() -> None:
         }
     }
 
+
+
+def test_root_post_thinking_capability_get_returns_canonical_schema_and_schema_version() -> None:
+    app, _scaffold, store = _build_app()
+    session = store.create(bound_agent_id="default", session_id="session-1")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json={
+                "method": "thinking/capability/get",
+                "body": {
+                    "sessionId": session.session_id,
+                    "modelRoute": {
+                        "providerProfileId": "provider-1",
+                        "snapshot": {
+                            "provider": "openai",
+                            "endpointType": "openai-compatible",
+                            "baseUrl": "https://example.com/v1",
+                            "modelId": "gpt-4.1",
+                        },
+                    },
+                    "thinkingCapabilityOverride": {
+                        "supported": True,
+                        "levels": ["low", "high"],
+                        "defaultLevel": "high",
+                        "source": "settings-page",
+                    },
+                },
+            },
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload == {
+        "ok": True,
+        "sessionId": session.session_id,
+        "capabilitySchemaVersion": "canonical-thinking-capability-v2",
+        "capability": {
+            "status": "unknown-with-override",
+            "source": "override",
+            "supported": True,
+            "series": "compat-override-discrete-v1",
+            "controlSpec": {
+                "kind": "discrete",
+                "selectionKind": "preset",
+                "presetOptions": [
+                    {"kind": "preset", "value": "off"},
+                    {"kind": "preset", "value": "low"},
+                    {"kind": "preset", "value": "high"},
+                ],
+            },
+            "defaultSelection": {"kind": "preset", "value": "high"},
+            "reasonCode": "override_candidate_control_applied",
+            "providerHint": "unknown-route-override",
+            "routeFingerprint": {
+                "providerProfileId": "provider-1",
+                "provider": "openai",
+                "endpointType": "openai-compatible",
+                "baseUrl": "https://example.com/v1",
+                "modelId": "gpt-4.1",
+            },
+            "provenance": {
+                "routeStatus": "unknown",
+                "override": {
+                    "present": True,
+                    "applied": True,
+                    "source": "settings-page",
+                    "format": "legacy-levels",
+                },
+            },
+            "visibility": {
+                "reasoning": "visible",
+                "supportsSuppression": True,
+            },
+            "supportedLevels": ["off", "low", "high"],
+            "defaultLevel": "high",
+            "overrideLevels": ["off", "low", "high"],
+        },
+    }
 
 
 def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool_catalog() -> None:
@@ -423,12 +621,22 @@ def test_root_post_message_send_streams_typed_events_and_persists_history() -> N
         "run_completed",
     ]
     assert events[1]["payload"] == {
+        "requestedThinkingSelection": None,
+        "appliedThinkingSelection": None,
         "requestedThinkingLevel": None,
         "appliedThinkingLevel": None,
         "thinkingCapabilitySnapshot": {
             "status": "unknown-without-override",
             "source": "unknown",
             "supported": False,
+            "series": "fixed-off-v1",
+            "controlSpec": {
+                "kind": "fixed",
+                "selectionKind": "preset",
+                "presetOptions": [{"kind": "preset", "value": "off"}],
+                "fixedSelection": {"kind": "preset", "value": "off"},
+            },
+            "defaultSelection": {"kind": "preset", "value": "off"},
             "supportedLevels": [],
             "defaultLevel": None,
             "reasonCode": "route_not_verified",
@@ -440,7 +648,50 @@ def test_root_post_message_send_streams_typed_events_and_persists_history() -> N
                 "baseUrl": "https://example.com/v1",
                 "modelId": "gpt-4.1",
             },
+            "provenance": {
+                "routeStatus": "unknown",
+                "override": {
+                    "present": False,
+                    "applied": False,
+                    "source": None,
+                    "format": None,
+                },
+            },
+            "visibility": {
+                "reasoning": "visible",
+                "supportsSuppression": True,
+            },
             "overrideLevels": [],
+        },
+        "thinkingSelectionResult": {
+            "requestedSelection": None,
+            "appliedSelection": None,
+            "requestedThinkingLevel": None,
+            "appliedThinkingLevel": None,
+            "applied": False,
+            "reasonCode": "intent_missing",
+            "errorCode": None,
+            "mappingReasonCode": "selection_missing",
+            "providerMapping": None,
+            "capabilityStatus": "unknown-without-override",
+            "capabilitySource": "unknown",
+            "capabilitySeries": "fixed-off-v1",
+            "capabilityReasonCode": "route_not_verified",
+            "overridePresent": False,
+            "overrideApplied": False,
+            "overrideSource": None,
+            "reasoningVisibility": "visible",
+            "supportsSuppression": True,
+        },
+        "reasoningSuppressionBasis": {
+            "shouldSuppress": False,
+            "source": "none",
+            "reasonCode": None,
+            "appliedThinkingLevel": None,
+            "reasoningVisibility": "visible",
+            "supportsSuppression": True,
+            "capabilitySource": "unknown",
+            "capabilitySeries": "fixed-off-v1",
         },
     }
     assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
@@ -622,6 +873,7 @@ def _build_runtime_bridge(
             scaffold=scaffold,
             model_route_resolver=_EchoModelRouteResolver(),
         ),
+        model_route_resolver=_EchoModelRouteResolver(),
     )
 
 

@@ -1,6 +1,8 @@
-import type {
-  RuntimeModelRoute,
-  RuntimeThinkingCapability,
+import {
+  cloneRuntimeReasoningSuppressionBasis as cloneRuntimeReasoningSuppressionBasisValue,
+  cloneRuntimeThinkingCapability as cloneRuntimeThinkingCapabilityValue,
+  type RuntimeModelRoute,
+  type RuntimeThinkingCapability,
 } from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
@@ -36,6 +38,8 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
   appliedThinkingLevel?: CopilotRunState['appliedThinkingLevel']
   thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
+  reasoningTraceState?: CopilotRunState['reasoningTraceState']
+  reasoningSuppressionBasis?: CopilotRunState['reasoningSuppressionBasis']
 }
 
 export interface CopilotReasoningMessageItem extends CopilotRunSegmentViewItemBase {
@@ -76,6 +80,8 @@ export interface CopilotTerminalMessageItem extends CopilotRunSegmentViewItemBas
   requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
   appliedThinkingLevel?: CopilotRunState['appliedThinkingLevel']
   thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
+  reasoningTraceState?: CopilotRunState['reasoningTraceState']
+  reasoningSuppressionBasis?: CopilotRunState['reasoningSuppressionBasis']
 }
 
 export type CopilotRunSegmentViewItem =
@@ -110,7 +116,7 @@ export function buildCopilotMessageListItems(input: {
 }
 
 export function resolveCopilotAssistantPlaceholderState(
-  runState: Pick<CopilotRunState, 'phase' | 'segments'>,
+  runState: Pick<CopilotRunState, 'phase' | 'segments' | 'reasoningTraceState'>,
 ): CopilotAssistantPlaceholderState {
   if (runState.segments.some(isRenderableAssistantSegment)) {
     return {
@@ -119,7 +125,10 @@ export function resolveCopilotAssistantPlaceholderState(
     }
   }
 
-  if (runState.segments.some((segment) => segment.kind === 'reasoning')) {
+  if (
+    runState.reasoningTraceState !== 'suppressed'
+    && runState.segments.some((segment) => segment.kind === 'reasoning')
+  ) {
     return {
       shouldRender: false,
       dismissReason: 'reasoning',
@@ -163,6 +172,9 @@ export function buildCopilotRunSegmentViewModel(
     | 'requestedThinkingLevel'
     | 'appliedThinkingLevel'
     | 'thinkingCapabilitySnapshot'
+    | 'reasoningSuppressed'
+    | 'reasoningTraceState'
+    | 'reasoningSuppressionBasis'
   >,
 ): CopilotRunSegmentViewItem[] {
   return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment, runState))
@@ -194,13 +206,16 @@ function projectSegmentToViewItems(
     | 'requestedThinkingLevel'
     | 'appliedThinkingLevel'
     | 'thinkingCapabilitySnapshot'
+    | 'reasoningSuppressed'
+    | 'reasoningTraceState'
+    | 'reasoningSuppressionBasis'
   >,
 ): CopilotRunSegmentViewItem[] {
   switch (segment.kind) {
     case 'assistant':
       return projectAssistantSegment(segment, runState)
     case 'reasoning':
-      return [projectReasoningSegment(segment)]
+      return shouldProjectReasoningSegment(runState) ? [projectReasoningSegment(segment)] : []
     case 'tool':
       return [projectToolSegment(segment)]
     case 'diagnostic':
@@ -222,6 +237,8 @@ function projectAssistantSegment(
     | 'requestedThinkingLevel'
     | 'appliedThinkingLevel'
     | 'thinkingCapabilitySnapshot'
+    | 'reasoningTraceState'
+    | 'reasoningSuppressionBasis'
   >,
 ): CopilotRunSegmentViewItem[] {
   if (!isRenderableAssistantSegment(segment)) {
@@ -246,6 +263,8 @@ function projectAssistantSegment(
     requestedThinkingLevel: runState.requestedThinkingLevel,
     appliedThinkingLevel: runState.appliedThinkingLevel,
     thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
+    reasoningTraceState: runState.reasoningTraceState,
+    reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(runState.reasoningSuppressionBasis),
   }]
 }
 
@@ -313,6 +332,8 @@ function projectTerminalSegment(
     | 'requestedThinkingLevel'
     | 'appliedThinkingLevel'
     | 'thinkingCapabilitySnapshot'
+    | 'reasoningTraceState'
+    | 'reasoningSuppressionBasis'
   >,
 ): CopilotTerminalMessageItem | null {
   switch (segment.terminalPhase) {
@@ -333,6 +354,8 @@ function projectTerminalSegment(
         requestedThinkingLevel: runState.requestedThinkingLevel,
         appliedThinkingLevel: runState.appliedThinkingLevel,
         thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
+        reasoningTraceState: runState.reasoningTraceState,
+        reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(runState.reasoningSuppressionBasis),
       }
     case 'failed':
       return {
@@ -355,6 +378,8 @@ function projectTerminalSegment(
         requestedThinkingLevel: runState.requestedThinkingLevel,
         appliedThinkingLevel: runState.appliedThinkingLevel,
         thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
+        reasoningTraceState: runState.reasoningTraceState,
+        reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(runState.reasoningSuppressionBasis),
       }
   }
 }
@@ -434,27 +459,19 @@ function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRo
 function cloneRuntimeThinkingCapability(
   capability: RuntimeThinkingCapability | null,
 ): RuntimeThinkingCapability | null {
-  if (capability === null) {
-    return null
-  }
+  return cloneRuntimeThinkingCapabilityValue(capability)
+}
 
-  return {
-    status: capability.status,
-    source: capability.source,
-    supported: capability.supported,
-    supportedLevels: [...capability.supportedLevels],
-    defaultLevel: capability.defaultLevel,
-    reasonCode: capability.reasonCode,
-    providerHint: capability.providerHint,
-    routeFingerprint: {
-      providerProfileId: capability.routeFingerprint.providerProfileId,
-      provider: capability.routeFingerprint.provider,
-      endpointType: capability.routeFingerprint.endpointType,
-      baseUrl: capability.routeFingerprint.baseUrl,
-      modelId: capability.routeFingerprint.modelId,
-    },
-    overrideLevels: [...capability.overrideLevels],
-  }
+function cloneRuntimeReasoningSuppressionBasis(
+  basis: CopilotRunState['reasoningSuppressionBasis'],
+): CopilotRunState['reasoningSuppressionBasis'] {
+  return cloneRuntimeReasoningSuppressionBasisValue(basis)
+}
+
+function shouldProjectReasoningSegment(
+  runState: Pick<CopilotRunState, 'reasoningSuppressed' | 'reasoningTraceState'>,
+): boolean {
+  return runState.reasoningSuppressed !== true && runState.reasoningTraceState !== 'suppressed'
 }
 
 function isRenderableAssistantSegment(segment: CopilotRunSegment): boolean {

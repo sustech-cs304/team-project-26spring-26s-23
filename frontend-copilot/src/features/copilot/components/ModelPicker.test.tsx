@@ -182,11 +182,6 @@ function createOption(input: {
         modelId: input.modelId,
       },
     },
-    thinkingCapability: {
-      supported: false,
-      levels: [],
-      defaultLevel: null,
-    },
     thinkingCapabilityOverride: null,
   }
 }

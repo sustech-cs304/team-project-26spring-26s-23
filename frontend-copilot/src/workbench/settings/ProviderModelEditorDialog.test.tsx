@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { renderWithRoot, clickElement } from './SettingsWorkspace.test-support'
+import { renderWithRoot, clickElement, setFormControlValue } from './SettingsWorkspace.test-support'
 import { ProviderModelEditorDialog } from './ProviderModelEditorDialog'
 import type { ModelEditorState } from './provider-profiles'
 
@@ -114,6 +114,64 @@ describe('ProviderModelEditorDialog', () => {
     )
 
     expect(rendered.queryByText('仅保存当前模型允许的离散档位。')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('renders budget series inputs and writes structured override edits back through state changes', async () => {
+    const handleStateChange = vi.fn()
+    const rendered = renderWithRoot(
+      <ProviderModelEditorDialog
+        modelEditorState={createModelEditorState({
+          thinkingCapability: {
+            supported: true,
+            series: 'gemini-2.5-budget-v1',
+            input: {
+              kind: 'budget',
+              minTokens: 0,
+              maxTokens: 32768,
+              stepTokens: 1024,
+            },
+            defaultSelection: {
+              mode: 'budget',
+              budgetTokens: 8192,
+            },
+            source: 'settings-page',
+          },
+        })}
+        modelEditorError={null}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onStateChange={handleStateChange}
+        onToggleCapability={vi.fn()}
+        onClearError={vi.fn()}
+      />,
+    )
+
+    expect(rendered.getByText('推理系列')).toBeTruthy()
+    expect(rendered.getByText('最小预算')).toBeTruthy()
+    expect(rendered.getByText('最大预算')).toBeTruthy()
+    expect(rendered.getByText('步进')).toBeTruthy()
+
+    await setFormControlValue(rendered.getByPlaceholder('8192') as HTMLInputElement, '4096')
+
+    expect(handleStateChange).toHaveBeenCalled()
+    expect(handleStateChange.mock.calls[handleStateChange.mock.calls.length - 1]?.[0]).toMatchObject({
+      thinkingCapability: {
+        supported: true,
+        series: 'gemini-2.5-budget-v1',
+        input: {
+          kind: 'budget',
+          minTokens: 0,
+          maxTokens: 32768,
+          stepTokens: 1024,
+        },
+        defaultSelection: {
+          mode: 'budget',
+          budgetTokens: 4096,
+        },
+      },
+    })
 
     rendered.unmount()
   })

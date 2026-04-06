@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { CopilotMessageList } from './CopilotMessageList'
 import {
   createRuntimeModelRoute,
+  createRuntimeReasoningSuppressionBasis,
   createRuntimeThinkingCapability,
 } from './chat-contract.test-support'
 import { createIdleCopilotRunState } from './run-segment-reducer'
@@ -359,6 +360,8 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('override_candidate_levels_applied')
     expect(html).toContain('Provider Hint')
     expect(html).toContain('unknown-route-override')
+    expect(html).toContain('思考轨迹')
+    expect(html).toContain('未收到')
   })
 
   it('keeps completed segments visible when a run is cancelled and appends a terminal marker', () => {
@@ -490,6 +493,63 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('最终答复。')
     expect(html.indexOf('思考')).toBeLessThan(html.indexOf('最终答复。'))
     expect(html).not.toContain('copilot-chat__message-text--markdown">先分析用户问题，再整理答案。')
+  })
+
+  it('suppresses reasoning cards when run state marks the trace as hidden for this run', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'completed',
+      runId: 'run-hidden-reasoning',
+      threadId: 'session-1',
+      requestedThinkingLevel: 'auto',
+      appliedThinkingLevel: 'auto',
+      reasoningSuppressed: true,
+      reasoningTraceState: 'suppressed',
+      reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
+        shouldSuppress: true,
+        source: 'capability-visibility',
+        reasonCode: 'capability_visibility_suppressed',
+        appliedThinkingLevel: 'auto',
+        reasoningVisibility: 'suppressed',
+      }),
+      segments: [
+        {
+          id: 'reasoning:run-hidden-reasoning:1',
+          kind: 'reasoning',
+          runId: 'run-hidden-reasoning',
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'completed',
+          text: '这段推理内容不应显示。',
+          observedStartedAt: 1_000,
+          observedFinishedAt: 1_500,
+          isCollapsedByDefault: true,
+        },
+        {
+          id: 'assistant:run-hidden-reasoning:2',
+          kind: 'assistant',
+          runId: 'run-hidden-reasoning',
+          assistantMessageId: 'run-hidden-reasoning:assistant',
+          text: '最终答复仍应显示。',
+          firstContentSequence: 2,
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'completed',
+          resolvedModelId: 'qwen-plus',
+          resolvedModelRoute: createRuntimeModelRoute(),
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).not.toContain('chat-message-reasoning-card-1')
+    expect(html).not.toContain('这段推理内容不应显示。')
+    expect(html).toContain('最终答复仍应显示。')
+    expect(html).toContain('思考轨迹')
+    expect(html).toContain('已抑制')
+    expect(html).toContain('抑制依据')
+    expect(html).toContain('capability_visibility_suppressed')
   })
 
   it('shows the reasoning streaming status only on the dedicated reasoning card', () => {

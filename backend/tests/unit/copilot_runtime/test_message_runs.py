@@ -15,7 +15,13 @@ from app.copilot_runtime.model_routes import (
     RuntimeModelRoute,
     RuntimeModelRouteSnapshot,
 )
-from app.copilot_runtime.contracts import RuntimeMessageExecutionPolicy, RuntimeMessagePayload, RuntimeMessageSendRequest, build_runtime_scaffold
+from app.copilot_runtime.contracts import (
+    RuntimeMessageExecutionPolicy,
+    RuntimeMessagePayload,
+    RuntimeMessageSendRequest,
+    RuntimeThinkingSelection,
+    build_runtime_scaffold,
+)
 from app.copilot_runtime.agent_registry import build_default_agent_registry
 from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
@@ -853,7 +859,7 @@ def test_stream_events_applies_glm_5_turbo_thinking_settings_for_mapped_routes()
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
-    asyncio.run(
+    events = asyncio.run(
         _collect_events(
             orchestrator,
             _build_request(
@@ -876,6 +882,219 @@ def test_stream_events_applies_glm_5_turbo_thinking_settings_for_mapped_routes()
             }
         }
     }
+    metadata = events[1].payload
+    assert metadata["requestedThinkingSelection"] == {
+        "series": "compat-discrete-selection-v1",
+        "mode": "preset",
+        "level": "auto",
+        "budgetTokens": None,
+    }
+    assert metadata["appliedThinkingSelection"] == {
+        "series": "compat-discrete-selection-v1",
+        "mode": "preset",
+        "level": "auto",
+        "budgetTokens": None,
+    }
+    assert metadata["requestedThinkingLevel"] == "auto"
+    assert metadata["appliedThinkingLevel"] == "auto"
+    assert metadata["thinkingCapabilitySnapshot"]["status"] == "verified-supported"
+    assert metadata["thinkingSelectionResult"] == _thinking_selection_result_payload(
+        requested_thinking_level="auto",
+        applied_thinking_level="auto",
+        applied=True,
+        reason_code="verified_provider_mapping_applied",
+        error_code=None,
+        mapping_reason_code="zai_glm_series_auto",
+        capability_status="verified-supported",
+        capability_source="verified",
+        override_present=False,
+        override_applied=False,
+        provider_mapping="zai_glm_openai_compatible",
+        model_settings={
+            "extra_body": {
+                "thinking": {
+                    "type": "enabled",
+                }
+            }
+        },
+        include_empty_fields=True,
+    )
+
+
+
+def test_stream_events_applies_structured_selection_for_verified_route() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    thinking_selection = RuntimeThinkingSelection(
+        series="zai-glm-thinking-v1",
+        mode="preset",
+        level="auto",
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                session_id="session-1",
+                thinking_selection=thinking_selection,
+                route_snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://api.z.ai/api/paas/v4",
+                    model_id="glm-5-turbo",
+                ),
+            ),
+        )
+    )
+
+    metadata = events[1].payload
+    assert metadata["requestedThinkingSelection"] == thinking_selection.to_dict()
+    assert metadata["appliedThinkingSelection"] == thinking_selection.to_dict()
+    assert metadata["requestedThinkingLevel"] == "auto"
+    assert metadata["appliedThinkingLevel"] == "auto"
+    assert metadata["thinkingCapabilitySnapshot"]["status"] == "verified-supported"
+    assert metadata["thinkingSelectionResult"]["reasonCode"] == "verified_provider_mapping_applied"
+    assert metadata["thinkingSelectionResult"]["mappingReasonCode"] == "zai_glm_series_auto"
+    assert executor.calls[0]["model_settings"] == {
+        "extra_body": {
+            "thinking": {
+                "type": "enabled",
+            }
+        }
+    }
+
+
+
+def test_stream_events_unknown_with_override_applies_when_mapping_exists() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    thinking_selection = RuntimeThinkingSelection(
+        series="zai-glm-thinking-v1",
+        mode="preset",
+        level="auto",
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                session_id="session-1",
+                thinking_selection=thinking_selection,
+                thinking_capability_override={
+                    "supported": True,
+                    "series": "zai-glm-thinking-v1",
+                    "input": {
+                        "kind": "discrete",
+                        "levels": ["auto"],
+                    },
+                    "defaultSelection": {"mode": "preset", "level": "auto"},
+                    "source": "settings-page",
+                },
+                route_snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://api.z.ai/api/paas/v4",
+                    model_id="glm-5-experimental",
+                ),
+            ),
+        )
+    )
+
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
+    metadata = events[1].payload
+    assert metadata["thinkingCapabilitySnapshot"]["status"] == "unknown-with-override"
+    assert metadata["thinkingCapabilitySnapshot"]["source"] == "override"
+    assert metadata["appliedThinkingSelection"] == thinking_selection.to_dict()
+    assert metadata["thinkingSelectionResult"]["reasonCode"] == "override_provider_mapping_applied"
+    assert metadata["thinkingSelectionResult"]["mappingReasonCode"] == "zai_glm_series_auto"
+    assert executor.calls[0]["model_settings"] == {
+        "extra_body": {
+            "thinking": {
+                "type": "enabled",
+            }
+        }
+    }
+
+
+
+def test_stream_events_unknown_with_override_fails_fast_when_mapping_missing() -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    thinking_selection = RuntimeThinkingSelection(
+        series="compat-discrete-levels-v1",
+        mode="preset",
+        level="high",
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                session_id="session-1",
+                thinking_selection=thinking_selection,
+                thinking_capability_override={
+                    "supported": True,
+                    "series": "compat-discrete-levels-v1",
+                    "input": {
+                        "kind": "discrete",
+                        "levels": ["high"],
+                    },
+                    "defaultSelection": {"mode": "preset", "level": "high"},
+                    "source": "settings-page",
+                },
+            ),
+        )
+    )
+
+    assert [event.type for event in events] == ["run_started", "run_metadata", "run_diagnostic", "run_failed"]
+    metadata = events[1].payload
+    assert metadata["thinkingCapabilitySnapshot"]["status"] == "unknown-with-override"
+    assert metadata["thinkingCapabilitySnapshot"]["source"] == "override"
+    assert metadata["appliedThinkingSelection"] is None
+    assert metadata["thinkingSelectionResult"]["reasonCode"] == "requested_selection_not_mappable_for_provider"
+    assert metadata["thinkingSelectionResult"]["errorCode"] == "thinking_not_supported_for_route"
+    assert events[2].payload["code"] == "thinking_not_supported_for_route"
+    assert events[2].payload["details"]["mappingReasonCode"] == "provider_mapping_missing_for_selection"
+    assert executor.calls == []
 
 
 
@@ -916,19 +1135,61 @@ def test_stream_events_fails_when_thinking_intent_cannot_be_mapped() -> None:
         "status": "unknown-without-override",
         "source": "unknown",
         "supported": False,
+        "series": "fixed-off-v1",
+        "controlSpec": {
+            "kind": "fixed",
+            "selectionKind": "preset",
+            "presetOptions": [{"kind": "preset", "value": "off"}],
+            "fixedSelection": {"kind": "preset", "value": "off"},
+        },
+        "defaultSelection": {"kind": "preset", "value": "off"},
         "supportedLevels": [],
         "defaultLevel": None,
         "reasonCode": "route_not_verified",
         "providerHint": "unknown-route",
+        "provenance": {
+            "routeStatus": "unknown",
+            "override": {
+                "present": False,
+                "applied": False,
+                "source": None,
+                "format": None,
+            },
+        },
+        "visibility": {
+            "reasoning": "visible",
+            "supportsSuppression": True,
+        },
+        "requestedSelection": {"kind": "preset", "value": "medium"},
+        "appliedSelection": None,
         "requestedThinkingLevel": "medium",
         "appliedThinkingLevel": None,
         "providerMapping": None,
+        "mappingReasonCode": "selection_not_allowed_by_capability",
+        "errorCode": "thinking_not_supported_for_route",
         "intent": "medium",
         "reason": "requested_level_not_in_capability",
     }
 
     assert [event.type for event in events] == ["run_started", "run_metadata", "run_diagnostic", "run_failed"]
-    _assert_unknown_route_run_metadata(events[1], requested_thinking_level="medium", applied_thinking_level=None)
+    _assert_unknown_route_run_metadata(
+        events[1],
+        requested_thinking_level="medium",
+        applied_thinking_level=None,
+        thinking_selection_result=_thinking_selection_result_payload(
+            requested_thinking_level="medium",
+            applied_thinking_level=None,
+            applied=False,
+            reason_code="requested_level_not_in_capability",
+            error_code="thinking_not_supported_for_route",
+            mapping_reason_code="selection_not_allowed_by_capability",
+            capability_status="unknown-without-override",
+            capability_source="unknown",
+            override_present=False,
+            override_applied=False,
+            include_empty_fields=True,
+        ),
+    )
     assert events[2].payload == {
         "code": "thinking_not_supported_for_route",
         "message": expected_message,
@@ -1009,6 +1270,123 @@ def test_stream_events_logs_thinking_diagnostics_when_debug_enabled(monkeypatch:
 
 
 
+def test_stream_events_logs_reasoning_suppression_when_hidden_reasoning_delta_arrives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = InMemorySessionStore()
+    store.create(bound_agent_id="default", session_id="session-1")
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="reasoning_segment_started",
+                payload={"segmentId": "run-hidden:reasoning-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="reasoning_segment_delta",
+                payload={
+                    "segmentId": "run-hidden:reasoning-segment-1",
+                    "delta": "这段推理应被抑制。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="reasoning_segment_completed",
+                payload={"segmentId": "run-hidden:reasoning-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_started",
+                payload={"segmentId": "run-hidden:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_delta",
+                payload={
+                    "segmentId": "run-hidden:assistant-segment-1",
+                    "delta": "最终回答。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_completed",
+                payload={"segmentId": "run-hidden:assistant-segment-1"},
+            ),
+        ],
+        output="最终回答。",
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    captured_logs: list[tuple[str, dict[str, object]]] = []
+    module = __import__("app.copilot_runtime.message_runs", fromlist=["log_runtime_chain_debug"])
+
+    def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
+        captured_logs.append((event_name, payload))
+
+    monkeypatch.setattr(module, "log_runtime_chain_debug", _capture_log)
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                session_id="session-1",
+                debug_mode_enabled=True,
+                thinking_capability_override={
+                    "supported": True,
+                    "series": "zai-glm-thinking-v1",
+                    "input": {
+                        "kind": "discrete",
+                        "levels": ["auto"],
+                    },
+                    "defaultSelection": {"mode": "preset", "level": "auto"},
+                    "visibility": {
+                        "reasoning": "suppressed",
+                        "supportsSuppression": True,
+                    },
+                    "source": "settings-page",
+                },
+                thinking_selection=RuntimeThinkingSelection(
+                    series="zai-glm-thinking-v1",
+                    mode="preset",
+                    level="auto",
+                ),
+                route_snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://api.z.ai/api/paas/v4",
+                    model_id="glm-5-experimental",
+                ),
+            ),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "reasoning_delta",
+        "text_delta",
+        "run_completed",
+    ]
+    suppression_logs = [payload for name, payload in captured_logs if name == "thinking.reasoning_suppressed"]
+    assert len(suppression_logs) == 1
+    assert suppression_logs[0]["suppressionEnabled"] is True
+    assert suppression_logs[0]["suppressionSource"] == "capability-visibility"
+    assert suppression_logs[0]["suppressionReasonCode"] == "capability_visibility_suppressed"
+    assert suppression_logs[0]["reasoningSuppressionBasis"] == _reasoning_suppression_basis_payload(
+        applied_thinking_level="auto",
+        capability_source="override",
+        capability_series="zai-glm-thinking-v1",
+        reasoning_visibility="suppressed",
+    )
+    assert suppression_logs[0]["projectedEventTypes"] == ["reasoning_delta"]
+
+
+
 def test_encode_runtime_run_event_renders_sse_payload() -> None:
     request = _build_request(session_id="session-1")
     event = asyncio.run(_collect_events_from_request(request))[0]
@@ -1052,6 +1430,14 @@ def _unknown_route_thinking_snapshot() -> dict[str, object]:
         "status": "unknown-without-override",
         "source": "unknown",
         "supported": False,
+        "series": "fixed-off-v1",
+        "controlSpec": {
+            "kind": "fixed",
+            "selectionKind": "preset",
+            "presetOptions": [{"kind": "preset", "value": "off"}],
+            "fixedSelection": {"kind": "preset", "value": "off"},
+        },
+        "defaultSelection": {"kind": "preset", "value": "off"},
         "supportedLevels": [],
         "defaultLevel": None,
         "reasonCode": "route_not_verified",
@@ -1062,6 +1448,19 @@ def _unknown_route_thinking_snapshot() -> dict[str, object]:
             "endpointType": "openai-compatible",
             "baseUrl": "https://example.com/v1",
             "modelId": "gpt-4.1",
+        },
+        "provenance": {
+            "routeStatus": "unknown",
+            "override": {
+                "present": False,
+                "applied": False,
+                "source": None,
+                "format": None,
+            },
+        },
+        "visibility": {
+            "reasoning": "visible",
+            "supportsSuppression": True,
         },
         "overrideLevels": [],
     }
@@ -1074,16 +1473,45 @@ def _unknown_route_run_metadata_summary(
     requested_thinking_level: str | None,
     applied_thinking_level: str | None,
 ) -> dict[str, object]:
-    summary: dict[str, object] = {
+    return {
         "type": "run_metadata",
         "sequence": sequence,
         "thinkingCapability": _unknown_route_thinking_snapshot(),
+        "requestedThinkingSelection": _compat_thinking_selection(requested_thinking_level),
+        "appliedThinkingSelection": _compat_thinking_selection(applied_thinking_level),
+        "thinkingSelectionResult": _thinking_selection_result_payload(
+            requested_thinking_level=requested_thinking_level,
+            applied_thinking_level=applied_thinking_level,
+            applied=False,
+            reason_code=(
+                "intent_missing"
+                if requested_thinking_level is None
+                else "requested_level_not_in_capability"
+            ),
+            error_code=(
+                None
+                if requested_thinking_level is None
+                else "thinking_not_supported_for_route"
+            ),
+            mapping_reason_code=(
+                "selection_missing"
+                if requested_thinking_level is None
+                else "selection_not_allowed_by_capability"
+            ),
+            capability_status="unknown-without-override",
+            capability_source="unknown",
+            override_present=False,
+            override_applied=False,
+            include_empty_fields=requested_thinking_level is None,
+        ),
+        "reasoningSuppressionBasis": _reasoning_suppression_basis_payload(
+            applied_thinking_level=applied_thinking_level,
+            capability_source="unknown",
+            capability_series="fixed-off-v1",
+        ),
+        **({"requestedThinkingLevel": requested_thinking_level} if requested_thinking_level is not None else {}),
+        **({"appliedThinkingLevel": applied_thinking_level} if applied_thinking_level is not None else {}),
     }
-    if requested_thinking_level is not None:
-        summary["requestedThinkingLevel"] = requested_thinking_level
-    if applied_thinking_level is not None:
-        summary["appliedThinkingLevel"] = applied_thinking_level
-    return summary
 
 
 
@@ -1092,13 +1520,175 @@ def _assert_unknown_route_run_metadata(
     *,
     requested_thinking_level: str | None,
     applied_thinking_level: str | None,
+    thinking_selection_result: dict[str, object] | None = None,
 ) -> None:
     assert event.type == "run_metadata"
-    assert event.payload == {
+    expected_payload = {
+        "requestedThinkingSelection": _compat_thinking_selection(requested_thinking_level),
+        "appliedThinkingSelection": _compat_thinking_selection(applied_thinking_level),
         "requestedThinkingLevel": requested_thinking_level,
         "appliedThinkingLevel": applied_thinking_level,
         "thinkingCapabilitySnapshot": _unknown_route_thinking_snapshot(),
+        "thinkingSelectionResult": (
+            thinking_selection_result
+            if thinking_selection_result is not None
+            else _thinking_selection_result_payload(
+                requested_thinking_level=requested_thinking_level,
+                applied_thinking_level=applied_thinking_level,
+                applied=False,
+                reason_code=(
+                    "intent_missing"
+                    if requested_thinking_level is None
+                    else "requested_level_not_in_capability"
+                ),
+                error_code=(
+                    None
+                    if requested_thinking_level is None
+                    else "thinking_not_supported_for_route"
+                ),
+                mapping_reason_code=(
+                    "selection_missing"
+                    if requested_thinking_level is None
+                    else "selection_not_allowed_by_capability"
+                ),
+                capability_status="unknown-without-override",
+                capability_source="unknown",
+                override_present=False,
+                override_applied=False,
+                include_empty_fields=requested_thinking_level is None,
+            )
+        ),
+        "reasoningSuppressionBasis": _reasoning_suppression_basis_payload(
+            applied_thinking_level=applied_thinking_level,
+            capability_source="unknown",
+            capability_series="fixed-off-v1",
+            include_empty_fields=applied_thinking_level is None,
+        ),
     }
+    assert event.payload == expected_payload
+
+
+
+def _compat_thinking_selection(level: str | None) -> dict[str, object] | None:
+    if level is None:
+        return None
+    return {
+        "series": "compat-discrete-selection-v1",
+        "mode": "preset",
+        "level": level,
+        "budgetTokens": None,
+    }
+
+
+def _thinking_selection_result_payload(
+    *,
+    requested_thinking_level: str | None,
+    applied_thinking_level: str | None,
+    applied: bool,
+    reason_code: str,
+    error_code: str | None,
+    mapping_reason_code: str | None,
+    capability_status: str,
+    capability_source: str,
+    override_present: bool,
+    override_applied: bool,
+    provider_mapping: str | None = None,
+    model_settings: dict[str, object] | None = None,
+    capability_series: str | None = None,
+    capability_reason_code: str | None = None,
+    override_source: str | None = None,
+    reasoning_visibility: str | None = "visible",
+    supports_suppression: bool | None = True,
+    include_empty_fields: bool = False,
+) -> dict[str, object]:
+    resolved_capability_series = capability_series
+    if resolved_capability_series is None:
+        if capability_status == "unknown-without-override":
+            resolved_capability_series = "fixed-off-v1"
+        elif capability_source in {"verified", "override"}:
+            resolved_capability_series = "zai-glm-thinking-v1"
+    resolved_capability_reason_code = capability_reason_code
+    if resolved_capability_reason_code is None:
+        if capability_status == "unknown-without-override":
+            resolved_capability_reason_code = "route_not_verified"
+        elif capability_source == "verified":
+            resolved_capability_reason_code = "zai_glm_verified_supported"
+        elif capability_source == "override":
+            resolved_capability_reason_code = "override_candidate_control_applied"
+    payload: dict[str, object] = {
+        "applied": applied,
+        "reasonCode": reason_code,
+        "mappingReasonCode": mapping_reason_code,
+        "capabilityStatus": capability_status,
+        "capabilitySource": capability_source,
+        "capabilitySeries": resolved_capability_series,
+        "capabilityReasonCode": resolved_capability_reason_code,
+        "overridePresent": override_present,
+        "overrideApplied": override_applied,
+        "reasoningVisibility": reasoning_visibility,
+        "supportsSuppression": supports_suppression,
+    }
+    if include_empty_fields or requested_thinking_level is not None:
+        payload["requestedSelection"] = _canonical_preset_selection(requested_thinking_level)
+        payload["requestedThinkingLevel"] = requested_thinking_level
+    if include_empty_fields or applied_thinking_level is not None:
+        payload["appliedSelection"] = _canonical_preset_selection(applied_thinking_level)
+        payload["appliedThinkingLevel"] = applied_thinking_level
+    if include_empty_fields or error_code is not None:
+        payload["errorCode"] = error_code
+    if include_empty_fields or provider_mapping is not None:
+        payload["providerMapping"] = provider_mapping
+    if include_empty_fields or override_source is not None:
+        payload["overrideSource"] = override_source
+    if model_settings is not None:
+        payload["modelSettings"] = model_settings
+    return payload
+
+
+
+def _reasoning_suppression_basis_payload(
+    *,
+    applied_thinking_level: str | None,
+    capability_source: str,
+    capability_series: str,
+    reasoning_visibility: str = "visible",
+    supports_suppression: bool = True,
+    include_empty_fields: bool = False,
+) -> dict[str, object]:
+    should_suppress = reasoning_visibility == "suppressed" or applied_thinking_level == "off"
+    if reasoning_visibility == "suppressed":
+        source = "capability-visibility"
+        reason_code = "capability_visibility_suppressed"
+    elif applied_thinking_level == "off":
+        source = "applied-selection"
+        reason_code = "applied_selection_off"
+    else:
+        source = "none"
+        reason_code = None
+    payload: dict[str, object] = {
+        "shouldSuppress": should_suppress,
+        "source": source,
+        "reasoningVisibility": reasoning_visibility,
+        "supportsSuppression": supports_suppression,
+        "capabilitySource": capability_source,
+        "capabilitySeries": capability_series,
+    }
+    if include_empty_fields or reason_code is not None:
+        payload["reasonCode"] = reason_code
+    if include_empty_fields or applied_thinking_level is not None:
+        payload["appliedThinkingLevel"] = applied_thinking_level
+    return payload
+
+
+
+def _canonical_preset_selection(level: str | None) -> dict[str, object] | None:
+    if level is None:
+        return None
+    return {
+        "kind": "preset",
+        "value": level,
+    }
+
 
 
 async def _collect_events(
@@ -1148,6 +1738,8 @@ def _build_request(
     enabled_tools: tuple[str, ...] = (),
     debug_mode_enabled: bool | None = None,
     thinking_level_intent: str | None = None,
+    thinking_selection: RuntimeThinkingSelection | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
     route_snapshot: RuntimeModelRouteSnapshot | None = None,
 ) -> RuntimeMessageSendRequest:
     return RuntimeMessageSendRequest(
@@ -1164,7 +1756,9 @@ def _build_request(
                     model_id="gpt-4.1",
                 ),
             ),
+            thinkingSelection=thinking_selection,
             thinkingLevelIntent=thinking_level_intent,
+            thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
             debugModeEnabled=debug_mode_enabled,
             requestOptions={},

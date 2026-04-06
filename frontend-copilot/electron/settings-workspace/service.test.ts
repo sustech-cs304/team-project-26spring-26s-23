@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -115,6 +115,65 @@ describe('createSettingsWorkspaceStorage', () => {
         fastAssistantModel: 'persisted-fast',
       })
       expect(reloaded.state.general.language).toBe('en-US')
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('loads legacy flat thinking declarations and normalizes them into structured override inputs', async () => {
+    const fixture = await createSettingsWorkspaceFixture()
+
+    try {
+      const initial = await fixture.storage.loadState()
+      const legacyProvider = createProviderProfile({
+        id: 'legacy-provider',
+        name: 'Legacy Provider',
+        defaultModel: 'legacy-model',
+        fastModel: 'legacy-model',
+        fallbackModel: 'legacy-model',
+        availableModels: [
+          {
+            id: 'legacy-provider:model-1',
+            modelId: 'legacy-model',
+            displayName: 'Legacy Model',
+            groupName: 'Legacy',
+            capabilities: ['reasoning', 'tools'],
+            thinkingCapability: {
+              supported: true,
+              levels: ['low', 'high'],
+              defaultLevel: 'high',
+            },
+            supportsStreaming: true,
+            currency: 'usd',
+            inputPrice: '1',
+            outputPrice: '2',
+          },
+        ],
+      })
+
+      await writeFile(fixture.paths.stateDocument, `${JSON.stringify({
+        version: 1,
+        kind: 'settings-workspace-state',
+        values: {
+          ...initial.state,
+          providerProfiles: [legacyProvider].map(({ hasApiKey: _hasApiKey, ...profile }) => profile),
+        },
+      }, null, 2)}\n`)
+
+      const loaded = await fixture.storage.loadState()
+
+      expect(loaded.state.providerProfiles[0]?.availableModels[0]?.thinkingCapability).toEqual({
+        supported: true,
+        series: 'compat-discrete-levels-v1',
+        input: {
+          kind: 'discrete',
+          levels: ['low', 'high'],
+        },
+        defaultSelection: {
+          mode: 'preset',
+          level: 'high',
+        },
+      })
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }

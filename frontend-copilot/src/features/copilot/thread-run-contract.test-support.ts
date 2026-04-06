@@ -14,6 +14,7 @@ import type {
   RuntimeRunView,
   RuntimeSessionCreateResponse,
   RuntimeThinkingCapability,
+  RuntimeThinkingSelection,
   RuntimeThreadCreateResponse,
   RuntimeThreadGetResponse,
   RuntimeToolEvent,
@@ -205,9 +206,16 @@ type RuntimeRunCancelResponseOverrides = Omit<Partial<RuntimeRunCancelResponse>,
   run?: Partial<RuntimeRunView>
 }
 
+type RuntimeRunMetadataEventOverrides = Omit<Partial<RuntimeRunMetadataEvent>, 'payload'> & {
+  payload?: Partial<RuntimeRunMetadataEvent['payload']>
+}
+
 export function createRuntimeRunStartResponse(
   overrides: RuntimeRunStartResponseOverrides = {},
 ): RuntimeRunStartResponse {
+  const requestedThinkingLevel = overrides.run?.requestedThinkingLevel ?? null
+  const appliedThinkingLevel = overrides.run?.appliedThinkingLevel ?? null
+
   return {
     ok: true,
     run: {
@@ -219,9 +227,15 @@ export function createRuntimeRunStartResponse(
       startedAt: overrides.run?.startedAt ?? null,
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? false,
-      requestedThinkingLevel: overrides.run?.requestedThinkingLevel ?? null,
-      appliedThinkingLevel: overrides.run?.appliedThinkingLevel ?? null,
+      requestedThinkingSelection: overrides.run?.requestedThinkingSelection
+        ?? createRuntimeThinkingSelectionFromLevel(requestedThinkingLevel),
+      appliedThinkingSelection: overrides.run?.appliedThinkingSelection
+        ?? createRuntimeThinkingSelectionFromLevel(appliedThinkingLevel),
+      requestedThinkingLevel,
+      appliedThinkingLevel,
       thinkingCapabilitySnapshot: overrides.run?.thinkingCapabilitySnapshot ?? null,
+      thinkingSelectionResult: overrides.run?.thinkingSelectionResult ?? null,
+      reasoningSuppressionBasis: overrides.run?.reasoningSuppressionBasis ?? null,
     },
     assistantMessageId: overrides.assistantMessageId ?? 'run-1:assistant',
     stream: overrides.stream ?? {
@@ -242,6 +256,9 @@ export function createRuntimeRunStartResponse(
 export function createRuntimeRunCancelResponse(
   overrides: RuntimeRunCancelResponseOverrides = {},
 ): RuntimeRunCancelResponse {
+  const requestedThinkingLevel = overrides.run?.requestedThinkingLevel ?? null
+  const appliedThinkingLevel = overrides.run?.appliedThinkingLevel ?? null
+
   return {
     ok: true,
     run: {
@@ -253,9 +270,15 @@ export function createRuntimeRunCancelResponse(
       startedAt: overrides.run?.startedAt ?? '2026-03-27T10:00:01Z',
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? true,
-      requestedThinkingLevel: overrides.run?.requestedThinkingLevel ?? null,
-      appliedThinkingLevel: overrides.run?.appliedThinkingLevel ?? null,
+      requestedThinkingSelection: overrides.run?.requestedThinkingSelection
+        ?? createRuntimeThinkingSelectionFromLevel(requestedThinkingLevel),
+      appliedThinkingSelection: overrides.run?.appliedThinkingSelection
+        ?? createRuntimeThinkingSelectionFromLevel(appliedThinkingLevel),
+      requestedThinkingLevel,
+      appliedThinkingLevel,
       thinkingCapabilitySnapshot: overrides.run?.thinkingCapabilitySnapshot ?? null,
+      thinkingSelectionResult: overrides.run?.thinkingSelectionResult ?? null,
+      reasoningSuppressionBasis: overrides.run?.reasoningSuppressionBasis ?? null,
     },
     cancelAccepted: overrides.cancelAccepted ?? true,
   }
@@ -268,6 +291,9 @@ export function createRuntimeThinkingCapability(
     status: overrides.status ?? 'verified-supported',
     source: overrides.source ?? 'verified',
     supported: overrides.supported ?? true,
+    series: overrides.series ?? 'compat-discrete-levels-v1',
+    controlSpec: overrides.controlSpec ?? createRuntimeThinkingControlSpec(),
+    defaultSelection: overrides.defaultSelection ?? createRuntimeCanonicalThinkingSelection({ value: 'auto' }),
     supportedLevels: overrides.supportedLevels ?? ['off', 'auto', 'low', 'medium', 'high', 'xhigh'],
     defaultLevel: overrides.defaultLevel ?? 'auto',
     reasonCode: overrides.reasonCode ?? 'verified_supported',
@@ -279,22 +305,44 @@ export function createRuntimeThinkingCapability(
       baseUrl: 'https://api.example.com/v1',
       modelId: 'qwen-plus',
     },
+    provenance: overrides.provenance ?? {
+      routeStatus: 'verified',
+      override: {
+        present: false,
+        applied: false,
+        source: null,
+        format: null,
+      },
+    },
+    visibility: overrides.visibility ?? {
+      reasoning: 'visible',
+      supportsSuppression: true,
+    },
     overrideLevels: overrides.overrideLevels ?? [],
   }
 }
 
 export function createRuntimeRunMetadataEvent(
-  overrides: Partial<RuntimeRunMetadataEvent> = {},
+  overrides: RuntimeRunMetadataEventOverrides = {},
 ): RuntimeRunMetadataEvent {
+  const requestedThinkingLevel = overrides.payload?.requestedThinkingLevel ?? 'auto'
+  const appliedThinkingLevel = overrides.payload?.appliedThinkingLevel ?? 'auto'
+
   return {
     type: 'run_metadata',
     runId: overrides.runId ?? 'run-1',
     sessionId: overrides.sessionId ?? sessionId,
     sequence: overrides.sequence ?? 2,
     payload: {
-      requestedThinkingLevel: overrides.payload?.requestedThinkingLevel ?? 'auto',
-      appliedThinkingLevel: overrides.payload?.appliedThinkingLevel ?? 'auto',
+      requestedThinkingSelection: overrides.payload?.requestedThinkingSelection
+        ?? createRuntimeThinkingSelectionFromLevel(requestedThinkingLevel),
+      appliedThinkingSelection: overrides.payload?.appliedThinkingSelection
+        ?? createRuntimeThinkingSelectionFromLevel(appliedThinkingLevel),
+      requestedThinkingLevel,
+      appliedThinkingLevel,
       thinkingCapabilitySnapshot: overrides.payload?.thinkingCapabilitySnapshot ?? createRuntimeThinkingCapability(),
+      thinkingSelectionResult: overrides.payload?.thinkingSelectionResult ?? null,
+      reasoningSuppressionBasis: overrides.payload?.reasoningSuppressionBasis ?? null,
     },
   }
 }
@@ -316,6 +364,99 @@ export function createRuntimeRunCompletedEvent(
       requestOptions: overrides.payload?.requestOptions ?? { trace: true },
     },
   }
+}
+
+export function createRuntimeThinkingSelection(
+  overrides: Partial<RuntimeThinkingSelection> = {},
+): RuntimeThinkingSelection {
+  return {
+    series: overrides.series ?? 'compat-discrete-selection-v1',
+    mode: overrides.mode ?? 'preset',
+    level: overrides.level === undefined ? 'auto' : overrides.level,
+    budgetTokens: overrides.budgetTokens === undefined ? null : overrides.budgetTokens,
+  }
+}
+
+export function createRuntimeCanonicalThinkingSelection(
+  overrides: Partial<RuntimeThinkingSelectionResult['requestedSelection']> & {
+    kind?: 'preset' | 'budget'
+  } = {},
+) {
+  return {
+    kind: overrides.kind ?? 'preset',
+    ...(overrides.value === undefined ? { value: 'auto' } : { value: overrides.value }),
+    ...(overrides.budgetTokens === undefined ? {} : { budgetTokens: overrides.budgetTokens }),
+  }
+}
+
+export function createRuntimeThinkingControlSpec(
+  overrides: Partial<NonNullable<RuntimeThinkingCapability['controlSpec']>> = {},
+) {
+  return {
+    kind: overrides.kind ?? 'discrete',
+    selectionKind: overrides.selectionKind ?? 'preset',
+    ...(overrides.presetOptions === undefined
+      ? {
+          presetOptions: [
+            createRuntimeCanonicalThinkingSelection({ value: 'off' }),
+            createRuntimeCanonicalThinkingSelection({ value: 'auto' }),
+            createRuntimeCanonicalThinkingSelection({ value: 'medium' }),
+          ],
+        }
+      : { presetOptions: overrides.presetOptions }),
+    ...(overrides.fixedSelection === undefined ? {} : { fixedSelection: overrides.fixedSelection }),
+    ...(overrides.budget === undefined ? {} : { budget: overrides.budget }),
+  }
+}
+
+export function createRuntimeThinkingSelectionResult(
+  overrides: Partial<NonNullable<RuntimeRunMetadataEvent['payload']['thinkingSelectionResult']>> = {},
+) {
+  return {
+    requestedSelection: overrides.requestedSelection ?? createRuntimeCanonicalThinkingSelection({ value: 'auto' }),
+    appliedSelection: overrides.appliedSelection ?? createRuntimeCanonicalThinkingSelection({ value: 'auto' }),
+    requestedThinkingLevel: overrides.requestedThinkingLevel ?? 'auto',
+    appliedThinkingLevel: overrides.appliedThinkingLevel ?? 'auto',
+    applied: overrides.applied ?? true,
+    reasonCode: overrides.reasonCode ?? 'verified_provider_mapping_applied',
+    errorCode: overrides.errorCode ?? null,
+    mappingReasonCode: overrides.mappingReasonCode ?? 'provider_mapping_applied',
+    providerMapping: overrides.providerMapping ?? 'openai_reasoning',
+    capabilityStatus: overrides.capabilityStatus ?? 'verified-supported',
+    capabilitySource: overrides.capabilitySource ?? 'verified',
+    capabilitySeries: overrides.capabilitySeries ?? 'compat-discrete-levels-v1',
+    capabilityReasonCode: overrides.capabilityReasonCode ?? 'verified_supported',
+    overridePresent: overrides.overridePresent ?? false,
+    overrideApplied: overrides.overrideApplied ?? false,
+    overrideSource: overrides.overrideSource ?? null,
+    reasoningVisibility: overrides.reasoningVisibility ?? 'visible',
+    supportsSuppression: overrides.supportsSuppression ?? true,
+    ...(overrides.modelSettings === undefined ? {} : { modelSettings: overrides.modelSettings }),
+  }
+}
+
+export function createRuntimeReasoningSuppressionBasis(
+  overrides: Partial<NonNullable<RuntimeRunMetadataEvent['payload']['reasoningSuppressionBasis']>> = {},
+) {
+  return {
+    shouldSuppress: overrides.shouldSuppress ?? false,
+    source: overrides.source ?? 'none',
+    reasonCode: overrides.reasonCode ?? null,
+    appliedThinkingLevel: overrides.appliedThinkingLevel ?? null,
+    reasoningVisibility: overrides.reasoningVisibility ?? 'visible',
+    supportsSuppression: overrides.supportsSuppression ?? true,
+    capabilitySource: overrides.capabilitySource ?? 'verified',
+    capabilitySeries: overrides.capabilitySeries ?? 'compat-discrete-levels-v1',
+  }
+}
+
+function createRuntimeThinkingSelectionFromLevel(
+  level: RuntimeThinkingSelection['level'],
+): RuntimeThinkingSelection | null {
+  if (level === null) {
+    return null
+  }
+  return createRuntimeThinkingSelection({ level })
 }
 
 export function createRuntimeToolEvent(

@@ -11,17 +11,24 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import { ArrowUp, Lightbulb, Square } from 'lucide-react'
+import { ArrowUp, Lightbulb, Lock, Square } from 'lucide-react'
 
 import { THINKING_LEVEL_LABELS } from '../../workbench/thinking-capabilities'
 import type { AssistantSessionShell, ThinkingLevelIntent } from '../../workbench/types'
 import {
   applyModelSelectionToComposerDraft,
-  applyThinkingLevelSelectionToComposerDraft,
+  applyThinkingSelectionToComposerDraft,
+  resolveThinkingSelectionForCapability,
   type CopilotChatComposerDraft,
 } from './copilot-chat-helpers'
 import type { CopilotModelGroup } from './model-picker'
-import type { RuntimeThinkingCapability } from './thread-run-contract'
+import type {
+  RuntimeCanonicalThinkingSelection,
+  RuntimeThinkingCapability,
+  RuntimeThinkingControlSpec,
+  RuntimeThinkingLevel,
+  RuntimeThinkingSelection,
+} from './thread-run-contract'
 import { ModelPicker } from './components/ModelPicker'
 import { ToolPicker } from './components/ToolPicker'
 
@@ -59,24 +66,30 @@ export function CopilotComposer({
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
   const isSending = sendStatus === 'sending'
   const controlsDisabled = isSending
-  const thinkingSupported = thinkingCapability?.supported === true
-  const thinkingOptions = thinkingSupported && thinkingCapability !== null
-    ? buildRuntimeThinkingLevelOptions(thinkingCapability)
-    : []
-  const thinkingValue = draft.thinkingLevelIntent ?? thinkingCapability?.defaultLevel ?? 'off'
-  const unsupportedThinkingHint = draft.selectedModelRoute !== null && thinkingCapability !== null && !thinkingSupported
-    ? '当前模型不支持'
-    : null
-  const thinkingSourceHint = thinkingCapability?.source === 'override'
-    ? '候选来源：设置页 override'
-    : null
   const thinkingControlRef = useRef<HTMLDivElement | null>(null)
   const thinkingPanelId = useId()
   const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
-  const currentThinkingLabel = useMemo(
-    () => thinkingOptions.find((option) => option.value === thinkingValue)?.label ?? '思考',
-    [thinkingOptions, thinkingValue],
+
+  const thinkingControlSpec = thinkingCapability?.controlSpec ?? null
+  const canRenderThinkingControl = thinkingCapability !== null && thinkingControlSpec !== null
+  const effectiveThinkingSelection = useMemo(
+    () => (thinkingCapability === null ? draft.thinkingSelection : resolveThinkingSelectionForCapability(thinkingCapability, draft.thinkingSelection)),
+    [draft.thinkingSelection, thinkingCapability],
   )
+  const currentThinkingLabel = useMemo(
+    () => formatThinkingSelectionLabel(effectiveThinkingSelection, thinkingControlSpec),
+    [effectiveThinkingSelection, thinkingControlSpec],
+  )
+  const thinkingSourceHint = thinkingCapability !== null && isOverrideThinkingCapability(thinkingCapability)
+    ? 'override'
+    : null
+  const thinkingTriggerLabel = currentThinkingLabel === null ? '思考' : currentThinkingLabel
+  const thinkingTriggerTitle = canRenderThinkingControl
+    ? thinkingTriggerLabel
+    : '思考'
+  const thinkingTriggerActive = effectiveThinkingSelection === null
+    ? false
+    : isThinkingSelectionActive(effectiveThinkingSelection)
 
   useEffect(() => {
     if (!thinkingPanelOpen) {
@@ -107,10 +120,10 @@ export function CopilotComposer({
   }, [thinkingPanelOpen])
 
   useEffect(() => {
-    if (controlsDisabled || !thinkingSupported) {
+    if (controlsDisabled || !canRenderThinkingControl) {
       setThinkingPanelOpen(false)
     }
-  }, [controlsDisabled, thinkingSupported])
+  }, [canRenderThinkingControl, controlsDisabled])
 
   const handleMessageInputKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
@@ -143,6 +156,13 @@ export function CopilotComposer({
     }
   }
 
+  const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
+    onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
+      modelRoute: draft.selectedModelRoute,
+      thinkingSelection,
+    }))
+  }
+
   return (
     <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={onSubmit}>
       <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
@@ -167,15 +187,15 @@ export function CopilotComposer({
             className={[
               'copilot-chat__thinking-trigger',
               controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
-              thinkingSupported && thinkingValue !== 'off' ? 'copilot-chat__thinking-trigger--active' : '',
+              thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
             ].filter((className) => className !== '').join(' ')}
             data-testid="chat-thinking-trigger"
-            aria-label={unsupportedThinkingHint ?? `思考档位：${currentThinkingLabel}`}
-            title={unsupportedThinkingHint ?? '思考档位'}
-            aria-controls={thinkingSupported ? thinkingPanelId : undefined}
+            aria-label={`思考设置：${thinkingTriggerTitle}`}
+            title={thinkingTriggerTitle}
+            aria-controls={canRenderThinkingControl ? thinkingPanelId : undefined}
             disabled={controlsDisabled}
             onClick={() => {
-              if (!thinkingSupported) {
+              if (!canRenderThinkingControl) {
                 setThinkingPanelOpen(false)
                 return
               }
@@ -185,7 +205,7 @@ export function CopilotComposer({
           >
             <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
           </button>
-          {thinkingSupported && thinkingPanelOpen && (
+          {thinkingCapability !== null && thinkingControlSpec !== null && thinkingPanelOpen && (
             <section
               id={thinkingPanelId}
               className="copilot-model-picker__panel copilot-chat__thinking-panel"
@@ -193,41 +213,25 @@ export function CopilotComposer({
               aria-label="选择思考档位"
               data-testid="chat-thinking-panel"
             >
-              <p className="copilot-panel__eyebrow">推理强度</p>
-              {thinkingSourceHint !== null && (
-                <p className="copilot-chat__thinking-hint" data-testid="chat-thinking-override-hint">
-                  {thinkingSourceHint}
-                </p>
-              )}
-              <div className="copilot-chat__thinking-option-list">
-                {thinkingOptions.map((option) => {
-                  const selected = option.value === thinkingValue
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={[
-                        'copilot-model-picker__option',
-                        'copilot-chat__thinking-option',
-                        selected ? 'copilot-model-picker__option--selected copilot-chat__thinking-option--selected' : '',
-                      ].filter((className) => className !== '').join(' ')}
-                      data-testid={`chat-thinking-option-${option.value}`}
-                      onClick={() => {
-                        onDraftChange((current) => applyThinkingLevelSelectionToComposerDraft(current, {
-                          modelRoute: draft.selectedModelRoute,
-                          thinkingLevelIntent: option.value as ThinkingLevelIntent,
-                        }))
-                        setThinkingPanelOpen(false)
-                      }}
-                    >
-                      <span className="copilot-chat__thinking-option-check" aria-hidden="true">{selected ? '✓' : ''}</span>
-                      <span className="copilot-model-picker__option-body">
-                        <span className="copilot-model-picker__option-name">{option.label}</span>
-                      </span>
-                    </button>
-                  )
-                })}
+              <div className="copilot-chat__thinking-panel-header">
+                <p className="copilot-panel__eyebrow">{resolveThinkingEyebrow(thinkingControlSpec)}</p>
+                {thinkingSourceHint !== null && (
+                  <span
+                    className="copilot-chat__thinking-source-badge"
+                    data-testid="chat-thinking-override-hint"
+                  >
+                    {thinkingSourceHint}
+                  </span>
+                )}
               </div>
+              {renderThinkingControlBody({
+                capability: thinkingCapability,
+                controlSpec: thinkingControlSpec,
+                currentSelection: effectiveThinkingSelection,
+                disabled: controlsDisabled,
+                onChange: handleThinkingSelectionChange,
+                onClose: () => setThinkingPanelOpen(false),
+              })}
             </section>
           )}
         </div>
@@ -300,9 +304,293 @@ export function CopilotComposer({
   )
 }
 
-function buildRuntimeThinkingLevelOptions(capability: RuntimeThinkingCapability) {
-  return capability.supportedLevels.map((level) => ({
-    value: level,
-    label: THINKING_LEVEL_LABELS[level],
-  }))
+function renderThinkingControlBody(input: {
+  capability: RuntimeThinkingCapability
+  controlSpec: RuntimeThinkingControlSpec
+  currentSelection: RuntimeThinkingSelection | null
+  disabled: boolean
+  onChange: (thinkingSelection: RuntimeThinkingSelection | null) => void
+  onClose: () => void
+}) {
+  switch (input.controlSpec.kind) {
+    case 'fixed':
+      return renderFixedThinkingControl(input)
+    case 'budget':
+      return renderBudgetThinkingControl(input)
+    case 'binary':
+    case 'off-auto':
+    case 'discrete':
+      return renderPresetThinkingControl(input)
+  }
+}
+
+function renderFixedThinkingControl(input: {
+  capability: RuntimeThinkingCapability
+  controlSpec: RuntimeThinkingControlSpec
+  currentSelection: RuntimeThinkingSelection | null
+}) {
+  return (
+    <div className="copilot-chat__thinking-fixed" data-testid="chat-thinking-kind-fixed">
+      <div className="copilot-chat__thinking-fixed-icon" aria-hidden="true">
+        <Lock className="copilot-chat__thinking-fixed-icon-svg" />
+      </div>
+      <div className="copilot-chat__thinking-fixed-body">
+        <span className="copilot-chat__thinking-fixed-value">
+          {formatThinkingSelectionLabel(input.currentSelection, input.controlSpec) ?? '锁定'}
+        </span>
+      </div>
+      <span className="copilot-chat__thinking-locked-badge" data-testid="chat-thinking-fixed-lock">
+        锁定
+      </span>
+    </div>
+  )
+}
+
+function renderPresetThinkingControl(input: {
+  capability: RuntimeThinkingCapability
+  controlSpec: RuntimeThinkingControlSpec
+  currentSelection: RuntimeThinkingSelection | null
+  disabled: boolean
+  onChange: (thinkingSelection: RuntimeThinkingSelection | null) => void
+  onClose: () => void
+}) {
+  const presetOptions = getPresetLevelOptions(input.controlSpec)
+
+  return (
+    <div
+      className="copilot-chat__thinking-option-list"
+      data-testid={`chat-thinking-kind-${input.controlSpec.kind}`}
+    >
+      {presetOptions.map((level) => {
+        const selected = isPresetThinkingSelection(input.currentSelection, level)
+        return (
+          <button
+            key={level}
+            type="button"
+            className={[
+              'copilot-model-picker__option',
+              'copilot-chat__thinking-option',
+              selected ? 'copilot-model-picker__option--selected copilot-chat__thinking-option--selected' : '',
+            ].filter((className) => className !== '').join(' ')}
+            data-testid={`chat-thinking-option-${level}`}
+            disabled={input.disabled}
+            onClick={() => {
+              input.onChange(buildPresetThinkingSelection(input.capability.series, level))
+              input.onClose()
+            }}
+          >
+            <span className="copilot-chat__thinking-option-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+            <span className="copilot-model-picker__option-body">
+              <span className="copilot-model-picker__option-name">{THINKING_LEVEL_LABELS[level]}</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function renderBudgetThinkingControl(input: {
+  capability: RuntimeThinkingCapability
+  controlSpec: RuntimeThinkingControlSpec
+  currentSelection: RuntimeThinkingSelection | null
+  disabled: boolean
+  onChange: (thinkingSelection: RuntimeThinkingSelection | null) => void
+}) {
+  const budgetConfig = resolveBudgetConfig(input.controlSpec)
+  const currentBudgetTokens = resolveBudgetTokens(input.currentSelection, budgetConfig.min, budgetConfig.max, budgetConfig.step)
+  const offSelected = isPresetThinkingSelection(input.currentSelection, 'off')
+  const hasOffPreset = getPresetLevelOptions(input.controlSpec).includes('off')
+
+  return (
+    <div className="copilot-chat__thinking-budget" data-testid="chat-thinking-kind-budget">
+      {hasOffPreset && (
+        <button
+          type="button"
+          className={[
+            'copilot-model-picker__option',
+            'copilot-chat__thinking-option',
+            offSelected ? 'copilot-model-picker__option--selected copilot-chat__thinking-option--selected' : '',
+          ].filter((className) => className !== '').join(' ')}
+          data-testid="chat-thinking-option-off"
+          disabled={input.disabled}
+          onClick={() => {
+            input.onChange(buildPresetThinkingSelection(input.capability.series, 'off'))
+          }}
+        >
+          <span className="copilot-chat__thinking-option-check" aria-hidden="true">{offSelected ? '✓' : ''}</span>
+          <span className="copilot-model-picker__option-body">
+            <span className="copilot-model-picker__option-name">{THINKING_LEVEL_LABELS.off}</span>
+          </span>
+        </button>
+      )}
+      <div className="copilot-chat__thinking-budget-card">
+        <div className="copilot-chat__thinking-budget-header">
+          <span className="copilot-chat__thinking-budget-label">预算</span>
+          <span className="copilot-chat__thinking-budget-value" data-testid="chat-thinking-budget-value">
+            {formatTokenCount(currentBudgetTokens)}
+          </span>
+        </div>
+        <input
+          className="copilot-chat__thinking-budget-input"
+          data-testid="chat-thinking-budget-input"
+          type="range"
+          aria-label="推理预算"
+          title="推理预算"
+          min={budgetConfig.min}
+          max={budgetConfig.max}
+          step={budgetConfig.step}
+          value={currentBudgetTokens}
+          disabled={input.disabled}
+          onChange={(event) => {
+            input.onChange(buildBudgetThinkingSelection(input.capability.series, Number(event.currentTarget.value)))
+          }}
+        />
+        <div className="copilot-chat__thinking-budget-scale" aria-hidden="true">
+          <span>{formatTokenCount(budgetConfig.min)}</span>
+          <span>{formatTokenCount(budgetConfig.max)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function resolveThinkingEyebrow(controlSpec: RuntimeThinkingControlSpec): string {
+  switch (controlSpec.kind) {
+    case 'fixed':
+      return '固定推理'
+    case 'budget':
+      return '推理预算'
+    case 'binary':
+    case 'off-auto':
+    case 'discrete':
+      return '推理强度'
+  }
+}
+
+function formatThinkingSelectionLabel(
+  selection: RuntimeThinkingSelection | null,
+  controlSpec: RuntimeThinkingControlSpec | null,
+): string | null {
+  if (selection === null || controlSpec === null) {
+    return null
+  }
+
+  if (selection.mode === 'budget' && typeof selection.budgetTokens === 'number') {
+    return formatTokenCount(selection.budgetTokens)
+  }
+
+  if (isThinkingLevel(selection.level)) {
+    return THINKING_LEVEL_LABELS[selection.level]
+  }
+
+  return null
+}
+
+function isThinkingSelectionActive(selection: RuntimeThinkingSelection): boolean {
+  if (selection.mode === 'budget') {
+    return typeof selection.budgetTokens === 'number' && selection.budgetTokens > 0
+  }
+
+  return isThinkingLevel(selection.level) && selection.level !== 'off'
+}
+
+function getPresetLevelOptions(controlSpec: RuntimeThinkingControlSpec): RuntimeThinkingLevel[] {
+  const levels = (controlSpec.presetOptions ?? []).flatMap((option) => (
+    option.kind === 'preset' && isThinkingLevel(option.value) ? [option.value] : []
+  ))
+
+  if (levels.length > 0) {
+    return Array.from(new Set(levels))
+  }
+
+  if (controlSpec.fixedSelection?.kind === 'preset' && isThinkingLevel(controlSpec.fixedSelection.value)) {
+    return [controlSpec.fixedSelection.value]
+  }
+
+  return []
+}
+
+function buildPresetThinkingSelection(
+  series: string,
+  level: RuntimeThinkingLevel,
+): RuntimeThinkingSelection {
+  return {
+    series,
+    mode: 'preset',
+    level,
+    budgetTokens: null,
+  }
+}
+
+function buildBudgetThinkingSelection(series: string, budgetTokens: number): RuntimeThinkingSelection {
+  return {
+    series,
+    mode: 'budget',
+    level: null,
+    budgetTokens,
+  }
+}
+
+function isPresetThinkingSelection(
+  selection: RuntimeThinkingSelection | null,
+  level: RuntimeThinkingLevel,
+): boolean {
+  return selection?.mode === 'preset' && selection.level === level
+}
+
+function resolveBudgetConfig(controlSpec: RuntimeThinkingControlSpec) {
+  const minimum = Math.max(0, Math.trunc(controlSpec.budget?.minTokens ?? 0))
+  const maximum = Math.max(minimum, Math.trunc(controlSpec.budget?.maxTokens ?? minimum))
+  const step = Math.max(1, Math.trunc(controlSpec.budget?.stepTokens ?? 1))
+
+  return {
+    min: minimum,
+    max: maximum,
+    step,
+  }
+}
+
+function resolveBudgetTokens(
+  selection: RuntimeThinkingSelection | null,
+  minimum: number,
+  maximum: number,
+  step: number,
+): number {
+  const rawValue = selection?.mode === 'budget' ? selection.budgetTokens : minimum
+  if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) {
+    return minimum
+  }
+
+  const clamped = Math.min(maximum, Math.max(minimum, Math.trunc(rawValue)))
+  return minimum + (Math.round((clamped - minimum) / step) * step)
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) {
+    return `${trimTrailingZero((value / 1_000_000).toFixed(1))}M`
+  }
+
+  if (value >= 1_000) {
+    return `${trimTrailingZero((value / 1_000).toFixed(value >= 100_000 ? 0 : 1))}K`
+  }
+
+  return String(value)
+}
+
+function trimTrailingZero(value: string): string {
+  return value.replace(/\.0$/, '')
+}
+
+function isOverrideThinkingCapability(capability: RuntimeThinkingCapability): boolean {
+  return capability.source === 'override' || capability.status === 'unknown-with-override'
+}
+
+function isThinkingLevel(value: RuntimeCanonicalThinkingSelection['value'] | RuntimeThinkingSelection['level']): value is ThinkingLevelIntent {
+  return value === 'off'
+    || value === 'auto'
+    || value === 'low'
+    || value === 'medium'
+    || value === 'high'
+    || value === 'xhigh'
 }

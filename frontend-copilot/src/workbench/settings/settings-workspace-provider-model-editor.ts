@@ -144,11 +144,7 @@ export function useSettingsWorkspaceProviderModelEditor({
     }
 
     if (modelEditorState.thinkingCapability?.supported === true) {
-      const normalizedThinkingCapability = initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
-      if (normalizedThinkingCapability.levels.length === 0) {
-        setModelEditorError('显式支持思考时，至少需要选择一个可用档位。')
-        return
-      }
+      initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
     }
 
     const nextModel: ProviderModelProfile = {

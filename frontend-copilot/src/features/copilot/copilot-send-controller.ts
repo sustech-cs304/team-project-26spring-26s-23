@@ -165,10 +165,7 @@ export async function orchestrateCopilotSend(input: {
       debugModeEnabled: input.debugModeEnabled,
       signal: input.signal,
       onRunStart: (response) => {
-        input.setRunState((current) => registerCopilotRunStartResponse(current, {
-          runId: response.run.runId,
-          threadId: response.run.threadId,
-        }))
+        input.setRunState((current) => registerCopilotRunStartResponse(current, response.run))
       },
     })) {
       if (

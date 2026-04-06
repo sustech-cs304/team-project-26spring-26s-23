@@ -1,5 +1,8 @@
 import type { CopilotConversationTurn } from './copilot-chat-helpers'
-import type { RuntimeThinkingCapability } from './thread-run-contract'
+import {
+  cloneRuntimeThinkingCapability as cloneRuntimeThinkingCapabilityValue,
+  type RuntimeThinkingCapability,
+} from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
   CopilotRunState,
@@ -214,27 +217,7 @@ function createErrorTurn(input: {
 function cloneRuntimeThinkingCapability(
   capability: RuntimeThinkingCapability | null | undefined,
 ): RuntimeThinkingCapability | null | undefined {
-  if (capability === null || capability === undefined) {
-    return capability
-  }
-
-  return {
-    status: capability.status,
-    source: capability.source,
-    supported: capability.supported,
-    supportedLevels: [...capability.supportedLevels],
-    defaultLevel: capability.defaultLevel,
-    reasonCode: capability.reasonCode,
-    providerHint: capability.providerHint,
-    routeFingerprint: {
-      providerProfileId: capability.routeFingerprint.providerProfileId,
-      provider: capability.routeFingerprint.provider,
-      endpointType: capability.routeFingerprint.endpointType,
-      baseUrl: capability.routeFingerprint.baseUrl,
-      modelId: capability.routeFingerprint.modelId,
-    },
-    overrideLevels: [...capability.overrideLevels],
-  }
+  return cloneRuntimeThinkingCapabilityValue(capability)
 }
 
 function mapAssistantSegmentStatus(

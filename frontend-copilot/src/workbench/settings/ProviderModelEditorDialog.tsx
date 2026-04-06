@@ -1,12 +1,26 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import { SelectField, TextField } from '../components/FormFields'
-import type { ModelCapability, ThinkingLevelIntent } from '../types'
+import type {
+  ModelCapability,
+  PositiveThinkingLevelIntent,
+  ThinkingCapabilityBudgetSeriesInput,
+  ThinkingLevelIntent,
+} from '../types'
 import {
   buildThinkingDeclarationDefaultLevelOptions,
+  buildThinkingDeclarationSeriesOptions,
   getThinkingCapabilityDeclarationMode,
+  initializeSupportedThinkingCapabilityDeclaration,
+  setThinkingCapabilityDeclarationBinaryLevel,
+  setThinkingCapabilityDeclarationBudgetConfig,
+  setThinkingCapabilityDeclarationBudgetDefaultMode,
+  setThinkingCapabilityDeclarationBudgetTokens,
   setThinkingCapabilityDeclarationDefaultLevel,
+  setThinkingCapabilityDeclarationFixedLevel,
   setThinkingCapabilityDeclarationMode,
+  setThinkingCapabilityDeclarationSeries,
+  THINKING_BUDGET_DEFAULT_MODE_OPTIONS,
   THINKING_DECLARATION_MODE_OPTIONS,
   THINKING_LEVEL_OPTIONS,
   toggleThinkingCapabilityDeclarationLevel,
@@ -32,6 +46,11 @@ const focusableElementSelector = [
   'select:not([disabled])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ')
+
+const positiveThinkingLevelOptions = THINKING_LEVEL_OPTIONS.filter((option) => option.value !== 'off')
+const binaryThinkingLevelOptions = THINKING_LEVEL_OPTIONS.filter((option) => {
+  return option.value !== 'off' && option.value !== 'auto'
+})
 
 function isFocusableElementVisible(element: HTMLElement) {
   let current: HTMLElement | null = element
@@ -61,6 +80,27 @@ function getFocusableElements(container: HTMLElement) {
 
     return isFocusableElementVisible(element)
   })
+}
+
+function parseBudgetNumberInput(value: string): number | null {
+  const normalized = value.trim()
+  if (normalized === '') {
+    return 0
+  }
+
+  const parsed = Number.parseInt(normalized, 10)
+  if (Number.isNaN(parsed)) {
+    return null
+  }
+
+  return Math.max(0, parsed)
+}
+
+function isBudgetSeriesInput(value: unknown): value is ThinkingCapabilityBudgetSeriesInput {
+  return typeof value === 'object'
+    && value !== null
+    && 'kind' in value
+    && (value as { kind?: string }).kind === 'budget'
 }
 
 export function ProviderModelEditorDialog({
@@ -120,7 +160,37 @@ export function ProviderModelEditorDialog({
   }
 
   const thinkingDeclarationMode = getThinkingCapabilityDeclarationMode(modelEditorState.thinkingCapability)
-  const thinkingDefaultLevelOptions = buildThinkingDeclarationDefaultLevelOptions(modelEditorState.thinkingCapability)
+  const normalizedThinkingCapability = modelEditorState.thinkingCapability?.supported === true
+    ? initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
+    : null
+  const thinkingDefaultLevelOptions = normalizedThinkingCapability === null
+    ? []
+    : buildThinkingDeclarationDefaultLevelOptions(normalizedThinkingCapability)
+  const thinkingSeriesOptions = normalizedThinkingCapability === null
+    ? []
+    : buildThinkingDeclarationSeriesOptions(normalizedThinkingCapability.series)
+  const fixedInput = normalizedThinkingCapability?.input.kind === 'fixed'
+    ? normalizedThinkingCapability.input
+    : null
+  const binaryInput = normalizedThinkingCapability?.input.kind === 'binary'
+    ? normalizedThinkingCapability.input
+    : null
+  const discreteInput = normalizedThinkingCapability?.input.kind === 'discrete'
+    ? normalizedThinkingCapability.input
+    : null
+  const budgetInput = isBudgetSeriesInput(normalizedThinkingCapability?.input)
+    ? normalizedThinkingCapability.input
+    : null
+  const budgetDefaultMode = normalizedThinkingCapability?.defaultSelection.mode === 'budget' ? 'budget' : 'off'
+  const presetDefaultLevel = normalizedThinkingCapability?.defaultSelection.mode === 'preset'
+    ? normalizedThinkingCapability.defaultSelection.level
+    : 'off'
+
+  const updateThinkingCapability = (nextThinkingCapability: ModelEditorState['thinkingCapability']) => {
+    onClearError()
+    onStateChange({ thinkingCapability: nextThinkingCapability })
+  }
+
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -251,65 +321,257 @@ export function ProviderModelEditorDialog({
                 value={thinkingDeclarationMode}
                 options={THINKING_DECLARATION_MODE_OPTIONS}
                 onChange={(value) => {
-                  onClearError()
-                  onStateChange({
-                    thinkingCapability: setThinkingCapabilityDeclarationMode(
+                  updateThinkingCapability(
+                    setThinkingCapabilityDeclarationMode(
                       modelEditorState.thinkingCapability,
                       value as 'inherit' | 'unsupported' | 'supported',
                     ),
-                  })
+                  )
                 }}
               />
-              {thinkingDeclarationMode === 'supported' ? (
+              {thinkingDeclarationMode === 'supported' && normalizedThinkingCapability !== null ? (
                 <SelectField
-                  label="默认档位"
-                  value={modelEditorState.thinkingCapability?.defaultLevel ?? 'off'}
-                  options={thinkingDefaultLevelOptions}
+                  label="推理系列"
+                  value={normalizedThinkingCapability.series}
+                  options={thinkingSeriesOptions}
                   onChange={(value) => {
-                    onClearError()
-                    onStateChange({
-                      thinkingCapability: setThinkingCapabilityDeclarationDefaultLevel(
-                        modelEditorState.thinkingCapability,
-                        value as ThinkingLevelIntent,
-                      ),
-                    })
+                    updateThinkingCapability(
+                      setThinkingCapabilityDeclarationSeries(modelEditorState.thinkingCapability, value),
+                    )
                   }}
                 />
               ) : <div />}
             </div>
 
-            {thinkingDeclarationMode === 'supported' ? (
+            {thinkingDeclarationMode === 'supported' && normalizedThinkingCapability !== null ? (
               <>
-                <div className="model-editor-section__header">
-                  <span className="form-field__label">可用思考档位</span>
-                </div>
-                <div className="model-capability-picker">
-                  {THINKING_LEVEL_OPTIONS.filter((option) => option.value !== 'off').map((option) => {
-                    const active = modelEditorState.thinkingCapability?.supported === true
-                      && (modelEditorState.thinkingCapability.levels ?? []).includes(option.value as Exclude<ThinkingLevelIntent, 'off'>)
-                    const capabilityClassName = active ? ' model-capability-button--reasoning' : ' model-capability-button--inactive'
+                {fixedInput !== null ? (
+                  <div className="form-grid form-grid--two">
+                    <SelectField
+                      label="固定挡位"
+                      value={fixedInput.level}
+                      options={positiveThinkingLevelOptions}
+                      onChange={(value) => {
+                        updateThinkingCapability(
+                          setThinkingCapabilityDeclarationFixedLevel(
+                            modelEditorState.thinkingCapability,
+                            value as PositiveThinkingLevelIntent,
+                          ),
+                        )
+                      }}
+                    />
+                    <SelectField
+                      label="默认选择"
+                      value={presetDefaultLevel}
+                      options={thinkingDefaultLevelOptions}
+                      onChange={(value) => {
+                        updateThinkingCapability(
+                          setThinkingCapabilityDeclarationDefaultLevel(
+                            modelEditorState.thinkingCapability,
+                            value as ThinkingLevelIntent,
+                          ),
+                        )
+                      }}
+                    />
+                  </div>
+                ) : null}
 
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        aria-pressed={active}
-                        className={`model-capability-button${capabilityClassName}${active ? ' model-capability-button--active' : ''}`}
-                        onClick={() => {
-                          onClearError()
-                          onStateChange({
-                            thinkingCapability: toggleThinkingCapabilityDeclarationLevel(
+                {binaryInput !== null ? (
+                  <div className="form-grid form-grid--two">
+                    <SelectField
+                      label="开启挡位"
+                      value={binaryInput.enabledLevel}
+                      options={binaryThinkingLevelOptions}
+                      onChange={(value) => {
+                        updateThinkingCapability(
+                          setThinkingCapabilityDeclarationBinaryLevel(
+                            modelEditorState.thinkingCapability,
+                            value as Exclude<PositiveThinkingLevelIntent, 'auto'>,
+                          ),
+                        )
+                      }}
+                    />
+                    <SelectField
+                      label="默认选择"
+                      value={presetDefaultLevel}
+                      options={thinkingDefaultLevelOptions}
+                      onChange={(value) => {
+                        updateThinkingCapability(
+                          setThinkingCapabilityDeclarationDefaultLevel(
+                            modelEditorState.thinkingCapability,
+                            value as ThinkingLevelIntent,
+                          ),
+                        )
+                      }}
+                    />
+                  </div>
+                ) : null}
+
+                {normalizedThinkingCapability.input.kind === 'off-auto' ? (
+                  <div className="form-grid form-grid--two">
+                    <div className="model-editor-series-summary">
+                      <span className="form-field__label">系列输入</span>
+                      <p className="form-field__description">固定为关闭 / 自动。</p>
+                    </div>
+                    <SelectField
+                      label="默认选择"
+                      value={presetDefaultLevel}
+                      options={thinkingDefaultLevelOptions}
+                      onChange={(value) => {
+                        updateThinkingCapability(
+                          setThinkingCapabilityDeclarationDefaultLevel(
+                            modelEditorState.thinkingCapability,
+                            value as ThinkingLevelIntent,
+                          ),
+                        )
+                      }}
+                    />
+                  </div>
+                ) : null}
+
+                {discreteInput !== null ? (
+                  <>
+                    <div className="form-grid form-grid--two">
+                      <div className="model-editor-section__header">
+                        <span className="form-field__label">可用挡位</span>
+                      </div>
+                      <SelectField
+                        label="默认选择"
+                        value={presetDefaultLevel}
+                        options={thinkingDefaultLevelOptions}
+                        onChange={(value) => {
+                          updateThinkingCapability(
+                            setThinkingCapabilityDeclarationDefaultLevel(
                               modelEditorState.thinkingCapability,
-                              option.value as Exclude<ThinkingLevelIntent, 'off'>,
+                              value as ThinkingLevelIntent,
                             ),
-                          })
+                          )
                         }}
-                      >
-                        {option.label}
-                      </button>
-                    )
-                  })}
-                </div>
+                      />
+                    </div>
+                    <div className="model-capability-picker">
+                      {positiveThinkingLevelOptions.map((option) => {
+                        const active = discreteInput.levels.includes(option.value as PositiveThinkingLevelIntent)
+                        const capabilityClassName = active ? ' model-capability-button--reasoning' : ' model-capability-button--inactive'
+
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={active}
+                            className={`model-capability-button${capabilityClassName}${active ? ' model-capability-button--active' : ''}`}
+                            onClick={() => {
+                              updateThinkingCapability(
+                                toggleThinkingCapabilityDeclarationLevel(
+                                  modelEditorState.thinkingCapability,
+                                  option.value as PositiveThinkingLevelIntent,
+                                ),
+                              )
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                ) : null}
+
+                {budgetInput !== null ? (
+                  <>
+                    <div className="form-grid form-grid--budget">
+                      <TextField
+                        label="最小预算"
+                        value={String(budgetInput.minTokens)}
+                        onChange={(value) => {
+                          const parsed = parseBudgetNumberInput(value)
+                          if (parsed === null) {
+                            return
+                          }
+                          updateThinkingCapability(
+                            setThinkingCapabilityDeclarationBudgetConfig(
+                              modelEditorState.thinkingCapability,
+                              { minTokens: parsed },
+                            ),
+                          )
+                        }}
+                        placeholder="0"
+                      />
+                      <TextField
+                        label="最大预算"
+                        value={String(budgetInput.maxTokens)}
+                        onChange={(value) => {
+                          const parsed = parseBudgetNumberInput(value)
+                          if (parsed === null) {
+                            return
+                          }
+                          updateThinkingCapability(
+                            setThinkingCapabilityDeclarationBudgetConfig(
+                              modelEditorState.thinkingCapability,
+                              { maxTokens: parsed },
+                            ),
+                          )
+                        }}
+                        placeholder="32768"
+                      />
+                      <TextField
+                        label="步进"
+                        value={String(budgetInput.stepTokens)}
+                        onChange={(value) => {
+                          const parsed = parseBudgetNumberInput(value)
+                          if (parsed === null) {
+                            return
+                          }
+                          updateThinkingCapability(
+                            setThinkingCapabilityDeclarationBudgetConfig(
+                              modelEditorState.thinkingCapability,
+                              { stepTokens: parsed },
+                            ),
+                          )
+                        }}
+                        placeholder="1024"
+                      />
+                    </div>
+                    <div className="form-grid form-grid--two">
+                      <SelectField
+                        label="默认选择"
+                        value={budgetDefaultMode}
+                        options={THINKING_BUDGET_DEFAULT_MODE_OPTIONS}
+                        onChange={(value) => {
+                          updateThinkingCapability(
+                            setThinkingCapabilityDeclarationBudgetDefaultMode(
+                              modelEditorState.thinkingCapability,
+                              value as 'off' | 'budget',
+                            ),
+                          )
+                        }}
+                      />
+                      {budgetDefaultMode === 'budget' ? (
+                        <TextField
+                          label="默认预算"
+                          value={String(
+                            normalizedThinkingCapability.defaultSelection.mode === 'budget'
+                              ? normalizedThinkingCapability.defaultSelection.budgetTokens
+                              : budgetInput.minTokens,
+                          )}
+                          onChange={(value) => {
+                            const parsed = parseBudgetNumberInput(value)
+                            if (parsed === null) {
+                              return
+                            }
+                            updateThinkingCapability(
+                              setThinkingCapabilityDeclarationBudgetTokens(
+                                modelEditorState.thinkingCapability,
+                                parsed,
+                              ),
+                            )
+                          }}
+                          placeholder="8192"
+                        />
+                      ) : <div />}
+                    </div>
+                  </>
+                ) : null}
               </>
             ) : null}
           </div>

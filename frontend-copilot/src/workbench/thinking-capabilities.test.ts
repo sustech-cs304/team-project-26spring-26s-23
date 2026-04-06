@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ProviderProfile } from './types'
-import { resolveThinkingCapability } from './thinking-capabilities'
+import {
+  resolveThinkingCapability,
+  serializeThinkingCapabilityOverrideInput,
+} from './thinking-capabilities'
 
 describe('thinking capabilities', () => {
   it.each([
@@ -96,6 +99,57 @@ describe('thinking capabilities', () => {
       supported: false,
       levels: [],
       defaultLevel: null,
+    })
+  })
+
+  it('serializes legacy declarations into the structured override input shape', () => {
+    expect(serializeThinkingCapabilityOverrideInput({
+      supported: true,
+      levels: ['low', 'high'],
+      defaultLevel: 'high',
+    })).toEqual({
+      supported: true,
+      series: 'compat-discrete-levels-v1',
+      input: {
+        kind: 'discrete',
+        levels: ['low', 'high'],
+      },
+      defaultSelection: {
+        mode: 'preset',
+        level: 'high',
+      },
+    })
+  })
+
+  it('preserves structured series-specific budget input during serialization', () => {
+    expect(serializeThinkingCapabilityOverrideInput({
+      supported: true,
+      series: 'gemini-2.5-budget-v1',
+      input: {
+        kind: 'budget',
+        minTokens: 0,
+        maxTokens: 32768,
+        stepTokens: 1024,
+      },
+      defaultSelection: {
+        mode: 'budget',
+        budgetTokens: 8192,
+      },
+      source: 'settings-page',
+    })).toEqual({
+      supported: true,
+      series: 'gemini-2.5-budget-v1',
+      input: {
+        kind: 'budget',
+        minTokens: 0,
+        maxTokens: 32768,
+        stepTokens: 1024,
+      },
+      defaultSelection: {
+        mode: 'budget',
+        budgetTokens: 8192,
+      },
+      source: 'settings-page',
     })
   })
 })

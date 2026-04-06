@@ -29,12 +29,81 @@ export type ThemeMode = 'light' | 'dark'
 
 export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
 export type ThinkingLevelIntent = 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'
+export type PositiveThinkingLevelIntent = Exclude<ThinkingLevelIntent, 'off'>
+export type ThinkingCapabilitySeriesInputKind = 'fixed' | 'binary' | 'off-auto' | 'discrete' | 'budget'
+export type ThinkingCapabilitySeriesId = string
 
-export interface ThinkingCapabilityDeclaration {
-  supported: boolean
-  levels?: Array<Exclude<ThinkingLevelIntent, 'off'>>
-  defaultLevel?: ThinkingLevelIntent
+export interface UnsupportedThinkingCapabilityDeclaration {
+  supported: false
+  source?: string
 }
+
+export interface LegacyThinkingCapabilityDeclaration {
+  supported: true
+  levels?: PositiveThinkingLevelIntent[]
+  defaultLevel?: ThinkingLevelIntent
+  source?: string
+}
+
+export interface ThinkingCapabilityPresetSelection {
+  mode: 'preset'
+  level: ThinkingLevelIntent
+}
+
+export interface ThinkingCapabilityBudgetSelection {
+  mode: 'budget'
+  budgetTokens: number
+}
+
+export type ThinkingCapabilityDefaultSelection =
+  | ThinkingCapabilityPresetSelection
+  | ThinkingCapabilityBudgetSelection
+
+export interface ThinkingCapabilityFixedSeriesInput {
+  kind: 'fixed'
+  level: PositiveThinkingLevelIntent
+}
+
+export interface ThinkingCapabilityBinarySeriesInput {
+  kind: 'binary'
+  enabledLevel: PositiveThinkingLevelIntent
+}
+
+export interface ThinkingCapabilityOffAutoSeriesInput {
+  kind: 'off-auto'
+}
+
+export interface ThinkingCapabilityDiscreteSeriesInput {
+  kind: 'discrete'
+  levels: PositiveThinkingLevelIntent[]
+}
+
+export interface ThinkingCapabilityBudgetSeriesInput {
+  kind: 'budget'
+  minTokens: number
+  maxTokens: number
+  stepTokens: number
+}
+
+export type ThinkingCapabilitySeriesInput =
+  | ThinkingCapabilityFixedSeriesInput
+  | ThinkingCapabilityBinarySeriesInput
+  | ThinkingCapabilityOffAutoSeriesInput
+  | ThinkingCapabilityDiscreteSeriesInput
+  | ThinkingCapabilityBudgetSeriesInput
+
+export interface StructuredThinkingCapabilityDeclaration {
+  supported: true
+  series?: ThinkingCapabilitySeriesId
+  input?: ThinkingCapabilitySeriesInput
+  defaultSelection?: ThinkingCapabilityDefaultSelection
+  source?: string
+}
+
+export type ThinkingCapabilityDeclaration =
+  | UnsupportedThinkingCapabilityDeclaration
+  | LegacyThinkingCapabilityDeclaration
+  | StructuredThinkingCapabilityDeclaration
 
 export interface ResolvedThinkingCapability {
   supported: boolean

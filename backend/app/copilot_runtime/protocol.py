@@ -27,6 +27,7 @@ from .contracts import (
     RuntimeScaffold,
     RuntimeSessionCreateRequest,
     RuntimeThinkingCapabilityGetRequest,
+    RuntimeThinkingSelection,
     RuntimeThreadCreateRequest,
     RuntimeThreadGetRequest,
 )
@@ -407,6 +408,48 @@ class RuntimeProtocolParser:
             )
         return value
 
+    def _optional_string(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value.strip() == "":
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be a non-empty string.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        return value.strip()
+
+    def _optional_non_negative_int(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> int | None:
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be a non-negative integer.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        return value
+
     def _optional_thinking_level_intent(
         self,
         value: Any,
@@ -555,10 +598,20 @@ class RuntimeProtocolParser:
             field_name="policy.modelRoute",
             requested_method=requested_method,
         )
+        thinking_selection = self._optional_thinking_selection(
+            policy.get("thinkingSelection"),
+            field_name="policy.thinkingSelection",
+            requested_method=requested_method,
+        )
         thinking_level_intent = self._optional_thinking_level_intent(
             policy.get("thinkingLevelIntent"),
             field_name="policy.thinkingLevelIntent",
             requested_method=requested_method,
+        )
+        if thinking_selection is None and thinking_level_intent is not None:
+            thinking_selection = RuntimeThinkingSelection.from_legacy_level_intent(thinking_level_intent)
+        resolved_legacy_thinking_level_intent = (
+            thinking_level_intent if thinking_selection is None else None
         )
         thinking_capability_override = self._optional_object(
             policy.get("thinkingCapabilityOverride"),
@@ -582,11 +635,49 @@ class RuntimeProtocolParser:
         )
         return RuntimeMessageExecutionPolicy(
             modelRoute=model_route,
-            thinkingLevelIntent=thinking_level_intent,
+            thinkingSelection=thinking_selection,
+            thinkingLevelIntent=resolved_legacy_thinking_level_intent,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
             debugModeEnabled=debug_mode_enabled,
             requestOptions=request_options,
+        )
+
+    def _optional_thinking_selection(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeThinkingSelection | None:
+        if value is None:
+            return None
+        selection = self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+        return RuntimeThinkingSelection(
+            series=self._require_non_empty_string(
+                selection.get("series"),
+                field_name=f"{field_name}.series",
+                requested_method=requested_method,
+            ),
+            mode=self._optional_string(
+                selection.get("mode"),
+                field_name=f"{field_name}.mode",
+                requested_method=requested_method,
+            ),
+            level=self._optional_thinking_level_intent(
+                selection.get("level"),
+                field_name=f"{field_name}.level",
+                requested_method=requested_method,
+            ),
+            budgetTokens=self._optional_non_negative_int(
+                selection.get("budgetTokens"),
+                field_name=f"{field_name}.budgetTokens",
+                requested_method=requested_method,
+            ),
         )
 
     def _extract_model_route(

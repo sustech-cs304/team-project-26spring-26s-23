@@ -26,7 +26,7 @@ const __dirname = path.dirname(__filename)
 const frontendRoot = path.resolve(__dirname, '..', '..', '..')
 
 describe('thread run primary path', () => {
-  it('posts run/start with thread-first payload and returns stream plus cancel descriptors', async () => {
+  it('normalizes compat thinking input into structured run/start payload and returns stream plus cancel descriptors', async () => {
     const fetchFn = createFetchFn(createRuntimeRunStartResponse({
       run: {
         runId: 'run-1',
@@ -51,6 +51,7 @@ describe('thread run primary path', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
+      thinkingLevelIntent: 'auto',
       enabledTools: ['tool.file-convert'],
       debugModeEnabled: true,
       requestOptions: {
@@ -75,6 +76,12 @@ describe('thread run primary path', () => {
           },
           policy: {
             modelRoute: createRuntimeModelRoute(),
+            thinkingSelection: {
+              series: 'compat-discrete-selection-v1',
+              mode: 'preset',
+              level: 'auto',
+              budgetTokens: null,
+            },
             enabledTools: ['tool.file-convert'],
             debugModeEnabled: true,
             requestOptions: {

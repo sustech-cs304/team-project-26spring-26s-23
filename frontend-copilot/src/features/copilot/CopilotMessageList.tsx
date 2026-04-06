@@ -369,6 +369,30 @@ function renderMessageBody(turn: CopilotMessageListItem) {
   return <p className="copilot-chat__message-text">{turn.content}</p>
 }
 
+type ThinkingDetailTurn = {
+  requestedThinkingLevel?: CopilotAssistantMessageItem['requestedThinkingLevel']
+  appliedThinkingLevel?: CopilotAssistantMessageItem['appliedThinkingLevel']
+  thinkingCapabilitySnapshot?: CopilotAssistantMessageItem['thinkingCapabilitySnapshot']
+  reasoningTraceState?: CopilotAssistantMessageItem['reasoningTraceState']
+  reasoningSuppressionBasis?: CopilotAssistantMessageItem['reasoningSuppressionBasis']
+}
+
+function extractThinkingDetailTurn(turn: CopilotMessageListItem): ThinkingDetailTurn {
+  switch (turn.kind) {
+    case 'assistant':
+    case 'terminal':
+      return {
+        requestedThinkingLevel: turn.requestedThinkingLevel,
+        appliedThinkingLevel: turn.appliedThinkingLevel,
+        thinkingCapabilitySnapshot: turn.thinkingCapabilitySnapshot,
+        reasoningTraceState: turn.reasoningTraceState,
+        reasoningSuppressionBasis: turn.reasoningSuppressionBasis,
+      }
+    default:
+      return {}
+  }
+}
+
 function buildDetailRows(
   turn: CopilotMessageListItem,
   showDiagnostics: boolean,
@@ -377,7 +401,8 @@ function buildDetailRows(
   label: string
   value: string
 }> {
-  const thinkingDetailRows = buildThinkingDetailRows(turn, showDiagnostics)
+  const thinkingDetailTurn = extractThinkingDetailTurn(turn)
+  const thinkingDetailRows = buildThinkingDetailRows(thinkingDetailTurn, showDiagnostics)
 
   switch (turn.kind) {
     case 'reasoning':
@@ -414,10 +439,7 @@ function buildDetailRows(
 }
 
 function buildThinkingDetailRows(
-  turn: Pick<
-    CopilotMessageListItem,
-    'requestedThinkingLevel' | 'appliedThinkingLevel' | 'thinkingCapabilitySnapshot'
-  >,
+  turn: ThinkingDetailTurn,
   showDiagnostics: boolean,
 ): Array<{
   kind: 'meta'
@@ -470,7 +492,48 @@ function buildThinkingDetailRows(
     }
   }
 
+  if (turn.reasoningTraceState !== undefined) {
+    rows.push({
+      kind: 'meta',
+      label: '思考轨迹',
+      value: formatReasoningTraceState(turn.reasoningTraceState),
+    })
+  }
+
+  if (turn.reasoningSuppressionBasis !== undefined && turn.reasoningSuppressionBasis !== null) {
+    rows.push({
+      kind: 'meta',
+      label: '抑制依据',
+      value: formatReasoningSuppressionBasis(turn.reasoningSuppressionBasis),
+    })
+  }
+
   return rows
+}
+
+function formatReasoningTraceState(
+  traceState: NonNullable<ThinkingDetailTurn['reasoningTraceState']>,
+): string {
+  switch (traceState) {
+    case 'not_observed':
+      return '未收到'
+    case 'suppressed':
+      return '已抑制'
+    case 'visible':
+      return '已显示'
+  }
+}
+
+function formatReasoningSuppressionBasis(
+  basis: NonNullable<ThinkingDetailTurn['reasoningSuppressionBasis']>,
+): string {
+  const suppressionLabel = basis.shouldSuppress ? '已启用抑制' : '未启用抑制'
+  const reasonCode = basis.reasonCode?.trim() ?? ''
+  const reasoningVisibility = basis.reasoningVisibility?.trim() ?? 'visible'
+
+  return reasonCode === ''
+    ? `${suppressionLabel} / ${basis.source} / ${reasoningVisibility}`
+    : `${suppressionLabel} / ${basis.source} / ${reasonCode} / ${reasoningVisibility}`
 }
 
 function ReasoningMessageCard({

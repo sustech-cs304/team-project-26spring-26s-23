@@ -107,8 +107,17 @@ class RuntimeStoredModelRoute:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeStoredThinkingSelection:
+    series: str
+    mode: str | None = None
+    level: str | None = None
+    budget_tokens: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeStoredRunPolicy:
     model_route: RuntimeStoredModelRoute
+    thinking_selection: RuntimeStoredThinkingSelection | None = None
     thinking_level_intent: str | None = None
     thinking_capability_override: dict[str, Any] | None = None
     enabled_tools: tuple[str, ...] = ()
@@ -633,6 +642,7 @@ __all__ = [
     "RuntimeStoredModelRouteSnapshot",
     "RuntimeStoredRunInput",
     "RuntimeStoredRunPolicy",
+    "RuntimeStoredThinkingSelection",
     "RuntimeTextMessage",
     "RuntimeThreadRecord",
 ]

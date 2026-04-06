@@ -79,13 +79,56 @@ export type RuntimeThinkingCapabilityStatus =
   | 'unknown-with-override'
 
 export type RuntimeThinkingCapabilitySource = 'verified' | 'override' | 'unknown'
+export type RuntimeThinkingLevel = 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'
+export type RuntimeThinkingControlKind = 'fixed' | 'binary' | 'off-auto' | 'discrete' | 'budget'
+export type RuntimeThinkingSelectionKind = 'preset' | 'budget'
+
+export interface RuntimeCanonicalThinkingSelection {
+  kind: RuntimeThinkingSelectionKind
+  value?: RuntimeThinkingLevel
+  budgetTokens?: number
+}
+
+export interface RuntimeThinkingControlBudgetSpec {
+  minTokens?: number
+  maxTokens?: number
+  stepTokens?: number
+}
+
+export interface RuntimeThinkingControlSpec {
+  kind: RuntimeThinkingControlKind
+  selectionKind: RuntimeThinkingSelectionKind
+  presetOptions?: RuntimeCanonicalThinkingSelection[]
+  fixedSelection?: RuntimeCanonicalThinkingSelection | null
+  budget?: RuntimeThinkingControlBudgetSpec | null
+}
+
+export interface RuntimeThinkingCapabilityProvenanceOverride {
+  present: boolean
+  applied: boolean
+  source: string | null
+  format: string | null
+}
+
+export interface RuntimeThinkingCapabilityProvenance {
+  routeStatus: string
+  override: RuntimeThinkingCapabilityProvenanceOverride
+}
+
+export interface RuntimeThinkingVisibility {
+  reasoning: string
+  supportsSuppression: boolean
+}
 
 export interface RuntimeThinkingCapability {
   status: RuntimeThinkingCapabilityStatus
   source: RuntimeThinkingCapabilitySource
   supported: boolean
-  supportedLevels: Array<'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'>
-  defaultLevel: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
+  series: string
+  controlSpec: RuntimeThinkingControlSpec | null
+  defaultSelection: RuntimeCanonicalThinkingSelection | null
+  supportedLevels: RuntimeThinkingLevel[]
+  defaultLevel: RuntimeThinkingLevel | null
   reasonCode: string
   providerHint: string | null
   routeFingerprint: {
@@ -95,7 +138,52 @@ export interface RuntimeThinkingCapability {
     baseUrl: string
     modelId: string
   }
-  overrideLevels: Array<'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'>
+  provenance: RuntimeThinkingCapabilityProvenance | null
+  visibility: RuntimeThinkingVisibility | null
+  overrideLevels: RuntimeThinkingLevel[]
+}
+
+export interface RuntimeThinkingSelectionResult {
+  requestedSelection: RuntimeCanonicalThinkingSelection | null
+  appliedSelection: RuntimeCanonicalThinkingSelection | null
+  requestedThinkingLevel: RuntimeThinkingLevel | null
+  appliedThinkingLevel: RuntimeThinkingLevel | null
+  applied: boolean
+  reasonCode: string
+  errorCode: string | null
+  mappingReasonCode: string | null
+  providerMapping: string | null
+  capabilityStatus: RuntimeThinkingCapabilityStatus
+  capabilitySource: RuntimeThinkingCapabilitySource
+  capabilitySeries: string | null
+  capabilityReasonCode: string | null
+  overridePresent: boolean
+  overrideApplied: boolean
+  overrideSource: string | null
+  reasoningVisibility: string | null
+  supportsSuppression: boolean | null
+  modelSettings?: Record<string, unknown>
+}
+
+export interface RuntimeReasoningSuppressionBasis {
+  shouldSuppress: boolean
+  source: string
+  reasonCode: string | null
+  appliedThinkingLevel: RuntimeThinkingLevel | null
+  reasoningVisibility: string | null
+  supportsSuppression: boolean
+  capabilitySource: RuntimeThinkingCapabilitySource | null
+  capabilitySeries: string | null
+}
+
+export interface RuntimeRunThinkingMetadata {
+  requestedThinkingSelection: RuntimeThinkingSelection | null
+  appliedThinkingSelection: RuntimeThinkingSelection | null
+  requestedThinkingLevel: RuntimeThinkingLevel | null
+  appliedThinkingLevel: RuntimeThinkingLevel | null
+  thinkingCapabilitySnapshot: RuntimeThinkingCapability | null
+  thinkingSelectionResult: RuntimeThinkingSelectionResult | null
+  reasoningSuppressionBasis: RuntimeReasoningSuppressionBasis | null
 }
 
 export interface RuntimeCapabilitiesGetResponse {
@@ -132,7 +220,14 @@ export interface RuntimeModelRoute {
   snapshot: RuntimeModelRouteSnapshot
 }
 
-export interface RuntimeRunView {
+export interface RuntimeThinkingSelection {
+  series: string
+  mode: string | null
+  level: RuntimeThinkingLevel | null
+  budgetTokens: number | null
+}
+
+export interface RuntimeRunView extends RuntimeRunThinkingMetadata {
   runId: string
   threadId: string
   status: string
@@ -141,9 +236,6 @@ export interface RuntimeRunView {
   startedAt: string | null
   terminalAt: string | null
   cancelRequested: boolean
-  requestedThinkingLevel: RuntimeRunMetadataEvent['payload']['requestedThinkingLevel']
-  appliedThinkingLevel: RuntimeRunMetadataEvent['payload']['appliedThinkingLevel']
-  thinkingCapabilitySnapshot: RuntimeThinkingCapability | null
 }
 
 export interface RuntimeRunStartResponse {
@@ -180,13 +272,9 @@ export interface RuntimeRunEventBase<TType extends string, TPayload extends Reco
 
 export type RuntimeRunStartedEvent = RuntimeRunEventBase<'run_started', {
   assistantMessageId: string
-}>
+} & Partial<RuntimeRunThinkingMetadata>>
 
-export type RuntimeRunMetadataEvent = RuntimeRunEventBase<'run_metadata', {
-  requestedThinkingLevel: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
-  appliedThinkingLevel: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
-  thinkingCapabilitySnapshot: RuntimeThinkingCapability
-}>
+export type RuntimeRunMetadataEvent = RuntimeRunEventBase<'run_metadata', RuntimeRunThinkingMetadata>
 
 export type RuntimeTextDeltaEvent = RuntimeRunEventBase<'text_delta', {
   assistantMessageId: string
@@ -408,6 +496,7 @@ export async function startRuntimeRun(input: {
   agent?: string
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
+  thinkingSelection?: RuntimeThinkingSelection | null
   thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
@@ -416,6 +505,10 @@ export async function startRuntimeRun(input: {
   fetchFn?: FetchLike
   signal?: AbortSignal
 }): Promise<RuntimeRunStartResponse> {
+  const thinkingSelection = input.thinkingSelection ?? buildCompatRuntimeThinkingSelection(
+    input.thinkingLevelIntent ?? null,
+  )
+
   return postRuntimeMethod<RuntimeRunStartResponse>({
     runtimeUrl: input.runtimeUrl,
     method: 'run/start',
@@ -425,9 +518,9 @@ export async function startRuntimeRun(input: {
       message: input.message,
       policy: {
         modelRoute: input.modelRoute,
-        ...(input.thinkingLevelIntent === undefined || input.thinkingLevelIntent === null
+        ...(thinkingSelection === undefined || thinkingSelection === null
           ? {}
-          : { thinkingLevelIntent: input.thinkingLevelIntent }),
+          : { thinkingSelection }),
         ...(input.thinkingCapabilityOverride === undefined || input.thinkingCapabilityOverride === null
           ? {}
           : { thinkingCapabilityOverride: input.thinkingCapabilityOverride }),
@@ -552,6 +645,7 @@ export async function* sendRuntimeMessage(input: {
   agent?: string
   message: RuntimeMessagePayload
   modelRoute: RuntimeModelRoute
+  thinkingSelection?: RuntimeThinkingSelection | null
   thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
@@ -567,6 +661,7 @@ export async function* sendRuntimeMessage(input: {
     agent: input.agent,
     message: input.message,
     modelRoute: input.modelRoute,
+    thinkingSelection: input.thinkingSelection,
     thinkingLevelIntent: input.thinkingLevelIntent,
     thinkingCapabilityOverride: input.thinkingCapabilityOverride,
     enabledTools: input.enabledTools,
@@ -729,27 +824,15 @@ function cloneRunStartResponse(response: RuntimeRunStartResponse): RuntimeRunSta
       startedAt: response.run.startedAt,
       terminalAt: response.run.terminalAt,
       cancelRequested: response.run.cancelRequested,
+      requestedThinkingSelection: cloneRuntimeThinkingSelection(response.run.requestedThinkingSelection),
+      appliedThinkingSelection: cloneRuntimeThinkingSelection(response.run.appliedThinkingSelection),
       requestedThinkingLevel: response.run.requestedThinkingLevel,
       appliedThinkingLevel: response.run.appliedThinkingLevel,
-      thinkingCapabilitySnapshot: response.run.thinkingCapabilitySnapshot === null
-        ? null
-        : {
-            status: response.run.thinkingCapabilitySnapshot.status,
-            source: response.run.thinkingCapabilitySnapshot.source,
-            supported: response.run.thinkingCapabilitySnapshot.supported,
-            supportedLevels: [...response.run.thinkingCapabilitySnapshot.supportedLevels],
-            defaultLevel: response.run.thinkingCapabilitySnapshot.defaultLevel,
-            reasonCode: response.run.thinkingCapabilitySnapshot.reasonCode,
-            providerHint: response.run.thinkingCapabilitySnapshot.providerHint,
-            routeFingerprint: {
-              providerProfileId: response.run.thinkingCapabilitySnapshot.routeFingerprint.providerProfileId,
-              provider: response.run.thinkingCapabilitySnapshot.routeFingerprint.provider,
-              endpointType: response.run.thinkingCapabilitySnapshot.routeFingerprint.endpointType,
-              baseUrl: response.run.thinkingCapabilitySnapshot.routeFingerprint.baseUrl,
-              modelId: response.run.thinkingCapabilitySnapshot.routeFingerprint.modelId,
-            },
-            overrideLevels: [...response.run.thinkingCapabilitySnapshot.overrideLevels],
-          },
+      thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(response.run.thinkingCapabilitySnapshot),
+      thinkingSelectionResult: cloneRuntimeThinkingSelectionResult(response.run.thinkingSelectionResult),
+      reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(
+        response.run.reasoningSuppressionBasis,
+      ),
     },
     assistantMessageId: response.assistantMessageId,
     stream: {
@@ -764,6 +847,175 @@ function cloneRunStartResponse(response: RuntimeRunStartResponse): RuntimeRunSta
         runId: response.cancel.body.runId,
       },
     },
+  }
+}
+
+export function cloneRuntimeThinkingSelection(
+  selection: RuntimeThinkingSelection | null | undefined,
+): RuntimeThinkingSelection | null {
+  if (selection == null) {
+    return null
+  }
+
+  return {
+    series: selection.series,
+    mode: selection.mode,
+    level: selection.level,
+    budgetTokens: selection.budgetTokens,
+  }
+}
+
+function cloneRuntimeCanonicalThinkingSelection(
+  selection: RuntimeCanonicalThinkingSelection | null | undefined,
+): RuntimeCanonicalThinkingSelection | null {
+  if (selection == null) {
+    return null
+  }
+
+  return {
+    kind: selection.kind,
+    ...(selection.value === undefined ? {} : { value: selection.value }),
+    ...(selection.budgetTokens === undefined ? {} : { budgetTokens: selection.budgetTokens }),
+  }
+}
+
+function cloneRuntimeThinkingControlSpec(
+  controlSpec: RuntimeThinkingControlSpec | null | undefined,
+): RuntimeThinkingControlSpec | null {
+  if (controlSpec == null) {
+    return null
+  }
+
+  return {
+    kind: controlSpec.kind,
+    selectionKind: controlSpec.selectionKind,
+    ...(controlSpec.presetOptions === undefined ? {} : {
+      presetOptions: controlSpec.presetOptions.map((option) => cloneRuntimeCanonicalThinkingSelection(option)!),
+    }),
+    ...(controlSpec.fixedSelection === undefined ? {} : {
+      fixedSelection: cloneRuntimeCanonicalThinkingSelection(controlSpec.fixedSelection),
+    }),
+    ...(controlSpec.budget === undefined
+      ? {}
+      : controlSpec.budget === null
+        ? { budget: null }
+        : {
+            budget: {
+              ...(controlSpec.budget.minTokens === undefined ? {} : { minTokens: controlSpec.budget.minTokens }),
+              ...(controlSpec.budget.maxTokens === undefined ? {} : { maxTokens: controlSpec.budget.maxTokens }),
+              ...(controlSpec.budget.stepTokens === undefined ? {} : { stepTokens: controlSpec.budget.stepTokens }),
+            },
+          }),
+  }
+}
+
+export function cloneRuntimeThinkingCapability(
+  capability: RuntimeThinkingCapability | null | undefined,
+): RuntimeThinkingCapability | null {
+  if (capability == null) {
+    return null
+  }
+
+  return {
+    status: capability.status,
+    source: capability.source,
+    supported: capability.supported,
+    series: capability.series,
+    controlSpec: cloneRuntimeThinkingControlSpec(capability.controlSpec),
+    defaultSelection: cloneRuntimeCanonicalThinkingSelection(capability.defaultSelection),
+    supportedLevels: [...capability.supportedLevels],
+    defaultLevel: capability.defaultLevel,
+    reasonCode: capability.reasonCode,
+    providerHint: capability.providerHint,
+    routeFingerprint: {
+      providerProfileId: capability.routeFingerprint.providerProfileId,
+      provider: capability.routeFingerprint.provider,
+      endpointType: capability.routeFingerprint.endpointType,
+      baseUrl: capability.routeFingerprint.baseUrl,
+      modelId: capability.routeFingerprint.modelId,
+    },
+    provenance: capability.provenance === null
+      ? null
+      : {
+          routeStatus: capability.provenance.routeStatus,
+          override: {
+            present: capability.provenance.override.present,
+            applied: capability.provenance.override.applied,
+            source: capability.provenance.override.source,
+            format: capability.provenance.override.format,
+          },
+        },
+    visibility: capability.visibility === null
+      ? null
+      : {
+          reasoning: capability.visibility.reasoning,
+          supportsSuppression: capability.visibility.supportsSuppression,
+        },
+    overrideLevels: [...capability.overrideLevels],
+  }
+}
+
+export function cloneRuntimeThinkingSelectionResult(
+  result: RuntimeThinkingSelectionResult | null | undefined,
+): RuntimeThinkingSelectionResult | null {
+  if (result == null) {
+    return null
+  }
+
+  return {
+    requestedSelection: cloneRuntimeCanonicalThinkingSelection(result.requestedSelection),
+    appliedSelection: cloneRuntimeCanonicalThinkingSelection(result.appliedSelection),
+    requestedThinkingLevel: result.requestedThinkingLevel,
+    appliedThinkingLevel: result.appliedThinkingLevel,
+    applied: result.applied,
+    reasonCode: result.reasonCode,
+    errorCode: result.errorCode,
+    mappingReasonCode: result.mappingReasonCode,
+    providerMapping: result.providerMapping,
+    capabilityStatus: result.capabilityStatus,
+    capabilitySource: result.capabilitySource,
+    capabilitySeries: result.capabilitySeries,
+    capabilityReasonCode: result.capabilityReasonCode,
+    overridePresent: result.overridePresent,
+    overrideApplied: result.overrideApplied,
+    overrideSource: result.overrideSource,
+    reasoningVisibility: result.reasoningVisibility,
+    supportsSuppression: result.supportsSuppression,
+    ...(result.modelSettings === undefined ? {} : { modelSettings: { ...result.modelSettings } }),
+  }
+}
+
+export function cloneRuntimeReasoningSuppressionBasis(
+  basis: RuntimeReasoningSuppressionBasis | null | undefined,
+): RuntimeReasoningSuppressionBasis | null {
+  if (basis == null) {
+    return null
+  }
+
+  return {
+    shouldSuppress: basis.shouldSuppress,
+    source: basis.source,
+    reasonCode: basis.reasonCode,
+    appliedThinkingLevel: basis.appliedThinkingLevel,
+    reasoningVisibility: basis.reasoningVisibility,
+    supportsSuppression: basis.supportsSuppression,
+    capabilitySource: basis.capabilitySource,
+    capabilitySeries: basis.capabilitySeries,
+  }
+}
+
+function buildCompatRuntimeThinkingSelection(
+  thinkingLevelIntent: RuntimeRunMetadataEvent['payload']['requestedThinkingLevel'],
+): RuntimeThinkingSelection | null {
+  if (thinkingLevelIntent === null) {
+    return null
+  }
+
+  return {
+    series: 'compat-discrete-selection-v1',
+    mode: 'preset',
+    level: thinkingLevelIntent,
+    budgetTokens: null,
   }
 }
 

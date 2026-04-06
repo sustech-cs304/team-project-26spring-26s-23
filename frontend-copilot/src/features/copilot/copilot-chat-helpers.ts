@@ -6,9 +6,13 @@ import type {
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   RuntimeRequestError,
+  cloneRuntimeThinkingSelection,
+  type RuntimeCanonicalThinkingSelection,
   type RuntimeModelRoute,
   type RuntimeRunCompletedEvent,
   type RuntimeThinkingCapability,
+  type RuntimeThinkingControlSpec,
+  type RuntimeThinkingSelection,
   type RuntimeToolEvent,
   type RuntimeToolEventPhase,
 } from './thread-run-contract'
@@ -22,8 +26,8 @@ export interface CopilotChatComposerDraft {
   messageText: string
   selectedModelId: string
   selectedModelRoute: RuntimeModelRoute | null
-  thinkingLevelIntent: ThinkingLevelIntent | null
-  thinkingLevelByModelKey: Record<string, ThinkingLevelIntent>
+  thinkingSelection: RuntimeThinkingSelection | null
+  thinkingSelectionByModelKey: Record<string, RuntimeThinkingSelection | null>
   enabledTools: string[]
   requestOptionsText: string
 }
@@ -37,7 +41,7 @@ export interface RuntimeMessageSendInput {
     content: string
   }
   modelRoute: RuntimeModelRoute
-  thinkingLevelIntent: ThinkingLevelIntent | null
+  thinkingSelection: RuntimeThinkingSelection | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
   requestOptions: Record<string, unknown>
@@ -77,8 +81,8 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
     messageText: '',
     selectedModelId: '',
     selectedModelRoute: null,
-    thinkingLevelIntent: null,
-    thinkingLevelByModelKey: {},
+    thinkingSelection: null,
+    thinkingSelectionByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
   }
@@ -91,8 +95,8 @@ export function createComposerDraftFromSession(
     messageText: '',
     selectedModelId: sessionShell?.capabilities.defaultModelPreference ?? '',
     selectedModelRoute: null,
-    thinkingLevelIntent: null,
-    thinkingLevelByModelKey: {},
+    thinkingSelection: null,
+    thinkingSelectionByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
   }
@@ -109,6 +113,8 @@ export function buildRuntimeMessageSendInput(input: {
     throw new Error('请先选择可发送的模型路由。')
   }
 
+  const thinkingSelection = cloneRuntimeThinkingSelection(input.draft.thinkingSelection)
+
   return {
     runtimeUrl: input.runtimeUrl,
     sessionId: input.sessionShell.sessionId,
@@ -118,7 +124,7 @@ export function buildRuntimeMessageSendInput(input: {
       content: input.draft.messageText.trim(),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
-    thinkingLevelIntent: input.draft.thinkingLevelIntent,
+    thinkingSelection,
     ...(input.thinkingCapabilityOverride === undefined
       ? {}
       : {
@@ -155,32 +161,33 @@ export function applyModelSelectionToComposerDraft(
     ...draft,
     selectedModelId: input.modelId,
     selectedModelRoute: nextRoute,
-    thinkingLevelIntent: draft.thinkingLevelByModelKey[memoryKey] ?? null,
+    thinkingSelection: cloneRuntimeThinkingSelection(draft.thinkingSelectionByModelKey[memoryKey] ?? null),
   }
 }
 
-export function applyThinkingLevelSelectionToComposerDraft(
+export function applyThinkingSelectionToComposerDraft(
   draft: CopilotChatComposerDraft,
   input: {
     modelRoute: RuntimeModelRoute | null
-    thinkingLevelIntent: ThinkingLevelIntent | null
+    thinkingSelection: RuntimeThinkingSelection | null
   },
 ): CopilotChatComposerDraft {
-  if (input.modelRoute === null || input.thinkingLevelIntent === null) {
+  if (input.modelRoute === null || input.thinkingSelection === null) {
     return {
       ...draft,
-      thinkingLevelIntent: null,
+      thinkingSelection: null,
     }
   }
 
   const memoryKey = buildThinkingSessionMemoryKey(input.modelRoute)
+  const nextThinkingSelection = cloneRuntimeThinkingSelection(input.thinkingSelection)
 
   return {
     ...draft,
-    thinkingLevelIntent: input.thinkingLevelIntent,
-    thinkingLevelByModelKey: {
-      ...draft.thinkingLevelByModelKey,
-      [memoryKey]: input.thinkingLevelIntent,
+    thinkingSelection: nextThinkingSelection,
+    thinkingSelectionByModelKey: {
+      ...draft.thinkingSelectionByModelKey,
+      [memoryKey]: nextThinkingSelection,
     },
   }
 }
@@ -192,50 +199,229 @@ export function syncComposerDraftThinkingSelection(
     thinkingCapability: RuntimeThinkingCapability | null
   },
 ): CopilotChatComposerDraft {
-  if (input.modelRoute === null || input.thinkingCapability === null) {
-    return draft.thinkingLevelIntent === null
+  if (input.modelRoute === null) {
+    return draft.thinkingSelection === null
       ? draft
       : {
           ...draft,
-          thinkingLevelIntent: null,
+          thinkingSelection: null,
         }
   }
 
+  if (input.thinkingCapability === null) {
+    return draft
+  }
+
   const memoryKey = buildThinkingSessionMemoryKey(input.modelRoute)
-  const nextThinkingLevelIntent = resolveThinkingLevelIntentFromCapability(
+  const nextThinkingSelection = resolveThinkingSelectionForCapability(
     input.thinkingCapability,
-    draft.thinkingLevelByModelKey[memoryKey],
+    draft.thinkingSelectionByModelKey[memoryKey] ?? draft.thinkingSelection,
   )
 
-  if (nextThinkingLevelIntent === draft.thinkingLevelIntent) {
+  if (isSameRuntimeThinkingSelection(nextThinkingSelection, draft.thinkingSelection)) {
     return draft
   }
 
   return {
     ...draft,
-    thinkingLevelIntent: nextThinkingLevelIntent,
-    thinkingLevelByModelKey: nextThinkingLevelIntent === null
-      ? { ...draft.thinkingLevelByModelKey }
+    thinkingSelection: nextThinkingSelection,
+    thinkingSelectionByModelKey: nextThinkingSelection === null
+      ? { ...draft.thinkingSelectionByModelKey }
       : {
-          ...draft.thinkingLevelByModelKey,
-          [memoryKey]: nextThinkingLevelIntent,
+          ...draft.thinkingSelectionByModelKey,
+          [memoryKey]: nextThinkingSelection,
         },
   }
 }
 
-function resolveThinkingLevelIntentFromCapability(
+export function resolveThinkingSelectionForCapability(
   capability: RuntimeThinkingCapability,
-  value: ThinkingLevelIntent | null | undefined,
-): ThinkingLevelIntent | null {
-  if (!capability.supported || capability.supportedLevels.length === 0) {
+  value: RuntimeThinkingSelection | null | undefined,
+): RuntimeThinkingSelection | null {
+  if (capability.controlSpec === null || capability.defaultSelection === null) {
     return null
   }
 
-  if (value !== null && value !== undefined && capability.supportedLevels.includes(value)) {
-    return value
+  return normalizeRuntimeThinkingSelectionForCapability(
+    value,
+    capability.series,
+    capability.controlSpec,
+  ) ?? buildRuntimeThinkingSelectionFromCanonical(
+    capability.defaultSelection,
+    capability.series,
+    capability.controlSpec,
+  )
+}
+
+function normalizeRuntimeThinkingSelectionForCapability(
+  value: RuntimeThinkingSelection | null | undefined,
+  capabilitySeries: string,
+  controlSpec: RuntimeThinkingControlSpec,
+): RuntimeThinkingSelection | null {
+  const normalizedMode = normalizeRuntimeThinkingSelectionMode(value)
+  if (normalizedMode === 'budget') {
+    if (controlSpec.kind !== 'budget') {
+      return null
+    }
+
+    const budgetTokens = normalizeBudgetTokens(value?.budgetTokens, controlSpec)
+    if (budgetTokens === null) {
+      return null
+    }
+
+    return {
+      series: capabilitySeries,
+      mode: 'budget',
+      level: null,
+      budgetTokens,
+    }
   }
 
-  return capability.defaultLevel ?? capability.supportedLevels[0] ?? null
+  if (normalizedMode !== 'preset' || !isThinkingLevelIntent(value?.level)) {
+    return null
+  }
+
+  if (!hasPresetOption(controlSpec, value.level)) {
+    return null
+  }
+
+  return {
+    series: capabilitySeries,
+    mode: 'preset',
+    level: value.level,
+    budgetTokens: null,
+  }
+}
+
+function buildRuntimeThinkingSelectionFromCanonical(
+  selection: RuntimeCanonicalThinkingSelection,
+  capabilitySeries: string,
+  controlSpec: RuntimeThinkingControlSpec,
+): RuntimeThinkingSelection | null {
+  if (selection.kind === 'budget') {
+    const budgetTokens = normalizeBudgetTokens(selection.budgetTokens, controlSpec)
+    if (budgetTokens !== null) {
+      return {
+        series: capabilitySeries,
+        mode: 'budget',
+        level: null,
+        budgetTokens,
+      }
+    }
+  }
+
+  if (selection.kind === 'preset' && isThinkingLevelIntent(selection.value) && hasPresetOption(controlSpec, selection.value)) {
+    return {
+      series: capabilitySeries,
+      mode: 'preset',
+      level: selection.value,
+      budgetTokens: null,
+    }
+  }
+
+  const fixedSelection = controlSpec.fixedSelection
+  if (fixedSelection?.kind === 'preset' && isThinkingLevelIntent(fixedSelection.value)) {
+    return {
+      series: capabilitySeries,
+      mode: 'preset',
+      level: fixedSelection.value,
+      budgetTokens: null,
+    }
+  }
+
+  for (const presetOption of controlSpec.presetOptions ?? []) {
+    if (presetOption.kind === 'preset' && isThinkingLevelIntent(presetOption.value)) {
+      return {
+        series: capabilitySeries,
+        mode: 'preset',
+        level: presetOption.value,
+        budgetTokens: null,
+      }
+    }
+  }
+
+  if (controlSpec.kind === 'budget') {
+    const budgetTokens = normalizeBudgetTokens(controlSpec.budget?.minTokens ?? 0, controlSpec)
+    return budgetTokens === null
+      ? null
+      : {
+          series: capabilitySeries,
+          mode: 'budget',
+          level: null,
+          budgetTokens,
+        }
+  }
+
+  return null
+}
+
+function normalizeRuntimeThinkingSelectionMode(
+  selection: RuntimeThinkingSelection | null | undefined,
+): RuntimeThinkingSelection['mode'] {
+  if (selection === null || selection === undefined) {
+    return null
+  }
+
+  if (selection.mode === 'budget' || selection.mode === 'preset') {
+    return selection.mode
+  }
+
+  if (typeof selection.budgetTokens === 'number') {
+    return 'budget'
+  }
+
+  return selection.level === null ? null : 'preset'
+}
+
+function hasPresetOption(
+  controlSpec: RuntimeThinkingControlSpec,
+  level: ThinkingLevelIntent,
+): boolean {
+  return (controlSpec.presetOptions ?? []).some((option) => option.kind === 'preset' && option.value === level)
+}
+
+function normalizeBudgetTokens(
+  value: number | null | undefined,
+  controlSpec: RuntimeThinkingControlSpec,
+): number | null {
+  if (controlSpec.kind !== 'budget' || typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+
+  const minimum = Math.max(0, Math.trunc(controlSpec.budget?.minTokens ?? 0))
+  const maximum = Math.max(minimum, Math.trunc(controlSpec.budget?.maxTokens ?? minimum))
+  const step = Math.max(1, Math.trunc(controlSpec.budget?.stepTokens ?? 1))
+  const clamped = Math.min(maximum, Math.max(minimum, Math.trunc(value)))
+  const stepped = minimum + (Math.round((clamped - minimum) / step) * step)
+
+  return Math.min(maximum, Math.max(minimum, stepped))
+}
+
+function isSameRuntimeThinkingSelection(
+  left: RuntimeThinkingSelection | null,
+  right: RuntimeThinkingSelection | null,
+): boolean {
+  if (left === right) {
+    return true
+  }
+
+  if (left === null || right === null) {
+    return false
+  }
+
+  return left.series === right.series
+    && left.mode === right.mode
+    && left.level === right.level
+    && left.budgetTokens === right.budgetTokens
+}
+
+function isThinkingLevelIntent(value: unknown): value is ThinkingLevelIntent {
+  return value === 'off'
+    || value === 'auto'
+    || value === 'low'
+    || value === 'medium'
+    || value === 'high'
+    || value === 'xhigh'
 }
 
 export function parseRequestOptionsText(requestOptionsText: string): Record<string, unknown> {

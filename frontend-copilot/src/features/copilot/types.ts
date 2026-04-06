@@ -7,6 +7,7 @@ import type {
 import type {
   RuntimeModelRoute,
   RuntimeRunMetadataEvent,
+  RuntimeRunView,
   RuntimeThinkingCapability,
 } from './thread-run-contract'
 import type {
@@ -49,6 +50,7 @@ export type CopilotRuntimeSource = 'hosted' | 'dev-override' | 'none'
 export type CopilotAgentNameSource = 'config-center' | 'missing'
 export type CopilotModeSource = 'resolved' | 'expected'
 export type CopilotRunPhase = 'idle' | 'starting' | 'streaming' | 'completed' | 'failed' | 'cancelled'
+export type CopilotReasoningTraceState = 'not_observed' | 'suppressed' | 'visible'
 
 export interface CopilotDiagnosticsSummary {
   hostedStatus: CopilotRendererRuntimeSnapshot['status']
@@ -69,10 +71,15 @@ export interface CopilotRunState {
   resolvedModelRoute: RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
+  requestedThinkingSelection: RuntimeRunView['requestedThinkingSelection']
+  appliedThinkingSelection: RuntimeRunView['appliedThinkingSelection']
   requestedThinkingLevel: RuntimeRunMetadataEvent['payload']['requestedThinkingLevel']
   appliedThinkingLevel: RuntimeRunMetadataEvent['payload']['appliedThinkingLevel']
   thinkingCapabilitySnapshot: RuntimeThinkingCapability | null
+  thinkingSelectionResult: RuntimeRunView['thinkingSelectionResult']
+  reasoningSuppressionBasis: RuntimeRunView['reasoningSuppressionBasis']
   reasoningSuppressed: boolean
+  reasoningTraceState: CopilotReasoningTraceState
   diagnostic: CopilotRunDiagnosticSummary | null
   failure: CopilotRunFailureSummary | null
   cancelReason: string | null

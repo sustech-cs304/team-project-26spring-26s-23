@@ -16,7 +16,7 @@ import {
 } from './thread-run-contract.test-support'
 
 describe('sendRuntimeMessage', () => {
-  it('posts run/start then run/stream with request-scoped modelRoute, enabledTools and requestOptions', async () => {
+  it('posts run/start then run/stream with structured thinking payload as the main transport path', async () => {
     const runEvents: RuntimeRunEvent[] = [
       {
         type: 'run_started',
@@ -86,6 +86,7 @@ describe('sendRuntimeMessage', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
+      thinkingLevelIntent: 'auto',
       enabledTools: ['tool.file-convert'],
       debugModeEnabled: true,
       requestOptions: {
@@ -123,6 +124,12 @@ describe('sendRuntimeMessage', () => {
           },
           policy: {
             modelRoute: createRuntimeModelRoute(),
+            thinkingSelection: {
+              series: 'compat-discrete-selection-v1',
+              mode: 'preset',
+              level: 'auto',
+              budgetTokens: null,
+            },
             enabledTools: ['tool.file-convert'],
             debugModeEnabled: true,
             requestOptions: {
