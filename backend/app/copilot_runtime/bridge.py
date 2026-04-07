@@ -10,10 +10,10 @@ from .contracts import (
     RuntimeCapabilitiesResponse,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
-    RuntimeMessageSendRequest,
     RuntimeRunStartRequest,
     RuntimeScaffold,
     RuntimeThinkingCapabilityResponse,
+    normalize_thinking_level_intent,
 )
 from .execution_support import (
     AgentNotFoundError,
@@ -22,7 +22,11 @@ from .execution_support import (
     ThreadNotFoundError,
 )
 from .message_runs import RuntimeMessageRunOrchestrator
-from .model_routes import RuntimeModelRoute, RuntimeModelRouteResolver, RuntimeModelRouteSnapshot
+from .model_routes import RuntimeModelRoute, RuntimeModelRouteResolver
+from .provider_adapter_registry import (
+    RuntimeProviderAdapterRegistry,
+    build_default_provider_adapter_registry,
+)
 from .run_events import (
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
@@ -35,7 +39,6 @@ from .session_store import (
     RuntimeMessageRole,
     RuntimeRunRecord,
     RuntimeStoredModelRoute,
-    RuntimeStoredModelRouteSnapshot,
     RuntimeStoredRunInput,
     RuntimeStoredRunPolicy,
     RuntimeThreadRecord,
@@ -46,7 +49,7 @@ from .thinking_adapter import resolve_canonical_thinking_capability
 
 
 class RuntimeBridge:
-    """Coordinates thread/run state, executor resolution, and compat projections."""
+    """Coordinates thread/run state and executor resolution."""
 
     def __init__(
         self,
@@ -56,20 +59,20 @@ class RuntimeBridge:
         scaffold: RuntimeScaffold | None = None,
         message_run_orchestrator: RuntimeMessageRunOrchestrator | None = None,
         model_route_resolver: RuntimeModelRouteResolver | None = None,
+        provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
         self._scaffold = scaffold
         self._message_run_orchestrator = message_run_orchestrator
         self._model_route_resolver = model_route_resolver
+        self._provider_adapter_registry = (
+            provider_adapter_registry or build_default_provider_adapter_registry()
+        )
 
     def create_thread(self, *, agent_id: str) -> RuntimeThreadRecord:
         self._resolve_agent(agent_id)
         return self._session_store.create_thread(bound_agent_id=agent_id)
-
-    def create_session(self, *, agent_id: str) -> RuntimeThreadRecord:
-        self._resolve_agent(agent_id)
-        return self._session_store.create(bound_agent_id=agent_id)
 
     def get_thread(self, *, thread_id: str) -> RuntimeThreadRecord:
         thread = self._session_store.get_thread(thread_id)
@@ -97,34 +100,14 @@ class RuntimeBridge:
         except LookupError as exc:
             raise RunNotFoundError(run_id) from exc
 
-    def stream_message(
-        self,
-        *,
-        request: RuntimeMessageSendRequest,
-        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
-    ) -> AsyncIterator[RuntimeRunEvent]:
-        compat_run = self._create_run_record(
-            request=RuntimeRunStartRequest(
-                thread_id=request.session_id,
-                message=request.message,
-                policy=request.policy,
-                agent_id=request.agent_id,
-            ),
-            validate_thread=False,
-        )
-        return self.stream_run(
-            run_id=compat_run.run_id,
-            is_client_disconnected=is_client_disconnected,
-        )
-
     def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:
             raise RuntimeError("Runtime scaffold is required for capabilities queries.")
-        session = self._session_store.get(session_id)
-        if session is None:
+        thread = self._session_store.get_thread(session_id)
+        if thread is None:
             raise SessionNotFoundError(session_id)
-        self._resolve_agent(session.bound_agent_id)
-        return self._scaffold.build_capabilities_response(session=session)
+        self._resolve_agent(thread.bound_agent_id)
+        return self._scaffold.build_capabilities_response(thread=thread)
 
     async def get_thinking_capability(
         self,
@@ -135,15 +118,16 @@ class RuntimeBridge:
     ) -> RuntimeThinkingCapabilityResponse:
         if self._scaffold is None:
             raise RuntimeError("Runtime scaffold is required for thinking capability queries.")
-        session = self._session_store.get(session_id)
-        if session is None:
+        thread = self._session_store.get_thread(session_id)
+        if thread is None:
             raise SessionNotFoundError(session_id)
-        self._resolve_agent(session.bound_agent_id)
+        self._resolve_agent(thread.bound_agent_id)
         resolver = self._require_model_route_resolver()
         resolved_model_route = await resolver.resolve(model_route)
         capability = resolve_canonical_thinking_capability(
             model_route=resolved_model_route,
             thinking_capability_override=thinking_capability_override,
+            provider_adapter_registry=self._provider_adapter_registry,
         )
         return self._scaffold.build_thinking_capability_response(
             session_id=session_id,
@@ -180,7 +164,7 @@ class RuntimeBridge:
                 yield event
             return
 
-        request = self._to_message_send_request(run)
+        request = self._to_run_start_request(run)
         self._session_store.mark_run_streaming(
             run.run_id,
             metadata={"assistant_message_id": f"{run.run_id}:assistant"},
@@ -230,7 +214,7 @@ class RuntimeBridge:
     async def _call_orchestrator_stream_events(
         self,
         *,
-        request: RuntimeMessageSendRequest,
+        request: RuntimeRunStartRequest,
         run_id: str,
         is_client_disconnected: Callable[[], Awaitable[bool]] | None,
     ) -> AsyncIterator[RuntimeRunEvent]:
@@ -343,12 +327,8 @@ class RuntimeBridge:
             policy=RuntimeStoredRunPolicy(
                 model_route=RuntimeStoredModelRoute(
                     provider_profile_id=request.policy.modelRoute.provider_profile_id,
-                    snapshot=RuntimeStoredModelRouteSnapshot(
-                        provider=request.policy.modelRoute.snapshot.provider,
-                        endpoint_type=request.policy.modelRoute.snapshot.endpoint_type,
-                        base_url=request.policy.modelRoute.snapshot.base_url,
-                        model_id=request.policy.modelRoute.snapshot.model_id,
-                    ),
+                    route_ref=request.policy.modelRoute.route_ref,
+                    catalog_revision=request.policy.modelRoute.catalog_revision,
                 ),
                 thinking_level_intent=request.policy.thinkingLevelIntent,
                 thinking_capability_override=None
@@ -361,12 +341,12 @@ class RuntimeBridge:
             agent_id=request.agent_id,
         )
 
-    def _to_message_send_request(self, run: RuntimeRunRecord) -> RuntimeMessageSendRequest:
+    def _to_run_start_request(self, run: RuntimeRunRecord) -> RuntimeRunStartRequest:
         stored_request = run.request
         stored_policy = stored_request.policy
         stored_route = stored_policy.model_route
-        return RuntimeMessageSendRequest(
-            session_id=run.thread_id,
+        return RuntimeRunStartRequest(
+            thread_id=run.thread_id,
             message=RuntimeMessagePayload(
                 role=stored_request.message_role,
                 content=stored_request.message_content,
@@ -374,14 +354,12 @@ class RuntimeBridge:
             policy=RuntimeMessageExecutionPolicy(
                 modelRoute=RuntimeModelRoute(
                     provider_profile_id=stored_route.provider_profile_id,
-                    snapshot=RuntimeModelRouteSnapshot(
-                        provider=stored_route.snapshot.provider,
-                        endpoint_type=stored_route.snapshot.endpoint_type,
-                        base_url=stored_route.snapshot.base_url,
-                        model_id=stored_route.snapshot.model_id,
-                    ),
+                    route_ref=stored_route.route_ref,
+                    catalog_revision=stored_route.catalog_revision,
                 ),
-                thinkingLevelIntent=stored_policy.thinking_level_intent,
+                thinkingLevelIntent=normalize_thinking_level_intent(
+                    stored_policy.thinking_level_intent
+                ),
                 thinkingCapabilityOverride=None
                 if stored_policy.thinking_capability_override is None
                 else dict(stored_policy.thinking_capability_override),

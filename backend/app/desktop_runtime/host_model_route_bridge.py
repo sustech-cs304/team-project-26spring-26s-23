@@ -10,18 +10,18 @@ import httpx
 from app.copilot_runtime.model_routes import (
     HostModelRouteAccessDeniedError,
     HostModelRouteUnavailableError,
-    ModelRouteSnapshotMismatchError,
     ProviderProfileNotFoundError,
     ProviderSecretMissingError,
     ResolvedRuntimeModelRoute,
     RuntimeModelRoute,
+    RuntimeModelRouteRef,
+    RuntimeModelRouteResolutionError,
     RuntimeModelRouteResolver,
 )
 
 HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME = "X-Host-Model-Route-Token"
 _INVALID_TOKEN_ERROR_CODE = "invalid_host_model_route_bridge_token"
 _PROVIDER_NOT_FOUND_ERROR_CODE = "provider_profile_not_found"
-_SNAPSHOT_MISMATCH_ERROR_CODE = "route_snapshot_mismatch"
 _SECRET_MISSING_ERROR_CODE = "provider_secret_missing"
 
 
@@ -58,15 +58,7 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
         try:
             response = await self._get_client().post(
                 self._bridge_url,
-                json={
-                    "providerProfileId": model_route.provider_profile_id,
-                    "snapshot": {
-                        "provider": model_route.snapshot.provider,
-                        "endpointType": model_route.snapshot.endpoint_type,
-                        "baseUrl": model_route.snapshot.base_url,
-                        "modelId": model_route.snapshot.model_id,
-                    },
-                },
+                json=model_route.to_dict(),
                 headers={self._header_name: self._bridge_token},
             )
         except httpx.HTTPError as exc:
@@ -101,7 +93,6 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
             detail="Host model route bridge returned an unrecognized response shape."
         )
 
-
     def _get_client(self) -> httpx.AsyncClient:
         client = self._client
         if client is None:
@@ -114,25 +105,66 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
 
 
 def _parse_resolved_route_payload(payload: Mapping[str, Any]) -> ResolvedRuntimeModelRoute:
-    route = payload.get("route")
+    route = payload.get("resolvedRoute")
     if not isinstance(route, Mapping):
         raise HostModelRouteUnavailableError(
-            detail="Host model route bridge success payload is missing the resolved route."
+            detail="Host model route bridge success payload is missing 'resolvedRoute'."
         )
 
-    auth = route.get("auth")
-    if not isinstance(auth, Mapping):
+    private_auth = payload.get("privateAuth")
+    if not isinstance(private_auth, Mapping):
         raise HostModelRouteUnavailableError(
-            detail="Host model route bridge success payload is missing auth fields."
+            detail="Host model route bridge success payload is missing 'privateAuth'."
         )
+
+    provider_profile_id = _require_non_empty_text(route, "providerProfileId")
+    model_id = _require_non_empty_text(route, "modelId")
+    provider = _normalize_optional_text(route.get("provider")) or _require_non_empty_text(route, "providerId")
+    route_ref = _parse_route_ref(route.get("routeRef"), provider_profile_id=provider_profile_id, model_id=model_id)
+
+    auth_kind = _normalize_optional_text(private_auth.get("authKind")) or _normalize_optional_text(route.get("authKind")) or "none"
+    auth_payload = private_auth.get("authPayload")
+    api_key = ""
+    if isinstance(auth_payload, Mapping):
+        api_key = _normalize_optional_text(auth_payload.get("apiKey")) or ""
 
     return ResolvedRuntimeModelRoute(
-        provider_profile_id=_require_non_empty_text(route, "providerProfileId"),
-        provider=_require_non_empty_text(route, "provider"),
+        provider_profile_id=provider_profile_id,
+        provider=provider,
+        provider_id=_normalize_optional_text(route.get("providerId")) or provider,
+        adapter_id=_normalize_optional_text(route.get("adapterId")) or "",
+        runtime_status=_normalize_optional_text(route.get("runtimeStatus")) or "enabled",
+        catalog_revision=_normalize_optional_text(route.get("catalogRevision")) or "",
+        endpoint_family=_normalize_optional_text(route.get("endpointFamily")) or "",
         endpoint_type=_require_non_empty_text(route, "endpointType"),
         base_url=_require_non_empty_text(route, "baseUrl"),
-        model_id=_require_non_empty_text(route, "modelId"),
-        api_key=_require_non_empty_text(auth, "apiKey"),
+        model_id=model_id,
+        auth_kind=auth_kind,
+        api_key=api_key,
+        route_ref=route_ref,
+    )
+
+
+def _parse_route_ref(
+    value: Any,
+    *,
+    provider_profile_id: str,
+    model_id: str,
+) -> RuntimeModelRouteRef:
+    if isinstance(value, Mapping):
+        route_kind = _normalize_optional_text(value.get("routeKind")) or "provider-model"
+        profile_id = _normalize_optional_text(value.get("profileId")) or provider_profile_id
+        resolved_model_id = _normalize_optional_text(value.get("modelId")) or model_id
+        return RuntimeModelRouteRef(
+            route_kind=route_kind,
+            profile_id=profile_id,
+            model_id=resolved_model_id,
+        )
+
+    return RuntimeModelRouteRef(
+        route_kind="provider-model",
+        profile_id=provider_profile_id,
+        model_id=model_id,
     )
 
 
@@ -149,28 +181,22 @@ def _build_resolution_error(
 
     code = _normalize_optional_text(error_payload.get("code"))
     details_value = error_payload.get("details")
-    details = details_value if isinstance(details_value, Mapping) else {}
+    details = dict(details_value) if isinstance(details_value, Mapping) else {}
     provider_profile_id = _normalize_optional_text(details.get("providerProfileId")) or fallback_provider_profile_id
 
     if code == _INVALID_TOKEN_ERROR_CODE:
         return HostModelRouteAccessDeniedError(header_name=header_name)
     if code == _PROVIDER_NOT_FOUND_ERROR_CODE:
         return ProviderProfileNotFoundError(provider_profile_id=provider_profile_id)
-    if code == _SNAPSHOT_MISMATCH_ERROR_CODE:
-        mismatches_value = details.get("mismatches")
-        mismatches = mismatches_value if isinstance(mismatches_value, list) else []
-        normalized_mismatches = [
-            item for item in mismatches if isinstance(item, dict)
-        ]
-        return ModelRouteSnapshotMismatchError(
-            provider_profile_id=provider_profile_id,
-            mismatches=normalized_mismatches,
-        )
     if code == _SECRET_MISSING_ERROR_CODE:
         return ProviderSecretMissingError(provider_profile_id=provider_profile_id)
 
     message = _normalize_optional_text(error_payload.get("message")) or "Host model route bridge request failed."
-    return HostModelRouteUnavailableError(detail=message)
+    return RuntimeModelRouteResolutionError(
+        code=code or "host_model_route_request_failed",
+        message=message,
+        details=details,
+    )
 
 
 def _require_non_empty_text(mapping: Mapping[str, Any], field_name: str) -> str:

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { sendRuntimeMessage, type RuntimeRunEvent } from './thread-run-contract'
+import type { RuntimeRunEvent } from './thread-run-contract'
+import { dispatchCopilotMessage } from './copilot-send-controller'
 import {
   agentId,
   createFetchResponse,
@@ -15,7 +16,7 @@ import {
   sessionId,
 } from './thread-run-contract.test-support'
 
-describe('sendRuntimeMessage', () => {
+describe('dispatchCopilotMessage', () => {
   it('posts run/start then run/stream with request-scoped modelRoute, enabledTools and requestOptions', async () => {
     const runEvents: RuntimeRunEvent[] = [
       {
@@ -80,12 +81,13 @@ describe('sendRuntimeMessage', () => {
     )
     const onRunStart = vi.fn()
 
-    const events = await collectEvents(sendRuntimeMessage({
+    const events = await collectEvents(dispatchCopilotMessage({
       runtimeUrl,
       sessionId,
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
+      thinkingLevelIntent: null,
       enabledTools: ['tool.file-convert'],
       debugModeEnabled: true,
       requestOptions: {
@@ -122,7 +124,14 @@ describe('sendRuntimeMessage', () => {
             content: '请总结这份文档',
           },
           policy: {
-            modelRoute: createRuntimeModelRoute(),
+            modelRoute: {
+              routeRef: {
+                routeKind: 'provider-model',
+                profileId: 'provider-openai',
+                modelId: 'qwen-plus',
+              },
+              catalogRevision: '2026-04-06-provider-catalog-v1',
+            },
             enabledTools: ['tool.file-convert'],
             debugModeEnabled: true,
             requestOptions: {
@@ -167,12 +176,13 @@ describe('sendRuntimeMessage', () => {
     )
 
     await expect(async () => {
-      for await (const _event of sendRuntimeMessage({
+      for await (const _event of dispatchCopilotMessage({
         runtimeUrl,
         sessionId,
         agent: 'blackboard',
         message: createUserMessage(),
         modelRoute: createRuntimeModelRoute(),
+        thinkingLevelIntent: null,
         enabledTools: ['tool.file-convert'],
         requestOptions: {},
         fetchFn,
@@ -204,12 +214,13 @@ describe('sendRuntimeMessage', () => {
     const fetchFn = rawFetchFn as unknown as typeof fetch
     const abortController = new AbortController()
 
-    await expect(collectEvents(sendRuntimeMessage({
+    await expect(collectEvents(dispatchCopilotMessage({
       runtimeUrl,
       sessionId,
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
+      thinkingLevelIntent: null,
       enabledTools: [],
       requestOptions: {},
       fetchFn,

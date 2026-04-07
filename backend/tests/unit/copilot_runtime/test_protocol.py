@@ -48,13 +48,13 @@ def test_extract_thread_create_request_validates_known_agent() -> None:
 
 
 
-def test_extract_session_create_request_unknown_agent_raises_structured_protocol_error() -> None:
+def test_extract_thread_create_request_unknown_agent_raises_structured_protocol_error() -> None:
     parser = _build_parser()
 
     with pytest.raises(RuntimeProtocolError) as exc_info:
-        parser.extract_session_create_request(
+        parser.extract_thread_create_request(
             {
-                "method": "session/create",
+                "method": "thread/create",
                 "body": {"agentId": "missing-agent"},
             }
         )
@@ -62,7 +62,7 @@ def test_extract_session_create_request_unknown_agent_raises_structured_protocol
     exc = exc_info.value
     assert exc.status_code == 404
     assert exc.error.error.code == "agent_not_found"
-    assert exc.error.error.requestedMethod == "session/create"
+    assert exc.error.error.requestedMethod == "thread/create"
     assert exc.error.error.details == {"agentName": "missing-agent"}
 
 
@@ -134,10 +134,11 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
     assert request.message.role == "user"
     assert request.message.content == "Hello"
     assert request.policy.modelRoute.provider_profile_id == "provider-1"
-    assert request.policy.modelRoute.snapshot.provider == "openai"
-    assert request.policy.modelRoute.snapshot.endpoint_type == "openai-compatible"
-    assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
-    assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
+    assert request.policy.modelRoute.route_ref is not None
+    assert request.policy.modelRoute.route_ref.route_kind == "provider-model"
+    assert request.policy.modelRoute.route_ref.profile_id == "provider-1"
+    assert request.policy.modelRoute.route_ref.model_id == "gpt-4.1"
+    assert request.policy.modelRoute.catalog_revision == "2026-04-06-provider-catalog-v1"
     assert request.policy.thinkingLevelIntent == "auto"
     assert request.policy.enabledTools == ("tool.file-convert",)
     assert request.policy.debugModeEnabled is True
@@ -145,47 +146,49 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
 
 
 
-def test_extract_message_send_request_reads_model_route_policy_fields() -> None:
+def test_extract_run_start_request_rejects_legacy_snapshot_model_route_fields() -> None:
     parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["modelRoute"] = {
+        **policy["modelRoute"],
+        "snapshot": {
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+    }
 
-    request = parser.extract_message_send_request(
-        {
-            "method": "message/send",
-            "body": {
-                "sessionId": "session-123",
-                "agent": "default",
-                "message": {"role": "user", "content": "Hello"},
-                "policy": _build_policy_payload(),
-            },
-        }
-    )
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_run_start_request(
+            {
+                "method": "run/start",
+                "body": {
+                    "threadId": "thread-123",
+                    "message": {"role": "user", "content": "Hello"},
+                    "policy": policy,
+                },
+            }
+        )
 
-    assert request.session_id == "session-123"
-    assert request.agent_id == "default"
-    assert request.message.role == "user"
-    assert request.message.content == "Hello"
-    assert request.policy.modelRoute.provider_profile_id == "provider-1"
-    assert request.policy.modelRoute.snapshot.provider == "openai"
-    assert request.policy.modelRoute.snapshot.endpoint_type == "openai-compatible"
-    assert request.policy.modelRoute.snapshot.base_url == "https://example.com/v1"
-    assert request.policy.modelRoute.snapshot.model_id == "gpt-4.1"
-    assert request.policy.thinkingLevelIntent == "auto"
-    assert request.policy.enabledTools == ("tool.file-convert",)
-    assert request.policy.debugModeEnabled is True
-    assert request.policy.requestOptions == {"temperature": 0.2}
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_request"
+    assert exc.error.error.requestedMethod == "run/start"
+    assert exc.error.error.details == {"field": "policy.modelRoute.snapshot"}
 
 
 
-def test_extract_message_send_request_leaves_debug_mode_unset_when_field_omitted() -> None:
+def test_extract_run_start_request_leaves_debug_mode_unset_when_field_omitted() -> None:
     parser = _build_parser()
     policy = _build_policy_payload()
     policy.pop("debugModeEnabled")
 
-    request = parser.extract_message_send_request(
+    request = parser.extract_run_start_request(
         {
-            "method": "message/send",
+            "method": "run/start",
             "body": {
-                "sessionId": "session-123",
+                "threadId": "thread-123",
                 "message": {"role": "user", "content": "Hello"},
                 "policy": policy,
             },
@@ -219,15 +222,15 @@ def test_extract_run_start_request_requires_model_route_policy_object() -> None:
 
 
 
-def test_extract_message_send_request_requires_user_text_message() -> None:
+def test_extract_run_start_request_requires_user_text_message() -> None:
     parser = _build_parser()
 
     with pytest.raises(RuntimeProtocolError) as exc_info:
-        parser.extract_message_send_request(
+        parser.extract_run_start_request(
             {
-                "method": "message/send",
+                "method": "run/start",
                 "body": {
-                    "sessionId": "session-123",
+                    "threadId": "thread-123",
                     "message": {"role": "assistant", "content": "Nope"},
                     "policy": _build_policy_payload(),
                 },
@@ -237,7 +240,7 @@ def test_extract_message_send_request_requires_user_text_message() -> None:
     exc = exc_info.value
     assert exc.status_code == 400
     assert exc.error.error.code == "unsupported_message_shape"
-    assert exc.error.error.requestedMethod == "message/send"
+    assert exc.error.error.requestedMethod == "run/start"
     assert exc.error.error.details == {"field": "message.role", "role": "assistant"}
 
 
@@ -270,14 +273,14 @@ def test_extract_run_cancel_request_reads_run_id() -> None:
 
 
 
-def test_extract_message_send_request_requires_explicit_body_wrapper() -> None:
+def test_extract_run_start_request_requires_explicit_body_wrapper() -> None:
     parser = _build_parser()
 
     with pytest.raises(RuntimeProtocolError) as exc_info:
-        parser.extract_message_send_request(
+        parser.extract_run_start_request(
             {
-                "method": "message/send",
-                "sessionId": "session-123",
+                "method": "run/start",
+                "threadId": "thread-123",
                 "message": {"role": "user", "content": "Hello"},
                 "policy": _build_policy_payload(),
             }
@@ -286,7 +289,7 @@ def test_extract_message_send_request_requires_explicit_body_wrapper() -> None:
     exc = exc_info.value
     assert exc.status_code == 400
     assert exc.error.error.code == "invalid_request"
-    assert exc.error.error.requestedMethod == "message/send"
+    assert exc.error.error.requestedMethod == "run/start"
     assert exc.error.error.details == {"field": "body"}
 
 
@@ -299,13 +302,12 @@ def _build_parser() -> RuntimeProtocolParser:
 def _build_policy_payload() -> dict[str, object]:
     return {
         "modelRoute": {
-            "providerProfileId": "provider-1",
-            "snapshot": {
-                "provider": "openai",
-                "endpointType": "openai-compatible",
-                "baseUrl": "https://example.com/v1",
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": "provider-1",
                 "modelId": "gpt-4.1",
             },
+            "catalogRevision": "2026-04-06-provider-catalog-v1",
         },
         "thinkingLevelIntent": "auto",
         "enabledTools": ["tool.file-convert"],

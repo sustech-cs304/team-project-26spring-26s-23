@@ -1,3 +1,4 @@
+import type { ModelRouteRef } from '../../workbench/types'
 import {
   isTerminalRuntimeRunEvent,
   parseRuntimeRunEventStream,
@@ -7,7 +8,6 @@ export interface RuntimeAgentDirectoryEntry {
   agentId: string
   status: string
   recommendedTools: string[]
-  defaultModelPreference: string | null
   displayName: string | null
   description: string | null
   iconKey: string | null
@@ -35,18 +35,6 @@ export interface RuntimeThreadCreateResponse {
   createdAt: string
   updatedAt: string
   recommendedTools: string[]
-  defaultModelPreference: string | null
-  capabilities: Record<string, unknown>
-}
-
-export interface RuntimeSessionCreateResponse {
-  ok: true
-  sessionId: string
-  boundAgent: RuntimeBoundAgent
-  createdAt: string
-  updatedAt: string
-  recommendedTools: string[]
-  defaultModelPreference: string | null
   capabilities: Record<string, unknown>
 }
 
@@ -68,7 +56,6 @@ export interface RuntimeThreadGetResponse {
   tools: RuntimeToolDirectoryEntry[]
   recommendedTools: string[]
   toolSelectionMode: string
-  defaultModelPreference: string | null
   latestRunId: string | null
 }
 
@@ -106,7 +93,6 @@ export interface RuntimeCapabilitiesGetResponse {
   tools: RuntimeToolDirectoryEntry[]
   recommendedTools: string[]
   toolSelectionMode: string
-  defaultModelPreference: string | null
 }
 
 export interface RuntimeThinkingCapabilityGetResponse {
@@ -120,16 +106,24 @@ export interface RuntimeMessagePayload {
   content: string
 }
 
-export interface RuntimeModelRouteSnapshot {
+export interface RuntimeModelRoute {
+  routeRef?: ModelRouteRef | null
+  catalogRevision?: string
+}
+
+export interface RuntimeResolvedModelRoute {
+  routeRef: ModelRouteRef
+  providerProfileId: string
   provider: string
+  providerId: string
+  adapterId: string
+  runtimeStatus: string
+  catalogRevision: string
+  endpointFamily: string
   endpointType: string
   baseUrl: string
   modelId: string
-}
-
-export interface RuntimeModelRoute {
-  providerProfileId: string
-  snapshot: RuntimeModelRouteSnapshot
+  authKind: string
 }
 
 export interface RuntimeRunView {
@@ -201,7 +195,7 @@ export type RuntimeRunCompletedEvent = RuntimeRunEventBase<'run_completed', {
   assistantMessageId: string
   assistantText: string
   resolvedModelId: string
-  resolvedModelRoute: RuntimeModelRoute
+  resolvedModelRoute: RuntimeResolvedModelRoute
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
 }>
@@ -258,6 +252,7 @@ interface RuntimeErrorPayload {
   error?: {
     code?: string
     message?: string
+    details?: Record<string, unknown>
   }
 }
 
@@ -269,10 +264,8 @@ interface RuntimeMethodRequest {
     | 'run/start'
     | 'run/stream'
     | 'run/cancel'
-    | 'session/create'
     | 'capabilities/get'
     | 'thinking/capability/get'
-    | 'message/send'
   body?: Record<string, unknown>
 }
 
@@ -281,12 +274,14 @@ export type FetchLike = typeof fetch
 export class RuntimeRequestError extends Error {
   readonly code: string | null
   readonly status: number
+  readonly details: Record<string, unknown>
 
-  constructor(message: string, input: { code?: string; status: number }) {
+  constructor(message: string, input: { code?: string; status: number; details?: Record<string, unknown> }) {
     super(message)
     this.name = 'RuntimeRequestError'
     this.code = input.code ?? null
     this.status = input.status
+    this.details = { ...(input.details ?? {}) }
   }
 }
 
@@ -335,25 +330,6 @@ export async function getRuntimeThread(input: {
   })
 }
 
-export async function createRuntimeSession(input: {
-  runtimeUrl: string
-  agentId: string
-  fetchFn?: FetchLike
-  signal?: AbortSignal
-}): Promise<RuntimeSessionCreateResponse> {
-  const response = await createRuntimeThread(input)
-  return {
-    ok: true,
-    sessionId: response.threadId,
-    boundAgent: { ...response.boundAgent },
-    createdAt: response.createdAt,
-    updatedAt: response.updatedAt,
-    recommendedTools: [...response.recommendedTools],
-    defaultModelPreference: response.defaultModelPreference,
-    capabilities: { ...response.capabilities },
-  }
-}
-
 export async function getRuntimeCapabilities(input: {
   runtimeUrl: string
   sessionId: string
@@ -375,7 +351,6 @@ export async function getRuntimeCapabilities(input: {
     tools: response.tools.map((tool) => ({ ...tool })),
     recommendedTools: [...response.recommendedTools],
     toolSelectionMode: response.toolSelectionMode,
-    defaultModelPreference: response.defaultModelPreference,
   }
 }
 
@@ -392,7 +367,7 @@ export async function getRuntimeThinkingCapability(input: {
     method: 'thinking/capability/get',
     body: {
       sessionId: input.sessionId,
-      modelRoute: input.modelRoute,
+      modelRoute: serializeRuntimeModelRouteForRequest(input.modelRoute),
       ...(input.thinkingCapabilityOverride === undefined || input.thinkingCapabilityOverride === null
         ? {}
         : { thinkingCapabilityOverride: input.thinkingCapabilityOverride }),
@@ -424,7 +399,7 @@ export async function startRuntimeRun(input: {
       ...(input.agent === undefined ? {} : { agent: input.agent }),
       message: input.message,
       policy: {
-        modelRoute: input.modelRoute,
+        modelRoute: serializeRuntimeModelRouteForRequest(input.modelRoute),
         ...(input.thinkingLevelIntent === undefined || input.thinkingLevelIntent === null
           ? {}
           : { thinkingLevelIntent: input.thinkingLevelIntent }),
@@ -546,61 +521,6 @@ export async function* streamRuntimeRun(input: {
   }
 }
 
-export async function* sendRuntimeMessage(input: {
-  runtimeUrl: string
-  sessionId: string
-  agent?: string
-  message: RuntimeMessagePayload
-  modelRoute: RuntimeModelRoute
-  thinkingLevelIntent?: 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | null
-  thinkingCapabilityOverride?: Record<string, unknown> | null
-  enabledTools: string[]
-  debugModeEnabled?: boolean
-  requestOptions?: Record<string, unknown>
-  fetchFn?: FetchLike
-  signal?: AbortSignal
-  onRunStart?: (response: RuntimeRunStartResponse) => void
-}): AsyncGenerator<RuntimeRunEvent> {
-  const runStartResponse = await startRuntimeRun({
-    runtimeUrl: input.runtimeUrl,
-    threadId: input.sessionId,
-    agent: input.agent,
-    message: input.message,
-    modelRoute: input.modelRoute,
-    thinkingLevelIntent: input.thinkingLevelIntent,
-    thinkingCapabilityOverride: input.thinkingCapabilityOverride,
-    enabledTools: input.enabledTools,
-    debugModeEnabled: input.debugModeEnabled,
-    requestOptions: input.requestOptions,
-    fetchFn: input.fetchFn,
-    signal: input.signal,
-  })
-
-  input.onRunStart?.(cloneRunStartResponse(runStartResponse))
-
-  try {
-    for await (const event of streamRuntimeRun({
-      runtimeUrl: input.runtimeUrl,
-      runId: runStartResponse.run.runId,
-      fetchFn: input.fetchFn,
-      signal: input.signal,
-    })) {
-      if (event.runId !== runStartResponse.run.runId) {
-        throw new Error(
-          `Runtime event stream changed runId from ${runStartResponse.run.runId} to ${event.runId}.`,
-        )
-      }
-
-      yield event
-    }
-  } catch (error) {
-    if (isAbortLikeError(error) || input.signal?.aborted === true) {
-      throw createAbortError()
-    }
-    throw error
-  }
-}
-
 async function postRuntimeMethod<TResponse>(input: {
   runtimeUrl: string
   method: RuntimeMethodRequest['method']
@@ -695,6 +615,7 @@ function buildRuntimeRequestError(payload: RuntimeErrorPayload, status: number):
   return new RuntimeRequestError(buildRuntimeErrorMessage(payload, status), {
     code: payload.error?.code,
     status,
+    details: isRecord(payload.error?.details) ? payload.error?.details : {},
   })
 }
 
@@ -717,53 +638,37 @@ function buildRuntimeErrorMessage(payload: RuntimeErrorPayload, status: number):
   return `Runtime request failed with HTTP ${status}.`
 }
 
-function cloneRunStartResponse(response: RuntimeRunStartResponse): RuntimeRunStartResponse {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function serializeRuntimeModelRouteForRequest(route: RuntimeModelRoute): {
+  routeRef: ModelRouteRef
+  catalogRevision?: string
+} {
+  const routeRef = serializeRuntimeModelRouteRef(route)
+  if (routeRef === null) {
+    throw new Error('Runtime model route request must include a stable routeRef.')
+  }
+
   return {
-    ok: true,
-    run: {
-      runId: response.run.runId,
-      threadId: response.run.threadId,
-      status: response.run.status,
-      createdAt: response.run.createdAt,
-      updatedAt: response.run.updatedAt,
-      startedAt: response.run.startedAt,
-      terminalAt: response.run.terminalAt,
-      cancelRequested: response.run.cancelRequested,
-      requestedThinkingLevel: response.run.requestedThinkingLevel,
-      appliedThinkingLevel: response.run.appliedThinkingLevel,
-      thinkingCapabilitySnapshot: response.run.thinkingCapabilitySnapshot === null
-        ? null
-        : {
-            status: response.run.thinkingCapabilitySnapshot.status,
-            source: response.run.thinkingCapabilitySnapshot.source,
-            supported: response.run.thinkingCapabilitySnapshot.supported,
-            supportedLevels: [...response.run.thinkingCapabilitySnapshot.supportedLevels],
-            defaultLevel: response.run.thinkingCapabilitySnapshot.defaultLevel,
-            reasonCode: response.run.thinkingCapabilitySnapshot.reasonCode,
-            providerHint: response.run.thinkingCapabilitySnapshot.providerHint,
-            routeFingerprint: {
-              providerProfileId: response.run.thinkingCapabilitySnapshot.routeFingerprint.providerProfileId,
-              provider: response.run.thinkingCapabilitySnapshot.routeFingerprint.provider,
-              endpointType: response.run.thinkingCapabilitySnapshot.routeFingerprint.endpointType,
-              baseUrl: response.run.thinkingCapabilitySnapshot.routeFingerprint.baseUrl,
-              modelId: response.run.thinkingCapabilitySnapshot.routeFingerprint.modelId,
-            },
-            overrideLevels: [...response.run.thinkingCapabilitySnapshot.overrideLevels],
-          },
-    },
-    assistantMessageId: response.assistantMessageId,
-    stream: {
-      method: 'run/stream',
-      body: {
-        runId: response.stream.body.runId,
-      },
-    },
-    cancel: {
-      method: 'run/cancel',
-      body: {
-        runId: response.cancel.body.runId,
-      },
-    },
+    routeRef,
+    ...(typeof route.catalogRevision === 'string' && route.catalogRevision.trim() !== ''
+      ? { catalogRevision: route.catalogRevision.trim() }
+      : {}),
+  }
+}
+
+function serializeRuntimeModelRouteRef(route: RuntimeModelRoute): ModelRouteRef | null {
+  const routeRef = route.routeRef
+  if (routeRef === undefined || routeRef === null) {
+    return null
+  }
+
+  return {
+    routeKind: routeRef.routeKind,
+    profileId: routeRef.profileId,
+    modelId: routeRef.modelId,
   }
 }
 

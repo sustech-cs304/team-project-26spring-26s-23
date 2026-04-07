@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createRuntimeSession } from './thread-run-contract'
+import { createRuntimeThread } from './thread-run-contract'
 import {
   agentId,
   createFetchFn,
@@ -9,11 +9,11 @@ import {
   runtimeUrl,
 } from './thread-run-contract.test-support'
 
-describe('createRuntimeSession', () => {
-  it('posts thread/create and returns the projected session payload', async () => {
+describe('createRuntimeThread', () => {
+  it('posts thread/create and returns the canonical thread payload', async () => {
     const fetchFn = createFetchFn(createRuntimeThreadCreateResponse())
 
-    const response = await createRuntimeSession({
+    const response = await createRuntimeThread({
       runtimeUrl,
       agentId,
       fetchFn,
@@ -32,7 +32,7 @@ describe('createRuntimeSession', () => {
       }),
       signal: undefined,
     })
-    expect(response.sessionId).toBe('session-1')
+    expect(response.threadId).toBe('session-1')
     expect(response.boundAgent.agentId).toBe('general')
     expect(response.recommendedTools).toEqual(['tool.file-convert'])
   })
@@ -52,7 +52,7 @@ describe('createRuntimeSession', () => {
       },
     )
 
-    await expect(createRuntimeSession({
+    await expect(createRuntimeThread({
       runtimeUrl,
       agentId,
       fetchFn,

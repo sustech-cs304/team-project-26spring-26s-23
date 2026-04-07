@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -8,11 +9,11 @@ import pytest
 from app.copilot_runtime.model_routes import (
     HostModelRouteAccessDeniedError,
     HostModelRouteUnavailableError,
-    ModelRouteSnapshotMismatchError,
     ProviderProfileNotFoundError,
     ProviderSecretMissingError,
     RuntimeModelRoute,
-    RuntimeModelRouteSnapshot,
+    RuntimeModelRouteRef,
+    RuntimeModelRouteResolutionError,
 )
 from app.desktop_runtime.host_model_route_bridge import (
     HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME,
@@ -20,24 +21,58 @@ from app.desktop_runtime.host_model_route_bridge import (
 )
 
 
+def _build_runtime_model_route(
+    *,
+    provider_profile_id: str = "provider-1",
+    model_id: str = "gpt-4.1",
+    catalog_revision: str | None = None,
+) -> RuntimeModelRoute:
+    return RuntimeModelRoute(
+        provider_profile_id=provider_profile_id,
+        route_ref=RuntimeModelRouteRef(
+            route_kind="provider-model",
+            profile_id=provider_profile_id,
+            model_id=model_id,
+        ),
+        catalog_revision=catalog_revision,
+    )
+
+
 def test_host_model_route_bridge_client_resolves_provider_route_successfully() -> None:
     captured_headers: list[str | None] = []
+    captured_bodies: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured_headers.append(request.headers.get(HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME))
+        captured_bodies.append(json.loads(request.content.decode("utf-8")))
         return httpx.Response(
             200,
             json={
                 "ok": True,
-                "route": {
+                "resolvedRoute": {
+                    "routeRef": {
+                        "routeKind": "provider-model",
+                        "profileId": "provider-1",
+                        "modelId": "gpt-4.1",
+                    },
                     "providerProfileId": "provider-1",
                     "provider": "openai",
+                    "providerId": "openai",
+                    "adapterId": "openai",
+                    "runtimeStatus": "enabled",
+                    "catalogRevision": "2026-04-06-provider-catalog-v1",
+                    "endpointFamily": "openai",
                     "endpointType": "openai-compatible",
                     "baseUrl": "https://api.example.com/v1",
                     "modelId": "gpt-4.1",
-                    "auth": {
+                    "authKind": "api-key",
+                },
+                "privateAuth": {
+                    "authKind": "api-key",
+                    "authPayload": {
                         "apiKey": "resolved-secret",
                     },
+                    "apiKey": "resolved-secret",
                 },
             },
             request=request,
@@ -51,34 +86,42 @@ def test_host_model_route_bridge_client_resolves_provider_route_successfully() -
 
     resolved = asyncio.run(
         client.resolve(
-            RuntimeModelRoute(
-                provider_profile_id="provider-1",
-                snapshot=RuntimeModelRouteSnapshot(
-                    provider="openai",
-                    endpoint_type="openai-compatible",
-                    base_url="https://api.example.com/v1",
-                    model_id="gpt-4.1",
-                ),
+            _build_runtime_model_route(
+                catalog_revision="2026-04-06-provider-catalog-v1",
             )
         )
     )
 
     assert resolved.provider_profile_id == "provider-1"
     assert resolved.provider == "openai"
+    assert resolved.provider_id == "openai"
+    assert resolved.adapter_id == "openai"
+    assert resolved.runtime_status == "enabled"
+    assert resolved.catalog_revision == "2026-04-06-provider-catalog-v1"
+    assert resolved.endpoint_family == "openai"
     assert resolved.endpoint_type == "openai-compatible"
     assert resolved.base_url == "https://api.example.com/v1"
     assert resolved.model_id == "gpt-4.1"
+    assert resolved.auth_kind == "api-key"
     assert resolved.api_key == "resolved-secret"
+    assert resolved.route_ref is not None
+    assert resolved.route_ref.profile_id == "provider-1"
+    assert resolved.route_ref.model_id == "gpt-4.1"
     assert captured_headers == ["bridge-token-123"]
+    assert captured_bodies == [
+        {
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": "provider-1",
+                "modelId": "gpt-4.1",
+            },
+            "catalogRevision": "2026-04-06-provider-catalog-v1",
+        }
+    ]
 
 
-
-def test_host_model_route_bridge_client_reuses_client_until_closed() -> None:
-    request_count = 0
-
+def test_host_model_route_bridge_client_rejects_legacy_success_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal request_count
-        request_count += 1
         return httpx.Response(
             200,
             json={
@@ -86,9 +129,11 @@ def test_host_model_route_bridge_client_reuses_client_until_closed() -> None:
                 "route": {
                     "providerProfileId": "provider-1",
                     "provider": "openai",
+                    "providerId": "openai",
                     "endpointType": "openai-compatible",
                     "baseUrl": "https://api.example.com/v1",
                     "modelId": "gpt-4.1",
+                    "authKind": "api-key",
                     "auth": {
                         "apiKey": "resolved-secret",
                     },
@@ -102,15 +147,60 @@ def test_host_model_route_bridge_client_reuses_client_until_closed() -> None:
         bridge_token="bridge-token-123",
         transport=httpx.MockTransport(handler),
     )
-    route = RuntimeModelRoute(
-        provider_profile_id="provider-1",
-        snapshot=RuntimeModelRouteSnapshot(
-            provider="openai",
-            endpoint_type="openai-compatible",
-            base_url="https://api.example.com/v1",
-            model_id="gpt-4.1",
-        ),
+
+    with pytest.raises(HostModelRouteUnavailableError) as exc_info:
+        asyncio.run(client.resolve(_build_runtime_model_route()))
+
+    assert exc_info.value.details == {
+        "detail": "Host model route bridge success payload is missing 'resolvedRoute'."
+    }
+
+
+def test_host_model_route_bridge_client_reuses_client_until_closed() -> None:
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "resolvedRoute": {
+                    "routeRef": {
+                        "routeKind": "provider-model",
+                        "profileId": "provider-1",
+                        "modelId": "gpt-4.1",
+                    },
+                    "providerProfileId": "provider-1",
+                    "provider": "openai",
+                    "providerId": "openai",
+                    "adapterId": "openai",
+                    "runtimeStatus": "enabled",
+                    "catalogRevision": "2026-04-06-provider-catalog-v1",
+                    "endpointFamily": "openai",
+                    "endpointType": "openai-compatible",
+                    "baseUrl": "https://api.example.com/v1",
+                    "modelId": "gpt-4.1",
+                    "authKind": "api-key",
+                },
+                "privateAuth": {
+                    "authKind": "api-key",
+                    "authPayload": {
+                        "apiKey": "resolved-secret",
+                    },
+                    "apiKey": "resolved-secret",
+                },
+            },
+            request=request,
+        )
+
+    client = HostModelRouteBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/provider-routes/resolve",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
     )
+    route = _build_runtime_model_route()
 
     async def exercise() -> None:
         await client.resolve(route)
@@ -134,19 +224,7 @@ def test_host_model_route_bridge_client_requires_bootstrap_configuration() -> No
     )
 
     with pytest.raises(HostModelRouteUnavailableError) as exc_info:
-        asyncio.run(
-            client.resolve(
-                RuntimeModelRoute(
-                    provider_profile_id="provider-1",
-                    snapshot=RuntimeModelRouteSnapshot(
-                        provider="openai",
-                        endpoint_type="openai-compatible",
-                        base_url="https://api.example.com/v1",
-                        model_id="gpt-4.1",
-                    ),
-                )
-            )
-        )
+        asyncio.run(client.resolve(_build_runtime_model_route()))
 
     assert exc_info.value.details == {
         "detail": "Host model route bridge bootstrap is not configured."
@@ -172,22 +250,21 @@ def test_host_model_route_bridge_client_requires_bootstrap_configuration() -> No
             {
                 "ok": False,
                 "error": {
-                    "code": "route_snapshot_mismatch",
-                    "message": "mismatch",
+                    "code": "provider_model_not_found",
+                    "message": "Provider profile 'provider-1' does not define model 'gpt-4.1'.",
                     "details": {
                         "providerProfileId": "provider-1",
-                        "mismatches": [
-                            {
-                                "field": "baseUrl",
-                                "expected": "https://api.example.com/v1",
-                                "actual": "https://drifted.example.com/v1",
-                            }
-                        ],
+                        "routeRef": {
+                            "routeKind": "provider-model",
+                            "profileId": "provider-1",
+                            "modelId": "gpt-4.1",
+                        },
+                        "modelId": "gpt-4.1",
                     },
                 },
             },
-            ModelRouteSnapshotMismatchError,
-            "provider-1",
+            RuntimeModelRouteResolutionError,
+            "gpt-4.1",
         ),
         (
             {
@@ -218,19 +295,7 @@ def test_host_model_route_bridge_client_maps_host_resolution_errors(
     )
 
     with pytest.raises(expected_exception, match=expected_match):
-        asyncio.run(
-            client.resolve(
-                RuntimeModelRoute(
-                    provider_profile_id="provider-1",
-                    snapshot=RuntimeModelRouteSnapshot(
-                        provider="openai",
-                        endpoint_type="openai-compatible",
-                        base_url="https://api.example.com/v1",
-                        model_id="gpt-4.1",
-                    ),
-                )
-            )
-        )
+        asyncio.run(client.resolve(_build_runtime_model_route()))
 
 
 def test_host_model_route_bridge_client_rejects_invalid_bridge_token() -> None:
@@ -257,19 +322,7 @@ def test_host_model_route_bridge_client_rejects_invalid_bridge_token() -> None:
     )
 
     with pytest.raises(HostModelRouteAccessDeniedError) as exc_info:
-        asyncio.run(
-            client.resolve(
-                RuntimeModelRoute(
-                    provider_profile_id="provider-1",
-                    snapshot=RuntimeModelRouteSnapshot(
-                        provider="openai",
-                        endpoint_type="openai-compatible",
-                        base_url="https://api.example.com/v1",
-                        model_id="gpt-4.1",
-                    ),
-                )
-            )
-        )
+        asyncio.run(client.resolve(_build_runtime_model_route()))
 
     assert exc_info.value.details == {
         "headerName": HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME

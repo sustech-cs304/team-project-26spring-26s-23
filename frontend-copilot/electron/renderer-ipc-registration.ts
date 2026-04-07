@@ -17,9 +17,9 @@ import {
   SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL,
   SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL,
-  type SettingsWorkspaceClearProviderApiKeyRequest,
-  type SettingsWorkspaceProviderSecretMutationResult,
-  type SettingsWorkspaceSaveProviderApiKeyRequest,
+  type SettingsWorkspaceClearProfileApiKeyRequest,
+  type SettingsWorkspaceProfileSecretMutationResult,
+  type SettingsWorkspaceSaveProfileApiKeyRequest,
   type SettingsWorkspaceSaveSustechCasPasswordRequest,
   type SettingsWorkspaceSecretsLoadStatusesRequest,
   type SettingsWorkspaceSecretsLoadStatusesResult,
@@ -47,12 +47,12 @@ export interface RendererIpcHandlers {
     request?: SettingsWorkspaceSecretsLoadStatusesRequest,
   ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
   loadSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretLoadResult>
-  saveSettingsWorkspaceProviderSecret: (
-    request: SettingsWorkspaceSaveProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
-  clearSettingsWorkspaceProviderSecret: (
-    request: SettingsWorkspaceClearProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  saveSettingsWorkspaceProfileSecret: (
+    request: SettingsWorkspaceSaveProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
+  clearSettingsWorkspaceProfileSecret: (
+    request: SettingsWorkspaceClearProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
   saveSettingsWorkspaceSustechCasSecret: (
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
@@ -126,9 +126,9 @@ export function registerRendererIpcHandlers(
     SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL,
     async (
       _event,
-      request: SettingsWorkspaceSaveProviderApiKeyRequest,
-    ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
-      return await handlers.saveSettingsWorkspaceProviderSecret(request)
+      request: SettingsWorkspaceSaveProfileApiKeyRequest,
+    ): Promise<SettingsWorkspaceProfileSecretMutationResult> => {
+      return await handlers.saveSettingsWorkspaceProfileSecret(request)
     },
   )
 
@@ -136,9 +136,9 @@ export function registerRendererIpcHandlers(
     SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
     async (
       _event,
-      request: SettingsWorkspaceClearProviderApiKeyRequest,
-    ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
-      return await handlers.clearSettingsWorkspaceProviderSecret(request)
+      request: SettingsWorkspaceClearProfileApiKeyRequest,
+    ): Promise<SettingsWorkspaceProfileSecretMutationResult> => {
+      return await handlers.clearSettingsWorkspaceProfileSecret(request)
     },
   )
 

@@ -187,17 +187,33 @@ function isProviderRouteResolveRequest(value: unknown): value is SettingsWorkspa
   }
 
   const record = value as Record<string, unknown>
-  const snapshot = record.snapshot
-  if (typeof record.providerProfileId !== 'string' || typeof snapshot !== 'object' || snapshot === null) {
+  if (!isProviderRouteResolveRouteRef(record.routeRef)) {
     return false
   }
 
-  const snapshotRecord = snapshot as Record<string, unknown>
-  return typeof snapshotRecord.provider === 'string'
-    && typeof snapshotRecord.endpointType === 'string'
-    && typeof snapshotRecord.baseUrl === 'string'
-    && typeof snapshotRecord.modelId === 'string'
+  const allowedKeys = new Set(['routeRef', 'catalogRevision'])
+  if (Object.keys(record).some((key) => !allowedKeys.has(key))) {
+    return false
+  }
+
+  if ('catalogRevision' in record && record.catalogRevision !== undefined && typeof record.catalogRevision !== 'string') {
+    return false
+  }
+
+  return true
 }
+
+function isProviderRouteResolveRouteRef(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+
+  const record = value as Record<string, unknown>
+  return record.routeKind === 'provider-model'
+    && typeof record.profileId === 'string'
+    && typeof record.modelId === 'string'
+}
+
 
 function writeJsonResponse(
   response: ServerResponse,

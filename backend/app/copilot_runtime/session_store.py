@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
+from .model_routes import RuntimeModelRouteRef
+
 RuntimeMessageRole = Literal["user", "assistant"]
 RuntimeRunStatus = Literal[
     "pending",
@@ -17,12 +19,6 @@ RuntimeRunStatus = Literal[
     "failed",
     "cancelled",
 ]
-
-_COMPAT_PROVIDER_PROFILE_ID = "compat-projection"
-_COMPAT_PROVIDER = "compat"
-_COMPAT_ENDPOINT_TYPE = "compat"
-_COMPAT_BASE_URL = "compat://projection"
-_COMPAT_MODEL_ID = "compat-projection"
 
 
 class BoundAgentMismatchError(RuntimeError):
@@ -47,7 +43,7 @@ class BoundAgentMismatchError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class RuntimeTextMessage:
-    """Minimal projected text message visible to legacy session consumers."""
+    """Minimal projected text message rebuilt from completed thread runs."""
 
     role: RuntimeMessageRole
     content: str
@@ -89,21 +85,17 @@ class RuntimeThreadRecord:
         self.updated_at = datetime.now(UTC)
 
 
-RuntimeSessionRecord = RuntimeThreadRecord
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeStoredModelRouteSnapshot:
-    provider: str
-    endpoint_type: str
-    base_url: str
-    model_id: str
-
-
 @dataclass(frozen=True, slots=True)
 class RuntimeStoredModelRoute:
     provider_profile_id: str
-    snapshot: RuntimeStoredModelRouteSnapshot
+    route_ref: RuntimeModelRouteRef
+    catalog_revision: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.route_ref.profile_id != self.provider_profile_id:
+            raise ValueError(
+                "RuntimeStoredModelRoute.provider_profile_id must match route_ref.profile_id."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +245,7 @@ class RuntimeRunRecord:
 
 
 class InMemorySessionStore:
-    """Canonical in-process thread/run store with compat session projections."""
+    """Canonical in-process thread/run store."""
 
     def __init__(self) -> None:
         self._threads: dict[str, RuntimeThreadRecord] = {}
@@ -443,90 +435,15 @@ class InMemorySessionStore:
         self._touch_thread_for_run(run)
         return run, changed
 
-    def get(self, session_id: str) -> RuntimeThreadRecord | None:
-        return self.get_thread(session_id)
-
-    def create(
-        self,
-        *,
-        bound_agent_id: str,
-        metadata: Mapping[str, Any] | None = None,
-        session_id: str | None = None,
-    ) -> RuntimeThreadRecord:
-        return self.create_thread(
-            bound_agent_id=bound_agent_id,
-            metadata=metadata,
-            thread_id=session_id or self._next_session_id(),
-        )
-
-    def get_or_create(
-        self,
-        *,
-        session_id: str,
-        bound_agent_id: str,
-        metadata: Mapping[str, Any] | None = None,
-    ) -> tuple[RuntimeThreadRecord, bool]:
-        return self.get_or_create_thread(
-            thread_id=session_id,
-            bound_agent_id=bound_agent_id,
-            metadata=metadata,
-        )
-
-    def list_messages(self, session_id: str) -> tuple[RuntimeTextMessage, ...]:
-        session = self.get(session_id)
-        if session is None:
+    def list_messages(self, thread_id: str) -> tuple[RuntimeTextMessage, ...]:
+        thread = self.get_thread(thread_id)
+        if thread is None:
             return ()
 
         projected_messages: list[RuntimeTextMessage] = []
-        for run in self.list_runs(session.thread_id):
+        for run in self.list_runs(thread.thread_id):
             projected_messages.extend(run.projected_messages())
         return tuple(projected_messages)
-
-    def append_turn(
-        self,
-        *,
-        session_id: str,
-        bound_agent_id: str,
-        user_text: str,
-        assistant_text: str,
-        metadata: Mapping[str, Any] | None = None,
-    ) -> tuple[RuntimeThreadRecord, bool]:
-        metadata_dict = dict(metadata) if metadata is not None else {}
-        session, created = self.get_or_create(
-            session_id=session_id,
-            bound_agent_id=bound_agent_id,
-            metadata=metadata_dict,
-        )
-
-        resolved_run_id = _normalize_optional_non_empty_string(metadata_dict.get("last_run_id"))
-        run = None
-        if resolved_run_id is not None:
-            run = self._runs.get(resolved_run_id)
-            if run is not None and run.thread_id != session.thread_id:
-                raise ValueError(
-                    f"Run '{resolved_run_id}' belongs to thread '{run.thread_id}', "
-                    f"cannot project it into session '{session.thread_id}'."
-                )
-
-        if run is None:
-            run = self.create_run(
-                thread_id=session.thread_id,
-                request=_build_compat_run_input(
-                    user_text=user_text,
-                    bound_agent_id=bound_agent_id,
-                ),
-                metadata=metadata_dict,
-                run_id=resolved_run_id,
-            )
-        else:
-            run.touch(metadata=metadata_dict)
-
-        self.mark_run_completed(
-            run.run_id,
-            assistant_text=assistant_text,
-            metadata=metadata_dict,
-        )
-        return session, created
 
     def _require_run(self, run_id: str) -> RuntimeRunRecord:
         resolved_run_id = _require_non_empty_string(run_id, field_name="run_id")
@@ -567,32 +484,6 @@ class InMemorySessionStore:
             if candidate not in self._runs:
                 return candidate
 
-    def _next_session_id(self) -> str:
-        while True:
-            candidate = f"session-{uuid4().hex}"
-            if candidate not in self._threads:
-                return candidate
-
-
-
-def _build_compat_run_input(*, user_text: str, bound_agent_id: str) -> RuntimeStoredRunInput:
-    return RuntimeStoredRunInput(
-        message_role="user",
-        message_content=_require_non_empty_string(user_text, field_name="user_text"),
-        policy=RuntimeStoredRunPolicy(
-            model_route=RuntimeStoredModelRoute(
-                provider_profile_id=_COMPAT_PROVIDER_PROFILE_ID,
-                snapshot=RuntimeStoredModelRouteSnapshot(
-                    provider=_COMPAT_PROVIDER,
-                    endpoint_type=_COMPAT_ENDPOINT_TYPE,
-                    base_url=_COMPAT_BASE_URL,
-                    model_id=_COMPAT_MODEL_ID,
-                ),
-            )
-        ),
-        agent_id=_require_non_empty_string(bound_agent_id, field_name="bound_agent_id"),
-    )
-
 
 
 def _normalize_projected_text(value: str | None) -> str | None:
@@ -628,9 +519,7 @@ __all__ = [
     "RuntimeRunEventRecord",
     "RuntimeRunRecord",
     "RuntimeRunStatus",
-    "RuntimeSessionRecord",
     "RuntimeStoredModelRoute",
-    "RuntimeStoredModelRouteSnapshot",
     "RuntimeStoredRunInput",
     "RuntimeStoredRunPolicy",
     "RuntimeTextMessage",
