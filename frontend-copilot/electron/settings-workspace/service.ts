@@ -29,16 +29,16 @@ export interface SettingsWorkspaceStorage {
   saveState: (input: SettingsWorkspaceStateSaveInput) => Promise<{
     state: SettingsWorkspaceEditableState
   }>
-  loadSecretStates: (providerIds?: readonly string[]) => Promise<{
+  loadSecretStates: (profileIds?: readonly string[]) => Promise<{
     states: SettingsWorkspaceProviderSecretStateById
   }>
   loadSustechCasSecret: () => Promise<{
     state: SettingsWorkspaceSustechCasSecretState
   }>
-  saveProviderSecret: (providerId: string, apiKey: string) => Promise<{
+  saveProfileSecret: (profileId: string, apiKey: string) => Promise<{
     state: SettingsWorkspaceProviderSecretState
   }>
-  clearProviderSecret: (providerId: string) => Promise<{
+  clearProfileSecret: (profileId: string) => Promise<{
     state: SettingsWorkspaceProviderSecretState
   }>
   saveSustechCasSecret: (password: string) => Promise<{
@@ -68,7 +68,8 @@ export function createSettingsWorkspaceStorage(
     request: SettingsWorkspaceProviderRouteResolveRequest,
   ): Promise<SettingsWorkspaceProviderRouteResolveResult> => {
     const { state } = await stateStorage.loadState()
-    const { states } = await secretStorage.loadSecretStates([request.providerProfileId])
+    const secretProfileId = request.routeRef?.profileId?.trim() ?? ''
+    const { states } = await secretStorage.loadSecretStates(secretProfileId === '' ? [] : [secretProfileId])
 
     return resolveSettingsWorkspaceProviderRoute({
       state,
@@ -82,8 +83,8 @@ export function createSettingsWorkspaceStorage(
     saveState: stateStorage.saveState,
     loadSecretStates: secretStorage.loadSecretStates,
     loadSustechCasSecret: secretStorage.loadSustechCasSecret,
-    saveProviderSecret: secretStorage.saveProviderSecret,
-    clearProviderSecret: secretStorage.clearProviderSecret,
+    saveProfileSecret: secretStorage.saveProfileSecret,
+    clearProfileSecret: secretStorage.clearProfileSecret,
     saveSustechCasSecret: secretStorage.saveSustechCasSecret,
     clearSustechCasSecret: secretStorage.clearSustechCasSecret,
     resolveProviderRoute,

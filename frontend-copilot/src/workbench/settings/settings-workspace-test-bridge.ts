@@ -1,5 +1,5 @@
 import type {
-  SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceProfileSecretMutationResult,
   SettingsWorkspaceSecretsApi,
   SettingsWorkspaceSecretsLoadStatusesResult,
   SettingsWorkspaceStateApi,
@@ -21,8 +21,8 @@ export interface InstallSettingsWorkspaceBridgeOptions {
   saveStateResult?: SettingsWorkspaceStateSaveResult
   loadStatusesResult?: SettingsWorkspaceSecretsLoadStatusesResult
   loadSustechCasPasswordResult?: SettingsWorkspaceSustechCasSecretLoadResult
-  saveProviderApiKeyResult?: SettingsWorkspaceProviderSecretMutationResult
-  clearProviderApiKeyResult?: SettingsWorkspaceProviderSecretMutationResult
+  saveProfileApiKeyResult?: SettingsWorkspaceProfileSecretMutationResult
+  clearProfileApiKeyResult?: SettingsWorkspaceProfileSecretMutationResult
   saveSustechCasPasswordResult?: SettingsWorkspaceSustechCasSecretMutationResult
   clearSustechCasPasswordResult?: SettingsWorkspaceSustechCasSecretMutationResult
 }
@@ -50,20 +50,20 @@ export function installSettingsWorkspaceBridge(options: InstallSettingsWorkspace
       },
     },
   )
-  const saveProviderApiKey = vi.fn<SettingsWorkspaceSecretsApi['saveProviderApiKey']>().mockResolvedValue(
-    options.saveProviderApiKeyResult ?? {
+  const saveProfileApiKey = vi.fn<SettingsWorkspaceSecretsApi['saveProfileApiKey']>().mockResolvedValue(
+    options.saveProfileApiKeyResult ?? {
       ok: true,
-      providerId: 'openrouter',
+      profileId: 'openrouter',
       state: {
         hasApiKey: true,
         apiKey: 'persisted-secret',
       },
     },
   )
-  const clearProviderApiKey = vi.fn<SettingsWorkspaceSecretsApi['clearProviderApiKey']>().mockResolvedValue(
-    options.clearProviderApiKeyResult ?? {
+  const clearProfileApiKey = vi.fn<SettingsWorkspaceSecretsApi['clearProfileApiKey']>().mockResolvedValue(
+    options.clearProfileApiKeyResult ?? {
       ok: true,
-      providerId: 'openrouter',
+      profileId: 'openrouter',
       state: {
         hasApiKey: false,
         apiKey: '',
@@ -96,8 +96,8 @@ export function installSettingsWorkspaceBridge(options: InstallSettingsWorkspace
   const secretsApi: SettingsWorkspaceSecretsApi = {
     loadStatuses,
     loadSustechCasPassword,
-    saveProviderApiKey,
-    clearProviderApiKey,
+    saveProfileApiKey,
+    clearProfileApiKey,
     saveSustechCasPassword,
     clearSustechCasPassword,
   }
@@ -114,8 +114,8 @@ export function installSettingsWorkspaceBridge(options: InstallSettingsWorkspace
     saveState,
     loadStatuses,
     loadSustechCasPassword,
-    saveProviderApiKey,
-    clearProviderApiKey,
+    saveProfileApiKey,
+    clearProfileApiKey,
     saveSustechCasPassword,
     clearSustechCasPassword,
   }

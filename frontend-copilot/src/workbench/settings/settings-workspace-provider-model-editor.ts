@@ -10,6 +10,7 @@ import {
   syncTrackedModelValue,
   type ModelEditorState,
 } from './provider-profiles'
+import { syncTrackedModelSelectionValue } from './settings-workspace-model-options'
 
 interface UseSettingsWorkspaceProviderModelEditorArgs {
   activeProviderId: string
@@ -70,8 +71,18 @@ export function useSettingsWorkspaceProviderModelEditor({
       }),
     )
 
-    setPrimaryAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
-    setFastAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
+    setPrimaryAssistantModel((current) => syncTrackedModelSelectionValue(
+      current,
+      activeProviderId,
+      previousModelId,
+      nextModelId,
+    ))
+    setFastAssistantModel((current) => syncTrackedModelSelectionValue(
+      current,
+      activeProviderId,
+      previousModelId,
+      nextModelId,
+    ))
   }
 
   const handleOpenCreateModelEditor = () => {

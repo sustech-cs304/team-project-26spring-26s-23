@@ -140,7 +140,9 @@ function renderList(overrides?: {
         ]}
         activeProviderId="provider-a"
         providerQuery=""
+        addProviderTypeId="openai"
         onProviderQueryChange={vi.fn()}
+        onAddProviderTypeChange={vi.fn()}
         onActiveProviderChange={vi.fn()}
         onAddProvider={vi.fn()}
         onCopyProvider={overrides?.onCopyProvider ?? vi.fn()}

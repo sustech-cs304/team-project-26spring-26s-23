@@ -1,5 +1,6 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 
+import { getDefaultProviderCatalogEntry } from '../../provider-catalog'
 import type { ProviderProfile } from '../types'
 import { createModelProfileId } from './config'
 import { createCustomProvider, createProviderId } from './provider-profiles'
@@ -22,6 +23,8 @@ interface UseSettingsWorkspaceProviderListControllerArgs {
 interface UseSettingsWorkspaceProviderListControllerResult {
   providerQuery: string
   setProviderQuery: (value: string) => void
+  addProviderTypeId: string
+  setAddProviderTypeId: (value: string) => void
   updateActiveProvider: (patch: Partial<ProviderProfile>) => void
   handleAddProvider: () => void
   moveProviderToIndex: (draggingProviderId: string, nextIndex: number) => void
@@ -39,6 +42,7 @@ export function useSettingsWorkspaceProviderListController({
   removeProviderSecret,
 }: UseSettingsWorkspaceProviderListControllerArgs): UseSettingsWorkspaceProviderListControllerResult {
   const [providerQuery, setProviderQuery] = useState('')
+  const [addProviderTypeId, setAddProviderTypeId] = useState(() => getDefaultProviderCatalogEntry().providerId)
 
   useEffect(() => {
     const nextActiveProviderId = resolveSettingsWorkspaceActiveProviderId(providerProfiles, activeProviderId)
@@ -56,7 +60,10 @@ export function useSettingsWorkspaceProviderListController({
   }
 
   const handleAddProvider = () => {
-    const nextProvider = createCustomProvider(providerProfiles.length + 1)
+    const nextProvider = createCustomProvider(
+      resolveNextProviderOrdinal(providerProfiles, addProviderTypeId),
+      addProviderTypeId,
+    )
 
     setProviderProfiles((previous) => [...previous, nextProvider])
     setProviderQuery('')
@@ -89,10 +96,15 @@ export function useSettingsWorkspaceProviderListController({
     const nextProviderId = createProviderId(sourceProvider.name)
     const nextProviderName = `${sourceProvider.name} 副本`
     const copiedSecret = getProviderSecretValue(providerId)
+    const copiedBaseUrl = sourceProvider.baseUrl?.trim() || sourceProvider.endpoint
     const nextProvider: ProviderProfile = {
       ...sourceProvider,
       id: nextProviderId,
+      profileId: nextProviderId,
       name: nextProviderName,
+      displayName: nextProviderName,
+      endpoint: copiedBaseUrl,
+      baseUrl: copiedBaseUrl,
       hasApiKey: copiedSecret !== '',
       availableModels: sourceProvider.availableModels.map((model) => ({
         ...model,
@@ -131,10 +143,26 @@ export function useSettingsWorkspaceProviderListController({
   return {
     providerQuery,
     setProviderQuery,
+    addProviderTypeId,
+    setAddProviderTypeId,
     updateActiveProvider,
     handleAddProvider,
     moveProviderToIndex,
     handleCopyProvider,
     handleDeleteProvider,
   }
+}
+
+function resolveNextProviderOrdinal(providerProfiles: ProviderProfile[], providerTypeId: string): number {
+  const normalizedProviderTypeId = providerTypeId.trim().toLowerCase()
+  const ordinals = providerProfiles.flatMap((profile) => {
+    if ((profile.providerId ?? profile.protocol).trim().toLowerCase() !== normalizedProviderTypeId) {
+      return []
+    }
+
+    const match = profile.id.match(/-(\d+)$/)
+    return match ? [Number(match[1])] : []
+  })
+
+  return ordinals.length === 0 ? 1 : Math.max(...ordinals) + 1
 }

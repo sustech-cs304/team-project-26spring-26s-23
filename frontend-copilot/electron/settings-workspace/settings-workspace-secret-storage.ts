@@ -10,16 +10,16 @@ import type { SettingsWorkspaceDocumentIO } from './settings-workspace-document-
 import { normalizeSettingsWorkspaceIdentifier } from './settings-workspace-serialization'
 
 export interface SettingsWorkspaceSecretStorage {
-  loadSecretStates: (providerIds?: readonly string[]) => Promise<{
+  loadSecretStates: (profileIds?: readonly string[]) => Promise<{
     states: SettingsWorkspaceProviderSecretStateById
   }>
   loadSustechCasSecret: () => Promise<{
     state: SettingsWorkspaceSustechCasSecretState
   }>
-  saveProviderSecret: (providerId: string, apiKey: string) => Promise<{
+  saveProfileSecret: (profileId: string, apiKey: string) => Promise<{
     state: SettingsWorkspaceProviderSecretState
   }>
-  clearProviderSecret: (providerId: string) => Promise<{
+  clearProfileSecret: (profileId: string) => Promise<{
     state: SettingsWorkspaceProviderSecretState
   }>
   saveSustechCasSecret: (password: string) => Promise<{
@@ -33,13 +33,13 @@ export interface SettingsWorkspaceSecretStorage {
 export function createSettingsWorkspaceSecretStorage(
   documentIO: SettingsWorkspaceDocumentIO,
 ): SettingsWorkspaceSecretStorage {
-  const loadSecretStates = async (providerIds?: readonly string[]) => {
-    const stateDocument = providerIds === undefined ? (await documentIO.readStateDocument()).document : null
-    const resolvedProviderIds = providerIds ?? stateDocument?.values.providerProfiles.map((profile) => profile.id) ?? []
+  const loadSecretStates = async (profileIds?: readonly string[]) => {
+    const stateDocument = profileIds === undefined ? (await documentIO.readStateDocument()).document : null
+    const resolvedProfileIds = profileIds ?? stateDocument?.values.providerProfiles.map((profile) => profile.profileId) ?? []
     const secretsDocument = (await documentIO.readSecretsDocument()).document
 
     return {
-      states: projectProviderSecretStateById(resolvedProviderIds, secretsDocument),
+      states: projectProviderSecretStateById(resolvedProfileIds, secretsDocument),
     }
   }
 
@@ -51,15 +51,19 @@ export function createSettingsWorkspaceSecretStorage(
     }
   }
 
-  const saveProviderSecret = async (providerId: string, apiKey: string) => {
-    const normalizedProviderId = normalizeSettingsWorkspaceIdentifier(providerId, 'providerId')
+  const saveProfileSecret = async (profileId: string, apiKey: string) => {
+    const normalizedProfileId = normalizeSettingsWorkspaceIdentifier(profileId, 'profileId')
     const normalizedApiKey = normalizeSettingsWorkspaceIdentifier(apiKey, 'apiKey')
     const secretsDocument = (await documentIO.readSecretsDocument()).document
     const nextSecretsDocument = createSettingsWorkspaceSecretsDocument({
       providerSecrets: {
         ...secretsDocument.values.providerSecrets,
-        [normalizedProviderId]: {
-          apiKey: normalizedApiKey,
+        [normalizedProfileId]: {
+          profileId: normalizedProfileId,
+          authKind: 'api-key',
+          secretValues: {
+            apiKey: normalizedApiKey,
+          },
         },
       },
       sustech: secretsDocument.values.sustech,
@@ -75,10 +79,10 @@ export function createSettingsWorkspaceSecretStorage(
     }
   }
 
-  const clearProviderSecret = async (providerId: string) => {
-    const normalizedProviderId = normalizeSettingsWorkspaceIdentifier(providerId, 'providerId')
+  const clearProfileSecret = async (profileId: string) => {
+    const normalizedProfileId = normalizeSettingsWorkspaceIdentifier(profileId, 'profileId')
     const secretsDocument = (await documentIO.readSecretsDocument()).document
-    const { [normalizedProviderId]: _removedSecret, ...remainingProviderSecrets } = secretsDocument.values.providerSecrets
+    const { [normalizedProfileId]: _removedSecret, ...remainingProviderSecrets } = secretsDocument.values.providerSecrets
     const nextSecretsDocument = createSettingsWorkspaceSecretsDocument({
       providerSecrets: remainingProviderSecrets,
       sustech: secretsDocument.values.sustech,
@@ -136,8 +140,8 @@ export function createSettingsWorkspaceSecretStorage(
   return {
     loadSecretStates,
     loadSustechCasSecret,
-    saveProviderSecret,
-    clearProviderSecret,
+    saveProfileSecret,
+    clearProfileSecret,
     saveSustechCasSecret,
     clearSustechCasSecret,
   }

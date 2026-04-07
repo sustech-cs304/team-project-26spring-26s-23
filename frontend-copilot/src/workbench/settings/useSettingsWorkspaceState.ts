@@ -3,6 +3,10 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import type { ProviderProfile } from '../types'
 import { createInitialSettingsWorkspaceFormState, type SettingsWorkspaceFormState } from './settings-workspace-form-state'
 import { loadSettingsWorkspaceHydration } from './settings-workspace-hydration'
+import {
+  parseSerializedModelRouteRef,
+  serializeModelRouteRef,
+} from './settings-workspace-model-options'
 import { createSettingsWorkspaceStateSaveInput } from './settings-workspace-save-input'
 import { saveSettingsWorkspaceState } from './workspace-state'
 
@@ -112,8 +116,22 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
         providerProfiles: typeof value === 'function' ? value(previous.providerProfiles) : value,
       }))
     },
-    setPrimaryAssistantModel: (value) => updateField(setFormState, 'primaryAssistantModel', value),
-    setFastAssistantModel: (value) => updateField(setFormState, 'fastAssistantModel', value),
+    setPrimaryAssistantModel: (value) => {
+      setFormState((previous) => updateDefaultModelSelectionField(
+        previous,
+        'primaryAssistantModel',
+        'primaryAssistantModelRoute',
+        value,
+      ))
+    },
+    setFastAssistantModel: (value) => {
+      setFormState((previous) => updateDefaultModelSelectionField(
+        previous,
+        'fastAssistantModel',
+        'fastAssistantModelRoute',
+        value,
+      ))
+    },
     setLanguage: (value) => updateField(setFormState, 'language', value),
     setProxyMode: (value) => updateField(setFormState, 'proxyMode', value),
     setAssistantNotificationsEnabled: (value) => updateField(setFormState, 'assistantNotificationsEnabled', value),
@@ -159,4 +177,54 @@ function updateField<TKey extends keyof SettingsWorkspaceFormState>(
       ? (value as (previous: SettingsWorkspaceFormState[TKey]) => SettingsWorkspaceFormState[TKey])(previous[key])
       : value,
   }))
+}
+
+function updateDefaultModelSelectionField(
+  previous: SettingsWorkspaceFormState,
+  field: 'primaryAssistantModel' | 'fastAssistantModel',
+  routeField: 'primaryAssistantModelRoute' | 'fastAssistantModelRoute',
+  value: string | ((previous: string) => string),
+): SettingsWorkspaceFormState {
+  const currentSelectionValue = previous[routeField] !== null
+    ? serializeModelRouteRef(previous[routeField])
+    : previous[field]
+  const nextRawValue = typeof value === 'function' ? value(currentSelectionValue) : value
+  const normalizedValue = nextRawValue.trim()
+  const parsedRoute = parseSerializedModelRouteRef(normalizedValue)
+
+  if (parsedRoute !== null) {
+    return {
+      ...previous,
+      [field]: parsedRoute.modelId,
+      [routeField]: cloneModelRouteRef(parsedRoute),
+    }
+  }
+
+  const previousRoute = previous[routeField]
+  const previousModelId = previous[field].trim()
+  const nextRoute = previousRoute !== null && previousRoute.modelId === previousModelId
+    ? (normalizedValue === ''
+        ? null
+        : {
+            routeKind: previousRoute.routeKind,
+            profileId: previousRoute.profileId,
+            modelId: normalizedValue,
+          })
+    : null
+
+  return {
+    ...previous,
+    [field]: normalizedValue,
+    [routeField]: nextRoute,
+  }
+}
+
+function cloneModelRouteRef(route: SettingsWorkspaceFormState['primaryAssistantModelRoute']) {
+  return route === null
+    ? null
+    : {
+        routeKind: route.routeKind,
+        profileId: route.profileId,
+        modelId: route.modelId,
+      }
 }

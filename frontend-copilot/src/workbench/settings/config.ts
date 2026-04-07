@@ -14,14 +14,6 @@ export function createModelProfileId(providerId: string, modelId: string) {
   return `${providerId}-${sanitizedModelId || 'model'}-${nextModelProfileSequence}`
 }
 
-export const protocolOptions: SelectOption[] = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'openai-response', label: 'OpenAI-Response' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'ollama', label: 'Ollama' },
-]
-
 export const languageOptions: SelectOption[] = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'en-US', label: 'English' },

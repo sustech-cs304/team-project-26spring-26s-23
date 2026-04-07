@@ -2,7 +2,10 @@ import type { MutableRefObject } from 'react'
 
 import type { ProviderProfile } from '../types'
 
-import { getProviderProtocolLabel } from './provider-profile-list-helpers'
+import {
+  resolveProviderStatusNotice,
+  resolveProviderTypeLabel,
+} from './settings-workspace-provider-helpers'
 
 interface ProviderProfileDragOverlayProps {
   provider: ProviderProfile | null
@@ -13,6 +16,8 @@ export function ProviderProfileDragOverlay({ provider, dragGhostRef }: ProviderP
   if (provider === null) {
     return null
   }
+
+  const providerStatusNotice = resolveProviderStatusNotice(provider)
 
   return (
     <div
@@ -25,7 +30,8 @@ export function ProviderProfileDragOverlay({ provider, dragGhostRef }: ProviderP
         <span className="provider-card__title">{provider.name}</span>
       </span>
       <span className="provider-card__meta-row">
-        <span className="provider-card__meta">{getProviderProtocolLabel(provider.protocol)}</span>
+        <span className="provider-card__meta">{resolveProviderTypeLabel(provider)}</span>
+        {providerStatusNotice ? <span className="provider-card__meta">{providerStatusNotice.title}</span> : null}
       </span>
     </div>
   )

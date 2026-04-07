@@ -1,9 +1,9 @@
 import type {
   SettingsWorkspaceApiFailure,
-  SettingsWorkspaceClearProviderApiKeyRequest,
-  SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceClearProfileApiKeyRequest,
+  SettingsWorkspaceProfileSecretMutationResult,
+  SettingsWorkspaceSaveProfileApiKeyRequest,
   SettingsWorkspaceSaveSustechCasPasswordRequest,
-  SettingsWorkspaceSaveProviderApiKeyRequest,
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
   SettingsWorkspaceSecretsApi,
@@ -58,18 +58,18 @@ export async function loadSettingsWorkspaceSustechCasPassword(): Promise<Setting
   return api ? api.loadSustechCasPassword() : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
 }
 
-export async function saveSettingsWorkspaceProviderApiKey(
-  request: SettingsWorkspaceSaveProviderApiKeyRequest,
-): Promise<SettingsWorkspaceProviderSecretMutationResult> {
+export async function saveSettingsWorkspaceProfileApiKey(
+  request: SettingsWorkspaceSaveProfileApiKeyRequest,
+): Promise<SettingsWorkspaceProfileSecretMutationResult> {
   const api = getSettingsWorkspaceSecretsApi()
-  return api ? api.saveProviderApiKey(request) : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
+  return api ? api.saveProfileApiKey(request) : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
 }
 
-export async function clearSettingsWorkspaceProviderApiKey(
-  request: SettingsWorkspaceClearProviderApiKeyRequest,
-): Promise<SettingsWorkspaceProviderSecretMutationResult> {
+export async function clearSettingsWorkspaceProfileApiKey(
+  request: SettingsWorkspaceClearProfileApiKeyRequest,
+): Promise<SettingsWorkspaceProfileSecretMutationResult> {
   const api = getSettingsWorkspaceSecretsApi()
-  return api ? api.clearProviderApiKey(request) : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
+  return api ? api.clearProfileApiKey(request) : createFailureResult(SECRETS_API_UNAVAILABLE_ERROR)
 }
 
 export async function saveSettingsWorkspaceSustechCasPassword(

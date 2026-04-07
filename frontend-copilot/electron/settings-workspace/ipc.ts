@@ -38,7 +38,7 @@ export type SettingsWorkspaceStateLoadResult = SettingsWorkspaceStateLoadSuccess
 export type SettingsWorkspaceStateSaveResult = SettingsWorkspaceStateSaveSuccess | SettingsWorkspaceApiFailure
 
 export interface SettingsWorkspaceSecretsLoadStatusesRequest {
-  providerIds?: string[]
+  profileIds?: string[]
 }
 
 export interface SettingsWorkspaceSecretsLoadStatusesSuccess {
@@ -59,27 +59,27 @@ export type SettingsWorkspaceSustechCasSecretLoadResult =
   | SettingsWorkspaceSustechCasSecretLoadSuccess
   | SettingsWorkspaceApiFailure
 
-export interface SettingsWorkspaceSaveProviderApiKeyRequest {
-  providerId: string
+export interface SettingsWorkspaceSaveProfileApiKeyRequest {
+  profileId: string
   apiKey: string
 }
 
-export interface SettingsWorkspaceClearProviderApiKeyRequest {
-  providerId: string
+export interface SettingsWorkspaceClearProfileApiKeyRequest {
+  profileId: string
 }
 
 export interface SettingsWorkspaceSaveSustechCasPasswordRequest {
   password: string
 }
 
-export interface SettingsWorkspaceProviderSecretMutationSuccess {
+export interface SettingsWorkspaceProfileSecretMutationSuccess {
   ok: true
-  providerId: string
+  profileId: string
   state: SettingsWorkspaceProviderSecretState
 }
 
-export type SettingsWorkspaceProviderSecretMutationResult =
-  | SettingsWorkspaceProviderSecretMutationSuccess
+export type SettingsWorkspaceProfileSecretMutationResult =
+  | SettingsWorkspaceProfileSecretMutationSuccess
   | SettingsWorkspaceApiFailure
 
 export interface SettingsWorkspaceSustechCasSecretMutationSuccess {
@@ -101,12 +101,12 @@ export interface SettingsWorkspaceSecretsApi {
     request?: SettingsWorkspaceSecretsLoadStatusesRequest,
   ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
   loadSustechCasPassword: () => Promise<SettingsWorkspaceSustechCasSecretLoadResult>
-  saveProviderApiKey: (
-    request: SettingsWorkspaceSaveProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
-  clearProviderApiKey: (
-    request: SettingsWorkspaceClearProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  saveProfileApiKey: (
+    request: SettingsWorkspaceSaveProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
+  clearProfileApiKey: (
+    request: SettingsWorkspaceClearProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
   saveSustechCasPassword: (
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>

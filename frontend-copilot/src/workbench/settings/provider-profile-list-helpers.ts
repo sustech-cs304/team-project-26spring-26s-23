@@ -1,6 +1,9 @@
 import type { ProviderProfile } from '../types'
 
-import { protocolOptions } from './config'
+import {
+  resolveProviderStatusNotice,
+  resolveProviderTypeLabel,
+} from './settings-workspace-provider-helpers'
 
 export function filterProviderProfiles(providerProfiles: ProviderProfile[], providerQuery: string) {
   const keyword = providerQuery.trim().toLowerCase()
@@ -10,17 +13,18 @@ export function filterProviderProfiles(providerProfiles: ProviderProfile[], prov
   }
 
   return providerProfiles.filter((profile) => {
+    const statusNotice = resolveProviderStatusNotice(profile)
+
     return (
       profile.name.toLowerCase().includes(keyword)
-      || profile.endpoint.toLowerCase().includes(keyword)
+      || resolveProviderTypeLabel(profile).toLowerCase().includes(keyword)
+      || (profile.baseUrl ?? profile.endpoint).toLowerCase().includes(keyword)
       || profile.defaultModel.toLowerCase().includes(keyword)
+      || (statusNotice?.title.toLowerCase().includes(keyword) ?? false)
+      || (statusNotice?.description.toLowerCase().includes(keyword) ?? false)
       || profile.availableModels.some((model) => {
         return model.modelId.toLowerCase().includes(keyword) || model.displayName.toLowerCase().includes(keyword)
       })
     )
   })
-}
-
-export function getProviderProtocolLabel(protocol: string) {
-  return protocolOptions.find((option) => option.value === protocol)?.label ?? protocol
 }
