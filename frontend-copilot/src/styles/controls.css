@@ -281,6 +281,13 @@
   background: var(--surface-muted);
 }
 
+.select-option--disabled,
+.select-option--disabled:hover {
+  cursor: not-allowed;
+  background: var(--surface-bg);
+  opacity: 0.58;
+}
+
 .select-option--active {
   background: var(--surface-accent);
 }

@@ -17,6 +17,7 @@ import {
   type CopilotAssistantPlaceholderState,
   type CopilotMessageListItem,
   type CopilotReasoningMessageItem,
+  type CopilotTerminalMessageItem,
   type CopilotToolMessageItem,
 } from './run-segment-view-model'
 
@@ -308,7 +309,7 @@ function resolveAssistantMessageHeader(
 
   const resolvedModelId = findFirstNonEmptyValue(
     turn.resolvedModelId,
-    turn.resolvedModelRoute?.snapshot.modelId,
+    readModelIdFromRoute(turn.resolvedModelRoute),
   )
   if (resolvedModelId !== null) {
     const fallbackModel = createFallbackCopilotModel(resolvedModelId)
@@ -330,6 +331,16 @@ function resolveAssistantMessageHeader(
     name: '助手响应',
     icon: createEmptyCopilotModel().icon,
   }
+}
+
+function readModelIdFromRoute(
+  route: CopilotAssistantMessageItem['resolvedModelRoute'],
+): string | null {
+  if (route === null || route === undefined) {
+    return null
+  }
+
+  return 'providerId' in route ? route.modelId : route.routeRef?.modelId ?? null
 }
 
 function findFirstNonEmptyValue(...values: Array<string | null | undefined>): string | null {
@@ -377,8 +388,6 @@ function buildDetailRows(
   label: string
   value: string
 }> {
-  const thinkingDetailRows = buildThinkingDetailRows(turn, showDiagnostics)
-
   switch (turn.kind) {
     case 'reasoning':
     case 'tool':
@@ -404,20 +413,17 @@ function buildDetailRows(
             value: turn.failure.code,
           }]
         : []
-      return [...terminalRows, ...thinkingDetailRows]
+      return [...terminalRows, ...buildThinkingDetailRows(turn, showDiagnostics)]
     }
     case 'assistant':
-      return thinkingDetailRows
+      return buildThinkingDetailRows(turn, showDiagnostics)
     case 'user':
       return []
   }
 }
 
 function buildThinkingDetailRows(
-  turn: Pick<
-    CopilotMessageListItem,
-    'requestedThinkingLevel' | 'appliedThinkingLevel' | 'thinkingCapabilitySnapshot'
-  >,
+  turn: CopilotAssistantMessageItem | CopilotTerminalMessageItem,
   showDiagnostics: boolean,
 ): Array<{
   kind: 'meta'

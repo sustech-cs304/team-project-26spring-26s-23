@@ -171,10 +171,19 @@ function createOption(input: {
   tags: string[]
   icon: { label: string; accent: string }
 }) {
+  const routeRef = {
+    routeKind: 'provider-model' as const,
+    profileId: input.id,
+    modelId: input.modelId,
+  }
+
   return {
     ...input,
+    selectionValue: `provider-model|${encodeURIComponent(input.id)}|${encodeURIComponent(input.modelId)}`,
+    routeRef,
     route: {
       providerProfileId: input.id,
+      routeRef,
       snapshot: {
         provider: 'openai',
         endpointType: 'openai-compatible',
@@ -182,24 +191,21 @@ function createOption(input: {
         modelId: input.modelId,
       },
     },
-    thinkingCapability: {
-      supported: false,
-      levels: [],
-      defaultLevel: null,
-    },
+    available: true,
+    unavailableReason: null,
     thinkingCapabilityOverride: null,
   }
 }
 
 function ModelPickerHarness() {
-  const [selectedModelId, setSelectedModelId] = useState(TEST_MODEL_CATALOG.models[0]?.id ?? '')
+  const [selectedModelId, setSelectedModelId] = useState(TEST_MODEL_CATALOG.models[0]?.selectionValue ?? '')
 
   return (
     <ModelPicker
       selectedModelId={selectedModelId}
       groups={TEST_MODEL_CATALOG.groups}
       onSelectModel={(model) => {
-        setSelectedModelId(model.id)
+        setSelectedModelId(model.selectionValue)
       }}
     />
   )
@@ -237,7 +243,7 @@ function InvalidModelPickerHarness() {
       selectedModelId={selectedModelId}
       groups={groups}
       onSelectModel={(model) => {
-        setSelectedModelId(model.id)
+        setSelectedModelId(model.selectionValue)
       }}
     />
   )

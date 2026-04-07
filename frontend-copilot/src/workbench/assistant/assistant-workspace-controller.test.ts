@@ -49,7 +49,6 @@ describe('assistant-workspace-controller', () => {
       recommendedToolsForAgent: ['tool.file-convert'],
       defaultEnabledTools: ['tool.file-convert'],
       toolSelectionMode: 'recommendation-only',
-      defaultModelPreference: 'openai/gpt-4.1',
     })
     expect(capabilities.allAvailableTools.map((tool) => tool.toolId)).toContain('tool.remote-search')
   })
@@ -91,7 +90,6 @@ describe('assistant-workspace-controller', () => {
         recommendedToolsForAgent: ['tool.file-convert'],
         defaultEnabledTools: ['tool.file-convert'],
         toolSelectionMode: 'recommendation-only',
-        defaultModelPreference: 'openai/gpt-4.1',
       },
     })
   })
@@ -111,12 +109,12 @@ describe('assistant-workspace-controller', () => {
   it('activates existing sessions and ignores unknown session ids', () => {
     const selectedAgent = getSelectedAgent()
     const firstSession = createAssistantSessionShell({
-      response: createSessionResponse({ sessionId: 'session-1' }),
+      response: createSessionResponse({ threadId: 'session-1' }),
       selectedAgent,
       capabilities: createCapabilitiesResponse({ sessionId: 'session-1' }),
     })
     const secondSession = createAssistantSessionShell({
-      response: createSessionResponse({ sessionId: 'session-2' }),
+      response: createSessionResponse({ threadId: 'session-2' }),
       selectedAgent,
       capabilities: createCapabilitiesResponse({ sessionId: 'session-2' }),
     })

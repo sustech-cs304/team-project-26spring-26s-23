@@ -1,5 +1,5 @@
 import {
-  createRuntimeSession,
+  createRuntimeThread,
   getRuntimeCapabilities,
   listRuntimeAgents,
 } from '../../features/copilot/chat-contract'
@@ -43,7 +43,7 @@ console.info('[startup]', JSON.stringify({
 interface AssistantWorkspaceProps {
   bootstrap: CopilotBootstrapController
   listAgents?: typeof listRuntimeAgents
-  createSession?: typeof createRuntimeSession
+  createSession?: typeof createRuntimeThread
   getCapabilities?: typeof getRuntimeCapabilities
   initialDirectoryState?: AssistantAgentDirectoryState
   initialSessionShell?: AssistantSessionShell | null
@@ -52,7 +52,7 @@ interface AssistantWorkspaceProps {
 export function AssistantWorkspace({
   bootstrap,
   listAgents: listAgentsImpl = listRuntimeAgents,
-  createSession: createSessionImpl = createRuntimeSession,
+  createSession: createSessionImpl = createRuntimeThread,
   getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
   initialDirectoryState = emptyAssistantAgentDirectoryState,
   initialSessionShell = null,

@@ -1,5 +1,6 @@
 import type {
   RuntimeModelRoute,
+  RuntimeResolvedModelRoute,
   RuntimeThinkingCapability,
 } from './thread-run-contract'
 import type {
@@ -30,7 +31,7 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   title: string
   content: string
   resolvedModelId: string | null
-  resolvedModelRoute: RuntimeModelRoute | null
+  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
   requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
@@ -153,17 +154,27 @@ export function resolveCopilotAssistantPlaceholderState(
   }
 }
 
+type CopilotRunThinkingProjectionState = Partial<Pick<
+  CopilotRunState,
+  | 'requestedThinkingLevel'
+  | 'appliedThinkingLevel'
+  | 'thinkingCapabilitySnapshot'
+>>
+
+type CopilotRunResolvedRouteProjectionState = Pick<
+  CopilotRunState,
+  | 'activeModelRoute'
+  | 'resolvedModelId'
+  | 'resolvedModelRoute'
+>
+
+type CopilotRunSegmentProjectionState = Pick<
+  CopilotRunState,
+  | 'segments'
+> & CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState
+
 export function buildCopilotRunSegmentViewModel(
-  runState: Pick<
-    CopilotRunState,
-    | 'segments'
-    | 'activeModelRoute'
-    | 'resolvedModelId'
-    | 'resolvedModelRoute'
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-  >,
+  runState: CopilotRunSegmentProjectionState,
 ): CopilotRunSegmentViewItem[] {
   return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment, runState))
 }
@@ -186,15 +197,7 @@ export function resolveCopilotReasoningElapsedMs(
 
 function projectSegmentToViewItems(
   segment: CopilotRunSegment,
-  runState: Pick<
-    CopilotRunState,
-    | 'activeModelRoute'
-    | 'resolvedModelId'
-    | 'resolvedModelRoute'
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-  >,
+  runState: Omit<CopilotRunSegmentProjectionState, 'segments'>,
 ): CopilotRunSegmentViewItem[] {
   switch (segment.kind) {
     case 'assistant':
@@ -214,15 +217,7 @@ function projectSegmentToViewItems(
 
 function projectAssistantSegment(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
-  runState: Pick<
-    CopilotRunState,
-    | 'activeModelRoute'
-    | 'resolvedModelId'
-    | 'resolvedModelRoute'
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-  >,
+  runState: CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState,
 ): CopilotRunSegmentViewItem[] {
   if (!isRenderableAssistantSegment(segment)) {
     return []
@@ -236,7 +231,7 @@ function projectAssistantSegment(
     kind: 'assistant',
     runId: segment.runId,
     sequence: segment.startedSequence,
-    title: resolvedModelId ?? resolvedModelRoute?.snapshot.modelId ?? '助手响应',
+    title: resolvedModelId ?? readModelIdFromRoute(resolvedModelRoute) ?? '助手响应',
     content: segment.text,
     status: mapSegmentStatus(segment.status),
     resolvedModelId,
@@ -245,7 +240,7 @@ function projectAssistantSegment(
     requestOptions: { ...segment.requestOptions },
     requestedThinkingLevel: runState.requestedThinkingLevel,
     appliedThinkingLevel: runState.appliedThinkingLevel,
-    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
+    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot ?? null),
   }]
 }
 
@@ -308,12 +303,7 @@ function projectDiagnosticSegment(
 
 function projectTerminalSegment(
   segment: Extract<CopilotRunSegment, { kind: 'terminal' }>,
-  runState: Pick<
-    CopilotRunState,
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-  >,
+  runState: CopilotRunThinkingProjectionState,
 ): CopilotTerminalMessageItem | null {
   switch (segment.terminalPhase) {
     case 'completed':
@@ -332,7 +322,7 @@ function projectTerminalSegment(
         failure: null,
         requestedThinkingLevel: runState.requestedThinkingLevel,
         appliedThinkingLevel: runState.appliedThinkingLevel,
-        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
+        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot ?? null),
       }
     case 'failed':
       return {
@@ -354,7 +344,7 @@ function projectTerminalSegment(
             },
         requestedThinkingLevel: runState.requestedThinkingLevel,
         appliedThinkingLevel: runState.appliedThinkingLevel,
-        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot),
+        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot ?? null),
       }
   }
 }
@@ -380,9 +370,9 @@ function resolveAssistantModelId(
   const modelIdCandidates = [
     segment.resolvedModelId,
     runState.resolvedModelId,
-    segment.resolvedModelRoute?.snapshot.modelId ?? null,
-    runState.resolvedModelRoute?.snapshot.modelId ?? null,
-    runState.activeModelRoute?.snapshot.modelId ?? null,
+    readModelIdFromRoute(segment.resolvedModelRoute),
+    readModelIdFromRoute(runState.resolvedModelRoute),
+    readModelIdFromRoute(runState.activeModelRoute),
   ]
 
   for (const candidate of modelIdCandidates) {
@@ -398,7 +388,7 @@ function resolveAssistantModelId(
 function resolveAssistantModelRoute(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
   runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
-): RuntimeModelRoute | null {
+): RuntimeResolvedModelRoute | RuntimeModelRoute | null {
   const routeCandidates = [
     segment.resolvedModelRoute,
     runState.resolvedModelRoute,
@@ -415,20 +405,56 @@ function resolveAssistantModelRoute(
   return null
 }
 
-function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRoute | null {
+function cloneRuntimeModelRoute(
+  route: RuntimeResolvedModelRoute | RuntimeModelRoute | null,
+): RuntimeResolvedModelRoute | RuntimeModelRoute | null {
   if (route === null) {
     return null
   }
 
-  return {
-    providerProfileId: route.providerProfileId,
-    snapshot: {
-      provider: route.snapshot.provider,
-      endpointType: route.snapshot.endpointType,
-      baseUrl: route.snapshot.baseUrl,
-      modelId: route.snapshot.modelId,
-    },
+  if ('providerId' in route) {
+    return {
+      routeRef: {
+        routeKind: route.routeRef.routeKind,
+        profileId: route.routeRef.profileId,
+        modelId: route.routeRef.modelId,
+      },
+      providerProfileId: route.providerProfileId,
+      provider: route.provider,
+      providerId: route.providerId,
+      adapterId: route.adapterId,
+      runtimeStatus: route.runtimeStatus,
+      catalogRevision: route.catalogRevision,
+      endpointFamily: route.endpointFamily,
+      endpointType: route.endpointType,
+      baseUrl: route.baseUrl,
+      modelId: route.modelId,
+      authKind: route.authKind,
+    }
   }
+
+  return {
+    ...(route.routeRef === undefined || route.routeRef === null
+      ? {}
+      : {
+          routeRef: {
+            routeKind: route.routeRef.routeKind,
+            profileId: route.routeRef.profileId,
+            modelId: route.routeRef.modelId,
+          },
+        }),
+    ...(route.catalogRevision === undefined ? {} : { catalogRevision: route.catalogRevision }),
+  }
+}
+
+function readModelIdFromRoute(
+  route: RuntimeResolvedModelRoute | RuntimeModelRoute | null | undefined,
+): string | null {
+  if (route === null || route === undefined) {
+    return null
+  }
+
+  return 'providerId' in route ? route.modelId : route.routeRef?.modelId ?? null
 }
 
 function cloneRuntimeThinkingCapability(

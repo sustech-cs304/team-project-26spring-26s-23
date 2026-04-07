@@ -18,6 +18,7 @@ import type { AssistantSessionShell, ThinkingLevelIntent } from '../../workbench
 import {
   applyModelSelectionToComposerDraft,
   applyThinkingLevelSelectionToComposerDraft,
+  describeThinkingCapabilityUnavailableReason,
   type CopilotChatComposerDraft,
 } from './copilot-chat-helpers'
 import type { CopilotModelGroup } from './model-picker'
@@ -65,7 +66,7 @@ export function CopilotComposer({
     : []
   const thinkingValue = draft.thinkingLevelIntent ?? thinkingCapability?.defaultLevel ?? 'off'
   const unsupportedThinkingHint = draft.selectedModelRoute !== null && thinkingCapability !== null && !thinkingSupported
-    ? '当前模型不支持'
+    ? describeThinkingCapabilityUnavailableReason(thinkingCapability) ?? '当前模型不支持'
     : null
   const thinkingSourceHint = thinkingCapability?.source === 'override'
     ? '候选来源：设置页 override'
@@ -152,7 +153,7 @@ export function CopilotComposer({
           disabled={!hasAvailableModels || controlsDisabled}
           onSelectModel={(model) => {
             onDraftChange((current) => applyModelSelectionToComposerDraft(current, {
-              modelId: model.id,
+              modelId: model.selectionValue,
               modelRoute: model.route,
             }))
           }}

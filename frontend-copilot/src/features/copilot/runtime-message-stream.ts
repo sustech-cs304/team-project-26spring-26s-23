@@ -1,6 +1,6 @@
 import type {
-  RuntimeModelRoute,
   RuntimeReasoningDeltaEvent,
+  RuntimeResolvedModelRoute,
   RuntimeRunCompletedEvent,
   RuntimeRunDiagnosticEvent,
   RuntimeRunEvent,
@@ -176,7 +176,7 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
             payload.resolvedModelId,
             'runtime event payload.resolvedModelId',
           ),
-          resolvedModelRoute: requireRuntimeModelRoute(
+          resolvedModelRoute: requireRuntimeResolvedModelRoute(
             payload.resolvedModelRoute,
             'runtime event payload.resolvedModelRoute',
           ),
@@ -254,18 +254,37 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
   }
 }
 
-function requireRuntimeModelRoute(value: unknown, label: string): RuntimeModelRoute {
+function requireRuntimeResolvedModelRoute(value: unknown, label: string): RuntimeResolvedModelRoute {
   const record = requireRecord(value, label)
-  const snapshot = requireRecord(record.snapshot, `${label}.snapshot`)
+  const routeRef = requireRuntimeModelRouteRef(record.routeRef, `${label}.routeRef`)
 
   return {
+    routeRef,
     providerProfileId: requireNonEmptyString(record.providerProfileId, `${label}.providerProfileId`),
-    snapshot: {
-      provider: requireNonEmptyString(snapshot.provider, `${label}.snapshot.provider`),
-      endpointType: requireNonEmptyString(snapshot.endpointType, `${label}.snapshot.endpointType`),
-      baseUrl: requireNonEmptyString(snapshot.baseUrl, `${label}.snapshot.baseUrl`),
-      modelId: requireNonEmptyString(snapshot.modelId, `${label}.snapshot.modelId`),
-    },
+    provider: requireNonEmptyString(record.provider, `${label}.provider`),
+    providerId: requireNonEmptyString(record.providerId, `${label}.providerId`),
+    adapterId: requireNonEmptyString(record.adapterId, `${label}.adapterId`),
+    runtimeStatus: requireNonEmptyString(record.runtimeStatus, `${label}.runtimeStatus`),
+    catalogRevision: requireString(record.catalogRevision, `${label}.catalogRevision`),
+    endpointFamily: requireNonEmptyString(record.endpointFamily, `${label}.endpointFamily`),
+    endpointType: requireNonEmptyString(record.endpointType, `${label}.endpointType`),
+    baseUrl: requireNonEmptyString(record.baseUrl, `${label}.baseUrl`),
+    modelId: requireNonEmptyString(record.modelId, `${label}.modelId`),
+    authKind: requireNonEmptyString(record.authKind, `${label}.authKind`),
+  }
+}
+
+function requireRuntimeModelRouteRef(value: unknown, label: string): RuntimeResolvedModelRoute['routeRef'] {
+  const record = requireRecord(value, label)
+  const routeKind = requireNonEmptyString(record.routeKind, `${label}.routeKind`)
+  if (routeKind !== 'provider-model') {
+    throw new Error(`${label}.routeKind must be 'provider-model'.`)
+  }
+
+  return {
+    routeKind,
+    profileId: requireNonEmptyString(record.profileId, `${label}.profileId`),
+    modelId: requireNonEmptyString(record.modelId, `${label}.modelId`),
   }
 }
 

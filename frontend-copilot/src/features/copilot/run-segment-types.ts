@@ -1,5 +1,6 @@
 import type {
   RuntimeModelRoute,
+  RuntimeResolvedModelRoute,
   RuntimeToolEventPhase,
 } from './thread-run-contract'
 
@@ -35,7 +36,7 @@ export interface CopilotAssistantSegment extends CopilotRunSegmentBase {
   text: string
   firstContentSequence: number | null
   resolvedModelId: string | null
-  resolvedModelRoute: RuntimeModelRoute | null
+  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
 }
@@ -72,7 +73,7 @@ export interface CopilotTerminalSegment extends CopilotRunSegmentBase {
   cancelReason: string | null
   failure: CopilotRunFailureSummary | null
   resolvedModelId: string | null
-  resolvedModelRoute: RuntimeModelRoute | null
+  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
 }

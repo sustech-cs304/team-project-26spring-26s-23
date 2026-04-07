@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
 import type { RuntimeRunEvent } from './chat-contract'
+import type { CopilotMessageDispatchInput } from './copilot-send-controller'
 import { createRuntimeThinkingCapability } from './chat-contract.test-support'
 import {
   clickElement,
@@ -82,11 +83,7 @@ describe('Copilot thinking selector', () => {
         retrying={false}
         retry={() => undefined}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'glm-5-turbo',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -114,6 +111,90 @@ describe('Copilot thinking selector', () => {
 
     expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
     expect(thinkingTrigger.title).toContain('当前模型不支持')
+
+    rendered.unmount()
+  })
+
+  it('relies on runtime capability results instead of frontend built-in rules for chat thinking availability', async () => {
+    const getThinkingCapability = vi.fn(async (input: {
+      runtimeUrl: string
+      sessionId: string
+      modelRoute: {
+        routeRef?: {
+          modelId: string
+        } | null
+      }
+    }) => ({
+      ok: true as const,
+      sessionId: input.sessionId,
+      capability: createRuntimeThinkingCapability({
+        status: 'unknown-without-override',
+        source: 'unknown',
+        supported: false,
+        supportedLevels: [],
+        defaultLevel: null,
+        reasonCode: 'route_not_verified',
+        providerHint: 'runtime-truth-only',
+        overrideLevels: [],
+      }),
+    }))
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-runtime-truth',
+            name: 'Runtime Truth Provider',
+            endpoint: 'https://api.z.ai/api/paas/v4',
+            defaultModel: 'glm-5-turbo',
+            availableModels: [
+              {
+                id: 'provider-runtime-truth:glm-5-turbo',
+                modelId: 'glm-5-turbo',
+                displayName: 'GLM 5 Turbo',
+                groupName: 'RuntimeTruth',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'glm-5-turbo',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => undefined}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
+      />,
+    )
+
+    await flushUi()
+    await flushUi()
+
+    const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+    expect(getThinkingCapability).toHaveBeenCalledTimes(1)
+    expect(thinkingTrigger.title).toBe('当前模型不支持')
+    expect(thinkingTrigger.getAttribute('aria-label')).toBe('当前模型不支持')
+    expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
+
+    await clickElement(thinkingTrigger)
+    expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
 
     rendered.unmount()
   })
@@ -193,11 +274,7 @@ describe('Copilot thinking selector', () => {
         retrying={false}
         retry={() => undefined}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'model-a',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -230,7 +307,7 @@ describe('Copilot thinking selector', () => {
   it('forwards the selected thinking level through the request build chain', async () => {
     const getThinkingCapability = createThinkingCapabilityGetterSpy()
     const sendMessage = vi.fn(async function* (
-      _input: Parameters<typeof import('./chat-contract').sendRuntimeMessage>[0],
+      _input: CopilotMessageDispatchInput,
     ): AsyncGenerator<RuntimeRunEvent> {
       return
     })
@@ -275,11 +352,7 @@ describe('Copilot thinking selector', () => {
         retrying={false}
         retry={() => undefined}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'model-request',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -319,7 +392,7 @@ describe('Copilot thinking selector', () => {
   it('shows a failed chat message when the backend rejects the selected thinking level for the current route', async () => {
     const getThinkingCapability = createThinkingCapabilityGetterSpy()
     const sendMessage = vi.fn(async function* (
-      input: Parameters<typeof import('./chat-contract').sendRuntimeMessage>[0],
+      input: CopilotMessageDispatchInput,
     ): AsyncGenerator<RuntimeRunEvent> {
       yield {
         type: 'run_started',
@@ -401,11 +474,7 @@ describe('Copilot thinking selector', () => {
         retrying={false}
         retry={() => undefined}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'model-thinking-fail',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -431,6 +500,73 @@ describe('Copilot thinking selector', () => {
 
     rendered.unmount()
   })
+
+  it('surfaces provider runtime status from thinking capability query errors in the trigger tooltip', async () => {
+    const getThinkingCapability = vi.fn(async () => {
+      throw new (await import('./chat-contract')).RuntimeRequestError('adapter_missing: provider adapter not registered', {
+        code: 'adapter_missing',
+        status: 409,
+        details: {
+          providerId: 'openai',
+          adapterId: 'openai',
+        },
+      })
+    })
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            providerId: 'openai',
+            protocol: 'openai',
+            name: 'OpenAI',
+            defaultModel: 'gpt-4.1',
+            availableModels: [
+              {
+                id: 'provider-openai:gpt-4.1',
+                modelId: 'gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'gpt-4.1',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => undefined}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
+      />,
+    )
+
+    await flushUi()
+
+    const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+    expect(thinkingTrigger.title).toContain('当前 provider 缺少 runtime adapter')
+    expect(thinkingTrigger.disabled).toBe(false)
+
+    rendered.unmount()
+  })
 })
 
 async function flushUi() {
@@ -442,11 +578,12 @@ async function flushUi() {
 
 function createThinkingCapabilityGetterSpy() {
   return vi.fn(async (input: {
+    runtimeUrl: string
     sessionId: string
     modelRoute: {
-      snapshot: {
+      routeRef?: {
         modelId: string
-      }
+      } | null
     }
     thinkingCapabilityOverride?: Record<string, unknown> | null
   }) => ({
@@ -458,9 +595,9 @@ function createThinkingCapabilityGetterSpy() {
 
 function resolveRuntimeThinkingCapability(input: {
   modelRoute: {
-    snapshot: {
+    routeRef?: {
       modelId: string
-    }
+    } | null
   }
   thinkingCapabilityOverride?: Record<string, unknown> | null
 }) {
@@ -502,7 +639,9 @@ function resolveRuntimeThinkingCapability(input: {
     })
   }
 
-  if (input.modelRoute.snapshot.modelId === 'glm-5' || input.modelRoute.snapshot.modelId === 'glm-5-turbo') {
+  const modelId = input.modelRoute.routeRef?.modelId ?? ''
+
+  if (modelId === 'glm-5' || modelId === 'glm-5-turbo') {
     return createRuntimeThinkingCapability({
       status: 'verified-supported',
       source: 'verified',

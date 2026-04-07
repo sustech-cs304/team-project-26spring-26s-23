@@ -6,6 +6,7 @@ import type {
 } from '../../../electron/copilot-runtime'
 import type {
   RuntimeModelRoute,
+  RuntimeResolvedModelRoute,
   RuntimeRunMetadataEvent,
   RuntimeThinkingCapability,
 } from './thread-run-contract'
@@ -66,7 +67,7 @@ export interface CopilotRunState {
   threadId: string | null
   activeModelRoute: RuntimeModelRoute | null
   resolvedModelId: string | null
-  resolvedModelRoute: RuntimeModelRoute | null
+  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
   requestedThinkingLevel: RuntimeRunMetadataEvent['payload']['requestedThinkingLevel']

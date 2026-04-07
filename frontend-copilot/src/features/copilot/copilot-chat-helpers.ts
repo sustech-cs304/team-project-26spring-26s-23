@@ -3,10 +3,12 @@ import type {
   AssistantSessionShell,
   ThinkingLevelIntent,
 } from '../../workbench/types'
+import { serializeModelRouteRef } from '../../workbench/settings/settings-workspace-model-options'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   RuntimeRequestError,
   type RuntimeModelRoute,
+  type RuntimeResolvedModelRoute,
   type RuntimeRunCompletedEvent,
   type RuntimeThinkingCapability,
   type RuntimeToolEvent,
@@ -53,7 +55,7 @@ export interface CopilotConversationTurn {
   content: string
   status?: 'streaming' | 'completed' | 'failed' | 'cancelled'
   resolvedModelId?: string
-  resolvedModelRoute?: RuntimeModelRoute
+  resolvedModelRoute?: RuntimeResolvedModelRoute | RuntimeModelRoute
   resolvedToolIds?: string[]
   requestOptions?: Record<string, unknown>
   requestedThinkingLevel?: ThinkingLevelIntent | null
@@ -85,11 +87,11 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
 }
 
 export function createComposerDraftFromSession(
-  sessionShell?: AssistantSessionShell,
+  _sessionShell?: AssistantSessionShell,
 ): CopilotChatComposerDraft {
   return {
     messageText: '',
-    selectedModelId: sessionShell?.capabilities.defaultModelPreference ?? '',
+    selectedModelId: '',
     selectedModelRoute: null,
     thinkingLevelIntent: null,
     thinkingLevelByModelKey: {},
@@ -132,13 +134,10 @@ export function buildRuntimeMessageSendInput(input: {
 }
 
 export function buildThinkingSessionMemoryKey(route: RuntimeModelRoute): string {
-  return [
-    route.providerProfileId,
-    route.snapshot.provider,
-    route.snapshot.endpointType,
-    route.snapshot.baseUrl,
-    route.snapshot.modelId,
-  ].join('|')
+  const routeRef = route.routeRef
+  return routeRef === undefined || routeRef === null
+    ? ''
+    : serializeModelRouteRef(routeRef)
 }
 
 export function applyModelSelectionToComposerDraft(
@@ -267,12 +266,122 @@ export function formatRuntimeMessageSendError(error: unknown): string {
         return `capabilities_version_stale：当前能力面版本已过期，需要重新拉取 capabilities 后再发。${error.message}`
       case 'thinking_not_supported_for_route':
         return `thinking_not_supported_for_route：当前模型路由不支持所选思考档位。${error.message}`
+      case 'provider_catalog_only':
+        return `provider_catalog_only：当前 provider 仅完成 catalog 接入，运行时尚未启用。${error.message}`
+      case 'provider_legacy_unsupported':
+        return `provider_legacy_unsupported：当前 provider 已标记为历史兼容 / 不受支持。${error.message}`
+      case 'provider_runtime_not_enabled':
+        return `provider_runtime_not_enabled：当前 provider 运行时未启用。${error.message}`
+      case 'adapter_missing':
+        return `adapter_missing：当前 provider 缺少 Python runtime adapter。${error.message}`
+      case 'provider_auth_missing':
+      case 'provider_secret_missing':
+        return `${error.code}：当前 provider 缺少必需认证信息。${error.message}`
+      case 'provider_auth_kind_unsupported':
+        return `provider_auth_kind_unsupported：当前 provider 不支持该认证方式。${error.message}`
+      case 'provider_adapter_mismatch':
+        return `provider_adapter_mismatch：当前模型路由的 adapter 信息与 catalog 不一致。${error.message}`
+      case 'provider_profile_not_found':
+        return `provider_profile_not_found：当前模型路由对应的 provider 配置不存在。${error.message}`
+      case 'route_ref_snapshot_mismatch':
+        return `route_ref_snapshot_mismatch：当前模型路由已失效，请重新选择。${error.message}`
+      case 'host_model_route_unavailable':
+        return `host_model_route_unavailable：宿主模型路由解析服务当前不可用。${error.message}`
+      case 'host_model_route_access_denied':
+        return `host_model_route_access_denied：宿主模型路由解析凭据无效。${error.message}`
       default:
         return error.message
     }
   }
 
   return error instanceof Error ? error.message : String(error)
+}
+
+export function buildRuntimeThinkingCapabilityFromError(input: {
+  error: RuntimeRequestError
+  modelRoute: RuntimeModelRoute
+}): RuntimeThinkingCapability {
+  const reasonCode = input.error.code ?? 'thinking_capability_query_failed'
+  const verifiedReasonCode = isVerifiedThinkingCapabilityErrorCode(reasonCode)
+    ? reasonCode
+    : null
+  const routeRef = input.modelRoute.routeRef ?? null
+  const providerHint = readRuntimeErrorDetail(input.error.details, 'providerId')
+    ?? readRuntimeErrorDetail(input.error.details, 'provider')
+    ?? null
+
+  return {
+    status: verifiedReasonCode === null ? 'unknown-without-override' : 'verified-unsupported',
+    source: verifiedReasonCode === null ? 'unknown' : 'verified',
+    supported: false,
+    supportedLevels: [],
+    defaultLevel: null,
+    reasonCode,
+    providerHint,
+    routeFingerprint: {
+      providerProfileId: routeRef?.profileId ?? '',
+      provider: providerHint ?? 'unknown-provider',
+      endpointType: readRuntimeErrorDetail(input.error.details, 'endpointType') ?? '',
+      baseUrl: readRuntimeErrorDetail(input.error.details, 'baseUrl') ?? '',
+      modelId: routeRef?.modelId ?? '',
+    },
+    overrideLevels: [],
+  }
+}
+
+export function describeThinkingCapabilityUnavailableReason(
+  capability: RuntimeThinkingCapability | null,
+): string | null {
+  if (capability === null || capability.supported) {
+    return null
+  }
+
+  switch (capability.reasonCode) {
+    case 'provider_catalog_only':
+      return '当前 provider 仅完成 catalog 接入'
+    case 'provider_legacy_unsupported':
+      return '当前 provider 已废弃或不受支持'
+    case 'provider_runtime_not_enabled':
+      return '当前 provider 运行时未启用'
+    case 'adapter_missing':
+      return '当前 provider 缺少 runtime adapter'
+    case 'provider_auth_missing':
+    case 'provider_secret_missing':
+      return '当前 provider 缺少认证信息'
+    case 'provider_auth_kind_unsupported':
+      return '当前 provider 认证方式不受支持'
+    case 'provider_profile_not_found':
+    case 'route_ref_snapshot_mismatch':
+      return '当前模型路由已失效'
+    case 'host_model_route_unavailable':
+    case 'host_model_route_access_denied':
+      return 'thinking 能力查询失败'
+    default:
+      return '当前模型不支持'
+  }
+}
+
+function isVerifiedThinkingCapabilityErrorCode(code: string): boolean {
+  return [
+    'provider_catalog_only',
+    'provider_legacy_unsupported',
+    'provider_runtime_not_enabled',
+    'adapter_missing',
+    'provider_auth_missing',
+    'provider_secret_missing',
+    'provider_auth_kind_unsupported',
+    'provider_adapter_mismatch',
+    'provider_profile_not_found',
+    'route_ref_snapshot_mismatch',
+    'host_model_route_unavailable',
+    'host_model_route_access_denied',
+    'thinking_not_supported_for_route',
+  ].includes(code)
+}
+
+function readRuntimeErrorDetail(details: Record<string, unknown>, key: string): string | null {
+  const value = details[key]
+  return typeof value === 'string' && value.trim() !== '' ? value.trim().toLowerCase() : null
 }
 
 export function buildRuntimeDebugSummary(input: {
@@ -305,7 +414,6 @@ export function buildSessionDebugSummary(sessionShell: AssistantSessionShell) {
     defaultEnabledTools: [...sessionShell.capabilities.defaultEnabledTools],
     defaultEnabledSource: {
       boundAgent: sessionShell.boundAgent.id,
-      defaultModelPreference: sessionShell.capabilities.defaultModelPreference,
       toolSelectionMode: sessionShell.capabilities.toolSelectionMode,
     },
   }
@@ -370,7 +478,7 @@ export function completeAssistantTurn(
       content: event.payload.assistantText,
       status: 'completed',
       resolvedModelId: event.payload.resolvedModelId,
-      resolvedModelRoute: cloneRuntimeModelRoute(event.payload.resolvedModelRoute),
+      resolvedModelRoute: cloneRuntimeResolvedModelRoute(event.payload.resolvedModelRoute),
       resolvedToolIds: [...event.payload.resolvedToolIds],
       requestOptions: { ...event.payload.requestOptions },
       diagnostic,
@@ -384,7 +492,7 @@ export function completeAssistantTurn(
     content: event.payload.assistantText,
     status: 'completed',
     resolvedModelId: event.payload.resolvedModelId,
-    resolvedModelRoute: cloneRuntimeModelRoute(event.payload.resolvedModelRoute),
+    resolvedModelRoute: cloneRuntimeResolvedModelRoute(event.payload.resolvedModelRoute),
     resolvedToolIds: [...event.payload.resolvedToolIds],
     requestOptions: { ...event.payload.requestOptions },
     diagnostic,
@@ -589,13 +697,37 @@ function resolveToolTurnInsertIndex(
 
 function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
   return {
-    providerProfileId: route.providerProfileId,
-    snapshot: {
-      provider: route.snapshot.provider,
-      endpointType: route.snapshot.endpointType,
-      baseUrl: route.snapshot.baseUrl,
-      modelId: route.snapshot.modelId,
+    ...(route.routeRef === undefined || route.routeRef === null
+      ? {}
+      : {
+          routeRef: {
+            routeKind: route.routeRef.routeKind,
+            profileId: route.routeRef.profileId,
+            modelId: route.routeRef.modelId,
+          },
+        }),
+    ...(route.catalogRevision === undefined ? {} : { catalogRevision: route.catalogRevision }),
+  }
+}
+
+function cloneRuntimeResolvedModelRoute(route: RuntimeResolvedModelRoute): RuntimeResolvedModelRoute {
+  return {
+    routeRef: {
+      routeKind: route.routeRef.routeKind,
+      profileId: route.routeRef.profileId,
+      modelId: route.routeRef.modelId,
     },
+    providerProfileId: route.providerProfileId,
+    provider: route.provider,
+    providerId: route.providerId,
+    adapterId: route.adapterId,
+    runtimeStatus: route.runtimeStatus,
+    catalogRevision: route.catalogRevision,
+    endpointFamily: route.endpointFamily,
+    endpointType: route.endpointType,
+    baseUrl: route.baseUrl,
+    modelId: route.modelId,
+    authKind: route.authKind,
   }
 }
 

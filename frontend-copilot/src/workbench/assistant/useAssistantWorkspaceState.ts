@@ -8,7 +8,7 @@ import {
 } from 'react'
 
 import {
-  createRuntimeSession,
+  createRuntimeThread,
   getRuntimeCapabilities,
   listRuntimeAgents,
 } from '../../features/copilot/chat-contract'
@@ -39,7 +39,7 @@ import {
 interface UseAssistantWorkspaceStateInput {
   bootstrap: CopilotBootstrapController
   listAgents?: typeof listRuntimeAgents
-  createSession?: typeof createRuntimeSession
+  createSession?: typeof createRuntimeThread
   getCapabilities?: typeof getRuntimeCapabilities
   initialDirectoryState?: AssistantAgentDirectoryState
   initialSessionShell?: AssistantSessionShell | null
@@ -83,7 +83,7 @@ interface UseAssistantWorkspaceStateResult {
 export function useAssistantWorkspaceState({
   bootstrap,
   listAgents: listAgentsImpl = listRuntimeAgents,
-  createSession: createSessionImpl = createRuntimeSession,
+  createSession: createSessionImpl = createRuntimeThread,
   getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
   initialDirectoryState = emptyAssistantAgentDirectoryState,
   initialSessionShell = null,
