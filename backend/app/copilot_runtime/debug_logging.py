@@ -42,13 +42,20 @@ def summarize_exception(exc: BaseException | None) -> dict[str, Any] | None:
 def summarize_runtime_model_route(route: Any | None) -> dict[str, Any] | None:
     if route is None:
         return None
-    return {
+    summary = {
         "providerProfileId": _lookup_value(route, attr_name="provider_profile_id", key_name="providerProfileId"),
         "provider": _lookup_value(route, attr_name="provider", key_name="provider"),
+        "providerId": _lookup_value(route, attr_name="provider_id", key_name="providerId"),
+        "adapterId": _lookup_value(route, attr_name="adapter_id", key_name="adapterId"),
+        "runtimeStatus": _lookup_value(route, attr_name="runtime_status", key_name="runtimeStatus"),
+        "catalogRevision": _lookup_value(route, attr_name="catalog_revision", key_name="catalogRevision"),
+        "endpointFamily": _lookup_value(route, attr_name="endpoint_family", key_name="endpointFamily"),
         "endpointType": _lookup_value(route, attr_name="endpoint_type", key_name="endpointType"),
         "baseUrl": _lookup_value(route, attr_name="base_url", key_name="baseUrl"),
         "modelId": _lookup_value(route, attr_name="model_id", key_name="modelId"),
+        "authKind": _lookup_value(route, attr_name="auth_kind", key_name="authKind"),
     }
+    return {key: value for key, value in summary.items() if value is not None}
 
 
 def summarize_runtime_execution_event(event: Any | None) -> dict[str, Any] | None:

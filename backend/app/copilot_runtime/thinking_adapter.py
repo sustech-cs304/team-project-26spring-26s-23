@@ -2,21 +2,26 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from .model_routes import ResolvedRuntimeModelRoute
+from .provider_adapter_registry import (
+    RuntimeProviderAdapterError,
+    RuntimeProviderAdapterRegistry,
+    RuntimeProviderThinkingCapability,
+    RuntimeProviderThinkingMapping,
+    build_default_provider_adapter_registry,
+)
 
 ThinkingLevelIntent = Literal['off', 'auto', 'low', 'medium', 'high', 'xhigh']
-PositiveThinkingLevelIntent = Literal['auto', 'low', 'medium', 'high', 'xhigh']
 ThinkingCapabilityStatus = Literal[
     'verified-supported',
     'verified-unsupported',
     'unknown-without-override',
-    'unknown-with-override',
 ]
-ThinkingCapabilitySource = Literal['verified', 'override', 'unknown']
+ThinkingCapabilitySource = Literal['verified', 'unknown']
 
-_POSITIVE_THINKING_LEVEL_ORDER: tuple[PositiveThinkingLevelIntent, ...] = (
+_POSITIVE_THINKING_LEVEL_ORDER: tuple[ThinkingLevelIntent, ...] = (
     'auto',
     'low',
     'medium',
@@ -24,16 +29,12 @@ _POSITIVE_THINKING_LEVEL_ORDER: tuple[PositiveThinkingLevelIntent, ...] = (
     'xhigh',
 )
 _POSITIVE_THINKING_LEVEL_SET = frozenset(_POSITIVE_THINKING_LEVEL_ORDER)
-_GLM_5_TURBO_SUPPORTED_LEVELS: tuple[ThinkingLevelIntent, ...] = ('off', 'auto')
-_GLM_5_TURBO_HOST_HINTS = ('z.ai', 'bigmodel.cn')
-_GLM_5_TURBO_PROVIDER_HINT = 'zai-glm-openai-compatible'
-
-
-@dataclass(frozen=True, slots=True)
-class ThinkingCapabilityOverrideInput:
-    supported: bool
-    levels: tuple[PositiveThinkingLevelIntent, ...] = ()
-    default_level: ThinkingLevelIntent | None = None
+_DEFAULT_PROVIDER_ADAPTER_REGISTRY = build_default_provider_adapter_registry()
+_VERIFIED_UNSUPPORTED_ADAPTER_ERROR_CODES = frozenset({
+    'provider_catalog_only',
+    'provider_legacy_unsupported',
+    'provider_runtime_not_enabled',
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,75 +90,21 @@ class ThinkingAdaptationResult:
     diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class _ProviderThinkingMapping:
-    mapping: str
-    model_settings: dict[str, Any] | None
-
-
-def parse_thinking_capability_override(
-    raw_override: Mapping[str, Any] | None,
-) -> ThinkingCapabilityOverrideInput | None:
-    if not isinstance(raw_override, Mapping):
-        return None
-
-    supported = raw_override.get('supported')
-    if supported is False:
-        return ThinkingCapabilityOverrideInput(supported=False)
-    if supported is not True:
-        return None
-
-    levels = _normalize_positive_thinking_levels(raw_override.get('levels'))
-    default_level = _normalize_thinking_level_intent(raw_override.get('defaultLevel'))
-    return ThinkingCapabilityOverrideInput(
-        supported=True,
-        levels=levels,
-        default_level=default_level,
-    )
-
-
 def resolve_canonical_thinking_capability(
     *,
     model_route: ResolvedRuntimeModelRoute,
     thinking_capability_override: Mapping[str, Any] | None = None,
+    provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
 ) -> CanonicalThinkingCapability:
+    _ = thinking_capability_override
     route_fingerprint = _build_route_diagnostics(model_route)
     verified_capability = _resolve_verified_capability(
         model_route=model_route,
         route_fingerprint=route_fingerprint,
+        provider_adapter_registry=provider_adapter_registry,
     )
     if verified_capability is not None:
         return verified_capability
-
-    override_input = parse_thinking_capability_override(thinking_capability_override)
-    if override_input is not None and override_input.supported and len(override_input.levels) > 0:
-        supported_levels: tuple[ThinkingLevelIntent, ...] = ('off', *override_input.levels)
-        return CanonicalThinkingCapability(
-            status='unknown-with-override',
-            source='override',
-            supported=True,
-            supported_levels=supported_levels,
-            default_level=_resolve_default_level(
-                levels=override_input.levels,
-                default_level=override_input.default_level,
-            ),
-            reason_code='override_candidate_levels_applied',
-            provider_hint='unknown-route-override',
-            route_fingerprint=route_fingerprint,
-            override_levels=supported_levels,
-        )
-
-    if override_input is not None and override_input.supported is False:
-        return CanonicalThinkingCapability(
-            status='unknown-without-override',
-            source='unknown',
-            supported=False,
-            supported_levels=(),
-            default_level=None,
-            reason_code='override_declares_unsupported_for_unknown_route',
-            provider_hint='unknown-route',
-            route_fingerprint=route_fingerprint,
-        )
 
     return CanonicalThinkingCapability(
         status='unknown-without-override',
@@ -176,10 +123,12 @@ def adapt_thinking_intent(
     intent: ThinkingLevelIntent | None,
     model_route: ResolvedRuntimeModelRoute,
     thinking_capability_override: Mapping[str, Any] | None = None,
+    provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
 ) -> ThinkingAdaptationResult:
     capability = resolve_canonical_thinking_capability(
         model_route=model_route,
         thinking_capability_override=thinking_capability_override,
+        provider_adapter_registry=provider_adapter_registry,
     )
 
     if intent is None:
@@ -194,7 +143,13 @@ def adapt_thinking_intent(
         )
 
     if intent == 'off':
-        provider_mapping = _resolve_provider_mapping(intent=intent, model_route=model_route)
+        provider_mapping = None
+        if capability.source == 'verified' and capability.supported:
+            provider_mapping = _resolve_provider_mapping(
+                intent=intent,
+                model_route=model_route,
+                provider_adapter_registry=provider_adapter_registry,
+            )
         return _build_adaptation_result(
             requested_intent=intent,
             applied_intent='off',
@@ -216,18 +171,11 @@ def adapt_thinking_intent(
             model_settings=None,
         )
 
-    if capability.source != 'verified':
-        return _build_adaptation_result(
-            requested_intent=intent,
-            applied_intent=None,
-            applied=False,
-            reason='requested_level_requires_verified_mapping',
-            capability=capability,
-            provider_mapping=None,
-            model_settings=None,
-        )
-
-    provider_mapping = _resolve_provider_mapping(intent=intent, model_route=model_route)
+    provider_mapping = _resolve_provider_mapping(
+        intent=intent,
+        model_route=model_route,
+        provider_adapter_registry=provider_adapter_registry,
+    )
     if provider_mapping is None:
         return _build_adaptation_result(
             requested_intent=intent,
@@ -284,120 +232,138 @@ def _resolve_verified_capability(
     *,
     model_route: ResolvedRuntimeModelRoute,
     route_fingerprint: dict[str, str],
+    provider_adapter_registry: RuntimeProviderAdapterRegistry | None,
 ) -> CanonicalThinkingCapability | None:
-    if _is_zai_glm_openai_compatible_route(model_route):
+    if _normalize_identifier(model_route.adapter_id) == '':
+        return None
+
+    try:
+        resolved_capability = _resolve_provider_adapter_registry(
+            provider_adapter_registry
+        ).resolve_thinking_capability(model_route=model_route)
+    except RuntimeProviderAdapterError as exc:
+        if exc.code == 'provider_unknown':
+            return None
+        if exc.code in _VERIFIED_UNSUPPORTED_ADAPTER_ERROR_CODES:
+            return _build_adapter_error_capability(
+                error=exc,
+                route_fingerprint=route_fingerprint,
+                model_route=model_route,
+            )
+        raise
+
+    if resolved_capability.supported:
+        supported_levels = _normalize_supported_thinking_levels(
+            resolved_capability.supported_levels
+        )
         return CanonicalThinkingCapability(
             status='verified-supported',
             source='verified',
             supported=True,
-            supported_levels=_GLM_5_TURBO_SUPPORTED_LEVELS,
-            default_level='auto',
-            reason_code='zai_glm_verified_supported',
-            provider_hint=_GLM_5_TURBO_PROVIDER_HINT,
+            supported_levels=supported_levels,
+            default_level=_resolve_verified_default_level(
+                supported_levels=supported_levels,
+                capability=resolved_capability,
+            ),
+            reason_code=resolved_capability.reason_code,
+            provider_hint=resolved_capability.provider_hint,
             route_fingerprint=route_fingerprint,
         )
-    return None
+    return CanonicalThinkingCapability(
+        status='verified-unsupported',
+        source='verified',
+        supported=False,
+        supported_levels=(),
+        default_level=None,
+        reason_code=resolved_capability.reason_code,
+        provider_hint=resolved_capability.provider_hint,
+        route_fingerprint=route_fingerprint,
+    )
+
+
+def _build_adapter_error_capability(
+    *,
+    error: RuntimeProviderAdapterError,
+    route_fingerprint: dict[str, str],
+    model_route: ResolvedRuntimeModelRoute,
+) -> CanonicalThinkingCapability:
+    provider_hint = _normalize_identifier(
+        str(
+            error.details.get('providerId')
+            or model_route.provider_id
+            or model_route.provider
+        )
+    )
+    return CanonicalThinkingCapability(
+        status='verified-unsupported',
+        source='verified',
+        supported=False,
+        supported_levels=(),
+        default_level=None,
+        reason_code=error.code,
+        provider_hint=provider_hint or None,
+        route_fingerprint=route_fingerprint,
+    )
 
 
 def _resolve_provider_mapping(
     *,
     intent: ThinkingLevelIntent,
     model_route: ResolvedRuntimeModelRoute,
-) -> _ProviderThinkingMapping | None:
-    if _is_zai_glm_openai_compatible_route(model_route):
-        if intent == 'off':
-            return _ProviderThinkingMapping(
-                mapping='zai_glm_openai_compatible',
-                model_settings={
-                    'extra_body': {
-                        'thinking': {
-                            'type': 'disabled',
-                        },
-                    },
-                },
-            )
-        if intent == 'auto':
-            return _ProviderThinkingMapping(
-                mapping='zai_glm_openai_compatible',
-                model_settings={
-                    'extra_body': {
-                        'thinking': {
-                            'type': 'enabled',
-                        },
-                    },
-                },
-            )
-    return None
-
-
-def _is_zai_glm_openai_compatible_route(model_route: ResolvedRuntimeModelRoute) -> bool:
-    provider = _normalize_identifier(model_route.provider)
-    endpoint_type = _normalize_identifier(model_route.endpoint_type)
-    model_id = _normalize_identifier(model_route.model_id)
-    base_url = _normalize_identifier(model_route.base_url)
-
-    return (
-        provider == 'openai'
-        and endpoint_type == 'openai-compatible'
-        and _matches_zai_glm_model_id(model_id)
-        and any(host_hint in base_url for host_hint in _GLM_5_TURBO_HOST_HINTS)
+    provider_adapter_registry: RuntimeProviderAdapterRegistry | None,
+) -> RuntimeProviderThinkingMapping | None:
+    return _resolve_provider_adapter_registry(
+        provider_adapter_registry
+    ).build_thinking_mapping(
+        intent=intent,
+        model_route=model_route,
     )
 
 
-def _matches_zai_glm_model_id(model_id: str) -> bool:
-    return (
-        model_id == 'glm-5'
-        or model_id == 'glm-5-turbo'
-        or model_id.endswith('/glm-5')
-        or model_id.endswith('/glm-5-turbo')
-    )
+def _resolve_provider_adapter_registry(
+    provider_adapter_registry: RuntimeProviderAdapterRegistry | None,
+) -> RuntimeProviderAdapterRegistry:
+    return provider_adapter_registry or _DEFAULT_PROVIDER_ADAPTER_REGISTRY
+
+
+def _normalize_supported_thinking_levels(
+    levels: tuple[ThinkingLevelIntent, ...],
+) -> tuple[ThinkingLevelIntent, ...]:
+    normalized_positive_levels = [
+        level
+        for level in levels
+        if level != 'off' and level in _POSITIVE_THINKING_LEVEL_SET
+    ]
+    if len(normalized_positive_levels) == 0:
+        return ('off',)
+    return ('off', *tuple(
+        level for level in _POSITIVE_THINKING_LEVEL_ORDER if level in normalized_positive_levels
+    ))
+
+
+def _resolve_verified_default_level(
+    *,
+    supported_levels: tuple[ThinkingLevelIntent, ...],
+    capability: RuntimeProviderThinkingCapability,
+) -> ThinkingLevelIntent:
+    default_level = capability.default_level
+    if default_level == 'off':
+        return 'off'
+    if default_level is not None and default_level in supported_levels:
+        return default_level
+    if 'auto' in supported_levels:
+        return 'auto'
+    return supported_levels[0]
 
 
 def _build_route_diagnostics(model_route: ResolvedRuntimeModelRoute) -> dict[str, str]:
     return {
         'providerProfileId': model_route.provider_profile_id,
-        'provider': model_route.provider,
+        'provider': _normalize_identifier(model_route.provider_id or model_route.provider),
         'endpointType': model_route.endpoint_type,
         'baseUrl': model_route.base_url,
         'modelId': model_route.model_id,
     }
-
-
-def _resolve_default_level(
-    *,
-    levels: tuple[PositiveThinkingLevelIntent, ...],
-    default_level: ThinkingLevelIntent | None,
-) -> ThinkingLevelIntent:
-    if len(levels) == 0:
-        return 'off'
-    if default_level == 'off':
-        return 'off'
-    if default_level in levels:
-        return default_level
-    if 'auto' in levels:
-        return 'auto'
-    return levels[0]
-
-
-def _normalize_thinking_level_intent(value: Any) -> ThinkingLevelIntent | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip().lower()
-    if normalized in {'off', 'auto', 'low', 'medium', 'high', 'xhigh'}:
-        return normalized
-    return None
-
-
-def _normalize_positive_thinking_levels(value: Any) -> tuple[PositiveThinkingLevelIntent, ...]:
-    if not isinstance(value, list):
-        return ()
-    normalized = {
-        level
-        for item in value
-        for level in [_normalize_thinking_level_intent(item)]
-        if level is not None and level != 'off' and level in _POSITIVE_THINKING_LEVEL_SET
-    }
-    return tuple(level for level in _POSITIVE_THINKING_LEVEL_ORDER if level in normalized)
 
 
 def _normalize_identifier(value: str) -> str:
@@ -407,11 +373,9 @@ def _normalize_identifier(value: str) -> str:
 __all__ = [
     'CanonicalThinkingCapability',
     'ThinkingAdaptationResult',
-    'ThinkingCapabilityOverrideInput',
     'ThinkingCapabilitySource',
     'ThinkingCapabilityStatus',
     'ThinkingLevelIntent',
     'adapt_thinking_intent',
-    'parse_thinking_capability_override',
     'resolve_canonical_thinking_capability',
 ]

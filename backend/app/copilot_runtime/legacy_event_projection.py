@@ -1,4 +1,4 @@
-"""Compatibility projection from unified execution events to legacy runtime run events."""
+"""Projection from unified execution events to runtime run events."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from .run_events import (
 
 
 @dataclass(slots=True)
-class LegacyRuntimeRunEventProjector:
+class RuntimeRunEventProjector:
     events: RuntimeRunEventFactory
     assistant_message_id: str
     resolved_model_route: ResolvedRuntimeModelRoute | None = None
@@ -163,4 +163,4 @@ class LegacyRuntimeRunEventProjector:
         raise ValueError(f"Unsupported execution event type '{event.type}'.")
 
 
-__all__ = ["LegacyRuntimeRunEventProjector"]
+__all__ = ["RuntimeRunEventProjector"]
