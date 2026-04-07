@@ -15,6 +15,7 @@ import {
   createRuntimeModelRoute,
   createRuntimeRunCompletedEvent,
   createRuntimeRunStartResponse,
+  createRuntimeThinkingSelection,
   createSseEventStream,
   createUserMessage,
   runtimeUrl,
@@ -51,7 +52,7 @@ describe('thread run primary path', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
-      thinkingLevelIntent: 'auto',
+      thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
       enabledTools: ['tool.file-convert'],
       debugModeEnabled: true,
       requestOptions: {
@@ -78,9 +79,11 @@ describe('thread run primary path', () => {
             modelRoute: createRuntimeModelRoute(),
             thinkingSelection: {
               series: 'compat-discrete-selection-v1',
-              mode: 'preset',
-              level: 'auto',
-              budgetTokens: null,
+              value: {
+                valueType: 'code',
+                code: 'auto',
+                labelZh: '自动',
+              },
             },
             enabledTools: ['tool.file-convert'],
             debugModeEnabled: true,

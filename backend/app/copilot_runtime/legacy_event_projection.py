@@ -67,10 +67,8 @@ class LegacyRuntimeRunEventProjector:
         *,
         requested_thinking_selection: Mapping[str, Any] | None,
         applied_thinking_selection: Mapping[str, Any] | None,
-        requested_thinking_level: str | None,
-        applied_thinking_level: str | None,
         thinking_capability_snapshot: Mapping[str, Any],
-        thinking_selection_result: Mapping[str, Any] | None = None,
+        thinking_series_decision: Mapping[str, Any] | None = None,
         reasoning_suppression_basis: Mapping[str, Any] | None = None,
     ) -> RuntimeRunEvent:
         payload: dict[str, Any] = {
@@ -84,12 +82,10 @@ class LegacyRuntimeRunEventProjector:
                 if applied_thinking_selection is None
                 else dict(applied_thinking_selection)
             ),
-            "requestedThinkingLevel": requested_thinking_level,
-            "appliedThinkingLevel": applied_thinking_level,
             "thinkingCapabilitySnapshot": dict(thinking_capability_snapshot),
         }
-        if thinking_selection_result is not None:
-            payload["thinkingSelectionResult"] = dict(thinking_selection_result)
+        if thinking_series_decision is not None:
+            payload["thinkingSeriesDecision"] = dict(thinking_series_decision)
         if reasoning_suppression_basis is not None:
             payload["reasoningSuppressionBasis"] = dict(reasoning_suppression_basis)
         return self.events.build(

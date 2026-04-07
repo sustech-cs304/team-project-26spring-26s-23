@@ -214,7 +214,7 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
                     "requestedThinkingLevel": "medium",
                     "appliedThinkingLevel": None,
                     "thinkingCapabilitySnapshot": thinking_capability_snapshot,
-                    "thinkingSelectionResult": {
+                    "thinkingSeriesDecision": {
                         "requestedSelection": {"kind": "preset", "value": "medium"},
                         "appliedSelection": None,
                         "requestedThinkingLevel": "medium",
@@ -266,15 +266,17 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
     assert updated_run.assistant_text == "Hello back"
     assert updated_run.metadata["requestedThinkingSelection"] == {
         "series": "compat-discrete-selection-v1",
-        "mode": "preset",
-        "level": "medium",
-        "budgetTokens": None,
+        "value": {
+            "valueType": "code",
+            "code": "medium",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "medium",
+        },
     }
     assert updated_run.metadata["appliedThinkingSelection"] is None
-    assert updated_run.metadata["requestedThinkingLevel"] == "medium"
-    assert updated_run.metadata["appliedThinkingLevel"] is None
     assert updated_run.metadata["thinkingCapabilitySnapshot"] == thinking_capability_snapshot
-    assert updated_run.metadata["thinkingSelectionResult"] == {
+    assert updated_run.metadata["thinkingSeriesDecision"] == {
         "requestedSelection": {"kind": "preset", "value": "medium"},
         "appliedSelection": None,
         "requestedThinkingLevel": "medium",
@@ -293,9 +295,13 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
     assert run_view.requestedThinkingSelection is not None
     assert run_view.requestedThinkingSelection.to_dict() == {
         "series": "compat-discrete-selection-v1",
-        "mode": "preset",
-        "level": "medium",
-        "budgetTokens": None,
+        "value": {
+            "valueType": "code",
+            "code": "medium",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "medium",
+        },
     }
     assert run_view.appliedThinkingSelection is None
     assert run_view.requestedThinkingLevel == "medium"
@@ -409,22 +415,26 @@ def test_get_thinking_capability_returns_structured_capability_response() -> Non
     assert response.sessionId == "session-1"
     assert response.capabilitySchemaVersion == "canonical-thinking-capability-v2"
     assert response.capability == {
-        "status": "unknown-with-override",
-        "source": "override",
-        "supported": True,
-        "series": "compat-override-discrete-v1",
-        "controlSpec": {
-            "kind": "discrete",
-            "selectionKind": "preset",
-            "presetOptions": [
-                {"kind": "preset", "value": "off"},
-                {"kind": "preset", "value": "low"},
-                {"kind": "preset", "value": "high"},
-            ],
+        "status": "verified-supported",
+        "source": "verified",
+        "series": "openai-4-level-minimal-v1",
+        "seriesLabelZh": "OpenAI 4 档 Minimal 系",
+        "editorType": "discrete",
+        "allowedValues": [
+            {"valueType": "code", "code": "minimal", "mode": None, "budgetTokens": None, "labelZh": "极简"},
+            {"valueType": "code", "code": "low", "mode": None, "budgetTokens": None, "labelZh": "低"},
+            {"valueType": "code", "code": "medium", "mode": None, "budgetTokens": None, "labelZh": "中"},
+            {"valueType": "code", "code": "high", "mode": None, "budgetTokens": None, "labelZh": "高"},
+        ],
+        "defaultValue": {
+            "valueType": "code",
+            "code": "medium",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "中",
         },
-        "defaultSelection": {"kind": "preset", "value": "high"},
-        "reasonCode": "override_candidate_control_applied",
-        "providerHint": "unknown-route-override",
+        "providerBuilderKey": "openai_reasoning_effort_v1",
+        "reasonCode": "verified_series_resolved",
         "routeFingerprint": {
             "providerProfileId": "provider-1",
             "provider": "openai",
@@ -432,24 +442,34 @@ def test_get_thinking_capability_returns_structured_capability_response() -> Non
             "baseUrl": "https://example.com/v1",
             "modelId": "gpt-4.1",
         },
-        "provenance": {
-            "routeStatus": "unknown",
-            "override": {
-                "present": True,
-                "applied": True,
-                "source": "settings-page",
-                "format": "legacy-levels",
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "supportedLevels": ["off", "low", "high"],
-        "defaultLevel": "high",
-        "overrideLevels": ["off", "low", "high"],
     }
-    assert summarize_runtime_thinking_capability(response.capability) == response.capability
+    assert summarize_runtime_thinking_capability(response.capability) == {
+        "status": "verified-supported",
+        "source": "verified",
+        "series": "openai-4-level-minimal-v1",
+        "seriesLabelZh": "OpenAI 4 档 Minimal 系",
+        "editorType": "discrete",
+        "allowedValues": [
+            {"valueType": "code", "code": "minimal", "labelZh": "极简"},
+            {"valueType": "code", "code": "low", "labelZh": "低"},
+            {"valueType": "code", "code": "medium", "labelZh": "中"},
+            {"valueType": "code", "code": "high", "labelZh": "高"},
+        ],
+        "defaultValue": {
+            "valueType": "code",
+            "code": "medium",
+            "labelZh": "中",
+        },
+        "providerBuilderKey": "openai_reasoning_effort_v1",
+        "reasonCode": "verified_series_resolved",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+    }
 
 
 def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -> None:

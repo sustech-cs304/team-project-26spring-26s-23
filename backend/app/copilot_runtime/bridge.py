@@ -16,6 +16,7 @@ from .contracts import (
     RuntimeThinkingCapabilityResponse,
     RuntimeThinkingSelection,
     _build_reasoning_suppression_basis as build_reasoning_suppression_basis,
+    _coerce_runtime_thinking_selection,
 )
 from .debug_logging import (
     log_runtime_chain_debug,
@@ -382,7 +383,7 @@ class RuntimeBridge:
                     ),
                 ),
                 thinking_selection=_to_stored_thinking_selection(resolved_thinking_selection),
-                thinking_level_intent=request.policy.thinkingLevelIntent,
+                thinking_level_intent=None,
                 thinking_capability_override=None
                 if request.policy.thinkingCapabilityOverride is None
                 else dict(request.policy.thinkingCapabilityOverride),
@@ -415,11 +416,6 @@ class RuntimeBridge:
                     ),
                 ),
                 thinkingSelection=runtime_thinking_selection,
-                thinkingLevelIntent=(
-                    stored_policy.thinking_level_intent
-                    if runtime_thinking_selection is None
-                    else None
-                ),
                 thinkingCapabilityOverride=None
                 if stored_policy.thinking_capability_override is None
                 else dict(stored_policy.thinking_capability_override),
@@ -437,7 +433,6 @@ class RuntimeBridge:
             "requestedThinkingSelection": (
                 None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
             ),
-            "requestedThinkingLevel": request.policy.resolve_thinking_level_intent(),
         }
         resolver = self._model_route_resolver
         if resolver is None:
@@ -456,20 +451,19 @@ class RuntimeBridge:
                 applied_selection_payload=adaptation.applied_selection,
                 capability_series=adaptation.capability.series,
             )
-            thinking_selection_result = adaptation.to_public_dict()
+            thinking_series_decision = adaptation.to_public_dict()
             capability_snapshot = adaptation.capability.to_public_dict()
             reasoning_suppression_basis = build_reasoning_suppression_basis(
                 capability=capability_snapshot,
-                applied_thinking_level=adaptation.applied_intent,
+                applied_selection=applied_thinking_selection,
             )
             metadata.update(
                 {
                     "appliedThinkingSelection": (
                         None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
                     ),
-                    "appliedThinkingLevel": adaptation.applied_intent,
                     "thinkingCapabilitySnapshot": capability_snapshot,
-                    "thinkingSelectionResult": thinking_selection_result,
+                    "thinkingSeriesDecision": thinking_series_decision,
                     "reasoningSuppressionBasis": reasoning_suppression_basis,
                 }
             )
@@ -483,10 +477,8 @@ class RuntimeBridge:
                 appliedThinkingSelection=(
                     None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
                 ),
-                requestedThinkingLevel=adaptation.requested_intent,
-                appliedThinkingLevel=adaptation.applied_intent,
                 capability=summarize_runtime_thinking_capability(adaptation.capability),
-                selectionResult=summarize_runtime_thinking_selection_result(thinking_selection_result),
+                selectionResult=summarize_runtime_thinking_selection_result(thinking_series_decision),
                 reasoningSuppressionBasis=summarize_runtime_reasoning_suppression_basis(
                     reasoning_suppression_basis
                 ),
@@ -501,7 +493,6 @@ class RuntimeBridge:
                 requestedThinkingSelection=(
                     None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
                 ),
-                requestedThinkingLevel=request.policy.resolve_thinking_level_intent(),
                 overrideInput=request.policy.thinkingCapabilityOverride,
                 error=summarize_exception(exc),
             )
@@ -548,10 +539,8 @@ class RuntimeBridge:
                     if run_view.appliedThinkingSelection is None
                     else run_view.appliedThinkingSelection.to_dict()
                 ),
-                "requestedThinkingLevel": run_view.requestedThinkingLevel,
-                "appliedThinkingLevel": run_view.appliedThinkingLevel,
                 "thinkingCapabilitySnapshot": run_view.thinkingCapabilitySnapshot,
-                "thinkingSelectionResult": run_view.thinkingSelectionResult,
+                "thinkingSeriesDecision": run_view.thinkingSeriesDecision,
                 "reasoningSuppressionBasis": run_view.reasoningSuppressionBasis,
             }
             return {key: value for key, value in payload.items() if value is not None}
@@ -566,15 +555,15 @@ class RuntimeBridge:
             "appliedThinkingSelection": _normalize_thinking_selection_payload(
                 payload.get("appliedThinkingSelection")
             ),
-            "requestedThinkingLevel": payload.get("requestedThinkingLevel"),
-            "appliedThinkingLevel": payload.get("appliedThinkingLevel"),
             "thinkingCapabilitySnapshot": (
                 dict(payload.get("thinkingCapabilitySnapshot"))
                 if isinstance(payload.get("thinkingCapabilitySnapshot"), dict)
                 else None
             ),
-            "thinkingSelectionResult": (
-                dict(payload.get("thinkingSelectionResult"))
+            "thinkingSeriesDecision": (
+                dict(payload.get("thinkingSeriesDecision"))
+                if isinstance(payload.get("thinkingSeriesDecision"), dict)
+                else dict(payload.get("thinkingSelectionResult"))
                 if isinstance(payload.get("thinkingSelectionResult"), dict)
                 else None
             ),
@@ -633,13 +622,8 @@ def _to_runtime_thinking_selection(
 
 
 def _normalize_thinking_selection_payload(value: Any) -> dict[str, Any] | None:
-    if not isinstance(value, dict):
-        return None
-    normalized: dict[str, Any] = {}
-    for key in ("series", "mode", "level", "budgetTokens"):
-        if key in value:
-            normalized[key] = value[key]
-    return normalized or None
+    selection = _coerce_runtime_thinking_selection(value)
+    return None if selection is None else selection.to_dict()
 
 
 

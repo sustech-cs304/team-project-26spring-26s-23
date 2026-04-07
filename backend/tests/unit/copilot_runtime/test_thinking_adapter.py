@@ -1,566 +1,281 @@
 from __future__ import annotations
 
-from app.copilot_runtime.contracts import RuntimeThinkingSelection
-from app.copilot_runtime.debug_logging import summarize_runtime_thinking_capability
+from app.copilot_runtime.contracts import RuntimeThinkingSelection, RuntimeThinkingValue
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.thinking_adapter import (
-    adapt_thinking_intent,
     adapt_thinking_selection,
     parse_thinking_capability_override,
     resolve_canonical_thinking_capability,
 )
 
 
-def test_resolve_canonical_thinking_capability_verified_supported_shape_and_legacy_fields() -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_route(model_id="glm-5-turbo", base_url="https://api.z.ai/api/paas/v4")
-    ).to_public_dict()
+def test_resolve_verified_openai_6_level_series_for_gpt5_route() -> None:
+    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-5")).to_public_dict()
 
     assert capability == {
         "status": "verified-supported",
         "source": "verified",
-        "supported": True,
-        "series": "zai-glm-thinking-v1",
-        "controlSpec": {
-            "kind": "off-auto",
-            "selectionKind": "preset",
-            "presetOptions": [
-                {"kind": "preset", "value": "off"},
-                {"kind": "preset", "value": "auto"},
-            ],
+        "series": "openai-6-level-superset-v1",
+        "seriesLabelZh": "OpenAI 6 档总超集",
+        "editorType": "discrete",
+        "allowedValues": [
+            {"valueType": "code", "code": "none", "labelZh": "无", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "minimal", "labelZh": "极简", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "low", "labelZh": "低", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "medium", "labelZh": "中", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "high", "labelZh": "高", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "xhigh", "labelZh": "超高", "mode": None, "budgetTokens": None},
+        ],
+        "defaultValue": {
+            "valueType": "code",
+            "code": "medium",
+            "labelZh": "中",
+            "mode": None,
+            "budgetTokens": None,
         },
-        "defaultSelection": {"kind": "preset", "value": "auto"},
-        "reasonCode": "zai_glm_verified_supported",
-        "providerHint": "zai-glm-openai-compatible",
+        "providerBuilderKey": "openai_reasoning_effort_v1",
+        "reasonCode": "verified_series_resolved",
         "routeFingerprint": {
             "providerProfileId": "provider-1",
             "provider": "openai",
             "endpointType": "openai-compatible",
-            "baseUrl": "https://api.z.ai/api/paas/v4",
-            "modelId": "glm-5-turbo",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-5",
         },
-        "provenance": {
-            "routeStatus": "verified",
-            "override": {
-                "present": False,
-                "applied": False,
-                "source": None,
-                "format": None,
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "supportedLevels": ["off", "auto"],
-        "defaultLevel": "auto",
-        "overrideLevels": [],
     }
 
 
-def test_resolve_canonical_thinking_capability_verified_unsupported_shape_and_legacy_fields() -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_route(model_id="glm-4", base_url="https://open.bigmodel.cn/api/paas/v4")
-    ).to_public_dict()
-
-    assert capability == {
-        "status": "verified-unsupported",
-        "source": "verified",
-        "supported": False,
-        "series": "zai-glm-fixed-off-v1",
-        "controlSpec": {
-            "kind": "fixed",
-            "selectionKind": "preset",
-            "presetOptions": [{"kind": "preset", "value": "off"}],
-            "fixedSelection": {"kind": "preset", "value": "off"},
-        },
-        "defaultSelection": {"kind": "preset", "value": "off"},
-        "reasonCode": "zai_glm_verified_unsupported",
-        "providerHint": "zai-glm-openai-compatible",
-        "routeFingerprint": {
-            "providerProfileId": "provider-1",
-            "provider": "openai",
-            "endpointType": "openai-compatible",
-            "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
-            "modelId": "glm-4",
-        },
-        "provenance": {
-            "routeStatus": "verified",
-            "override": {
-                "present": False,
-                "applied": False,
-                "source": None,
-                "format": None,
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "supportedLevels": [],
-        "defaultLevel": None,
-        "overrideLevels": [],
-    }
-
-
-def test_resolve_canonical_thinking_capability_unknown_without_override_shape_and_legacy_fields() -> None:
+def test_resolve_verified_openai_4_level_series_for_gpt41_route() -> None:
     capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-4.1")).to_public_dict()
+
+    assert capability["series"] == "openai-4-level-minimal-v1"
+    assert capability["seriesLabelZh"] == "OpenAI 4 档 Minimal 系"
+    assert capability["editorType"] == "discrete"
+    assert [value["code"] for value in capability["allowedValues"]] == [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+    ]
+    assert capability["defaultValue"]["code"] == "medium"
+
+
+def test_openai_6_level_and_4_level_are_different_series() -> None:
+    gpt5_capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-5"))
+    gpt41_capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-4.1"))
+
+    assert gpt5_capability.series == "openai-6-level-superset-v1"
+    assert gpt41_capability.series == "openai-4-level-minimal-v1"
+    assert gpt5_capability.series != gpt41_capability.series
+
+
+def test_resolve_unknown_route_without_override_returns_empty_series_snapshot() -> None:
+    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="unknown-model")).to_public_dict()
 
     assert capability == {
         "status": "unknown-without-override",
         "source": "unknown",
-        "supported": False,
-        "series": "fixed-off-v1",
-        "controlSpec": {
-            "kind": "fixed",
-            "selectionKind": "preset",
-            "presetOptions": [{"kind": "preset", "value": "off"}],
-            "fixedSelection": {"kind": "preset", "value": "off"},
-        },
-        "defaultSelection": {"kind": "preset", "value": "off"},
+        "series": None,
+        "seriesLabelZh": None,
+        "editorType": None,
+        "allowedValues": [],
+        "defaultValue": None,
+        "providerBuilderKey": None,
         "reasonCode": "route_not_verified",
-        "providerHint": "unknown-route",
         "routeFingerprint": {
             "providerProfileId": "provider-1",
             "provider": "openai",
             "endpointType": "openai-compatible",
             "baseUrl": "https://example.com/v1",
-            "modelId": "gpt-4.1",
+            "modelId": "unknown-model",
         },
-        "provenance": {
-            "routeStatus": "unknown",
-            "override": {
-                "present": False,
-                "applied": False,
-                "source": None,
-                "format": None,
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "supportedLevels": [],
-        "defaultLevel": None,
-        "overrideLevels": [],
     }
 
 
-def test_resolve_canonical_thinking_capability_unknown_with_legacy_override_shape_and_legacy_fields() -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_route(model_id="gpt-4.1"),
-        thinking_capability_override={
-            "supported": True,
-            "levels": ["low", "high"],
-            "defaultLevel": "high",
-            "source": "settings-page",
-        },
-    ).to_public_dict()
-
-    assert capability == {
-        "status": "unknown-with-override",
-        "source": "override",
-        "supported": True,
-        "series": "compat-override-discrete-v1",
-        "controlSpec": {
-            "kind": "discrete",
-            "selectionKind": "preset",
-            "presetOptions": [
-                {"kind": "preset", "value": "off"},
-                {"kind": "preset", "value": "low"},
-                {"kind": "preset", "value": "high"},
-            ],
-        },
-        "defaultSelection": {"kind": "preset", "value": "high"},
-        "reasonCode": "override_candidate_control_applied",
-        "providerHint": "unknown-route-override",
-        "routeFingerprint": {
-            "providerProfileId": "provider-1",
-            "provider": "openai",
-            "endpointType": "openai-compatible",
-            "baseUrl": "https://example.com/v1",
-            "modelId": "gpt-4.1",
-        },
-        "provenance": {
-            "routeStatus": "unknown",
-            "override": {
-                "present": True,
-                "applied": True,
-                "source": "settings-page",
-                "format": "legacy-levels",
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "supportedLevels": ["off", "low", "high"],
-        "defaultLevel": "high",
-        "overrideLevels": ["off", "low", "high"],
-    }
-
-
-def test_parse_thinking_capability_override_accepts_series_input_shape() -> None:
+def test_parse_thinking_capability_override_accepts_series_template_shape() -> None:
     override = parse_thinking_capability_override(
         {
             "supported": True,
             "series": "gemini-2.5-budget-v1",
-            "input": {
-                "kind": "budget",
-                "minTokens": 0,
-                "maxTokens": 32768,
-                "stepTokens": 1024,
-            },
-            "defaultSelection": {"mode": "budget", "budgetTokens": 4096},
             "source": "settings-page",
+            "template": {
+                "editorType": "budget",
+                "allowedValues": [
+                    {"valueType": "budget", "mode": "off", "labelZh": "关闭"},
+                    {"valueType": "budget", "mode": "dynamic", "labelZh": "动态"},
+                ],
+                "defaultValue": {
+                    "valueType": "budget",
+                    "mode": "budget",
+                    "budgetTokens": 4096,
+                    "labelZh": "4096 Tokens",
+                },
+                "budget": {
+                    "minTokens": 0,
+                    "maxTokens": 32768,
+                    "stepTokens": 1024,
+                    "anchorTokens": [0, 4096, 8192],
+                },
+            },
         }
     )
 
     assert override is not None
+    assert override.supported is True
     assert override.series == "gemini-2.5-budget-v1"
-    assert override.format == "series-input"
-    assert override.control_spec is not None
-    assert override.control_spec.to_public_dict() == {
-        "kind": "budget",
-        "selectionKind": "budget",
-        "presetOptions": [{"kind": "preset", "value": "off"}],
-        "budget": {
-            "minTokens": 0,
-            "maxTokens": 32768,
-            "stepTokens": 1024,
-        },
+    assert override.source == "settings-page"
+    assert override.editor_type == "budget"
+    assert [value.to_dict() for value in override.allowed_values] == [
+        {"valueType": "budget", "code": None, "mode": "off", "budgetTokens": None, "labelZh": "关闭"},
+        {"valueType": "budget", "code": None, "mode": "dynamic", "budgetTokens": None, "labelZh": "动态"},
+    ]
+    assert override.default_value is not None
+    assert override.default_value.to_dict() == {
+        "valueType": "budget",
+        "code": None,
+        "mode": "budget",
+        "budgetTokens": 4096,
+        "labelZh": "4096 Tokens",
     }
-    assert override.default_selection is not None
-    assert override.default_selection.to_public_dict() == {"kind": "budget", "budgetTokens": 4096}
+    assert override.budget is not None
+    assert override.budget.to_public_dict() == {
+        "minTokens": 0,
+        "maxTokens": 32768,
+        "stepTokens": 1024,
+        "anchorTokens": [0, 4096, 8192],
+    }
 
 
-def test_resolve_canonical_thinking_capability_unknown_with_series_input_override() -> None:
+def test_resolve_unknown_route_with_override_uses_override_series_template() -> None:
     capability = resolve_canonical_thinking_capability(
-        model_route=_route(model_id="gpt-4.1"),
+        model_route=_route(model_id="unknown-model"),
         thinking_capability_override={
             "supported": True,
-            "series": "compat-discrete-levels-v1",
-            "input": {
-                "kind": "discrete",
-                "levels": ["low", "medium", "high"],
+            "series": "qwen-thinking-switch-v1",
+            "template": {
+                "editorType": "discrete",
+                "allowedValues": [
+                    {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                    {"valueType": "code", "code": "true", "labelZh": "开启"},
+                ],
+                "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
             },
-            "defaultSelection": {"mode": "preset", "level": "medium"},
-            "source": "settings-page",
         },
     ).to_public_dict()
 
-    assert capability == {
-        "status": "unknown-with-override",
-        "source": "override",
-        "supported": True,
-        "series": "compat-discrete-levels-v1",
-        "controlSpec": {
-            "kind": "discrete",
-            "selectionKind": "preset",
-            "presetOptions": [
-                {"kind": "preset", "value": "off"},
-                {"kind": "preset", "value": "low"},
-                {"kind": "preset", "value": "medium"},
-                {"kind": "preset", "value": "high"},
-            ],
-        },
-        "defaultSelection": {"kind": "preset", "value": "medium"},
-        "reasonCode": "override_candidate_control_applied",
-        "providerHint": "unknown-route-override",
-        "routeFingerprint": {
-            "providerProfileId": "provider-1",
-            "provider": "openai",
-            "endpointType": "openai-compatible",
-            "baseUrl": "https://example.com/v1",
-            "modelId": "gpt-4.1",
-        },
-        "provenance": {
-            "routeStatus": "unknown",
-            "override": {
-                "present": True,
-                "applied": True,
-                "source": "settings-page",
-                "format": "series-input",
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "supportedLevels": ["off", "low", "medium", "high"],
-        "defaultLevel": "medium",
-        "overrideLevels": ["off", "low", "medium", "high"],
-    }
+    assert capability["status"] == "unknown-with-override"
+    assert capability["source"] == "override"
+    assert capability["series"] == "qwen-thinking-switch-v1"
+    assert capability["seriesLabelZh"] == "Qwen Thinking 开关"
+    assert capability["editorType"] == "discrete"
+    assert capability["providerBuilderKey"] == "qwen_switch_v1"
+    assert [value["code"] for value in capability["allowedValues"]] == ["false", "true"]
+    assert capability["defaultValue"]["code"] == "true"
 
 
-def test_resolve_canonical_thinking_capability_verified_route_does_not_expand_from_series_input_override() -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_route(model_id="glm-5-turbo", base_url="https://api.z.ai/api/paas/v4"),
-        thinking_capability_override={
-            "supported": True,
-            "series": "compat-discrete-levels-v1",
-            "input": {
-                "kind": "discrete",
-                "levels": ["low", "high"],
-            },
-            "defaultSelection": {"mode": "preset", "level": "high"},
-            "source": "settings-page",
-        },
-    ).to_public_dict()
+def test_adapt_thinking_selection_applies_verified_series_builder() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="openai-6-level-superset-v1",
+            value=RuntimeThinkingValue(valueType="code", code="high", labelZh="高"),
+        ),
+        model_route=_route(model_id="gpt-5"),
+    )
 
-    assert capability["status"] == "verified-supported"
-    assert capability["source"] == "verified"
-    assert capability["series"] == "zai-glm-thinking-v1"
-    assert capability["supportedLevels"] == ["off", "auto"]
-    assert capability["defaultLevel"] == "auto"
-    assert capability["provenance"] == {
-        "routeStatus": "verified",
-        "override": {
-            "present": True,
-            "applied": False,
-            "source": "settings-page",
-            "format": "series-input",
-        },
-    }
+    assert result.applied is True
+    assert result.reason == "verified_series_builder_applied"
+    assert result.error_code is None
+    assert result.provider_builder_key == "openai_reasoning_effort_v1"
+    assert result.mapping_reason_code == "openai_reasoning_effort_high"
+    assert result.model_settings == {"reasoning_effort": "high"}
+    assert result.requested_selection is not None
+    assert result.applied_selection is not None
+    assert result.requested_selection.to_dict() == result.applied_selection.to_dict()
 
 
-def test_resolve_canonical_thinking_capability_unknown_with_budget_override_uses_structured_selection() -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_route(model_id="gpt-4.1"),
+def test_adapt_thinking_selection_rejects_requested_series_mismatch() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="openai-4-level-minimal-v1",
+            value=RuntimeThinkingValue(valueType="code", code="medium", labelZh="中"),
+        ),
+        model_route=_route(model_id="gpt-5"),
+    )
+
+    assert result.applied is False
+    assert result.reason == "requested_series_mismatch"
+    assert result.error_code == "thinking_series_not_supported_for_route"
+    assert result.mapping_reason_code == "requested_series_mismatch"
+    assert result.provider_builder_key == "openai_reasoning_effort_v1"
+    assert result.applied_selection is None
+
+
+def test_adapt_thinking_selection_rejects_unknown_route_without_override() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="openai-6-level-superset-v1",
+            value=RuntimeThinkingValue(valueType="code", code="high", labelZh="高"),
+        ),
+        model_route=_route(model_id="unknown-model"),
+    )
+
+    assert result.applied is False
+    assert result.reason == "thinking_series_unknown_without_override"
+    assert result.error_code == "thinking_series_unknown_without_override"
+    assert result.mapping_reason_code == "series_unresolved"
+    assert result.provider_builder_key is None
+
+
+def test_adapt_thinking_selection_uses_override_budget_builder() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="gemini-2.5-budget-v1",
+            value=RuntimeThinkingValue(
+                valueType="budget",
+                mode="budget",
+                budgetTokens=8192,
+                labelZh="8192 Tokens",
+            ),
+        ),
+        model_route=_route(model_id="unknown-model"),
         thinking_capability_override={
             "supported": True,
             "series": "gemini-2.5-budget-v1",
-            "source": "settings-page",
-            "controlSpec": {
-                "kind": "budget",
-                "presetOptions": [{"kind": "preset", "value": "off"}],
+            "template": {
+                "editorType": "budget",
+                "allowedValues": [
+                    {"valueType": "budget", "mode": "off", "labelZh": "关闭"},
+                    {"valueType": "budget", "mode": "dynamic", "labelZh": "动态"},
+                ],
+                "defaultValue": {
+                    "valueType": "budget",
+                    "mode": "dynamic",
+                    "budgetTokens": None,
+                    "labelZh": "动态",
+                },
                 "budget": {
                     "minTokens": 0,
                     "maxTokens": 32768,
                     "stepTokens": 1024,
+                    "anchorTokens": [0, 4096, 8192],
                 },
             },
-            "defaultSelection": {"kind": "budget", "budgetTokens": 8192},
-            "visibility": {
-                "reasoning": "suppressed",
-                "supportsSuppression": True,
-            },
         },
-    ).to_public_dict()
-
-    assert capability == {
-        "status": "unknown-with-override",
-        "source": "override",
-        "supported": True,
-        "series": "gemini-2.5-budget-v1",
-        "controlSpec": {
-            "kind": "budget",
-            "selectionKind": "budget",
-            "presetOptions": [{"kind": "preset", "value": "off"}],
-            "budget": {
-                "minTokens": 0,
-                "maxTokens": 32768,
-                "stepTokens": 1024,
-            },
-        },
-        "defaultSelection": {"kind": "budget", "budgetTokens": 8192},
-        "reasonCode": "override_candidate_control_applied",
-        "providerHint": "unknown-route-override",
-        "routeFingerprint": {
-            "providerProfileId": "provider-1",
-            "provider": "openai",
-            "endpointType": "openai-compatible",
-            "baseUrl": "https://example.com/v1",
-            "modelId": "gpt-4.1",
-        },
-        "provenance": {
-            "routeStatus": "unknown",
-            "override": {
-                "present": True,
-                "applied": True,
-                "source": "settings-page",
-                "format": "canonical-control",
-            },
-        },
-        "visibility": {
-            "reasoning": "suppressed",
-            "supportsSuppression": True,
-        },
-        "supportedLevels": ["off"],
-        "defaultLevel": None,
-        "overrideLevels": ["off"],
-    }
-
-
-def test_summarize_runtime_thinking_capability_returns_loggable_schema_summary() -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_route(model_id="gpt-4.1"),
-        thinking_capability_override={
-            "supported": True,
-            "series": "gemini-2.5-budget-v1",
-            "source": "settings-page",
-            "controlSpec": {
-                "kind": "budget",
-                "presetOptions": [{"kind": "preset", "value": "off"}],
-                "budget": {
-                    "minTokens": 0,
-                    "maxTokens": 32768,
-                    "stepTokens": 1024,
-                },
-            },
-            "defaultSelection": {"kind": "budget", "budgetTokens": 8192},
-            "visibility": {
-                "reasoning": "suppressed",
-                "supportsSuppression": True,
-            },
-        },
-    )
-
-    assert summarize_runtime_thinking_capability(capability) == capability.to_public_dict()
-
-
-
-def test_adapt_thinking_selection_verified_supported_route_applies_provider_mapping() -> None:
-    result = adapt_thinking_selection(
-        selection=RuntimeThinkingSelection(
-            series="zai-glm-thinking-v1",
-            mode="preset",
-            level="auto",
-        ),
-        model_route=_route(model_id="glm-5-turbo", base_url="https://api.z.ai/api/paas/v4"),
     )
 
     assert result.applied is True
-    assert result.requested_selection is not None
-    assert result.requested_selection.to_public_dict() == {"kind": "preset", "value": "auto"}
-    assert result.applied_selection is not None
-    assert result.applied_selection.to_public_dict() == {"kind": "preset", "value": "auto"}
-    assert result.requested_intent == "auto"
-    assert result.applied_intent == "auto"
-    assert result.reason == "verified_provider_mapping_applied"
+    assert result.reason == "override_series_builder_applied"
     assert result.error_code is None
-    assert result.provider_mapping == "zai_glm_openai_compatible"
-    assert result.mapping_reason_code == "zai_glm_series_auto"
+    assert result.provider_builder_key == "gemini_budget_v1"
+    assert result.mapping_reason_code == "gemini_budget_tokens"
     assert result.model_settings == {
         "extra_body": {
             "thinking": {
-                "type": "enabled",
+                "type": "budget_tokens",
+                "budget_tokens": 8192,
             }
         }
     }
-
-
-
-def test_adapt_thinking_selection_verified_unsupported_route_cannot_be_expanded_by_override() -> None:
-    result = adapt_thinking_selection(
-        selection=RuntimeThinkingSelection(
-            series="compat-discrete-levels-v1",
-            mode="preset",
-            level="high",
-        ),
-        model_route=_route(model_id="glm-4", base_url="https://open.bigmodel.cn/api/paas/v4"),
-        thinking_capability_override={
-            "supported": True,
-            "series": "compat-discrete-levels-v1",
-            "input": {
-                "kind": "discrete",
-                "levels": ["high"],
-            },
-            "defaultSelection": {"mode": "preset", "level": "high"},
-            "source": "settings-page",
-        },
-    )
-
-    assert result.capability.status == "verified-unsupported"
-    assert result.capability.source == "verified"
-    assert result.applied is False
-    assert result.applied_selection is None
-    assert result.reason == "requested_level_not_in_capability"
-    assert result.error_code == "thinking_not_supported_for_route"
-    assert result.mapping_reason_code == "selection_not_allowed_by_capability"
-
-
-
-def test_adapt_thinking_selection_unknown_with_override_applies_when_provider_mapping_exists() -> None:
-    result = adapt_thinking_selection(
-        selection=RuntimeThinkingSelection(
-            series="zai-glm-thinking-v1",
-            mode="preset",
-            level="auto",
-        ),
-        model_route=_route(model_id="glm-5-experimental", base_url="https://api.z.ai/api/paas/v4"),
-        thinking_capability_override={
-            "supported": True,
-            "series": "zai-glm-thinking-v1",
-            "input": {
-                "kind": "discrete",
-                "levels": ["auto"],
-            },
-            "defaultSelection": {"mode": "preset", "level": "auto"},
-            "source": "settings-page",
-        },
-    )
-
-    assert result.capability.status == "unknown-with-override"
-    assert result.capability.source == "override"
-    assert result.applied is True
-    assert result.reason == "override_provider_mapping_applied"
-    assert result.error_code is None
-    assert result.provider_mapping == "zai_glm_openai_compatible"
-    assert result.mapping_reason_code == "zai_glm_series_auto"
-    assert result.model_settings == {
-        "extra_body": {
-            "thinking": {
-                "type": "enabled",
-            }
-        }
-    }
-
-
-
-def test_adapt_thinking_selection_unknown_with_override_fails_when_provider_mapping_missing() -> None:
-    result = adapt_thinking_selection(
-        selection=RuntimeThinkingSelection(
-            series="compat-discrete-levels-v1",
-            mode="preset",
-            level="high",
-        ),
-        model_route=_route(model_id="gpt-4.1"),
-        thinking_capability_override={
-            "supported": True,
-            "series": "compat-discrete-levels-v1",
-            "input": {
-                "kind": "discrete",
-                "levels": ["high"],
-            },
-            "defaultSelection": {"mode": "preset", "level": "high"},
-            "source": "settings-page",
-        },
-    )
-
-    assert result.capability.status == "unknown-with-override"
-    assert result.capability.source == "override"
-    assert result.applied is False
-    assert result.applied_selection is None
-    assert result.reason == "requested_selection_not_mappable_for_provider"
-    assert result.error_code == "thinking_not_supported_for_route"
-    assert result.mapping_reason_code == "provider_mapping_missing_for_selection"
-
-
-
-def test_adapt_thinking_intent_legacy_entry_uses_structured_selection_mapping_path() -> None:
-    result = adapt_thinking_intent(
-        intent="auto",
-        model_route=_route(model_id="glm-5-turbo", base_url="https://api.z.ai/api/paas/v4"),
-    )
-
-    assert result.requested_selection is not None
-    assert result.requested_selection.to_public_dict() == {"kind": "preset", "value": "auto"}
-    assert result.applied_selection is not None
-    assert result.applied_selection.to_public_dict() == {"kind": "preset", "value": "auto"}
-    assert result.reason == "verified_provider_mapping_applied"
-    assert result.mapping_reason_code == "zai_glm_series_auto"
-
 
 
 def _route(*, model_id: str, base_url: str = "https://example.com/v1") -> ResolvedRuntimeModelRoute:

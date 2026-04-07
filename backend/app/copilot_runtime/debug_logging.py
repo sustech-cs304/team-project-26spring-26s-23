@@ -99,11 +99,34 @@ def summarize_runtime_execution_event(event: Any | None) -> dict[str, Any] | Non
     return summary
 
 
+def summarize_runtime_thinking_value(value: Any | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    summary = {
+        "valueType": _lookup_value(value, attr_name="value_type", key_name="valueType"),
+        "code": _lookup_value(value, attr_name="code", key_name="code"),
+        "mode": _lookup_value(value, attr_name="mode", key_name="mode"),
+        "budgetTokens": _lookup_value(value, attr_name="budget_tokens", key_name="budgetTokens"),
+        "labelZh": _lookup_value(value, attr_name="label_zh", key_name="labelZh"),
+    }
+    return {key: _sanitize_value(item) for key, item in summary.items() if item is not None}
+
+
+
 def summarize_runtime_thinking_selection(selection: Any | None) -> dict[str, Any] | None:
     if selection is None:
         return None
 
     series = _lookup_value(selection, attr_name="series", key_name="series")
+    value_summary = summarize_runtime_thinking_value(
+        _lookup_value(selection, attr_name="value", key_name="value")
+    )
+    if series is not None and value_summary is not None:
+        return {
+            "series": _sanitize_value(series),
+            "value": value_summary,
+        }
+
     mode = _lookup_value(selection, attr_name="mode", key_name="mode")
     level = _lookup_value(selection, attr_name="level", key_name="level")
     if series is not None or mode is not None or level is not None:
@@ -186,9 +209,12 @@ def summarize_runtime_thinking_capability(capability: Any | None) -> dict[str, A
         "source": _lookup_value(capability, attr_name="source", key_name="source"),
         "supported": _lookup_value(capability, attr_name="supported", key_name="supported"),
         "series": _lookup_value(capability, attr_name="series", key_name="series"),
+        "seriesLabelZh": _lookup_value(capability, attr_name="series_label_zh", key_name="seriesLabelZh"),
+        "editorType": _lookup_value(capability, attr_name="editor_type", key_name="editorType"),
         "defaultLevel": _lookup_value(capability, attr_name="default_level", key_name="defaultLevel"),
         "reasonCode": _lookup_value(capability, attr_name="reason_code", key_name="reasonCode"),
         "providerHint": _lookup_value(capability, attr_name="provider_hint", key_name="providerHint"),
+        "providerBuilderKey": _lookup_value(capability, attr_name="provider_builder_key", key_name="providerBuilderKey"),
     }
     control_spec = summarize_runtime_thinking_control_spec(
         _lookup_value(capability, attr_name="control_spec", key_name="controlSpec")
@@ -200,6 +226,19 @@ def summarize_runtime_thinking_capability(capability: Any | None) -> dict[str, A
     )
     if default_selection is not None:
         summary["defaultSelection"] = default_selection
+    allowed_values = _lookup_value(capability, attr_name="allowed_values", key_name="allowedValues")
+    if isinstance(allowed_values, Sequence) and not isinstance(allowed_values, str):
+        summary["allowedValues"] = [
+            summarized
+            for value in allowed_values
+            for summarized in [summarize_runtime_thinking_value(value)]
+            if summarized is not None
+        ]
+    default_value = summarize_runtime_thinking_value(
+        _lookup_value(capability, attr_name="default_value", key_name="defaultValue")
+    )
+    if default_value is not None:
+        summary["defaultValue"] = default_value
     supported_levels = _lookup_value(capability, attr_name="supported_levels", key_name="supportedLevels")
     if isinstance(supported_levels, Sequence) and not isinstance(supported_levels, str):
         summary["supportedLevels"] = [_sanitize_value(level) for level in supported_levels]
@@ -237,7 +276,7 @@ def summarize_runtime_thinking_capability(capability: Any | None) -> dict[str, A
     override_levels = _lookup_value(capability, attr_name="override_levels", key_name="overrideLevels")
     if isinstance(override_levels, Sequence) and not isinstance(override_levels, str):
         summary["overrideLevels"] = [_sanitize_value(level) for level in override_levels]
-    return summary
+    return {key: value for key, value in summary.items() if value is not None}
 
 
 
@@ -264,6 +303,11 @@ def summarize_runtime_thinking_selection_result(result: Any | None) -> dict[str,
         "applied": _lookup_value(result, attr_name="applied", key_name="applied"),
         "reasonCode": _lookup_value(result, attr_name="reason", key_name="reasonCode"),
         "errorCode": _lookup_value(result, attr_name="error_code", key_name="errorCode"),
+        "providerBuilderKey": _lookup_value(
+            result,
+            attr_name="provider_builder_key",
+            key_name="providerBuilderKey",
+        ),
         "mappingReasonCode": _lookup_value(
             result,
             attr_name="mapping_reason_code",
@@ -273,6 +317,11 @@ def summarize_runtime_thinking_selection_result(result: Any | None) -> dict[str,
         "capabilityStatus": _lookup_value(result, attr_name="capability_status", key_name="capabilityStatus"),
         "capabilitySource": _lookup_value(result, attr_name="capability_source", key_name="capabilitySource"),
         "capabilitySeries": _lookup_value(result, attr_name="capability_series", key_name="capabilitySeries"),
+        "capabilitySeriesLabelZh": _lookup_value(
+            result,
+            attr_name="capability_series_label_zh",
+            key_name="capabilitySeriesLabelZh",
+        ),
         "capabilityReasonCode": _lookup_value(
             result,
             attr_name="capability_reason_code",
@@ -306,11 +355,6 @@ def summarize_runtime_reasoning_suppression_basis(basis: Any | None) -> dict[str
         "shouldSuppress": _lookup_value(basis, attr_name="should_suppress", key_name="shouldSuppress"),
         "source": _lookup_value(basis, attr_name="source", key_name="source"),
         "reasonCode": _lookup_value(basis, attr_name="reason_code", key_name="reasonCode"),
-        "appliedThinkingLevel": _lookup_value(
-            basis,
-            attr_name="applied_thinking_level",
-            key_name="appliedThinkingLevel",
-        ),
         "reasoningVisibility": _lookup_value(
             basis,
             attr_name="reasoning_visibility",
@@ -324,6 +368,18 @@ def summarize_runtime_reasoning_suppression_basis(basis: Any | None) -> dict[str
         "capabilitySource": _lookup_value(basis, attr_name="capability_source", key_name="capabilitySource"),
         "capabilitySeries": _lookup_value(basis, attr_name="capability_series", key_name="capabilitySeries"),
     }
+    applied_thinking_level = _lookup_value(
+        basis,
+        attr_name="applied_thinking_level",
+        key_name="appliedThinkingLevel",
+    )
+    if applied_thinking_level is not None:
+        summary["appliedThinkingLevel"] = applied_thinking_level
+    applied_selection = summarize_runtime_thinking_selection(
+        _lookup_value(basis, attr_name="applied_thinking_selection", key_name="appliedThinkingSelection")
+    )
+    if applied_selection is not None:
+        summary["appliedThinkingSelection"] = applied_selection
     return {key: value for key, value in summary.items() if value is not None}
 
 
@@ -392,6 +448,11 @@ def summarize_runtime_run_event(event: Any | None) -> dict[str, Any] | None:
     )
     if thinking_selection_result is not None:
         summary["thinkingSelectionResult"] = thinking_selection_result
+    thinking_series_decision = summarize_runtime_thinking_selection_result(
+        _lookup_mapping_value(payload, "thinkingSeriesDecision")
+    )
+    if thinking_series_decision is not None:
+        summary["thinkingSeriesDecision"] = thinking_series_decision
     reasoning_suppression_basis = summarize_runtime_reasoning_suppression_basis(
         _lookup_mapping_value(payload, "reasoningSuppressionBasis")
     )
@@ -463,6 +524,8 @@ def _lookup_value(value: Any, *, attr_name: str, key_name: str) -> Any:
         return None
     if hasattr(value, attr_name):
         return getattr(value, attr_name)
+    if hasattr(value, key_name):
+        return getattr(value, key_name)
     if isinstance(value, Mapping):
         return value.get(key_name)
     return None

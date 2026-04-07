@@ -10,6 +10,7 @@ import {
   createRuntimeModelRoute,
   createRuntimeReasoningSuppressionBasis,
   createRuntimeThinkingCapability,
+  createRuntimeThinkingSelection,
 } from './chat-contract.test-support'
 import { createIdleCopilotRunState } from './run-segment-reducer'
 import { createCopilotModelCatalog } from './model-picker'
@@ -300,6 +301,14 @@ describe('CopilotMessageList segment rendering', () => {
       phase: 'failed',
       runId: 'run-thinking-details',
       threadId: 'session-1',
+      requestedThinkingSelection: createRuntimeThinkingSelection({
+        series: 'compat-discrete-levels-v1',
+        level: 'medium',
+      }),
+      appliedThinkingSelection: createRuntimeThinkingSelection({
+        series: 'compat-discrete-levels-v1',
+        level: 'auto',
+      }),
       requestedThinkingLevel: 'medium',
       appliedThinkingLevel: 'auto',
       thinkingCapabilitySnapshot: createRuntimeThinkingCapability({
@@ -350,10 +359,10 @@ describe('CopilotMessageList segment rendering', () => {
       ],
     })
 
-    expect(html).toContain('请求思考')
-    expect(html).toContain('medium')
-    expect(html).toContain('应用思考')
-    expect(html).toContain('auto')
+    expect(html).toContain('请求系列值')
+    expect(html).toContain('compat-discrete-levels-v1 / medium')
+    expect(html).toContain('应用系列值')
+    expect(html).toContain('compat-discrete-levels-v1 / auto')
     expect(html).toContain('能力来源')
     expect(html).toContain('override / unknown-with-override')
     expect(html).toContain('原因码')

@@ -145,6 +145,11 @@ describe('copilot chat helpers', () => {
       },
       thinkingSelection: {
         series: 'compat-discrete-levels-v1',
+        value: {
+          valueType: 'code',
+          code: 'auto',
+          labelZh: '自动',
+        },
         mode: 'preset',
         level: 'auto',
         budgetTokens: null,
@@ -274,6 +279,11 @@ describe('copilot chat helpers', () => {
     })
     expect(draft.thinkingSelection).toEqual({
       series: 'compat-discrete-levels-v1',
+      value: {
+        valueType: 'code',
+        code: 'auto',
+        labelZh: '自动',
+      },
       mode: 'preset',
       level: 'auto',
       budgetTokens: null,
@@ -285,6 +295,12 @@ describe('copilot chat helpers', () => {
     })
     expect(draft.thinkingSelection).toEqual({
       series: 'compat-budget-tokens-v1',
+      value: {
+        valueType: 'budget',
+        mode: 'budget',
+        budgetTokens: 12288,
+        labelZh: '12288',
+      },
       mode: 'budget',
       level: null,
       budgetTokens: 12288,

@@ -20,6 +20,7 @@ from app.copilot_runtime.contracts import (
     RuntimeMessagePayload,
     RuntimeMessageSendRequest,
     RuntimeThinkingSelection,
+    RuntimeThinkingValue,
     build_runtime_scaffold,
 )
 from app.copilot_runtime.agent_registry import build_default_agent_registry
@@ -842,7 +843,7 @@ def test_stream_events_uses_runtime_debug_env_when_request_debug_omitted(
 
 
 
-def test_stream_events_applies_glm_5_turbo_thinking_settings_for_mapped_routes() -> None:
+def test_stream_events_applies_verified_openai_series_settings_for_gpt5_route() -> None:
     store = InMemorySessionStore()
     store.create(bound_agent_id="default", session_id="session-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
@@ -858,67 +859,44 @@ def test_stream_events_applies_glm_5_turbo_thinking_settings_for_mapped_routes()
         ),
         model_route_resolver=_ResolvedRouteResolver(),
     )
+    thinking_selection = RuntimeThinkingSelection(
+        series="openai-6-level-superset-v1",
+        value=RuntimeThinkingValue(valueType="code", code="high", labelZh="高"),
+    )
 
     events = asyncio.run(
         _collect_events(
             orchestrator,
             _build_request(
                 session_id="session-1",
-                thinking_level_intent="auto",
+                thinking_selection=thinking_selection,
                 route_snapshot=RuntimeModelRouteSnapshot(
                     provider="openai",
                     endpoint_type="openai-compatible",
-                    base_url="https://api.z.ai/api/paas/v4",
-                    model_id="glm-5-turbo",
+                    base_url="https://example.com/v1",
+                    model_id="gpt-5",
                 ),
             ),
         )
     )
 
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
     assert executor.calls[0]["model_settings"] == {
-        "extra_body": {
-            "thinking": {
-                "type": "enabled",
-            }
-        }
+        "reasoning_effort": "high",
     }
     metadata = events[1].payload
-    assert metadata["requestedThinkingSelection"] == {
-        "series": "compat-discrete-selection-v1",
-        "mode": "preset",
-        "level": "auto",
-        "budgetTokens": None,
-    }
-    assert metadata["appliedThinkingSelection"] == {
-        "series": "compat-discrete-selection-v1",
-        "mode": "preset",
-        "level": "auto",
-        "budgetTokens": None,
-    }
-    assert metadata["requestedThinkingLevel"] == "auto"
-    assert metadata["appliedThinkingLevel"] == "auto"
+    assert metadata["requestedThinkingSelection"] == thinking_selection.to_dict()
+    assert metadata["appliedThinkingSelection"] == thinking_selection.to_dict()
     assert metadata["thinkingCapabilitySnapshot"]["status"] == "verified-supported"
-    assert metadata["thinkingSelectionResult"] == _thinking_selection_result_payload(
-        requested_thinking_level="auto",
-        applied_thinking_level="auto",
-        applied=True,
-        reason_code="verified_provider_mapping_applied",
-        error_code=None,
-        mapping_reason_code="zai_glm_series_auto",
-        capability_status="verified-supported",
-        capability_source="verified",
-        override_present=False,
-        override_applied=False,
-        provider_mapping="zai_glm_openai_compatible",
-        model_settings={
-            "extra_body": {
-                "thinking": {
-                    "type": "enabled",
-                }
-            }
-        },
-        include_empty_fields=True,
-    )
+    assert metadata["thinkingCapabilitySnapshot"]["series"] == "openai-6-level-superset-v1"
+    assert metadata["thinkingCapabilitySnapshot"]["seriesLabelZh"] == "OpenAI 6 档总超集"
+    assert metadata["thinkingSeriesDecision"]["applied"] is True
+    assert metadata["thinkingSeriesDecision"]["reasonCode"] == "verified_series_builder_applied"
+    assert metadata["thinkingSeriesDecision"]["errorCode"] is None
+    assert metadata["thinkingSeriesDecision"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
+    assert metadata["thinkingSeriesDecision"]["mappingReasonCode"] == "openai_reasoning_effort_high"
+    assert metadata["thinkingSeriesDecision"]["capabilitySeries"] == "openai-6-level-superset-v1"
+    assert metadata["thinkingSeriesDecision"]["capabilitySeriesLabelZh"] == "OpenAI 6 档总超集"
 
 
 
@@ -939,9 +917,8 @@ def test_stream_events_applies_structured_selection_for_verified_route() -> None
         model_route_resolver=_ResolvedRouteResolver(),
     )
     thinking_selection = RuntimeThinkingSelection(
-        series="zai-glm-thinking-v1",
-        mode="preset",
-        level="auto",
+        series="openai-4-level-minimal-v1",
+        value=RuntimeThinkingValue(valueType="code", code="medium", labelZh="中"),
     )
 
     events = asyncio.run(
@@ -953,8 +930,8 @@ def test_stream_events_applies_structured_selection_for_verified_route() -> None
                 route_snapshot=RuntimeModelRouteSnapshot(
                     provider="openai",
                     endpoint_type="openai-compatible",
-                    base_url="https://api.z.ai/api/paas/v4",
-                    model_id="glm-5-turbo",
+                    base_url="https://example.com/v1",
+                    model_id="gpt-4.1",
                 ),
             ),
         )
@@ -963,17 +940,13 @@ def test_stream_events_applies_structured_selection_for_verified_route() -> None
     metadata = events[1].payload
     assert metadata["requestedThinkingSelection"] == thinking_selection.to_dict()
     assert metadata["appliedThinkingSelection"] == thinking_selection.to_dict()
-    assert metadata["requestedThinkingLevel"] == "auto"
-    assert metadata["appliedThinkingLevel"] == "auto"
     assert metadata["thinkingCapabilitySnapshot"]["status"] == "verified-supported"
-    assert metadata["thinkingSelectionResult"]["reasonCode"] == "verified_provider_mapping_applied"
-    assert metadata["thinkingSelectionResult"]["mappingReasonCode"] == "zai_glm_series_auto"
+    assert metadata["thinkingCapabilitySnapshot"]["series"] == "openai-4-level-minimal-v1"
+    assert metadata["thinkingSeriesDecision"]["reasonCode"] == "verified_series_builder_applied"
+    assert metadata["thinkingSeriesDecision"]["mappingReasonCode"] == "openai_reasoning_effort_medium"
+    assert metadata["thinkingSeriesDecision"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
     assert executor.calls[0]["model_settings"] == {
-        "extra_body": {
-            "thinking": {
-                "type": "enabled",
-            }
-        }
+        "reasoning_effort": "medium",
     }
 
 
@@ -995,9 +968,8 @@ def test_stream_events_unknown_with_override_applies_when_mapping_exists() -> No
         model_route_resolver=_ResolvedRouteResolver(),
     )
     thinking_selection = RuntimeThinkingSelection(
-        series="zai-glm-thinking-v1",
-        mode="preset",
-        level="auto",
+        series="qwen-thinking-switch-v1",
+        value=RuntimeThinkingValue(valueType="code", code="true", labelZh="开启"),
     )
 
     events = asyncio.run(
@@ -1008,19 +980,22 @@ def test_stream_events_unknown_with_override_applies_when_mapping_exists() -> No
                 thinking_selection=thinking_selection,
                 thinking_capability_override={
                     "supported": True,
-                    "series": "zai-glm-thinking-v1",
-                    "input": {
-                        "kind": "discrete",
-                        "levels": ["auto"],
+                    "series": "qwen-thinking-switch-v1",
+                    "template": {
+                        "editorType": "discrete",
+                        "allowedValues": [
+                            {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                            {"valueType": "code", "code": "true", "labelZh": "开启"},
+                        ],
+                        "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
                     },
-                    "defaultSelection": {"mode": "preset", "level": "auto"},
                     "source": "settings-page",
                 },
                 route_snapshot=RuntimeModelRouteSnapshot(
                     provider="openai",
                     endpoint_type="openai-compatible",
-                    base_url="https://api.z.ai/api/paas/v4",
-                    model_id="glm-5-experimental",
+                    base_url="https://unknown.example.com/v1",
+                    model_id="unknown-model",
                 ),
             ),
         )
@@ -1030,14 +1005,15 @@ def test_stream_events_unknown_with_override_applies_when_mapping_exists() -> No
     metadata = events[1].payload
     assert metadata["thinkingCapabilitySnapshot"]["status"] == "unknown-with-override"
     assert metadata["thinkingCapabilitySnapshot"]["source"] == "override"
+    assert metadata["thinkingCapabilitySnapshot"]["series"] == "qwen-thinking-switch-v1"
+    assert metadata["thinkingCapabilitySnapshot"]["seriesLabelZh"] == "Qwen Thinking 开关"
     assert metadata["appliedThinkingSelection"] == thinking_selection.to_dict()
-    assert metadata["thinkingSelectionResult"]["reasonCode"] == "override_provider_mapping_applied"
-    assert metadata["thinkingSelectionResult"]["mappingReasonCode"] == "zai_glm_series_auto"
+    assert metadata["thinkingSeriesDecision"]["reasonCode"] == "override_series_builder_applied"
+    assert metadata["thinkingSeriesDecision"]["mappingReasonCode"] == "qwen_switch_true"
+    assert metadata["thinkingSeriesDecision"]["providerBuilderKey"] == "qwen_switch_v1"
     assert executor.calls[0]["model_settings"] == {
         "extra_body": {
-            "thinking": {
-                "type": "enabled",
-            }
+            "enable_thinking": True,
         }
     }
 
@@ -1061,8 +1037,7 @@ def test_stream_events_unknown_with_override_fails_fast_when_mapping_missing() -
     )
     thinking_selection = RuntimeThinkingSelection(
         series="compat-discrete-levels-v1",
-        mode="preset",
-        level="high",
+        value=RuntimeThinkingValue(valueType="code", code="high", labelZh="高"),
     )
 
     events = asyncio.run(
@@ -1074,13 +1049,21 @@ def test_stream_events_unknown_with_override_fails_fast_when_mapping_missing() -
                 thinking_capability_override={
                     "supported": True,
                     "series": "compat-discrete-levels-v1",
-                    "input": {
-                        "kind": "discrete",
-                        "levels": ["high"],
+                    "template": {
+                        "editorType": "discrete",
+                        "allowedValues": [
+                            {"valueType": "code", "code": "high", "labelZh": "高"},
+                        ],
+                        "defaultValue": {"valueType": "code", "code": "high", "labelZh": "高"},
                     },
-                    "defaultSelection": {"mode": "preset", "level": "high"},
                     "source": "settings-page",
                 },
+                route_snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://unknown.example.com/v1",
+                    model_id="unknown-model",
+                ),
             ),
         )
     )
@@ -1089,11 +1072,14 @@ def test_stream_events_unknown_with_override_fails_fast_when_mapping_missing() -
     metadata = events[1].payload
     assert metadata["thinkingCapabilitySnapshot"]["status"] == "unknown-with-override"
     assert metadata["thinkingCapabilitySnapshot"]["source"] == "override"
+    assert metadata["thinkingCapabilitySnapshot"]["series"] == "compat-discrete-levels-v1"
     assert metadata["appliedThinkingSelection"] is None
-    assert metadata["thinkingSelectionResult"]["reasonCode"] == "requested_selection_not_mappable_for_provider"
-    assert metadata["thinkingSelectionResult"]["errorCode"] == "thinking_not_supported_for_route"
-    assert events[2].payload["code"] == "thinking_not_supported_for_route"
-    assert events[2].payload["details"]["mappingReasonCode"] == "provider_mapping_missing_for_selection"
+    assert metadata["thinkingSeriesDecision"]["reasonCode"] == "provider_builder_missing"
+    assert metadata["thinkingSeriesDecision"]["errorCode"] == "thinking_series_builder_missing"
+    assert metadata["thinkingSeriesDecision"]["mappingReasonCode"] == "provider_builder_missing"
+    assert events[2].payload["code"] == "thinking_series_builder_missing"
+    assert events[2].payload["details"]["mappingReasonCode"] == "provider_builder_missing"
+    assert events[2].payload["details"]["providerBuilderKey"] is None
     assert executor.calls == []
 
 
@@ -1122,85 +1108,26 @@ def test_stream_events_fails_when_thinking_intent_cannot_be_mapped() -> None:
         )
     )
 
-    expected_message = (
-        "Selected thinking level 'medium' is not supported by the current model route. "
-        "This request was cancelled instead of continuing without provider thinking parameters."
-    )
-    expected_details = {
-        "providerProfileId": "provider-1",
-        "provider": "openai",
-        "endpointType": "openai-compatible",
-        "baseUrl": "https://example.com/v1",
-        "modelId": "gpt-4.1",
-        "status": "unknown-without-override",
-        "source": "unknown",
-        "supported": False,
-        "series": "fixed-off-v1",
-        "controlSpec": {
-            "kind": "fixed",
-            "selectionKind": "preset",
-            "presetOptions": [{"kind": "preset", "value": "off"}],
-            "fixedSelection": {"kind": "preset", "value": "off"},
-        },
-        "defaultSelection": {"kind": "preset", "value": "off"},
-        "supportedLevels": [],
-        "defaultLevel": None,
-        "reasonCode": "route_not_verified",
-        "providerHint": "unknown-route",
-        "provenance": {
-            "routeStatus": "unknown",
-            "override": {
-                "present": False,
-                "applied": False,
-                "source": None,
-                "format": None,
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "requestedSelection": {"kind": "preset", "value": "medium"},
-        "appliedSelection": None,
-        "requestedThinkingLevel": "medium",
-        "appliedThinkingLevel": None,
-        "providerMapping": None,
-        "mappingReasonCode": "selection_not_allowed_by_capability",
-        "errorCode": "thinking_not_supported_for_route",
-        "intent": "medium",
-        "reason": "requested_level_not_in_capability",
-    }
-
     assert [event.type for event in events] == ["run_started", "run_metadata", "run_diagnostic", "run_failed"]
-    _assert_unknown_route_run_metadata(
-        events[1],
-        requested_thinking_level="medium",
-        applied_thinking_level=None,
-        thinking_selection_result=_thinking_selection_result_payload(
-            requested_thinking_level="medium",
-            applied_thinking_level=None,
-            applied=False,
-            reason_code="requested_level_not_in_capability",
-            error_code="thinking_not_supported_for_route",
-            mapping_reason_code="selection_not_allowed_by_capability",
-            capability_status="unknown-without-override",
-            capability_source="unknown",
-            override_present=False,
-            override_applied=False,
-            include_empty_fields=True,
-        ),
-    )
-    assert events[2].payload == {
-        "code": "thinking_not_supported_for_route",
-        "message": expected_message,
-        "details": expected_details,
-        "stage": "adapt_thinking",
-    }
-    assert events[3].payload == {
-        "code": "thinking_not_supported_for_route",
-        "message": expected_message,
-        "details": expected_details,
-    }
+    metadata = events[1].payload
+    assert metadata["thinkingCapabilitySnapshot"]["status"] == "verified-supported"
+    assert metadata["thinkingCapabilitySnapshot"]["series"] == "openai-4-level-minimal-v1"
+    assert metadata["requestedThinkingSelection"] == _compat_thinking_selection("medium")
+    assert metadata["appliedThinkingSelection"] is None
+    assert metadata["thinkingSeriesDecision"]["reasonCode"] == "requested_series_mismatch"
+    assert metadata["thinkingSeriesDecision"]["errorCode"] == "thinking_series_not_supported_for_route"
+    assert metadata["thinkingSeriesDecision"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
+    assert metadata["thinkingSeriesDecision"]["mappingReasonCode"] == "requested_series_mismatch"
+
+    assert events[2].payload["code"] == "thinking_series_not_supported_for_route"
+    assert events[2].payload["stage"] == "adapt_thinking"
+    assert "compat-discrete-selection-v1" in events[2].payload["message"]
+    assert events[2].payload["details"]["series"] == "openai-4-level-minimal-v1"
+    assert events[2].payload["details"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
+    assert events[2].payload["details"]["mappingReasonCode"] == "requested_series_mismatch"
+    assert events[2].payload["details"]["requestedSelection"] == _compat_thinking_selection("medium")
+    assert events[2].payload["details"]["reason"] == "requested_series_mismatch"
+    assert events[3].payload["code"] == "thinking_series_not_supported_for_route"
     assert executor.calls == []
 
 
@@ -1253,20 +1180,35 @@ def test_stream_events_logs_thinking_diagnostics_when_debug_enabled(monkeypatch:
         "thinking.run_metadata_attached",
         "thinking.fail_fast",
     }
-    assert thinking_logs["thinking.capability_resolved"]["capability"] == _unknown_route_thinking_snapshot()
-    assert thinking_logs["thinking.request_validated"]["requestedThinkingLevel"] == "medium"
+    capability_log = thinking_logs["thinking.capability_resolved"]["capability"]
+    assert capability_log["status"] == "verified-supported"
+    assert capability_log["series"] == "openai-4-level-minimal-v1"
+    assert capability_log["seriesLabelZh"] == "OpenAI 4 档 Minimal 系"
+    assert capability_log["providerBuilderKey"] == "openai_reasoning_effort_v1"
+    assert capability_log["allowedValues"][0]["code"] == "minimal"
+    assert capability_log["defaultValue"]["code"] == "medium"
+
+    assert thinking_logs["thinking.request_validated"]["requestedThinkingSelection"] == _compat_thinking_selection("medium")
     assert thinking_logs["thinking.request_validated"]["applied"] is False
-    assert thinking_logs["thinking.request_validated"]["reason"] == "requested_level_not_in_capability"
-    assert thinking_logs["thinking.provider_mapping_resolved"]["reason"] == "requested_level_not_in_capability"
-    assert thinking_logs["thinking.run_metadata_attached"]["yieldedEvent"] == _unknown_route_run_metadata_summary(
-        sequence=2,
-        requested_thinking_level="medium",
-        applied_thinking_level=None,
-    )
-    assert thinking_logs["thinking.fail_fast"]["code"] == "thinking_not_supported_for_route"
-    assert thinking_logs["thinking.fail_fast"]["reason"] == "requested_level_not_in_capability"
-    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["requestedThinkingLevel"] == "medium"
-    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["reasonCode"] == "route_not_verified"
+    assert thinking_logs["thinking.request_validated"]["reason"] == "requested_series_mismatch"
+    assert thinking_logs["thinking.provider_mapping_resolved"]["reason"] == "requested_series_mismatch"
+    assert thinking_logs["thinking.provider_mapping_resolved"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
+
+    yielded_event = thinking_logs["thinking.run_metadata_attached"]["yieldedEvent"]
+    assert yielded_event["type"] == "run_metadata"
+    assert yielded_event["sequence"] == 2
+    assert yielded_event["requestedThinkingSelection"] == _compact_code_selection("medium")
+    assert yielded_event["appliedThinkingSelection"] is None
+    assert yielded_event["thinkingCapability"]["series"] == "openai-4-level-minimal-v1"
+    assert yielded_event["thinkingSeriesDecision"]["reasonCode"] == "requested_series_mismatch"
+    assert yielded_event["thinkingSeriesDecision"]["errorCode"] == "thinking_series_not_supported_for_route"
+
+    assert thinking_logs["thinking.fail_fast"]["code"] == "thinking_series_not_supported_for_route"
+    assert thinking_logs["thinking.fail_fast"]["reason"] == "requested_series_mismatch"
+    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["requestedSelection"] == _compat_thinking_selection("medium")
+    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
+    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["reasonCode"] == "verified_series_resolved"
+    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["reason"] == "requested_series_mismatch"
 
 
 
@@ -1338,12 +1280,15 @@ def test_stream_events_logs_reasoning_suppression_when_hidden_reasoning_delta_ar
                 debug_mode_enabled=True,
                 thinking_capability_override={
                     "supported": True,
-                    "series": "zai-glm-thinking-v1",
-                    "input": {
-                        "kind": "discrete",
-                        "levels": ["auto"],
+                    "series": "qwen-thinking-switch-v1",
+                    "template": {
+                        "editorType": "discrete",
+                        "allowedValues": [
+                            {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                            {"valueType": "code", "code": "true", "labelZh": "开启"},
+                        ],
+                        "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
                     },
-                    "defaultSelection": {"mode": "preset", "level": "auto"},
                     "visibility": {
                         "reasoning": "suppressed",
                         "supportsSuppression": True,
@@ -1351,15 +1296,14 @@ def test_stream_events_logs_reasoning_suppression_when_hidden_reasoning_delta_ar
                     "source": "settings-page",
                 },
                 thinking_selection=RuntimeThinkingSelection(
-                    series="zai-glm-thinking-v1",
-                    mode="preset",
-                    level="auto",
+                    series="qwen-thinking-switch-v1",
+                    value=RuntimeThinkingValue(valueType="code", code="true", labelZh="开启"),
                 ),
                 route_snapshot=RuntimeModelRouteSnapshot(
                     provider="openai",
                     endpoint_type="openai-compatible",
-                    base_url="https://api.z.ai/api/paas/v4",
-                    model_id="glm-5-experimental",
+                    base_url="https://unknown.example.com/v1",
+                    model_id="unknown-model",
                 ),
             ),
         )
@@ -1377,12 +1321,23 @@ def test_stream_events_logs_reasoning_suppression_when_hidden_reasoning_delta_ar
     assert suppression_logs[0]["suppressionEnabled"] is True
     assert suppression_logs[0]["suppressionSource"] == "capability-visibility"
     assert suppression_logs[0]["suppressionReasonCode"] == "capability_visibility_suppressed"
-    assert suppression_logs[0]["reasoningSuppressionBasis"] == _reasoning_suppression_basis_payload(
-        applied_thinking_level="auto",
-        capability_source="override",
-        capability_series="zai-glm-thinking-v1",
-        reasoning_visibility="suppressed",
-    )
+    assert suppression_logs[0]["reasoningSuppressionBasis"] == {
+        "shouldSuppress": True,
+        "source": "capability-visibility",
+        "reasonCode": "capability_visibility_suppressed",
+        "reasoningVisibility": "suppressed",
+        "supportsSuppression": True,
+        "capabilitySource": "override",
+        "capabilitySeries": "qwen-thinking-switch-v1",
+        "appliedThinkingSelection": {
+            "series": "qwen-thinking-switch-v1",
+            "value": {
+                "valueType": "code",
+                "code": "true",
+                "labelZh": "开启",
+            },
+        },
+    }
     assert suppression_logs[0]["projectedEventTypes"] == ["reasoning_delta"]
 
 
@@ -1427,21 +1382,26 @@ def test_stream_events_missing_session_emits_failed_terminal_event() -> None:
 
 def _unknown_route_thinking_snapshot() -> dict[str, object]:
     return {
-        "status": "unknown-without-override",
-        "source": "unknown",
-        "supported": False,
-        "series": "fixed-off-v1",
-        "controlSpec": {
-            "kind": "fixed",
-            "selectionKind": "preset",
-            "presetOptions": [{"kind": "preset", "value": "off"}],
-            "fixedSelection": {"kind": "preset", "value": "off"},
+        "status": "verified-supported",
+        "source": "verified",
+        "series": "openai-4-level-minimal-v1",
+        "seriesLabelZh": "OpenAI 4 档 Minimal 系",
+        "editorType": "discrete",
+        "allowedValues": [
+            {"valueType": "code", "code": "minimal", "labelZh": "极简", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "low", "labelZh": "低", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "medium", "labelZh": "中", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "high", "labelZh": "高", "mode": None, "budgetTokens": None},
+        ],
+        "defaultValue": {
+            "valueType": "code",
+            "code": "medium",
+            "labelZh": "中",
+            "mode": None,
+            "budgetTokens": None,
         },
-        "defaultSelection": {"kind": "preset", "value": "off"},
-        "supportedLevels": [],
-        "defaultLevel": None,
-        "reasonCode": "route_not_verified",
-        "providerHint": "unknown-route",
+        "providerBuilderKey": "openai_reasoning_effort_v1",
+        "reasonCode": "verified_series_resolved",
         "routeFingerprint": {
             "providerProfileId": "provider-1",
             "provider": "openai",
@@ -1449,20 +1409,6 @@ def _unknown_route_thinking_snapshot() -> dict[str, object]:
             "baseUrl": "https://example.com/v1",
             "modelId": "gpt-4.1",
         },
-        "provenance": {
-            "routeStatus": "unknown",
-            "override": {
-                "present": False,
-                "applied": False,
-                "source": None,
-                "format": None,
-            },
-        },
-        "visibility": {
-            "reasoning": "visible",
-            "supportsSuppression": True,
-        },
-        "overrideLevels": [],
     }
 
 
@@ -1479,38 +1425,35 @@ def _unknown_route_run_metadata_summary(
         "thinkingCapability": _unknown_route_thinking_snapshot(),
         "requestedThinkingSelection": _compat_thinking_selection(requested_thinking_level),
         "appliedThinkingSelection": _compat_thinking_selection(applied_thinking_level),
-        "thinkingSelectionResult": _thinking_selection_result_payload(
+        "thinkingSeriesDecision": _thinking_selection_result_payload(
             requested_thinking_level=requested_thinking_level,
             applied_thinking_level=applied_thinking_level,
             applied=False,
             reason_code=(
-                "intent_missing"
+                "selection_missing"
                 if requested_thinking_level is None
-                else "requested_level_not_in_capability"
+                else "requested_series_mismatch"
             ),
             error_code=(
                 None
                 if requested_thinking_level is None
-                else "thinking_not_supported_for_route"
+                else "thinking_series_not_supported_for_route"
             ),
             mapping_reason_code=(
                 "selection_missing"
                 if requested_thinking_level is None
-                else "selection_not_allowed_by_capability"
+                else "requested_series_mismatch"
             ),
-            capability_status="unknown-without-override",
-            capability_source="unknown",
+            capability_status="verified-supported",
+            capability_source="verified",
             override_present=False,
             override_applied=False,
-            include_empty_fields=requested_thinking_level is None,
         ),
         "reasoningSuppressionBasis": _reasoning_suppression_basis_payload(
             applied_thinking_level=applied_thinking_level,
-            capability_source="unknown",
-            capability_series="fixed-off-v1",
+            capability_source="verified",
+            capability_series="openai-4-level-minimal-v1",
         ),
-        **({"requestedThinkingLevel": requested_thinking_level} if requested_thinking_level is not None else {}),
-        **({"appliedThinkingLevel": applied_thinking_level} if applied_thinking_level is not None else {}),
     }
 
 
@@ -1526,10 +1469,8 @@ def _assert_unknown_route_run_metadata(
     expected_payload = {
         "requestedThinkingSelection": _compat_thinking_selection(requested_thinking_level),
         "appliedThinkingSelection": _compat_thinking_selection(applied_thinking_level),
-        "requestedThinkingLevel": requested_thinking_level,
-        "appliedThinkingLevel": applied_thinking_level,
         "thinkingCapabilitySnapshot": _unknown_route_thinking_snapshot(),
-        "thinkingSelectionResult": (
+        "thinkingSeriesDecision": (
             thinking_selection_result
             if thinking_selection_result is not None
             else _thinking_selection_result_payload(
@@ -1537,31 +1478,30 @@ def _assert_unknown_route_run_metadata(
                 applied_thinking_level=applied_thinking_level,
                 applied=False,
                 reason_code=(
-                    "intent_missing"
+                    "selection_missing"
                     if requested_thinking_level is None
-                    else "requested_level_not_in_capability"
+                    else "requested_series_mismatch"
                 ),
                 error_code=(
                     None
                     if requested_thinking_level is None
-                    else "thinking_not_supported_for_route"
+                    else "thinking_series_not_supported_for_route"
                 ),
                 mapping_reason_code=(
                     "selection_missing"
                     if requested_thinking_level is None
-                    else "selection_not_allowed_by_capability"
+                    else "requested_series_mismatch"
                 ),
-                capability_status="unknown-without-override",
-                capability_source="unknown",
+                capability_status="verified-supported",
+                capability_source="verified",
                 override_present=False,
                 override_applied=False,
-                include_empty_fields=requested_thinking_level is None,
             )
         ),
         "reasoningSuppressionBasis": _reasoning_suppression_basis_payload(
             applied_thinking_level=applied_thinking_level,
-            capability_source="unknown",
-            capability_series="fixed-off-v1",
+            capability_source="verified",
+            capability_series="openai-4-level-minimal-v1",
             include_empty_fields=applied_thinking_level is None,
         ),
     }
@@ -1574,9 +1514,27 @@ def _compat_thinking_selection(level: str | None) -> dict[str, object] | None:
         return None
     return {
         "series": "compat-discrete-selection-v1",
-        "mode": "preset",
-        "level": level,
-        "budgetTokens": None,
+        "value": {
+            "valueType": "code",
+            "code": level,
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": level,
+        },
+    }
+
+
+
+def _compact_code_selection(level: str | None, *, series: str = "compat-discrete-selection-v1") -> dict[str, object] | None:
+    if level is None:
+        return None
+    return {
+        "series": series,
+        "value": {
+            "valueType": "code",
+            "code": level,
+            "labelZh": level,
+        },
     }
 
 
@@ -1592,9 +1550,10 @@ def _thinking_selection_result_payload(
     capability_source: str,
     override_present: bool,
     override_applied: bool,
-    provider_mapping: str | None = None,
+    provider_builder_key: str | None = None,
     model_settings: dict[str, object] | None = None,
     capability_series: str | None = None,
+    capability_series_label_zh: str | None = None,
     capability_reason_code: str | None = None,
     override_source: str | None = None,
     reasoning_visibility: str | None = "visible",
@@ -1604,42 +1563,61 @@ def _thinking_selection_result_payload(
     resolved_capability_series = capability_series
     if resolved_capability_series is None:
         if capability_status == "unknown-without-override":
-            resolved_capability_series = "fixed-off-v1"
-        elif capability_source in {"verified", "override"}:
-            resolved_capability_series = "zai-glm-thinking-v1"
+            resolved_capability_series = None
+        elif capability_source == "verified":
+            resolved_capability_series = "openai-4-level-minimal-v1"
+        elif capability_source == "override":
+            resolved_capability_series = "qwen-thinking-switch-v1"
+
+    resolved_capability_series_label_zh = capability_series_label_zh
+    if resolved_capability_series_label_zh is None:
+        if resolved_capability_series == "openai-4-level-minimal-v1":
+            resolved_capability_series_label_zh = "OpenAI 4 档 Minimal 系"
+        elif resolved_capability_series == "openai-6-level-superset-v1":
+            resolved_capability_series_label_zh = "OpenAI 6 档总超集"
+        elif resolved_capability_series == "qwen-thinking-switch-v1":
+            resolved_capability_series_label_zh = "Qwen Thinking 开关"
+
     resolved_capability_reason_code = capability_reason_code
     if resolved_capability_reason_code is None:
         if capability_status == "unknown-without-override":
             resolved_capability_reason_code = "route_not_verified"
         elif capability_source == "verified":
-            resolved_capability_reason_code = "zai_glm_verified_supported"
+            resolved_capability_reason_code = "verified_series_resolved"
         elif capability_source == "override":
-            resolved_capability_reason_code = "override_candidate_control_applied"
+            resolved_capability_reason_code = "override_series_template_applied"
+
+    resolved_provider_builder_key = provider_builder_key
+    if resolved_provider_builder_key is None:
+        if resolved_capability_series in {
+            "openai-6-level-superset-v1",
+            "openai-4-level-minimal-v1",
+            "openai-4-level-none-v1",
+        } and (applied or error_code in {"thinking_series_not_supported_for_route", "thinking_series_value_not_allowed", "thinking_series_mapping_failed"}):
+            resolved_provider_builder_key = "openai_reasoning_effort_v1"
+        elif resolved_capability_series == "qwen-thinking-switch-v1":
+            resolved_provider_builder_key = "qwen_switch_v1"
+        elif resolved_capability_series == "gemini-2.5-budget-v1":
+            resolved_provider_builder_key = "gemini_budget_v1"
+        elif resolved_capability_series == "anthropic-budget-v1":
+            resolved_provider_builder_key = "anthropic_budget_v1"
+        elif resolved_capability_series == "deepseek-fixed-reasoning-v1":
+            resolved_provider_builder_key = "fixed_reasoning_v1"
+
     payload: dict[str, object] = {
+        "requestedSelection": _compat_thinking_selection(requested_thinking_level),
+        "appliedSelection": _compat_thinking_selection(applied_thinking_level),
         "applied": applied,
         "reasonCode": reason_code,
+        "errorCode": error_code,
+        "providerBuilderKey": resolved_provider_builder_key,
         "mappingReasonCode": mapping_reason_code,
         "capabilityStatus": capability_status,
         "capabilitySource": capability_source,
         "capabilitySeries": resolved_capability_series,
+        "capabilitySeriesLabelZh": resolved_capability_series_label_zh,
         "capabilityReasonCode": resolved_capability_reason_code,
-        "overridePresent": override_present,
-        "overrideApplied": override_applied,
-        "reasoningVisibility": reasoning_visibility,
-        "supportsSuppression": supports_suppression,
     }
-    if include_empty_fields or requested_thinking_level is not None:
-        payload["requestedSelection"] = _canonical_preset_selection(requested_thinking_level)
-        payload["requestedThinkingLevel"] = requested_thinking_level
-    if include_empty_fields or applied_thinking_level is not None:
-        payload["appliedSelection"] = _canonical_preset_selection(applied_thinking_level)
-        payload["appliedThinkingLevel"] = applied_thinking_level
-    if include_empty_fields or error_code is not None:
-        payload["errorCode"] = error_code
-    if include_empty_fields or provider_mapping is not None:
-        payload["providerMapping"] = provider_mapping
-    if include_empty_fields or override_source is not None:
-        payload["overrideSource"] = override_source
     if model_settings is not None:
         payload["modelSettings"] = model_settings
     return payload
@@ -1661,7 +1639,7 @@ def _reasoning_suppression_basis_payload(
         reason_code = "capability_visibility_suppressed"
     elif applied_thinking_level == "off":
         source = "applied-selection"
-        reason_code = "applied_selection_off"
+        reason_code = "applied_selection_suppressed"
     else:
         source = "none"
         reason_code = None
@@ -1676,7 +1654,10 @@ def _reasoning_suppression_basis_payload(
     if include_empty_fields or reason_code is not None:
         payload["reasonCode"] = reason_code
     if include_empty_fields or applied_thinking_level is not None:
-        payload["appliedThinkingLevel"] = applied_thinking_level
+        payload["appliedThinkingSelection"] = _compact_code_selection(
+            applied_thinking_level,
+            series=capability_series,
+        )
     return payload
 
 
@@ -1742,6 +1723,10 @@ def _build_request(
     thinking_capability_override: dict[str, object] | None = None,
     route_snapshot: RuntimeModelRouteSnapshot | None = None,
 ) -> RuntimeMessageSendRequest:
+    resolved_thinking_selection = thinking_selection
+    if resolved_thinking_selection is None and thinking_level_intent is not None:
+        resolved_thinking_selection = RuntimeThinkingSelection.from_legacy_level_intent(thinking_level_intent)
+
     return RuntimeMessageSendRequest(
         session_id=session_id,
         message=RuntimeMessagePayload(role="user", content="Hello"),
@@ -1756,8 +1741,7 @@ def _build_request(
                     model_id="gpt-4.1",
                 ),
             ),
-            thinkingSelection=thinking_selection,
-            thinkingLevelIntent=thinking_level_intent,
+            thinkingSelection=resolved_thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
             debugModeEnabled=debug_mode_enabled,

@@ -164,14 +164,15 @@ describe('createSettingsWorkspaceStorage', () => {
 
       expect(loaded.state.providerProfiles[0]?.availableModels[0]?.thinkingCapability).toEqual({
         supported: true,
-        series: 'compat-discrete-levels-v1',
-        input: {
-          kind: 'discrete',
-          levels: ['low', 'high'],
-        },
-        defaultSelection: {
-          mode: 'preset',
-          level: 'high',
+        series: 'openai-6-level-superset-v1',
+        template: {
+          editorType: 'discrete',
+          allowedValues: [
+            { valueType: 'code', code: 'none', labelZh: '无' },
+            { valueType: 'code', code: 'low', labelZh: '低' },
+            { valueType: 'code', code: 'high', labelZh: '高' },
+          ],
+          defaultValue: { valueType: 'code', code: 'high', labelZh: '高' },
         },
       })
     } finally {

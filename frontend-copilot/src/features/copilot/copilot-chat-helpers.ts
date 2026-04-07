@@ -7,11 +7,9 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import {
   RuntimeRequestError,
   cloneRuntimeThinkingSelection,
-  type RuntimeCanonicalThinkingSelection,
   type RuntimeModelRoute,
   type RuntimeRunCompletedEvent,
   type RuntimeThinkingCapability,
-  type RuntimeThinkingControlSpec,
   type RuntimeThinkingSelection,
   type RuntimeToolEvent,
   type RuntimeToolEventPhase,
@@ -238,159 +236,251 @@ export function resolveThinkingSelectionForCapability(
   capability: RuntimeThinkingCapability,
   value: RuntimeThinkingSelection | null | undefined,
 ): RuntimeThinkingSelection | null {
-  if (capability.controlSpec === null || capability.defaultSelection === null) {
+  if (capability.series === null || capability.editorType === null || capability.defaultValue === null) {
     return null
   }
 
-  return normalizeRuntimeThinkingSelectionForCapability(
-    value,
-    capability.series,
-    capability.controlSpec,
-  ) ?? buildRuntimeThinkingSelectionFromCanonical(
-    capability.defaultSelection,
-    capability.series,
-    capability.controlSpec,
-  )
+  return normalizeRuntimeThinkingSelectionForCapability(value, capability)
+    ?? buildRuntimeThinkingSelectionFromValue(capability.series, capability.defaultValue)
 }
 
 function normalizeRuntimeThinkingSelectionForCapability(
   value: RuntimeThinkingSelection | null | undefined,
-  capabilitySeries: string,
-  controlSpec: RuntimeThinkingControlSpec,
+  capability: RuntimeThinkingCapability,
 ): RuntimeThinkingSelection | null {
-  const normalizedMode = normalizeRuntimeThinkingSelectionMode(value)
-  if (normalizedMode === 'budget') {
-    if (controlSpec.kind !== 'budget') {
-      return null
-    }
+  if (value == null || capability.series === null || capability.editorType === null) {
+    return null
+  }
 
-    const budgetTokens = normalizeBudgetTokens(value?.budgetTokens, controlSpec)
-    if (budgetTokens === null) {
-      return null
-    }
+  if (value.series !== capability.series) {
+    return null
+  }
 
+  const runtimeValue = cloneRuntimeThinkingValue(value.value)
+    ?? buildRuntimeThinkingValueFromLegacySelection(value)
+  if (runtimeValue === null) {
+    return null
+  }
+
+  const normalizedValue = normalizeRuntimeThinkingValueForCapability(runtimeValue, capability)
+  if (normalizedValue === null) {
+    return null
+  }
+
+  return buildRuntimeThinkingSelectionFromValue(capability.series, normalizedValue)
+}
+
+function normalizeRuntimeThinkingValueForCapability(
+  value: NonNullable<RuntimeThinkingSelection['value']> | null | undefined,
+  capability: RuntimeThinkingCapability,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value == null || capability.editorType === null) {
+    return null
+  }
+
+  switch (capability.editorType) {
+    case 'fixed': {
+      const fixedValue = capability.defaultValue?.valueType === 'fixed'
+        ? capability.defaultValue
+        : capability.allowedValues.find((candidate) => candidate.valueType === 'fixed') ?? null
+      return cloneRuntimeThinkingValue(fixedValue)
+    }
+    case 'budget':
+      if (value.valueType !== 'budget') {
+        return null
+      }
+      if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
+        const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
+        return budgetTokens === null
+          ? null
+          : {
+              valueType: 'budget',
+              mode: 'budget',
+              budgetTokens,
+              labelZh: `${budgetTokens} Tokens`,
+            }
+      }
+      return cloneRuntimeThinkingValue(
+        capability.allowedValues.find((candidate) => (
+          candidate.valueType === 'budget' && candidate.mode === value.mode
+        )) ?? null,
+      )
+    case 'discrete':
+      if (value.valueType !== 'code') {
+        return null
+      }
+      return cloneRuntimeThinkingValue(
+        capability.allowedValues.find((candidate) => (
+          candidate.valueType === 'code' && candidate.code === value.code
+        )) ?? null,
+      )
+  }
+}
+
+function buildRuntimeThinkingSelectionFromValue(
+  capabilitySeries: string,
+  value: NonNullable<RuntimeThinkingSelection['value']>,
+): RuntimeThinkingSelection {
+  return {
+    series: capabilitySeries,
+    value: cloneRuntimeThinkingValue(value)!,
+    ...deriveLegacyThinkingSelectionFields(value),
+  }
+}
+
+function cloneRuntimeThinkingValue(
+  value: RuntimeThinkingSelection['value'] | null | undefined,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value == null) {
+    return null
+  }
+
+  switch (value.valueType) {
+    case 'code':
+      return {
+        valueType: 'code',
+        code: value.code,
+        labelZh: value.labelZh,
+      }
+    case 'budget':
+      return {
+        valueType: 'budget',
+        mode: value.mode,
+        budgetTokens: value.budgetTokens,
+        labelZh: value.labelZh,
+      }
+    case 'fixed':
+      return {
+        valueType: 'fixed',
+        code: 'fixed',
+        labelZh: value.labelZh,
+      }
+  }
+}
+
+function buildRuntimeThinkingValueFromLegacySelection(
+  selection: RuntimeThinkingSelection,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (selection.mode === 'budget' && typeof selection.budgetTokens === 'number') {
     return {
-      series: capabilitySeries,
+      valueType: 'budget',
       mode: 'budget',
-      level: null,
-      budgetTokens,
+      budgetTokens: selection.budgetTokens,
+      labelZh: `${selection.budgetTokens} Tokens`,
     }
   }
 
-  if (normalizedMode !== 'preset' || !isThinkingLevelIntent(value?.level)) {
+  if (typeof selection.level !== 'string' || selection.level.trim() === '') {
     return null
   }
 
-  if (!hasPresetOption(controlSpec, value.level)) {
-    return null
+  if (selection.level === 'fixed') {
+    return {
+      valueType: 'fixed',
+      code: 'fixed',
+      labelZh: '固定推理',
+    }
   }
 
   return {
-    series: capabilitySeries,
-    mode: 'preset',
-    level: value.level,
-    budgetTokens: null,
+    valueType: 'code',
+    code: selection.level,
+    labelZh: resolveLegacyThinkingValueLabel(selection.level),
   }
 }
 
-function buildRuntimeThinkingSelectionFromCanonical(
-  selection: RuntimeCanonicalThinkingSelection,
-  capabilitySeries: string,
-  controlSpec: RuntimeThinkingControlSpec,
-): RuntimeThinkingSelection | null {
-  if (selection.kind === 'budget') {
-    const budgetTokens = normalizeBudgetTokens(selection.budgetTokens, controlSpec)
-    if (budgetTokens !== null) {
+function deriveLegacyThinkingSelectionFields(
+  value: NonNullable<RuntimeThinkingSelection['value']>,
+): Pick<RuntimeThinkingSelection, 'mode' | 'level' | 'budgetTokens'> {
+  switch (value.valueType) {
+    case 'budget':
       return {
-        series: capabilitySeries,
         mode: 'budget',
         level: null,
-        budgetTokens,
+        budgetTokens: value.mode === 'budget' ? value.budgetTokens : null,
       }
-    }
-  }
-
-  if (selection.kind === 'preset' && isThinkingLevelIntent(selection.value) && hasPresetOption(controlSpec, selection.value)) {
-    return {
-      series: capabilitySeries,
-      mode: 'preset',
-      level: selection.value,
-      budgetTokens: null,
-    }
-  }
-
-  const fixedSelection = controlSpec.fixedSelection
-  if (fixedSelection?.kind === 'preset' && isThinkingLevelIntent(fixedSelection.value)) {
-    return {
-      series: capabilitySeries,
-      mode: 'preset',
-      level: fixedSelection.value,
-      budgetTokens: null,
-    }
-  }
-
-  for (const presetOption of controlSpec.presetOptions ?? []) {
-    if (presetOption.kind === 'preset' && isThinkingLevelIntent(presetOption.value)) {
+    case 'fixed':
       return {
-        series: capabilitySeries,
         mode: 'preset',
-        level: presetOption.value,
+        level: 'fixed',
         budgetTokens: null,
       }
-    }
+    case 'code':
+      return {
+        mode: 'preset',
+        level: mapSeriesCodeToLegacyLevel(value.code),
+        budgetTokens: null,
+      }
   }
-
-  if (controlSpec.kind === 'budget') {
-    const budgetTokens = normalizeBudgetTokens(controlSpec.budget?.minTokens ?? 0, controlSpec)
-    return budgetTokens === null
-      ? null
-      : {
-          series: capabilitySeries,
-          mode: 'budget',
-          level: null,
-          budgetTokens,
-        }
-  }
-
-  return null
 }
 
-function normalizeRuntimeThinkingSelectionMode(
-  selection: RuntimeThinkingSelection | null | undefined,
-): RuntimeThinkingSelection['mode'] {
-  if (selection === null || selection === undefined) {
+function resolveLegacyThinkingValueLabel(level: string): string {
+  switch (level) {
+    case 'off':
+    case 'none':
+      return '无'
+    case 'auto':
+    case 'dynamic':
+      return '自动'
+    case 'minimal':
+      return '极简'
+    case 'low':
+      return '低'
+    case 'medium':
+      return '中'
+    case 'high':
+      return '高'
+    case 'xhigh':
+      return '超高'
+    case 'disabled':
+    case 'false':
+      return '关闭'
+    case 'true':
+    case 'enabled':
+      return '开启'
+    case 'max':
+      return '最大'
+    case 'fixed':
+      return '固定推理'
+    default:
+      return level
+  }
+}
+
+function mapSeriesCodeToLegacyLevel(code: string): ThinkingLevelIntent {
+  switch (code) {
+    case 'none':
+    case 'off':
+    case 'disabled':
+    case 'false':
+      return 'off'
+    case 'minimal':
+    case 'dynamic':
+      return 'auto'
+    case 'low':
+      return 'low'
+    case 'medium':
+      return 'medium'
+    case 'high':
+    case 'true':
+    case 'enabled':
+      return 'high'
+    case 'max':
+    case 'xhigh':
+      return 'xhigh'
+    default:
+      return 'auto'
+  }
+}
+
+function normalizeBudgetTokens(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return null
   }
 
-  if (selection.mode === 'budget' || selection.mode === 'preset') {
-    return selection.mode
-  }
-
-  if (typeof selection.budgetTokens === 'number') {
-    return 'budget'
-  }
-
-  return selection.level === null ? null : 'preset'
-}
-
-function hasPresetOption(
-  controlSpec: RuntimeThinkingControlSpec,
-  level: ThinkingLevelIntent,
-): boolean {
-  return (controlSpec.presetOptions ?? []).some((option) => option.kind === 'preset' && option.value === level)
-}
-
-function normalizeBudgetTokens(
-  value: number | null | undefined,
-  controlSpec: RuntimeThinkingControlSpec,
-): number | null {
-  if (controlSpec.kind !== 'budget' || typeof value !== 'number' || !Number.isFinite(value)) {
-    return null
-  }
-
-  const minimum = Math.max(0, Math.trunc(controlSpec.budget?.minTokens ?? 0))
-  const maximum = Math.max(minimum, Math.trunc(controlSpec.budget?.maxTokens ?? minimum))
-  const step = Math.max(1, Math.trunc(controlSpec.budget?.stepTokens ?? 1))
+  const minimum = 0
+  const maximum = 32_768
+  const step = 1_024
   const clamped = Math.min(maximum, Math.max(minimum, Math.trunc(value)))
   const stepped = minimum + (Math.round((clamped - minimum) / step) * step)
 
@@ -409,19 +499,33 @@ function isSameRuntimeThinkingSelection(
     return false
   }
 
-  return left.series === right.series
-    && left.mode === right.mode
-    && left.level === right.level
-    && left.budgetTokens === right.budgetTokens
+  const leftValue = cloneRuntimeThinkingValue(left.value) ?? buildRuntimeThinkingValueFromLegacySelection(left)
+  const rightValue = cloneRuntimeThinkingValue(right.value) ?? buildRuntimeThinkingValueFromLegacySelection(right)
+  if (leftValue === null || rightValue === null) {
+    return false
+  }
+
+  return left.series === right.series && isSameRuntimeThinkingValue(leftValue, rightValue)
 }
 
-function isThinkingLevelIntent(value: unknown): value is ThinkingLevelIntent {
-  return value === 'off'
-    || value === 'auto'
-    || value === 'low'
-    || value === 'medium'
-    || value === 'high'
-    || value === 'xhigh'
+function isSameRuntimeThinkingValue(
+  left: NonNullable<RuntimeThinkingSelection['value']>,
+  right: NonNullable<RuntimeThinkingSelection['value']>,
+): boolean {
+  if (left.valueType !== right.valueType) {
+    return false
+  }
+
+  switch (left.valueType) {
+    case 'code':
+      return right.valueType === 'code' && left.code === right.code
+    case 'fixed':
+      return right.valueType === 'fixed'
+    case 'budget':
+      return right.valueType === 'budget'
+        && left.mode === right.mode
+        && left.budgetTokens === right.budgetTokens
+  }
 }
 
 export function parseRequestOptionsText(requestOptionsText: string): Record<string, unknown> {

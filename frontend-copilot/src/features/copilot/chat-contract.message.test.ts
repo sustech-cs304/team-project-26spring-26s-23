@@ -9,6 +9,7 @@ import {
   createRuntimeModelRoute,
   createRuntimeRunCompletedEvent,
   createRuntimeRunStartResponse,
+  createRuntimeThinkingSelection,
   createSseEventStream,
   createUserMessage,
   runtimeUrl,
@@ -86,7 +87,7 @@ describe('sendRuntimeMessage', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
-      thinkingLevelIntent: 'auto',
+      thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
       enabledTools: ['tool.file-convert'],
       debugModeEnabled: true,
       requestOptions: {
@@ -126,9 +127,11 @@ describe('sendRuntimeMessage', () => {
             modelRoute: createRuntimeModelRoute(),
             thinkingSelection: {
               series: 'compat-discrete-selection-v1',
-              mode: 'preset',
-              level: 'auto',
-              budgetTokens: null,
+              value: {
+                valueType: 'code',
+                code: 'auto',
+                labelZh: '自动',
+              },
             },
             enabledTools: ['tool.file-convert'],
             debugModeEnabled: true,

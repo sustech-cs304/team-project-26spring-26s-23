@@ -31,8 +31,10 @@ DEFAULT_TRANSPORT = {
 
 
 ThinkingLevelIntent = Literal["off", "auto", "low", "medium", "high", "xhigh"]
+ThinkingSeriesValueType = Literal["code", "budget", "fixed"]
 COMPAT_THINKING_SELECTION_SERIES = "compat-discrete-selection-v1"
 _THINKING_LEVEL_VALUES = frozenset({"off", "auto", "low", "medium", "high", "xhigh"})
+_BUDGET_VALUE_MODES = frozenset({"off", "dynamic", "budget"})
 
 
 class RuntimeContract:
@@ -41,11 +43,56 @@ class RuntimeContract:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeThinkingValue(RuntimeContract):
+    valueType: ThinkingSeriesValueType
+    code: str | None = None
+    mode: str | None = None
+    budgetTokens: int | None = None
+    labelZh: str | None = None
+
+    def to_legacy_level_intent(self) -> ThinkingLevelIntent | None:
+        if self.valueType != "code" or self.code not in _THINKING_LEVEL_VALUES:
+            return None
+        return cast(ThinkingLevelIntent, self.code)
+
+    def suppression_marker(self) -> str | None:
+        if self.valueType == "code":
+            return self.code
+        if self.valueType == "budget":
+            return self.mode
+        if self.valueType == "fixed":
+            return self.code or "fixed"
+        return None
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class RuntimeThinkingSelection(RuntimeContract):
     series: str
-    mode: str | None = None
-    level: ThinkingLevelIntent | None = None
-    budgetTokens: int | None = None
+    value: RuntimeThinkingValue
+
+    def __init__(
+        self,
+        *,
+        series: str,
+        value: RuntimeThinkingValue | None = None,
+        mode: str | None = None,
+        level: ThinkingLevelIntent | None = None,
+        budgetTokens: int | None = None,
+        labelZh: str | None = None,
+    ) -> None:
+        normalized_series = series.strip()
+        if normalized_series == "":
+            raise ValueError("RuntimeThinkingSelection.series must be non-empty.")
+        normalized_value = value or _build_runtime_thinking_value_from_legacy(
+            mode=mode,
+            level=level,
+            budget_tokens=budgetTokens,
+            label_zh=labelZh,
+        )
+        if normalized_value is None:
+            raise ValueError("RuntimeThinkingSelection requires a valid series value.")
+        object.__setattr__(self, "series", normalized_series)
+        object.__setattr__(self, "value", normalized_value)
 
     @classmethod
     def from_legacy_level_intent(
@@ -56,12 +103,26 @@ class RuntimeThinkingSelection(RuntimeContract):
     ) -> "RuntimeThinkingSelection" | None:
         if value is None:
             return None
-        return cls(series=series, mode="preset", level=value)
+        return cls(series=series, level=value, labelZh=value)
 
     def to_legacy_level_intent(self) -> ThinkingLevelIntent | None:
-        if self.level is None or self.level not in _THINKING_LEVEL_VALUES:
-            return None
-        return self.level
+        return self.value.to_legacy_level_intent()
+
+    @property
+    def mode(self) -> str | None:
+        if self.value.valueType == "budget":
+            return "budget"
+        if self.value.valueType in {"code", "fixed"}:
+            return "preset"
+        return None
+
+    @property
+    def level(self) -> ThinkingLevelIntent | None:
+        return self.to_legacy_level_intent()
+
+    @property
+    def budgetTokens(self) -> int | None:
+        return self.value.budgetTokens if self.value.valueType == "budget" else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,24 +258,17 @@ class RuntimeMessagePayload(RuntimeContract):
 class RuntimeMessageExecutionPolicy(RuntimeContract):
     modelRoute: RuntimeModelRoute
     thinkingSelection: RuntimeThinkingSelection | None = None
-    thinkingLevelIntent: ThinkingLevelIntent | None = None
     thinkingCapabilityOverride: dict[str, Any] | None = None
     enabledTools: tuple[str, ...] = ()
     debugModeEnabled: bool | None = None
     requestOptions: dict[str, Any] = field(default_factory=dict)
 
     def resolve_thinking_selection(self) -> RuntimeThinkingSelection | None:
-        if self.thinkingSelection is not None:
-            return self.thinkingSelection
-        return RuntimeThinkingSelection.from_legacy_level_intent(self.thinkingLevelIntent)
+        return self.thinkingSelection
 
     def resolve_thinking_level_intent(self) -> ThinkingLevelIntent | None:
         selection = self.resolve_thinking_selection()
-        if selection is not None:
-            selection_level = selection.to_legacy_level_intent()
-            if selection_level is not None or self.thinkingSelection is not None:
-                return selection_level
-        return self.thinkingLevelIntent
+        return None if selection is None else selection.to_legacy_level_intent()
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,11 +309,21 @@ class RuntimeRunView(RuntimeContract):
     cancelRequested: bool = False
     requestedThinkingSelection: RuntimeThinkingSelection | None = None
     appliedThinkingSelection: RuntimeThinkingSelection | None = None
-    requestedThinkingLevel: ThinkingLevelIntent | None = None
-    appliedThinkingLevel: ThinkingLevelIntent | None = None
     thinkingCapabilitySnapshot: dict[str, Any] | None = None
-    thinkingSelectionResult: dict[str, Any] | None = None
+    thinkingSeriesDecision: dict[str, Any] | None = None
     reasoningSuppressionBasis: dict[str, Any] | None = None
+
+    @property
+    def requestedThinkingLevel(self) -> ThinkingLevelIntent | None:
+        if self.requestedThinkingSelection is None:
+            return None
+        return self.requestedThinkingSelection.to_legacy_level_intent()
+
+    @property
+    def appliedThinkingLevel(self) -> ThinkingLevelIntent | None:
+        if self.appliedThinkingSelection is None:
+            return None
+        return self.appliedThinkingSelection.to_legacy_level_intent()
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,49 +466,22 @@ class RuntimeScaffold(RuntimeContract):
     def build_run_view(self, *, run: RuntimeRunRecord) -> RuntimeRunView:
         request_policy = run.request.policy
         request_policy_selection = _resolve_policy_thinking_selection(request_policy)
-        request_policy_level = _resolve_policy_thinking_level_intent(request_policy)
-        metadata_requested_level = run.metadata.get("requestedThinkingLevel")
-        metadata_applied_level = run.metadata.get("appliedThinkingLevel")
 
         requested_thinking_selection = _coerce_runtime_thinking_selection(
             run.metadata.get("requestedThinkingSelection")
         ) or request_policy_selection
-        if requested_thinking_selection is None and isinstance(metadata_requested_level, str):
-            requested_thinking_selection = RuntimeThinkingSelection.from_legacy_level_intent(
-                cast(ThinkingLevelIntent, metadata_requested_level)
-            )
 
         applied_thinking_selection = _coerce_runtime_thinking_selection(
             run.metadata.get("appliedThinkingSelection")
         )
-        if applied_thinking_selection is None and isinstance(metadata_applied_level, str):
-            applied_thinking_selection = RuntimeThinkingSelection.from_legacy_level_intent(
-                cast(ThinkingLevelIntent, metadata_applied_level)
-            )
 
-        requested_thinking_level = (
-            requested_thinking_selection.to_legacy_level_intent()
-            if requested_thinking_selection is not None
-            else request_policy_level
-            if request_policy_level is not None
-            else metadata_requested_level
+        resolved_thinking_capability_snapshot = _coerce_mapping_dict(
+            run.metadata.get("thinkingCapabilitySnapshot")
         )
-        applied_thinking_level = (
-            applied_thinking_selection.to_legacy_level_intent()
-            if applied_thinking_selection is not None
-            else metadata_applied_level
-        )
-        thinking_capability_snapshot = run.metadata.get("thinkingCapabilitySnapshot")
-        thinking_selection_result = _coerce_mapping_dict(run.metadata.get("thinkingSelectionResult"))
+        thinking_series_decision = _coerce_mapping_dict(
+            run.metadata.get("thinkingSeriesDecision")
+        ) or _coerce_mapping_dict(run.metadata.get("thinkingSelectionResult"))
         reasoning_suppression_basis = _coerce_mapping_dict(run.metadata.get("reasoningSuppressionBasis"))
-        resolved_thinking_capability_snapshot = (
-            dict(thinking_capability_snapshot)
-            if isinstance(thinking_capability_snapshot, dict)
-            else None
-        )
-        resolved_applied_thinking_level = (
-            applied_thinking_level if isinstance(applied_thinking_level, str) else None
-        )
         return RuntimeRunView(
             runId=run.run_id,
             threadId=run.thread_id,
@@ -456,18 +493,14 @@ class RuntimeScaffold(RuntimeContract):
             cancelRequested=run.cancel_requested,
             requestedThinkingSelection=requested_thinking_selection,
             appliedThinkingSelection=applied_thinking_selection,
-            requestedThinkingLevel=(
-                requested_thinking_level if isinstance(requested_thinking_level, str) else None
-            ),
-            appliedThinkingLevel=resolved_applied_thinking_level,
             thinkingCapabilitySnapshot=resolved_thinking_capability_snapshot,
-            thinkingSelectionResult=thinking_selection_result,
+            thinkingSeriesDecision=thinking_series_decision,
             reasoningSuppressionBasis=(
                 reasoning_suppression_basis
                 if reasoning_suppression_basis is not None
                 else _build_reasoning_suppression_basis(
                     capability=resolved_thinking_capability_snapshot,
-                    applied_thinking_level=resolved_applied_thinking_level,
+                    applied_selection=applied_thinking_selection,
                 )
             ),
         )
@@ -685,15 +718,8 @@ def _resolve_policy_thinking_selection(policy: Any) -> RuntimeThinkingSelection 
 
 
 def _resolve_policy_thinking_level_intent(policy: Any) -> ThinkingLevelIntent | None:
-    resolver = getattr(policy, "resolve_thinking_level_intent", None)
-    if callable(resolver):
-        resolved = resolver()
-        return resolved if isinstance(resolved, str) and resolved in _THINKING_LEVEL_VALUES else None
-    for attr_name in ("thinkingLevelIntent", "thinking_level_intent"):
-        value = getattr(policy, attr_name, None)
-        if isinstance(value, str) and value in _THINKING_LEVEL_VALUES:
-            return cast(ThinkingLevelIntent, value)
-    return None
+    selection = _resolve_policy_thinking_selection(policy)
+    return None if selection is None else selection.to_legacy_level_intent()
 
 
 
@@ -705,17 +731,26 @@ def _coerce_runtime_thinking_selection(value: Any) -> RuntimeThinkingSelection |
 
     if isinstance(value, dict):
         series = value.get("series")
+        raw_selection_value = value.get("value")
+    else:
+        series = getattr(value, "series", None)
+        raw_selection_value = getattr(value, "value", None)
+
+    if not isinstance(series, str) or series.strip() == "":
+        return None
+
+    selection_value = _coerce_runtime_thinking_value(raw_selection_value)
+    if selection_value is not None:
+        return RuntimeThinkingSelection(series=series.strip(), value=selection_value)
+
+    if isinstance(value, dict):
         mode = value.get("mode")
         level = value.get("level")
         budget_tokens = value.get("budgetTokens")
     else:
-        series = getattr(value, "series", None)
         mode = getattr(value, "mode", None)
         level = getattr(value, "level", None)
         budget_tokens = getattr(value, "budgetTokens", getattr(value, "budget_tokens", None))
-
-    if not isinstance(series, str) or series.strip() == "":
-        return None
 
     normalized_mode = mode.strip() if isinstance(mode, str) and mode.strip() != "" else None
     normalized_level = (
@@ -724,14 +759,112 @@ def _coerce_runtime_thinking_selection(value: Any) -> RuntimeThinkingSelection |
         else None
     )
     normalized_budget_tokens = (
-        budget_tokens if isinstance(budget_tokens, int) and not isinstance(budget_tokens, bool) else None
+        budget_tokens
+        if isinstance(budget_tokens, int) and not isinstance(budget_tokens, bool) and budget_tokens >= 0
+        else None
     )
-    return RuntimeThinkingSelection(
-        series=series.strip(),
-        mode=normalized_mode,
-        level=normalized_level,
-        budgetTokens=normalized_budget_tokens,
-    )
+    if normalized_mode == "budget" and normalized_budget_tokens is not None:
+        return RuntimeThinkingSelection(
+            series=series.strip(),
+            value=RuntimeThinkingValue(
+                valueType="budget",
+                mode="budget",
+                budgetTokens=normalized_budget_tokens,
+            ),
+        )
+    if normalized_level is not None:
+        return RuntimeThinkingSelection(
+            series=series.strip(),
+            value=RuntimeThinkingValue(
+                valueType="code",
+                code=normalized_level,
+                labelZh=normalized_level,
+            ),
+        )
+    return None
+
+
+
+def _coerce_runtime_thinking_value(value: Any) -> RuntimeThinkingValue | None:
+    if isinstance(value, RuntimeThinkingValue):
+        return value
+    if isinstance(value, dict):
+        value_type = value.get("valueType")
+        code = value.get("code")
+        mode = value.get("mode")
+        budget_tokens = value.get("budgetTokens")
+        label_zh = value.get("labelZh")
+    else:
+        value_type = getattr(value, "valueType", getattr(value, "value_type", None))
+        code = getattr(value, "code", None)
+        mode = getattr(value, "mode", None)
+        budget_tokens = getattr(value, "budgetTokens", getattr(value, "budget_tokens", None))
+        label_zh = getattr(value, "labelZh", getattr(value, "label_zh", None))
+
+    normalized_label = label_zh.strip() if isinstance(label_zh, str) and label_zh.strip() != "" else None
+    if value_type == "code":
+        if not isinstance(code, str) or code.strip() == "":
+            return None
+        return RuntimeThinkingValue(
+            valueType="code",
+            code=code.strip(),
+            labelZh=normalized_label,
+        )
+    if value_type == "budget":
+        normalized_mode = mode.strip() if isinstance(mode, str) and mode.strip() in _BUDGET_VALUE_MODES else None
+        normalized_budget_tokens = (
+            budget_tokens
+            if isinstance(budget_tokens, int) and not isinstance(budget_tokens, bool) and budget_tokens >= 0
+            else None
+        )
+        if normalized_mode is None:
+            return None
+        if normalized_mode == "budget" and normalized_budget_tokens is None:
+            return None
+        return RuntimeThinkingValue(
+            valueType="budget",
+            mode=normalized_mode,
+            budgetTokens=normalized_budget_tokens,
+            labelZh=normalized_label,
+        )
+    if value_type == "fixed":
+        normalized_code = code.strip() if isinstance(code, str) and code.strip() != "" else "fixed"
+        if normalized_code != "fixed":
+            return None
+        return RuntimeThinkingValue(
+            valueType="fixed",
+            code="fixed",
+            labelZh=normalized_label,
+        )
+    return None
+
+
+
+def _build_runtime_thinking_value_from_legacy(
+    *,
+    mode: str | None,
+    level: ThinkingLevelIntent | None,
+    budget_tokens: int | None,
+    label_zh: str | None,
+) -> RuntimeThinkingValue | None:
+    normalized_label = label_zh.strip() if isinstance(label_zh, str) and label_zh.strip() != "" else None
+    normalized_mode = mode.strip() if isinstance(mode, str) and mode.strip() != "" else None
+    if normalized_mode == "budget":
+        if budget_tokens is None or budget_tokens < 0:
+            return None
+        return RuntimeThinkingValue(
+            valueType="budget",
+            mode="budget",
+            budgetTokens=budget_tokens,
+            labelZh=normalized_label or str(budget_tokens),
+        )
+    if level is not None:
+        return RuntimeThinkingValue(
+            valueType="code",
+            code=level,
+            labelZh=normalized_label or level,
+        )
+    return None
 
 
 
@@ -743,9 +876,10 @@ def _coerce_mapping_dict(value: Any) -> dict[str, Any] | None:
 def _build_reasoning_suppression_basis(
     *,
     capability: dict[str, Any] | None,
-    applied_thinking_level: ThinkingLevelIntent | None,
+    applied_selection: RuntimeThinkingSelection | None = None,
+    applied_thinking_level: ThinkingLevelIntent | None = None,
 ) -> dict[str, Any] | None:
-    if capability is None and applied_thinking_level is None:
+    if capability is None and applied_selection is None and applied_thinking_level is None:
         return None
 
     capability_visibility = capability.get("visibility") if isinstance(capability, dict) else None
@@ -760,23 +894,38 @@ def _build_reasoning_suppression_basis(
         and isinstance(capability_visibility.get("supportsSuppression"), bool)
         else True
     )
+    resolved_applied_selection = applied_selection
+    if resolved_applied_selection is None and applied_thinking_level is not None:
+        resolved_applied_selection = RuntimeThinkingSelection.from_legacy_level_intent(applied_thinking_level)
+    suppression_marker = (
+        None
+        if resolved_applied_selection is None
+        else resolved_applied_selection.value.suppression_marker()
+    )
     should_suppress = False
     source = "none"
     reason_code: str | None = None
-    if reasoning_visibility == "suppressed":
+    visibility_reason_codes = {
+        "suppressed": "capability_visibility_suppressed",
+        "hidden": "capability_visibility_hidden",
+        "fixed-no-visible-trace": "capability_visibility_fixed_no_visible_trace",
+    }
+    if reasoning_visibility in visibility_reason_codes:
         should_suppress = True
         source = "capability-visibility"
-        reason_code = "capability_visibility_suppressed"
-    elif applied_thinking_level == "off":
+        reason_code = visibility_reason_codes[reasoning_visibility]
+    elif suppression_marker in {"off", "none", "disabled", "false"}:
         should_suppress = True
         source = "applied-selection"
-        reason_code = "applied_selection_off"
+        reason_code = "applied_selection_suppressed"
 
     return {
         "shouldSuppress": should_suppress,
         "source": source,
         "reasonCode": reason_code,
-        "appliedThinkingLevel": applied_thinking_level,
+        "appliedThinkingSelection": (
+            None if resolved_applied_selection is None else resolved_applied_selection.to_dict()
+        ),
         "reasoningVisibility": reasoning_visibility,
         "supportsSuppression": supports_suppression,
         "capabilitySource": capability.get("source") if isinstance(capability, dict) else None,

@@ -40,7 +40,7 @@ export function createIdleCopilotRunState(): CopilotRunState {
     requestedThinkingLevel: null,
     appliedThinkingLevel: null,
     thinkingCapabilitySnapshot: null,
-    thinkingSelectionResult: null,
+    thinkingSeriesDecision: null,
     reasoningSuppressionBasis: null,
     reasoningSuppressed: false,
     reasoningTraceState: 'not_observed',
@@ -98,16 +98,14 @@ function applyRunThinkingMetadataToState(
   const thinkingCapabilitySnapshot = metadata.thinkingCapabilitySnapshot === undefined
     ? state.thinkingCapabilitySnapshot
     : cloneRuntimeThinkingCapability(metadata.thinkingCapabilitySnapshot)
-  const thinkingSelectionResult = metadata.thinkingSelectionResult === undefined
-    ? state.thinkingSelectionResult
-    : cloneRuntimeThinkingSelectionResult(metadata.thinkingSelectionResult)
+  const thinkingSeriesDecision = metadata.thinkingSeriesDecision === undefined
+    ? state.thinkingSeriesDecision
+    : cloneRuntimeThinkingSelectionResult(metadata.thinkingSeriesDecision)
   const reasoningSuppressionBasis = metadata.reasoningSuppressionBasis === undefined
     ? state.reasoningSuppressionBasis
     : cloneRuntimeReasoningSuppressionBasis(metadata.reasoningSuppressionBasis)
   const reasoningSuppressed = shouldSuppressReasoning({
     previousSuppressed: state.reasoningSuppressed,
-    appliedThinkingSelection,
-    appliedThinkingLevel,
     reasoningSuppressionBasis,
   })
   const reasoningTraceState = resolveReasoningTraceStateAfterMetadata({
@@ -123,7 +121,7 @@ function applyRunThinkingMetadataToState(
     requestedThinkingLevel,
     appliedThinkingLevel,
     thinkingCapabilitySnapshot,
-    thinkingSelectionResult,
+    thinkingSeriesDecision,
     reasoningSuppressionBasis,
     reasoningSuppressed,
     reasoningTraceState,
@@ -180,8 +178,6 @@ export function applyRuntimeRunEventToCopilotRunState(
     case 'reasoning_delta': {
       if (shouldSuppressReasoning({
         previousSuppressed: state.reasoningSuppressed,
-        appliedThinkingSelection: state.appliedThinkingSelection,
-        appliedThinkingLevel: state.appliedThinkingLevel,
         reasoningSuppressionBasis: state.reasoningSuppressionBasis,
       })) {
         return {
@@ -825,8 +821,8 @@ function cloneRuntimeThinkingCapability(
 }
 
 function cloneRuntimeThinkingSelectionResult(
-  result: CopilotRunState['thinkingSelectionResult'],
-): CopilotRunState['thinkingSelectionResult'] {
+  result: CopilotRunState['thinkingSeriesDecision'],
+): CopilotRunState['thinkingSeriesDecision'] {
   return cloneRuntimeThinkingSelectionResultValue(result)
 }
 
@@ -838,16 +834,10 @@ function cloneRuntimeReasoningSuppressionBasis(
 
 function shouldSuppressReasoning(input: {
   previousSuppressed: boolean
-  appliedThinkingSelection: CopilotRunState['appliedThinkingSelection']
-  appliedThinkingLevel: CopilotRunState['appliedThinkingLevel']
   reasoningSuppressionBasis: CopilotRunState['reasoningSuppressionBasis']
 }): boolean {
-  const appliedThinkingDisabled = input.appliedThinkingSelection?.level === 'off'
-    || (input.appliedThinkingSelection === null && input.appliedThinkingLevel === 'off')
-
   return input.previousSuppressed
     || input.reasoningSuppressionBasis?.shouldSuppress === true
-    || appliedThinkingDisabled
 }
 
 function resolveReasoningTraceStateAfterMetadata(input: {

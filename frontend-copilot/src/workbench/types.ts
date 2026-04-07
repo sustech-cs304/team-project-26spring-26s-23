@@ -32,6 +32,46 @@ export type ThinkingLevelIntent = 'off' | 'auto' | 'low' | 'medium' | 'high' | '
 export type PositiveThinkingLevelIntent = Exclude<ThinkingLevelIntent, 'off'>
 export type ThinkingCapabilitySeriesInputKind = 'fixed' | 'binary' | 'off-auto' | 'discrete' | 'budget'
 export type ThinkingCapabilitySeriesId = string
+export type ThinkingSeriesEditorType = 'discrete' | 'budget' | 'fixed'
+export type ThinkingSeriesValueType = 'code' | 'budget' | 'fixed'
+
+export interface ThinkingSeriesCodeValue {
+  valueType: 'code'
+  code: string
+  labelZh: string
+}
+
+export interface ThinkingSeriesBudgetValue {
+  valueType: 'budget'
+  mode: 'off' | 'dynamic' | 'budget'
+  budgetTokens: number | null
+  labelZh: string
+}
+
+export interface ThinkingSeriesFixedValue {
+  valueType: 'fixed'
+  code: 'fixed'
+  labelZh: string
+}
+
+export type ThinkingSeriesValue =
+  | ThinkingSeriesCodeValue
+  | ThinkingSeriesBudgetValue
+  | ThinkingSeriesFixedValue
+
+export interface ThinkingSeriesBudgetTemplate {
+  minTokens: number
+  maxTokens: number
+  stepTokens: number
+  anchorTokens: number[]
+}
+
+export interface ThinkingSeriesTemplate {
+  editorType?: ThinkingSeriesEditorType
+  defaultValue: ThinkingSeriesValue | null
+  allowedValues?: ThinkingSeriesValue[]
+  budget?: ThinkingSeriesBudgetTemplate
+}
 
 export interface UnsupportedThinkingCapabilityDeclaration {
   supported: false
@@ -95,6 +135,7 @@ export type ThinkingCapabilitySeriesInput =
 export interface StructuredThinkingCapabilityDeclaration {
   supported: true
   series?: ThinkingCapabilitySeriesId
+  template?: ThinkingSeriesTemplate
   input?: ThinkingCapabilitySeriesInput
   defaultSelection?: ThinkingCapabilityDefaultSelection
   source?: string

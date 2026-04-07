@@ -370,6 +370,8 @@ function renderMessageBody(turn: CopilotMessageListItem) {
 }
 
 type ThinkingDetailTurn = {
+  requestedThinkingSelection?: CopilotAssistantMessageItem['requestedThinkingSelection']
+  appliedThinkingSelection?: CopilotAssistantMessageItem['appliedThinkingSelection']
   requestedThinkingLevel?: CopilotAssistantMessageItem['requestedThinkingLevel']
   appliedThinkingLevel?: CopilotAssistantMessageItem['appliedThinkingLevel']
   thinkingCapabilitySnapshot?: CopilotAssistantMessageItem['thinkingCapabilitySnapshot']
@@ -382,6 +384,8 @@ function extractThinkingDetailTurn(turn: CopilotMessageListItem): ThinkingDetail
     case 'assistant':
     case 'terminal':
       return {
+        requestedThinkingSelection: turn.requestedThinkingSelection,
+        appliedThinkingSelection: turn.appliedThinkingSelection,
         requestedThinkingLevel: turn.requestedThinkingLevel,
         appliedThinkingLevel: turn.appliedThinkingLevel,
         thinkingCapabilitySnapshot: turn.thinkingCapabilitySnapshot,
@@ -456,19 +460,19 @@ function buildThinkingDetailRows(
     value: string
   }> = []
 
-  if (turn.requestedThinkingLevel !== undefined) {
+  if (turn.requestedThinkingSelection !== undefined) {
     rows.push({
       kind: 'meta',
-      label: '请求思考',
-      value: turn.requestedThinkingLevel ?? '未请求',
+      label: '请求系列值',
+      value: formatThinkingSelection(turn.requestedThinkingSelection),
     })
   }
 
-  if (turn.appliedThinkingLevel !== undefined) {
+  if (turn.appliedThinkingSelection !== undefined) {
     rows.push({
       kind: 'meta',
-      label: '应用思考',
-      value: turn.appliedThinkingLevel ?? '未应用',
+      label: '应用系列值',
+      value: formatThinkingSelection(turn.appliedThinkingSelection),
     })
   }
 
@@ -483,7 +487,10 @@ function buildThinkingDetailRows(
       label: '原因码',
       value: turn.thinkingCapabilitySnapshot.reasonCode,
     })
-    if (turn.thinkingCapabilitySnapshot.providerHint !== null) {
+    if (
+      turn.thinkingCapabilitySnapshot.providerHint !== undefined
+      && turn.thinkingCapabilitySnapshot.providerHint !== null
+    ) {
       rows.push({
         kind: 'meta',
         label: 'Provider Hint',
@@ -534,6 +541,39 @@ function formatReasoningSuppressionBasis(
   return reasonCode === ''
     ? `${suppressionLabel} / ${basis.source} / ${reasoningVisibility}`
     : `${suppressionLabel} / ${basis.source} / ${reasonCode} / ${reasoningVisibility}`
+}
+
+function formatThinkingSelection(
+  selection: ThinkingDetailTurn['requestedThinkingSelection'],
+): string {
+  if (selection === undefined) {
+    return '未提供'
+  }
+  if (selection === null) {
+    return '未请求'
+  }
+
+  const value = selection.value
+  if (value?.valueType === 'code') {
+    return `${selection.series} / ${value.code}`
+  }
+  if (value?.valueType === 'budget') {
+    return value.mode === 'budget'
+      ? `${selection.series} / budget:${value.budgetTokens ?? 0}`
+      : `${selection.series} / ${value.mode}`
+  }
+  if (value?.valueType === 'fixed') {
+    return `${selection.series} / fixed`
+  }
+
+  if (typeof selection.level === 'string' && selection.level.trim() !== '') {
+    return `${selection.series} / ${selection.level}`
+  }
+  if (selection.mode === 'budget' && typeof selection.budgetTokens === 'number') {
+    return `${selection.series} / budget:${selection.budgetTokens}`
+  }
+
+  return selection.series
 }
 
 function ReasoningMessageCard({

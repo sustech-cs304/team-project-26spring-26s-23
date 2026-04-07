@@ -56,7 +56,7 @@ from .model_routes import (
 )
 from .run_events import RuntimeRunEvent, RuntimeRunEventFactory
 from .session_store import BoundAgentMismatchError, InMemorySessionStore, RuntimeSessionRecord
-from .thinking_adapter import CanonicalThinkingSelection, adapt_thinking_selection
+from .thinking_adapter import adapt_thinking_selection
 
 
 class RuntimeAgentTextStream(Protocol):
@@ -336,7 +336,7 @@ class RuntimeMessageRunOrchestrator:
             selection_result_summary = summarize_runtime_thinking_selection_result(selection_result)
             reasoning_suppression_basis = build_reasoning_suppression_basis(
                 capability=thinking_adaptation.capability.to_public_dict(),
-                applied_thinking_level=thinking_adaptation.applied_intent,
+                applied_selection=applied_thinking_selection,
             )
             reasoning_suppression_basis_summary = summarize_runtime_reasoning_suppression_basis(
                 reasoning_suppression_basis
@@ -352,8 +352,6 @@ class RuntimeMessageRunOrchestrator:
                 appliedThinkingSelection=(
                     None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
                 ),
-                requestedThinkingLevel=thinking_adaptation.requested_intent,
-                appliedThinkingLevel=thinking_adaptation.applied_intent,
                 resolvedModelRoute=summarize_runtime_model_route(resolved_model_route),
                 overrideInput=request.policy.thinkingCapabilityOverride,
                 capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
@@ -371,8 +369,6 @@ class RuntimeMessageRunOrchestrator:
                 appliedThinkingSelection=(
                     None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
                 ),
-                requestedThinkingLevel=thinking_adaptation.requested_intent,
-                appliedThinkingLevel=thinking_adaptation.applied_intent,
                 applied=thinking_adaptation.applied,
                 reason=thinking_adaptation.reason,
                 capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
@@ -390,9 +386,7 @@ class RuntimeMessageRunOrchestrator:
                 appliedThinkingSelection=(
                     None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
                 ),
-                requestedThinkingLevel=thinking_adaptation.requested_intent,
-                appliedThinkingLevel=thinking_adaptation.applied_intent,
-                providerMapping=thinking_adaptation.provider_mapping,
+                providerBuilderKey=thinking_adaptation.provider_builder_key,
                 modelSettings=thinking_adaptation.model_settings,
                 mappingReasonCode=thinking_adaptation.mapping_reason_code,
                 reason=thinking_adaptation.reason,
@@ -407,10 +401,8 @@ class RuntimeMessageRunOrchestrator:
                 applied_thinking_selection=None
                 if applied_thinking_selection is None
                 else applied_thinking_selection.to_dict(),
-                requested_thinking_level=thinking_adaptation.requested_intent,
-                applied_thinking_level=thinking_adaptation.applied_intent,
                 thinking_capability_snapshot=thinking_adaptation.capability.to_public_dict(),
-                thinking_selection_result=selection_result,
+                thinking_series_decision=selection_result,
                 reasoning_suppression_basis=reasoning_suppression_basis,
             )
             log_runtime_chain_debug(
@@ -422,13 +414,13 @@ class RuntimeMessageRunOrchestrator:
             )
             yield run_metadata
             if requested_thinking_selection is not None and not thinking_adaptation.applied:
-                fail_fast_code = thinking_adaptation.error_code or "thinking_not_supported_for_route"
+                fail_fast_code = (
+                    thinking_adaptation.error_code or "thinking_series_not_supported_for_route"
+                )
                 fail_fast_details = {
                     **thinking_adaptation.diagnostics,
                     "reason": thinking_adaptation.reason,
                 }
-                if thinking_adaptation.requested_intent is not None:
-                    fail_fast_details["intent"] = thinking_adaptation.requested_intent
                 log_runtime_chain_debug(
                     "thinking.fail_fast",
                     enabled=debug_enabled,
@@ -439,8 +431,6 @@ class RuntimeMessageRunOrchestrator:
                     appliedThinkingSelection=(
                         None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
                     ),
-                    requestedThinkingLevel=thinking_adaptation.requested_intent,
-                    appliedThinkingLevel=thinking_adaptation.applied_intent,
                     reason=thinking_adaptation.reason,
                     capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
                     diagnostics=fail_fast_details,
@@ -968,8 +958,8 @@ class RuntimeMessageRunOrchestrator:
 def _resolve_applied_thinking_selection(
     *,
     requested_selection: RuntimeThinkingSelection | None,
-    requested_canonical_selection: CanonicalThinkingSelection | None,
-    applied_canonical_selection: CanonicalThinkingSelection | None,
+    requested_canonical_selection: Any,
+    applied_canonical_selection: Any,
     capability_series: str,
 ) -> RuntimeThinkingSelection | None:
     if applied_canonical_selection is None:
@@ -989,20 +979,26 @@ def _resolve_applied_thinking_selection(
 
 def _to_runtime_thinking_selection(
     *,
-    selection: CanonicalThinkingSelection,
+    selection: Any,
     series: str,
 ) -> RuntimeThinkingSelection | None:
-    if selection.kind == "budget":
-        if selection.budget_tokens is None:
+    if isinstance(selection, RuntimeThinkingSelection):
+        return selection
+    kind = getattr(selection, "kind", None)
+    if kind == "budget":
+        budget_tokens = getattr(selection, "budget_tokens", None)
+        if budget_tokens is None:
             return None
         return RuntimeThinkingSelection(
             series=series,
             mode="budget",
             level=None,
-            budgetTokens=selection.budget_tokens,
+            budgetTokens=budget_tokens,
         )
-    level = selection.to_legacy_level()
-    if level is None:
+    if kind != "preset":
+        return None
+    level = getattr(selection, "value", None)
+    if not isinstance(level, str):
         return None
     return RuntimeThinkingSelection(
         series=series,
@@ -1018,24 +1014,24 @@ def _build_thinking_fail_fast_message(
     code: str,
     requested_selection: RuntimeThinkingSelection,
 ) -> str:
-    requested_level = requested_selection.to_legacy_level_intent()
-    if code == "thinking_capability_resolution_failed":
+    requested_value = requested_selection.value.to_dict()
+    if code == "thinking_series_mapping_failed":
         return (
-            "Selected thinking option could not be mapped to provider parameters for the current model route. "
-            "This request was cancelled before execution started."
+            f"Thinking 系列 '{requested_selection.series}' 的请求值 {requested_value} 无法映射为当前模型路由的 provider 参数，"
+            "请求已在执行前终止。"
         )
-    if code == "thinking_level_not_allowed":
-        if requested_level is not None:
-            return f"Selected thinking level '{requested_level}' is not allowed for the current model route."
-        return "Selected thinking option is not allowed for the current model route."
-    if requested_level is not None:
+    if code == "thinking_series_value_not_allowed":
         return (
-            f"Selected thinking level '{requested_level}' is not supported by the current model route. "
-            "This request was cancelled instead of continuing without provider thinking parameters."
+            f"Thinking 系列 '{requested_selection.series}' 的请求值 {requested_value} 不在当前模型路由允许集合中。"
         )
+    if code == "thinking_series_builder_missing":
+        return (
+            f"当前模型路由缺少 Thinking 系列 '{requested_selection.series}' 的 provider builder。"
+        )
+    if code == "thinking_series_unknown_without_override":
+        return "当前模型路由未解析出 Thinking 系列，且未提供 override 系列模板，无法发送 Thinking 请求。"
     return (
-        "Selected thinking option is not supported by the current model route. "
-        "This request was cancelled instead of continuing without provider thinking parameters."
+        f"Thinking 系列 '{requested_selection.series}' 不适用于当前模型路由，请求已终止。"
     )
 
 

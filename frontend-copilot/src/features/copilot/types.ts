@@ -76,7 +76,7 @@ export interface CopilotRunState {
   requestedThinkingLevel: RuntimeRunMetadataEvent['payload']['requestedThinkingLevel']
   appliedThinkingLevel: RuntimeRunMetadataEvent['payload']['appliedThinkingLevel']
   thinkingCapabilitySnapshot: RuntimeThinkingCapability | null
-  thinkingSelectionResult: RuntimeRunView['thinkingSelectionResult']
+  thinkingSeriesDecision: RuntimeRunView['thinkingSeriesDecision']
   reasoningSuppressionBasis: RuntimeRunView['reasoningSuppressionBasis']
   reasoningSuppressed: boolean
   reasoningTraceState: CopilotReasoningTraceState

@@ -24,6 +24,7 @@ import {
   submitForm,
 } from './CopilotChatPanel.test-support'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
+import type { ModelCapability, ProviderModelProfile } from '../../workbench/types'
 import type {
   RuntimeThinkingCapability,
   RuntimeThinkingLevel,
@@ -64,7 +65,7 @@ describe('Copilot thinking selector', () => {
             modelId: 'truth-model',
             displayName: 'Truth Model',
             groupName: 'Truth',
-            capabilities: ['reasoning', 'tools'],
+            capabilities: ['reasoning', 'tools'] as ModelCapability[],
             thinkingCapability: {
               supported: true,
               series: 'compat-discrete-levels-v1',
@@ -99,14 +100,19 @@ describe('Copilot thinking selector', () => {
     expect(getThinkingCapability).toHaveBeenCalledWith(expect.objectContaining({
       thinkingCapabilityOverride: expect.objectContaining({
         supported: true,
-        input: {
-          kind: 'discrete',
-          levels: ['low', 'medium', 'high'],
-        },
+        series: 'compat-discrete-levels-v1',
+        template: expect.objectContaining({
+          editorType: 'discrete',
+          defaultValue: {
+            valueType: 'code',
+            code: 'low',
+            labelZh: '低',
+          },
+        }),
       }),
     }))
-    expect(rendered.getByTestId('chat-thinking-kind-budget')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-thinking-kind-discrete')).toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-thinking-editor-discrete')).toBeNull()
 
     rendered.unmount()
   })
@@ -144,9 +150,9 @@ describe('Copilot thinking selector', () => {
     await flushUi()
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
 
-    expect(rendered.getByTestId('chat-thinking-kind-fixed')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-fixed')).not.toBeNull()
     expect(rendered.getByTestId('chat-thinking-fixed-lock').textContent).toContain('锁定')
-    expect(rendered.queryByTestId('chat-thinking-kind-discrete')).toBeNull()
+    expect(rendered.queryByTestId('chat-thinking-editor-discrete')).toBeNull()
 
     rendered.unmount()
   })
@@ -212,24 +218,24 @@ describe('Copilot thinking selector', () => {
 
     await flushUi()
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-kind-binary')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
     expect(rendered.getByTestId('chat-thinking-option-off').textContent).toContain('无')
     expect(rendered.getByTestId('chat-thinking-option-high').textContent).toContain('高')
 
     await selectModel(rendered, providerId, `${providerId}:off-auto-model`)
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-kind-off-auto')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
     expect(rendered.getByTestId('chat-thinking-option-auto').textContent).toContain('自动')
 
     await selectModel(rendered, providerId, `${providerId}:discrete-model`)
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-kind-discrete')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
     expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('中')
     expect(rendered.getByTestId('chat-thinking-option-high').textContent).toContain('高')
 
     await selectModel(rendered, providerId, `${providerId}:budget-model`)
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-kind-budget')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
     expect(rendered.getByTestId('chat-thinking-budget-input')).not.toBeNull()
 
     rendered.unmount()
@@ -303,9 +309,15 @@ describe('Copilot thinking selector', () => {
     expect(getThinkingCapability).toHaveBeenCalledWith(expect.objectContaining({
       thinkingCapabilityOverride: expect.objectContaining({
         supported: true,
-        input: {
-          kind: 'off-auto',
-        },
+        series: 'compat-off-auto-v1',
+        template: expect.objectContaining({
+          editorType: 'discrete',
+          defaultValue: {
+            valueType: 'code',
+            code: 'minimal',
+            labelZh: '极简',
+          },
+        }),
       }),
     }))
 
@@ -358,7 +370,7 @@ describe('Copilot thinking selector', () => {
 
     await selectModel(rendered, providerId, `${providerId}:discrete-memory-model`)
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-kind-discrete')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
     expect(rendered.getByTestId('chat-thinking-option-auto').className).toContain('copilot-chat__thinking-option--selected')
 
     await selectModel(rendered, providerId, `${providerId}:budget-memory-model`)
@@ -493,7 +505,7 @@ describe('Copilot thinking selector', () => {
 
     await flushUi()
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-kind-discrete')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
 
     await setFormControlValue(rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement, 'run metadata capability')
@@ -502,7 +514,7 @@ describe('Copilot thinking selector', () => {
     await flushUi()
 
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-kind-budget')).not.toBeNull()
+    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
     expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('8.2K')
 
     rendered.unmount()
@@ -553,13 +565,13 @@ function createReasoningModel(input: {
   id: string
   modelId: string
   displayName: string
-}) {
+}): ProviderModelProfile {
   return {
     id: input.id,
     modelId: input.modelId,
     displayName: input.displayName,
     groupName: 'Thinking',
-    capabilities: ['reasoning', 'tools'] as const,
+    capabilities: ['reasoning', 'tools'] as ModelCapability[],
     supportsStreaming: true,
     currency: 'usd',
     inputPrice: '1',
