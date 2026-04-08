@@ -23,6 +23,7 @@ import {
   setFormControlValue,
   submitForm,
 } from './CopilotChatPanel.test-support'
+import { getThinkingBudgetProgressFromTokens } from '../../workbench/thinking-display'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 import type { ModelCapability, ProviderModelProfile } from '../../workbench/types'
 import type {
@@ -241,6 +242,59 @@ describe('Copilot thinking selector', () => {
     rendered.unmount()
   })
 
+  it('hides the budget button when the capability does not expose exact budget selection', async () => {
+    const getThinkingCapability = createThinkingCapabilityGetter({
+      'dynamic-only-model': createBudgetCapability({
+        controlSpec: createRuntimeThinkingControlSpec({
+          kind: 'budget',
+          selectionKind: 'budget',
+          presetOptions: [createRuntimeCanonicalThinkingSelection({ value: 'off' })],
+          budget: null,
+        }),
+        allowedValues: [
+          { valueType: 'budget', mode: 'off', budgetTokens: null, labelZh: '关闭' },
+          { valueType: 'budget', mode: 'dynamic', budgetTokens: null, labelZh: '动态' },
+        ],
+        defaultValue: {
+          valueType: 'budget',
+          mode: 'dynamic',
+          budgetTokens: null,
+          labelZh: '动态',
+        },
+      }),
+    })
+    const providerId = 'provider-no-exact-budget'
+    const loadWorkspaceState = createLoadWorkspaceState([
+      createProviderProfile({
+        id: providerId,
+        name: 'No Exact Budget Provider',
+        defaultModel: 'dynamic-only-model',
+        availableModels: [
+          createReasoningModel({
+            id: `${providerId}:dynamic-only-model`,
+            modelId: 'dynamic-only-model',
+            displayName: 'Dynamic Only Model',
+          }),
+        ],
+      }),
+    ], 'dynamic-only-model')
+
+    const rendered = renderThinkingPanel({
+      getThinkingCapability,
+      loadWorkspaceState,
+      sessionModelPreference: 'dynamic-only-model',
+    })
+
+    await flushUi()
+    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
+
+    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-thinking-budget-mode-budget')).toBeNull()
+    expect(rendered.queryByTestId('chat-thinking-budget-input')).toBeNull()
+
+    rendered.unmount()
+  })
+
   it('shows a lightweight override source badge for unknown plus override capability', async () => {
     const overrideCapability = createPresetCapability({
       status: 'unknown-with-override',
@@ -305,7 +359,7 @@ describe('Copilot thinking selector', () => {
     await flushUi()
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
 
-    expect(rendered.getByTestId('chat-thinking-override-hint').textContent).toContain('override')
+    expect(rendered.queryByTestId('chat-thinking-override-hint')).toBeNull()
     expect(getThinkingCapability).toHaveBeenCalledWith(expect.objectContaining({
       thinkingCapabilityOverride: expect.objectContaining({
         supported: true,
@@ -365,17 +419,20 @@ describe('Copilot thinking selector', () => {
 
     await flushUi()
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    await setRangeValue(rendered.getByTestId('chat-thinking-budget-input') as HTMLInputElement, 12288)
-    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('12.3K')
+    await setRangeValue(
+      rendered.getByTestId('chat-thinking-budget-input') as HTMLInputElement,
+      getThinkingBudgetProgressFromTokens(32768),
+    )
+    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('32K')
 
     await selectModel(rendered, providerId, `${providerId}:discrete-memory-model`)
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
     expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-option-auto').className).toContain('copilot-chat__thinking-option--selected')
+    expect(rendered.getByTestId('chat-thinking-option-auto').className).toContain('thinking-pill--selected')
 
     await selectModel(rendered, providerId, `${providerId}:budget-memory-model`)
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('12.3K')
+    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('32K')
 
     rendered.unmount()
   })
@@ -413,7 +470,10 @@ describe('Copilot thinking selector', () => {
 
     await flushUi()
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    await setRangeValue(rendered.getByTestId('chat-thinking-budget-input') as HTMLInputElement, 16384)
+    await setRangeValue(
+      rendered.getByTestId('chat-thinking-budget-input') as HTMLInputElement,
+      getThinkingBudgetProgressFromTokens(32768),
+    )
     await setFormControlValue(rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement, '发送预算型推理')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
 
@@ -423,7 +483,7 @@ describe('Copilot thinking selector', () => {
         series: 'compat-budget-tokens-v1',
         mode: 'budget',
         level: null,
-        budgetTokens: 16384,
+        budgetTokens: 32768,
       },
       message: {
         content: '发送预算型推理',
@@ -515,7 +575,7 @@ describe('Copilot thinking selector', () => {
 
     await clickElement(rendered.getByTestId('chat-thinking-trigger'))
     expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('8.2K')
+    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('8K')
 
     rendered.unmount()
   })

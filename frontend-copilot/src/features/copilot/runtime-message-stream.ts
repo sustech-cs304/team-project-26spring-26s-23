@@ -1,3 +1,4 @@
+import { formatThinkingTokenCount } from '../../workbench/thinking-display'
 import type {
   RuntimeCanonicalThinkingSelection,
   RuntimeModelRoute,
@@ -552,7 +553,7 @@ function buildRuntimeThinkingValueFromLegacyRecord(
       valueType: 'budget',
       mode: 'budget',
       budgetTokens,
-      labelZh: String(budgetTokens),
+      labelZh: formatThinkingTokenCount(budgetTokens),
     }
   }
 
@@ -572,7 +573,7 @@ function buildRuntimeThinkingValueFromLegacyRecord(
   return {
     valueType: 'code',
     code: normalizedLevel,
-    labelZh: resolveRuntimeThinkingLabel(normalizedLevel),
+    labelZh: normalizedLevel,
   }
 }
 
@@ -598,37 +599,6 @@ function deriveLegacyRuntimeThinkingSelectionFields(
         level: value.code,
         budgetTokens: null,
       }
-  }
-}
-
-function resolveRuntimeThinkingLabel(code: string): string {
-  switch (code) {
-    case 'off':
-    case 'none':
-      return '无'
-    case 'auto':
-    case 'dynamic':
-      return '自动'
-    case 'minimal':
-      return '极简'
-    case 'low':
-      return '低'
-    case 'medium':
-      return '中'
-    case 'high':
-      return '高'
-    case 'xhigh':
-      return '超高'
-    case 'disabled':
-    case 'false':
-      return '关闭'
-    case 'true':
-    case 'enabled':
-      return '开启'
-    case 'max':
-      return '最大'
-    default:
-      return code
   }
 }
 

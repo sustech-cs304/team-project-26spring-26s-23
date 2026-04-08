@@ -2,6 +2,7 @@
 @import './styles/tokens.css';
 @import './styles/layout.css';
 @import './styles/controls.css';
+@import './styles/thinking-controls.css';
 @import './styles/workbench.css';
 @import './styles/settings.css';
 @import './styles/responsive.css';

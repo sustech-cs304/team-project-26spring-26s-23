@@ -3,6 +3,13 @@ import type {
   AssistantSessionShell,
   ThinkingLevelIntent,
 } from '../../workbench/types'
+import {
+  THINKING_BUDGET_DEFAULT_MAX_TOKENS,
+  THINKING_BUDGET_DEFAULT_MIN_TOKENS,
+  THINKING_BUDGET_DEFAULT_STEP_TOKENS,
+  findThinkingCodeValue,
+  formatThinkingTokenCount,
+} from '../../workbench/thinking-display'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   RuntimeRequestError,
@@ -290,6 +297,9 @@ function normalizeRuntimeThinkingValueForCapability(
         return null
       }
       if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
+        if (!supportsExactBudgetThinkingSelection(capability)) {
+          return null
+        }
         const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
         return budgetTokens === null
           ? null
@@ -297,7 +307,7 @@ function normalizeRuntimeThinkingValueForCapability(
               valueType: 'budget',
               mode: 'budget',
               budgetTokens,
-              labelZh: `${budgetTokens} Tokens`,
+              labelZh: formatThinkingTokenCount(budgetTokens),
             }
       }
       return cloneRuntimeThinkingValue(
@@ -309,12 +319,15 @@ function normalizeRuntimeThinkingValueForCapability(
       if (value.valueType !== 'code') {
         return null
       }
-      return cloneRuntimeThinkingValue(
-        capability.allowedValues.find((candidate) => (
-          candidate.valueType === 'code' && candidate.code === value.code
-        )) ?? null,
-      )
+      return cloneRuntimeThinkingValue(findThinkingCodeValue(capability.allowedValues, value.code))
   }
+}
+
+function supportsExactBudgetThinkingSelection(capability: RuntimeThinkingCapability): boolean {
+  return capability.editorType === 'budget'
+    && capability.controlSpec?.kind === 'budget'
+    && capability.controlSpec.budget !== null
+    && capability.controlSpec.budget !== undefined
 }
 
 function buildRuntimeThinkingSelectionFromValue(
@@ -366,7 +379,7 @@ function buildRuntimeThinkingValueFromLegacySelection(
       valueType: 'budget',
       mode: 'budget',
       budgetTokens: selection.budgetTokens,
-      labelZh: `${selection.budgetTokens} Tokens`,
+      labelZh: formatThinkingTokenCount(selection.budgetTokens),
     }
   }
 
@@ -385,7 +398,7 @@ function buildRuntimeThinkingValueFromLegacySelection(
   return {
     valueType: 'code',
     code: selection.level,
-    labelZh: resolveLegacyThinkingValueLabel(selection.level),
+    labelZh: selection.level,
   }
 }
 
@@ -411,39 +424,6 @@ function deriveLegacyThinkingSelectionFields(
         level: mapSeriesCodeToLegacyLevel(value.code),
         budgetTokens: null,
       }
-  }
-}
-
-function resolveLegacyThinkingValueLabel(level: string): string {
-  switch (level) {
-    case 'off':
-    case 'none':
-      return '无'
-    case 'auto':
-    case 'dynamic':
-      return '自动'
-    case 'minimal':
-      return '极简'
-    case 'low':
-      return '低'
-    case 'medium':
-      return '中'
-    case 'high':
-      return '高'
-    case 'xhigh':
-      return '超高'
-    case 'disabled':
-    case 'false':
-      return '关闭'
-    case 'true':
-    case 'enabled':
-      return '开启'
-    case 'max':
-      return '最大'
-    case 'fixed':
-      return '固定推理'
-    default:
-      return level
   }
 }
 
@@ -478,9 +458,9 @@ function normalizeBudgetTokens(value: number | null | undefined): number | null 
     return null
   }
 
-  const minimum = 0
-  const maximum = 32_768
-  const step = 1_024
+  const minimum = THINKING_BUDGET_DEFAULT_MIN_TOKENS
+  const maximum = THINKING_BUDGET_DEFAULT_MAX_TOKENS
+  const step = THINKING_BUDGET_DEFAULT_STEP_TOKENS
   const clamped = Math.min(maximum, Math.max(minimum, Math.trunc(value)))
   const stepped = minimum + (Math.round((clamped - minimum) / step) * step)
 

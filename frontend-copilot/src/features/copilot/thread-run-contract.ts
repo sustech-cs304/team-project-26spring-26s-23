@@ -2,6 +2,7 @@ import {
   isTerminalRuntimeRunEvent,
   parseRuntimeRunEventStream,
 } from './runtime-message-stream'
+import { formatThinkingTokenCount } from '../../workbench/thinking-display'
 
 export interface RuntimeAgentDirectoryEntry {
   agentId: string
@@ -970,7 +971,7 @@ function buildRuntimeThinkingValueFromLegacySelection(
       valueType: 'budget',
       mode: 'budget',
       budgetTokens: selection.budgetTokens,
-      labelZh: String(selection.budgetTokens),
+      labelZh: formatThinkingTokenCount(selection.budgetTokens),
     }
   }
 
@@ -979,39 +980,18 @@ function buildRuntimeThinkingValueFromLegacySelection(
       return {
         valueType: 'fixed',
         code: 'fixed',
-        labelZh: resolveLegacyThinkingValueLabel(selection.level),
+        labelZh: '固定推理',
       }
     }
 
     return {
       valueType: 'code',
       code: selection.level,
-      labelZh: resolveLegacyThinkingValueLabel(selection.level),
+      labelZh: selection.level,
     }
   }
 
   return null
-}
-
-function resolveLegacyThinkingValueLabel(level: string): string {
-  switch (level) {
-    case 'off':
-      return '无'
-    case 'auto':
-      return '自动'
-    case 'low':
-      return '低'
-    case 'medium':
-      return '中'
-    case 'high':
-      return '高'
-    case 'xhigh':
-      return '超高'
-    case 'fixed':
-      return '固定推理'
-    default:
-      return level
-  }
 }
 
 function cloneRuntimeCanonicalThinkingSelection(

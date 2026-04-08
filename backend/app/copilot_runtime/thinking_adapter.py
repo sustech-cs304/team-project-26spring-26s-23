@@ -17,6 +17,22 @@ ThinkingCapabilitySource = Literal['verified', 'override', 'unknown']
 ThinkingSeriesEditorType = Literal['discrete', 'budget', 'fixed']
 
 _DEFAULT_OVERRIDE_SOURCE = 'settings-model-declaration'
+_UNIFIED_4_LEVEL_SERIES_ID = 'unified-4-level-v1'
+_UNIFIED_4_LEVEL_SERIES_LABEL_ZH = '统一 4 档系列'
+_THINKING_BUDGET_DEFAULT_MIN_TOKENS = 0
+_THINKING_BUDGET_DEFAULT_MAX_TOKENS = 1048576
+_THINKING_BUDGET_DEFAULT_STEP_TOKENS = 1024
+_THINKING_BUDGET_FIXED_ANCHOR_TOKENS = (0, 4096, 32768, 131072, 1048576)
+_UNIFIED_4_LEVEL_CODE_LABELS: dict[str, str] = {
+    'none': '无',
+    'low': '低',
+    'medium': '中',
+    'high': '高',
+}
+_SERIES_ID_ALIASES: dict[str, str] = {
+    'openai-4-level-none-v1': _UNIFIED_4_LEVEL_SERIES_ID,
+    'anthropic-adaptive-4-v1': _UNIFIED_4_LEVEL_SERIES_ID,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +167,7 @@ class _SeriesSpec:
         source: ThinkingCapabilitySource,
         route_fingerprint: Mapping[str, str],
         reason_code: str,
+        provider_builder_key: str | None = None,
     ) -> CanonicalThinkingCapability:
         return CanonicalThinkingCapability(
             status=status,
@@ -160,7 +177,9 @@ class _SeriesSpec:
             editor_type=self.editor_type,
             allowed_values=self.allowed_values,
             default_value=self.default_value,
-            provider_builder_key=self.provider_builder_key,
+            provider_builder_key=(
+                self.provider_builder_key if provider_builder_key is None else provider_builder_key
+            ),
             reason_code=reason_code,
             route_fingerprint=dict(route_fingerprint),
             visibility=None if self.visibility is None else dict(self.visibility),
@@ -189,10 +208,10 @@ def _fixed_value(label_zh: str) -> RuntimeThinkingValue:
 
 
 def _budget_config(
-    min_tokens: int = 0,
-    max_tokens: int = 32768,
-    step_tokens: int = 1024,
-    anchor_tokens: tuple[int, ...] = (0, 1024, 4096, 8192, 16384, 32768),
+    min_tokens: int = _THINKING_BUDGET_DEFAULT_MIN_TOKENS,
+    max_tokens: int = _THINKING_BUDGET_DEFAULT_MAX_TOKENS,
+    step_tokens: int = _THINKING_BUDGET_DEFAULT_STEP_TOKENS,
+    anchor_tokens: tuple[int, ...] = _THINKING_BUDGET_FIXED_ANCHOR_TOKENS,
 ) -> ThinkingSeriesBudgetConfig:
     return ThinkingSeriesBudgetConfig(
         min_tokens=min_tokens,
@@ -200,6 +219,63 @@ def _budget_config(
         step_tokens=max(1, step_tokens),
         anchor_tokens=anchor_tokens,
     )
+
+
+def _normalize_series_id(series_id: str | None) -> str | None:
+    if series_id is None:
+        return None
+    return _SERIES_ID_ALIASES.get(series_id, series_id)
+
+
+
+def _normalize_series_code(series_id: str | None, code: str | None) -> str | None:
+    normalized_series = _normalize_series_id(series_id)
+    normalized_code = _normalize_optional_string(code)
+    if normalized_code is None:
+        return None
+    if normalized_series == _UNIFIED_4_LEVEL_SERIES_ID and normalized_code in {'disabled', 'off'}:
+        return 'none'
+    return normalized_code
+
+
+
+def _normalize_series_value(
+    series_id: str | None,
+    value: RuntimeThinkingValue,
+) -> RuntimeThinkingValue:
+    normalized_series = _normalize_series_id(series_id)
+    if normalized_series != _UNIFIED_4_LEVEL_SERIES_ID or value.valueType != 'code':
+        return value
+    normalized_code = _normalize_series_code(normalized_series, value.code)
+    if normalized_code is None:
+        return value
+    return _code_value(
+        normalized_code,
+        _UNIFIED_4_LEVEL_CODE_LABELS.get(normalized_code, value.labelZh or normalized_code),
+    )
+
+
+
+def _normalize_series_allowed_values(
+    series_id: str | None,
+    values: tuple[RuntimeThinkingValue, ...],
+) -> tuple[RuntimeThinkingValue, ...]:
+    normalized_values = tuple(_normalize_series_value(series_id, value) for value in values)
+    normalized_series = _normalize_series_id(series_id)
+    if normalized_series != _UNIFIED_4_LEVEL_SERIES_ID:
+        return normalized_values
+
+    deduped_values: list[RuntimeThinkingValue] = []
+    seen_codes: set[str] = set()
+    for value in normalized_values:
+        if value.valueType != 'code':
+            deduped_values.append(value)
+            continue
+        if value.code in seen_codes:
+            continue
+        seen_codes.add(value.code)
+        deduped_values.append(value)
+    return tuple(deduped_values)
 
 
 _SERIES_REGISTRY: dict[str, _SeriesSpec] = {
@@ -231,9 +307,9 @@ _SERIES_REGISTRY: dict[str, _SeriesSpec] = {
         default_value=_code_value('medium', '中'),
         provider_builder_key='openai_reasoning_effort_v1',
     ),
-    'openai-4-level-none-v1': _SeriesSpec(
-        series_id='openai-4-level-none-v1',
-        label_zh='OpenAI 4 档 None 系',
+    _UNIFIED_4_LEVEL_SERIES_ID: _SeriesSpec(
+        series_id=_UNIFIED_4_LEVEL_SERIES_ID,
+        label_zh=_UNIFIED_4_LEVEL_SERIES_LABEL_ZH,
         editor_type='discrete',
         allowed_values=(
             _code_value('none', '无'),
@@ -242,7 +318,7 @@ _SERIES_REGISTRY: dict[str, _SeriesSpec] = {
             _code_value('high', '高'),
         ),
         default_value=_code_value('medium', '中'),
-        provider_builder_key='openai_reasoning_effort_v1',
+        provider_builder_key=None,
     ),
     'anthropic-budget-v1': _SeriesSpec(
         series_id='anthropic-budget-v1',
@@ -336,6 +412,21 @@ def _build_anthropic_budget(value: RuntimeThinkingValue) -> tuple[dict[str, Any]
     return None
 
 
+def _build_anthropic_adaptive_reasoning(
+    value: RuntimeThinkingValue,
+) -> tuple[dict[str, Any], str] | None:
+    if value.valueType != 'code' or value.code is None:
+        return None
+    if value.code == 'none':
+        return ({'thinking': {'type': 'disabled'}}, 'anthropic_adaptive_disabled')
+    if value.code in {'low', 'medium', 'high'}:
+        return (
+            {'thinking': {'type': 'adaptive', 'effort': value.code}},
+            f'anthropic_adaptive_{value.code}',
+        )
+    return None
+
+
 def _build_qwen_switch(value: RuntimeThinkingValue) -> tuple[dict[str, Any], str] | None:
     if value.valueType != 'code' or value.code not in {'true', 'false'}:
         return None
@@ -350,9 +441,25 @@ _PROVIDER_BUILDERS: dict[str, ProviderBuilder] = {
     'openai_reasoning_effort_v1': _build_openai_reasoning_effort,
     'gemini_budget_v1': _build_gemini_budget,
     'anthropic_budget_v1': _build_anthropic_budget,
+    'anthropic_adaptive_reasoning_v1': _build_anthropic_adaptive_reasoning,
     'qwen_switch_v1': _build_qwen_switch,
     'fixed_reasoning_v1': _build_fixed_reasoning,
 }
+
+
+def _resolve_provider_builder_key(
+    series_spec: _SeriesSpec,
+    model_route: ResolvedRuntimeModelRoute,
+) -> str | None:
+    provider = _normalize_identifier(model_route.provider)
+    normalized_series_id = _normalize_series_id(series_spec.series_id)
+    if normalized_series_id == _UNIFIED_4_LEVEL_SERIES_ID:
+        if provider == 'openai':
+            return 'openai_reasoning_effort_v1'
+        if provider == 'anthropic':
+            return 'anthropic_adaptive_reasoning_v1'
+        return None
+    return series_spec.provider_builder_key
 
 
 def parse_thinking_capability_override(
@@ -378,7 +485,7 @@ def parse_thinking_capability_override(
     if supported is False:
         return ThinkingCapabilityOverrideInput(supported=False, source=source, visibility=visibility)
 
-    series = _normalize_optional_string(raw_override.get('series'))
+    series = _normalize_series_id(_normalize_optional_string(raw_override.get('series')))
     template_record = raw_override.get('template')
     base_spec = None if series is None else _SERIES_REGISTRY.get(series)
     editor_type = _parse_editor_type(
@@ -425,6 +532,7 @@ def resolve_canonical_thinking_capability(
             source='verified',
             route_fingerprint=route_fingerprint,
             reason_code='verified_series_resolved',
+            provider_builder_key=_resolve_provider_builder_key(verified, model_route),
         )
 
     override_input = parse_thinking_capability_override(thinking_capability_override)
@@ -436,6 +544,7 @@ def resolve_canonical_thinking_capability(
                 source='override',
                 route_fingerprint=route_fingerprint,
                 reason_code='override_series_template_applied',
+                provider_builder_key=_resolve_provider_builder_key(override_spec, model_route),
             )
         return CanonicalThinkingCapability(
             status='unknown-without-override',
@@ -665,13 +774,14 @@ def _resolve_verified_series_spec(model_route: ResolvedRuntimeModelRoute) -> _Se
     if model_id == 'gpt-4.1' or model_id.startswith('gpt-4.1-') or model_id.endswith('/gpt-4.1'):
         return _SERIES_REGISTRY['openai-4-level-minimal-v1']
     if model_id == 'gpt-4o' or model_id.startswith('gpt-4o-') or model_id.endswith('/gpt-4o'):
-        return _SERIES_REGISTRY['openai-4-level-none-v1']
+        return _SERIES_REGISTRY[_UNIFIED_4_LEVEL_SERIES_ID]
     return None
 
 
 def _resolve_override_series_spec(override_input: ThinkingCapabilityOverrideInput) -> _SeriesSpec | None:
-    base_spec = None if override_input.series is None else _SERIES_REGISTRY.get(override_input.series)
-    series_id = override_input.series or (None if base_spec is None else base_spec.series_id)
+    normalized_series = _normalize_series_id(override_input.series)
+    base_spec = None if normalized_series is None else _SERIES_REGISTRY.get(normalized_series)
+    series_id = normalized_series or (None if base_spec is None else base_spec.series_id)
     editor_type = override_input.editor_type or (None if base_spec is None else base_spec.editor_type)
     if series_id is None or editor_type is None:
         return None
@@ -688,6 +798,7 @@ def _resolve_override_series_spec(override_input: ThinkingCapabilityOverrideInpu
         allowed_values=allowed_values,
         fallback=() if base_spec is None else base_spec.allowed_values,
     )
+    normalized_allowed_values = _normalize_series_allowed_values(series_id, normalized_allowed_values)
     normalized_default_value = _normalize_default_value(
         editor_type=editor_type,
         default_value=default_value,
@@ -695,6 +806,8 @@ def _resolve_override_series_spec(override_input: ThinkingCapabilityOverrideInpu
         fallback=None if base_spec is None else base_spec.default_value,
         budget=budget,
     )
+    if normalized_default_value is not None:
+        normalized_default_value = _normalize_series_value(series_id, normalized_default_value)
     if normalized_default_value is None:
         return None
 
@@ -786,8 +899,8 @@ def _runtime_values_equal(left: RuntimeThinkingValue, right: RuntimeThinkingValu
 
 
 def _normalize_runtime_selection(selection: RuntimeThinkingSelection) -> RuntimeThinkingSelection | None:
-    normalized_series = selection.series.strip()
-    if normalized_series == '':
+    normalized_series = _normalize_series_id(selection.series.strip())
+    if normalized_series is None or normalized_series == '':
         return None
     value = selection.value
     if value.valueType == 'code':
@@ -795,10 +908,13 @@ def _normalize_runtime_selection(selection: RuntimeThinkingSelection) -> Runtime
             return None
         return RuntimeThinkingSelection(
             series=normalized_series,
-            value=RuntimeThinkingValue(
-                valueType='code',
-                code=value.code.strip(),
-                labelZh=value.labelZh,
+            value=_normalize_series_value(
+                normalized_series,
+                RuntimeThinkingValue(
+                    valueType='code',
+                    code=value.code.strip(),
+                    labelZh=value.labelZh,
+                ),
             ),
         )
     if value.valueType == 'fixed':
@@ -885,21 +1001,11 @@ def _parse_budget_config(
     min_value = normalized_fallback.min_tokens if min_tokens is None else min_tokens
     max_value = normalized_fallback.max_tokens if max_tokens is None else max_tokens
     step_value = normalized_fallback.step_tokens if step_tokens is None else step_tokens
-    anchor_tokens = (
-        tuple(
-            token
-            for item in anchor_tokens_raw
-            for token in [_normalize_non_negative_int(item)]
-            if token is not None
-        )
-        if isinstance(anchor_tokens_raw, list)
-        else normalized_fallback.anchor_tokens
-    )
     return ThinkingSeriesBudgetConfig(
         min_tokens=min_value,
         max_tokens=max(min_value, max_value),
         step_tokens=max(1, step_value),
-        anchor_tokens=anchor_tokens,
+        anchor_tokens=_THINKING_BUDGET_FIXED_ANCHOR_TOKENS,
     )
 
 

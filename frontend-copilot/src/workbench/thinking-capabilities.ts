@@ -20,6 +20,14 @@ import type {
   ThinkingSeriesTemplate,
   ThinkingSeriesValue,
 } from './types'
+import {
+  THINKING_BUDGET_DEFAULT_MAX_TOKENS,
+  THINKING_BUDGET_DEFAULT_MIN_TOKENS,
+  THINKING_BUDGET_DEFAULT_SELECTION_TOKENS,
+  THINKING_BUDGET_DEFAULT_STEP_TOKENS,
+  buildThinkingBudgetTemplate,
+  normalizeThinkingBudgetAnchorTokens,
+} from './thinking-display'
 
 export type ThinkingCapabilityDeclarationMode = 'inherit' | 'unsupported' | 'supported'
 
@@ -41,11 +49,22 @@ interface ThinkingSeriesPreset {
 }
 
 const DEFAULT_SERIES_ID = 'openai-6-level-superset-v1'
-const DEFAULT_BUDGET_MIN_TOKENS = 0
-const DEFAULT_BUDGET_MAX_TOKENS = 32768
-const DEFAULT_BUDGET_STEP_TOKENS = 1024
-const DEFAULT_BUDGET_SELECTION_TOKENS = 8192
-const DEFAULT_BUDGET_ANCHOR_TOKENS = [0, 1024, 4096, 8192, 16384, 32768]
+const UNIFIED_4_LEVEL_SERIES_ID = 'unified-4-level-v1'
+const DEFAULT_BUDGET_MIN_TOKENS = THINKING_BUDGET_DEFAULT_MIN_TOKENS
+const DEFAULT_BUDGET_MAX_TOKENS = THINKING_BUDGET_DEFAULT_MAX_TOKENS
+const DEFAULT_BUDGET_STEP_TOKENS = THINKING_BUDGET_DEFAULT_STEP_TOKENS
+const DEFAULT_BUDGET_SELECTION_TOKENS = THINKING_BUDGET_DEFAULT_SELECTION_TOKENS
+const DEFAULT_BUDGET_ANCHOR_TOKENS = normalizeThinkingBudgetAnchorTokens(undefined)
+const UNIFIED_4_LEVEL_CODE_LABELS: Record<string, string> = {
+  none: '无',
+  low: '低',
+  medium: '中',
+  high: '高',
+}
+const SERIES_ID_ALIASES: Record<string, ThinkingCapabilitySeriesId> = {
+  'openai-4-level-none-v1': UNIFIED_4_LEVEL_SERIES_ID,
+  'anthropic-adaptive-4-v1': UNIFIED_4_LEVEL_SERIES_ID,
+}
 
 const POSITIVE_THINKING_LEVEL_ORDER: PositiveThinkingLevelIntent[] = ['auto', 'low', 'medium', 'high', 'xhigh']
 const POSITIVE_THINKING_LEVEL_SET = new Set<PositiveThinkingLevelIntent>(POSITIVE_THINKING_LEVEL_ORDER)
@@ -102,12 +121,12 @@ function createFixedValue(labelZh: string): ThinkingSeriesFixedValue {
 }
 
 function createBudgetTemplate(overrides: Partial<ThinkingSeriesBudgetTemplate> = {}): ThinkingSeriesBudgetTemplate {
-  return {
+  return buildThinkingBudgetTemplate({
     minTokens: overrides.minTokens ?? DEFAULT_BUDGET_MIN_TOKENS,
     maxTokens: overrides.maxTokens ?? DEFAULT_BUDGET_MAX_TOKENS,
     stepTokens: overrides.stepTokens ?? DEFAULT_BUDGET_STEP_TOKENS,
     anchorTokens: overrides.anchorTokens ?? [...DEFAULT_BUDGET_ANCHOR_TOKENS],
-  }
+  })
 }
 
 const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
@@ -148,8 +167,8 @@ const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
     },
   },
   {
-    id: 'openai-4-level-none-v1',
-    label: 'OpenAI 4 档 None 系',
+    id: UNIFIED_4_LEVEL_SERIES_ID,
+    label: '统一 4 档系列',
     hint: '无（none）/ 低 / 中 / 高',
     editorType: 'discrete',
     inputKind: 'discrete',
@@ -173,23 +192,6 @@ const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
     template: {
       editorType: 'discrete',
       allowedValues: [
-        createCodeValue('low', '低'),
-        createCodeValue('medium', '中'),
-        createCodeValue('high', '高'),
-      ],
-      defaultValue: createCodeValue('medium', '中'),
-    },
-  },
-  {
-    id: 'anthropic-adaptive-4-v1',
-    label: 'Anthropic Adaptive 4 档',
-    hint: '关闭（disabled）/ 低 / 中 / 高',
-    editorType: 'discrete',
-    inputKind: 'discrete',
-    template: {
-      editorType: 'discrete',
-      allowedValues: [
-        createCodeValue('disabled', '关闭'),
         createCodeValue('low', '低'),
         createCodeValue('medium', '中'),
         createCodeValue('high', '高'),
@@ -300,15 +302,19 @@ export function getThinkingCapabilityDeclarationMode(
 }
 
 export function buildThinkingDeclarationSeriesOptions(currentSeries: string | undefined): SelectOption[] {
-  if (!currentSeries || THINKING_SERIES_PRESET_BY_ID.has(currentSeries)) {
+  const normalizedCurrentSeries = currentSeries === undefined
+    ? undefined
+    : normalizeThinkingCapabilitySeries(currentSeries)
+
+  if (!normalizedCurrentSeries || THINKING_SERIES_PRESET_BY_ID.has(normalizedCurrentSeries)) {
     return THINKING_SERIES_OPTIONS
   }
 
   return [
     ...THINKING_SERIES_OPTIONS,
     {
-      value: currentSeries,
-      label: currentSeries,
+      value: normalizedCurrentSeries,
+      label: normalizedCurrentSeries,
       hint: '自定义系列',
     },
   ]
@@ -420,13 +426,14 @@ export function toggleThinkingCapabilityDeclarationCodeValue(
   code: string,
 ): ThinkingCapabilityDeclaration {
   const supported = initializeSupportedThinkingCapabilityDeclaration(declaration)
+  const normalizedCode = normalizeSeriesCode(supported.series, code)
   const preset = resolveThinkingSeriesPreset(supported.series)
   const presetValues = getDiscreteCodeValues(preset.template)
   const currentValues = getDiscreteCodeValues(supported.template)
-  const hasCode = currentValues.some((value) => value.code === code)
+  const hasCode = currentValues.some((value) => value.code === normalizedCode)
   const nextValues = hasCode
-    ? currentValues.filter((value) => value.code !== code)
-    : presetValues.filter((value) => currentValues.some((candidate) => candidate.code === value.code) || value.code === code)
+    ? currentValues.filter((value) => value.code !== normalizedCode)
+    : presetValues.filter((value) => currentValues.some((candidate) => candidate.code === value.code) || value.code === normalizedCode)
 
   const normalizedValues = presetValues.filter((value) => nextValues.some((candidate) => candidate.code === value.code))
   const safeValues = normalizedValues.length > 0 ? normalizedValues : presetValues
@@ -469,8 +476,9 @@ export function setThinkingCapabilityDeclarationDefaultCodeValue(
   code: string,
 ): ThinkingCapabilityDeclaration {
   const supported = initializeSupportedThinkingCapabilityDeclaration(declaration)
+  const normalizedCode = normalizeSeriesCode(supported.series, code)
   const allowedValues = getDiscreteCodeValues(supported.template)
-  const nextDefaultValue = allowedValues.find((value) => value.code === code)
+  const nextDefaultValue = allowedValues.find((value) => value.code === normalizedCode)
   if (!nextDefaultValue) {
     return supported
   }
@@ -633,11 +641,11 @@ export function normalizeThinkingCapabilityDeclaration(
     }
   }
 
-  const series = normalizeOptionalString(record.series) ?? DEFAULT_SERIES_ID
+  const series = normalizeThinkingCapabilitySeries(normalizeOptionalString(record.series) ?? DEFAULT_SERIES_ID)
   const preset = resolveThinkingSeriesPreset(series)
   const template = record.template !== undefined
-    ? normalizeThinkingSeriesTemplate(record.template, preset)
-    : hydrateThinkingSeriesTemplate(record, preset)
+    ? normalizeThinkingSeriesTemplate(record.template, preset, series)
+    : hydrateThinkingSeriesTemplate(record, preset, series)
 
   return buildSupportedDeclaration(series, template, source)
 }
@@ -680,8 +688,9 @@ function createDefaultSupportedThinkingCapabilityDeclaration(
   series: ThinkingCapabilitySeriesId = DEFAULT_SERIES_ID,
   source?: string,
 ): NormalizedSupportedThinkingCapabilityDeclaration {
-  const preset = resolveThinkingSeriesPreset(series)
-  return buildSupportedDeclaration(series, preset.template, source)
+  const normalizedSeries = normalizeThinkingCapabilitySeries(series)
+  const preset = resolveThinkingSeriesPreset(normalizedSeries)
+  return buildSupportedDeclaration(normalizedSeries, preset.template, source)
 }
 
 function buildSupportedDeclaration(
@@ -689,12 +698,17 @@ function buildSupportedDeclaration(
   template: ThinkingSeriesTemplate,
   source?: string,
 ): NormalizedSupportedThinkingCapabilityDeclaration {
-  const normalizedTemplate = normalizeThinkingSeriesTemplate(template, resolveThinkingSeriesPreset(series))
+  const normalizedSeries = normalizeThinkingCapabilitySeries(series)
+  const normalizedTemplate = normalizeThinkingSeriesTemplate(
+    template,
+    resolveThinkingSeriesPreset(normalizedSeries),
+    normalizedSeries,
+  )
   return {
     supported: true,
-    series,
+    series: normalizedSeries,
     template: normalizedTemplate,
-    input: deriveLegacyInputFromTemplate(series, normalizedTemplate),
+    input: deriveLegacyInputFromTemplate(normalizedSeries, normalizedTemplate),
     defaultSelection: deriveLegacyDefaultSelectionFromTemplate(normalizedTemplate),
     ...(source === undefined ? {} : { source }),
   }
@@ -703,6 +717,7 @@ function buildSupportedDeclaration(
 function hydrateThinkingSeriesTemplate(
   record: Record<string, unknown>,
   preset: ThinkingSeriesPreset,
+  _series: ThinkingCapabilitySeriesId,
 ): ThinkingSeriesTemplate {
   if (record.input === undefined && record.defaultSelection === undefined && record.levels === undefined) {
     return cloneThinkingSeriesTemplate(preset.template)
@@ -797,6 +812,7 @@ function normalizeLegacyLevelsFromRecord(record: Record<string, unknown>): Think
 function normalizeThinkingSeriesTemplate(
   value: unknown,
   preset: ThinkingSeriesPreset,
+  series: ThinkingCapabilitySeriesId,
 ): ThinkingSeriesTemplate {
   const record = asRecord(value)
   const editorType = normalizeThinkingSeriesEditorType(record.editorType) ?? preset.editorType
@@ -821,8 +837,8 @@ function normalizeThinkingSeriesTemplate(
     }
   }
 
-  const allowedValues = normalizeDiscreteAllowedValues(record.allowedValues, preset.template.allowedValues)
-  const defaultValue = normalizeDiscreteDefaultValue(record.defaultValue, allowedValues)
+  const allowedValues = normalizeDiscreteAllowedValues(record.allowedValues, preset.template.allowedValues, series)
+  const defaultValue = normalizeDiscreteDefaultValue(record.defaultValue, allowedValues, series)
   return {
     editorType,
     allowedValues,
@@ -833,15 +849,22 @@ function normalizeThinkingSeriesTemplate(
 function normalizeDiscreteAllowedValues(
   value: unknown,
   fallback: ThinkingSeriesTemplate['allowedValues'],
+  series: ThinkingCapabilitySeriesId,
 ): ThinkingSeriesValue[] {
-  const fallbackValues = getDiscreteCodeValues({ allowedValues: fallback, defaultValue: null })
+  const fallbackValues = normalizeDiscreteSeriesValues(
+    series,
+    getDiscreteCodeValues({ allowedValues: fallback, defaultValue: null }),
+  )
   if (!Array.isArray(value)) {
     return fallbackValues.map((item) => cloneThinkingSeriesValue(item)!)
   }
 
-  const parsed = value
-    .map((entry) => normalizeCodeValue(entry))
-    .filter((entry): entry is Extract<ThinkingSeriesValue, { valueType: 'code' }> => entry !== null)
+  const parsed = normalizeDiscreteSeriesValues(
+    series,
+    value
+      .map((entry) => normalizeCodeValue(entry))
+      .filter((entry): entry is Extract<ThinkingSeriesValue, { valueType: 'code' }> => entry !== null),
+  )
 
   return parsed.length > 0 ? parsed : fallbackValues.map((item) => cloneThinkingSeriesValue(item)!)
 }
@@ -867,8 +890,9 @@ function normalizeBudgetAllowedValues(
 function normalizeDiscreteDefaultValue(
   value: unknown,
   allowedValues: ThinkingSeriesValue[],
+  series: ThinkingCapabilitySeriesId,
 ): ThinkingSeriesValue {
-  const parsed = normalizeCodeValue(value)
+  const parsed = normalizeCodeValueForSeries(series, normalizeCodeValue(value))
   if (parsed !== null && allowedValues.some((candidate) => candidate.valueType === 'code' && candidate.code === parsed.code)) {
     return parsed
   }
@@ -954,18 +978,17 @@ function normalizeBudgetTemplate(value: unknown): ThinkingSeriesBudgetTemplate {
   const maxTokens = Math.max(minTokens, maxCandidate)
   const stepCandidate = normalizeNonNegativeInteger(record.stepTokens) ?? DEFAULT_BUDGET_STEP_TOKENS
   const stepTokens = stepCandidate > 0 ? stepCandidate : DEFAULT_BUDGET_STEP_TOKENS
-  const anchorTokens = Array.isArray(record.anchorTokens)
-    ? record.anchorTokens
-      .map((entry) => normalizeNonNegativeInteger(entry))
-      .filter((entry): entry is number => entry !== undefined)
-    : [...DEFAULT_BUDGET_ANCHOR_TOKENS]
 
-  return {
+  return buildThinkingBudgetTemplate({
     minTokens,
     maxTokens,
     stepTokens,
-    anchorTokens: anchorTokens.length > 0 ? Array.from(new Set(anchorTokens)).sort((left, right) => left - right) : [...DEFAULT_BUDGET_ANCHOR_TOKENS],
-  }
+    anchorTokens: Array.isArray(record.anchorTokens)
+      ? record.anchorTokens
+          .map((entry) => normalizeNonNegativeInteger(entry))
+          .filter((entry): entry is number => entry !== undefined)
+      : [...DEFAULT_BUDGET_ANCHOR_TOKENS],
+  })
 }
 
 function resolveExplicitThinkingCapability(
@@ -1219,7 +1242,8 @@ function serializeThinkingSeriesValue(value: ThinkingSeriesValue | null): Record
 }
 
 function resolveThinkingSeriesPreset(series: ThinkingCapabilitySeriesId): ThinkingSeriesPreset {
-  return THINKING_SERIES_PRESET_BY_ID.get(series) ?? THINKING_SERIES_PRESET_BY_ID.get(DEFAULT_SERIES_ID)!
+  const normalizedSeries = normalizeThinkingCapabilitySeries(series)
+  return THINKING_SERIES_PRESET_BY_ID.get(normalizedSeries) ?? THINKING_SERIES_PRESET_BY_ID.get(DEFAULT_SERIES_ID)!
 }
 
 function normalizeThinkingSeriesEditorType(value: unknown): ThinkingSeriesEditorType | undefined {
@@ -1262,6 +1286,60 @@ function cloneThinkingSeriesValue(value: ThinkingSeriesValue | null | undefined)
     case 'fixed':
       return createFixedValue(value.labelZh)
   }
+}
+
+function normalizeThinkingCapabilitySeries(series: ThinkingCapabilitySeriesId): ThinkingCapabilitySeriesId {
+  return SERIES_ID_ALIASES[series] ?? series
+}
+
+function normalizeSeriesCode(series: ThinkingCapabilitySeriesId, code: string): string {
+  const normalizedSeries = normalizeThinkingCapabilitySeries(series)
+  const normalizedCode = normalizeIdentifier(code)
+  if (normalizedSeries === UNIFIED_4_LEVEL_SERIES_ID && (normalizedCode === 'disabled' || normalizedCode === 'off')) {
+    return 'none'
+  }
+  return normalizedCode
+}
+
+function normalizeCodeValueForSeries(
+  series: ThinkingCapabilitySeriesId,
+  value: Extract<ThinkingSeriesValue, { valueType: 'code' }> | null,
+): Extract<ThinkingSeriesValue, { valueType: 'code' }> | null {
+  if (value === null) {
+    return null
+  }
+
+  const normalizedSeries = normalizeThinkingCapabilitySeries(series)
+  const normalizedCode = normalizeSeriesCode(normalizedSeries, value.code)
+  if (normalizedSeries !== UNIFIED_4_LEVEL_SERIES_ID) {
+    return createCodeValue(normalizedCode, value.labelZh)
+  }
+
+  return createCodeValue(
+    normalizedCode,
+    UNIFIED_4_LEVEL_CODE_LABELS[normalizedCode] ?? value.labelZh,
+  )
+}
+
+function normalizeDiscreteSeriesValues(
+  series: ThinkingCapabilitySeriesId,
+  values: Extract<ThinkingSeriesValue, { valueType: 'code' }>[],
+): Extract<ThinkingSeriesValue, { valueType: 'code' }>[] {
+  const normalizedValues = values
+    .map((value) => normalizeCodeValueForSeries(series, value))
+    .filter((value): value is Extract<ThinkingSeriesValue, { valueType: 'code' }> => value !== null)
+
+  if (normalizeThinkingCapabilitySeries(series) !== UNIFIED_4_LEVEL_SERIES_ID) {
+    return normalizedValues
+  }
+
+  const deduped = new Map<string, Extract<ThinkingSeriesValue, { valueType: 'code' }>>()
+  normalizedValues.forEach((value) => {
+    if (!deduped.has(value.code)) {
+      deduped.set(value.code, value)
+    }
+  })
+  return Array.from(deduped.values())
 }
 
 function mapSeriesCodeToLegacyLevel(code: string): ThinkingLevelIntent | null {

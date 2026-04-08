@@ -142,7 +142,7 @@ def test_parse_thinking_capability_override_accepts_series_template_shape() -> N
         "minTokens": 0,
         "maxTokens": 32768,
         "stepTokens": 1024,
-        "anchorTokens": [0, 4096, 8192],
+        "anchorTokens": [0, 4096, 32768, 131072, 1048576],
     }
 
 

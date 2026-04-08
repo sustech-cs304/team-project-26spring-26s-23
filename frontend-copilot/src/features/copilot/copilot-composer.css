@@ -138,160 +138,97 @@
 
 .copilot-chat__thinking-panel {
   left: 0;
-  width: 16rem;
-  min-width: 16rem;
-  padding: 0.55rem;
+  width: 18rem;
+  min-width: 18rem;
+  padding: 0.75rem;
+  gap: 0.7rem;
 }
 
 .copilot-chat__thinking-panel-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin-bottom: 0.45rem;
+  flex-direction: column;
+  gap: 0.38rem;
+  margin-bottom: 0.1rem;
 }
 
-.copilot-chat__thinking-source-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 1.3rem;
-  padding: 0 0.45rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-muted) 70%, var(--accent-soft, #dbeafe));
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  line-height: 1;
-  text-transform: lowercase;
-}
-
-.copilot-chat__thinking-hint {
-  margin: 0.15rem 0 0.45rem;
-  color: var(--text-muted);
-  font-size: 0.74rem;
-  line-height: 1.4;
-}
-
-.copilot-chat__thinking-option-list {
+.copilot-chat__thinking-panel-summary {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
 }
 
-.copilot-chat__thinking-option {
-  align-items: center;
-  gap: 0.55rem;
+.copilot-chat__thinking-panel-title {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
-.copilot-chat__thinking-option-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  min-width: 1rem;
-  color: var(--accent-text, #2563eb);
-  font-size: 0.8rem;
+.copilot-chat__thinking-panel-current-shell {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.32rem 0.45rem;
+}
+
+.copilot-chat__thinking-panel-current-label {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.copilot-chat__thinking-panel-current-value {
+  color: var(--text-primary);
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
-.copilot-chat__thinking-fixed {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.7rem 0.75rem;
-  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
+.copilot-chat__thinking-panel-current-code,
+.copilot-chat__thinking-option-code {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-family: Consolas, 'SFMono-Regular', 'Courier New', monospace;
 }
 
-.copilot-chat__thinking-fixed-icon {
+.copilot-chat__thinking-option-list,
+.copilot-chat__thinking-budget {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.copilot-chat__thinking-pill-group {
+  width: 100%;
+}
+
+.copilot-chat__thinking-fixed {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-bg) 78%, transparent);
-  color: var(--text-secondary);
-}
-
-.copilot-chat__thinking-fixed-icon-svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  stroke-width: 2.2;
-}
-
-.copilot-chat__thinking-fixed-body {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.45rem;
+  padding: 0.35rem 0;
 }
 
 .copilot-chat__thinking-fixed-value {
   color: var(--text-primary);
-  font-size: 0.86rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
-.copilot-chat__thinking-locked-badge {
+.copilot-chat__thinking-fixed-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 1.35rem;
-  padding: 0 0.48rem;
+  min-height: 1.3rem;
+  padding: 0 0.42rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-bg) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   line-height: 1;
 }
 
-.copilot-chat__thinking-budget {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.copilot-chat__thinking-budget-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.75rem;
-  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
-}
-
-.copilot-chat__thinking-budget-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
-}
-
-.copilot-chat__thinking-budget-label {
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-}
-
-.copilot-chat__thinking-budget-value {
-  color: var(--text-primary);
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.copilot-chat__thinking-budget-input {
-  width: 100%;
-  margin: 0;
-}
-
-.copilot-chat__thinking-budget-scale {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
-  color: var(--text-muted);
-  font-size: 0.72rem;
+.copilot-chat__thinking-budget-slider {
+  margin-top: 0.05rem;
 }
 
 .copilot-chat__composer-grid {
@@ -418,7 +355,7 @@
 
   .copilot-chat__thinking-panel {
     left: 0;
-    width: min(16rem, calc(100vw - 3rem));
-    min-width: min(16rem, calc(100vw - 3rem));
+    width: min(18rem, calc(100vw - 3rem));
+    min-width: min(18rem, calc(100vw - 3rem));
   }
 }
