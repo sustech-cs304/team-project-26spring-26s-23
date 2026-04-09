@@ -185,6 +185,14 @@ function collectSnapshotMismatches(
 }
 
 function providerProfileSupportsModel(profile: ProviderProfile, modelId: string): boolean {
+  return collectSupportedModelIds(profile).has(modelId)
+}
+
+function buildSupportedModelSummary(profile: ProviderProfile): string {
+  return Array.from(collectSupportedModelIds(profile)).join(', ')
+}
+
+function collectSupportedModelIds(profile: ProviderProfile): Set<string> {
   const supportedModelIds = new Set<string>()
 
   for (const model of profile.availableModels) {
@@ -194,25 +202,14 @@ function providerProfileSupportsModel(profile: ProviderProfile, modelId: string)
     }
   }
 
-  for (const candidate of [profile.defaultModel, profile.fastModel, profile.fallbackModel]) {
+  for (const candidate of [profile.fastModel, profile.fallbackModel]) {
     const normalizedModelId = normalizeModelId(candidate)
     if (normalizedModelId !== '') {
       supportedModelIds.add(normalizedModelId)
     }
   }
 
-  return supportedModelIds.has(modelId)
-}
-
-function buildSupportedModelSummary(profile: ProviderProfile): string {
-  const supportedModelIds = Array.from(new Set([
-    ...profile.availableModels.map((model) => normalizeModelId(model.modelId)),
-    normalizeModelId(profile.defaultModel),
-    normalizeModelId(profile.fastModel),
-    normalizeModelId(profile.fallbackModel),
-  ].filter((modelId) => modelId !== '')))
-
-  return supportedModelIds.join(', ')
+  return supportedModelIds
 }
 
 function projectProviderIdentifier(profile: ProviderProfile): string {

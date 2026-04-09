@@ -63,7 +63,6 @@ export function useSettingsWorkspaceProviderModelEditor({
         return {
           ...profile,
           availableModels: nextModels,
-          defaultModel: syncTrackedModelValue(profile.defaultModel, previousModelId, nextModelId),
           fastModel: syncTrackedModelValue(profile.fastModel, previousModelId, nextModelId),
           fallbackModel: syncTrackedModelValue(profile.fallbackModel, previousModelId, nextModelId),
         }

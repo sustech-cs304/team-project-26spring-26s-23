@@ -238,7 +238,6 @@ function createProviderProfile(overrides: Partial<ProviderProfile>): ProviderPro
     protocol: overrides.protocol ?? 'openai',
     endpoint: overrides.endpoint ?? 'https://api.example.com/v1',
     hasApiKey: overrides.hasApiKey ?? true,
-    defaultModel: overrides.defaultModel ?? '',
     fastModel: overrides.fastModel ?? '',
     fallbackModel: overrides.fallbackModel ?? '',
     organization: overrides.organization ?? '',

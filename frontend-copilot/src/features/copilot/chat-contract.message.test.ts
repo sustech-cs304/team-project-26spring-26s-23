@@ -16,6 +16,8 @@ import {
   sessionId,
 } from './thread-run-contract.test-support'
 
+const RUNTIME_CONNECTIVITY_ERROR_MESSAGE = '无法连接到本地运行时，可能由后端异常、CORS 或网络拒绝导致，请查看运行时控制台日志。'
+
 describe('sendRuntimeMessage', () => {
   it('posts run/start then run/stream with structured thinking payload as the main transport path', async () => {
     const runEvents: RuntimeRunEvent[] = [
@@ -194,6 +196,62 @@ describe('sendRuntimeMessage', () => {
       code: 'agent_mismatch',
       status: 409,
     })
+  })
+
+  it.each([
+    ['native TypeError rejection', new TypeError('Failed to fetch')],
+    ['plain Failed to fetch rejection', new Error('Failed to fetch')],
+    ['CORS rejection', new Error('CORS policy blocked the request')],
+  ])('maps %s during run/start into a readable RuntimeRequestError', async (_label, fetchError) => {
+    const rawFetchFn = vi.fn().mockRejectedValue(fetchError)
+    const fetchFn = rawFetchFn as unknown as typeof fetch
+
+    await expect(collectEvents(sendRuntimeMessage({
+      runtimeUrl,
+      sessionId,
+      agent: agentId,
+      message: createUserMessage(),
+      modelRoute: createRuntimeModelRoute(),
+      enabledTools: ['tool.file-convert'],
+      requestOptions: {},
+      fetchFn,
+    }))).rejects.toMatchObject({
+      name: 'RuntimeRequestError',
+      code: null,
+      status: 0,
+      message: RUNTIME_CONNECTIVITY_ERROR_MESSAGE,
+    })
+
+    expect(rawFetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps browser connectivity failures during run/stream into a readable RuntimeRequestError', async () => {
+    const rawFetchFn = vi.fn()
+    rawFetchFn.mockResolvedValueOnce(createFetchResponse(createRuntimeRunStartResponse(), {
+      headers: {
+        'content-type': 'application/json',
+      },
+    }))
+    rawFetchFn.mockRejectedValueOnce(new Error('CORS policy blocked the request'))
+    const fetchFn = rawFetchFn as unknown as typeof fetch
+
+    await expect(collectEvents(sendRuntimeMessage({
+      runtimeUrl,
+      sessionId,
+      agent: agentId,
+      message: createUserMessage(),
+      modelRoute: createRuntimeModelRoute(),
+      enabledTools: ['tool.file-convert'],
+      requestOptions: {},
+      fetchFn,
+    }))).rejects.toMatchObject({
+      name: 'RuntimeRequestError',
+      code: null,
+      status: 0,
+      message: RUNTIME_CONNECTIVITY_ERROR_MESSAGE,
+    })
+
+    expect(rawFetchFn).toHaveBeenCalledTimes(2)
   })
 
   it('forwards abort signals into both run/start and run/stream requests', async () => {

@@ -128,7 +128,6 @@ describe('createSettingsWorkspaceStorage', () => {
       const legacyProvider = createProviderProfile({
         id: 'legacy-provider',
         name: 'Legacy Provider',
-        defaultModel: 'legacy-model',
         fastModel: 'legacy-model',
         fallbackModel: 'legacy-model',
         availableModels: [
@@ -173,6 +172,82 @@ describe('createSettingsWorkspaceStorage', () => {
             { valueType: 'code', code: 'high', labelZh: '高' },
           ],
           defaultValue: { valueType: 'code', code: 'high', labelZh: '高' },
+        },
+      })
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('loads legacy defaultModel fields, drops them from editable state, and clears them on save', async () => {
+    const fixture = await createSettingsWorkspaceFixture()
+
+    try {
+      const initial = await fixture.storage.loadState()
+      await fixture.storage.saveProviderSecret('legacy-provider', 'legacy-secret')
+
+      await writeFile(fixture.paths.stateDocument, `${JSON.stringify({
+        version: 1,
+        kind: 'settings-workspace-state',
+        values: {
+          ...initial.state,
+          providerProfiles: [
+            {
+              id: 'legacy-provider',
+              name: 'Legacy Provider',
+              protocol: 'openai',
+              endpoint: 'https://legacy.example.com/v1',
+              defaultModel: 'legacy-model',
+              fastModel: '',
+              fallbackModel: '',
+              organization: '',
+              region: 'Global',
+              notes: 'legacy-default-model',
+              availableModels: [
+                {
+                  id: 'legacy-provider:model-1',
+                  modelId: 'legacy-model',
+                  displayName: 'Legacy Model',
+                  groupName: 'Legacy',
+                  capabilities: ['reasoning', 'tools'],
+                  supportsStreaming: true,
+                  currency: 'usd',
+                  inputPrice: '1',
+                  outputPrice: '2',
+                },
+              ],
+            },
+          ],
+        },
+      }, null, 2)}\n`)
+
+      const loaded = await fixture.storage.loadState()
+
+      expect(loaded.state.providerProfiles[0]).toMatchObject({
+        id: 'legacy-provider',
+        fastModel: 'legacy-model',
+        fallbackModel: 'legacy-model',
+        hasApiKey: true,
+      })
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+
+      await fixture.storage.saveState({
+        ...loaded.state,
+        providerProfiles: loaded.state.providerProfiles.map(({ hasApiKey: _hasApiKey, ...profile }) => profile),
+      })
+
+      const persistedDocument = await readJsonFile(fixture.paths.stateDocument) as {
+        values: {
+          providerProfiles: Array<Record<string, unknown>>
+        }
+      }
+      expect(persistedDocument.values.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(await fixture.storage.loadSecretStates(['legacy-provider'])).toEqual({
+        states: {
+          'legacy-provider': {
+            hasApiKey: true,
+            apiKey: 'legacy-secret',
+          },
         },
       })
     } finally {
@@ -294,9 +369,21 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'resolved-provider',
         protocol: 'openai',
         endpoint: 'https://resolved.example.com/v1/',
-        defaultModel: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
+        availableModels: [
+          {
+            id: 'resolved-provider:model-1',
+            modelId: 'gpt-4.1',
+            displayName: 'GPT 4.1',
+            groupName: 'Resolved',
+            capabilities: ['reasoning', 'tools'],
+            supportsStreaming: true,
+            currency: 'usd',
+            inputPrice: '1',
+            outputPrice: '2',
+          },
+        ],
       })
       await fixture.storage.saveState({
         ...(await fixture.storage.loadState()).state,

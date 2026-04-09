@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createProviderProfile } from '../../src/workbench/settings/settings-workspace-test-fixtures'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createElectronSettingsWorkspaceService } from './main-process'
+import { createSettingsWorkspacePaths } from './paths'
 
 async function createPreparedPaths(testName: string) {
   const tempRoot = await mkdtemp(path.join(tmpdir(), `candue-settings-main-${testName}-`))
@@ -15,6 +16,10 @@ async function createPreparedPaths(testName: string) {
     tempRoot,
     hostedPaths,
   }
+}
+
+async function readJsonFile(filePath: string): Promise<unknown> {
+  return JSON.parse(await readFile(filePath, 'utf8')) as unknown
 }
 
 describe('createElectronSettingsWorkspaceService', () => {
@@ -41,6 +46,89 @@ describe('createElectronSettingsWorkspaceService', () => {
         fastAssistantModel: '',
       })
       expect(appendLog).toHaveBeenCalledWith('info', 'Initialized settings workspace persistence documents.', null)
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('loads legacy defaultModel fields through the main-process API and clears them on save', async () => {
+    const fixture = await createPreparedPaths('legacy-default-model-cleanup')
+    const service = createElectronSettingsWorkspaceService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+    })
+    const paths = createSettingsWorkspacePaths(fixture.hostedPaths)
+
+    try {
+      const initialized = await service.loadState()
+      expect(initialized.ok).toBe(true)
+      if (!initialized.ok) {
+        throw new Error('Expected initial settings workspace load to succeed.')
+      }
+
+      await writeFile(paths.stateDocument, `${JSON.stringify({
+        version: 1,
+        kind: 'settings-workspace-state',
+        values: {
+          ...initialized.state,
+          providerProfiles: [
+            {
+              id: 'legacy-main-process-provider',
+              name: 'Legacy Main Process Provider',
+              protocol: 'openai',
+              endpoint: 'https://legacy.example.com/v1',
+              defaultModel: 'legacy-model',
+              fastModel: '',
+              fallbackModel: '',
+              organization: '',
+              region: 'Global',
+              notes: 'legacy-default-model',
+              availableModels: [
+                {
+                  id: 'legacy-main-process-provider:model-1',
+                  modelId: 'legacy-model',
+                  displayName: 'Legacy Model',
+                  groupName: 'Legacy',
+                  capabilities: ['reasoning', 'tools'],
+                  supportsStreaming: true,
+                  currency: 'usd',
+                  inputPrice: '1',
+                  outputPrice: '2',
+                },
+              ],
+            },
+          ],
+        },
+      }, null, 2)}\n`)
+
+      const loaded = await service.loadState()
+      expect(loaded.ok).toBe(true)
+      if (!loaded.ok) {
+        throw new Error('Expected legacy settings workspace load to succeed.')
+      }
+
+      expect(loaded.state.providerProfiles[0]).toMatchObject({
+        id: 'legacy-main-process-provider',
+        fastModel: 'legacy-model',
+        fallbackModel: 'legacy-model',
+      })
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+
+      const saveResult = await service.saveState({
+        ...loaded.state,
+        providerProfiles: loaded.state.providerProfiles.map(({ hasApiKey: _hasApiKey, ...profile }) => profile),
+      })
+      expect(saveResult.ok).toBe(true)
+      if (!saveResult.ok) {
+        throw new Error('Expected legacy settings workspace save to succeed.')
+      }
+      expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+
+      const persistedDocument = await readJsonFile(paths.stateDocument) as {
+        values: {
+          providerProfiles: Array<Record<string, unknown>>
+        }
+      }
+      expect(persistedDocument.values.providerProfiles[0]).not.toHaveProperty('defaultModel')
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }

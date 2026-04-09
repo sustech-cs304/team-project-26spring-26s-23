@@ -13,7 +13,6 @@ export function filterProviderProfiles(providerProfiles: ProviderProfile[], prov
     return (
       profile.name.toLowerCase().includes(keyword)
       || profile.endpoint.toLowerCase().includes(keyword)
-      || profile.defaultModel.toLowerCase().includes(keyword)
       || profile.availableModels.some((model) => {
         return model.modelId.toLowerCase().includes(keyword) || model.displayName.toLowerCase().includes(keyword)
       })

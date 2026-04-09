@@ -914,7 +914,6 @@ describe('CopilotChatPanel composer interactions', () => {
             id: 'provider-response',
             name: 'Response Provider',
             protocol: 'openai-response',
-            defaultModel: 'gpt-5.4',
             fastModel: 'gpt-5.4',
             fallbackModel: 'gpt-5.4',
             availableModels: [
@@ -990,7 +989,6 @@ describe('CopilotChatPanel composer interactions', () => {
             id: 'provider-response',
             name: 'Response Provider',
             protocol: 'openai-response',
-            defaultModel: 'gpt-5.4',
             fastModel: 'gpt-5.4',
             fallbackModel: 'gpt-5.4',
             availableModels: [

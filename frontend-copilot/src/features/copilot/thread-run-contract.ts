@@ -401,6 +401,8 @@ interface RuntimeMethodRequest {
 
 export type FetchLike = typeof fetch
 
+const RUNTIME_CONNECTIVITY_ERROR_MESSAGE = '无法连接到本地运行时，可能由后端异常、CORS 或网络拒绝导致，请查看运行时控制台日志。'
+
 export class RuntimeRequestError extends Error {
   readonly code: string | null
   readonly status: number
@@ -592,20 +594,28 @@ export async function* streamRuntimeRun(input: {
   signal?: AbortSignal
 }): AsyncGenerator<RuntimeRunEvent> {
   const fetchFn = input.fetchFn ?? fetch
-  const response = await fetchFn(buildRuntimeEndpoint(input.runtimeUrl), {
-    method: 'POST',
-    headers: {
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(buildRuntimeRequest({
-      method: 'run/stream',
-      body: {
-        runId: input.runId,
+  let response: Awaited<ReturnType<FetchLike>>
+  try {
+    response = await fetchFn(buildRuntimeEndpoint(input.runtimeUrl), {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
       },
-    })),
-    signal: input.signal,
-  })
+      body: JSON.stringify(buildRuntimeRequest({
+        method: 'run/stream',
+        body: {
+          runId: input.runId,
+        },
+      })),
+      signal: input.signal,
+    })
+  } catch (error) {
+    if (isAbortLikeError(error) || input.signal?.aborted === true) {
+      throw createAbortError()
+    }
+    throwMappedRuntimeTransportError(error)
+  }
 
   if (!response.ok) {
     throw await buildRuntimeRequestErrorFromResponse(response)
@@ -722,7 +732,7 @@ export async function* sendRuntimeMessage(input: {
     if (isAbortLikeError(error) || input.signal?.aborted === true) {
       throw createAbortError()
     }
-    throw error
+    throwMappedRuntimeTransportError(error)
   }
 }
 
@@ -734,14 +744,22 @@ async function postRuntimeMethod<TResponse>(input: {
   signal?: AbortSignal
 }): Promise<TResponse> {
   const fetchFn = input.fetchFn ?? fetch
-  const response = await fetchFn(buildRuntimeEndpoint(input.runtimeUrl), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(buildRuntimeRequest(input)),
-    signal: input.signal,
-  })
+  let response: Awaited<ReturnType<FetchLike>>
+  try {
+    response = await fetchFn(buildRuntimeEndpoint(input.runtimeUrl), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(buildRuntimeRequest(input)),
+      signal: input.signal,
+    })
+  } catch (error) {
+    if (isAbortLikeError(error) || input.signal?.aborted === true) {
+      throw createAbortError()
+    }
+    throwMappedRuntimeTransportError(error)
+  }
 
   const payload = await response.json() as TResponse | RuntimeErrorPayload
 
@@ -1245,6 +1263,42 @@ function isRuntimeThinkingValueRecord(
 
   const valueType = 'valueType' in value ? value.valueType : undefined
   return valueType === 'code' || valueType === 'budget' || valueType === 'fixed'
+}
+
+function throwMappedRuntimeTransportError(error: unknown): never {
+  const runtimeTransportError = buildRuntimeTransportError(error)
+  throw runtimeTransportError ?? error
+}
+
+function buildRuntimeTransportError(error: unknown): RuntimeRequestError | null {
+  if (error instanceof RuntimeRequestError) {
+    return error
+  }
+
+  if (!isRuntimeConnectivityFailure(error)) {
+    return null
+  }
+
+  return new RuntimeRequestError(RUNTIME_CONNECTIVITY_ERROR_MESSAGE, {
+    status: 0,
+  })
+}
+
+function isRuntimeConnectivityFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  if (isAbortLikeError(error)) {
+    return false
+  }
+
+  const normalizedMessage = error.message.trim().toLowerCase()
+  return error instanceof TypeError
+    || normalizedMessage.includes('failed to fetch')
+    || normalizedMessage.includes('networkerror')
+    || normalizedMessage.includes('load failed')
+    || normalizedMessage.includes('cors')
 }
 
 function createAbortError(): Error {

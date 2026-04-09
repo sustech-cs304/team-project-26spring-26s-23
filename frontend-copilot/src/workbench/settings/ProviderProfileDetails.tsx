@@ -53,12 +53,7 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
               onChange={(value) => onUpdateActiveProvider({ endpoint: value })}
               placeholder="https://api.example.com/v1"
               type="url"
-            />
-            <TextField
-              label="默认模型 ID"
-              value={activeProviderDetail.defaultModel}
-              onChange={(value) => onUpdateActiveProvider({ defaultModel: value })}
-              placeholder="例如 openai/gpt-4.1"
+              containerClassName="form-field--full"
             />
             <ProviderSecretPanel
               providerId={activeProviderDetail.id}

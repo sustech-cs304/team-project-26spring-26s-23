@@ -59,7 +59,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: 'provider-truth',
         name: 'Truth Provider',
-        defaultModel: 'truth-model',
         availableModels: [
           {
             id: 'provider-truth:truth-model',
@@ -131,7 +130,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: 'provider-fixed',
         name: 'Fixed Provider',
-        defaultModel: 'fixed-model',
         availableModels: [
           createReasoningModel({
             id: 'provider-fixed:fixed-model',
@@ -185,7 +183,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: providerId,
         name: 'Kinds Provider',
-        defaultModel: 'binary-model',
         availableModels: [
           createReasoningModel({
             id: `${providerId}:binary-model`,
@@ -268,7 +265,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: providerId,
         name: 'No Exact Budget Provider',
-        defaultModel: 'dynamic-only-model',
         availableModels: [
           createReasoningModel({
             id: `${providerId}:dynamic-only-model`,
@@ -326,7 +322,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: 'provider-override',
         name: 'Override Provider',
-        defaultModel: 'unknown-route-model',
         availableModels: [
           {
             ...createReasoningModel({
@@ -395,7 +390,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: providerId,
         name: 'Memory Provider',
-        defaultModel: 'budget-memory-model',
         availableModels: [
           createReasoningModel({
             id: `${providerId}:budget-memory-model`,
@@ -450,7 +444,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: 'provider-send',
         name: 'Send Provider',
-        defaultModel: 'budget-send-model',
         availableModels: [
           createReasoningModel({
             id: 'provider-send:budget-send-model',
@@ -545,7 +538,6 @@ describe('Copilot thinking selector', () => {
       createProviderProfile({
         id: 'provider-run-metadata',
         name: 'Run Metadata Provider',
-        defaultModel: 'run-metadata-model',
         availableModels: [
           createReasoningModel({
             id: 'provider-run-metadata:run-metadata-model',

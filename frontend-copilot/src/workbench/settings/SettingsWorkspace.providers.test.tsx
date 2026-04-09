@@ -157,6 +157,34 @@ describe('SettingsWorkspace provider interactions', () => {
     rendered.unmount()
   })
 
+  it('keeps the API 地址 field editable and renders it with the full-width form-field layout', async () => {
+    installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createSingleProviderWorkspaceState(),
+      },
+      loadStatusesResult: createPersistedSecretStatesResult(),
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    expect(rendered.container.textContent).not.toContain('默认模型 ID')
+    expect(rendered.container.querySelector('input[placeholder="例如 openai/gpt-4.1"]')).toBeNull()
+
+    const apiAddressInput = rendered.getByPlaceholder('https://api.example.com/v1') as HTMLInputElement
+    await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2')
+
+    expect(apiAddressInput.value).toBe('https://editable.example.com/v2')
+    expect(apiAddressInput.closest('.form-field')?.className).toContain('form-field--full')
+
+    rendered.unmount()
+  })
+
   it('reorders providers from drag interaction and persists the reordered list', async () => {
     vi.useFakeTimers()
 
@@ -171,7 +199,6 @@ describe('SettingsWorkspace provider interactions', () => {
       protocol: 'gemini',
       endpoint: 'https://beta.example.com/v1',
       hasApiKey: false,
-      defaultModel: 'google/gemini-2.5-pro',
       fastModel: 'google/gemini-2.5-flash',
       fallbackModel: 'google/gemini-2.0-flash',
     })

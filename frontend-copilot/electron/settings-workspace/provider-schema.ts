@@ -11,7 +11,6 @@ export interface SettingsWorkspaceStoredProviderProfile {
   name: string
   protocol: string
   endpoint: string
-  defaultModel: string
   fastModel: string
   fallbackModel: string
   organization: string
@@ -29,8 +28,8 @@ export function createDefaultSettingsWorkspaceDefaultModelRouting(): {
   fastAssistantModel: string
 } {
   return {
-    primaryAssistantModel: initialProviderProfiles[0]?.defaultModel ?? '',
-    fastAssistantModel: initialProviderProfiles[0]?.fastModel ?? '',
+    primaryAssistantModel: '',
+    fastAssistantModel: '',
   }
 }
 
@@ -40,7 +39,6 @@ export function projectStoredProviderProfile(profile: ProviderProfile): Settings
     name: profile.name,
     protocol: profile.protocol,
     endpoint: profile.endpoint,
-    defaultModel: profile.defaultModel,
     fastModel: profile.fastModel,
     fallbackModel: profile.fallbackModel,
     organization: profile.organization,
@@ -91,16 +89,22 @@ function normalizeStoredProviderProfile(
   }
 
   const availableModels = normalizeProviderModelProfiles(record.availableModels, providerId)
-  const defaultModel = normalizeNonEmptyString(record.defaultModel, availableModels[0]?.modelId ?? 'default-model')
-  const fastModel = normalizeNonEmptyString(record.fastModel, availableModels[1]?.modelId ?? defaultModel)
-  const fallbackModel = normalizeNonEmptyString(record.fallbackModel, availableModels[2]?.modelId ?? defaultModel)
+  const primaryAvailableModel = availableModels[0]?.modelId ?? ''
+  const legacyDefaultModel = normalizeNonEmptyString(record.defaultModel, '')
+  const fastModelSeed = legacyDefaultModel !== ''
+    ? legacyDefaultModel
+    : (availableModels[1]?.modelId ?? primaryAvailableModel)
+  const fallbackModelSeed = legacyDefaultModel !== ''
+    ? legacyDefaultModel
+    : (availableModels[2]?.modelId ?? primaryAvailableModel)
+  const fastModel = normalizeNonEmptyString(record.fastModel, fastModelSeed)
+  const fallbackModel = normalizeNonEmptyString(record.fallbackModel, fallbackModelSeed)
 
   return {
     id: providerId,
     name: normalizeNonEmptyString(record.name, `Provider ${index + 1}`),
     protocol: normalizeNonEmptyString(record.protocol, 'openai'),
     endpoint: normalizeNonEmptyString(record.endpoint, 'https://api.example.com/v1'),
-    defaultModel,
     fastModel,
     fallbackModel,
     organization: normalizeString(record.organization, ''),
