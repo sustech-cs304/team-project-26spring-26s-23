@@ -1,0 +1,782 @@
+{
+  "catalogRevision": "2026-04-06-provider-catalog-v1",
+  "providers": [
+    {
+      "providerId": "openai",
+      "displayName": "OpenAI",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "enabled",
+      "adapterId": "openai",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"],
+        "helpText": "需要 OpenAI API Key。"
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "https://api.openai.com/v1"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "anthropic",
+      "displayName": "Anthropic",
+      "endpointType": "anthropic-native",
+      "runtimeStatus": "enabled",
+      "adapterId": "anthropic",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"],
+        "helpText": "需要 Anthropic API Key。"
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "https://api.anthropic.com"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "gemini",
+      "displayName": "Gemini",
+      "endpointType": "gemini-native",
+      "runtimeStatus": "enabled",
+      "adapterId": "gemini",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"],
+        "helpText": "需要 Google AI / Gemini API Key。"
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "https://generativelanguage.googleapis.com"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": true
+      },
+      "aliases": ["google"],
+      "notes": "统一采用 gemini 作为稳定 providerId，兼容 PydanticAI 的 google provider 命名。"
+    },
+    {
+      "providerId": "ollama",
+      "displayName": "Ollama",
+      "endpointType": "ollama-native",
+      "runtimeStatus": "enabled",
+      "adapterId": "ollama",
+      "authSchema": {
+        "defaultKind": "none",
+        "supportedKinds": ["none", "api-key"],
+        "secretFields": ["apiKey"],
+        "helpText": "本地 Ollama 默认无需 API Key，兼容受保护代理时可选填。"
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "http://127.0.0.1:11434/v1"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "groq",
+      "displayName": "Groq",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "enabled",
+      "adapterId": "groq",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"],
+        "helpText": "需要 Groq API Key。"
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "https://api.groq.com/openai/v1"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": false,
+        "reasoning": true,
+        "search": false
+      },
+      "notes": "运行时传输层与 OpenAI 兼容，但 providerId 需保持为 groq。"
+    },
+    {
+      "providerId": "mistral",
+      "displayName": "Mistral",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "enabled",
+      "adapterId": "mistral",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"],
+        "helpText": "需要 Mistral API Key。"
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "https://api.mistral.ai/v1"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      },
+      "notes": "运行时传输层与 OpenAI 兼容，但 providerId 需保持为 mistral。"
+    },
+    {
+      "providerId": "alibaba",
+      "displayName": "Alibaba Cloud Model Studio",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "alibaba",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      },
+      "aliases": ["dashscope"]
+    },
+    {
+      "providerId": "azure",
+      "displayName": "Azure OpenAI / Azure AI Foundry",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "azure",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "required"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "bedrock",
+      "displayName": "AWS Bedrock",
+      "endpointType": "bedrock-native",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "bedrock",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "cerebras",
+      "displayName": "Cerebras",
+      "endpointType": "cerebras-native",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "cerebras",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": false,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "cohere",
+      "displayName": "Cohere",
+      "endpointType": "cohere-native",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "cohere",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": false,
+        "reasoning": true,
+        "search": true
+      }
+    },
+    {
+      "providerId": "deepseek",
+      "displayName": "DeepSeek",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "deepseek",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "https://api.deepseek.com/v1"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": false,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "fireworks",
+      "displayName": "Fireworks AI",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "fireworks",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "gateway",
+      "displayName": "Pydantic AI Gateway",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "gateway",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "github",
+      "displayName": "GitHub Models",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "github",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "heroku",
+      "displayName": "Heroku Inference",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "heroku",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "huggingface",
+      "displayName": "Hugging Face",
+      "endpointType": "huggingface-native",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "huggingface",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "litellm",
+      "displayName": "LiteLLM",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "litellm",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "moonshotai",
+      "displayName": "Moonshot AI",
+      "endpointType": "moonshotai-native",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "moonshotai",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": false,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "nebius",
+      "displayName": "Nebius AI Studio",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "nebius",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "openrouter",
+      "displayName": "OpenRouter",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "openrouter",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional",
+        "defaultBaseUrl": "https://openrouter.ai/api/v1"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "ovhcloud",
+      "displayName": "OVHcloud AI Endpoints",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "ovhcloud",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "sambanova",
+      "displayName": "SambaNova",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "sambanova",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "together",
+      "displayName": "Together AI",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "together",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "vercel",
+      "displayName": "Vercel AI Gateway",
+      "endpointType": "openai-compatible",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "vercel",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      }
+    },
+    {
+      "providerId": "xai",
+      "displayName": "xAI",
+      "endpointType": "xai-native",
+      "runtimeStatus": "catalog-only",
+      "adapterId": "xai",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": true,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      },
+      "aliases": ["grok"]
+    },
+    {
+      "providerId": "openai-response",
+      "displayName": "OpenAI-Response",
+      "endpointType": "openai-response",
+      "runtimeStatus": "legacy-unsupported",
+      "adapterId": "openai-response",
+      "authSchema": {
+        "defaultKind": "api-key",
+        "supportedKinds": ["api-key"],
+        "secretFields": ["apiKey"]
+      },
+      "baseUrlPolicy": {
+        "mode": "optional"
+      },
+      "modelConfigPolicy": {
+        "mode": "user-defined",
+        "allowCustomModels": true,
+        "defaultModelRequired": true,
+        "allowModelDisplayNameOverride": true
+      },
+      "capabilityHints": {
+        "streaming": false,
+        "tools": true,
+        "vision": true,
+        "reasoning": true,
+        "search": false
+      },
+      "notes": "历史设置协议占位；保留以承载 legacy/unsupported 区分，但当前不应进入新的运行时主链。"
+    }
+  ]
+}

@@ -9,6 +9,8 @@ from .contracts import RuntimeContract, RuntimeScaffold
 
 INVALID_REQUEST_CODE = "invalid_request"
 METHOD_NOT_IMPLEMENTED_CODE = "method_not_implemented"
+THREAD_NOT_FOUND_CODE = "thread_not_found"
+RUN_NOT_FOUND_CODE = "run_not_found"
 SESSION_NOT_FOUND_CODE = "session_not_found"
 AGENT_NOT_FOUND_CODE = "agent_not_found"
 AGENT_MISMATCH_CODE = "agent_mismatch"
@@ -49,6 +51,38 @@ def build_invalid_request_error(
         scaffold=scaffold,
         requested_method=requested_method,
         details=details,
+    )
+
+
+
+def build_thread_not_found_error(
+    *,
+    thread_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=THREAD_NOT_FOUND_CODE,
+        message=f"Unknown thread '{thread_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"threadId": thread_id},
+    )
+
+
+
+def build_run_not_found_error(
+    *,
+    run_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=RUN_NOT_FOUND_CODE,
+        message=f"Unknown run '{run_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"runId": run_id},
     )
 
 
@@ -176,6 +210,24 @@ def build_model_not_configured_error(
 
 
 
+def build_runtime_operation_error(
+    *,
+    code: str,
+    message: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+    details: dict[str, Any] | None = None,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=code,
+        message=message,
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details=details,
+    )
+
+
+
 def build_agent_execution_failed_error(
     *,
     message: str,
@@ -183,7 +235,7 @@ def build_agent_execution_failed_error(
     requested_method: str,
     details: dict[str, Any] | None = None,
 ) -> RuntimeErrorResponse:
-    return _build_runtime_error(
+    return build_runtime_operation_error(
         code=AGENT_EXECUTION_FAILED_CODE,
         message=message,
         scaffold=scaffold,

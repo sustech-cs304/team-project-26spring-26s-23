@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import type { RuntimeSessionCreateResponse } from '../../features/copilot/chat-contract'
+import type { RuntimeThreadCreateResponse } from '../../features/copilot/chat-contract'
 
 import { AssistantWorkspace } from './AssistantWorkspace'
 import {
@@ -94,7 +94,7 @@ describe('AssistantWorkspace render + interactions', () => {
 
   it('keeps the create-session button label stable while creation is pending', async () => {
     const directoryState = createAssistantAgentDirectoryState(createDirectoryResponse())
-    const createSessionDeferred = createDeferred<RuntimeSessionCreateResponse>()
+    const createSessionDeferred = createDeferred<RuntimeThreadCreateResponse>()
     const createSession = vi.fn().mockReturnValue(createSessionDeferred.promise)
     const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse())
 
@@ -252,7 +252,7 @@ describe('AssistantWorkspace render + interactions', () => {
     }
 
     const createSession = vi.fn().mockResolvedValue(createSessionResponse({
-      sessionId: 'session-2',
+      threadId: 'session-2',
       createdAt: '2026-03-27T10:05:00Z',
       updatedAt: '2026-03-27T10:05:00Z',
     }))

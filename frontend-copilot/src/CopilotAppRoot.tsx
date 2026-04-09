@@ -36,7 +36,7 @@ const loadWorkbenchApp = () => {
   const startedAt = performance.now()
   logStartupTrace('workbench-import:start', { attempt })
 
-  return import('./App.tsx')
+  return import('./App')
     .then((module) => {
       logStartupTrace('workbench-import:resolved', {
         attempt,

@@ -35,6 +35,10 @@ export function applyUnifiedConfigFieldPatch(
     nextAssistantValues.agentName = UNIFIED_CONFIG_FIELD_REGISTRY.agentName.normalize(patch.agentName)
   }
 
+  if ('debugModeEnabled' in patch) {
+    nextAssistantValues.debugModeEnabled = UNIFIED_CONFIG_FIELD_REGISTRY.debugModeEnabled.normalize(patch.debugModeEnabled)
+  }
+
   if ('runtimeUrl' in patch) {
     nextHostValues.runtimeUrl = UNIFIED_CONFIG_FIELD_REGISTRY.runtimeUrl.normalize(patch.runtimeUrl)
   }

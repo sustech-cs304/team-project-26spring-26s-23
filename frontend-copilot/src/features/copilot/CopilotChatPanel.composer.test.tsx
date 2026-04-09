@@ -4,7 +4,18 @@ import { act } from 'react'
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
-import { RuntimeRequestError, sendRuntimeMessage, type RuntimeMessageSendResponse } from './chat-contract'
+import {
+  cancelRuntimeRun,
+  RuntimeRequestError,
+  type RuntimeRunEvent,
+} from './chat-contract'
+import type { CopilotMessageDispatchInput } from './copilot-send-controller'
+import {
+  createRuntimeMessageEventStream,
+  createRuntimeResolvedModelRoute,
+  createRuntimeRunCancelResponse,
+  createRuntimeToolEvent,
+} from './chat-contract.test-support'
 import {
   clickElement,
   createDirectoryState,
@@ -59,14 +70,15 @@ describe('CopilotChatPanel composer interactions', () => {
             ],
           }),
           createProviderProfile({
-            id: 'provider-anthropic',
-            name: 'Anthropic Mirror',
+            id: 'provider-beta',
+            name: 'Beta Router',
+            protocol: 'openai',
             availableModels: [
               {
-                id: 'provider-anthropic:anthropic/claude-opus-4.1',
-                modelId: 'anthropic/claude-opus-4.1',
-                displayName: 'Claude Opus 4.1',
-                groupName: 'Anthropic',
+                id: 'provider-beta:openai/gpt-4.1-mini',
+                modelId: 'openai/gpt-4.1-mini',
+                displayName: 'GPT 4.1 Mini',
+                groupName: 'Beta',
                 capabilities: ['reasoning', 'tools'],
                 supportsStreaming: true,
                 currency: 'usd',
@@ -106,22 +118,28 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(loadWorkspaceState).toHaveBeenCalledTimes(1)
     expect(modelTrigger.textContent).toContain('GPT 4.1')
-    expect(getTriggerIconText(modelTrigger)).toBe('O')
+    expect(getTriggerIconText(modelTrigger)).toBe('G')
 
     await clickElement(modelTrigger)
     expect(rendered.container.textContent).toContain('OpenAI Compatible')
-    expect(rendered.container.textContent).toContain('Anthropic Mirror')
-    await clickElement(rendered.getByTestId('chat-model-option-provider-anthropic-anthropic/claude-opus-4.1'))
+    expect(rendered.container.textContent).toContain('Beta Router')
+    await clickElement(rendered.getByTestId('chat-model-option-provider-beta-provider-beta:openai/gpt-4.1-mini'))
 
-    expect(modelTrigger.textContent).toContain('Claude Opus 4.1')
-    expect(getTriggerIconText(modelTrigger)).toBe('A')
+    expect(modelTrigger.textContent).toContain('GPT 4.1 Mini')
+    expect(getTriggerIconText(modelTrigger)).toBe('G')
 
     await setFormControlValue(messageInput, '请总结刚才的内容')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      model: 'anthropic/claude-opus-4.1',
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-beta',
+          modelId: 'openai/gpt-4.1-mini',
+        },
+      },
       message: {
         content: '请总结刚才的内容',
       },
@@ -130,21 +148,28 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('keeps an invalid selected model visible after persisted settings remove it, excludes it from candidates, and clears invalid state after reselecting a valid model', async () => {
+  it('allows enabled anthropic routes to send without openai-compatible endpoint whitelists', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
       source: 'stored' as const,
       state: createPersistedWorkspaceState({
         providerProfiles: [
           createProviderProfile({
-            id: 'provider-active',
-            name: 'Active Provider',
+            id: 'provider-anthropic',
+            name: 'Anthropic',
+            providerId: 'anthropic',
+            protocol: 'anthropic',
+            endpoint: 'https://api.anthropic.com/',
+            defaultModel: 'claude-3.7-sonnet',
+            fastModel: 'claude-3.7-sonnet',
+            fallbackModel: 'claude-3.7-sonnet',
             availableModels: [
               {
-                id: 'provider-active:openai/gpt-4.1',
-                modelId: 'openai/gpt-4.1',
-                displayName: 'GPT 4.1',
-                groupName: 'OpenAI',
+                id: 'provider-anthropic:claude-3.7-sonnet',
+                modelId: 'claude-3.7-sonnet',
+                displayName: 'Claude 3.7 Sonnet',
+                groupName: 'Anthropic',
                 capabilities: ['reasoning', 'tools'],
                 supportsStreaming: true,
                 currency: 'usd',
@@ -153,14 +178,9 @@ describe('CopilotChatPanel composer interactions', () => {
               },
             ],
           }),
-          createProviderProfile({
-            id: 'provider-empty',
-            name: 'Empty Provider',
-            availableModels: [],
-          }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'openai/gpt-4.1',
+          primaryAssistantModel: 'claude-3.7-sonnet',
         },
       }),
     }))
@@ -171,11 +191,238 @@ describe('CopilotChatPanel composer interactions', () => {
         retrying={false}
         retry={() => {}}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'legacy/retired-model',
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+
+    expect(modelTrigger.textContent).toContain('Claude 3.7 Sonnet')
+    await setFormControlValue(messageInput, '请用 Anthropic 路由发送这条消息')
+    expect(sendButton.disabled).toBe(false)
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-anthropic',
+          modelId: 'claude-3.7-sonnet',
+        },
+      },
+      message: {
+        content: '请用 Anthropic 路由发送这条消息',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('restores the workspace default model from route ref only when duplicate model ids exist across profiles', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-alpha',
+            name: 'Alpha Provider',
+            availableModels: [
+              {
+                id: 'provider-alpha:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Alpha',
+                groupName: 'Alpha',
+                capabilities: ['reasoning'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+          createProviderProfile({
+            id: 'provider-beta',
+            name: 'Beta Provider',
+            providerId: 'groq',
+            protocol: 'openai',
+            availableModels: [
+              {
+                id: 'provider-beta:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Beta',
+                groupName: 'Beta',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'shared-model',
+          primaryAssistantModelRoute: {
+            routeKind: 'provider-model',
+            profileId: 'provider-beta',
+            modelId: 'shared-model',
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+
+    expect(modelTrigger.textContent).toContain('Shared Model Beta')
+
+    await setFormControlValue(messageInput, '请使用稳定 route ref 默认模型发送')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-beta',
+          modelId: 'shared-model',
+        },
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('forwards enabled debug mode from bootstrap state into chat send requests', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
           },
         })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请总结刚才的内容')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0].debugModeEnabled).toBe(true)
+
+    rendered.unmount()
+  })
+
+  it('does not recover ambiguous shared-model defaults from legacy strings in workspace or session state', async () => {
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-alpha',
+            name: 'Alpha Provider',
+            availableModels: [
+              {
+                id: 'provider-alpha:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Alpha',
+                groupName: 'Alpha',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+          createProviderProfile({
+            id: 'provider-beta',
+            name: 'Beta Provider',
+            providerId: 'groq',
+            protocol: 'openai',
+            availableModels: [
+              {
+                id: 'provider-beta:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Beta',
+                groupName: 'Beta',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'shared-model',
+          primaryAssistantModelRoute: null,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -188,22 +435,24 @@ describe('CopilotChatPanel composer interactions', () => {
     })
 
     const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
-    expect(modelTrigger.textContent).toContain('legacy/retired-model')
-    expect(rendered.getByTestId('chat-model-picker-invalid-badge').textContent).toContain('失效')
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+
+    expect(modelTrigger.textContent).toContain('尚未配置模型')
+    expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
+
+    await setFormControlValue(messageInput, '请不要再靠同名字符串恢复默认模型')
+    expect(sendButton.disabled).toBe(true)
+    expect(sendButton.title).toBe('请先选择本次发送要使用的模型路由。')
 
     await clickElement(modelTrigger)
-
-    expect(rendered.getByTestId('chat-model-group-empty-provider-empty')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-provider-active-legacy/retired-model')).toBeNull()
-    await clickElement(rendered.getByTestId('chat-model-option-provider-active-openai/gpt-4.1'))
-
-    expect(modelTrigger.textContent).toContain('GPT 4.1')
-    expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
+    expect(rendered.getByTestId('chat-model-option-provider-alpha-provider-alpha:shared-model')).not.toBeNull()
+    expect(rendered.getByTestId('chat-model-option-provider-beta-provider-beta:shared-model')).not.toBeNull()
 
     rendered.unmount()
   })
 
-  it('shows the explicit no-model empty state and clears session-level fallback model when no configured models exist', async () => {
+  it('shows the explicit no-model empty state and clears session-level legacy string fallback when no configured models exist', async () => {
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
       source: 'initialized-defaults' as const,
@@ -222,11 +471,7 @@ describe('CopilotChatPanel composer interactions', () => {
         retrying={false}
         retry={() => {}}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'openai/gpt-4.1',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -392,26 +637,36 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('echoes user and assistant messages after a successful send', async () => {
-    const sendMessage = createResolvedSendMessageSpy(async (input) => ({
-      ok: true,
-      sessionId: input.sessionId,
-      boundAgent: {
-        agentId: input.agent ?? 'general',
-        status: 'ready',
-        displayName: '通用智能体',
-        description: '默认通用智能体',
-        iconKey: null,
-      },
-      assistantMessage: {
-        role: 'assistant',
-        content: '这是助手回显',
-      },
-      resolvedModelId: input.model,
-      resolvedToolIds: input.enabledTools,
-      requestOptions: input.requestOptions ?? {},
+  it('echoes user and assistant messages after a successful send with model icon and model name in the assistant header', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'openai/gpt-4.1',
+        },
+      }),
     }))
-    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
     const rendered = renderWithRoot(
       <CopilotChatPanel
@@ -436,15 +691,370 @@ describe('CopilotChatPanel composer interactions', () => {
     await setFormControlValue(messageInput, '请回显本条消息')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
 
+    const assistantHeader = rendered.getByTestId('chat-message-assistant-label-1')
+    const assistantIcon = rendered.getByTestId('chat-message-assistant-icon-1')
+    const renderedIcon = assistantIcon.querySelector('.copilot-model-picker__icon')
+
     expect(rendered.container.textContent).toContain('请回显本条消息')
-    expect(rendered.container.textContent).toContain('助手响应')
+    expect(rendered.container.textContent).not.toContain('助手响应')
     expect(rendered.container.textContent).toContain('这是助手回显')
+    expect(assistantHeader.textContent).toContain('GPT 4.1')
+    expect(renderedIcon?.textContent).toBe('G')
+    expect(renderedIcon?.getAttribute('aria-label')).toBe('GPT 4.1 图标')
+    expect(rendered.container.textContent).not.toContain('已完成')
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--assistant.copilot-chat__message--completed')).toHaveLength(1)
+
+    rendered.unmount()
+  })
+
+  it('shows an assistant placeholder immediately after send with spinner feedback', async () => {
+    const sendMessage = createStartOnlyPendingSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先准备响应')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible after send',
+    )
+
+    const placeholder = rendered.getByTestId('chat-assistant-placeholder')
+    expect(placeholder.getAttribute('data-dismiss-reason')).toBe('pending')
+    expect(rendered.getByTestId('chat-assistant-placeholder-spinner')).not.toBeNull()
+    expect(placeholder.textContent).toContain('助手正在准备响应')
+    expect(rendered.container.textContent).toContain('请先准备响应')
+
+    rendered.unmount()
+  })
+
+  it('removes the assistant placeholder when a tool card arrives before assistant text', async () => {
+    const toolEventControl = createDeferredSignal()
+    const sendMessage = createToolFirstPendingSendMessageSpy(toolEventControl)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先查天气再继续')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before tool card',
+    )
+
+    toolEventControl.release()
+
+    await waitForText(rendered.container, '天气工具调用中')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after tool card',
+    )
+
+    expect(rendered.getByTestId('chat-message-tool-spinner-1')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-message-tool-panel-1')).toBeNull()
+    expect(rendered.container.textContent).not.toContain('正在获取 Shenzhen 的天气。')
+
+    rendered.unmount()
+  })
+
+  it('fades out and removes the assistant placeholder after the first assistant text arrives', async () => {
+    const sendMessage = createTextFirstPendingSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请直接回答')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before assistant text',
+    )
+    await waitForText(rendered.container, '这是助手回显')
+    await waitForCondition(() => {
+      const placeholder = rendered.queryByTestId('chat-assistant-placeholder') as HTMLElement | null
+      return placeholder?.className.includes('copilot-chat__message--placeholder-fading') ?? false
+    }, 'assistant placeholder fading after assistant text')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after assistant text',
+    )
+
+    rendered.unmount()
+  })
+
+  it('does not keep the assistant placeholder after a failed run with no assistant text', async () => {
+    const failureControl = createDeferredSignal()
+    const sendMessage = createFailedBeforeAssistantSendMessageSpy(failureControl)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请在失败前开始')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before failure',
+    )
+
+    failureControl.release()
+
+    await waitForText(rendered.container, '发送失败')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after failed run',
+    )
+
+    expect(rendered.container.textContent).toContain('tool_execution_failed: Tool failed: boom')
+
+    rendered.unmount()
+  })
+
+  it('does not keep the assistant placeholder after cancelling before any assistant text arrives', async () => {
+    const sendMessage = createStartOnlyPendingSendMessageSpy()
+    const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
+      run: {
+        runId: 'run-placeholder-pending',
+        threadId: 'session-1',
+        status: 'cancelling',
+        createdAt: '2026-03-27T10:00:00Z',
+        updatedAt: '2026-03-27T10:00:02Z',
+        startedAt: '2026-03-27T10:00:01Z',
+        terminalAt: null,
+        cancelRequested: true,
+      },
+      cancelAccepted: true,
+    }))
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        cancelRun={cancelRun}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先开始然后取消')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible before cancellation',
+    )
+
+    await clickElement(rendered.getByTestId('chat-composer-send-button'))
+    await waitForText(rendered.container, '已取消')
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      'assistant placeholder removed after cancellation',
+    )
+
+    expect(cancelRun).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      runId: 'run-placeholder-pending',
+    })
+
+    rendered.unmount()
+  })
+
+  it('renders tool lifecycle steps before assistant text and updates the same step on completion', async () => {
+    const sendMessage = createToolLifecycleSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请先查询天气再回答')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '天气工具被调用')
+
+    const textContent = rendered.container.textContent ?? ''
+    expect(textContent).toContain('这是助手回显')
+    expect(textContent).not.toContain('正在获取 Shenzhen 的天气。')
+    expect(textContent).not.toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(textContent).not.toContain('{"location":"Shenzhen"}')
+    expect(textContent.indexOf('天气工具被调用')).toBeLessThan(textContent.indexOf('这是助手回显'))
+    expect(rendered.queryByTestId('chat-message-tool-panel-1')).toBeNull()
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--completed')).toHaveLength(1)
+    expect(rendered.getByTestId('chat-message-tool-toggle-1').getAttribute('aria-expanded')).toBe('false')
+
+    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      'tool panel visible after expanding card',
+    )
+
+    expect(rendered.getByTestId('chat-message-tool-toggle-1').getAttribute('aria-expanded')).toBe('true')
+    expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').textContent).toContain('输入')
+    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').getAttribute('aria-expanded')).toBe('false')
+    expect(rendered.queryByTestId('chat-message-tool-input-panel-1')).toBeNull()
+
+    await clickElement(rendered.getByTestId('chat-message-tool-input-toggle-1'))
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-input-panel-1') !== null,
+      'tool input panel visible after expanding nested input section',
+    )
+
+    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').getAttribute('aria-expanded')).toBe('true')
+
+    const inputJson = rendered.getByTestId('chat-message-tool-input-1-json')
+    expect(inputJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
+    expect(inputJson.textContent).toContain('location')
+    expect(inputJson.textContent).toContain('Shenzhen')
+
+    rendered.unmount()
+  })
+
+  it('keeps a failed tool step visible when the runtime emits tool_event failed', async () => {
+    const sendMessage = createToolFailureSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请调用天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '工具调用失败')
+
+    expect(rendered.container.textContent).not.toContain('工具执行失败。')
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--failed')).toHaveLength(1)
+
+    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      'failed tool panel visible after expanding card',
+    )
+
+    expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('工具执行失败。')
+    expect(rendered.getByTestId('chat-message-tool-extra-1-1-text').textContent).toContain('boom')
 
     rendered.unmount()
   })
 
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
-    const sendMessage = vi.fn<(input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>>(async () => {
+    const sendMessage = vi.fn(async function* () {
+      yield* []
       throw new RuntimeRequestError('tool_not_found: unknown tool', {
         code: 'tool_not_found',
         status: 400,
@@ -481,31 +1091,563 @@ describe('CopilotChatPanel composer interactions', () => {
 
     rendered.unmount()
   })
+
+  it('displays legacy-unsupported provider validation in the chat area without a composer error bar', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-response',
+            name: 'Response Provider',
+            protocol: 'openai-response',
+            defaultModel: 'gpt-5.4',
+            fastModel: 'gpt-5.4',
+            fallbackModel: 'gpt-5.4',
+            availableModels: [
+              {
+                id: 'provider-response:gpt-5.4',
+                modelId: 'gpt-5.4',
+                displayName: 'GPT 5.4',
+                groupName: 'Response',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'gpt-5.4',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
+    await setFormControlValue(messageInput, '请执行一次真实流式对话')
+
+    expect(sendButton.disabled).toBe(true)
+    expect(sendButton.title).toBe('历史兼容 / 当前未启用')
+
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(0)
+    expect(scrollRegion.textContent).toContain('历史兼容 / 当前未启用')
+    expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('allows a subsequent successful send after a legacy-provider validation failure and clears the stale error message', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-response',
+            name: 'Response Provider',
+            protocol: 'openai-response',
+            defaultModel: 'gpt-5.4',
+            fastModel: 'gpt-5.4',
+            fallbackModel: 'gpt-5.4',
+            availableModels: [
+              {
+                id: 'provider-response:gpt-5.4',
+                modelId: 'gpt-5.4',
+                displayName: 'GPT 5.4',
+                groupName: 'Response',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'gpt-5.4',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
+    await setFormControlValue(messageInput, '第一次先触发不支持路由错误')
+    await submitForm(composer)
+
+    expect(scrollRegion.textContent).toContain('历史兼容 / 当前未启用')
+    expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
+
+    await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
+    await clickElement(rendered.getByTestId('chat-model-option-provider-openai-provider-openai:openai/gpt-4.1'))
+    await setFormControlValue(messageInput, '第二次发送应恢复成功')
+    await submitForm(composer)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(scrollRegion.textContent).not.toContain('历史兼容 / 当前未启用')
+    expect(scrollRegion.textContent).toContain('第二次发送应恢复成功')
+    expect(scrollRegion.textContent).toContain('这是助手回显')
+
+    rendered.unmount()
+  })
+
+  it('keeps the input editable during an in-flight send, hides composer status text, and still allows cancellation', async () => {
+    const sendMessage = createAbortableSendMessageSpy()
+    const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
+      run: {
+        runId: 'run-cancel',
+        threadId: 'session-1',
+        status: 'cancelling',
+        createdAt: '2026-03-27T10:00:00Z',
+        updatedAt: '2026-03-27T10:00:02Z',
+        startedAt: '2026-03-27T10:00:01Z',
+        terminalAt: null,
+        cancelRequested: true,
+      },
+      cancelAccepted: true,
+    }))
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        cancelRun={cancelRun}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请开始并允许我取消')
+
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '第一段')
+
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    expect(sendButton.title).toBe('取消当前响应')
+    expect(sendButton.type).toBe('button')
+    expect(messageInput.disabled).toBe(false)
+    expect(rendered.queryByTestId('chat-composer-run-status')).toBeNull()
+    expect(rendered.container.textContent).toContain('天气工具调用中')
+    expect(rendered.container.textContent).toContain('第一段')
+    expect(rendered.container.textContent).not.toContain('第二段')
+
+    await setFormControlValue(messageInput, '生成期间继续编辑')
+    expect(messageInput.value).toBe('生成期间继续编辑')
+
+    await pressTextareaKey(messageInput, 'Enter')
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+
+    await clickElement(sendButton)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(cancelRun).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      runId: 'run-cancel',
+    })
+    expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
+    expect(rendered.container.textContent).toContain('已取消')
+    expect(rendered.queryByTestId('chat-composer-run-status')).toBeNull()
+    expect(rendered.container.textContent).toContain('天气工具已取消')
+    expect(rendered.container.textContent).toContain('第一段')
+    expect(rendered.container.textContent).not.toContain('第二段')
+    expect(rendered.container.textContent).not.toContain('已完成')
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--cancelled')).toHaveLength(1)
+
+    rendered.unmount()
+  })
 })
 
-function createResolvedSendMessageSpy(
-  implementation?: (input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>,
-) {
-  return vi.fn<(input: Parameters<typeof sendRuntimeMessage>[0]) => Promise<RuntimeMessageSendResponse>>(
-    implementation ?? (async (input) => ({
-      ok: true,
+function createStartOnlyPendingSendMessageSpy() {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-placeholder-pending',
       sessionId: input.sessionId,
-      boundAgent: {
-        agentId: input.agent ?? 'general',
-        status: 'ready',
-        displayName: '通用智能体',
-        description: '默认通用智能体',
-        iconKey: null,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-placeholder-pending:assistant',
       },
-      assistantMessage: {
-        role: 'assistant',
-        content: '已收到',
+    }
+
+    await waitForAbort(input.signal)
+  })
+}
+
+function createToolFirstPendingSendMessageSpy(control: DeferredSignal) {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-tool-placeholder',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-placeholder:assistant',
       },
-      resolvedModelId: input.model,
-      resolvedToolIds: input.enabledTools,
-      requestOptions: input.requestOptions ?? {},
-    })),
-  )
+    }
+
+    await control.wait()
+    yield createRuntimeToolEvent({
+      runId: 'run-tool-placeholder',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-placeholder',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    })
+
+    await waitForAbort(input.signal)
+  })
+}
+
+function createTextFirstPendingSendMessageSpy() {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-text-placeholder',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-text-placeholder:assistant',
+      },
+    }
+
+    await Promise.resolve()
+    yield {
+      type: 'text_delta',
+      runId: 'run-text-placeholder',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        assistantMessageId: 'run-text-placeholder:assistant',
+        delta: '这是助手回显',
+      },
+    }
+
+    await waitForAbort(input.signal)
+  })
+}
+
+function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-no-text-failed',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-no-text-failed:assistant',
+      },
+    }
+
+    await control.wait()
+    yield {
+      type: 'run_failed',
+      runId: 'run-no-text-failed',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        code: 'tool_execution_failed',
+        message: 'Tool failed: boom',
+        details: {
+          toolId: 'tool.weather-current',
+        },
+      },
+    }
+  })
+}
+
+function createResolvedSendMessageSpy() {
+  return vi.fn((input: CopilotMessageDispatchInput) => {
+    const routeRef = input.modelRoute.routeRef ?? {
+      routeKind: 'provider-model' as const,
+      profileId: 'unknown-profile',
+      modelId: 'unknown-model',
+    }
+
+    return createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-1',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+        },
+      },
+      {
+        type: 'text_delta',
+        runId: 'run-1',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          delta: '这是助手回显',
+        },
+      },
+      {
+        type: 'run_completed',
+        runId: 'run-1',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          assistantText: '这是助手回显',
+          resolvedModelId: routeRef.modelId,
+          resolvedModelRoute: createRuntimeResolvedModelRoute({
+            routeRef,
+            providerProfileId: routeRef.profileId,
+            provider: 'openai',
+            providerId: 'openai',
+            adapterId: 'openai',
+            endpointFamily: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: routeRef.modelId,
+            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+          }),
+          resolvedToolIds: input.enabledTools,
+          requestOptions: input.requestOptions ?? {},
+        },
+      },
+    ])
+  })
+}
+
+function createToolLifecycleSendMessageSpy() {
+  return vi.fn((input: CopilotMessageDispatchInput) => {
+    const routeRef = input.modelRoute.routeRef ?? {
+      routeKind: 'provider-model' as const,
+      profileId: 'unknown-profile',
+      modelId: 'unknown-model',
+    }
+
+    return createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-tool-success:assistant',
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'started',
+          title: '调用天气工具',
+          summary: '正在获取 Shenzhen 的天气。',
+          inputSummary: '{"location":"Shenzhen"}',
+        },
+      }),
+      createRuntimeToolEvent({
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'completed',
+          title: '天气工具已返回结果',
+          summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+          inputSummary: '{"location":"Shenzhen"}',
+          resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        },
+      }),
+      {
+        type: 'text_delta',
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 4,
+        payload: {
+          assistantMessageId: 'run-tool-success:assistant',
+          delta: '这是助手回显',
+        },
+      },
+      {
+        type: 'run_completed',
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 5,
+        payload: {
+          assistantMessageId: 'run-tool-success:assistant',
+          assistantText: '这是助手回显',
+          resolvedModelId: routeRef.modelId,
+          resolvedModelRoute: createRuntimeResolvedModelRoute({
+            routeRef,
+            providerProfileId: routeRef.profileId,
+            provider: 'openai',
+            providerId: 'openai',
+            adapterId: 'openai',
+            endpointFamily: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: routeRef.modelId,
+            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+          }),
+          resolvedToolIds: ['tool.weather-current'],
+          requestOptions: input.requestOptions ?? {},
+        },
+      },
+    ])
+  })
+}
+
+function createToolFailureSendMessageSpy() {
+  return vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+    {
+      type: 'run_started',
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-failed:assistant',
+      },
+    },
+    createRuntimeToolEvent({
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    }),
+    createRuntimeToolEvent({
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'failed',
+        title: '工具调用失败',
+        summary: '工具执行失败。',
+        inputSummary: '{"location":"Shenzhen"}',
+        errorSummary: 'boom',
+      },
+    }),
+    {
+      type: 'run_failed',
+      runId: 'run-tool-failed',
+      sessionId: input.sessionId,
+      sequence: 4,
+      payload: {
+        code: 'tool_execution_failed',
+        message: 'Tool failed: boom',
+        details: {
+          toolId: 'tool.weather-current',
+          toolCallId: 'tool.weather-current:call-1',
+        },
+      },
+    },
+  ]))
 }
 
 function createPersistedWorkspaceStateLoader() {
@@ -514,4 +1656,139 @@ function createPersistedWorkspaceStateLoader() {
     source: 'stored' as const,
     state: createPersistedWorkspaceState(),
   }))
+}
+
+function createAbortableSendMessageSpy() {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-cancel:assistant',
+      },
+    }
+
+    await Promise.resolve()
+    yield createRuntimeToolEvent({
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    })
+
+    await Promise.resolve()
+    yield {
+      type: 'text_delta',
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        assistantMessageId: 'run-cancel:assistant',
+        delta: '第一段',
+      },
+    }
+
+    await new Promise<never>((_resolve, reject) => {
+      const abort = () => {
+        const error = new Error('The operation was aborted.')
+        error.name = 'AbortError'
+        reject(error)
+      }
+
+      if (input.signal?.aborted) {
+        abort()
+        return
+      }
+
+      input.signal?.addEventListener('abort', abort, { once: true })
+    })
+
+    yield {
+      type: 'text_delta',
+      runId: 'run-cancel',
+      sessionId: input.sessionId,
+      sequence: 4,
+      payload: {
+        assistantMessageId: 'run-cancel:assistant',
+        delta: '第二段',
+      },
+    }
+  })
+}
+
+interface DeferredSignal {
+  wait: () => Promise<void>
+  release: () => void
+}
+
+async function waitForAbort(signal?: AbortSignal) {
+  await new Promise<never>((_resolve, reject) => {
+    const abort = () => {
+      const error = new Error('The operation was aborted.')
+      error.name = 'AbortError'
+      reject(error)
+    }
+
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+
+    signal?.addEventListener('abort', abort, { once: true })
+  })
+}
+
+function createDeferredSignal(): DeferredSignal {
+  let releaseResolver: (() => void) | null = null
+  const wait = new Promise<void>((resolve) => {
+    releaseResolver = resolve
+  })
+
+  return {
+    wait: () => wait,
+    release: () => {
+      releaseResolver?.()
+    },
+  }
+}
+
+async function waitForCondition(condition: () => boolean, label: string) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (condition()) {
+      return
+    }
+
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+  }
+
+  throw new Error(`Timed out waiting for condition: ${label}`)
+}
+
+async function waitForText(container: HTMLElement, expectedText: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (container.textContent?.includes(expectedText)) {
+      return
+    }
+
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  throw new Error(`Timed out waiting for text: ${expectedText}`)
 }

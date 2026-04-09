@@ -1,51 +1,47 @@
-"""FastAPI router for the minimal Copilot runtime run bridge."""
+"""FastAPI router for the Copilot runtime thread/run bridge."""
 
 from __future__ import annotations
 
-import json
-from typing import Any, Iterable
+from collections.abc import AsyncIterable
+from typing import Any
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .bridge import (
-    AgentExecutionError,
     AgentNotFoundError,
-    BoundAgentMismatchError,
-    InvalidSessionHistoryError,
-    ModelNotConfiguredError,
+    RunNotFoundError,
     RuntimeBridge,
     SessionNotFoundError,
-    ToolNotFoundError,
+    ThreadNotFoundError,
 )
 from .contracts import (
-    AGENT_CONNECT_METHOD,
-    AGENT_RUN_METHOD,
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
-    INFO_METHOD,
-    MESSAGE_SEND_METHOD,
-    SESSION_CREATE_METHOD,
+    RUN_CANCEL_METHOD,
+    RUN_START_METHOD,
+    RUN_STREAM_METHOD,
+    THINKING_CAPABILITY_GET_METHOD,
+    THREAD_CREATE_METHOD,
+    THREAD_GET_METHOD,
     RuntimeScaffold,
 )
 from .errors import (
     RuntimeErrorResponse,
     build_agent_execution_failed_error,
-    build_agent_mismatch_error,
     build_agent_not_found_error,
-    build_invalid_message_history_error,
     build_method_not_implemented_error,
-    build_model_not_configured_error,
+    build_run_not_found_error,
+    build_runtime_operation_error,
     build_session_not_found_error,
-    build_tool_not_found_error,
+    build_thread_not_found_error,
 )
 from .protocol import RuntimeProtocolError, RuntimeProtocolParser
-from .session_store import InMemorySessionStore
-
-
+from .run_events import RuntimeRunEvent, encode_runtime_run_events
+from .model_routes import RuntimeModelRouteResolutionError
+from .provider_adapter_registry import RuntimeProviderAdapterError
 def build_router(
     scaffold: RuntimeScaffold,
-    session_store: InMemorySessionStore,
     runtime_bridge: RuntimeBridge,
 ) -> APIRouter:
     router = APIRouter()
@@ -59,18 +55,48 @@ def build_router(
         except RuntimeProtocolError as exc:
             return _error_response(exc.status_code, exc.error)
 
-        if requested_method == INFO_METHOD:
-            return JSONResponse(content=scaffold.build_info_response().to_dict())
-
         if requested_method == AGENTS_LIST_METHOD:
             return JSONResponse(content=scaffold.build_agents_list_response().to_dict())
 
-        if requested_method == SESSION_CREATE_METHOD:
-            return _handle_session_create_request(
+        if requested_method == THREAD_CREATE_METHOD:
+            return _handle_thread_create_request(
                 parser=parser,
                 payload=payload,
                 scaffold=scaffold,
-                session_store=session_store,
+                runtime_bridge=runtime_bridge,
+            )
+
+        if requested_method == THREAD_GET_METHOD:
+            return _handle_thread_get_request(
+                parser=parser,
+                payload=payload,
+                scaffold=scaffold,
+                runtime_bridge=runtime_bridge,
+            )
+
+        if requested_method == RUN_START_METHOD:
+            return _handle_run_start_request(
+                parser=parser,
+                payload=payload,
+                scaffold=scaffold,
+                runtime_bridge=runtime_bridge,
+            )
+
+        if requested_method == RUN_STREAM_METHOD:
+            return await _handle_run_stream_request(
+                parser=parser,
+                payload=payload,
+                scaffold=scaffold,
+                runtime_bridge=runtime_bridge,
+                http_request=request,
+            )
+
+        if requested_method == RUN_CANCEL_METHOD:
+            return _handle_run_cancel_request(
+                parser=parser,
+                payload=payload,
+                scaffold=scaffold,
+                runtime_bridge=runtime_bridge,
             )
 
         if requested_method == CAPABILITIES_GET_METHOD:
@@ -81,24 +107,8 @@ def build_router(
                 runtime_bridge=runtime_bridge,
             )
 
-        if requested_method == MESSAGE_SEND_METHOD:
-            return await _handle_message_send_request(
-                parser=parser,
-                payload=payload,
-                scaffold=scaffold,
-                runtime_bridge=runtime_bridge,
-            )
-
-        if requested_method == AGENT_CONNECT_METHOD:
-            return _handle_connect_request(
-                parser=parser,
-                payload=payload,
-                scaffold=scaffold,
-                session_store=session_store,
-            )
-
-        if requested_method == AGENT_RUN_METHOD:
-            return await _handle_run_request(
+        if requested_method == THINKING_CAPABILITY_GET_METHOD:
+            return await _handle_thinking_capability_get_request(
                 parser=parser,
                 payload=payload,
                 scaffold=scaffold,
@@ -114,22 +124,169 @@ def build_router(
     return router
 
 
-def _handle_session_create_request(
+
+def _handle_thread_create_request(
     *,
     parser: RuntimeProtocolParser,
     payload: dict[str, Any] | None,
     scaffold: RuntimeScaffold,
-    session_store: InMemorySessionStore,
+    runtime_bridge: RuntimeBridge,
 ) -> JSONResponse:
     try:
-        session_create_request = parser.extract_session_create_request(payload)
+        thread_create_request = parser.extract_thread_create_request(payload)
+        thread_record = runtime_bridge.create_thread(agent_id=thread_create_request.agent_id)
     except RuntimeProtocolError as exc:
         return _error_response(exc.status_code, exc.error)
+    except AgentNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_agent_not_found_error(
+                agent_name=exc.agent_name,
+                scaffold=scaffold,
+                requested_method=THREAD_CREATE_METHOD,
+            ),
+        )
 
-    session_record = session_store.create(
-        bound_agent_id=session_create_request.agent_id,
+    return JSONResponse(content=scaffold.build_thread_create_response(thread=thread_record).to_dict())
+
+
+
+def _handle_thread_get_request(
+    *,
+    parser: RuntimeProtocolParser,
+    payload: dict[str, Any] | None,
+    scaffold: RuntimeScaffold,
+    runtime_bridge: RuntimeBridge,
+) -> JSONResponse:
+    try:
+        thread_get_request = parser.extract_thread_get_request(payload)
+        thread = runtime_bridge.get_thread(thread_id=thread_get_request.thread_id)
+    except RuntimeProtocolError as exc:
+        return _error_response(exc.status_code, exc.error)
+    except ThreadNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_thread_not_found_error(
+                thread_id=exc.thread_id,
+                scaffold=scaffold,
+                requested_method=THREAD_GET_METHOD,
+            ),
+        )
+    except AgentNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_agent_not_found_error(
+                agent_name=exc.agent_name,
+                scaffold=scaffold,
+                requested_method=THREAD_GET_METHOD,
+            ),
+        )
+
+    return JSONResponse(content=scaffold.build_thread_get_response(thread=thread).to_dict())
+
+
+
+def _handle_run_start_request(
+    *,
+    parser: RuntimeProtocolParser,
+    payload: dict[str, Any] | None,
+    scaffold: RuntimeScaffold,
+    runtime_bridge: RuntimeBridge,
+) -> JSONResponse:
+    try:
+        run_start_request = parser.extract_run_start_request(payload)
+        run = runtime_bridge.start_run(request=run_start_request)
+    except RuntimeProtocolError as exc:
+        return _error_response(exc.status_code, exc.error)
+    except ThreadNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_thread_not_found_error(
+                thread_id=exc.thread_id,
+                scaffold=scaffold,
+                requested_method=RUN_START_METHOD,
+            ),
+        )
+    except AgentNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_agent_not_found_error(
+                agent_name=exc.agent_name,
+                scaffold=scaffold,
+                requested_method=RUN_START_METHOD,
+            ),
+        )
+
+    return JSONResponse(content=scaffold.build_run_start_response(run=run).to_dict())
+
+
+
+async def _handle_run_stream_request(
+    *,
+    parser: RuntimeProtocolParser,
+    payload: dict[str, Any] | None,
+    scaffold: RuntimeScaffold,
+    runtime_bridge: RuntimeBridge,
+    http_request: Request,
+) -> JSONResponse | StreamingResponse:
+    try:
+        run_stream_request = parser.extract_run_stream_request(payload)
+        events = runtime_bridge.stream_run(
+            run_id=run_stream_request.run_id,
+            is_client_disconnected=http_request.is_disconnected,
+        )
+        return _stream_runtime_run_events(events)
+    except RuntimeProtocolError as exc:
+        return _error_response(exc.status_code, exc.error)
+    except RunNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_run_not_found_error(
+                run_id=exc.run_id,
+                scaffold=scaffold,
+                requested_method=RUN_STREAM_METHOD,
+            ),
+        )
+    except RuntimeError as exc:
+        return _error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            build_agent_execution_failed_error(
+                message=str(exc),
+                scaffold=scaffold,
+                requested_method=RUN_STREAM_METHOD,
+            ),
+        )
+
+
+
+def _handle_run_cancel_request(
+    *,
+    parser: RuntimeProtocolParser,
+    payload: dict[str, Any] | None,
+    scaffold: RuntimeScaffold,
+    runtime_bridge: RuntimeBridge,
+) -> JSONResponse:
+    try:
+        run_cancel_request = parser.extract_run_cancel_request(payload)
+        run, cancel_accepted = runtime_bridge.cancel_run(run_id=run_cancel_request.run_id)
+    except RuntimeProtocolError as exc:
+        return _error_response(exc.status_code, exc.error)
+    except RunNotFoundError as exc:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            build_run_not_found_error(
+                run_id=exc.run_id,
+                scaffold=scaffold,
+                requested_method=RUN_CANCEL_METHOD,
+            ),
+        )
+
+    return JSONResponse(
+        content=scaffold.build_run_cancel_response(
+            run=run,
+            cancel_accepted=cancel_accepted,
+        ).to_dict()
     )
-    return JSONResponse(content=scaffold.build_session_create_response(session=session_record).to_dict())
 
 
 
@@ -142,11 +299,9 @@ def _handle_capabilities_get_request(
 ) -> JSONResponse:
     try:
         capabilities_request = parser.extract_capabilities_get_request(payload)
+        capabilities = runtime_bridge.get_capabilities(session_id=capabilities_request.session_id)
     except RuntimeProtocolError as exc:
         return _error_response(exc.status_code, exc.error)
-
-    try:
-        capabilities = runtime_bridge.get_capabilities(session_id=capabilities_request.session_id)
     except SessionNotFoundError as exc:
         return _error_response(
             status.HTTP_404_NOT_FOUND,
@@ -169,8 +324,7 @@ def _handle_capabilities_get_request(
     return JSONResponse(content=capabilities.to_dict())
 
 
-
-async def _handle_message_send_request(
+async def _handle_thinking_capability_get_request(
     *,
     parser: RuntimeProtocolParser,
     payload: dict[str, Any] | None,
@@ -178,39 +332,21 @@ async def _handle_message_send_request(
     runtime_bridge: RuntimeBridge,
 ) -> JSONResponse:
     try:
-        message_send_request = parser.extract_message_send_request(payload)
+        thinking_request = parser.extract_thinking_capability_get_request(payload)
+        response = await runtime_bridge.get_thinking_capability(
+            session_id=thinking_request.session_id,
+            model_route=thinking_request.model_route,
+            thinking_capability_override=thinking_request.thinking_capability_override,
+        )
     except RuntimeProtocolError as exc:
         return _error_response(exc.status_code, exc.error)
-
-    try:
-        bridge_result = await runtime_bridge.send_message(request=message_send_request)
     except SessionNotFoundError as exc:
         return _error_response(
             status.HTTP_404_NOT_FOUND,
             build_session_not_found_error(
                 session_id=exc.session_id,
                 scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except BoundAgentMismatchError as exc:
-        return _error_response(
-            status.HTTP_409_CONFLICT,
-            build_agent_mismatch_error(
-                session_id=exc.session_id,
-                bound_agent_id=exc.expected_agent_id,
-                requested_agent_id=exc.actual_agent_id,
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except ToolNotFoundError as exc:
-        return _error_response(
-            status.HTTP_400_BAD_REQUEST,
-            build_tool_not_found_error(
-                tool_id=exc.tool_id,
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
             ),
         )
     except AgentNotFoundError as exc:
@@ -219,196 +355,51 @@ async def _handle_message_send_request(
             build_agent_not_found_error(
                 agent_name=exc.agent_name,
                 scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
             ),
         )
-    except ModelNotConfiguredError as exc:
-        return _error_response(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            build_model_not_configured_error(
-                message=str(exc),
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except InvalidSessionHistoryError as exc:
+    except RuntimeModelRouteResolutionError as exc:
         return _error_response(
             status.HTTP_409_CONFLICT,
-            build_invalid_message_history_error(
+            build_runtime_operation_error(
+                code=exc.code,
                 message=str(exc),
                 scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+                details=exc.details,
             ),
         )
-    except AgentExecutionError as exc:
+    except RuntimeProviderAdapterError as exc:
+        return _error_response(
+            status.HTTP_409_CONFLICT,
+            build_runtime_operation_error(
+                code=exc.code,
+                message=str(exc),
+                scaffold=scaffold,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+                details=exc.details,
+            ),
+        )
+    except RuntimeError as exc:
         return _error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             build_agent_execution_failed_error(
                 message=str(exc),
                 scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
-            ),
-        )
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        return _error_response(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            build_agent_execution_failed_error(
-                message=f"Unexpected agent execution failure: {exc}",
-                scaffold=scaffold,
-                requested_method=MESSAGE_SEND_METHOD,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
             ),
         )
 
-    return JSONResponse(
-        content=scaffold.build_message_send_response(
-            session=bridge_result.session,
-            assistant_text=bridge_result.assistant_text,
-            resolved_model_id=bridge_result.resolved_model_id,
-            resolved_tool_ids=bridge_result.resolved_tool_ids,
-            request_options=bridge_result.request_options,
-        ).to_dict()
-    )
+    return JSONResponse(content=response.to_dict())
 
 
-
-def _handle_connect_request(
-    *,
-    parser: RuntimeProtocolParser,
-    payload: dict[str, Any] | None,
-    scaffold: RuntimeScaffold,
-    session_store: InMemorySessionStore,
-) -> JSONResponse | StreamingResponse:
-    try:
-        connect_request = parser.extract_connect_request(payload)
-    except RuntimeProtocolError as exc:
-        return _error_response(exc.status_code, exc.error)
-
-    try:
-        session_record, newly_created = session_store.get_or_create(
-            session_id=connect_request.thread_id,
-            bound_agent_id=connect_request.agent_name,
-            metadata={"last_connect_run_id": connect_request.run_id},
-        )
-    except BoundAgentMismatchError as exc:
-        return _error_response(
-            status.HTTP_409_CONFLICT,
-            build_agent_mismatch_error(
-                session_id=exc.session_id,
-                bound_agent_id=exc.expected_agent_id,
-                requested_agent_id=exc.actual_agent_id,
-                scaffold=scaffold,
-                requested_method=AGENT_CONNECT_METHOD,
-            ),
-        )
-    session = scaffold.build_session_descriptor(
-        session=session_record,
-        newly_created=newly_created,
-    )
-    result = scaffold.build_connect_result(request=connect_request, session=session)
-    return _stream_runtime_events(scaffold.build_connect_events(request=connect_request, result=result))
-
-
-async def _handle_run_request(
-    *,
-    parser: RuntimeProtocolParser,
-    payload: dict[str, Any] | None,
-    scaffold: RuntimeScaffold,
-    runtime_bridge: RuntimeBridge,
-) -> JSONResponse | StreamingResponse:
-    try:
-        run_request = parser.extract_run_request(payload)
-    except RuntimeProtocolError as exc:
-        return _error_response(exc.status_code, exc.error)
-
-    try:
-        bridge_result = await runtime_bridge.run(request=run_request)
-    except AgentNotFoundError as exc:
-        return _error_response(
-            status.HTTP_404_NOT_FOUND,
-            build_agent_not_found_error(
-                agent_name=exc.agent_name,
-                scaffold=scaffold,
-                requested_method=AGENT_RUN_METHOD,
-            ),
-        )
-    except BoundAgentMismatchError as exc:
-        return _error_response(
-            status.HTTP_409_CONFLICT,
-            build_agent_mismatch_error(
-                session_id=exc.session_id,
-                bound_agent_id=exc.expected_agent_id,
-                requested_agent_id=exc.actual_agent_id,
-                scaffold=scaffold,
-                requested_method=AGENT_RUN_METHOD,
-            ),
-        )
-    except ModelNotConfiguredError as exc:
-        return _error_response(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            build_model_not_configured_error(
-                message=str(exc),
-                scaffold=scaffold,
-                requested_method=AGENT_RUN_METHOD,
-            ),
-        )
-    except InvalidSessionHistoryError as exc:
-        return _error_response(
-            status.HTTP_409_CONFLICT,
-            build_invalid_message_history_error(
-                message=str(exc),
-                scaffold=scaffold,
-                requested_method=AGENT_RUN_METHOD,
-            ),
-        )
-    except AgentExecutionError as exc:
-        return _error_response(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            build_agent_execution_failed_error(
-                message=str(exc),
-                scaffold=scaffold,
-                requested_method=AGENT_RUN_METHOD,
-            ),
-        )
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        return _error_response(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            build_agent_execution_failed_error(
-                message=f"Unexpected agent execution failure: {exc}",
-                scaffold=scaffold,
-                requested_method=AGENT_RUN_METHOD,
-            ),
-        )
-
-    session = scaffold.build_session_descriptor(
-        session=bridge_result.session,
-        newly_created=bridge_result.newly_created,
-    )
-    result = scaffold.build_run_result(
-        request=run_request,
-        assistant_text=bridge_result.assistant_text,
-        session=session,
-    )
-    assistant_message_id = f"{run_request.run_id}:assistant"
-    return _stream_runtime_events(
-        scaffold.build_run_events(
-            request=run_request,
-            result=result,
-            assistant_message_id=assistant_message_id,
-        )
-    )
-
-
-def _stream_runtime_events(events: Iterable[dict[str, Any]]) -> StreamingResponse:
+def _stream_runtime_run_events(events: AsyncIterable[RuntimeRunEvent]) -> StreamingResponse:
     return StreamingResponse(
-        _encode_sse_events(events),
+        encode_runtime_run_events(events),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
 
-
-def _encode_sse_events(events: Iterable[dict[str, Any]]) -> Iterable[str]:
-    for event in events:
-        yield f"data: {json.dumps(event)}\n\n"
 
 
 def _error_response(status_code: int, error: RuntimeErrorResponse) -> JSONResponse:

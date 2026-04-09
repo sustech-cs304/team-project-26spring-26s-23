@@ -67,10 +67,10 @@ const settingsWorkspaceSecretsApi: SettingsWorkspaceSecretsApi = {
   loadSustechCasPassword() {
     return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL)
   },
-  saveProviderApiKey(request) {
+  saveProfileApiKey(request) {
     return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL, request)
   },
-  clearProviderApiKey(request) {
+  clearProfileApiKey(request) {
     return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL, request)
   },
   saveSustechCasPassword(request) {

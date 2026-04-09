@@ -10,15 +10,14 @@ import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from './config-center/main-process'
-import { UNIFIED_CONFIG_DOMAIN_KEYS } from './config-center/domain-schema'
 import {
   createElectronSettingsWorkspaceService,
   type ElectronSettingsWorkspaceService,
 } from './settings-workspace/main-process'
 import type {
-  SettingsWorkspaceClearProviderApiKeyRequest,
-  SettingsWorkspaceProviderSecretMutationResult,
-  SettingsWorkspaceSaveProviderApiKeyRequest,
+  SettingsWorkspaceClearProfileApiKeyRequest,
+  SettingsWorkspaceProfileSecretMutationResult,
+  SettingsWorkspaceSaveProfileApiKeyRequest,
   SettingsWorkspaceSaveSustechCasPasswordRequest,
   SettingsWorkspaceSecretsLoadStatusesRequest,
   SettingsWorkspaceSecretsLoadStatusesResult,
@@ -27,6 +26,7 @@ import type {
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
 } from './settings-workspace/ipc'
+import type { SettingsWorkspaceProviderRouteResolveRequest, SettingsWorkspaceProviderRouteResolveResult } from './settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from './settings-workspace/state-schema'
 import type { HostedRuntimePaths } from './runtime/runtime-paths'
 
@@ -53,17 +53,19 @@ export interface MainProcessServices {
     request?: SettingsWorkspaceSecretsLoadStatusesRequest,
   ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
   loadSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretLoadResult>
-  saveSettingsWorkspaceProviderSecret: (
-    request: SettingsWorkspaceSaveProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
-  clearSettingsWorkspaceProviderSecret: (
-    request: SettingsWorkspaceClearProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  saveSettingsWorkspaceProfileSecret: (
+    request: SettingsWorkspaceSaveProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
+  clearSettingsWorkspaceProfileSecret: (
+    request: SettingsWorkspaceClearProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
   saveSettingsWorkspaceSustechCasSecret: (
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
-  loadConfiguredHostedRuntimeModel: () => Promise<string | null>
+  resolveSettingsWorkspaceProviderRoute: (
+    request: SettingsWorkspaceProviderRouteResolveRequest,
+  ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
 }
 
 export function createMainProcessServices(
@@ -97,11 +99,6 @@ export function createMainProcessServices(
     return settingsWorkspaceService
   }
 
-  async function loadConfiguredHostedRuntimeModel(): Promise<string | null> {
-    const loadResult = await getUnifiedConfigService().loadSnapshot()
-    return loadResult.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].values.model
-  }
-
   return {
     async loadConfigCenterPublicSnapshot(): Promise<ConfigCenterPublicSnapshotLoadResult> {
       return await getUnifiedConfigService().loadPublicSnapshot()
@@ -127,15 +124,15 @@ export function createMainProcessServices(
     async loadSettingsWorkspaceSustechCasSecret(): Promise<SettingsWorkspaceSustechCasSecretLoadResult> {
       return await getSettingsWorkspaceService().loadSustechCasSecret()
     },
-    async saveSettingsWorkspaceProviderSecret(
-      request: SettingsWorkspaceSaveProviderApiKeyRequest,
-    ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
-      return await getSettingsWorkspaceService().saveProviderSecret(request)
+    async saveSettingsWorkspaceProfileSecret(
+      request: SettingsWorkspaceSaveProfileApiKeyRequest,
+    ): Promise<SettingsWorkspaceProfileSecretMutationResult> {
+      return await getSettingsWorkspaceService().saveProfileSecret(request)
     },
-    async clearSettingsWorkspaceProviderSecret(
-      request: SettingsWorkspaceClearProviderApiKeyRequest,
-    ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
-      return await getSettingsWorkspaceService().clearProviderSecret(request)
+    async clearSettingsWorkspaceProfileSecret(
+      request: SettingsWorkspaceClearProfileApiKeyRequest,
+    ): Promise<SettingsWorkspaceProfileSecretMutationResult> {
+      return await getSettingsWorkspaceService().clearProfileSecret(request)
     },
     async saveSettingsWorkspaceSustechCasSecret(
       request: SettingsWorkspaceSaveSustechCasPasswordRequest,
@@ -145,6 +142,10 @@ export function createMainProcessServices(
     async clearSettingsWorkspaceSustechCasSecret(): Promise<SettingsWorkspaceSustechCasSecretMutationResult> {
       return await getSettingsWorkspaceService().clearSustechCasSecret()
     },
-    loadConfiguredHostedRuntimeModel,
+    async resolveSettingsWorkspaceProviderRoute(
+      request: SettingsWorkspaceProviderRouteResolveRequest,
+    ): Promise<SettingsWorkspaceProviderRouteResolveResult> {
+      return await getSettingsWorkspaceService().resolveProviderRoute(request)
+    },
   }
 }

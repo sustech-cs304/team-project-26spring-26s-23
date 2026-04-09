@@ -13,6 +13,7 @@ export interface RenderedSettingsWorkspace {
   getByTestId: (testId: string) => HTMLElement
   queryByTestId: (testId: string) => Element | null
   getByText: (text: string) => HTMLElement
+  getByTextContaining: (text: string) => HTMLElement
   queryByText: (text: string) => HTMLElement | null
   getByPlaceholder: (placeholder: string) => HTMLElement
   unmount: () => void
@@ -60,6 +61,23 @@ export function renderWithRoot(element: ReactElement): RenderedSettingsWorkspace
 
       if (target === undefined) {
         throw new Error(`Missing element for text=${text}`)
+      }
+
+      return target
+    },
+    getByTextContaining(text: string) {
+      const target = Array.from(container.querySelectorAll<HTMLElement>('*')).find((element) => {
+        if (!element.textContent?.includes(text)) {
+          return false
+        }
+
+        return !Array.from(element.children).some((child) => {
+          return child.textContent?.includes(text)
+        })
+      })
+
+      if (target === undefined) {
+        throw new Error(`Missing element containing text=${text}`)
       }
 
       return target

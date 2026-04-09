@@ -1,7 +1,7 @@
 import type { SettingsWorkspaceSecretsLoadStatusesResult } from '../../../electron/settings-workspace/ipc'
 import type { SettingsWorkspaceEditableState } from '../../../electron/settings-workspace/schema'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
-import type { ProviderProfile } from '../types'
+import type { ModelRouteRef, ProviderProfile } from '../types'
 import { createProviderModelProfile } from './provider-profiles'
 
 export interface WorkspaceStateOverrides {
@@ -27,6 +27,7 @@ export function createBootstrapController(): CopilotBootstrapController {
       bootstrapFields: {
         runtimeUrl: 'http://127.0.0.1:8765',
         agentName: 'campus-agent',
+        debugModeEnabled: false,
       },
       storageState: 'stored',
       runtime: {
@@ -58,22 +59,38 @@ export function createProviderProfile(overrides: Partial<ProviderProfile> = {}):
   const id = overrides.id ?? 'openrouter'
   const name = overrides.name ?? 'Persisted Router'
 
+  const protocol = overrides.protocol ?? 'openai'
+  const endpoint = overrides.endpoint ?? 'https://persisted.example.com/v1'
+  const defaultModel = overrides.defaultModel ?? 'openai/gpt-4.1'
+  const fastModel = overrides.fastModel ?? 'openai/gpt-4.1-mini'
+  const fallbackModel = overrides.fallbackModel ?? 'anthropic/claude-3.7-sonnet'
+
   return {
     id,
+    profileId: overrides.profileId ?? id,
+    providerId: overrides.providerId ?? protocol,
     name,
-    protocol: overrides.protocol ?? 'openai',
-    endpoint: overrides.endpoint ?? 'https://persisted.example.com/v1',
+    displayName: overrides.displayName ?? name,
+    protocol,
+    endpoint,
+    baseUrl: overrides.baseUrl ?? endpoint,
     hasApiKey: overrides.hasApiKey ?? true,
-    defaultModel: overrides.defaultModel ?? 'openai/gpt-4.1',
-    fastModel: overrides.fastModel ?? 'openai/gpt-4.1-mini',
-    fallbackModel: overrides.fallbackModel ?? 'anthropic/claude-3.7-sonnet',
+    defaultModel,
+    defaultModelId: overrides.defaultModelId ?? defaultModel,
+    fastModel,
+    fallbackModel,
     organization: overrides.organization ?? 'persisted-org',
     region: overrides.region ?? 'Global',
     notes: overrides.notes ?? 'persisted provider note',
+    compatibility: overrides.compatibility ?? {
+      status: 'active',
+      reason: '',
+    },
+    extensions: overrides.extensions ?? {},
     availableModels:
       overrides.availableModels
       ?? [
-        createProviderModelProfile(id, overrides.defaultModel ?? 'openai/gpt-4.1', name),
+        createProviderModelProfile(id, defaultModel, name),
       ],
   }
 }
@@ -90,6 +107,16 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     defaultModelRouting: {
       primaryAssistantModel: 'openai/gpt-4.1',
       fastAssistantModel: 'openai/gpt-4.1-mini',
+      primaryAssistantModelRoute: {
+        routeKind: 'provider-model',
+        profileId: 'openrouter',
+        modelId: 'openai/gpt-4.1',
+      },
+      fastAssistantModelRoute: {
+        routeKind: 'provider-model',
+        profileId: 'openrouter',
+        modelId: 'openai/gpt-4.1-mini',
+      },
     },
     general: {
       language: 'zh-CN',
@@ -130,10 +157,23 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     },
   }
 
+  const providerProfiles = overrides.providerProfiles ?? baseState.providerProfiles
+  const mergedDefaultModelRouting = { ...baseState.defaultModelRouting, ...overrides.defaultModelRouting }
+  const hasPrimaryRouteOverride = Object.prototype.hasOwnProperty.call(overrides.defaultModelRouting ?? {}, 'primaryAssistantModelRoute')
+  const hasFastRouteOverride = Object.prototype.hasOwnProperty.call(overrides.defaultModelRouting ?? {}, 'fastAssistantModelRoute')
+
   return {
     sustech: { ...baseState.sustech, ...overrides.sustech },
-    providerProfiles: overrides.providerProfiles ?? baseState.providerProfiles,
-    defaultModelRouting: { ...baseState.defaultModelRouting, ...overrides.defaultModelRouting },
+    providerProfiles,
+    defaultModelRouting: {
+      ...mergedDefaultModelRouting,
+      primaryAssistantModelRoute: hasPrimaryRouteOverride
+        ? overrides.defaultModelRouting?.primaryAssistantModelRoute ?? null
+        : resolveModelRouteRef(providerProfiles, mergedDefaultModelRouting.primaryAssistantModel),
+      fastAssistantModelRoute: hasFastRouteOverride
+        ? overrides.defaultModelRouting?.fastAssistantModelRoute ?? null
+        : resolveModelRouteRef(providerProfiles, mergedDefaultModelRouting.fastAssistantModel),
+    },
     general: { ...baseState.general, ...overrides.general },
     data: { ...baseState.data, ...overrides.data },
     mcp: { ...baseState.mcp, ...overrides.mcp },
@@ -142,6 +182,30 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     api: { ...baseState.api, ...overrides.api },
     docs: { ...baseState.docs, ...overrides.docs },
     externalSource: { ...baseState.externalSource, ...overrides.externalSource },
+  }
+}
+
+function resolveModelRouteRef(
+  providerProfiles: ProviderProfile[],
+  modelId: string,
+): ModelRouteRef | null {
+  const normalizedModelId = modelId.trim()
+  if (normalizedModelId === '') {
+    return null
+  }
+
+  const matchingProfiles = providerProfiles.filter((profile) => {
+    return profile.availableModels.some((model) => model.modelId === normalizedModelId)
+  })
+
+  if (matchingProfiles.length !== 1) {
+    return null
+  }
+
+  return {
+    routeKind: 'provider-model',
+    profileId: matchingProfiles[0]!.id,
+    modelId: normalizedModelId,
   }
 }
 

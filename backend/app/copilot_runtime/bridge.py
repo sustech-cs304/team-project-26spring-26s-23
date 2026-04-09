@@ -2,77 +2,54 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import cast
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, cast
 
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
-
-from .agent import AgentExecutionError, ModelNotConfiguredError, RuntimeAgentExecutor
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import (
     RuntimeCapabilitiesResponse,
-    RuntimeMessageSendRequest,
-    RuntimeRunRequest,
+    RuntimeMessageExecutionPolicy,
+    RuntimeMessagePayload,
+    RuntimeRunStartRequest,
     RuntimeScaffold,
+    RuntimeThinkingCapabilityResponse,
+    normalize_thinking_level_intent,
+)
+from .execution_support import (
+    AgentNotFoundError,
+    RunNotFoundError,
+    SessionNotFoundError,
+    ThreadNotFoundError,
+)
+from .message_runs import RuntimeMessageRunOrchestrator
+from .model_routes import RuntimeModelRoute, RuntimeModelRouteResolver
+from .provider_adapter_registry import (
+    RuntimeProviderAdapterRegistry,
+    build_default_provider_adapter_registry,
+)
+from .run_events import (
+    RUN_CANCELLED_EVENT_TYPE,
+    RUN_COMPLETED_EVENT_TYPE,
+    RUN_FAILED_EVENT_TYPE,
+    RuntimeRunEvent,
+    RuntimeRunEventFactory,
 )
 from .session_store import (
-    BoundAgentMismatchError,
     InMemorySessionStore,
-    RuntimeSessionRecord,
-    RuntimeTextMessage,
+    RuntimeMessageRole,
+    RuntimeRunRecord,
+    RuntimeStoredModelRoute,
+    RuntimeStoredRunInput,
+    RuntimeStoredRunPolicy,
+    RuntimeThreadRecord,
 )
 
 
-class AgentNotFoundError(LookupError):
-    """Raised when the requested agent is not registered in the runtime."""
-
-    def __init__(self, agent_name: str) -> None:
-        self.agent_name = agent_name
-        super().__init__(f"Unknown agent '{agent_name}'.")
-
-
-class InvalidSessionHistoryError(RuntimeError):
-    """Raised when persisted in-memory history cannot be converted into model messages."""
-
-
-class SessionNotFoundError(LookupError):
-    """Raised when a requested session does not exist."""
-
-    def __init__(self, session_id: str) -> None:
-        self.session_id = session_id
-        super().__init__(f"Unknown session '{session_id}'.")
-
-
-class ToolNotFoundError(LookupError):
-    """Raised when a requested tool id is not available in the registered catalog."""
-
-    def __init__(self, tool_id: str) -> None:
-        self.tool_id = tool_id
-        super().__init__(f"Unknown tool '{tool_id}'.")
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeBridgeResult:
-    """Successful result of a bridged runtime run."""
-
-    assistant_text: str
-    session: RuntimeSessionRecord
-    newly_created: bool
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeMessageSendResult:
-    """Successful result of a request-scoped message send."""
-
-    assistant_text: str
-    session: RuntimeSessionRecord
-    resolved_model_id: str
-    resolved_tool_ids: tuple[str, ...]
-    request_options: dict[str, object]
+from .thinking_adapter import resolve_canonical_thinking_capability
 
 
 class RuntimeBridge:
-    """Coordinates session history loading, executor resolution, and success persistence."""
+    """Coordinates thread/run state and executor resolution."""
 
     def __init__(
         self,
@@ -80,93 +57,328 @@ class RuntimeBridge:
         session_store: InMemorySessionStore,
         agent_registry: AgentRegistry,
         scaffold: RuntimeScaffold | None = None,
+        message_run_orchestrator: RuntimeMessageRunOrchestrator | None = None,
+        model_route_resolver: RuntimeModelRouteResolver | None = None,
+        provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
         self._scaffold = scaffold
-
-    async def run(self, *, request: RuntimeRunRequest) -> RuntimeBridgeResult:
-        agent_descriptor = self._resolve_agent(request.agent_name)
-        existing_session = self._session_store.get(request.thread_id)
-        history = self._build_message_history(
-            existing_session.message_history() if existing_session is not None else ()
-        )
-        agent_executor = self._build_executor(agent_descriptor)
-        assistant_text = await agent_executor.run(
-            agent_name=request.agent_name,
-            user_prompt=request.user_message_text,
-            message_history=history,
-        )
-        persisted_session, newly_created = self._session_store.append_turn(
-            session_id=request.thread_id,
-            bound_agent_id=request.agent_name,
-            user_text=request.user_message_text,
-            assistant_text=assistant_text,
-            metadata={"last_run_id": request.run_id},
-        )
-        return RuntimeBridgeResult(
-            assistant_text=assistant_text,
-            session=persisted_session,
-            newly_created=newly_created,
+        self._message_run_orchestrator = message_run_orchestrator
+        self._model_route_resolver = model_route_resolver
+        self._provider_adapter_registry = (
+            provider_adapter_registry or build_default_provider_adapter_registry()
         )
 
-    async def send_message(self, *, request: RuntimeMessageSendRequest) -> RuntimeMessageSendResult:
-        if self._scaffold is None:
-            raise RuntimeError("Runtime scaffold is required for request-scoped message sends.")
+    def create_thread(self, *, agent_id: str) -> RuntimeThreadRecord:
+        self._resolve_agent(agent_id)
+        return self._session_store.create_thread(bound_agent_id=agent_id)
 
-        session = self._session_store.get(request.session_id)
-        if session is None:
-            raise SessionNotFoundError(request.session_id)
+    def get_thread(self, *, thread_id: str) -> RuntimeThreadRecord:
+        thread = self._session_store.get_thread(thread_id)
+        if thread is None:
+            raise ThreadNotFoundError(thread_id)
+        self._resolve_agent(thread.bound_agent_id)
+        return thread
 
-        if request.agent_id is not None and request.agent_id != session.bound_agent_id:
-            raise BoundAgentMismatchError(
-                session_id=session.session_id,
-                expected_agent_id=session.bound_agent_id,
-                actual_agent_id=request.agent_id,
-            )
+    def start_run(self, *, request: RuntimeRunStartRequest) -> RuntimeRunRecord:
+        self.get_thread(thread_id=request.thread_id)
+        return self._create_run_record(request=request, validate_thread=False)
 
-        agent_descriptor = self._resolve_agent(session.bound_agent_id)
-        history = self._build_message_history(session.message_history())
-        agent_executor = self._build_executor(agent_descriptor)
+    def stream_run(
+        self,
+        *,
+        run_id: str,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        run = self.get_run(run_id=run_id)
+        return self._stream_run(run=run, is_client_disconnected=is_client_disconnected)
+
+    def cancel_run(self, *, run_id: str) -> tuple[RuntimeRunRecord, bool]:
         try:
-            resolved_tool_ids = self._scaffold.resolve_enabled_tool_ids(
-                agent_id=session.bound_agent_id,
-                enabled_tools=request.policy.enabledTools,
-            )
+            return self._session_store.request_run_cancel(run_id)
         except LookupError as exc:
-            raise ToolNotFoundError(_extract_unknown_tool_id(exc)) from exc
-
-        assistant_text = await agent_executor.run(
-            agent_name=session.bound_agent_id,
-            user_prompt=request.message.content,
-            message_history=history,
-            model=request.policy.model,
-            enabled_tools=resolved_tool_ids,
-            request_options=request.policy.requestOptions,
-        )
-        persisted_session, _created = self._session_store.append_turn(
-            session_id=session.session_id,
-            bound_agent_id=session.bound_agent_id,
-            user_text=request.message.content,
-            assistant_text=assistant_text,
-            metadata={"last_model_id": request.policy.model},
-        )
-        return RuntimeMessageSendResult(
-            assistant_text=assistant_text,
-            session=persisted_session,
-            resolved_model_id=request.policy.model,
-            resolved_tool_ids=resolved_tool_ids,
-            request_options=dict(request.policy.requestOptions),
-        )
+            raise RunNotFoundError(run_id) from exc
 
     def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:
             raise RuntimeError("Runtime scaffold is required for capabilities queries.")
-        session = self._session_store.get(session_id)
-        if session is None:
+        thread = self._session_store.get_thread(session_id)
+        if thread is None:
             raise SessionNotFoundError(session_id)
-        self._resolve_agent(session.bound_agent_id)
-        return self._scaffold.build_capabilities_response(session=session)
+        self._resolve_agent(thread.bound_agent_id)
+        return self._scaffold.build_capabilities_response(thread=thread)
+
+    async def get_thinking_capability(
+        self,
+        *,
+        session_id: str,
+        model_route: RuntimeModelRoute,
+        thinking_capability_override: dict[str, Any] | None = None,
+    ) -> RuntimeThinkingCapabilityResponse:
+        if self._scaffold is None:
+            raise RuntimeError("Runtime scaffold is required for thinking capability queries.")
+        thread = self._session_store.get_thread(session_id)
+        if thread is None:
+            raise SessionNotFoundError(session_id)
+        self._resolve_agent(thread.bound_agent_id)
+        resolver = self._require_model_route_resolver()
+        resolved_model_route = await resolver.resolve(model_route)
+        capability = resolve_canonical_thinking_capability(
+            model_route=resolved_model_route,
+            thinking_capability_override=thinking_capability_override,
+            provider_adapter_registry=self._provider_adapter_registry,
+        )
+        return self._scaffold.build_thinking_capability_response(
+            session_id=session_id,
+            capability=capability.to_public_dict(),
+        )
+
+    def get_run(self, *, run_id: str) -> RuntimeRunRecord:
+        run = self._session_store.get_run(run_id)
+        if run is None:
+            raise RunNotFoundError(run_id)
+        return run
+
+    def _create_run_record(
+        self,
+        *,
+        request: RuntimeRunStartRequest,
+        validate_thread: bool,
+    ) -> RuntimeRunRecord:
+        if validate_thread:
+            self.get_thread(thread_id=request.thread_id)
+        return self._session_store.create_run(
+            thread_id=request.thread_id,
+            request=self._to_stored_run_input(request),
+        )
+
+    async def _stream_run(
+        self,
+        *,
+        run: RuntimeRunRecord,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        if run.status == "cancelled" and run.started_at is None:
+            async for event in self._emit_preemptively_cancelled_run(run=run):
+                yield event
+            return
+
+        request = self._to_run_start_request(run)
+        self._session_store.mark_run_streaming(
+            run.run_id,
+            metadata={"assistant_message_id": f"{run.run_id}:assistant"},
+        )
+
+        terminal_seen = False
+        async for event in self._call_orchestrator_stream_events(
+            request=request,
+            run_id=run.run_id,
+            is_client_disconnected=self._build_run_cancellation_checker(
+                run_id=run.run_id,
+                is_client_disconnected=is_client_disconnected,
+            ),
+        ):
+            self._update_run_state_from_event(run_id=run.run_id, event=event)
+            if event.type in {RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE, RUN_CANCELLED_EVENT_TYPE}:
+                terminal_seen = True
+            yield event
+
+        if not terminal_seen:
+            self._session_store.mark_run_failed(
+                run.run_id,
+                metadata={
+                    "terminal_event": RUN_FAILED_EVENT_TYPE,
+                    "terminal_payload": {
+                        "code": "agent_execution_failed",
+                        "message": "Run stream ended without a terminal event.",
+                        "details": {},
+                    },
+                },
+            )
+
+    def _build_run_cancellation_checker(
+        self,
+        *,
+        run_id: str,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+    ) -> Callable[[], Awaitable[bool]]:
+        async def _checker() -> bool:
+            if is_client_disconnected is not None and await is_client_disconnected():
+                return True
+            run = self._session_store.get_run(run_id)
+            return run.cancel_requested if run is not None else False
+
+        return _checker
+
+    async def _call_orchestrator_stream_events(
+        self,
+        *,
+        request: RuntimeRunStartRequest,
+        run_id: str,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        orchestrator = self._require_message_run_orchestrator()
+        try:
+            events = orchestrator.stream_events(
+                request=request,
+                is_client_disconnected=is_client_disconnected,
+                run_id=run_id,
+            )
+        except TypeError as exc:
+            if "run_id" not in str(exc):
+                raise
+            events = orchestrator.stream_events(
+                request=request,
+                is_client_disconnected=is_client_disconnected,
+            )
+
+        async for event in events:
+            yield event
+
+    async def _emit_preemptively_cancelled_run(
+        self,
+        *,
+        run: RuntimeRunRecord,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        events = RuntimeRunEventFactory(session_id=run.thread_id, run_id=run.run_id)
+        event = events.build(
+            RUN_CANCELLED_EVENT_TYPE,
+            payload={
+                "assistantMessageId": self._assistant_message_id_for_run(run),
+                "reason": "cancelled",
+            },
+        )
+        self._session_store.record_run_event(
+            run.run_id,
+            event_type=event.type,
+            payload=event.payload,
+            sequence=event.sequence,
+        )
+        yield event
+
+    def _update_run_state_from_event(self, *, run_id: str, event: RuntimeRunEvent) -> None:
+        self._session_store.record_run_event(
+            run_id,
+            event_type=event.type,
+            payload=event.payload,
+            sequence=event.sequence,
+        )
+        metadata = {"last_event_type": event.type}
+        if event.type == "run_metadata":
+            self._session_store.mark_run_streaming(
+                run_id,
+                metadata={
+                    **metadata,
+                    "requestedThinkingLevel": event.payload.get("requestedThinkingLevel"),
+                    "appliedThinkingLevel": event.payload.get("appliedThinkingLevel"),
+                    "thinkingCapabilitySnapshot": dict(event.payload.get("thinkingCapabilitySnapshot", {})),
+                },
+            )
+            return
+        if event.type == RUN_COMPLETED_EVENT_TYPE:
+            assistant_text = event.payload.get("assistantText")
+            self._session_store.mark_run_completed(
+                run_id,
+                assistant_text=assistant_text if isinstance(assistant_text, str) else None,
+                metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
+            )
+            return
+        if event.type == RUN_FAILED_EVENT_TYPE:
+            self._session_store.mark_run_failed(
+                run_id,
+                metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
+            )
+            return
+        if event.type == RUN_CANCELLED_EVENT_TYPE:
+            self._session_store.mark_run_cancelled(
+                run_id,
+                metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
+            )
+            return
+        if event.type == "run_started":
+            self._session_store.mark_run_streaming(
+                run_id,
+                metadata={
+                    **metadata,
+                    "assistant_message_id": str(
+                        event.payload.get("assistantMessageId", self._assistant_message_id_from_run_id(run_id))
+                    ),
+                },
+            )
+            return
+        run = self._session_store.get_run(run_id)
+        if run is not None:
+            run.touch(metadata=metadata)
+
+    def _assistant_message_id_for_run(self, run: RuntimeRunRecord) -> str:
+        stored = run.metadata.get("assistant_message_id")
+        if isinstance(stored, str) and stored.strip() != "":
+            return stored.strip()
+        return self._assistant_message_id_from_run_id(run.run_id)
+
+    def _assistant_message_id_from_run_id(self, run_id: str) -> str:
+        return f"{run_id}:assistant"
+
+    def _to_stored_run_input(self, request: RuntimeRunStartRequest) -> RuntimeStoredRunInput:
+        return RuntimeStoredRunInput(
+            message_role=cast(RuntimeMessageRole, request.message.role),
+            message_content=request.message.content,
+            policy=RuntimeStoredRunPolicy(
+                model_route=RuntimeStoredModelRoute(
+                    provider_profile_id=request.policy.modelRoute.provider_profile_id,
+                    route_ref=request.policy.modelRoute.route_ref,
+                    catalog_revision=request.policy.modelRoute.catalog_revision,
+                ),
+                thinking_level_intent=request.policy.thinkingLevelIntent,
+                thinking_capability_override=None
+                if request.policy.thinkingCapabilityOverride is None
+                else dict(request.policy.thinkingCapabilityOverride),
+                enabled_tools=tuple(request.policy.enabledTools),
+                debug_mode_enabled=request.policy.debugModeEnabled,
+                request_options=dict(request.policy.requestOptions),
+            ),
+            agent_id=request.agent_id,
+        )
+
+    def _to_run_start_request(self, run: RuntimeRunRecord) -> RuntimeRunStartRequest:
+        stored_request = run.request
+        stored_policy = stored_request.policy
+        stored_route = stored_policy.model_route
+        return RuntimeRunStartRequest(
+            thread_id=run.thread_id,
+            message=RuntimeMessagePayload(
+                role=stored_request.message_role,
+                content=stored_request.message_content,
+            ),
+            policy=RuntimeMessageExecutionPolicy(
+                modelRoute=RuntimeModelRoute(
+                    provider_profile_id=stored_route.provider_profile_id,
+                    route_ref=stored_route.route_ref,
+                    catalog_revision=stored_route.catalog_revision,
+                ),
+                thinkingLevelIntent=normalize_thinking_level_intent(
+                    stored_policy.thinking_level_intent
+                ),
+                thinkingCapabilityOverride=None
+                if stored_policy.thinking_capability_override is None
+                else dict(stored_policy.thinking_capability_override),
+                enabledTools=tuple(stored_policy.enabled_tools),
+                debugModeEnabled=stored_policy.debug_mode_enabled,
+                requestOptions=dict(stored_policy.request_options),
+            ),
+            agent_id=stored_request.agent_id,
+        )
+
+    def _require_message_run_orchestrator(self) -> RuntimeMessageRunOrchestrator:
+        if self._message_run_orchestrator is None:
+            raise RuntimeError("Runtime message run orchestrator is not configured.")
+        return self._message_run_orchestrator
+
+    def _require_model_route_resolver(self) -> RuntimeModelRouteResolver:
+        if self._model_route_resolver is None:
+            raise RuntimeError("Runtime model route resolver is not configured.")
+        return self._model_route_resolver
 
     def _resolve_agent(self, agent_name: str) -> AgentDescriptor:
         descriptor = self._agent_registry.get(agent_name)
@@ -174,67 +386,11 @@ class RuntimeBridge:
             raise AgentNotFoundError(agent_name)
         return descriptor
 
-    def _build_executor(self, descriptor: AgentDescriptor) -> RuntimeAgentExecutor:
-        executor_factory = descriptor.executor_factory
-        if executor_factory is None:
-            raise AgentExecutionError(
-                f"Agent '{descriptor.name}' has no executor factory configured."
-            )
-        return executor_factory()
-
-    def _build_message_history(
-        self,
-        messages: tuple[RuntimeTextMessage, ...],
-    ) -> list[ModelMessage]:
-        history: list[ModelMessage] = []
-        expected_roles = ("user", "assistant")
-        for index, message in enumerate(messages):
-            expected_role = expected_roles[index % 2]
-            if message.role != expected_role:
-                raise InvalidSessionHistoryError(
-                    "Stored message history is invalid at "
-                    f"index {index}: expected role '{expected_role}' but found '{message.role}'."
-                )
-            history.append(_to_model_message(message))
-        return history
-
-
-def _extract_unknown_tool_id(error: LookupError) -> str:
-    structured_tool_id = getattr(error, "tool_id", None)
-    if isinstance(structured_tool_id, str):
-        normalized_tool_id = structured_tool_id.strip()
-        if normalized_tool_id != "":
-            return normalized_tool_id
-
-    message = str(error).strip()
-    if message == "":
-        return "unknown"
-
-    prefix = "Unknown tool '"
-    suffix = "'."
-    if message.startswith(prefix) and message.endswith(suffix) and len(message) > len(prefix) + len(suffix):
-        return message[len(prefix) : -len(suffix)]
-
-    return message
-
-
-def _to_model_message(message: RuntimeTextMessage) -> ModelMessage:
-    if message.role == "user":
-        return cast(ModelMessage, ModelRequest.user_text_prompt(message.content))
-    if message.role == "assistant":
-        return cast(ModelMessage, ModelResponse(parts=[TextPart(content=message.content)]))
-    raise InvalidSessionHistoryError(f"Unsupported stored message role '{message.role}'.")
-
 
 __all__ = [
-    "AgentExecutionError",
     "AgentNotFoundError",
-    "BoundAgentMismatchError",
-    "InvalidSessionHistoryError",
-    "ModelNotConfiguredError",
+    "RunNotFoundError",
     "RuntimeBridge",
-    "RuntimeBridgeResult",
-    "RuntimeMessageSendResult",
     "SessionNotFoundError",
-    "ToolNotFoundError",
+    "ThreadNotFoundError",
 ]

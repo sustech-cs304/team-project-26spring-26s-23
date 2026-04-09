@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
-import { createRuntimeSession } from './chat-contract'
+import { createRuntimeThread } from './thread-run-contract'
 import {
   agentId,
   createFetchFn,
   createRuntimeErrorPayload,
-  createRuntimeSessionCreateResponse,
+  createRuntimeThreadCreateResponse,
   runtimeUrl,
-} from './chat-contract.test-support'
+} from './thread-run-contract.test-support'
 
-describe('createRuntimeSession', () => {
-  it('posts session/create and returns the bound session payload', async () => {
-    const fetchFn = createFetchFn(createRuntimeSessionCreateResponse())
+describe('createRuntimeThread', () => {
+  it('posts thread/create and returns the canonical thread payload', async () => {
+    const fetchFn = createFetchFn(createRuntimeThreadCreateResponse())
 
-    const response = await createRuntimeSession({
+    const response = await createRuntimeThread({
       runtimeUrl,
       agentId,
       fetchFn,
@@ -25,14 +25,16 @@ describe('createRuntimeSession', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        method: 'session/create',
+        method: 'thread/create',
         body: {
           agentId: 'general',
         },
       }),
+      signal: undefined,
     })
-    expect(response.sessionId).toBe('session-1')
+    expect(response.threadId).toBe('session-1')
     expect(response.boundAgent.agentId).toBe('general')
+    expect(response.recommendedTools).toEqual(['tool.file-convert'])
   })
 
   it('surfaces structured runtime errors without silently continuing', async () => {
@@ -44,10 +46,13 @@ describe('createRuntimeSession', () => {
       {
         ok: false,
         status: 409,
+        headers: {
+          'content-type': 'application/json',
+        },
       },
     )
 
-    await expect(createRuntimeSession({
+    await expect(createRuntimeThread({
       runtimeUrl,
       agentId,
       fetchFn,

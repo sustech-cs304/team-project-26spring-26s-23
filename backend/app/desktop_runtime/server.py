@@ -23,6 +23,7 @@ from app.copilot_runtime import (  # noqa: E402
     build_default_runtime_dependencies,
     build_router,
 )
+from app.copilot_runtime.model_routes import RuntimeModelRouteResolver  # noqa: E402
 from app.copilot_runtime.session_store import InMemorySessionStore  # noqa: E402
 from app.desktop_runtime.config import (  # noqa: E402
     LOCAL_TOKEN_HEADER_NAME,
@@ -37,6 +38,7 @@ from app.desktop_runtime.health import (  # noqa: E402
     build_readiness_contract,
     build_version_contract,
 )
+from app.desktop_runtime.host_model_route_bridge import HostModelRouteBridgeClient  # noqa: E402
 from app.desktop_runtime.lifecycle import RuntimeLifecycleManager  # noqa: E402
 
 
@@ -75,6 +77,7 @@ def create_app(
     *,
     session_store: InMemorySessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
+    model_route_resolver: RuntimeModelRouteResolver | None = None,
 ) -> FastAPI:
     runtime_config = config
     if runtime_config is None:
@@ -82,10 +85,15 @@ def create_app(
         runtime_config = parse_runtime_config([], env=os.environ, cwd=BACKEND_DIR)
 
     lifecycle_manager = RuntimeLifecycleManager(runtime_config)
+    host_model_route_bridge_client = HostModelRouteBridgeClient(
+        bridge_url=runtime_config.host_model_route_bridge_url,
+        bridge_token=runtime_config.host_model_route_bridge_token,
+    )
     runtime_dependencies = build_default_runtime_dependencies(
         runtime_config=runtime_config,
         session_store=session_store,
         agent_executor=agent_executor,
+        model_route_resolver=model_route_resolver or host_model_route_bridge_client,
     )
     runtime_session_store = runtime_dependencies.session_store
     runtime_agent_executor = runtime_dependencies.agent_executor
@@ -98,6 +106,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.runtime_config = runtime_config
         app.state.lifecycle_manager = lifecycle_manager
+        app.state.host_model_route_bridge_client = host_model_route_bridge_client
         app.state.copilot_runtime_dependencies = runtime_dependencies
         app.state.copilot_runtime_scaffold = runtime_scaffold
         app.state.copilot_runtime_session_store = runtime_session_store
@@ -109,7 +118,10 @@ def create_app(
         try:
             yield
         finally:
-            lifecycle_manager.shutdown()
+            try:
+                await host_model_route_bridge_client.aclose()
+            finally:
+                lifecycle_manager.shutdown()
 
     app = FastAPI(
         title=DESKTOP_RUNTIME_SERVICE_NAME,
@@ -129,7 +141,7 @@ def create_app(
     )
     app.add_middleware(DesktopNullOriginMiddleware)
 
-    app.include_router(build_router(runtime_scaffold, runtime_session_store, runtime_bridge))
+    app.include_router(build_router(runtime_scaffold, runtime_bridge))
 
     @app.get("/health")
     def get_health(request: Request) -> dict[str, object]:

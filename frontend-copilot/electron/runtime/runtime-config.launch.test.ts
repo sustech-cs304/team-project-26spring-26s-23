@@ -33,7 +33,6 @@ describe('createHostedRuntimeLaunchConfig', () => {
     expect(config.readyUrl).toBe('http://127.0.0.1:43210/ready')
     expect(config.healthUrl).toBe('http://127.0.0.1:43210/health')
     expect(config.diagnosticsUrl).toBe('http://127.0.0.1:43210/diagnostics')
-    expect(config.model).toBe('qwen-plus')
     expect(config.args).toEqual([
       '--host', '127.0.0.1',
       '--port', '43210',
@@ -51,7 +50,6 @@ describe('createHostedRuntimeLaunchConfig', () => {
       '--backend-stderr-log-file', paths.backendStderrLogFile,
       '--runtime-snapshot-file', paths.runtimeSnapshotFile,
       '--last-failure-file', paths.lastFailureFile,
-      '--model', 'qwen-plus',
       '--local-token', 'token-123',
     ])
     expect(config.env).toEqual({
@@ -69,7 +67,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
       appMode: 'desktop',
       environment: 'development',
       localTokenConfigured: true,
-      modelConfigured: true,
+      hostModelRouteBridgeConfigured: false,
       paths: {
         userDataDir: paths.userDataDir,
         runtimeRootDir: paths.runtimeRootDir,
@@ -88,7 +86,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
     })
   })
 
-  it('prefers an explicit model over config-center and environment fallbacks when building runtime args', () => {
+  it('does not project retired startup model compatibility into runtime args', () => {
     const config = createHostedRuntimeLaunchConfig({
       userDataPath: path.resolve('.tmp-userdata-model'),
       processEnv: {
@@ -97,34 +95,27 @@ describe('createHostedRuntimeLaunchConfig', () => {
       },
       port: 43210,
       localToken: 'token-model',
-      model: 'explicit-model',
-      configuredModel: 'configured-model',
     })
 
-    expect(config.model).toBe('explicit-model')
-    expect(config.args.slice(-4)).toEqual([
-      '--model', 'explicit-model',
-      '--local-token', 'token-model',
-    ])
+    expect(config.args).not.toContain('--model')
+    expect(sanitizeHostedRuntimeLaunchConfig(config)).not.toHaveProperty('modelConfigured')
   })
 
-  it('uses the configured config-center model when no explicit runtime flag is provided', () => {
+  it('passes host model route bridge bootstrap through runtime args without leaking it into sanitized output', () => {
     const config = createHostedRuntimeLaunchConfig({
-      userDataPath: path.resolve('.tmp-userdata-configured-model'),
-      processEnv: {
-        COPILOT_RUNTIME_MODEL: 'env-primary',
-        COPILOT_MODEL: 'env-legacy',
-      },
+      userDataPath: path.resolve('.tmp-userdata-route-bridge'),
+      processEnv: {},
       port: 43210,
-      localToken: 'token-configured-model',
-      configuredModel: 'configured-model',
+      localToken: 'token-bridge',
+      hostModelRouteBridgeUrl: 'http://127.0.0.1:45678/host/private/provider-routes/resolve',
+      hostModelRouteBridgeToken: 'bridge-token-123',
     })
 
-    expect(config.model).toBe('configured-model')
-    expect(config.args.slice(-4)).toEqual([
-      '--model', 'configured-model',
-      '--local-token', 'token-configured-model',
-    ])
+    expect(config.args).toEqual(expect.arrayContaining([
+      '--host-model-route-bridge-url', 'http://127.0.0.1:45678/host/private/provider-routes/resolve',
+      '--host-model-route-bridge-token', 'bridge-token-123',
+    ]))
+    expect(sanitizeHostedRuntimeLaunchConfig(config).hostModelRouteBridgeConfigured).toBe(true)
   })
 
   it('brackets IPv6 loopback hosts when composing runtime urls', () => {

@@ -11,13 +11,15 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import { CopilotComposer } from './CopilotComposer'
 import { CopilotMessageList } from './CopilotMessageList'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
+import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
 import type {
-  CopilotChatComposerDraft,
-  CopilotConversationTurn,
-} from './copilot-chat-helpers'
+  CopilotAssistantPlaceholderState,
+  CopilotMessageListItem,
+} from './run-segment-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
-import type { CopilotBootstrapState } from './types'
+import type { RuntimeThinkingCapability } from './thread-run-contract'
+import type { CopilotBootstrapState, CopilotConnectableState } from './types'
 
 export interface CopilotPanelShellProps {
   state: CopilotBootstrapState
@@ -28,16 +30,25 @@ export interface CopilotPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  sendError: string | null
   modelGroups: CopilotModelGroup[]
+  thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
+  onCancelCurrentRun: () => void
   sendStatus: 'idle' | 'sending'
+  canCancelSend: boolean
   sendDisabledReason: string | null
-  conversation: CopilotConversationTurn[]
+  conversation: CopilotMessageListItem[]
+  assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
+}
+
+type ConnectableCopilotPanelShellProps = Omit<CopilotPanelShellProps, 'state'> & {
+  state: CopilotConnectableState
 }
 
 export function CopilotPanelShell(props: CopilotPanelShellProps) {
@@ -51,10 +62,13 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
     )
   }
 
-  return renderSessionShell(props)
+  return renderSessionShell({
+    ...props,
+    state: props.state,
+  })
 }
 
-function renderSessionShell(props: CopilotPanelShellProps) {
+function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   const hasAvailableModels = props.modelGroups.some((group) => group.models.length > 0)
 
   if (props.directoryState.status === 'loading' || props.directoryState.status === 'idle') {
@@ -110,6 +124,10 @@ function renderSessionShell(props: CopilotPanelShellProps) {
       <section className="copilot-chat" data-testid="chat-send-shell">
         <CopilotMessageList
           conversation={props.conversation}
+          assistantPlaceholder={props.assistantPlaceholder}
+          models={props.modelGroups.flatMap((group) => group.models)}
+          showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
+          transientError={props.sendError ?? props.sessionError}
           emptyState={hasAvailableModels
             ? null
             : {
@@ -120,12 +138,14 @@ function renderSessionShell(props: CopilotPanelShellProps) {
         <CopilotComposer
           capabilities={props.sessionShell.capabilities}
           modelGroups={props.modelGroups}
+          thinkingCapability={props.thinkingCapability}
           draft={props.composerDraft}
           onDraftChange={props.onComposerDraftChange}
           onSubmit={props.onSend}
+          onCancel={props.onCancelCurrentRun}
           sendStatus={props.sendStatus}
+          canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
-          sessionError={props.sessionError}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}

@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { getRuntimeCapabilities } from './chat-contract'
+import { getRuntimeCapabilities } from './thread-run-contract'
 import {
   createFetchFn,
-  createRuntimeCapabilitiesGetResponse,
   createRuntimeErrorPayload,
+  createRuntimeThreadGetResponse,
   runtimeUrl,
   sessionId,
-} from './chat-contract.test-support'
+} from './thread-run-contract.test-support'
 
 describe('getRuntimeCapabilities', () => {
-  it('posts capabilities/get and returns the backend capability snapshot fields', async () => {
-    const fetchFn = createFetchFn(createRuntimeCapabilitiesGetResponse())
+  it('posts thread/get and returns the backend capability snapshot fields', async () => {
+    const fetchFn = createFetchFn(createRuntimeThreadGetResponse())
 
     const response = await getRuntimeCapabilities({
       runtimeUrl,
@@ -25,11 +25,12 @@ describe('getRuntimeCapabilities', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        method: 'capabilities/get',
+        method: 'thread/get',
         body: {
-          sessionId: 'session-1',
+          threadId: 'session-1',
         },
       }),
+      signal: undefined,
     })
     expect(response.capabilitiesVersion).toBe('cap-v12')
     expect(response.tools.map((tool) => tool.toolId)).toEqual([
@@ -39,15 +40,18 @@ describe('getRuntimeCapabilities', () => {
     expect(response.recommendedTools).toEqual(['tool.file-convert'])
   })
 
-  it('throws a structured RuntimeRequestError when capabilities/get fails', async () => {
+  it('throws a structured RuntimeRequestError when thread/get fails', async () => {
     const fetchFn = createFetchFn(
       createRuntimeErrorPayload({
-        code: 'session_not_found',
-        message: 'session missing',
+        code: 'thread_not_found',
+        message: 'thread missing',
       }),
       {
         ok: false,
         status: 404,
+        headers: {
+          'content-type': 'application/json',
+        },
       },
     )
 
@@ -57,9 +61,9 @@ describe('getRuntimeCapabilities', () => {
       fetchFn,
     })).rejects.toMatchObject({
       name: 'RuntimeRequestError',
-      code: 'session_not_found',
+      code: 'thread_not_found',
       status: 404,
-      message: 'session_not_found: session missing',
+      message: 'thread_not_found: thread missing',
     })
   })
 })

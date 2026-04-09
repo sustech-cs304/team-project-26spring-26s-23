@@ -76,7 +76,7 @@ describe('SettingsWorkspace structure', () => {
     expect(html).not.toContain('启用微动画')
   })
 
-  it('shows the empty provider state on first initialization without seeded provider examples', () => {
+  it('shows the empty provider state while exposing catalog-driven creation options', () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace
         bootstrap={createBootstrapController()}
@@ -88,7 +88,7 @@ describe('SettingsWorkspace structure', () => {
 
     expect(html).toContain('模型服务商')
     expect(html).toContain('可在左侧添加服务商信息')
-    expect(html).not.toContain('OpenRouter')
+    expect(html).toContain('OpenRouter')
     expect(html).not.toContain('Ollama Local')
     expect(html).not.toContain('BaiLiOpenAI')
   })

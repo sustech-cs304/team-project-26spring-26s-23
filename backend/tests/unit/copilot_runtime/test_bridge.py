@@ -1,168 +1,294 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
 
-from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry, build_default_agent_registry
-from app.copilot_runtime.bridge import (
-    AgentExecutionError,
-    AgentNotFoundError,
-    BoundAgentMismatchError,
-    InvalidSessionHistoryError,
-    RuntimeBridge,
-    SessionNotFoundError,
-    ToolNotFoundError,
-)
+from app.copilot_runtime.agent_registry import AgentRegistry, build_default_agent_registry
+from app.copilot_runtime.bridge import AgentNotFoundError, RuntimeBridge, SessionNotFoundError
 from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
-    RuntimeMessageSendRequest,
-    RuntimeRunRequest,
+    RuntimeRunStartRequest,
     build_runtime_scaffold,
 )
-from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
+from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteRef
+from app.copilot_runtime.run_events import (
+    RUN_CANCELLED_EVENT_TYPE,
+    RUN_COMPLETED_EVENT_TYPE,
+    RUN_METADATA_EVENT_TYPE,
+    RUN_STARTED_EVENT_TYPE,
+    TEXT_DELTA_EVENT_TYPE,
+    RuntimeRunEvent,
+    RuntimeRunEventFactory,
+)
+from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.tool_registry import build_default_tool_registry
 
 
-class RecordingAgentExecutor:
-    def __init__(self, *, reply: str = "Bridge reply", error: Exception | None = None) -> None:
-        self._reply = reply
-        self._error = error
-        self.calls: list[dict[str, object]] = []
+class _StubMessageRunOrchestrator:
+    def __init__(self, *, events: list[RuntimeRunEvent]) -> None:
+        self._events = list(events)
+        self.received_requests: list[RuntimeRunStartRequest] = []
+        self.received_run_ids: list[str | None] = []
+        self.received_disconnect_callbacks: list[Callable[[], Awaitable[bool]] | None] = []
 
-    async def run(
+    async def stream_events(
         self,
         *,
-        agent_name: str,
-        user_prompt: str,
-        message_history: Sequence[ModelMessage],
-    ) -> str:
-        self.calls.append(
-            {
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-            }
+        request: RuntimeRunStartRequest,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
+        run_id: str | None = None,
+    ):
+        self.received_requests.append(request)
+        self.received_run_ids.append(run_id)
+        self.received_disconnect_callbacks.append(is_client_disconnected)
+        for event in self._events:
+            yield event
+
+
+class _CancelAwareMessageRunOrchestrator:
+    def __init__(self, *, session_id: str, run_id: str, request_cancel) -> None:
+        self._events = RuntimeRunEventFactory(session_id=session_id, run_id=run_id)
+        self._request_cancel = request_cancel
+
+    async def stream_events(
+        self,
+        *,
+        request: RuntimeRunStartRequest,
+        is_client_disconnected=None,
+        run_id: str | None = None,
+    ):
+        assistant_message_id = f"{self._events.run_id}:assistant"
+        yield self._events.build(
+            RUN_STARTED_EVENT_TYPE,
+            payload={"assistantMessageId": assistant_message_id},
         )
-        if self._error is not None:
-            raise self._error
-        return self._reply
+        yield self._events.build(
+            TEXT_DELTA_EVENT_TYPE,
+            payload={"assistantMessageId": assistant_message_id, "delta": "partial"},
+        )
+        self._request_cancel()
+        if is_client_disconnected is not None and await is_client_disconnected():
+            yield self._events.build(
+                RUN_CANCELLED_EVENT_TYPE,
+                payload={"assistantMessageId": assistant_message_id, "reason": "cancelled"},
+            )
+            return
+        yield self._events.build(
+            RUN_COMPLETED_EVENT_TYPE,
+            payload={
+                "assistantMessageId": assistant_message_id,
+                "assistantText": "late completion",
+                "resolvedToolIds": [],
+                "requestOptions": {},
+            },
+        )
 
 
-class RecordingExecutorFactory:
-    def __init__(self, executor: RecordingAgentExecutor) -> None:
-        self._executor = executor
-        self.call_count = 0
-
-    def __call__(self) -> RecordingAgentExecutor:
-        self.call_count += 1
-        return self._executor
-
-
-def test_run_resolves_default_agent_through_registry_and_factory() -> None:
+def test_stream_run_delegates_to_orchestrator_and_preserves_request() -> None:
     store = InMemorySessionStore()
-    store.append_turn(
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    request = _build_run_start_request(thread_id="thread-1")
+    seed_bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = seed_bridge.start_run(request=request)
+    expected_events = [
+        RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id).build(
+            RUN_STARTED_EVENT_TYPE,
+            payload={"assistantMessageId": f"{run.run_id}:assistant"},
+        )
+    ]
+    orchestrator = _StubMessageRunOrchestrator(events=expected_events)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
+    )
+
+    disconnected = False
+
+    async def is_client_disconnected() -> bool:
+        return disconnected
+
+    events = asyncio.run(
+        _collect_events(
+            bridge.stream_run(
+                run_id=run.run_id,
+                is_client_disconnected=is_client_disconnected,
+            )
+        )
+    )
+
+    assert events == expected_events
+    assert orchestrator.received_requests == [request]
+    assert orchestrator.received_run_ids == [run.run_id]
+
+    checker = orchestrator.received_disconnect_callbacks[0]
+    assert checker is not None
+    assert checker is not is_client_disconnected
+    assert asyncio.run(checker()) is False
+
+    disconnected = True
+    assert asyncio.run(checker()) is True
+
+    disconnected = False
+    assert asyncio.run(checker()) is False
+
+
+def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    events_factory = RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id)
+    thinking_capability_snapshot = {
+        "status": "unknown-without-override",
+        "source": "unknown",
+        "supported": False,
+        "supportedLevels": [],
+        "defaultLevel": None,
+        "reasonCode": "route_not_verified",
+        "providerHint": "unknown-route",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+        "overrideLevels": [],
+    }
+    orchestrator = _StubMessageRunOrchestrator(
+        events=[
+            events_factory.build(
+                RUN_STARTED_EVENT_TYPE,
+                payload={"assistantMessageId": f"{run.run_id}:assistant"},
+            ),
+            events_factory.build(
+                RUN_METADATA_EVENT_TYPE,
+                payload={
+                    "requestedThinkingLevel": "medium",
+                    "appliedThinkingLevel": None,
+                    "thinkingCapabilitySnapshot": thinking_capability_snapshot,
+                },
+            ),
+            events_factory.build(
+                TEXT_DELTA_EVENT_TYPE,
+                payload={"assistantMessageId": f"{run.run_id}:assistant", "delta": "Hello back"},
+            ),
+            events_factory.build(
+                RUN_COMPLETED_EVENT_TYPE,
+                payload={
+                    "assistantMessageId": f"{run.run_id}:assistant",
+                    "assistantText": "Hello back",
+                    "resolvedToolIds": [],
+                    "requestOptions": {},
+                },
+            ),
+        ]
+    )
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
+    )
+
+    events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
+    updated_run = bridge.get_run(run_id=run.run_id)
+
+    assert [event.type for event in events] == [
+        RUN_STARTED_EVENT_TYPE,
+        RUN_METADATA_EVENT_TYPE,
+        TEXT_DELTA_EVENT_TYPE,
+        RUN_COMPLETED_EVENT_TYPE,
+    ]
+    assert updated_run.status == "completed"
+    assert updated_run.assistant_text == "Hello back"
+    assert updated_run.metadata["requestedThinkingLevel"] == "medium"
+    assert updated_run.metadata["appliedThinkingLevel"] is None
+    assert updated_run.metadata["thinkingCapabilitySnapshot"] == thinking_capability_snapshot
+    run_view = scaffold.build_run_view(run=updated_run)
+    assert run_view.requestedThinkingLevel == "medium"
+    assert run_view.appliedThinkingLevel is None
+    assert run_view.thinkingCapabilitySnapshot == thinking_capability_snapshot
+    assert [(event.event_type, event.sequence) for event in store.list_run_events(run.run_id)] == [
+        (RUN_STARTED_EVENT_TYPE, 1),
+        (RUN_METADATA_EVENT_TYPE, 2),
+        (TEXT_DELTA_EVENT_TYPE, 3),
+        (RUN_COMPLETED_EVENT_TYPE, 4),
+    ]
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "Hello"),
+        ("assistant", "Hello back"),
+    ]
+
+
+def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    seed_bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = seed_bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    orchestrator = _CancelAwareMessageRunOrchestrator(
         session_id="thread-1",
-        bound_agent_id="default",
-        user_text="hello",
-        assistant_text="hi there",
-        metadata={"last_run_id": "run-1"},
+        run_id=run.run_id,
+        request_cancel=lambda: store.request_run_cancel(run.run_id),
     )
-    executor = RecordingAgentExecutor(reply="Bridge success")
-    executor_factory = RecordingExecutorFactory(executor)
-    registry = build_default_agent_registry(executor_factory=executor_factory)
     bridge = RuntimeBridge(
         session_store=store,
         agent_registry=registry,
-        scaffold=_build_scaffold(agent_registry=registry),
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
     )
 
-    result = asyncio.run(
-        bridge.run(
-            request=_build_run_request(
-                thread_id="thread-1",
-                run_id="run-2",
-                user_message_text="what next?",
-            )
-        )
-    )
+    events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
+    updated_run = bridge.get_run(run_id=run.run_id)
 
-    assert executor_factory.call_count == 1
-    assert result.assistant_text == "Bridge success"
-    assert result.newly_created is False
-    assert result.session.metadata == {"last_run_id": "run-2"}
-    assert _message_pairs(store, "thread-1") == [
-        ("user", "hello"),
-        ("assistant", "hi there"),
-        ("user", "what next?"),
-        ("assistant", "Bridge success"),
+    assert [event.type for event in events] == [
+        RUN_STARTED_EVENT_TYPE,
+        TEXT_DELTA_EVENT_TYPE,
+        RUN_CANCELLED_EVENT_TYPE,
     ]
+    assert updated_run.status == "cancelled"
+    assert updated_run.cancel_requested is True
+    assert store.list_messages("thread-1") == ()
 
-    assert len(executor.calls) == 1
-    call = executor.calls[0]
-    assert call["agent_name"] == "default"
-    assert call["user_prompt"] == "what next?"
-
-    history = call["message_history"]
-    assert isinstance(history, list)
-    assert len(history) == 2
-    assert isinstance(history[0], ModelRequest)
-    assert history[0].parts[0].content == "hello"
-    assert isinstance(history[1], ModelResponse)
-    assert isinstance(history[1].parts[0], TextPart)
-    assert history[1].parts[0].content == "hi there"
-
-
-def test_run_creates_new_session_after_successful_first_turn() -> None:
-    store = InMemorySessionStore()
-    executor = RecordingAgentExecutor(reply="First reply")
-    executor_factory = RecordingExecutorFactory(executor)
-    registry = build_default_agent_registry(executor_factory=executor_factory)
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=_build_scaffold(agent_registry=registry),
-    )
-
-    result = asyncio.run(
-        bridge.run(
-            request=_build_run_request(
-                thread_id="thread-new",
-                run_id="run-1",
-                user_message_text="hello there",
-            )
-        )
-    )
-
-    assert executor_factory.call_count == 1
-    assert result.assistant_text == "First reply"
-    assert result.newly_created is True
-    assert result.session.metadata == {"last_run_id": "run-1"}
-    assert _message_pairs(store, "thread-new") == [
-        ("user", "hello there"),
-        ("assistant", "First reply"),
-    ]
-
-    assert len(executor.calls) == 1
-    call = executor.calls[0]
-    history = call["message_history"]
-    assert isinstance(history, list)
-    assert history == []
 
 
 def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:
     store = InMemorySessionStore()
-    session = store.create(bound_agent_id="default", session_id="session-1")
+    thread = store.create_thread(bound_agent_id="default", thread_id="thread-1")
     registry = build_default_agent_registry()
-    scaffold = _build_scaffold(agent_registry=registry)
-    bridge = RuntimeBridge(session_store=store, agent_registry=registry, scaffold=scaffold)
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
 
-    capabilities = bridge.get_capabilities(session_id=session.session_id)
+    capabilities = bridge.get_capabilities(session_id=thread.thread_id)
 
-    assert capabilities.sessionId == "session-1"
+    assert capabilities.sessionId == thread.thread_id
     assert capabilities.boundAgent.agentId == "default"
     assert capabilities.toolSelectionMode == "recommendation-only"
     assert capabilities.recommendedTools == ("tool.file-convert",)
@@ -171,291 +297,69 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.tools[0].displayName == "File Convert"
 
 
+
 def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -> None:
     store = InMemorySessionStore()
     registry = build_default_agent_registry()
-    scaffold = _build_scaffold(agent_registry=registry)
-    bridge = RuntimeBridge(session_store=store, agent_registry=registry, scaffold=scaffold)
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
 
     with pytest.raises(SessionNotFoundError, match="Unknown session 'missing-session'."):
         bridge.get_capabilities(session_id="missing-session")
 
 
-def test_run_raises_explicit_error_when_agent_is_not_registered() -> None:
+
+def test_get_capabilities_raises_agent_not_found_for_unknown_bound_agent() -> None:
     store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="missing-agent", thread_id="thread-1")
     registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
     bridge = RuntimeBridge(
         session_store=store,
         agent_registry=registry,
-        scaffold=_build_scaffold(agent_registry=registry),
+        scaffold=scaffold,
     )
 
     with pytest.raises(AgentNotFoundError, match="Unknown agent 'missing-agent'."):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-1",
-                    run_id="run-1",
-                    user_message_text="should fail",
-                    agent_name="missing-agent",
-                )
-            )
-        )
-
-    assert store.get("thread-1") is None
+        bridge.get_capabilities(session_id="thread-1")
+async def _collect_events(events) -> list[RuntimeRunEvent]:
+    return [event async for event in events]
 
 
-def test_run_rejects_existing_session_bound_to_different_agent() -> None:
-    store = InMemorySessionStore()
-    store.create(bound_agent_id="default", session_id="thread-1")
-    executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
-    registry = AgentRegistry(
-        [
-            AgentDescriptor(
-                name="default",
-                label="Default",
-                description="Default runtime agent.",
-                default=True,
-                toolset_name="default",
-                executor_factory=executor_factory,
-            ),
-            AgentDescriptor(
-                name="secondary",
-                label="Secondary",
-                description="Secondary runtime agent.",
-                toolset_name="default",
-                executor_factory=executor_factory,
-            ),
-        ]
-    )
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=_build_scaffold(agent_registry=registry),
-    )
-
-    with pytest.raises(BoundAgentMismatchError, match="bound to agent 'default'"):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-1",
-                    run_id="run-1",
-                    user_message_text="should fail",
-                    agent_name="secondary",
-                )
-            )
-        )
-
-
-def test_run_does_not_append_failed_turn_to_session_history() -> None:
-    store = InMemorySessionStore()
-    store.append_turn(
-        session_id="thread-1",
-        bound_agent_id="default",
-        user_text="hello",
-        assistant_text="hi there",
-        metadata={"last_run_id": "run-1"},
-    )
-    session_before_failure = store.get("thread-1")
-    assert session_before_failure is not None
-    previous_updated_at = session_before_failure.updated_at
-    executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
-    executor_factory = RecordingExecutorFactory(executor)
-    registry = build_default_agent_registry(executor_factory=executor_factory)
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=_build_scaffold(agent_registry=registry),
-    )
-
-    with pytest.raises(AgentExecutionError, match="executor boom"):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-1",
-                    run_id="run-2",
-                    user_message_text="should fail",
-                )
-            )
-        )
-
-    assert executor_factory.call_count == 1
-    assert _message_pairs(store, "thread-1") == [
-        ("user", "hello"),
-        ("assistant", "hi there"),
-    ]
-    session_after_failure = store.get("thread-1")
-    assert session_after_failure is session_before_failure
-    assert session_after_failure.metadata == {"last_run_id": "run-1"}
-    assert session_after_failure.updated_at == previous_updated_at
-
-
-def test_run_does_not_create_session_when_executor_fails_before_first_success() -> None:
-    store = InMemorySessionStore()
-    executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
-    executor_factory = RecordingExecutorFactory(executor)
-    registry = build_default_agent_registry(executor_factory=executor_factory)
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=_build_scaffold(agent_registry=registry),
-    )
-
-    with pytest.raises(AgentExecutionError, match="executor boom"):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-new",
-                    run_id="run-1",
-                    user_message_text="should fail",
-                )
-            )
-        )
-
-    assert executor_factory.call_count == 1
-    assert store.get("thread-new") is None
-    assert store.list_messages("thread-new") == ()
-
-
-def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
-    store = InMemorySessionStore()
-    session, _ = store.get_or_create(
-        session_id="thread-1",
-        bound_agent_id="default",
-        metadata={"last_run_id": "run-1"},
-    )
-    session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
-    executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
-    registry = build_default_agent_registry(executor_factory=executor_factory)
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=_build_scaffold(agent_registry=registry),
-    )
-
-    with pytest.raises(InvalidSessionHistoryError, match="expected role 'user'"):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-1",
-                    run_id="run-2",
-                    user_message_text="should not execute",
-                )
-            )
-        )
-
-    assert executor_factory.call_count == 0
-    assert _message_pairs(store, "thread-1") == [("assistant", "orphan assistant")]
-
-
-class StructuredToolLookupError(LookupError):
-    def __init__(self, tool_id: str, message: str | None = None) -> None:
-        self.tool_id = tool_id
-        super().__init__(message or f"Tool lookup failed for '{tool_id}'.")
-
-
-class FailingToolResolutionScaffold:
-    def __init__(self, error: LookupError) -> None:
-        self._error = error
-
-    def resolve_enabled_tool_ids(
-        self,
-        *,
-        agent_id: str,
-        enabled_tools: tuple[str, ...],
-    ) -> tuple[str, ...]:
-        raise self._error
-
-
-@pytest.mark.parametrize(
-    ("lookup_error", "expected_tool_id"),
-    [
-        (StructuredToolLookupError("tool.structured", message="tool catalog mismatch"), "tool.structured"),
-        (LookupError("tool resolution failed for requested alias"), "tool resolution failed for requested alias"),
-    ],
-)
-def test_send_message_unknown_tool_uses_structured_id_or_safe_fallback(
-    lookup_error: LookupError,
-    expected_tool_id: str,
-) -> None:
-    store = InMemorySessionStore()
-    store.create(bound_agent_id="default", session_id="session-1")
-    executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
-    registry = build_default_agent_registry(executor_factory=executor_factory)
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=FailingToolResolutionScaffold(lookup_error),
-    )
-
-    with pytest.raises(ToolNotFoundError) as exc_info:
-        asyncio.run(
-            bridge.send_message(
-                request=_build_message_send_request(
-                    session_id="session-1",
-                    model="openai/gpt-4.1",
-                    enabled_tools=("tool.missing",),
-                )
-            )
-        )
-
-    assert exc_info.value.tool_id == expected_tool_id
-    assert executor_factory.call_count == 1
-    assert store.list_messages("session-1") == ()
-
-
-def _build_scaffold(*, agent_registry: AgentRegistry):
+def _build_scaffold(
+    *,
+    agent_registry: AgentRegistry,
+    session_store: InMemorySessionStore,
+):
     return build_runtime_scaffold(
-        session_store_type="in-memory",
+        session_store_type=session_store.storage_type,
         model_configured=True,
         agent_registry=agent_registry,
         tool_registry=build_default_tool_registry(),
     )
 
 
-def _build_run_request(
-    *,
-    thread_id: str,
-    run_id: str,
-    user_message_text: str,
-    agent_name: str = "default",
-) -> RuntimeRunRequest:
-    return RuntimeRunRequest(
-        agent_name=agent_name,
+def _build_run_start_request(*, thread_id: str) -> RuntimeRunStartRequest:
+    return RuntimeRunStartRequest(
         thread_id=thread_id,
-        run_id=run_id,
-        user_message_text=user_message_text,
-        state={},
-        messages=(),
-        actions=(),
-        meta_events=(),
-        node_name=None,
-        forwarded_props={},
-        metadata={},
-    )
-
-
-def _build_message_send_request(
-    *,
-    session_id: str,
-    model: str,
-    user_text: str = "Hello",
-    agent_id: str | None = None,
-    enabled_tools: tuple[str, ...] = (),
-    request_options: dict[str, object] | None = None,
-) -> RuntimeMessageSendRequest:
-    return RuntimeMessageSendRequest(
-        session_id=session_id,
-        message=RuntimeMessagePayload(role="user", content=user_text),
+        message=RuntimeMessagePayload(role="user", content="Hello"),
         policy=RuntimeMessageExecutionPolicy(
-            model=model,
-            enabledTools=enabled_tools,
-            requestOptions=dict(request_options or {}),
+            modelRoute=RuntimeModelRoute(
+                provider_profile_id="provider-1",
+                route_ref=RuntimeModelRouteRef(
+                    route_kind="provider-model",
+                    profile_id="provider-1",
+                    model_id="gpt-4.1",
+                ),
+            ),
+            enabledTools=(),
+            requestOptions={},
         ),
-        agent_id=agent_id,
+        agent_id="default",
     )
 
 
-
-def _message_pairs(store: InMemorySessionStore, thread_id: str) -> list[tuple[str, str]]:
-    return [(message.role, message.content) for message in store.list_messages(thread_id)]

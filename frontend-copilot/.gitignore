@@ -17,6 +17,9 @@ dist-ssr
 dist-electron
 *.local
 public/generated-icons/
+*.tsbuildinfo
+vite.config.d.ts
+vitest.config.d.ts
 
 # Editor directories and files
 .vscode/*

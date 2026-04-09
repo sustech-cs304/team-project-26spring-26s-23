@@ -73,9 +73,6 @@ def build_diagnostics_contract(
         "supported_methods": [],
         "chat_runtime_stage": None,
         "session_store_type": None,
-        "current_stage_supports_info_only": False,
-        "current_stage_supports_connect": False,
-        "current_stage_supports_run": False,
         "model_configured": False,
         "model_environment_keys": [],
     }

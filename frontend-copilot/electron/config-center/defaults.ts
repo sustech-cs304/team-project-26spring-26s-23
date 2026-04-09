@@ -26,6 +26,7 @@ export function createDefaultUnifiedConfigDomainDocument<TDomain extends Unified
         UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR,
         {
           agentName: UNIFIED_CONFIG_FIELD_REGISTRY.agentName.defaultValue,
+          debugModeEnabled: UNIFIED_CONFIG_FIELD_REGISTRY.debugModeEnabled.defaultValue,
         },
       ) as UnifiedConfigDomainDocument<TDomain>
 

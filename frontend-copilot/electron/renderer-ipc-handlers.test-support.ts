@@ -10,7 +10,7 @@ import {
   createSettingsWorkspaceStateFixture,
 } from './renderer-ipc-domain-fixtures.test-support'
 import type {
-  SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceProfileSecretMutationResult,
   SettingsWorkspaceSecretsLoadStatusesResult,
   SettingsWorkspaceStateLoadResult,
   SettingsWorkspaceStateSaveResult,
@@ -59,17 +59,17 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
         password: 'persisted-cas-secret',
       },
     })),
-    saveSettingsWorkspaceProviderSecret: vi.fn(async (): Promise<SettingsWorkspaceProviderSecretMutationResult> => ({
+    saveSettingsWorkspaceProfileSecret: vi.fn(async (): Promise<SettingsWorkspaceProfileSecretMutationResult> => ({
       ok: true,
-      providerId: 'openrouter',
+      profileId: 'openrouter',
       state: {
         hasApiKey: true,
         apiKey: 'persisted-secret',
       },
     })),
-    clearSettingsWorkspaceProviderSecret: vi.fn(async (): Promise<SettingsWorkspaceProviderSecretMutationResult> => ({
+    clearSettingsWorkspaceProfileSecret: vi.fn(async (): Promise<SettingsWorkspaceProfileSecretMutationResult> => ({
       ok: true,
-      providerId: 'openrouter',
+      profileId: 'openrouter',
       state: {
         hasApiKey: false,
         apiKey: '',

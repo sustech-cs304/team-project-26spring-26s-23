@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 
 import {
-  createRuntimeSession,
+  createRuntimeThread,
   getRuntimeCapabilities,
 } from '../../features/copilot/chat-contract'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
@@ -28,7 +28,7 @@ interface UseAssistantSessionCreationInput {
   bootstrap: CopilotBootstrapController
   selectedAgent: AgentType | null
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>
-  createSession?: typeof createRuntimeSession
+  createSession?: typeof createRuntimeThread
   getCapabilities?: typeof getRuntimeCapabilities
   initialSessionShell?: AssistantSessionShell | null
 }
@@ -49,7 +49,7 @@ export function useAssistantSessionCreation({
   bootstrap,
   selectedAgent,
   setSelectedAgentId,
-  createSession: createSessionImpl = createRuntimeSession,
+  createSession: createSessionImpl = createRuntimeThread,
   getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
   initialSessionShell = null,
 }: UseAssistantSessionCreationInput): UseAssistantSessionCreationResult {

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createProviderProfile } from '../../src/workbench/settings/settings-workspace-test-fixtures'
+import { normalizeSettingsWorkspaceStateValues } from './state-schema'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createElectronSettingsWorkspaceService } from './main-process'
 
@@ -36,9 +37,11 @@ describe('createElectronSettingsWorkspaceService', () => {
 
       expect(result.source).toBe('initialized-defaults')
       expect(result.state.providerProfiles).toEqual([])
-      expect(result.state.defaultModelRouting).toEqual({
+      expect(result.state.defaultModelRouting).toMatchObject({
         primaryAssistantModel: '',
         fastAssistantModel: '',
+        primaryAssistantModelRoute: null,
+        fastAssistantModelRoute: null,
       })
       expect(appendLog).toHaveBeenCalledWith('info', 'Initialized settings workspace persistence documents.', null)
     } finally {
@@ -64,15 +67,10 @@ describe('createElectronSettingsWorkspaceService', () => {
         name: 'Main Process Persisted Provider',
       })
 
-      const saveResult = await service.saveState({
+      const saveResult = await service.saveState(normalizeSettingsWorkspaceStateValues({
         ...loaded.state,
-        providerProfiles: [
-          (() => {
-            const { hasApiKey: _hasApiKey, ...profile } = persistedProvider
-            return profile
-          })(),
-        ],
-      })
+        providerProfiles: [persistedProvider],
+      }))
 
       expect(saveResult.ok).toBe(true)
       if (!saveResult.ok) {
@@ -80,13 +78,13 @@ describe('createElectronSettingsWorkspaceService', () => {
       }
       expect(saveResult.state.providerProfiles[0]?.name).toBe('Main Process Persisted Provider')
 
-      const saveSecretResult = await service.saveProviderSecret({
-        providerId: 'main-process-provider',
+      const saveSecretResult = await service.saveProfileSecret({
+        profileId: 'main-process-provider',
         apiKey: 'main-process-secret',
       })
       expect(saveSecretResult).toEqual({
         ok: true,
-        providerId: 'main-process-provider',
+        profileId: 'main-process-provider',
         state: {
           hasApiKey: true,
           apiKey: 'main-process-secret',
@@ -94,7 +92,7 @@ describe('createElectronSettingsWorkspaceService', () => {
       })
 
       const secretStatesResult = await service.loadSecretStates({
-        providerIds: ['main-process-provider'],
+        profileIds: ['main-process-provider'],
       })
       expect(secretStatesResult).toEqual({
         ok: true,
@@ -106,12 +104,12 @@ describe('createElectronSettingsWorkspaceService', () => {
         },
       })
 
-      const clearSecretResult = await service.clearProviderSecret({
-        providerId: 'main-process-provider',
+      const clearSecretResult = await service.clearProfileSecret({
+        profileId: 'main-process-provider',
       })
       expect(clearSecretResult).toEqual({
         ok: true,
-        providerId: 'main-process-provider',
+        profileId: 'main-process-provider',
         state: {
           hasApiKey: false,
           apiKey: '',

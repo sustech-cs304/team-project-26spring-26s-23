@@ -51,6 +51,7 @@ describe('loadCopilotConfigState', () => {
       bootstrapFields: {
         runtimeUrl: 'http://localhost:4400',
         agentName: 'planner',
+        debugModeEnabled: false,
       },
       storageState: 'stored',
     })
@@ -142,6 +143,7 @@ describe('retryCopilotConfigState', () => {
       bootstrapFields: {
         runtimeUrl: 'http://127.0.0.1:3000',
         agentName: null,
+        debugModeEnabled: false,
       },
     })
 

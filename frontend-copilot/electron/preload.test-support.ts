@@ -79,6 +79,7 @@ export function createConfigCenterPublicSnapshotFixture(): ConfigCenterPublicSna
       },
       assistantBehavior: {
         agentName: 'planner',
+        debugModeEnabled: false,
       },
       hostConfig: {
         runtimeUrl: 'http://localhost:4400',
@@ -102,6 +103,8 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     defaultModelRouting: {
       primaryAssistantModel: '',
       fastAssistantModel: '',
+      primaryAssistantModelRoute: null,
+      fastAssistantModelRoute: null,
     },
     general: {
       language: 'zh-CN',

@@ -1,7 +1,7 @@
 import {
   type RuntimeAgentsListResponse,
   type RuntimeCapabilitiesGetResponse,
-  type RuntimeSessionCreateResponse,
+  type RuntimeThreadCreateResponse,
 } from '../../features/copilot/chat-contract'
 import type { CopilotBootstrapController, CopilotConnectableState } from '../../features/copilot/types'
 import { enhanceRuntimeAgents } from '../config'
@@ -49,17 +49,16 @@ export function createAssistantSessionCapabilities(
     recommendedToolsForAgent: [...response.recommendedTools],
     defaultEnabledTools: [...response.recommendedTools],
     toolSelectionMode: response.toolSelectionMode,
-    defaultModelPreference: response.defaultModelPreference,
   }
 }
 
 export function createAssistantSessionShell(input: {
-  response: RuntimeSessionCreateResponse
+  response: RuntimeThreadCreateResponse
   selectedAgent: AgentType
   capabilities: RuntimeCapabilitiesGetResponse
 }): AssistantSessionShell {
   return {
-    sessionId: input.response.sessionId,
+    sessionId: input.response.threadId,
     title: input.selectedAgent.label,
     boundAgent: input.selectedAgent,
     createdAt: input.response.createdAt,

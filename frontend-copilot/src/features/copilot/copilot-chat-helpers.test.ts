@@ -5,13 +5,19 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRuntimeDebugSummary,
   buildRuntimeMessageSendInput,
+  buildRuntimeThinkingCapabilityFromError,
   createEmptyComposerDraft,
   buildSessionDebugSummary,
+  cancelStreamingToolTurns,
   createComposerDraftFromSession,
+  createPendingAssistantTurn,
+  describeThinkingCapabilityUnavailableReason,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
+  upsertToolStepTurn,
 } from './copilot-chat-helpers'
-import { RuntimeRequestError } from './chat-contract'
+import { RuntimeRequestError } from './thread-run-contract'
+import { createRuntimeModelRoute, createRuntimeToolEvent } from './thread-run-contract.test-support'
 import {
   createDirectoryState,
   createReadyState,
@@ -47,16 +53,18 @@ describe('copilot chat helpers', () => {
       defaultEnabledTools: ['tool.file-convert'],
       defaultEnabledSource: {
         boundAgent: 'general',
-        defaultModelPreference: 'openai/gpt-4.1',
         toolSelectionMode: 'recommendation-only',
       },
     })
   })
 
-  it('creates composer defaults from empty state and session capabilities without falling back to static model ids', () => {
+  it('creates composer defaults from empty state and keeps model selection empty until route-based restoration happens elsewhere', () => {
     expect(createEmptyComposerDraft()).toEqual({
       messageText: '',
-      model: '',
+      selectedModelId: '',
+      selectedModelRoute: null,
+      thinkingLevelIntent: null,
+      thinkingLevelByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
     })
@@ -65,20 +73,36 @@ describe('copilot chat helpers', () => {
 
     expect(draft).toEqual({
       messageText: '',
-      model: 'openai/gpt-4.1',
-      enabledTools: ['tool.file-convert'],
+      selectedModelId: '',
+      selectedModelRoute: null,
+      thinkingLevelIntent: null,
+      thinkingLevelByModelKey: {},
+      enabledTools: [],
       requestOptionsText: '{}',
     })
   })
 
-  it('builds request-scoped message input with sessionId, boundAgent validation value, model, enabledTools and requestOptions', () => {
+  it('builds request-scoped message input with sessionId, boundAgent validation value, modelRoute, enabledTools and requestOptions', () => {
     const sessionShell = createSessionShell()
     const input = buildRuntimeMessageSendInput({
       runtimeUrl: 'http://127.0.0.1:8765',
       sessionShell,
       draft: {
         messageText: '请总结这份文档',
-        model: 'qwen-plus',
+        selectedModelId: 'provider-openai:openai/gpt-4.1',
+        selectedModelRoute: createRuntimeModelRoute({
+          providerProfileId: 'provider-openai',
+          snapshot: {
+            provider: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: 'qwen-plus',
+          },
+        }),
+        thinkingLevelIntent: 'auto',
+        thinkingLevelByModelKey: {
+          'provider-model|provider-openai|qwen-plus': 'auto',
+        },
         enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
       },
@@ -95,7 +119,15 @@ describe('copilot chat helpers', () => {
         role: 'user',
         content: '请总结这份文档',
       },
-      model: 'qwen-plus',
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-openai',
+          modelId: 'qwen-plus',
+        },
+        catalogRevision: '2026-04-06-provider-catalog-v1',
+      },
+      thinkingLevelIntent: 'auto',
       enabledTools: ['tool.remote-search', 'tool.file-convert'],
       requestOptions: {
         trace: true,
@@ -106,6 +138,132 @@ describe('copilot chat helpers', () => {
   it('parses minimal requestOptions json object and rejects non-object payloads', () => {
     expect(parseRequestOptionsText('{"trace":true}')).toEqual({ trace: true })
     expect(() => parseRequestOptionsText('[]')).toThrow('requestOptions 必须是 JSON 对象。')
+  })
+
+  it('inserts tool steps ahead of the pending assistant turn and updates the same step on completion/failure', () => {
+    const assistantTurn = createPendingAssistantTurn({
+      assistantMessageId: 'run-1:assistant',
+    })
+    const startedEvent = createRuntimeToolEvent({
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location": "Shenzhen"}',
+      },
+    })
+    const completedEvent = createRuntimeToolEvent({
+      sequence: 3,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'completed',
+        title: '天气工具已返回结果',
+        summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        inputSummary: '{"location": "Shenzhen"}',
+        resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+      },
+    })
+    const failedEvent = createRuntimeToolEvent({
+      sequence: 4,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'failed',
+        title: '工具调用失败',
+        summary: '工具执行失败。',
+        inputSummary: '{"location": "Shenzhen"}',
+        errorSummary: 'boom',
+      },
+    })
+
+    const withStarted = upsertToolStepTurn([assistantTurn], startedEvent, {
+      assistantMessageId: 'run-1:assistant',
+    })
+    expect(withStarted).toHaveLength(2)
+    expect(withStarted[0]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'tool.weather-current:call-1',
+      toolPhase: 'started',
+      status: 'streaming',
+      content: '正在获取 Shenzhen 的天气。',
+    })
+    expect(withStarted[1].kind).toBe('assistant')
+
+    const withCompleted = upsertToolStepTurn(withStarted, completedEvent, {
+      assistantMessageId: 'run-1:assistant',
+    })
+    expect(withCompleted).toHaveLength(2)
+    expect(withCompleted[0]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'tool.weather-current:call-1',
+      toolPhase: 'completed',
+      status: 'completed',
+      title: '天气工具已返回结果',
+      resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+    })
+
+    const withFailed = upsertToolStepTurn(withStarted, failedEvent, {
+      assistantMessageId: 'run-1:assistant',
+    })
+    expect(withFailed).toHaveLength(2)
+    expect(withFailed[0]).toMatchObject({
+      kind: 'tool',
+      toolCallId: 'tool.weather-current:call-1',
+      toolPhase: 'failed',
+      status: 'failed',
+      title: '工具调用失败',
+      errorSummary: 'boom',
+    })
+  })
+
+  it('cancels only in-flight tool steps while keeping other turns unchanged', () => {
+    const cancelled = cancelStreamingToolTurns([
+      {
+        id: 'tool:pending',
+        kind: 'tool',
+        title: '调用天气工具',
+        content: '正在获取 Shenzhen 的天气。',
+        status: 'streaming',
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        toolPhase: 'started',
+      },
+      {
+        id: 'tool:done',
+        kind: 'tool',
+        title: '天气工具已返回结果',
+        content: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        status: 'completed',
+        toolCallId: 'tool.weather-current:call-2',
+        toolId: 'tool.weather-current',
+        toolPhase: 'completed',
+      },
+      {
+        id: 'assistant:1',
+        kind: 'assistant',
+        title: '助手响应',
+        content: '第一段',
+        status: 'streaming',
+      },
+    ])
+
+    expect(cancelled[0]).toMatchObject({
+      kind: 'tool',
+      status: 'cancelled',
+      toolPhase: 'cancelled',
+    })
+    expect(cancelled[1]).toMatchObject({
+      kind: 'tool',
+      status: 'completed',
+      toolPhase: 'completed',
+    })
+    expect(cancelled[2]).toMatchObject({
+      kind: 'assistant',
+      status: 'streaming',
+    })
   })
 
   it('formats structured backend errors into explicit user-facing messages', () => {
@@ -123,5 +281,50 @@ describe('copilot chat helpers', () => {
       code: 'invalid_request',
       status: 400,
     }))).toContain('invalid_request：消息请求结构无效')
+
+    expect(formatRuntimeMessageSendError(new RuntimeRequestError('thinking_not_supported_for_route: unsupported thinking selection', {
+      code: 'thinking_not_supported_for_route',
+      status: 400,
+    }))).toContain('thinking_not_supported_for_route：当前模型路由不支持所选思考档位')
+
+    expect(formatRuntimeMessageSendError(new RuntimeRequestError('provider_catalog_only: not enabled', {
+      code: 'provider_catalog_only',
+      status: 409,
+    }))).toContain('provider_catalog_only：当前 provider 仅完成 catalog 接入，运行时尚未启用')
+  })
+
+  it('builds a stable unsupported thinking capability snapshot from runtime request errors', () => {
+    const capability = buildRuntimeThinkingCapabilityFromError({
+      error: new RuntimeRequestError('provider_catalog_only: not enabled', {
+        code: 'provider_catalog_only',
+        status: 409,
+        details: {
+          providerId: 'openrouter',
+        },
+      }),
+      modelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openrouter',
+        modelId: 'openrouter/auto',
+      }),
+    })
+
+    expect(capability).toEqual({
+      status: 'verified-unsupported',
+      source: 'verified',
+      supported: false,
+      supportedLevels: [],
+      defaultLevel: null,
+      reasonCode: 'provider_catalog_only',
+      providerHint: 'openrouter',
+      routeFingerprint: {
+        providerProfileId: 'provider-openrouter',
+        provider: 'openrouter',
+        endpointType: '',
+        baseUrl: '',
+        modelId: 'openrouter/auto',
+      },
+      overrideLevels: [],
+    })
+    expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前 provider 仅完成 catalog 接入')
   })
 })

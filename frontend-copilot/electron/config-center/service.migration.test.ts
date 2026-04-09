@@ -26,6 +26,9 @@ describe('createUnifiedConfigCenter legacy migration', () => {
       expect(
         migrated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,
       ).toBe('planner')
+      expect(
+        migrated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.debugModeEnabled,
+      ).toBe(false)
       expect(await readStoredDomainDocument(fixture, UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG)).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG, {
           runtimeUrl: 'http://127.0.0.1:4310',
@@ -36,6 +39,7 @@ describe('createUnifiedConfigCenter legacy migration', () => {
       ).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
           agentName: 'planner',
+          debugModeEnabled: false,
         }),
       )
 

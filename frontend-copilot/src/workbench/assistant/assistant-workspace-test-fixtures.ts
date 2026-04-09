@@ -3,7 +3,7 @@ import { vi } from 'vitest'
 import type {
   RuntimeAgentsListResponse,
   RuntimeCapabilitiesGetResponse,
-  RuntimeSessionCreateResponse,
+  RuntimeThreadCreateResponse,
 } from '../../features/copilot/chat-contract'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 
@@ -17,7 +17,6 @@ export function createDirectoryResponse(): RuntimeAgentsListResponse {
         agentId: 'general',
         status: 'active',
         recommendedTools: ['tool.file-convert'],
-        defaultModelPreference: 'openai/gpt-4.1',
         displayName: 'Default',
         description: '默认通用智能体',
         iconKey: 'sparkles',
@@ -26,7 +25,6 @@ export function createDirectoryResponse(): RuntimeAgentsListResponse {
         agentId: 'blackboard',
         status: 'active',
         recommendedTools: [],
-        defaultModelPreference: null,
         displayName: 'Blackboard',
         description: '课程数据助手',
         iconKey: 'database',
@@ -36,11 +34,11 @@ export function createDirectoryResponse(): RuntimeAgentsListResponse {
 }
 
 export function createSessionResponse(
-  overrides: Partial<RuntimeSessionCreateResponse> = {},
-): RuntimeSessionCreateResponse {
+  overrides: Partial<RuntimeThreadCreateResponse> = {},
+): RuntimeThreadCreateResponse {
   return {
     ok: true,
-    sessionId: 'session-1',
+    threadId: 'session-1',
     boundAgent: {
       agentId: 'general',
       status: 'active',
@@ -51,7 +49,6 @@ export function createSessionResponse(
     createdAt: '2026-03-27T10:00:00Z',
     updatedAt: '2026-03-27T10:00:00Z',
     recommendedTools: ['tool.file-convert'],
-    defaultModelPreference: 'openai/gpt-4.1',
     capabilities: {
       tools: {
         selectionMode: 'recommendation-only',
@@ -93,7 +90,6 @@ export function createCapabilitiesResponse(
     ],
     recommendedTools: ['tool.file-convert'],
     toolSelectionMode: 'recommendation-only',
-    defaultModelPreference: 'openai/gpt-4.1',
     ...overrides,
   }
 }
@@ -107,6 +103,7 @@ export function createBootstrapController(): CopilotBootstrapController {
       bootstrapFields: {
         runtimeUrl: 'http://127.0.0.1:8765',
         agentName: null,
+        debugModeEnabled: false,
       },
       storageState: 'stored',
       runtime: {

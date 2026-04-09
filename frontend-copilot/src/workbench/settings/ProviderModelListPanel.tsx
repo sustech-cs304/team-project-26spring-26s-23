@@ -5,6 +5,8 @@ import { modelCapabilityOptions } from './config'
 
 interface ProviderModelListPanelProps {
   availableModels: ProviderModelProfile[]
+  canEditModels: boolean
+  description: string
   onOpenCreateModelEditor: () => void
   onOpenModelEditor: (index: number) => void
   onRemoveModel: (index: number) => void
@@ -12,6 +14,8 @@ interface ProviderModelListPanelProps {
 
 export function ProviderModelListPanel({
   availableModels,
+  canEditModels,
+  description,
   onOpenCreateModelEditor,
   onOpenModelEditor,
   onRemoveModel,
@@ -21,6 +25,7 @@ export function ProviderModelListPanel({
       <div className="settings-card__header settings-card__header--spaced">
         <div>
           <h3 className="settings-card__title">模型列表管理</h3>
+          <p className="settings-card__subtitle">{description}</p>
         </div>
         <span className="inline-badge">{availableModels.length} 个模型</span>
       </div>
@@ -67,6 +72,7 @@ export function ProviderModelListPanel({
                       className="icon-button"
                       title={`编辑 ${modelDisplayName}`}
                       aria-label={`编辑模型 ${modelDisplayName}`}
+                      disabled={!canEditModels}
                       onClick={() => onOpenModelEditor(index)}
                     >
                       <Pencil size={14} />
@@ -76,6 +82,7 @@ export function ProviderModelListPanel({
                       className="icon-button icon-button--danger"
                       title={`删除 ${modelDisplayName}`}
                       aria-label={`删除模型 ${modelDisplayName}`}
+                      disabled={!canEditModels}
                       onClick={() => onRemoveModel(index)}
                     >
                       <Trash2 size={14} />
@@ -85,13 +92,16 @@ export function ProviderModelListPanel({
               )
             })
           ) : (
-            <div className="model-list-empty">当前服务商还没有可用模型。点击下方按钮添加第一个模型。</div>
+            <div className="model-list-empty">
+              {canEditModels ? '当前服务商还没有可用模型。点击下方按钮添加第一个模型。' : '当前 provider 的模型列表为只读。'}
+            </div>
           )}
         </div>
 
         <button
           type="button"
           className="secondary-button secondary-button--subtle"
+          disabled={!canEditModels}
           onClick={onOpenCreateModelEditor}
         >
           添加模型

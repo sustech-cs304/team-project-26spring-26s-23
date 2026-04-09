@@ -34,7 +34,7 @@ function createSessionShellFixture(sessionId: string) {
   const selectedAgent = getSelectedAgent()
 
   return createAssistantSessionShell({
-    response: createSessionResponse({ sessionId }),
+    response: createSessionResponse({ threadId: sessionId }),
     selectedAgent,
     capabilities: createCapabilitiesResponse({ sessionId }),
   })
@@ -50,7 +50,7 @@ describe('assistant-session-helpers', () => {
     })
     const nextSession = createAssistantSessionShell({
       response: createSessionResponse({
-        sessionId: 'session-2',
+        threadId: 'session-2',
         createdAt: '2026-03-27T10:05:00Z',
         updatedAt: '2026-03-27T10:05:00Z',
       }),

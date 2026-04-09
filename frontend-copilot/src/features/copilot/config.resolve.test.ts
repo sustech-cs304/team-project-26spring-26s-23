@@ -29,6 +29,7 @@ describe('resolveCopilotConfigState', () => {
       bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://localhost:4400',
         agentName: 'planner',
+        debugModeEnabled: false,
       }),
       runtimeResult: {
         ok: false,
@@ -45,6 +46,7 @@ describe('resolveCopilotConfigState', () => {
       bootstrapFieldsResult: createBootstrapFieldsResult({
         runtimeUrl: 'http://manual-override:9000',
         agentName: 'campus-agent',
+        debugModeEnabled: false,
       }),
       runtimeResult: createRuntimeResult({
         status: 'ready',

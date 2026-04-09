@@ -1,4 +1,4 @@
-"""In-memory session storage for the Copilot runtime."""
+"""In-memory thread/run storage for the Copilot runtime."""
 
 from __future__ import annotations
 
@@ -8,11 +8,21 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
+from .model_routes import RuntimeModelRouteRef
+
 RuntimeMessageRole = Literal["user", "assistant"]
+RuntimeRunStatus = Literal[
+    "pending",
+    "streaming",
+    "cancellation_requested",
+    "completed",
+    "failed",
+    "cancelled",
+]
 
 
 class BoundAgentMismatchError(RuntimeError):
-    """Raised when an existing session is accessed with a different bound agent."""
+    """Raised when an existing thread is accessed with a different bound agent."""
 
     def __init__(
         self,
@@ -33,27 +43,37 @@ class BoundAgentMismatchError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class RuntimeTextMessage:
-    """Minimal persisted text message stored for a session."""
+    """Minimal projected text message rebuilt from completed thread runs."""
 
     role: RuntimeMessageRole
     content: str
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
-@dataclass(slots=True)
-class RuntimeSessionRecord:
-    """Minimal per-session record kept in process memory."""
+@dataclass(frozen=True, slots=True)
+class RuntimeRunEventRecord:
+    """Minimal persisted event record attached to a run."""
 
-    session_id: str
+    event_type: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    sequence: int | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(slots=True)
+class RuntimeThreadRecord:
+    """Canonical per-thread record kept in process memory."""
+
+    thread_id: str
     bound_agent_id: str
     metadata: dict[str, Any] = field(default_factory=dict)
-    messages: list[RuntimeTextMessage] = field(default_factory=list)
+    last_run_id: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
-    def thread_id(self) -> str:
-        return self.session_id
+    def session_id(self) -> str:
+        return self.thread_id
 
     @property
     def agent_name(self) -> str:
@@ -64,120 +84,384 @@ class RuntimeSessionRecord:
             self.metadata = {**self.metadata, **dict(metadata)}
         self.updated_at = datetime.now(UTC)
 
-    def append_message(self, *, role: RuntimeMessageRole, content: str) -> RuntimeTextMessage:
-        normalized_content = content.strip()
-        if normalized_content == "":
-            raise ValueError("Session message content must be a non-empty string.")
 
-        message = RuntimeTextMessage(role=role, content=normalized_content)
-        self.messages.append(message)
-        self.updated_at = message.created_at
-        return message
+@dataclass(frozen=True, slots=True)
+class RuntimeStoredModelRoute:
+    provider_profile_id: str
+    route_ref: RuntimeModelRouteRef
+    catalog_revision: str | None = None
 
-    def append_turn(self, *, user_text: str, assistant_text: str) -> None:
-        self.append_message(role="user", content=user_text)
-        self.append_message(role="assistant", content=assistant_text)
+    def __post_init__(self) -> None:
+        if self.route_ref.profile_id != self.provider_profile_id:
+            raise ValueError(
+                "RuntimeStoredModelRoute.provider_profile_id must match route_ref.profile_id."
+            )
 
-    def message_history(self) -> tuple[RuntimeTextMessage, ...]:
-        return tuple(self.messages)
+
+@dataclass(frozen=True, slots=True)
+class RuntimeStoredRunPolicy:
+    model_route: RuntimeStoredModelRoute
+    thinking_level_intent: str | None = None
+    thinking_capability_override: dict[str, Any] | None = None
+    enabled_tools: tuple[str, ...] = ()
+    debug_mode_enabled: bool | None = None
+    request_options: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeStoredRunInput:
+    message_role: RuntimeMessageRole
+    message_content: str
+    policy: RuntimeStoredRunPolicy
+    agent_id: str | None = None
+
+
+@dataclass(slots=True)
+class RuntimeRunRecord:
+    run_id: str
+    thread_id: str
+    request: RuntimeStoredRunInput
+    status: RuntimeRunStatus = "pending"
+    metadata: dict[str, Any] = field(default_factory=dict)
+    cancel_requested: bool = False
+    assistant_text: str | None = None
+    event_log: list[RuntimeRunEventRecord] = field(default_factory=list)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    started_at: datetime | None = None
+    terminal_at: datetime | None = None
+
+    @property
+    def session_id(self) -> str:
+        return self.thread_id
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in {"completed", "failed", "cancelled"}
+
+    def touch(self, *, metadata: Mapping[str, Any] | None = None) -> None:
+        if metadata:
+            self.metadata = {**self.metadata, **dict(metadata)}
+        self.updated_at = datetime.now(UTC)
+
+    def append_event(
+        self,
+        *,
+        event_type: str,
+        payload: Mapping[str, Any] | None = None,
+        sequence: int | None = None,
+    ) -> RuntimeRunEventRecord:
+        event = RuntimeRunEventRecord(
+            event_type=event_type,
+            payload=dict(payload or {}),
+            sequence=sequence,
+        )
+        self.event_log.append(event)
+        self.updated_at = event.created_at
+        return event
+
+    def mark_streaming(self, *, metadata: Mapping[str, Any] | None = None) -> None:
+        if self.is_terminal:
+            return
+        now = datetime.now(UTC)
+        self.status = "streaming"
+        self.started_at = self.started_at or now
+        if metadata:
+            self.metadata = {**self.metadata, **dict(metadata)}
+        self.updated_at = now
+
+    def request_cancel(self) -> bool:
+        if self.is_terminal:
+            return False
+
+        now = datetime.now(UTC)
+        self.cancel_requested = True
+        if self.status == "pending":
+            self.status = "cancelled"
+            self.terminal_at = now
+        else:
+            self.status = "cancellation_requested"
+        self.updated_at = now
+        return True
+
+    def mark_completed(
+        self,
+        *,
+        assistant_text: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        self._mark_terminal(
+            status="completed",
+            assistant_text=assistant_text,
+            metadata=metadata,
+        )
+
+    def mark_failed(self, *, metadata: Mapping[str, Any] | None = None) -> None:
+        self._mark_terminal(status="failed", metadata=metadata)
+
+    def mark_cancelled(self, *, metadata: Mapping[str, Any] | None = None) -> None:
+        self.cancel_requested = True
+        self._mark_terminal(status="cancelled", metadata=metadata)
+
+    def projected_messages(self) -> tuple[RuntimeTextMessage, ...]:
+        if self.status != "completed":
+            return ()
+
+        projected_user_text = _normalize_projected_text(self.request.message_content)
+        projected_assistant_text = _normalize_projected_text(self.assistant_text)
+        if projected_user_text is None or projected_assistant_text is None:
+            return ()
+
+        assistant_created_at = self.terminal_at or self.updated_at
+        return (
+            RuntimeTextMessage(
+                role=self.request.message_role,
+                content=projected_user_text,
+                created_at=self.created_at,
+            ),
+            RuntimeTextMessage(
+                role="assistant",
+                content=projected_assistant_text,
+                created_at=assistant_created_at,
+            ),
+        )
+
+    def _mark_terminal(
+        self,
+        *,
+        status: Literal["completed", "failed", "cancelled"],
+        assistant_text: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        now = datetime.now(UTC)
+        self.status = status
+        self.started_at = self.started_at or now
+        self.terminal_at = now
+        if assistant_text is not None:
+            self.assistant_text = assistant_text
+        if metadata:
+            self.metadata = {**self.metadata, **dict(metadata)}
+        self.updated_at = now
 
 
 class InMemorySessionStore:
-    """Minimal in-process session store keyed by `session_id`."""
+    """Canonical in-process thread/run store."""
 
     def __init__(self) -> None:
-        self._sessions: dict[str, RuntimeSessionRecord] = {}
+        self._threads: dict[str, RuntimeThreadRecord] = {}
+        self._runs: dict[str, RuntimeRunRecord] = {}
 
     @property
     def storage_type(self) -> str:
         return "in-memory"
 
-    def get(self, session_id: str) -> RuntimeSessionRecord | None:
-        return self._sessions.get(session_id)
+    def get_thread(self, thread_id: str) -> RuntimeThreadRecord | None:
+        return self._threads.get(thread_id)
 
-    def create(
+    def create_thread(
         self,
         *,
         bound_agent_id: str,
         metadata: Mapping[str, Any] | None = None,
-        session_id: str | None = None,
-    ) -> RuntimeSessionRecord:
+        thread_id: str | None = None,
+    ) -> RuntimeThreadRecord:
         resolved_agent_id = _require_non_empty_string(
             bound_agent_id,
             field_name="bound_agent_id",
         )
-        resolved_session_id = (
-            _require_non_empty_string(session_id, field_name="session_id")
-            if session_id is not None
-            else self._next_session_id()
+        resolved_thread_id = (
+            _require_non_empty_string(thread_id, field_name="thread_id")
+            if thread_id is not None
+            else self._next_thread_id()
         )
-        if resolved_session_id in self._sessions:
-            raise ValueError(f"Session '{resolved_session_id}' already exists.")
+        if resolved_thread_id in self._threads:
+            raise ValueError(f"Thread '{resolved_thread_id}' already exists.")
 
         now = datetime.now(UTC)
-        session = RuntimeSessionRecord(
-            session_id=resolved_session_id,
+        thread = RuntimeThreadRecord(
+            thread_id=resolved_thread_id,
             bound_agent_id=resolved_agent_id,
             metadata=dict(metadata) if metadata is not None else {},
             created_at=now,
             updated_at=now,
         )
-        self._sessions[resolved_session_id] = session
-        return session
+        self._threads[resolved_thread_id] = thread
+        return thread
 
-    def get_or_create(
+    def get_or_create_thread(
         self,
         *,
-        session_id: str,
+        thread_id: str,
         bound_agent_id: str,
         metadata: Mapping[str, Any] | None = None,
-    ) -> tuple[RuntimeSessionRecord, bool]:
-        resolved_session_id = _require_non_empty_string(session_id, field_name="session_id")
+    ) -> tuple[RuntimeThreadRecord, bool]:
+        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
         resolved_agent_id = _require_non_empty_string(
             bound_agent_id,
             field_name="bound_agent_id",
         )
-        existing = self._sessions.get(resolved_session_id)
+        existing = self._threads.get(resolved_thread_id)
         if existing is not None:
             self._assert_bound_agent(existing, requested_agent_id=resolved_agent_id)
             existing.touch(metadata=metadata)
             return existing, False
 
         return (
-            self.create(
-                session_id=resolved_session_id,
+            self.create_thread(
+                thread_id=resolved_thread_id,
                 bound_agent_id=resolved_agent_id,
                 metadata=metadata,
             ),
             True,
         )
 
-    def list_messages(self, session_id: str) -> tuple[RuntimeTextMessage, ...]:
-        session = self.get(session_id)
-        if session is None:
-            return ()
-        return session.message_history()
+    def get_run(self, run_id: str) -> RuntimeRunRecord | None:
+        return self._runs.get(run_id)
 
-    def append_turn(
+    def list_runs(self, thread_id: str) -> tuple[RuntimeRunRecord, ...]:
+        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        runs = [run for run in self._runs.values() if run.thread_id == resolved_thread_id]
+        runs.sort(key=lambda run: (run.created_at, run.run_id))
+        return tuple(runs)
+
+    def list_run_events(self, run_id: str) -> tuple[RuntimeRunEventRecord, ...]:
+        run = self._require_run(run_id)
+        return tuple(run.event_log)
+
+    def create_run(
         self,
         *,
-        session_id: str,
-        bound_agent_id: str,
-        user_text: str,
-        assistant_text: str,
+        thread_id: str,
+        request: RuntimeStoredRunInput,
         metadata: Mapping[str, Any] | None = None,
-    ) -> tuple[RuntimeSessionRecord, bool]:
-        session, created = self.get_or_create(
-            session_id=session_id,
-            bound_agent_id=bound_agent_id,
-            metadata=metadata,
+        run_id: str | None = None,
+    ) -> RuntimeRunRecord:
+        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        resolved_run_id = (
+            _require_non_empty_string(run_id, field_name="run_id")
+            if run_id is not None
+            else self._next_run_id()
         )
-        session.append_turn(user_text=user_text, assistant_text=assistant_text)
-        return session, created
+        if resolved_run_id in self._runs:
+            raise ValueError(f"Run '{resolved_run_id}' already exists.")
+
+        now = datetime.now(UTC)
+        run = RuntimeRunRecord(
+            run_id=resolved_run_id,
+            thread_id=resolved_thread_id,
+            request=request,
+            metadata=dict(metadata) if metadata is not None else {},
+            created_at=now,
+            updated_at=now,
+        )
+        self._runs[resolved_run_id] = run
+
+        self._touch_thread_for_run(run)
+        return run
+
+    def get_latest_run_for_thread(self, thread_id: str) -> RuntimeRunRecord | None:
+        thread = self.get_thread(thread_id)
+        if thread is not None and thread.last_run_id is not None:
+            latest = self.get_run(thread.last_run_id)
+            if latest is not None:
+                return latest
+
+        runs = self.list_runs(thread_id)
+        if len(runs) == 0:
+            return None
+        return runs[-1]
+
+    def record_run_event(
+        self,
+        run_id: str,
+        *,
+        event_type: str,
+        payload: Mapping[str, Any] | None = None,
+        sequence: int | None = None,
+    ) -> RuntimeRunRecord:
+        run = self._require_run(run_id)
+        run.append_event(event_type=event_type, payload=payload, sequence=sequence)
+        self._touch_thread_for_run(run)
+        return run
+
+    def mark_run_streaming(
+        self,
+        run_id: str,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> RuntimeRunRecord:
+        run = self._require_run(run_id)
+        run.mark_streaming(metadata=metadata)
+        self._touch_thread_for_run(run)
+        return run
+
+    def mark_run_completed(
+        self,
+        run_id: str,
+        *,
+        assistant_text: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> RuntimeRunRecord:
+        run = self._require_run(run_id)
+        run.mark_completed(assistant_text=assistant_text, metadata=metadata)
+        self._touch_thread_for_run(run)
+        return run
+
+    def mark_run_failed(
+        self,
+        run_id: str,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> RuntimeRunRecord:
+        run = self._require_run(run_id)
+        run.mark_failed(metadata=metadata)
+        self._touch_thread_for_run(run)
+        return run
+
+    def mark_run_cancelled(
+        self,
+        run_id: str,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> RuntimeRunRecord:
+        run = self._require_run(run_id)
+        run.mark_cancelled(metadata=metadata)
+        self._touch_thread_for_run(run)
+        return run
+
+    def request_run_cancel(self, run_id: str) -> tuple[RuntimeRunRecord, bool]:
+        run = self._require_run(run_id)
+        changed = run.request_cancel()
+        self._touch_thread_for_run(run)
+        return run, changed
+
+    def list_messages(self, thread_id: str) -> tuple[RuntimeTextMessage, ...]:
+        thread = self.get_thread(thread_id)
+        if thread is None:
+            return ()
+
+        projected_messages: list[RuntimeTextMessage] = []
+        for run in self.list_runs(thread.thread_id):
+            projected_messages.extend(run.projected_messages())
+        return tuple(projected_messages)
+
+    def _require_run(self, run_id: str) -> RuntimeRunRecord:
+        resolved_run_id = _require_non_empty_string(run_id, field_name="run_id")
+        run = self._runs.get(resolved_run_id)
+        if run is None:
+            raise LookupError(f"Run '{resolved_run_id}' does not exist.")
+        return run
+
+    def _touch_thread_for_run(self, run: RuntimeRunRecord) -> None:
+        thread = self._threads.get(run.thread_id)
+        if thread is None:
+            return
+        thread.last_run_id = run.run_id
+        thread.touch(metadata={"last_run_id": run.run_id})
 
     def _assert_bound_agent(
         self,
-        session: RuntimeSessionRecord,
+        session: RuntimeThreadRecord,
         *,
         requested_agent_id: str,
     ) -> None:
@@ -188,11 +472,37 @@ class InMemorySessionStore:
                 actual_agent_id=requested_agent_id,
             )
 
-    def _next_session_id(self) -> str:
+    def _next_thread_id(self) -> str:
         while True:
-            candidate = f"session-{uuid4().hex}"
-            if candidate not in self._sessions:
+            candidate = f"thread-{uuid4().hex}"
+            if candidate not in self._threads:
                 return candidate
+
+    def _next_run_id(self) -> str:
+        while True:
+            candidate = f"run-{uuid4().hex}"
+            if candidate not in self._runs:
+                return candidate
+
+
+
+def _normalize_projected_text(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized_value = value.strip()
+    if normalized_value == "":
+        return None
+    return normalized_value
+
+
+
+def _normalize_optional_non_empty_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized_value = value.strip()
+    if normalized_value == "":
+        return None
+    return normalized_value
 
 
 
@@ -200,3 +510,18 @@ def _require_non_empty_string(value: str | None, *, field_name: str) -> str:
     if value is None or value.strip() == "":
         raise ValueError(f"Session store field '{field_name}' must be a non-empty string.")
     return value.strip()
+
+
+__all__ = [
+    "BoundAgentMismatchError",
+    "InMemorySessionStore",
+    "RuntimeMessageRole",
+    "RuntimeRunEventRecord",
+    "RuntimeRunRecord",
+    "RuntimeRunStatus",
+    "RuntimeStoredModelRoute",
+    "RuntimeStoredRunInput",
+    "RuntimeStoredRunPolicy",
+    "RuntimeTextMessage",
+    "RuntimeThreadRecord",
+]

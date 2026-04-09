@@ -43,7 +43,7 @@ describe('SettingsWorkspace provider interactions', () => {
     rendered.unmount()
   })
 
-  it('adds a provider from the empty state and activates its detail form', async () => {
+  it('adds a provider from the empty state using catalog-backed defaults and activates its detail form', async () => {
     installSettingsWorkspaceBridge({
       loadStateResult: {
         ok: true,
@@ -68,24 +68,25 @@ describe('SettingsWorkspace provider interactions', () => {
 
     await clickElement(rendered.getByText('添加'))
 
-    expect(rendered.getByTestId('settings-provider-card-custom-provider-1').textContent).toContain('Custom Provider 1')
-    expect((rendered.getByPlaceholder('输入服务商名称') as HTMLInputElement).value).toBe('Custom Provider 1')
+    expect(rendered.getByTestId('settings-provider-card-openai-1').textContent).toContain('OpenAI')
+    expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('OpenAI')
+    expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('https://api.openai.com/v1')
 
     rendered.unmount()
   })
 
   it('renders the active provider detail and supports duplicating a provider from the context menu', async () => {
     const persistedState = createPersistedWorkspaceState()
-    const { saveProviderApiKey } = installSettingsWorkspaceBridge({
+    const { saveProfileApiKey } = installSettingsWorkspaceBridge({
       loadStateResult: {
         ok: true,
         source: 'stored',
         state: persistedState,
       },
       loadStatusesResult: createPersistedSecretStatesResult('persisted-secret', 'openrouter'),
-      saveProviderApiKeyResult: {
+      saveProfileApiKeyResult: {
         ok: true,
-        providerId: 'persisted-router-1',
+        profileId: 'persisted-router-1',
         state: {
           hasApiKey: true,
           apiKey: 'persisted-secret',
@@ -99,7 +100,7 @@ describe('SettingsWorkspace provider interactions', () => {
 
     await flushAsyncEffects()
 
-    const providerNameInput = rendered.getByPlaceholder('输入服务商名称') as HTMLInputElement
+    const providerNameInput = rendered.getByTestId('provider-display-name-input') as HTMLInputElement
     expect(providerNameInput.value).toBe('Persisted Router')
 
     await contextMenuElement(rendered.getByTestId('settings-provider-card-openrouter'))
@@ -107,29 +108,126 @@ describe('SettingsWorkspace provider interactions', () => {
     await clickElement(rendered.getByText('复制服务商'))
     expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
 
-    expect(saveProviderApiKey).toHaveBeenCalledWith({
-      providerId: 'persisted-router-1',
+    expect(saveProfileApiKey).toHaveBeenCalledWith({
+      profileId: 'persisted-router-1',
       apiKey: 'persisted-secret',
     })
 
     const copiedProviderCard = rendered.getByTestId('settings-provider-card-persisted-router-1')
     expect(copiedProviderCard.textContent).toContain('Persisted Router 副本')
-    expect((rendered.getByPlaceholder('输入服务商名称') as HTMLInputElement).value).toBe('Persisted Router 副本')
+    expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('Persisted Router 副本')
+
+    rendered.unmount()
+  })
+
+  it('shows catalog-driven provider metadata and optional auth guidance for ollama', async () => {
+    installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createPersistedWorkspaceState({
+          providerProfiles: [createProviderProfile({
+            id: 'local-ollama',
+            profileId: 'local-ollama',
+            providerId: 'ollama',
+            protocol: 'ollama',
+            name: 'Local Ollama',
+            displayName: 'Local Ollama',
+            endpoint: 'http://127.0.0.1:11434/v1',
+            baseUrl: 'http://127.0.0.1:11434/v1',
+            hasApiKey: false,
+            defaultModel: 'llama3.2',
+            defaultModelId: 'llama3.2',
+            fastModel: 'llama3.2',
+            fallbackModel: 'llama3.2',
+            organization: '',
+            region: '',
+            notes: '',
+          })],
+        }),
+      },
+      loadStatusesResult: {
+        ok: true,
+        states: {
+          'local-ollama': {
+            hasApiKey: false,
+            apiKey: '',
+          },
+        },
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    expect(rendered.container.textContent).toContain('Provider: Ollama')
+    expect(rendered.container.textContent).toContain('API 密钥（可选）')
+    expect(rendered.container.textContent).toContain('本地 Ollama 默认无需 API Key')
+    expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1')
+
+    rendered.unmount()
+  })
+
+  it('keeps legacy unsupported providers visible and shows compatibility warnings from the settings page', async () => {
+    installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createPersistedWorkspaceState({
+          providerProfiles: [createProviderProfile({
+            id: 'legacy-provider',
+            profileId: 'legacy-provider',
+            providerId: 'legacy-provider',
+            protocol: 'legacy-provider',
+            name: 'Legacy Provider',
+            displayName: 'Legacy Provider',
+            endpoint: 'https://legacy.example.com/v1',
+            baseUrl: 'https://legacy.example.com/v1',
+            hasApiKey: false,
+            defaultModel: 'legacy-model',
+            defaultModelId: 'legacy-model',
+            fastModel: 'legacy-model',
+            fallbackModel: 'legacy-model',
+            compatibility: {
+              status: 'unsupported',
+              reason: '历史 provider 不在当前 catalog 中，仅保留查看与迁移。',
+            },
+          })],
+        }),
+      },
+      loadStatusesResult: {
+        ok: true,
+        states: {},
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    expect(rendered.getByTestId('settings-provider-status-legacy-provider').textContent).toContain('不受支持的配置')
+    expect(rendered.getByTestId('provider-status-banner').textContent).toContain('历史 provider 不在当前 catalog 中，仅保留查看与迁移。')
+    expect(rendered.container.textContent).toContain('Provider 类型、运行状态与基础语义均来自统一 catalog。')
 
     rendered.unmount()
   })
 
   it('deletes the active provider and shows the empty state when no providers remain', async () => {
-    const { clearProviderApiKey } = installSettingsWorkspaceBridge({
+    const { clearProfileApiKey } = installSettingsWorkspaceBridge({
       loadStateResult: {
         ok: true,
         source: 'stored',
         state: createSingleProviderWorkspaceState(),
       },
       loadStatusesResult: createPersistedSecretStatesResult(),
-      clearProviderApiKeyResult: {
+      clearProfileApiKeyResult: {
         ok: true,
-        providerId: 'openrouter',
+        profileId: 'openrouter',
         state: {
           hasApiKey: false,
           apiKey: '',
@@ -148,8 +246,8 @@ describe('SettingsWorkspace provider interactions', () => {
     await clickElement(rendered.getByText('删除服务商'))
     expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
 
-    expect(clearProviderApiKey).toHaveBeenCalledWith({
-      providerId: 'openrouter',
+    expect(clearProfileApiKey).toHaveBeenCalledWith({
+      profileId: 'openrouter',
     })
     expect(rendered.queryByTestId('settings-provider-card-openrouter')).toBeNull()
     expect(rendered.container.textContent).toContain('可在左侧添加服务商信息')
@@ -168,10 +266,13 @@ describe('SettingsWorkspace provider interactions', () => {
     const betaProvider = createProviderProfile({
       id: 'provider-b',
       name: 'Beta Provider',
+      providerId: 'gemini',
       protocol: 'gemini',
       endpoint: 'https://beta.example.com/v1',
+      baseUrl: 'https://beta.example.com/v1',
       hasApiKey: false,
       defaultModel: 'google/gemini-2.5-pro',
+      defaultModelId: 'google/gemini-2.5-pro',
       fastModel: 'google/gemini-2.5-flash',
       fallbackModel: 'google/gemini-2.0-flash',
     })
@@ -235,7 +336,7 @@ describe('SettingsWorkspace provider interactions', () => {
     })
 
     const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
-    expect(lastSaveCall?.providerProfiles.map((profile) => profile.id)).toEqual(['provider-b', 'provider-a'])
+    expect(lastSaveCall?.providerProfiles.map((profile) => profile.profileId)).toEqual(['provider-b', 'provider-a'])
 
     rendered.unmount()
   })
