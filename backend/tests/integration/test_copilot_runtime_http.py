@@ -20,6 +20,7 @@ from app.copilot_runtime.contracts import (
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.session_store import (
+    InMemorySessionStore,
     RuntimeStoredModelRoute,
     RuntimeStoredModelRouteSnapshot,
     RuntimeStoredRunInput,
@@ -231,6 +232,60 @@ def test_post_root_message_send_succeeds_without_startup_model_when_route_is_pre
 
 
 
+def test_post_root_run_start_unexpected_failure_with_origin_returns_json_and_cors_headers(caplog) -> None:
+    class _FailingRunStartSessionStore(InMemorySessionStore):
+        def create_run(self, *args: Any, **kwargs: Any):
+            raise RuntimeError("forced run/start failure")
+
+    app = create_app(
+        session_store=_FailingRunStartSessionStore(),
+        agent_executor=CapturingStreamingExecutor(outputs=["unused reply"]),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    with caplog.at_level("ERROR", logger="uvicorn.error"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
+            session_id = session_response.json()["sessionId"]
+            response = client.post(
+                "/",
+                json=_build_run_start_request(
+                    thread_id=session_id,
+                    model_id="gpt-4.1",
+                    user_text="Hello",
+                ),
+                headers={"Origin": "http://localhost:5173"},
+            )
+
+    payload = response.json()
+    request_id = payload["error"]["details"]["requestId"]
+    run_start_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "run/start unexpected exception" in record.getMessage()
+    ]
+
+    assert session_response.status_code == 200
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "internal_server_error"
+    assert payload["error"]["requestedMethod"] == "run/start"
+    assert request_id
+    assert len(run_start_logs) == 1
+    assert f"request_id={request_id}" in run_start_logs[0]
+    assert "runtime_method=run/start" in run_start_logs[0]
+    assert f"thread_id={session_id}" in run_start_logs[0]
+    assert "agent_id=default" in run_start_logs[0]
+    assert "phase=create_run_record" in run_start_logs[0]
+    assert all(
+        "desktop-runtime unexpected exception" not in record.getMessage()
+        for record in caplog.records
+    )
+
+
+
 def test_post_root_message_send_emits_real_tool_lifecycle_events() -> None:
     tool_events = [
         RuntimeToolLifecycleEvent(
@@ -361,6 +416,42 @@ def _build_capabilities_get_request(*, session_id: str) -> dict[str, Any]:
         "method": "capabilities/get",
         "body": {
             "sessionId": session_id,
+        },
+    }
+
+
+
+def _build_run_start_request(
+    *,
+    thread_id: str,
+    model_id: str,
+    user_text: str,
+    enabled_tools: list[str] | None = None,
+    debug_mode_enabled: bool = False,
+) -> dict[str, Any]:
+    return {
+        "method": "run/start",
+        "body": {
+            "threadId": thread_id,
+            "agent": "default",
+            "message": {
+                "role": "user",
+                "content": user_text,
+            },
+            "policy": {
+                "modelRoute": {
+                    "providerProfileId": "provider-1",
+                    "snapshot": {
+                        "provider": "openai",
+                        "endpointType": "openai-compatible",
+                        "baseUrl": "https://example.com/v1",
+                        "modelId": model_id,
+                    },
+                },
+                "enabledTools": list(enabled_tools or []),
+                "debugModeEnabled": debug_mode_enabled,
+                "requestOptions": {},
+            },
         },
     }
 

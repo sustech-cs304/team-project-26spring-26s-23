@@ -112,6 +112,7 @@ class RuntimeStoredThinkingSelection:
     mode: str | None = None
     level: str | None = None
     budget_tokens: int | None = None
+    value_payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)

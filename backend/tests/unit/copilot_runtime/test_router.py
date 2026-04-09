@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.copilot_runtime import (
     RuntimeBridge,
+    RuntimeRunStartResponse,
     RuntimeScaffold,
     ToolDescriptor,
     ToolRegistry,
@@ -17,6 +19,7 @@ from app.copilot_runtime import (
     build_router,
     build_runtime_scaffold,
 )
+from app.copilot_runtime.agent import ModelNotConfiguredError
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
@@ -265,6 +268,172 @@ def test_root_post_run_start_returns_run_shell_payload() -> None:
 
 
 
+def test_root_post_run_start_provider_specific_thinking_selection_round_trips_without_500(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    thinking_selection = {
+        "series": "qwen-thinking-switch-v1",
+        "value": {
+            "valueType": "code",
+            "code": "true",
+            "labelZh": "开启",
+        },
+    }
+    thinking_capability_override = {
+        "supported": True,
+        "series": "qwen-thinking-switch-v1",
+        "template": {
+            "editorType": "discrete",
+            "allowedValues": [
+                {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                {"valueType": "code", "code": "true", "labelZh": "开启"},
+            ],
+            "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
+        },
+        "source": "settings-page",
+    }
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/",
+                json=_build_run_start_request(
+                    thread_id="thread-1",
+                    model="unknown-model",
+                    thinking_selection=thinking_selection,
+                    thinking_capability_override=thinking_capability_override,
+                ),
+            )
+
+    payload = response.json()
+    run = store.get_run(payload["run"]["runId"])
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert response.status_code == 200
+    assert run is not None
+    assert run.request.policy.thinking_selection is not None
+    assert run.request.policy.thinking_selection.value_payload == {
+        "valueType": "code",
+        "code": "true",
+        "mode": None,
+        "budgetTokens": None,
+        "labelZh": "开启",
+    }
+    assert payload["run"]["requestedThinkingSelection"] == {
+        "series": "qwen-thinking-switch-v1",
+        "value": {
+            "valueType": "code",
+            "code": "true",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "开启",
+        },
+    }
+    assert payload["run"]["appliedThinkingSelection"] == {
+        "series": "qwen-thinking-switch-v1",
+        "value": {
+            "valueType": "code",
+            "code": "true",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "开启",
+        },
+    }
+    assert payload["run"]["thinkingCapabilitySnapshot"]["status"] == "unknown-with-override"
+    assert payload["run"]["thinkingCapabilitySnapshot"]["series"] == "qwen-thinking-switch-v1"
+    assert payload["run"]["thinkingSeriesDecision"]["reasonCode"] == "override_series_builder_applied"
+    assert payload["run"]["thinkingSeriesDecision"]["mappingReasonCode"] == "qwen_switch_true"
+    assert any('"event":"run_start.prime_run_metadata.enter"' in message for message in chain_logs)
+    assert any(
+        '"event":"thinking.run_metadata_primed"' in message
+        and '"phase":"prime_run_metadata"' in message
+        and '"requestId":' in message
+        and '"runId":"' in message
+        for message in chain_logs
+    )
+
+
+
+def test_root_post_run_start_unexpected_create_run_failure_returns_structured_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    def _raise_create_run(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("forced run/start failure")
+
+    monkeypatch.setattr(store, "create_run", _raise_create_run)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/",
+            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "internal_server_error"
+    assert payload["error"]["requestedMethod"] == "run/start"
+    assert payload["error"]["details"]["requestId"]
+
+
+
+def test_root_post_run_start_serialization_failure_returns_structured_error_and_keeps_run_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    captured_logs: list[tuple[str, dict[str, object]]] = []
+    router_module = __import__("app.copilot_runtime.router", fromlist=["log_runtime_chain_debug"])
+
+    def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
+        captured_logs.append((event_name, payload))
+
+    def _raise_to_dict(self: RuntimeRunStartResponse) -> dict[str, object]:
+        raise RuntimeError("forced run/start serialization failure")
+
+    monkeypatch.setattr(router_module, "log_runtime_chain_debug", _capture_log)
+    monkeypatch.setattr(RuntimeRunStartResponse, "to_dict", _raise_to_dict)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/",
+            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+        )
+
+    payload = response.json()
+    runs = store.list_runs("thread-1")
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "internal_server_error"
+    assert payload["error"]["requestedMethod"] == "run/start"
+    assert payload["error"]["details"]["requestId"]
+    assert len(runs) == 1
+    assert runs[0].status == "pending"
+    assert runs[0].metadata["thinkingCapabilitySnapshot"]["status"] == "verified-supported"
+
+    serialize_logs = [payload for name, payload in captured_logs if name == "run_start.serialize_run_start_response.failed"]
+    assert len(serialize_logs) == 1
+    assert serialize_logs[0]["phase"] == "serialize_run_start_response"
+    assert serialize_logs[0]["threadId"] == "thread-1"
+    assert serialize_logs[0]["runId"] == runs[0].run_id
+    assert serialize_logs[0]["runtimeMethod"] == "run/start"
+    assert serialize_logs[0]["exceptionType"] == "RuntimeError"
+    assert serialize_logs[0]["exception"]["message"] == "forced run/start serialization failure"
+
+
 def test_root_post_run_stream_executes_started_run_and_persists_thread_history() -> None:
     app, _scaffold, store, executor = _build_app_with_recording_executor()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
@@ -476,6 +645,43 @@ def test_root_post_run_stream_unknown_run_returns_structured_error() -> None:
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"runId": "run-missing"}
 
+
+
+def test_root_post_run_stream_execution_failure_preserves_streaming_failure_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    def _raise_open_text_stream(*args: Any, **kwargs: Any) -> None:
+        raise ModelNotConfiguredError("forced streaming execution failure")
+
+    monkeypatch.setattr(_PermissiveExecutor, "open_text_stream", _raise_open_text_stream)
+
+    with TestClient(app) as client:
+        start_response = client.post(
+            "/",
+            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+        )
+        run_id = start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+    run = store.get_run(run_id)
+
+    assert start_response.status_code == 200
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert [event["type"] for event in events] == ["run_started", "run_metadata", "run_failed"]
+    assert events[-1]["payload"] == {
+        "code": "model_not_configured",
+        "message": "forced streaming execution failure",
+        "details": {"modelEnvironmentKeys": []},
+    }
+    assert run is not None
+    assert run.status == "failed"
+    assert run.metadata["terminal_event"] == "run_failed"
+    assert run.metadata["terminal_payload"] == events[-1]["payload"]
 
 
 def test_root_post_session_create_returns_bound_agent_session_payload() -> None:
@@ -1012,6 +1218,8 @@ def _build_run_start_request(
     enabled_tools: list[str] | None = None,
     debug_mode_enabled: bool = False,
     request_options: dict[str, object] | None = None,
+    thinking_selection: dict[str, object] | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "threadId": thread_id,
@@ -1021,6 +1229,8 @@ def _build_run_start_request(
             enabled_tools=enabled_tools,
             debug_mode_enabled=debug_mode_enabled,
             request_options=request_options,
+            thinking_selection=thinking_selection,
+            thinking_capability_override=thinking_capability_override,
         ),
     }
     if agent_id is not None:
@@ -1081,8 +1291,10 @@ def _build_policy(
     enabled_tools: list[str] | None = None,
     debug_mode_enabled: bool = False,
     request_options: dict[str, object] | None = None,
+    thinking_selection: dict[str, object] | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    policy: dict[str, object] = {
         "modelRoute": {
             "providerProfileId": "provider-1",
             "snapshot": {
@@ -1096,6 +1308,11 @@ def _build_policy(
         "debugModeEnabled": debug_mode_enabled,
         "requestOptions": dict(request_options or {}),
     }
+    if thinking_selection is not None:
+        policy["thinkingSelection"] = dict(thinking_selection)
+    if thinking_capability_override is not None:
+        policy["thinkingCapabilityOverride"] = dict(thinking_capability_override)
+    return policy
 
 
 

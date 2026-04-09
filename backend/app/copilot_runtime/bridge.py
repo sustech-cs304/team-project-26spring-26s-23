@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, cast
 
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import (
+    RUN_START_METHOD,
     RuntimeCapabilitiesResponse,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
@@ -57,6 +59,9 @@ from .session_store import (
 from .thinking_adapter import adapt_thinking_selection, resolve_canonical_thinking_capability
 
 
+_RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
+
+
 class RuntimeBridge:
     """Coordinates thread/run state, executor resolution, and compat projections."""
 
@@ -91,8 +96,35 @@ class RuntimeBridge:
         return thread
 
     def start_run(self, *, request: RuntimeRunStartRequest) -> RuntimeRunRecord:
-        self.get_thread(thread_id=request.thread_id)
-        return self._create_run_record(request=request, validate_thread=False)
+        log_runtime_chain_debug(
+            "run_start.bridge.start_run.enter",
+            runtimeMethod=RUN_START_METHOD,
+            threadId=request.thread_id,
+            agentId=request.agent_id,
+            phase="create_run_record",
+        )
+        try:
+            self.get_thread(thread_id=request.thread_id)
+            run = self._create_run_record(request=request, validate_thread=False)
+        except Exception as exc:
+            log_runtime_chain_debug(
+                "run_start.bridge.start_run.failed",
+                runtimeMethod=RUN_START_METHOD,
+                threadId=request.thread_id,
+                agentId=request.agent_id,
+                phase="create_run_record",
+                error=summarize_exception(exc),
+            )
+            raise
+        log_runtime_chain_debug(
+            "run_start.bridge.start_run.succeeded",
+            runtimeMethod=RUN_START_METHOD,
+            threadId=request.thread_id,
+            agentId=request.agent_id,
+            runId=run.run_id,
+            phase="create_run_record",
+        )
+        return run
 
     def stream_run(
         self,
@@ -180,11 +212,50 @@ class RuntimeBridge:
             raise RunNotFoundError(run_id)
         return run
 
-    async def prime_run_metadata(self, *, run_id: str) -> RuntimeRunRecord:
+    async def prime_run_metadata(
+        self,
+        *,
+        run_id: str,
+        runtime_method: str | None = None,
+        request_id: str | None = None,
+    ) -> RuntimeRunRecord:
         run = self.get_run(run_id=run_id)
-        metadata = await self._resolve_initial_run_metadata(run=run)
-        if metadata:
-            run.touch(metadata=metadata)
+        log_runtime_chain_debug(
+            "run_start.bridge.prime_run_metadata.enter",
+            runtimeMethod=runtime_method,
+            threadId=run.thread_id,
+            agentId=run.request.agent_id,
+            runId=run.run_id,
+            phase="prime_run_metadata",
+        )
+        try:
+            metadata = await self._resolve_initial_run_metadata(
+                run=run,
+                runtime_method=runtime_method,
+                request_id=request_id,
+            )
+            if metadata:
+                run.touch(metadata=metadata)
+        except Exception as exc:
+            log_runtime_chain_debug(
+                "run_start.bridge.prime_run_metadata.failed",
+                runtimeMethod=runtime_method,
+                threadId=run.thread_id,
+                agentId=run.request.agent_id,
+                runId=run.run_id,
+                phase="prime_run_metadata",
+                error=summarize_exception(exc),
+            )
+            raise
+        log_runtime_chain_debug(
+            "run_start.bridge.prime_run_metadata.succeeded",
+            runtimeMethod=runtime_method,
+            threadId=run.thread_id,
+            agentId=run.request.agent_id,
+            runId=run.run_id,
+            phase="prime_run_metadata",
+            metadataKeys=tuple(sorted(metadata.keys())),
+        )
         return run
 
     def _create_run_record(
@@ -211,7 +282,7 @@ class RuntimeBridge:
                 yield event
             return
 
-        request = self._to_message_send_request(run)
+        request, _legacy_fallback_used, _rehydrate_error = self._to_message_send_request(run)
         self._session_store.mark_run_streaming(
             run.run_id,
             metadata={"assistant_message_id": f"{run.run_id}:assistant"},
@@ -394,41 +465,83 @@ class RuntimeBridge:
             agent_id=request.agent_id,
         )
 
-    def _to_message_send_request(self, run: RuntimeRunRecord) -> RuntimeMessageSendRequest:
+    def _to_message_send_request(
+        self,
+        run: RuntimeRunRecord,
+    ) -> tuple[RuntimeMessageSendRequest, bool, Exception | None]:
         stored_request = run.request
         stored_policy = stored_request.policy
         stored_route = stored_policy.model_route
-        runtime_thinking_selection = _to_runtime_thinking_selection(stored_policy.thinking_selection)
-        return RuntimeMessageSendRequest(
-            session_id=run.thread_id,
-            message=RuntimeMessagePayload(
-                role=stored_request.message_role,
-                content=stored_request.message_content,
-            ),
-            policy=RuntimeMessageExecutionPolicy(
-                modelRoute=RuntimeModelRoute(
-                    provider_profile_id=stored_route.provider_profile_id,
-                    snapshot=RuntimeModelRouteSnapshot(
-                        provider=stored_route.snapshot.provider,
-                        endpoint_type=stored_route.snapshot.endpoint_type,
-                        base_url=stored_route.snapshot.base_url,
-                        model_id=stored_route.snapshot.model_id,
-                    ),
+        runtime_thinking_selection, legacy_fallback_used, rehydrate_error = _rehydrate_runtime_thinking_selection(
+            stored_policy.thinking_selection
+        )
+        return (
+            RuntimeMessageSendRequest(
+                session_id=run.thread_id,
+                message=RuntimeMessagePayload(
+                    role=stored_request.message_role,
+                    content=stored_request.message_content,
                 ),
-                thinkingSelection=runtime_thinking_selection,
-                thinkingCapabilityOverride=None
-                if stored_policy.thinking_capability_override is None
-                else dict(stored_policy.thinking_capability_override),
-                enabledTools=tuple(stored_policy.enabled_tools),
-                debugModeEnabled=stored_policy.debug_mode_enabled,
-                requestOptions=dict(stored_policy.request_options),
+                policy=RuntimeMessageExecutionPolicy(
+                    modelRoute=RuntimeModelRoute(
+                        provider_profile_id=stored_route.provider_profile_id,
+                        snapshot=RuntimeModelRouteSnapshot(
+                            provider=stored_route.snapshot.provider,
+                            endpoint_type=stored_route.snapshot.endpoint_type,
+                            base_url=stored_route.snapshot.base_url,
+                            model_id=stored_route.snapshot.model_id,
+                        ),
+                    ),
+                    thinkingSelection=runtime_thinking_selection,
+                    thinkingCapabilityOverride=None
+                    if stored_policy.thinking_capability_override is None
+                    else dict(stored_policy.thinking_capability_override),
+                    enabledTools=tuple(stored_policy.enabled_tools),
+                    debugModeEnabled=stored_policy.debug_mode_enabled,
+                    requestOptions=dict(stored_policy.request_options),
+                ),
+                agent_id=stored_request.agent_id,
             ),
-            agent_id=stored_request.agent_id,
+            legacy_fallback_used,
+            rehydrate_error,
         )
 
-    async def _resolve_initial_run_metadata(self, *, run: RuntimeRunRecord) -> dict[str, Any]:
-        request = self._to_message_send_request(run)
+    async def _resolve_initial_run_metadata(
+        self,
+        *,
+        run: RuntimeRunRecord,
+        runtime_method: str | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        request, legacy_fallback_used, rehydrate_error = self._to_message_send_request(run)
         requested_thinking_selection = request.policy.resolve_thinking_selection()
+        if rehydrate_error is not None:
+            rehydrate_error_summary = summarize_exception(rehydrate_error) or {}
+            exception_type = str(rehydrate_error_summary.get("type") or type(rehydrate_error).__name__)
+            exception_message = str(rehydrate_error_summary.get("message") or str(rehydrate_error))
+            _RUNTIME_LOGGER.warning(
+                "thinking selection rehydrate skipped request_id=%s runtime_method=%s thread_id=%s run_id=%s phase=%s legacy_fallback_used=%s exception_type=%s exception_summary=%s",
+                request_id or "",
+                runtime_method or "",
+                run.thread_id,
+                run.run_id,
+                "prime_run_metadata",
+                legacy_fallback_used,
+                exception_type,
+                exception_message,
+            )
+            log_runtime_chain_debug(
+                "thinking.run_metadata_rehydrate_skipped",
+                enabled=True,
+                requestId=request_id,
+                runtimeMethod=runtime_method,
+                runId=run.run_id,
+                threadId=run.thread_id,
+                phase="prime_run_metadata",
+                legacyFallbackUsed=legacy_fallback_used,
+                skippedThinkingSelectionRehydrate=True,
+                error=rehydrate_error_summary,
+            )
         metadata: dict[str, Any] = {
             "requestedThinkingSelection": (
                 None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
@@ -449,7 +562,14 @@ class RuntimeBridge:
                 requested_selection=requested_thinking_selection,
                 requested_selection_payload=adaptation.requested_selection,
                 applied_selection_payload=adaptation.applied_selection,
-                capability_series=adaptation.capability.series,
+                capability_series=(
+                    adaptation.capability.series
+                    or (
+                        requested_thinking_selection.series
+                        if requested_thinking_selection is not None
+                        else "compat-discrete-selection-v1"
+                    )
+                ),
             )
             thinking_series_decision = adaptation.to_public_dict()
             capability_snapshot = adaptation.capability.to_public_dict()
@@ -469,8 +589,12 @@ class RuntimeBridge:
             )
             log_runtime_chain_debug(
                 "thinking.run_metadata_primed",
+                enabled=True,
+                requestId=request_id,
+                runtimeMethod=runtime_method,
                 runId=run.run_id,
                 threadId=run.thread_id,
+                phase="prime_run_metadata",
                 requestedThinkingSelection=(
                     None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
                 ),
@@ -484,16 +608,24 @@ class RuntimeBridge:
                 ),
                 overrideInput=request.policy.thinkingCapabilityOverride,
                 resolvedModelRoute=summarize_runtime_model_route(resolved_model_route),
+                legacyFallbackUsed=legacy_fallback_used,
+                skippedThinkingSelectionRehydrate=rehydrate_error is not None,
             )
         except Exception as exc:  # pragma: no cover - defensive priming fallback
             log_runtime_chain_debug(
                 "thinking.run_metadata_prime_failed",
+                enabled=True,
+                requestId=request_id,
+                runtimeMethod=runtime_method,
                 runId=run.run_id,
                 threadId=run.thread_id,
+                phase="prime_run_metadata",
                 requestedThinkingSelection=(
                     None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
                 ),
                 overrideInput=request.policy.thinkingCapabilityOverride,
+                legacyFallbackUsed=legacy_fallback_used,
+                skippedThinkingSelectionRehydrate=rehydrate_error is not None,
                 error=summarize_exception(exc),
             )
         return metadata
@@ -548,28 +680,34 @@ class RuntimeBridge:
         return {key: value for key, value in payload.items() if value is not None}
 
     def _extract_thinking_metadata_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        requested_thinking_selection = payload.get("requestedThinkingSelection")
+        applied_thinking_selection = payload.get("appliedThinkingSelection")
+        thinking_capability_snapshot = payload.get("thinkingCapabilitySnapshot")
+        thinking_series_decision = payload.get("thinkingSeriesDecision")
+        thinking_selection_result = payload.get("thinkingSelectionResult")
+        reasoning_suppression_basis = payload.get("reasoningSuppressionBasis")
         metadata: dict[str, Any] = {
             "requestedThinkingSelection": _normalize_thinking_selection_payload(
-                payload.get("requestedThinkingSelection")
+                requested_thinking_selection
             ),
             "appliedThinkingSelection": _normalize_thinking_selection_payload(
-                payload.get("appliedThinkingSelection")
+                applied_thinking_selection
             ),
             "thinkingCapabilitySnapshot": (
-                dict(payload.get("thinkingCapabilitySnapshot"))
-                if isinstance(payload.get("thinkingCapabilitySnapshot"), dict)
+                dict(thinking_capability_snapshot)
+                if isinstance(thinking_capability_snapshot, dict)
                 else None
             ),
             "thinkingSeriesDecision": (
-                dict(payload.get("thinkingSeriesDecision"))
-                if isinstance(payload.get("thinkingSeriesDecision"), dict)
-                else dict(payload.get("thinkingSelectionResult"))
-                if isinstance(payload.get("thinkingSelectionResult"), dict)
+                dict(thinking_series_decision)
+                if isinstance(thinking_series_decision, dict)
+                else dict(thinking_selection_result)
+                if isinstance(thinking_selection_result, dict)
                 else None
             ),
             "reasoningSuppressionBasis": (
-                dict(payload.get("reasoningSuppressionBasis"))
-                if isinstance(payload.get("reasoningSuppressionBasis"), dict)
+                dict(reasoning_suppression_basis)
+                if isinstance(reasoning_suppression_basis, dict)
                 else None
             ),
         }
@@ -603,6 +741,7 @@ def _to_stored_thinking_selection(
         mode=selection.mode,
         level=selection.level,
         budget_tokens=selection.budgetTokens,
+        value_payload=dict(selection.value.to_dict()),
     )
 
 
@@ -610,14 +749,48 @@ def _to_stored_thinking_selection(
 def _to_runtime_thinking_selection(
     selection: RuntimeStoredThinkingSelection | None,
 ) -> RuntimeThinkingSelection | None:
+    rehydrated_selection, _, _ = _rehydrate_runtime_thinking_selection(selection)
+    return rehydrated_selection
+
+
+
+def _rehydrate_runtime_thinking_selection(
+    selection: RuntimeStoredThinkingSelection | None,
+) -> tuple[RuntimeThinkingSelection | None, bool, Exception | None]:
     if selection is None:
-        return None
-    return RuntimeThinkingSelection(
-        series=selection.series,
-        mode=selection.mode,
-        level=selection.level,
-        budgetTokens=selection.budget_tokens,
-    )
+        return None, False, None
+
+    if isinstance(selection.value_payload, dict):
+        provider_specific_selection = _coerce_runtime_thinking_selection(
+            {
+                "series": selection.series,
+                "value": dict(selection.value_payload),
+            }
+        )
+        if provider_specific_selection is not None:
+            return provider_specific_selection, False, None
+
+    if _stored_thinking_selection_has_legacy_fields(selection):
+        legacy_selection = _coerce_runtime_thinking_selection(
+            {
+                "series": selection.series,
+                "mode": selection.mode,
+                "level": selection.level,
+                "budgetTokens": selection.budget_tokens,
+            }
+        )
+        if legacy_selection is not None:
+            return legacy_selection, True, None
+        return None, True, ValueError("Stored legacy thinkingSelection payload is invalid.")
+
+    if isinstance(selection.value_payload, dict):
+        return None, False, ValueError("Stored provider-specific thinkingSelection payload is invalid.")
+    return None, False, ValueError("Stored thinkingSelection payload is incomplete.")
+
+
+
+def _stored_thinking_selection_has_legacy_fields(selection: RuntimeStoredThinkingSelection) -> bool:
+    return selection.mode is not None or selection.level is not None or selection.budget_tokens is not None
 
 
 

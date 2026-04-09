@@ -13,6 +13,8 @@ from app.copilot_runtime.contracts import (
     RuntimeMessagePayload,
     RuntimeMessageSendRequest,
     RuntimeRunStartRequest,
+    RuntimeThinkingSelection,
+    RuntimeThinkingValue,
     build_runtime_scaffold,
 )
 from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
@@ -25,7 +27,14 @@ from app.copilot_runtime.run_events import (
     RuntimeRunEvent,
     RuntimeRunEventFactory,
 )
-from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.session_store import (
+    InMemorySessionStore,
+    RuntimeStoredModelRoute,
+    RuntimeStoredModelRouteSnapshot,
+    RuntimeStoredRunInput,
+    RuntimeStoredRunPolicy,
+    RuntimeStoredThinkingSelection,
+)
 from app.copilot_runtime.tool_registry import build_default_tool_registry
 
 
@@ -143,6 +152,213 @@ def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> Non
 
     disconnected = False
     assert asyncio.run(checker()) is False
+
+
+def test_start_run_stores_provider_specific_thinking_selection_value_payload_and_rehydrates_request() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    thinking_selection = RuntimeThinkingSelection(
+        series="qwen-thinking-switch-v1",
+        value=RuntimeThinkingValue(valueType="code", code="true", labelZh="开启"),
+    )
+
+    run = bridge.start_run(
+        request=_build_run_start_request(
+            thread_id="thread-1",
+            model_route=RuntimeModelRoute(
+                provider_profile_id="provider-1",
+                snapshot=RuntimeModelRouteSnapshot(
+                    provider="openai",
+                    endpoint_type="openai-compatible",
+                    base_url="https://unknown.example.com/v1",
+                    model_id="unknown-model",
+                ),
+            ),
+            thinking_selection=thinking_selection,
+            thinking_capability_override={
+                "supported": True,
+                "series": "qwen-thinking-switch-v1",
+                "template": {
+                    "editorType": "discrete",
+                    "allowedValues": [
+                        {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                        {"valueType": "code", "code": "true", "labelZh": "开启"},
+                    ],
+                    "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
+                },
+                "source": "settings-page",
+            },
+        )
+    )
+
+    stored_selection = run.request.policy.thinking_selection
+    assert stored_selection is not None
+    assert stored_selection.value_payload == thinking_selection.value.to_dict()
+
+    message_request, legacy_fallback_used, rehydrate_error = bridge._to_message_send_request(run)
+
+    assert legacy_fallback_used is False
+    assert rehydrate_error is None
+    assert message_request.policy.resolve_thinking_selection() == thinking_selection
+
+
+
+def test_to_message_send_request_rehydrates_legacy_thinking_selection_from_legacy_fields() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = store.create_run(
+        thread_id="thread-1",
+        run_id="run-legacy",
+        request=RuntimeStoredRunInput(
+            message_role="user",
+            message_content="Hello",
+            policy=RuntimeStoredRunPolicy(
+                model_route=RuntimeStoredModelRoute(
+                    provider_profile_id="provider-1",
+                    snapshot=RuntimeStoredModelRouteSnapshot(
+                        provider="openai",
+                        endpoint_type="openai-compatible",
+                        base_url="https://example.com/v1",
+                        model_id="gpt-4.1",
+                    ),
+                ),
+                thinking_selection=RuntimeStoredThinkingSelection(
+                    series="compat-discrete-selection-v1",
+                    mode="preset",
+                    level="medium",
+                ),
+            ),
+            agent_id="default",
+        ),
+    )
+
+    message_request, legacy_fallback_used, rehydrate_error = bridge._to_message_send_request(run)
+    selection = message_request.policy.resolve_thinking_selection()
+
+    assert selection is not None
+    assert selection.series == "compat-discrete-selection-v1"
+    assert selection.to_legacy_level_intent() == "medium"
+    assert legacy_fallback_used is True
+    assert rehydrate_error is None
+
+
+
+def test_to_message_send_request_preserves_empty_thinking_selection_path() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+
+    message_request, legacy_fallback_used, rehydrate_error = bridge._to_message_send_request(run)
+
+    assert message_request.policy.resolve_thinking_selection() is None
+    assert legacy_fallback_used is False
+    assert rehydrate_error is None
+
+
+
+def test_resolve_initial_run_metadata_fail_soft_logs_rehydrate_skip(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+    )
+    run = store.create_run(
+        thread_id="thread-1",
+        run_id="run-invalid",
+        request=RuntimeStoredRunInput(
+            message_role="user",
+            message_content="Hello",
+            policy=RuntimeStoredRunPolicy(
+                model_route=RuntimeStoredModelRoute(
+                    provider_profile_id="provider-1",
+                    snapshot=RuntimeStoredModelRouteSnapshot(
+                        provider="openai",
+                        endpoint_type="openai-compatible",
+                        base_url="https://example.com/v1",
+                        model_id="gpt-4.1",
+                    ),
+                ),
+                thinking_selection=RuntimeStoredThinkingSelection(
+                    series="qwen-thinking-switch-v1",
+                    value_payload={"valueType": "code"},
+                ),
+            ),
+            agent_id="default",
+        ),
+    )
+    captured_logs: list[tuple[str, dict[str, object]]] = []
+    bridge_module = __import__("app.copilot_runtime.bridge", fromlist=["log_runtime_chain_debug"])
+
+    def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
+        captured_logs.append((event_name, payload))
+
+    monkeypatch.setattr(bridge_module, "log_runtime_chain_debug", _capture_log)
+
+    with caplog.at_level("WARNING", logger="uvicorn.error"):
+        metadata = asyncio.run(
+            bridge._resolve_initial_run_metadata(
+                run=run,
+                runtime_method="run/start",
+                request_id="req-1",
+            )
+        )
+
+    warning_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "thinking selection rehydrate skipped" in record.getMessage()
+    ]
+    skip_logs = [payload for name, payload in captured_logs if name == "thinking.run_metadata_rehydrate_skipped"]
+
+    assert metadata["requestedThinkingSelection"] is None
+    assert len(warning_logs) == 1
+    assert "request_id=req-1" in warning_logs[0]
+    assert "runtime_method=run/start" in warning_logs[0]
+    assert "thread_id=thread-1" in warning_logs[0]
+    assert "run_id=run-invalid" in warning_logs[0]
+    assert "phase=prime_run_metadata" in warning_logs[0]
+    assert "legacy_fallback_used=False" in warning_logs[0]
+    assert "exception_type=ValueError" in warning_logs[0]
+    assert "exception_summary=Stored provider-specific thinkingSelection payload is invalid." in warning_logs[0]
+    assert len(skip_logs) == 1
+    assert skip_logs[0]["requestId"] == "req-1"
+    assert skip_logs[0]["runtimeMethod"] == "run/start"
+    assert skip_logs[0]["runId"] == "run-invalid"
+    assert skip_logs[0]["threadId"] == "thread-1"
+    assert skip_logs[0]["phase"] == "prime_run_metadata"
+    assert skip_logs[0]["legacyFallbackUsed"] is False
+    assert skip_logs[0]["skippedThinkingSelectionRehydrate"] is True
+    assert skip_logs[0]["error"] == {
+        "type": "ValueError",
+        "message": "Stored provider-specific thinkingSelection payload is invalid.",
+    }
+
 
 
 def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
@@ -518,12 +734,19 @@ def _build_scaffold(
     )
 
 
-def _build_run_start_request(*, thread_id: str) -> RuntimeRunStartRequest:
+def _build_run_start_request(
+    *,
+    thread_id: str,
+    model_route: RuntimeModelRoute | None = None,
+    thinking_selection: RuntimeThinkingSelection | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
+) -> RuntimeRunStartRequest:
     return RuntimeRunStartRequest(
         thread_id=thread_id,
         message=RuntimeMessagePayload(role="user", content="Hello"),
         policy=RuntimeMessageExecutionPolicy(
-            modelRoute=RuntimeModelRoute(
+            modelRoute=model_route
+            or RuntimeModelRoute(
                 provider_profile_id="provider-1",
                 snapshot=RuntimeModelRouteSnapshot(
                     provider="openai",
@@ -532,6 +755,8 @@ def _build_run_start_request(*, thread_id: str) -> RuntimeRunStartRequest:
                     model_id="gpt-4.1",
                 ),
             ),
+            thinkingSelection=thinking_selection,
+            thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=(),
             requestOptions={},
         ),
