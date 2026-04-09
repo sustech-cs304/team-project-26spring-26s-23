@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from json import JSONDecodeError
-from typing import Any, cast
+from typing import Any
 
 from fastapi import Request, status
 
@@ -15,6 +15,7 @@ from .contracts import (
     THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
+    THINKING_LEVEL_INTENTS,
     RuntimeCapabilitiesGetRequest,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
@@ -26,6 +27,7 @@ from .contracts import (
     RuntimeThinkingCapabilityGetRequest,
     RuntimeThreadCreateRequest,
     RuntimeThreadGetRequest,
+    normalize_thinking_level_intent,
 )
 from .errors import (
     RuntimeErrorResponse,
@@ -34,9 +36,6 @@ from .errors import (
     build_unsupported_message_shape_error,
 )
 from .model_routes import RuntimeModelRoute, RuntimeModelRouteRef
-
-
-_THINKING_LEVEL_INTENTS = frozenset({"off", "auto", "low", "medium", "high", "xhigh"})
 
 
 class RuntimeProtocolError(RuntimeError):
@@ -402,21 +401,21 @@ class RuntimeProtocolParser:
                     details={"field": field_name},
                 ),
             )
-        normalized_value = value.strip().lower()
-        if normalized_value not in _THINKING_LEVEL_INTENTS:
+        normalized_value = normalize_thinking_level_intent(value)
+        if normalized_value is None:
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
                     message=(
                         f"Runtime request field '{field_name}' must be one of "
-                        f"{', '.join(sorted(_THINKING_LEVEL_INTENTS))}."
+                        f"{', '.join(sorted(THINKING_LEVEL_INTENTS))}."
                     ),
                     scaffold=self._scaffold,
                     requested_method=requested_method,
                     details={"field": field_name},
                 ),
             )
-        return cast(ThinkingLevelIntent, normalized_value)
+        return normalized_value
 
     def _require_object(
         self,

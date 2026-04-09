@@ -217,6 +217,98 @@ def test_host_model_route_bridge_client_reuses_client_until_closed() -> None:
     assert request_count == 3
 
 
+def test_host_model_route_bridge_client_allows_none_auth_without_api_key() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "resolvedRoute": {
+                    "routeRef": {
+                        "routeKind": "provider-model",
+                        "profileId": "provider-1",
+                        "modelId": "llama3.2",
+                    },
+                    "providerProfileId": "provider-1",
+                    "provider": "ollama",
+                    "providerId": "ollama",
+                    "adapterId": "ollama",
+                    "runtimeStatus": "enabled",
+                    "catalogRevision": "2026-04-06-provider-catalog-v1",
+                    "endpointFamily": "ollama",
+                    "endpointType": "ollama-native",
+                    "baseUrl": "http://127.0.0.1:11434/v1",
+                    "modelId": "llama3.2",
+                    "authKind": "none",
+                },
+                "privateAuth": {
+                    "authKind": "none",
+                    "authPayload": {},
+                },
+            },
+            request=request,
+        )
+
+    client = HostModelRouteBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/provider-routes/resolve",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    resolved = asyncio.run(client.resolve(_build_runtime_model_route(model_id="llama3.2")))
+
+    assert resolved.auth_kind == "none"
+    assert resolved.api_key == ""
+
+
+
+def test_host_model_route_bridge_client_rejects_api_key_auth_without_secret() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "resolvedRoute": {
+                    "routeRef": {
+                        "routeKind": "provider-model",
+                        "profileId": "provider-1",
+                        "modelId": "gpt-4.1",
+                    },
+                    "providerProfileId": "provider-1",
+                    "provider": "openai",
+                    "providerId": "openai",
+                    "adapterId": "openai",
+                    "runtimeStatus": "enabled",
+                    "catalogRevision": "2026-04-06-provider-catalog-v1",
+                    "endpointFamily": "openai",
+                    "endpointType": "openai-compatible",
+                    "baseUrl": "https://api.example.com/v1",
+                    "modelId": "gpt-4.1",
+                    "authKind": "api-key",
+                },
+                "privateAuth": {
+                    "authKind": "api-key",
+                    "authPayload": {},
+                },
+            },
+            request=request,
+        )
+
+    client = HostModelRouteBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/provider-routes/resolve",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HostModelRouteUnavailableError) as exc_info:
+        asyncio.run(client.resolve(_build_runtime_model_route()))
+
+    assert exc_info.value.details == {
+        "detail": "Host model route bridge success payload requires a non-empty apiKey for 'api-key' auth."
+    }
+
+
+
 def test_host_model_route_bridge_client_requires_bootstrap_configuration() -> None:
     client = HostModelRouteBridgeClient(
         bridge_url=None,

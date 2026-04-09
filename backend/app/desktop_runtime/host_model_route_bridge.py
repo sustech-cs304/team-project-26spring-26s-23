@@ -128,6 +128,13 @@ def _parse_resolved_route_payload(payload: Mapping[str, Any]) -> ResolvedRuntime
     if isinstance(auth_payload, Mapping):
         api_key = _normalize_optional_text(auth_payload.get("apiKey")) or ""
 
+    if auth_kind == "none":
+        api_key = ""
+    elif auth_kind == "api-key" and api_key == "":
+        raise HostModelRouteUnavailableError(
+            detail="Host model route bridge success payload requires a non-empty apiKey for 'api-key' auth."
+        )
+
     return ResolvedRuntimeModelRoute(
         provider_profile_id=provider_profile_id,
         provider=provider,

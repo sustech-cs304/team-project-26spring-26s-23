@@ -146,11 +146,62 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
 
 
 
+def test_extract_run_start_request_normalizes_thinking_level_intent_from_shared_contract() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["thinkingLevelIntent"] = "  HIGH  "
+
+    request = parser.extract_run_start_request(
+        {
+            "method": "run/start",
+            "body": {
+                "threadId": "thread-123",
+                "message": {"role": "user", "content": "Hello"},
+                "policy": policy,
+            },
+        }
+    )
+
+    assert request.policy.thinkingLevelIntent == "high"
+
+
+
+def test_extract_run_start_request_rejects_invalid_thinking_level_intent() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["thinkingLevelIntent"] = "turbo"
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_run_start_request(
+            {
+                "method": "run/start",
+                "body": {
+                    "threadId": "thread-123",
+                    "message": {"role": "user", "content": "Hello"},
+                    "policy": policy,
+                },
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_request"
+    assert exc.error.error.requestedMethod == "run/start"
+    assert exc.error.error.details == {"field": "policy.thinkingLevelIntent"}
+    assert "auto, high, low, medium, off, xhigh" in exc.error.error.message
+
+
+
 def test_extract_run_start_request_rejects_legacy_snapshot_model_route_fields() -> None:
     parser = _build_parser()
     policy = _build_policy_payload()
     policy["modelRoute"] = {
-        **policy["modelRoute"],
+        "routeRef": {
+            "routeKind": "provider-model",
+            "profileId": "provider-1",
+            "modelId": "gpt-4.1",
+        },
+        "catalogRevision": "2026-04-06-provider-catalog-v1",
         "snapshot": {
             "provider": "openai",
             "endpointType": "openai-compatible",

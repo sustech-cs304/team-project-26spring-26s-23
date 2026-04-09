@@ -28,14 +28,14 @@ DEFAULT_TRANSPORT = {
 
 
 ThinkingLevelIntent = Literal["off", "auto", "low", "medium", "high", "xhigh"]
-_THINKING_LEVEL_INTENTS = frozenset({"off", "auto", "low", "medium", "high", "xhigh"})
+THINKING_LEVEL_INTENTS = frozenset({"off", "auto", "low", "medium", "high", "xhigh"})
 
 
 def normalize_thinking_level_intent(value: Any) -> ThinkingLevelIntent | None:
     if not isinstance(value, str):
         return None
     normalized = value.strip().lower()
-    if normalized not in _THINKING_LEVEL_INTENTS:
+    if normalized not in THINKING_LEVEL_INTENTS:
         return None
     return cast(ThinkingLevelIntent, normalized)
 
