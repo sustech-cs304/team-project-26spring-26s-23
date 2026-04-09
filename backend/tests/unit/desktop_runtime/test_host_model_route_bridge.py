@@ -156,6 +156,54 @@ def test_host_model_route_bridge_client_rejects_legacy_success_payload() -> None
     }
 
 
+def test_host_model_route_bridge_client_rejects_unexpected_route_kind() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "resolvedRoute": {
+                    "routeRef": {
+                        "routeKind": "legacy-provider-model",
+                        "profileId": "provider-1",
+                        "modelId": "gpt-4.1",
+                    },
+                    "providerProfileId": "provider-1",
+                    "provider": "openai",
+                    "providerId": "openai",
+                    "adapterId": "openai",
+                    "runtimeStatus": "enabled",
+                    "catalogRevision": "2026-04-06-provider-catalog-v1",
+                    "endpointFamily": "openai",
+                    "endpointType": "openai-compatible",
+                    "baseUrl": "https://api.example.com/v1",
+                    "modelId": "gpt-4.1",
+                    "authKind": "api-key",
+                },
+                "privateAuth": {
+                    "authKind": "api-key",
+                    "authPayload": {
+                        "apiKey": "resolved-secret",
+                    },
+                },
+            },
+            request=request,
+        )
+
+    client = HostModelRouteBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/provider-routes/resolve",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HostModelRouteUnavailableError) as exc_info:
+        asyncio.run(client.resolve(_build_runtime_model_route()))
+
+    assert exc_info.value.details == {
+        "detail": "Host model route bridge payload field 'routeRef.routeKind' must be 'provider-model'."
+    }
+
+
 def test_host_model_route_bridge_client_reuses_client_until_closed() -> None:
     request_count = 0
 

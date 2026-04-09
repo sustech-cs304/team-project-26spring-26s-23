@@ -277,7 +277,7 @@ def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
 
 def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:
     store = InMemorySessionStore()
-    thread = store.create_thread(bound_agent_id="default", thread_id="session-1")
+    thread = store.create_thread(bound_agent_id="default", thread_id="thread-1")
     registry = build_default_agent_registry()
     scaffold = _build_scaffold(agent_registry=registry, session_store=store)
     bridge = RuntimeBridge(
@@ -286,9 +286,9 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
         scaffold=scaffold,
     )
 
-    capabilities = bridge.get_capabilities(session_id=thread.session_id)
+    capabilities = bridge.get_capabilities(session_id=thread.thread_id)
 
-    assert capabilities.sessionId == "session-1"
+    assert capabilities.sessionId == thread.thread_id
     assert capabilities.boundAgent.agentId == "default"
     assert capabilities.toolSelectionMode == "recommendation-only"
     assert capabilities.recommendedTools == ("tool.file-convert",)
@@ -315,7 +315,7 @@ def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -
 
 def test_get_capabilities_raises_agent_not_found_for_unknown_bound_agent() -> None:
     store = InMemorySessionStore()
-    store.create_thread(bound_agent_id="missing-agent", thread_id="session-1")
+    store.create_thread(bound_agent_id="missing-agent", thread_id="thread-1")
     registry = build_default_agent_registry()
     scaffold = _build_scaffold(agent_registry=registry, session_store=store)
     bridge = RuntimeBridge(
@@ -325,7 +325,7 @@ def test_get_capabilities_raises_agent_not_found_for_unknown_bound_agent() -> No
     )
 
     with pytest.raises(AgentNotFoundError, match="Unknown agent 'missing-agent'."):
-        bridge.get_capabilities(session_id="session-1")
+        bridge.get_capabilities(session_id="thread-1")
 async def _collect_events(events) -> list[RuntimeRunEvent]:
     return [event async for event in events]
 

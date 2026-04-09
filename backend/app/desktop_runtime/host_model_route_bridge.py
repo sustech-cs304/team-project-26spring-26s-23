@@ -23,6 +23,7 @@ HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME = "X-Host-Model-Route-Token"
 _INVALID_TOKEN_ERROR_CODE = "invalid_host_model_route_bridge_token"
 _PROVIDER_NOT_FOUND_ERROR_CODE = "provider_profile_not_found"
 _SECRET_MISSING_ERROR_CODE = "provider_secret_missing"
+_PROVIDER_MODEL_ROUTE_KIND = "provider-model"
 
 
 class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
@@ -159,7 +160,7 @@ def _parse_route_ref(
     model_id: str,
 ) -> RuntimeModelRouteRef:
     if isinstance(value, Mapping):
-        route_kind = _normalize_optional_text(value.get("routeKind")) or "provider-model"
+        route_kind = _parse_route_kind(value.get("routeKind"))
         profile_id = _normalize_optional_text(value.get("profileId")) or provider_profile_id
         resolved_model_id = _normalize_optional_text(value.get("modelId")) or model_id
         return RuntimeModelRouteRef(
@@ -169,10 +170,22 @@ def _parse_route_ref(
         )
 
     return RuntimeModelRouteRef(
-        route_kind="provider-model",
+        route_kind=_PROVIDER_MODEL_ROUTE_KIND,
         profile_id=provider_profile_id,
         model_id=model_id,
     )
+
+
+def _parse_route_kind(value: Any) -> str:
+    route_kind = _normalize_optional_text(value) or _PROVIDER_MODEL_ROUTE_KIND
+    if route_kind != _PROVIDER_MODEL_ROUTE_KIND:
+        raise HostModelRouteUnavailableError(
+            detail=(
+                "Host model route bridge payload field 'routeRef.routeKind' "
+                f"must be '{_PROVIDER_MODEL_ROUTE_KIND}'."
+            )
+        )
+    return route_kind
 
 
 def _build_resolution_error(
