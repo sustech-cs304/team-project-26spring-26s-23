@@ -1,0 +1,239 @@
+/** @vitest-environment jsdom */
+
+import { act, createRef, useMemo, useState, type FormEvent, type ReactElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { CopilotComposer } from './CopilotComposer'
+import { createEmptyComposerDraft, type CopilotChatComposerDraft } from './copilot-chat-helpers'
+import type { CopilotModelGroup, CopilotModelOption } from './model-picker'
+import type { RuntimeThinkingCapability } from './thread-run-contract'
+import { THINKING_LEVEL_LABELS } from '../../workbench/thinking-capabilities'
+import type { AssistantSessionCapabilities } from '../../workbench/types'
+
+vi.mock('./components/ModelPicker', () => ({
+  ModelPicker: (props: {
+    groups: CopilotModelGroup[]
+    onSelectModel: (model: CopilotModelOption) => void
+  }) => (
+    <div data-testid="mock-model-picker">
+      {props.groups.flatMap((group) => group.models).map((model) => (
+        <button
+          key={model.id}
+          type="button"
+          data-testid={`mock-model-select-${model.modelId}`}
+          onClick={() => {
+            props.onSelectModel(model)
+          }}
+        >
+          {model.name}
+        </button>
+      ))}
+    </div>
+  ),
+}))
+
+vi.mock('./components/ToolPicker', () => ({
+  ToolPicker: () => <div data-testid="mock-tool-picker" />,
+}))
+
+declare global {
+  // eslint-disable-next-line no-var
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+describe('CopilotComposer thinking controls', () => {
+  it('uses the latest selected model route inside the thinking updater during batched interactions', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+      expect(thinkingTrigger.getAttribute('aria-label')).toContain('低')
+
+      await clickElement(thinkingTrigger)
+
+      await act(async () => {
+        rendered.getByTestId('mock-model-select-model-b').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        rendered.getByTestId('chat-thinking-option-medium').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(rendered.getByTestId('composer-selected-model').textContent).toBe('model-b')
+      expect(thinkingTrigger.getAttribute('aria-label')).toContain('中')
+
+      await clickElement(rendered.getByTestId('mock-model-select-model-a'))
+      expect(thinkingTrigger.getAttribute('aria-label')).toContain('低')
+
+      await clickElement(rendered.getByTestId('mock-model-select-model-b'))
+      expect(thinkingTrigger.getAttribute('aria-label')).toContain('中')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('falls back to the thinking level value when a label entry is blank', async () => {
+    const originalMediumLabel = THINKING_LEVEL_LABELS.medium
+    THINKING_LEVEL_LABELS.medium = ''
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      await clickElement(rendered.getByTestId('chat-thinking-trigger'))
+      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('medium')
+    } finally {
+      THINKING_LEVEL_LABELS.medium = originalMediumLabel
+      rendered.unmount()
+    }
+  })
+})
+
+function ComposerHarness() {
+  const modelGroups = useMemo<CopilotModelGroup[]>(() => [
+    {
+      key: 'provider-thinking',
+      title: 'Thinking Provider',
+      models: [createModelOption('model-a'), createModelOption('model-b')],
+    },
+  ], [])
+  const [draft, setDraft] = useState<CopilotChatComposerDraft>(() => ({
+    ...createEmptyComposerDraft(),
+    selectedModelId: modelGroups[0].models[0]?.selectionValue ?? '',
+    selectedModelRoute: cloneRoute(modelGroups[0].models[0]?.route ?? null),
+  }))
+  const selectedModelId = draft.selectedModelRoute?.routeRef?.modelId ?? 'none'
+  const thinkingCapability = createThinkingCapability(selectedModelId)
+
+  return (
+    <>
+      <div data-testid="composer-selected-model">{selectedModelId}</div>
+      <CopilotComposer
+        capabilities={createCapabilities()}
+        modelGroups={modelGroups}
+        thinkingCapability={thinkingCapability}
+        draft={draft}
+        onDraftChange={setDraft}
+        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault()
+        }}
+        onCancel={() => undefined}
+        sendStatus="idle"
+        canCancel
+        sendDisabledReason={null}
+        composerInputRef={createRef<HTMLTextAreaElement>()}
+        composerHeight={160}
+        onResizeStart={() => undefined}
+      />
+    </>
+  )
+}
+
+function createCapabilities(): AssistantSessionCapabilities {
+  return {
+    capabilitiesVersion: 'cap-v12',
+    allAvailableTools: [],
+    recommendedToolsForAgent: [],
+    defaultEnabledTools: [],
+    toolSelectionMode: 'recommendation-only',
+  }
+}
+
+function createThinkingCapability(modelId: string): RuntimeThinkingCapability {
+  return {
+    status: 'verified-supported',
+    source: 'verified',
+    supported: true,
+    supportedLevels: ['off', 'low', 'medium'],
+    defaultLevel: 'low',
+    reasonCode: `${modelId}:supported`,
+    providerHint: 'provider-thinking',
+    routeFingerprint: {
+      providerProfileId: 'provider-thinking',
+      provider: 'provider-thinking',
+      endpointType: 'openai-compatible',
+      baseUrl: 'https://example.com/v1',
+      modelId,
+    },
+    overrideLevels: [],
+  }
+}
+
+function createModelOption(modelId: 'model-a' | 'model-b'): CopilotModelOption {
+  return {
+    id: `provider-thinking:${modelId}`,
+    selectionValue: `provider-model|provider-thinking|${modelId}`,
+    modelId,
+    name: modelId,
+    provider: 'Thinking Provider',
+    group: 'Thinking Provider',
+    tags: [],
+    icon: {
+      label: modelId === 'model-a' ? 'A' : 'B',
+      accent: '#6366f1',
+    },
+    routeRef: {
+      routeKind: 'provider-model',
+      profileId: 'provider-thinking',
+      modelId,
+    },
+    route: {
+      routeRef: {
+        routeKind: 'provider-model',
+        profileId: 'provider-thinking',
+        modelId,
+      },
+    },
+    available: true,
+    unavailableReason: null,
+    thinkingCapabilityOverride: null,
+  }
+}
+
+function cloneRoute(route: CopilotModelOption['route'] | null) {
+  if (route === null || route.routeRef === undefined || route.routeRef === null) {
+    return route
+  }
+
+  return {
+    ...route,
+    routeRef: {
+      ...route.routeRef,
+    },
+  }
+}
+
+function renderWithRoot(element: ReactElement) {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  act(() => {
+    root.render(element)
+  })
+
+  return {
+    container,
+    root,
+    getByTestId(testId: string) {
+      const target = container.querySelector(`[data-testid="${testId}"]`)
+      if (target === null) {
+        throw new Error(`Missing element for data-testid=${testId}`)
+      }
+
+      return target as HTMLElement
+    },
+    unmount() {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    },
+  }
+}
+
+async function clickElement(element: Element) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}

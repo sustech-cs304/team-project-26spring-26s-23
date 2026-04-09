@@ -225,7 +225,7 @@ export function CopilotComposer({
                       data-testid={`chat-thinking-option-${option.value}`}
                       onClick={() => {
                         onDraftChange((current) => applyThinkingLevelSelectionToComposerDraft(current, {
-                          modelRoute: draft.selectedModelRoute,
+                          modelRoute: current.selectedModelRoute,
                           thinkingLevelIntent: option.value as ThinkingLevelIntent,
                         }))
                         setThinkingPanelOpen(false)
@@ -314,6 +314,11 @@ export function CopilotComposer({
 function buildRuntimeThinkingLevelOptions(capability: RuntimeThinkingCapability) {
   return capability.supportedLevels.map((level) => ({
     value: level,
-    label: THINKING_LEVEL_LABELS[level],
+    label: getThinkingLevelLabel(level),
   }))
+}
+
+function getThinkingLevelLabel(level: ThinkingLevelIntent): string {
+  const label = THINKING_LEVEL_LABELS[level]
+  return typeof label === 'string' && label.trim() !== '' ? label : level
 }

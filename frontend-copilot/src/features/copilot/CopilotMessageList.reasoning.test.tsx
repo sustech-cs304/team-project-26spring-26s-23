@@ -20,16 +20,13 @@ afterEach(() => {
 describe('CopilotMessageList reasoning card', () => {
   it('updates the reasoning timer while streaming and freezes it after completion', async () => {
     const actualSystemTime = Date.now()
-    let rendered: ReturnType<typeof renderWithRoot> | null = null
+    vi.useFakeTimers()
+    vi.setSystemTime(1_500)
+    const rendered = renderWithRoot(
+      <CopilotMessageList conversation={[createReasoningConversationItem({ status: 'streaming' })]} />,
+    )
 
     try {
-      vi.useFakeTimers()
-      vi.setSystemTime(1_500)
-
-      rendered = renderWithRoot(
-        <CopilotMessageList conversation={[createReasoningConversationItem({ status: 'streaming' })]} />,
-      )
-
       expect(rendered.container.textContent).toContain('思考 0.5s')
       expect(rendered.container.textContent).toContain('生成中')
 
@@ -62,7 +59,7 @@ describe('CopilotMessageList reasoning card', () => {
 
       expect(rendered.container.textContent).toContain('思考 1.3s')
     } finally {
-      rendered?.unmount()
+      rendered.unmount()
       vi.setSystemTime(actualSystemTime)
       vi.useRealTimers()
     }
