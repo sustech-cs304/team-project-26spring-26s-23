@@ -3,7 +3,7 @@
 import type { ReactElement } from 'react'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CopilotMessageList } from './CopilotMessageList'
 import type { CopilotMessageListItem } from './run-segment-view-model'
@@ -13,56 +13,59 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
 }
 
-beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
-})
-
-afterAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('CopilotMessageList reasoning card', () => {
   it('updates the reasoning timer while streaming and freezes it after completion', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(1_500)
+    const actualSystemTime = Date.now()
+    let rendered: ReturnType<typeof renderWithRoot> | null = null
 
-    const rendered = renderWithRoot(
-      <CopilotMessageList conversation={[createReasoningConversationItem({ status: 'streaming' })]} />,
-    )
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(1_500)
 
-    expect(rendered.container.textContent).toContain('思考 0.5s')
-    expect(rendered.container.textContent).toContain('生成中')
-
-    await act(async () => {
-      vi.advanceTimersByTime(800)
-    })
-
-    expect(rendered.container.textContent).toContain('思考 1.3s')
-
-    vi.setSystemTime(4_900)
-    await act(async () => {
-      rendered.root.render(
-        <CopilotMessageList
-          conversation={[
-            createReasoningConversationItem({
-              status: 'completed',
-              observedFinishedAt: 2_345,
-            }),
-          ]}
-        />,
+      rendered = renderWithRoot(
+        <CopilotMessageList conversation={[createReasoningConversationItem({ status: 'streaming' })]} />,
       )
-    })
 
-    expect(rendered.container.textContent).toContain('思考 1.3s')
-    expect(rendered.container.textContent).not.toContain('生成中')
+      expect(rendered.container.textContent).toContain('思考 0.5s')
+      expect(rendered.container.textContent).toContain('生成中')
 
-    await act(async () => {
-      vi.advanceTimersByTime(2_000)
-    })
+      await act(async () => {
+        vi.advanceTimersByTime(800)
+      })
 
-    expect(rendered.container.textContent).toContain('思考 1.3s')
+      expect(rendered.container.textContent).toContain('思考 1.3s')
 
-    rendered.unmount()
+      vi.setSystemTime(4_900)
+      await act(async () => {
+        rendered.root.render(
+          <CopilotMessageList
+            conversation={[
+              createReasoningConversationItem({
+                status: 'completed',
+                observedFinishedAt: 2_345,
+              }),
+            ]}
+          />,
+        )
+      })
+
+      expect(rendered.container.textContent).toContain('思考 1.3s')
+      expect(rendered.container.textContent).not.toContain('生成中')
+
+      await act(async () => {
+        vi.advanceTimersByTime(2_000)
+      })
+
+      expect(rendered.container.textContent).toContain('思考 1.3s')
+    } finally {
+      rendered?.unmount()
+      vi.setSystemTime(actualSystemTime)
+      vi.useRealTimers()
+    }
   })
 
   it('renders reasoning content with the assistant markdown stack while keeping collapse interaction', async () => {

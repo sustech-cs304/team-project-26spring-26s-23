@@ -626,10 +626,6 @@ function buildSupportedModelIds(profile) {
   ))
 }
 
-function buildSupportedModelSummary(profile) {
-  return buildSupportedModelIds(profile).join(', ')
-}
-
 async function loadProviderCatalog() {
   const providerCatalog = await readJsonFile(PROVIDER_CATALOG_PATH)
   if (!isRecord(providerCatalog)) {

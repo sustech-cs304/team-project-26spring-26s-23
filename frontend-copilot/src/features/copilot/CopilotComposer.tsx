@@ -61,9 +61,12 @@ export function CopilotComposer({
   const isSending = sendStatus === 'sending'
   const controlsDisabled = isSending
   const thinkingSupported = thinkingCapability?.supported === true
-  const thinkingOptions = thinkingSupported && thinkingCapability !== null
-    ? buildRuntimeThinkingLevelOptions(thinkingCapability)
-    : []
+  const thinkingOptions = useMemo(
+    () => (thinkingSupported && thinkingCapability !== null
+      ? buildRuntimeThinkingLevelOptions(thinkingCapability)
+      : []),
+    [thinkingCapability, thinkingSupported],
+  )
   const thinkingValue = draft.thinkingLevelIntent ?? thinkingCapability?.defaultLevel ?? 'off'
   const unsupportedThinkingHint = draft.selectedModelRoute !== null && thinkingCapability !== null && !thinkingSupported
     ? describeThinkingCapabilityUnavailableReason(thinkingCapability) ?? '当前模型不支持'
@@ -78,6 +81,13 @@ export function CopilotComposer({
     () => thinkingOptions.find((option) => option.value === thinkingValue)?.label ?? '思考',
     [thinkingOptions, thinkingValue],
   )
+  const thinkingTriggerAriaProps = thinkingSupported
+    ? {
+        'aria-haspopup': 'dialog' as const,
+        'aria-controls': thinkingPanelId,
+        'aria-expanded': thinkingPanelOpen,
+      }
+    : {}
 
   useEffect(() => {
     if (!thinkingPanelOpen) {
@@ -173,8 +183,8 @@ export function CopilotComposer({
             data-testid="chat-thinking-trigger"
             aria-label={unsupportedThinkingHint ?? `思考档位：${currentThinkingLabel}`}
             title={unsupportedThinkingHint ?? '思考档位'}
-            aria-controls={thinkingSupported ? thinkingPanelId : undefined}
             disabled={controlsDisabled}
+            {...thinkingTriggerAriaProps}
             onClick={() => {
               if (!thinkingSupported) {
                 setThinkingPanelOpen(false)

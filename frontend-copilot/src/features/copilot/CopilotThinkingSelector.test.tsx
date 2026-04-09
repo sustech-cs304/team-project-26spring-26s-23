@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act } from 'react'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
 import type { RuntimeRunEvent } from './chat-contract'
@@ -23,14 +23,6 @@ declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
 }
-
-beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
-})
-
-afterAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
-})
 
 describe('Copilot thinking selector', () => {
   it('shows supported thinking options in the floating panel and exposes a short unsupported tooltip', async () => {
@@ -97,8 +89,11 @@ describe('Copilot thinking selector', () => {
     const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
     expect(thinkingTrigger.disabled).toBe(false)
     expect(thinkingTrigger.title).toBe('思考档位')
+    expect(thinkingTrigger.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(thinkingTrigger.getAttribute('aria-expanded')).toBe('false')
 
     await clickElement(thinkingTrigger)
+    expect(thinkingTrigger.getAttribute('aria-expanded')).toBe('true')
     const thinkingPanel = rendered.getByTestId('chat-thinking-panel')
     expect(thinkingPanel.textContent).toContain('推理强度')
     expect(thinkingPanel.textContent).toContain('无')
@@ -111,6 +106,8 @@ describe('Copilot thinking selector', () => {
 
     expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
     expect(thinkingTrigger.title).toContain('当前模型不支持')
+    expect(thinkingTrigger.getAttribute('aria-haspopup')).toBeNull()
+    expect(thinkingTrigger.getAttribute('aria-expanded')).toBeNull()
 
     rendered.unmount()
   })
@@ -307,9 +304,10 @@ describe('Copilot thinking selector', () => {
   it('forwards the selected thinking level through the request build chain', async () => {
     const getThinkingCapability = createThinkingCapabilityGetterSpy()
     const sendMessage = vi.fn(async function* (
-      _input: CopilotMessageDispatchInput,
+      input: CopilotMessageDispatchInput,
     ): AsyncGenerator<RuntimeRunEvent> {
-      return
+      void input
+      yield* []
     })
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
