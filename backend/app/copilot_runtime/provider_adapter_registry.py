@@ -52,31 +52,36 @@ class RuntimeProviderThinkingMapping:
 
 class RuntimeProviderAdapter(Protocol):
     @property
-    def adapter_id(self) -> str: ...
+    def adapter_id(self) -> str:
+        raise NotImplementedError
 
     @property
-    def provider_family(self) -> str: ...
+    def provider_family(self) -> str:
+        raise NotImplementedError
 
     def supports_streaming_execution(
         self,
         *,
         model_route: ResolvedRuntimeModelRoute,
         catalog_entry: ProviderCatalogEntry,
-    ) -> bool: ...
+    ) -> bool:
+        raise NotImplementedError
 
     def build_model(
         self,
         *,
         model_route: ResolvedRuntimeModelRoute,
         catalog_entry: ProviderCatalogEntry,
-    ) -> Any: ...
+    ) -> Any:
+        raise NotImplementedError
 
     def resolve_thinking_capability(
         self,
         *,
         model_route: ResolvedRuntimeModelRoute,
         catalog_entry: ProviderCatalogEntry,
-    ) -> RuntimeProviderThinkingCapability: ...
+    ) -> RuntimeProviderThinkingCapability:
+        raise NotImplementedError
 
     def build_thinking_mapping(
         self,
@@ -84,7 +89,8 @@ class RuntimeProviderAdapter(Protocol):
         intent: RuntimeThinkingLevelIntent,
         model_route: ResolvedRuntimeModelRoute,
         catalog_entry: ProviderCatalogEntry,
-    ) -> RuntimeProviderThinkingMapping | None: ...
+    ) -> RuntimeProviderThinkingMapping | None:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)

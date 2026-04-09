@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any
+
+from pydantic_ai.messages import ModelMessage
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -20,7 +23,7 @@ from app.copilot_runtime import (
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
-from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteRef
+from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.session_store import InMemorySessionStore
 
 
@@ -62,6 +65,19 @@ class _PermissiveExecutor:
         self.model_configured = True
         self.model_environment_keys: tuple[str, ...] = ()
         self._reply = reply
+
+    async def run(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: Sequence[ModelMessage],
+        model: Any | None = None,
+        enabled_tools: Sequence[str] = (),
+        request_options: Mapping[str, Any] | None = None,
+    ) -> str:
+        _ = (agent_name, user_prompt, message_history, model, enabled_tools, request_options)
+        return self._reply
 
     def open_event_stream(
         self,
