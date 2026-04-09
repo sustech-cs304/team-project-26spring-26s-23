@@ -86,19 +86,51 @@ class DatabaseManager:
                 session.add(course_event_model)
                 session.flush()
                 course_event.id = course_event_model.id
-            return True
 
-    def delete_course_event(self, course_event_id: int) -> bool:
+                if course_event.course_group_id is None:
+                    course_event.course_group_id = course_event.id
+                    course_event_model.course_group_id = course_event.id
+            return True
+        
+    def reschedule_course(
+        self,
+        old_event: CourseEvent,
+        old_week: int,
+        new_event: CourseEvent | None
+    ) -> bool:
+        if old_event.id is None or (new_event is not None and new_event.id is not None):
+            raise ValueError("Old event must have an ID and new event must not have an ID.")
+        old_event.week_canceled.append(old_week)
+        if not self.upsert_course_event(old_event):
+            return False
+        if new_event is None:
+            return True
+        new_event.course_group_id = old_event.course_group_id
+        return self.upsert_course_event(new_event)
+
+    def delete_course_event(self, course_event_id: int, delete_group: bool = False) -> bool:
         with self._session_scope() as session:
             course_event_model = (
                 session.query(CourseEventModel)
                 .filter(CourseEventModel.id == course_event_id)
+                .filter(CourseEventModel.is_deleted.is_(False))
                 .one_or_none()
             )
             if course_event_model is None:
                 return False
-            course_event_model.is_deleted = True
-        return True
+            if not delete_group:
+                course_event_model.is_deleted = True
+                return True
+            group_id = course_event_model.course_group_id
+            course_event_models = (
+                session.query(CourseEventModel)
+                .filter(CourseEventModel.course_group_id == group_id)
+                .filter(CourseEventModel.is_deleted.is_(False))
+                .all()
+            )
+            for model in course_event_models:
+                model.is_deleted = True
+            return True
     
     def get_all_course_events(self) -> list[CourseEvent]:
         with self._session_scope() as session:

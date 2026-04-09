@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from typing import Any
 
@@ -42,8 +42,26 @@ class CourseEvent(EventDTO):
     week_day: int
     week_start: int
     week_end: int
-    week_type: int
+    week_type: int = 2  # 0:even 1:odd 2:all
+
+    week_canceled: list[int] = field(default_factory=list)
+    course_group_id: int | None = None
 
     id: int | None = None
     place: str | None = None
     teacher: str | None = None
+
+    def week_valid(self, week: int) -> bool:
+        if week < self.week_start or week > self.week_end:
+            return False
+        if self.week_type != 2 and week % 2 != self.week_type:
+            return False
+        return week not in self.week_canceled
+
+    def get_all_weeks(self):
+        all_weeks = list(range(self.week_start, self.week_start+1))
+        if self.week_type != 2:
+            all_weeks = list(filter(lambda week: week % 2 == self.week_type, all_weeks))
+        if len(self.week_canceled) != 0:
+            all_weeks = list(filter(lambda week: week not in self.week_canceled, all_weeks))
+        return all_weeks

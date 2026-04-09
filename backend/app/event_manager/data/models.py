@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, PickleType, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -40,6 +40,9 @@ class CourseEventModel(TimestampSoftDeleteMixin, Base):
     week_start: Mapped[int] = mapped_column(Integer, nullable=False)
     week_end: Mapped[int] = mapped_column(Integer, nullable=False)
     week_type: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    week_canceled: Mapped[list[int]] = mapped_column(PickleType, nullable=False)
+    course_group_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     place: Mapped[str | None] = mapped_column(String(255), nullable=True)
     teacher: Mapped[str | None] = mapped_column(String(255), nullable=True)
