@@ -161,7 +161,7 @@ describe('CopilotChatPanel composer interactions', () => {
             providerId: 'anthropic',
             protocol: 'anthropic',
             endpoint: 'https://api.anthropic.com/',
-            defaultModel: 'claude-3.7-sonnet',
+            primaryModelId: 'claude-3.7-sonnet',
             fastModel: 'claude-3.7-sonnet',
             fallbackModel: 'claude-3.7-sonnet',
             availableModels: [

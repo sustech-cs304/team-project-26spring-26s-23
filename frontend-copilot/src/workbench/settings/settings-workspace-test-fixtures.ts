@@ -55,13 +55,15 @@ export function createBootstrapController(): CopilotBootstrapController {
   }
 }
 
-export function createProviderProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
+export function createProviderProfile(
+  overrides: Partial<ProviderProfile> & { primaryModelId?: string } = {},
+): ProviderProfile {
   const id = overrides.id ?? 'openrouter'
   const name = overrides.name ?? 'Persisted Router'
 
   const protocol = overrides.protocol ?? 'openai'
   const endpoint = overrides.endpoint ?? 'https://persisted.example.com/v1'
-  const defaultModel = overrides.defaultModel ?? 'openai/gpt-4.1'
+  const primaryModelId = overrides.primaryModelId ?? overrides.availableModels?.[0]?.modelId ?? 'openai/gpt-4.1'
   const fastModel = overrides.fastModel ?? 'openai/gpt-4.1-mini'
   const fallbackModel = overrides.fallbackModel ?? 'anthropic/claude-3.7-sonnet'
 
@@ -75,8 +77,6 @@ export function createProviderProfile(overrides: Partial<ProviderProfile> = {}):
     endpoint,
     baseUrl: overrides.baseUrl ?? endpoint,
     hasApiKey: overrides.hasApiKey ?? true,
-    defaultModel,
-    defaultModelId: overrides.defaultModelId ?? defaultModel,
     fastModel,
     fallbackModel,
     organization: overrides.organization ?? 'persisted-org',
@@ -90,7 +90,7 @@ export function createProviderProfile(overrides: Partial<ProviderProfile> = {}):
     availableModels:
       overrides.availableModels
       ?? [
-        createProviderModelProfile(id, defaultModel, name),
+        createProviderModelProfile(id, primaryModelId, name),
       ],
   }
 }

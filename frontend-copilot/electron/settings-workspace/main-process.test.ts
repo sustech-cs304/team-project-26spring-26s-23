@@ -54,7 +54,7 @@ describe('createElectronSettingsWorkspaceService', () => {
     }
   })
 
-  it('loads legacy defaultModel fields through the main-process API and clears them on save', async () => {
+  it('drops legacy provider defaultModel fields through the main-process API and clears them on save', async () => {
     const fixture = await createPreparedPaths('legacy-default-model-cleanup')
     const service = createElectronSettingsWorkspaceService({
       prepareRuntimePaths: async () => fixture.hostedPaths,
@@ -111,21 +111,19 @@ describe('createElectronSettingsWorkspaceService', () => {
 
       expect(loaded.state.providerProfiles[0]).toMatchObject({
         id: 'legacy-main-process-provider',
-        defaultModel: 'legacy-model',
-        defaultModelId: 'legacy-model',
         fastModel: '',
         fallbackModel: '',
       })
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
 
       const saveResult = await service.saveState(normalizeSettingsWorkspaceStateValues(loaded.state))
       expect(saveResult.ok).toBe(true)
       if (!saveResult.ok) {
         throw new Error('Expected legacy settings workspace save to succeed.')
       }
-      expect(saveResult.state.providerProfiles[0]).toMatchObject({
-        defaultModel: 'legacy-model',
-        defaultModelId: 'legacy-model',
-      })
+      expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
 
       const persistedDocument = await readJsonFile(paths.stateDocument) as {
         values: {

@@ -248,8 +248,6 @@ export interface ProviderProfile {
   endpoint: string
   baseUrl?: string
   hasApiKey: boolean
-  defaultModel: string
-  defaultModelId?: string
   fastModel: string
   fallbackModel: string
   organization: string

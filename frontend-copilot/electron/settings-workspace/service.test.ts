@@ -80,6 +80,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'persisted-provider',
         name: 'Persisted Router',
       })
+      const primaryModelId = persistedProvider.availableModels[0]!.modelId
       const stateToSave = {
         ...initial.state,
         providerProfiles: [
@@ -89,7 +90,7 @@ describe('createSettingsWorkspaceStorage', () => {
           },
         ],
         defaultModelRouting: {
-          primaryAssistantModel: persistedProvider.defaultModel,
+          primaryAssistantModel: primaryModelId,
           fastAssistantModel: persistedProvider.fastModel,
         },
         general: {
@@ -111,12 +112,12 @@ describe('createSettingsWorkspaceStorage', () => {
         hasApiKey: false,
       })
       expect(reloaded.state.defaultModelRouting).toMatchObject({
-        primaryAssistantModel: persistedProvider.defaultModel,
+        primaryAssistantModel: primaryModelId,
         fastAssistantModel: persistedProvider.fastModel,
         primaryAssistantModelRoute: {
           routeKind: 'provider-model',
           profileId: 'persisted-provider',
-          modelId: persistedProvider.defaultModel,
+          modelId: primaryModelId,
         },
         fastAssistantModelRoute: {
           routeKind: 'provider-model',
@@ -189,7 +190,7 @@ describe('createSettingsWorkspaceStorage', () => {
     }
   })
 
-  it('loads legacy defaultModel fields, drops them from editable state, and clears them on save', async () => {
+  it('drops legacy provider defaultModel fields from editable state and clears them on save', async () => {
     const fixture = await createSettingsWorkspaceFixture()
 
     try {
@@ -235,14 +236,16 @@ describe('createSettingsWorkspaceStorage', () => {
 
       expect(loaded.state.providerProfiles[0]).toMatchObject({
         id: 'legacy-provider',
-        defaultModel: 'legacy-model',
-        defaultModelId: 'legacy-model',
         fastModel: '',
         fallbackModel: '',
         hasApiKey: true,
       })
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
 
-      await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues(loaded.state))
+      const saveResult = await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues(loaded.state))
+      expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
 
       const persistedDocument = await readJsonFile(fixture.paths.stateDocument) as {
         values: {
@@ -550,7 +553,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'active-openai',
         protocol: 'openai',
         endpoint: 'https://active.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
       })
@@ -559,7 +562,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'openrouter',
         providerId: 'openrouter',
         endpoint: 'https://openrouter.ai/api/v1/',
-        defaultModel: 'openai/gpt-4.1',
+        primaryModelId: 'openai/gpt-4.1',
         fastModel: 'openai/gpt-4.1-mini',
         fallbackModel: 'openai/gpt-4.1-mini',
       })
@@ -568,7 +571,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'openai-response',
         providerId: 'openai-response',
         endpoint: 'https://legacy.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1',
         fallbackModel: 'gpt-4.1',
       })
@@ -576,7 +579,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'legacy-profile',
         protocol: 'openai',
         endpoint: 'https://legacy-profile.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
         compatibility: {
@@ -588,7 +591,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'unsupported-profile',
         protocol: 'openai',
         endpoint: 'https://unsupported.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
         compatibility: {
@@ -601,7 +604,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'custom-missing',
         providerId: 'custom-missing',
         endpoint: 'https://missing.example.com/v1/',
-        defaultModel: 'custom-model',
+        primaryModelId: 'custom-model',
         fastModel: 'custom-model',
         fallbackModel: 'custom-model',
       })
@@ -733,7 +736,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'ollama',
         endpoint: 'http://127.0.0.1:11434/v1/',
         hasApiKey: false,
-        defaultModel: 'llama3.2',
+        primaryModelId: 'llama3.2',
         fastModel: 'llama3.2',
         fallbackModel: 'llama3.2',
       })

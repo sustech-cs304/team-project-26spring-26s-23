@@ -37,7 +37,6 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
   const providerAuthFieldState = resolveProviderAuthFieldState(activeProviderDetail)
   const providerBaseUrlFieldState = resolveProviderBaseUrlFieldState(activeProviderDetail)
   const providerModelEditingAvailability = resolveProviderModelEditingAvailability(activeProviderDetail)
-  const defaultModelOptions = createProviderDefaultModelOptions(activeProviderDetail)
   const extensionNotice = resolveProviderExtensionNotice(activeProviderDetail)
   const providerTypeValue = (activeProviderDetail.providerId ?? activeProviderDetail.protocol).trim()
   const baseUrlValue = activeProviderDetail.baseUrl ?? activeProviderDetail.endpoint
@@ -98,15 +97,6 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
               disabled={!providerBaseUrlFieldState.editable}
               inputTestId="provider-base-url-input"
             />
-            <SelectField
-              label="默认模型"
-              description="默认模型保存为当前 profile 内的 modelId；全局默认路由另在“默认模型路由”中按 profile + model 选择。"
-              value={activeProviderDetail.defaultModel}
-              options={defaultModelOptions}
-              onChange={(value) => onUpdateActiveProvider({ defaultModel: value, defaultModelId: value })}
-              placeholder="先在下方模型列表中添加模型"
-              triggerTestId="provider-default-model-trigger"
-            />
             <ProviderSecretPanel
               providerId={activeProviderDetail.id}
               visible={providerAuthFieldState.visible}
@@ -136,28 +126,6 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
       />
     </>
   )
-}
-
-function createProviderDefaultModelOptions(detail: ProviderProfileDetailsDomain['activeProviderDetail']) {
-  const options = detail.availableModels.map((model) => ({
-    value: model.modelId,
-    label: model.displayName.trim() || model.modelId,
-    hint: model.displayName.trim() && model.displayName.trim() !== model.modelId ? model.modelId : undefined,
-  }))
-
-  const currentValue = detail.defaultModel.trim()
-  if (currentValue === '' || options.some((option) => option.value === currentValue)) {
-    return options
-  }
-
-  return [
-    {
-      value: currentValue,
-      label: `已保留旧值 · ${currentValue}`,
-      hint: '当前默认模型不在模型列表中，请重新选择或保留为兼容数据。',
-    },
-    ...options,
-  ]
 }
 
 function resolveProviderExtensionNotice(detail: ProviderProfileDetailsDomain['activeProviderDetail']): string | null {

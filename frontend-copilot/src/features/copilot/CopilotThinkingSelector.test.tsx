@@ -142,7 +142,7 @@ describe('Copilot thinking selector', () => {
             id: 'provider-runtime-truth',
             name: 'Runtime Truth Provider',
             endpoint: 'https://api.z.ai/api/paas/v4',
-            defaultModel: 'glm-5-turbo',
+            primaryModelId: 'glm-5-turbo',
             availableModels: [
               {
                 id: 'provider-runtime-truth:glm-5-turbo',
@@ -671,7 +671,7 @@ describe('Copilot thinking selector', () => {
             providerId: 'openai',
             protocol: 'openai',
             name: 'OpenAI',
-            defaultModel: 'gpt-4.1',
+            primaryModelId: 'gpt-4.1',
             availableModels: [
               {
                 id: 'provider-openai:gpt-4.1',

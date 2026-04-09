@@ -12,8 +12,6 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
       protocol: 'openai',
       endpoint: 'https://alpha.example.com/v1/',
       baseUrl: 'https://alpha.example.com/v1/',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
       fastModel: 'shared-model',
       fallbackModel: 'shared-model',
       availableModels: [
@@ -33,8 +31,6 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
       protocol: 'openai',
       endpoint: 'https://beta.example.com/v1/',
       baseUrl: 'https://beta.example.com/v1/',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
       fastModel: 'shared-model',
       fallbackModel: 'shared-model',
       availableModels: [
@@ -101,16 +97,14 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
     })
   })
 
-  it('ignores legacy default model aliases when the requested routeRef model is not in the profile model list', () => {
-    const providerWithLegacyDefaultModel = createProviderProfile({
+  it('rejects route refs whose model is not present in the provider model list', () => {
+    const providerWithoutMatchingModel = createProviderProfile({
       id: 'legacy-route-provider',
       profileId: 'legacy-route-provider',
       providerId: 'openai',
       protocol: 'openai',
       endpoint: 'https://legacy-route.example.com/v1/',
       baseUrl: 'https://legacy-route.example.com/v1/',
-      defaultModel: 'legacy-only-model',
-      defaultModelId: 'legacy-only-model',
       fastModel: '',
       fallbackModel: '',
       availableModels: [],
@@ -118,7 +112,7 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
 
     const result = resolveSettingsWorkspaceProviderRoute({
       state: createPersistedWorkspaceState({
-        providerProfiles: [providerWithLegacyDefaultModel],
+        providerProfiles: [providerWithoutMatchingModel],
       }),
       secretStates: {
         'legacy-route-provider': {

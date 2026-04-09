@@ -60,8 +60,7 @@ describe('SettingsWorkspace persistence', () => {
       protocol: 'openai',
       name: 'Alpha Provider',
       displayName: 'Alpha Provider',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
+      primaryModelId: 'shared-model',
       fastModel: 'alpha-fast',
       fallbackModel: 'alpha-fast',
       availableModels: [
@@ -80,8 +79,7 @@ describe('SettingsWorkspace persistence', () => {
       protocol: 'gemini',
       name: 'Beta Provider',
       displayName: 'Beta Provider',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
+      primaryModelId: 'shared-model',
       fastModel: 'shared-model',
       fallbackModel: 'shared-model',
       availableModels: [

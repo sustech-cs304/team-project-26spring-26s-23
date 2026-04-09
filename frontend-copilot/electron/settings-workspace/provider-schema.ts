@@ -4,7 +4,6 @@ import {
 } from '../../src/provider-catalog'
 import type {
   ModelCapability,
-  ModelRouteRef,
   ProviderModelProfile,
   ProviderProfile,
   ProviderProfileCompatibility,
@@ -23,28 +22,12 @@ export interface SettingsWorkspaceStoredProviderProfile {
   displayName: string
   baseUrl: string
   models: ProviderModelProfile[]
-  defaultModelId: string
   compatibility: ProviderProfileCompatibility
   extensions: ProviderProfileExtensions
 }
 
 export function createDefaultStoredProviderProfiles(): SettingsWorkspaceStoredProviderProfile[] {
   return initialProviderProfiles.map((profile) => projectStoredProviderProfile(profile))
-}
-
-export function createDefaultSettingsWorkspaceDefaultModelRouting(): {
-  primaryAssistantModel: ModelRouteRef | null
-  fastAssistantModel: ModelRouteRef | null
-} {
-  const primaryProfile = createDefaultStoredProviderProfiles()[0]
-  const fastModelId = primaryProfile === undefined
-    ? ''
-    : getProviderProfileExtensionString(primaryProfile.extensions, 'fastModel') || primaryProfile.defaultModelId
-
-  return {
-    primaryAssistantModel: buildModelRouteRef(primaryProfile?.profileId ?? '', primaryProfile?.defaultModelId ?? ''),
-    fastAssistantModel: buildModelRouteRef(primaryProfile?.profileId ?? '', fastModelId),
-  }
 }
 
 export function projectStoredProviderProfile(profile: ProviderProfile): SettingsWorkspaceStoredProviderProfile {
@@ -55,7 +38,6 @@ export function projectStoredProviderProfile(profile: ProviderProfile): Settings
     profileId,
   })
   const displayName = normalizeNonEmptyString(profile.name, normalizeNonEmptyString(profile.displayName, profile.name))
-  const defaultModelId = normalizeNonEmptyString(profile.defaultModelId, profile.defaultModel)
   const extensions = normalizeProviderProfileExtensions({
     ...(profile.extensions ?? {}),
     ...buildLegacyProviderProfileExtensionPatch(profile, providerId),
@@ -65,7 +47,6 @@ export function projectStoredProviderProfile(profile: ProviderProfile): Settings
     profileId,
     displayName,
     [
-      defaultModelId,
       getProviderProfileExtensionString(extensions, 'fastModel'),
       getProviderProfileExtensionString(extensions, 'fallbackModel'),
     ],
@@ -77,7 +58,6 @@ export function projectStoredProviderProfile(profile: ProviderProfile): Settings
     displayName,
     baseUrl: normalizeString(profile.baseUrl, profile.endpoint),
     models,
-    defaultModelId: normalizeNonEmptyString(defaultModelId, models[0]?.modelId ?? ''),
     compatibility: normalizeStoredProviderCompatibility(profile.compatibility, providerId),
     extensions,
   }
@@ -99,8 +79,6 @@ export function projectEditableProviderProfile(
     endpoint: profile.baseUrl,
     baseUrl: profile.baseUrl,
     hasApiKey,
-    defaultModel: profile.defaultModelId,
-    defaultModelId: profile.defaultModelId,
     fastModel: getProviderProfileExtensionString(profile.extensions, 'fastModel'),
     fallbackModel: getProviderProfileExtensionString(profile.extensions, 'fallbackModel'),
     organization: getProviderProfileExtensionString(profile.extensions, 'organization'),
@@ -174,8 +152,6 @@ function normalizeStoredProviderProfile(
       endpoint: baseUrl,
       baseUrl,
       hasApiKey: false,
-      defaultModel: normalizeString(record.defaultModel, ''),
-      defaultModelId: normalizeString(record.defaultModelId, ''),
       fastModel: normalizeString(record.fastModel, ''),
       fallbackModel: normalizeString(record.fallbackModel, ''),
       organization: normalizeString(record.organization, ''),
@@ -190,15 +166,7 @@ function normalizeStoredProviderProfile(
     Array.isArray(record.models) ? record.models : record.availableModels,
     profileId,
   )
-  const defaultModelId = normalizeNonEmptyString(
-    record.defaultModelId,
-    normalizeNonEmptyString(
-      record.defaultModel,
-      rawModels[0]?.modelId ?? '',
-    ),
-  )
   const models = ensureTrackedModels(rawModels, profileId, displayName, [
-    defaultModelId,
     getProviderProfileExtensionString(extensions, 'fastModel'),
     getProviderProfileExtensionString(extensions, 'fallbackModel'),
   ])
@@ -209,7 +177,6 @@ function normalizeStoredProviderProfile(
     displayName,
     baseUrl,
     models,
-    defaultModelId: normalizeNonEmptyString(defaultModelId, models[0]?.modelId ?? ''),
     compatibility: normalizeStoredProviderCompatibility(record.compatibility, providerId),
     extensions,
   }
@@ -438,17 +405,3 @@ function getProviderProfileExtensionString(extensions: ProviderProfileExtensions
   return typeof value === 'string' ? value : ''
 }
 
-function buildModelRouteRef(profileId: string, modelId: string): ModelRouteRef | null {
-  const normalizedProfileId = normalizeNonEmptyString(profileId, '')
-  const normalizedModelId = normalizeNonEmptyString(modelId, '')
-
-  if (normalizedProfileId === '' || normalizedModelId === '') {
-    return null
-  }
-
-  return {
-    routeKind: 'provider-model',
-    profileId: normalizedProfileId,
-    modelId: normalizedModelId,
-  }
-}
