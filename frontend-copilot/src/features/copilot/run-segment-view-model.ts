@@ -1,4 +1,8 @@
-import type { RuntimeModelRoute } from './thread-run-contract'
+import type {
+  RuntimeModelRoute,
+  RuntimeResolvedModelRoute,
+  RuntimeThinkingCapability,
+} from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
   CopilotRunFailureSummary,
@@ -27,9 +31,21 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   title: string
   content: string
   resolvedModelId: string | null
-  resolvedModelRoute: RuntimeModelRoute | null
+  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
+  requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
+  appliedThinkingLevel?: CopilotRunState['appliedThinkingLevel']
+  thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
+}
+
+export interface CopilotReasoningMessageItem extends CopilotRunSegmentViewItemBase {
+  kind: 'reasoning'
+  title: string
+  content: string
+  observedStartedAt: number
+  observedFinishedAt: number | null
+  isCollapsedByDefault: true
 }
 
 export interface CopilotToolMessageItem extends CopilotRunSegmentViewItemBase {
@@ -58,10 +74,14 @@ export interface CopilotTerminalMessageItem extends CopilotRunSegmentViewItemBas
   terminalPhase: 'failed' | 'cancelled'
   cancelReason: string | null
   failure: CopilotRunFailureSummary | null
+  requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
+  appliedThinkingLevel?: CopilotRunState['appliedThinkingLevel']
+  thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
 }
 
 export type CopilotRunSegmentViewItem =
   | CopilotAssistantMessageItem
+  | CopilotReasoningMessageItem
   | CopilotToolMessageItem
   | CopilotDiagnosticMessageItem
   | CopilotTerminalMessageItem
@@ -80,7 +100,7 @@ export function createUserMessageListItem(content: string): CopilotUserMessageIt
 
 export interface CopilotAssistantPlaceholderState {
   shouldRender: boolean
-  dismissReason: 'assistant' | 'tool' | 'terminal' | 'inactive' | null
+  dismissReason: 'assistant' | 'reasoning' | 'tool' | 'terminal' | 'inactive' | null
 }
 
 export function buildCopilotMessageListItems(input: {
@@ -97,6 +117,13 @@ export function resolveCopilotAssistantPlaceholderState(
     return {
       shouldRender: false,
       dismissReason: 'assistant',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'reasoning')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'reasoning',
     }
   }
 
@@ -127,25 +154,62 @@ export function resolveCopilotAssistantPlaceholderState(
   }
 }
 
+type CopilotRunThinkingProjectionState = Partial<Pick<
+  CopilotRunState,
+  | 'requestedThinkingLevel'
+  | 'appliedThinkingLevel'
+  | 'thinkingCapabilitySnapshot'
+>>
+
+type CopilotRunResolvedRouteProjectionState = Pick<
+  CopilotRunState,
+  | 'activeModelRoute'
+  | 'resolvedModelId'
+  | 'resolvedModelRoute'
+>
+
+type CopilotRunSegmentProjectionState = Pick<
+  CopilotRunState,
+  | 'segments'
+> & CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState
+
 export function buildCopilotRunSegmentViewModel(
-  runState: Pick<CopilotRunState, 'segments' | 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+  runState: CopilotRunSegmentProjectionState,
 ): CopilotRunSegmentViewItem[] {
   return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment, runState))
 }
 
+export function formatCopilotReasoningDurationLabel(
+  reasoning: Pick<CopilotReasoningMessageItem, 'title' | 'observedStartedAt' | 'observedFinishedAt'>,
+  observedNow: number,
+): string {
+  return `${reasoning.title} ${formatCopilotReasoningElapsedSeconds(resolveCopilotReasoningElapsedMs(reasoning, observedNow))}s`
+}
+
+export function resolveCopilotReasoningElapsedMs(
+  reasoning: Pick<CopilotReasoningMessageItem, 'observedStartedAt' | 'observedFinishedAt'>,
+  observedNow: number,
+): number {
+  const observedEndedAt = reasoning.observedFinishedAt ?? observedNow
+
+  return Math.max(0, observedEndedAt - reasoning.observedStartedAt)
+}
+
 function projectSegmentToViewItems(
   segment: CopilotRunSegment,
-  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+  runState: Omit<CopilotRunSegmentProjectionState, 'segments'>,
 ): CopilotRunSegmentViewItem[] {
   switch (segment.kind) {
     case 'assistant':
       return projectAssistantSegment(segment, runState)
+    case 'reasoning':
+      return [projectReasoningSegment(segment)]
     case 'tool':
       return [projectToolSegment(segment)]
     case 'diagnostic':
       return [projectDiagnosticSegment(segment)]
     case 'terminal': {
-      const terminalItem = projectTerminalSegment(segment)
+      const terminalItem = projectTerminalSegment(segment, runState)
       return terminalItem === null ? [] : [terminalItem]
     }
   }
@@ -153,7 +217,7 @@ function projectSegmentToViewItems(
 
 function projectAssistantSegment(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
-  runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
+  runState: CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState,
 ): CopilotRunSegmentViewItem[] {
   if (!isRenderableAssistantSegment(segment)) {
     return []
@@ -167,14 +231,34 @@ function projectAssistantSegment(
     kind: 'assistant',
     runId: segment.runId,
     sequence: segment.startedSequence,
-    title: resolvedModelId ?? resolvedModelRoute?.snapshot.modelId ?? '助手响应',
+    title: resolvedModelId ?? readModelIdFromRoute(resolvedModelRoute) ?? '助手响应',
     content: segment.text,
     status: mapSegmentStatus(segment.status),
     resolvedModelId,
     resolvedModelRoute,
     resolvedToolIds: [...segment.resolvedToolIds],
     requestOptions: { ...segment.requestOptions },
+    requestedThinkingLevel: runState.requestedThinkingLevel,
+    appliedThinkingLevel: runState.appliedThinkingLevel,
+    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot ?? null),
   }]
+}
+
+function projectReasoningSegment(
+  segment: Extract<CopilotRunSegment, { kind: 'reasoning' }>,
+): CopilotReasoningMessageItem {
+  return {
+    id: segment.id,
+    kind: 'reasoning',
+    runId: segment.runId,
+    sequence: segment.startedSequence,
+    title: '思考',
+    content: segment.text,
+    observedStartedAt: segment.observedStartedAt,
+    observedFinishedAt: segment.observedFinishedAt,
+    status: mapSegmentStatus(segment.status),
+    isCollapsedByDefault: true,
+  }
 }
 
 function projectToolSegment(
@@ -219,6 +303,7 @@ function projectDiagnosticSegment(
 
 function projectTerminalSegment(
   segment: Extract<CopilotRunSegment, { kind: 'terminal' }>,
+  runState: CopilotRunThinkingProjectionState,
 ): CopilotTerminalMessageItem | null {
   switch (segment.terminalPhase) {
     case 'completed':
@@ -235,6 +320,9 @@ function projectTerminalSegment(
         terminalPhase: 'cancelled',
         cancelReason: segment.cancelReason,
         failure: null,
+        requestedThinkingLevel: runState.requestedThinkingLevel,
+        appliedThinkingLevel: runState.appliedThinkingLevel,
+        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot ?? null),
       }
     case 'failed':
       return {
@@ -254,6 +342,9 @@ function projectTerminalSegment(
               message: segment.failure.message,
               details: { ...segment.failure.details },
             },
+        requestedThinkingLevel: runState.requestedThinkingLevel,
+        appliedThinkingLevel: runState.appliedThinkingLevel,
+        thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runState.thinkingCapabilitySnapshot ?? null),
       }
   }
 }
@@ -279,9 +370,9 @@ function resolveAssistantModelId(
   const modelIdCandidates = [
     segment.resolvedModelId,
     runState.resolvedModelId,
-    segment.resolvedModelRoute?.snapshot.modelId ?? null,
-    runState.resolvedModelRoute?.snapshot.modelId ?? null,
-    runState.activeModelRoute?.snapshot.modelId ?? null,
+    readModelIdFromRoute(segment.resolvedModelRoute),
+    readModelIdFromRoute(runState.resolvedModelRoute),
+    readModelIdFromRoute(runState.activeModelRoute),
   ]
 
   for (const candidate of modelIdCandidates) {
@@ -297,7 +388,7 @@ function resolveAssistantModelId(
 function resolveAssistantModelRoute(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
   runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
-): RuntimeModelRoute | null {
+): RuntimeResolvedModelRoute | RuntimeModelRoute | null {
   const routeCandidates = [
     segment.resolvedModelRoute,
     runState.resolvedModelRoute,
@@ -314,19 +405,81 @@ function resolveAssistantModelRoute(
   return null
 }
 
-function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRoute | null {
+function cloneRuntimeModelRoute(
+  route: RuntimeResolvedModelRoute | RuntimeModelRoute | null,
+): RuntimeResolvedModelRoute | RuntimeModelRoute | null {
   if (route === null) {
     return null
   }
 
+  if ('providerId' in route) {
+    return {
+      routeRef: {
+        routeKind: route.routeRef.routeKind,
+        profileId: route.routeRef.profileId,
+        modelId: route.routeRef.modelId,
+      },
+      providerProfileId: route.providerProfileId,
+      provider: route.provider,
+      providerId: route.providerId,
+      adapterId: route.adapterId,
+      runtimeStatus: route.runtimeStatus,
+      catalogRevision: route.catalogRevision,
+      endpointFamily: route.endpointFamily,
+      endpointType: route.endpointType,
+      baseUrl: route.baseUrl,
+      modelId: route.modelId,
+      authKind: route.authKind,
+    }
+  }
+
   return {
-    providerProfileId: route.providerProfileId,
-    snapshot: {
-      provider: route.snapshot.provider,
-      endpointType: route.snapshot.endpointType,
-      baseUrl: route.snapshot.baseUrl,
-      modelId: route.snapshot.modelId,
+    ...(route.routeRef === undefined || route.routeRef === null
+      ? {}
+      : {
+          routeRef: {
+            routeKind: route.routeRef.routeKind,
+            profileId: route.routeRef.profileId,
+            modelId: route.routeRef.modelId,
+          },
+        }),
+    ...(route.catalogRevision === undefined ? {} : { catalogRevision: route.catalogRevision }),
+  }
+}
+
+function readModelIdFromRoute(
+  route: RuntimeResolvedModelRoute | RuntimeModelRoute | null | undefined,
+): string | null {
+  if (route === null || route === undefined) {
+    return null
+  }
+
+  return 'providerId' in route ? route.modelId : route.routeRef?.modelId ?? null
+}
+
+function cloneRuntimeThinkingCapability(
+  capability: RuntimeThinkingCapability | null,
+): RuntimeThinkingCapability | null {
+  if (capability === null) {
+    return null
+  }
+
+  return {
+    status: capability.status,
+    source: capability.source,
+    supported: capability.supported,
+    supportedLevels: [...capability.supportedLevels],
+    defaultLevel: capability.defaultLevel,
+    reasonCode: capability.reasonCode,
+    providerHint: capability.providerHint,
+    routeFingerprint: {
+      providerProfileId: capability.routeFingerprint.providerProfileId,
+      provider: capability.routeFingerprint.provider,
+      endpointType: capability.routeFingerprint.endpointType,
+      baseUrl: capability.routeFingerprint.baseUrl,
+      modelId: capability.routeFingerprint.modelId,
     },
+    overrideLevels: [...capability.overrideLevels],
   }
 }
 
@@ -345,4 +498,8 @@ function formatFailureMessage(failure: CopilotRunFailureSummary | null): string 
 function formatCancelledReason(reason: string): string {
   const trimmedReason = reason.trim()
   return trimmedReason === '' ? '本次响应已取消。' : `本次响应已取消：${trimmedReason}`
+}
+
+function formatCopilotReasoningElapsedSeconds(elapsedMs: number): string {
+  return (Math.floor(Math.max(0, elapsedMs) / 100) / 10).toFixed(1)
 }

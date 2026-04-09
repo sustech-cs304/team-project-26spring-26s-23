@@ -5,11 +5,13 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRuntimeDebugSummary,
   buildRuntimeMessageSendInput,
+  buildRuntimeThinkingCapabilityFromError,
   createEmptyComposerDraft,
   buildSessionDebugSummary,
   cancelStreamingToolTurns,
   createComposerDraftFromSession,
   createPendingAssistantTurn,
+  describeThinkingCapabilityUnavailableReason,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
   upsertToolStepTurn,
@@ -51,17 +53,18 @@ describe('copilot chat helpers', () => {
       defaultEnabledTools: ['tool.file-convert'],
       defaultEnabledSource: {
         boundAgent: 'general',
-        defaultModelPreference: 'openai/gpt-4.1',
         toolSelectionMode: 'recommendation-only',
       },
     })
   })
 
-  it('creates composer defaults from empty state and seeds the session preferred model id while deferring route resolution', () => {
+  it('creates composer defaults from empty state and keeps model selection empty until route-based restoration happens elsewhere', () => {
     expect(createEmptyComposerDraft()).toEqual({
       messageText: '',
       selectedModelId: '',
       selectedModelRoute: null,
+      thinkingLevelIntent: null,
+      thinkingLevelByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
     })
@@ -70,8 +73,10 @@ describe('copilot chat helpers', () => {
 
     expect(draft).toEqual({
       messageText: '',
-      selectedModelId: 'openai/gpt-4.1',
+      selectedModelId: '',
       selectedModelRoute: null,
+      thinkingLevelIntent: null,
+      thinkingLevelByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
     })
@@ -94,6 +99,10 @@ describe('copilot chat helpers', () => {
             modelId: 'qwen-plus',
           },
         }),
+        thinkingLevelIntent: 'auto',
+        thinkingLevelByModelKey: {
+          'provider-model|provider-openai|qwen-plus': 'auto',
+        },
         enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
       },
@@ -111,14 +120,14 @@ describe('copilot chat helpers', () => {
         content: '请总结这份文档',
       },
       modelRoute: {
-        providerProfileId: 'provider-openai',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://api.example.com/v1',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-openai',
           modelId: 'qwen-plus',
         },
+        catalogRevision: '2026-04-06-provider-catalog-v1',
       },
+      thinkingLevelIntent: 'auto',
       enabledTools: ['tool.remote-search', 'tool.file-convert'],
       requestOptions: {
         trace: true,
@@ -272,5 +281,50 @@ describe('copilot chat helpers', () => {
       code: 'invalid_request',
       status: 400,
     }))).toContain('invalid_request：消息请求结构无效')
+
+    expect(formatRuntimeMessageSendError(new RuntimeRequestError('thinking_not_supported_for_route: unsupported thinking selection', {
+      code: 'thinking_not_supported_for_route',
+      status: 400,
+    }))).toContain('thinking_not_supported_for_route：当前模型路由不支持所选思考档位')
+
+    expect(formatRuntimeMessageSendError(new RuntimeRequestError('provider_catalog_only: not enabled', {
+      code: 'provider_catalog_only',
+      status: 409,
+    }))).toContain('provider_catalog_only：当前 provider 仅完成 catalog 接入，运行时尚未启用')
+  })
+
+  it('builds a stable unsupported thinking capability snapshot from runtime request errors', () => {
+    const capability = buildRuntimeThinkingCapabilityFromError({
+      error: new RuntimeRequestError('provider_catalog_only: not enabled', {
+        code: 'provider_catalog_only',
+        status: 409,
+        details: {
+          providerId: 'openrouter',
+        },
+      }),
+      modelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openrouter',
+        modelId: 'openrouter/auto',
+      }),
+    })
+
+    expect(capability).toEqual({
+      status: 'verified-unsupported',
+      source: 'verified',
+      supported: false,
+      supportedLevels: [],
+      defaultLevel: null,
+      reasonCode: 'provider_catalog_only',
+      providerHint: 'openrouter',
+      routeFingerprint: {
+        providerProfileId: 'provider-openrouter',
+        provider: 'openrouter',
+        endpointType: '',
+        baseUrl: '',
+        modelId: 'openrouter/auto',
+      },
+      overrideLevels: [],
+    })
+    expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前 provider 仅完成 catalog 接入')
   })
 })

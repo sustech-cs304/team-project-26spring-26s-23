@@ -71,12 +71,15 @@ def build_default_runtime_dependencies(
         agent_registry=agent_registry,
         scaffold=scaffold,
         model_route_resolver=resolved_model_route_resolver,
+        provider_adapter_registry=resolved_agent_executor.provider_adapter_registry,
     )
     runtime_bridge = RuntimeBridge(
         session_store=resolved_session_store,
         agent_registry=agent_registry,
         scaffold=scaffold,
         message_run_orchestrator=message_run_orchestrator,
+        model_route_resolver=resolved_model_route_resolver,
+        provider_adapter_registry=resolved_agent_executor.provider_adapter_registry,
     )
     return RuntimeDependencies(
         session_store=resolved_session_store,

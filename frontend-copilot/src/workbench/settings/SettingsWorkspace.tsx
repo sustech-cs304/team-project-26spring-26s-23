@@ -15,7 +15,10 @@ import type { ExternalSourcesSectionDomain } from './ExternalSourcesSection'
 import type { ProviderProfilesSectionDomain } from './ProviderProfilesSectionDomain'
 import type { SustechInfoSectionDomain } from './SustechInfoSection'
 import { initialSettingsWorkspaceActiveProviderId } from './settings-workspace-form-state'
-import { collectAllModelOptions } from './settings-workspace-model-options'
+import {
+  buildDefaultModelRouteSelectionValue,
+  collectAllModelOptions,
+} from './settings-workspace-model-options'
 import { useSettingsWorkspaceProviderController } from './settings-workspace-provider-controller'
 import { useSettingsWorkspaceSideflows } from './settings-workspace-sideflows'
 import { useSettingsWorkspaceState } from './useSettingsWorkspaceState'
@@ -88,6 +91,8 @@ export function SettingsWorkspace({
     activeProviderDetail,
     providerQuery,
     setProviderQuery,
+    addProviderTypeId,
+    setAddProviderTypeId,
     activeProviderApiKeyDraft,
     apiKeyVisible,
     apiKeyFeedback,
@@ -132,9 +137,30 @@ export function SettingsWorkspace({
     [activeSection],
   )
 
+  const primaryAssistantModelSelectionValue = useMemo(
+    () => buildDefaultModelRouteSelectionValue({
+      selectedModelId: formState.primaryAssistantModel,
+      persistedRoute: formState.primaryAssistantModelRoute ?? null,
+      providerProfiles: formState.providerProfiles,
+    }),
+    [formState.primaryAssistantModel, formState.primaryAssistantModelRoute, formState.providerProfiles],
+  )
+
+  const fastAssistantModelSelectionValue = useMemo(
+    () => buildDefaultModelRouteSelectionValue({
+      selectedModelId: formState.fastAssistantModel,
+      persistedRoute: formState.fastAssistantModelRoute ?? null,
+      providerProfiles: formState.providerProfiles,
+    }),
+    [formState.fastAssistantModel, formState.fastAssistantModelRoute, formState.providerProfiles],
+  )
+
   const allModelOptions = useMemo(
-    () => collectAllModelOptions(formState.providerProfiles),
-    [formState.providerProfiles],
+    () => collectAllModelOptions(
+      formState.providerProfiles,
+      [primaryAssistantModelSelectionValue, fastAssistantModelSelectionValue],
+    ),
+    [formState.providerProfiles, primaryAssistantModelSelectionValue, fastAssistantModelSelectionValue],
   )
 
   const derivedSustechEmail = useMemo(() => {
@@ -200,12 +226,14 @@ export function SettingsWorkspace({
     activeProvider,
     activeProviderDetail,
     providerQuery,
+    addProviderTypeId,
     activeProviderApiKeyDraft,
     apiKeyVisible,
     apiKeyFeedback,
     modelEditorState,
     modelEditorError,
     onProviderQueryChange: setProviderQuery,
+    onAddProviderTypeChange: setAddProviderTypeId,
     onActiveProviderChange: setActiveProviderId,
     onAddProvider: handleAddProvider,
     onReorderProviders: moveProviderToIndex,
@@ -227,8 +255,8 @@ export function SettingsWorkspace({
   }
 
   const defaultModelsSectionDomain: DefaultModelRoutesSectionDomain = {
-    primaryAssistantModel: formState.primaryAssistantModel,
-    fastAssistantModel: formState.fastAssistantModel,
+    primaryAssistantModel: primaryAssistantModelSelectionValue,
+    fastAssistantModel: fastAssistantModelSelectionValue,
     allModelOptions,
     onPrimaryAssistantModelChange: setPrimaryAssistantModel,
     onFastAssistantModelChange: setFastAssistantModel,

@@ -23,11 +23,25 @@ export interface SelectOption {
   value: string
   label: string
   hint?: string
+  disabled?: boolean
 }
 
 export type ThemeMode = 'light' | 'dark'
 
 export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
+export type ThinkingLevelIntent = 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'
+
+export interface ThinkingCapabilityDeclaration {
+  supported: boolean
+  levels?: Array<Exclude<ThinkingLevelIntent, 'off'>>
+  defaultLevel?: ThinkingLevelIntent
+}
+
+export interface ResolvedThinkingCapability {
+  supported: boolean
+  levels: ThinkingLevelIntent[]
+  defaultLevel: ThinkingLevelIntent | null
+}
 
 export interface ProviderModelProfile {
   id: string
@@ -35,11 +49,30 @@ export interface ProviderModelProfile {
   displayName: string
   groupName: string
   capabilities: ModelCapability[]
+  thinkingCapability?: ThinkingCapabilityDeclaration
   supportsStreaming: boolean
   currency: string
   inputPrice: string
   outputPrice: string
 }
+
+export type ModelRouteKind = 'provider-model'
+
+export interface ModelRouteRef {
+  routeKind: ModelRouteKind
+  profileId: string
+  modelId: string
+}
+
+export type ProviderProfileCompatibilityStatus = 'active' | 'legacy' | 'unsupported'
+
+export interface ProviderProfileCompatibility {
+  status: ProviderProfileCompatibilityStatus
+  reason: string
+}
+
+export type ProviderProfileExtensionValue = string | number | boolean | null
+export type ProviderProfileExtensions = Record<string, ProviderProfileExtensionValue>
 
 export interface RailItem {
   id: WorkspaceView
@@ -56,7 +89,6 @@ export interface AgentType {
   status: string
   icon: LucideIcon
   recommendedTools: string[]
-  defaultModelPreference: string | null
 }
 
 export interface AssistantSessionCapabilities {
@@ -65,7 +97,6 @@ export interface AssistantSessionCapabilities {
   recommendedToolsForAgent: string[]
   defaultEnabledTools: string[]
   toolSelectionMode: string
-  defaultModelPreference: string | null
 }
 
 export interface AssistantSessionShell {
@@ -99,15 +130,22 @@ export interface HubWorkspaceContent {
 
 export interface ProviderProfile {
   id: string
+  profileId?: string
+  providerId?: string
   name: string
+  displayName?: string
   protocol: string
   endpoint: string
+  baseUrl?: string
   hasApiKey: boolean
   defaultModel: string
+  defaultModelId?: string
   fastModel: string
   fallbackModel: string
   organization: string
   region: string
   notes: string
+  compatibility?: ProviderProfileCompatibility
+  extensions?: ProviderProfileExtensions
   availableModels: ProviderModelProfile[]
 }

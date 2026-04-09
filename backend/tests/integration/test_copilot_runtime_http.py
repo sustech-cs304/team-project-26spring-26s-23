@@ -10,18 +10,22 @@ from app.copilot_runtime.agent import RuntimeToolLifecycleEvent
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
-    MESSAGE_SEND_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
-    SESSION_CREATE_METHOD,
+    THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
 )
-from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
+from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
+from app.copilot_runtime.model_routes import (
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRoute,
+    RuntimeModelRouteRef,
+)
+from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.session_store import (
     RuntimeStoredModelRoute,
-    RuntimeStoredModelRouteSnapshot,
     RuntimeStoredRunInput,
     RuntimeStoredRunPolicy,
 )
@@ -29,34 +33,30 @@ from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
 from app.desktop_runtime.server import create_app
 
 
-class _ImmediateTextStream:
+class _ImmediateEventStream:
     def __init__(
         self,
         *,
         output: str,
         resolved_model_id: str,
-        tool_events: list[RuntimeToolLifecycleEvent] | None = None,
+        events: list[RuntimeExecutionEvent],
     ) -> None:
         self.resolved_model_id = resolved_model_id
         self._output = output
-        self._tool_events = list(tool_events or [])
+        self._events = list(events)
 
-    async def __aenter__(self) -> "_ImmediateTextStream":
+    async def __aenter__(self) -> "_ImmediateEventStream":
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         return None
 
-    async def iter_deltas(self):
-        yield self._output
+    async def iter_events(self):
+        for event in self._events:
+            yield event
 
     async def get_output(self) -> str:
         return self._output
-
-    def drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]:
-        drained = tuple(self._tool_events)
-        self._tool_events.clear()
-        return drained
 
 
 class CapturingStreamingExecutor:
@@ -68,17 +68,16 @@ class CapturingStreamingExecutor:
         tool_events_by_call: list[list[RuntimeToolLifecycleEvent]] | None = None,
     ) -> None:
         self.model_configured = model_configured
-        self.model_environment_keys: tuple[str, ...] = (
-            "COPILOT_RUNTIME_MODEL",
-            "COPILOT_MODEL",
-        )
+        self.model_environment_keys: tuple[str, ...] = ()
+        self.provider_adapter_registry = build_default_provider_adapter_registry()
         self._outputs = list(outputs)
         self._tool_events_by_call = [list(events) for events in (tool_events_by_call or [])]
         self.captured_calls: list[dict[str, object]] = []
 
-    def open_text_stream(
+    def open_event_stream(
         self,
         *,
+        run_id: str,
         agent_name: str,
         user_prompt: str,
         message_history: list[object],
@@ -86,7 +85,8 @@ class CapturingStreamingExecutor:
         enabled_tools: tuple[str, ...] = (),
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
-    ) -> _ImmediateTextStream:
+        model_settings: dict[str, object] | None = None,
+    ) -> _ImmediateEventStream:
         self.captured_calls.append(
             {
                 "agent_name": agent_name,
@@ -99,10 +99,11 @@ class CapturingStreamingExecutor:
             }
         )
         tool_events = self._tool_events_by_call.pop(0) if self._tool_events_by_call else []
-        return _ImmediateTextStream(
-            output=self._outputs.pop(0),
+        output = self._outputs.pop(0)
+        return _ImmediateEventStream(
+            output=output,
             resolved_model_id=model_route.model_id,
-            tool_events=tool_events,
+            events=_build_execution_events(run_id=run_id, text=output, tool_events=tool_events),
         )
 
 
@@ -110,12 +111,42 @@ class _ResolvedRouteResolver:
     async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
         return ResolvedRuntimeModelRoute(
             provider_profile_id=model_route.provider_profile_id,
-            provider=model_route.snapshot.provider,
-            endpoint_type=model_route.snapshot.endpoint_type,
-            base_url=model_route.snapshot.base_url,
-            model_id=model_route.snapshot.model_id,
+            provider="openai",
+            endpoint_type="openai-compatible",
+            base_url="https://example.com/v1",
+            model_id=model_route.route_ref.model_id,
             api_key="test-api-key",
+            route_ref=model_route.route_ref,
         )
+
+
+def _build_execution_events(
+    *,
+    run_id: str,
+    text: str,
+    tool_events: list[RuntimeToolLifecycleEvent],
+) -> list[RuntimeExecutionEvent]:
+    events = [
+        RuntimeExecutionEvent(
+            type={
+                "started": "tool_started",
+                "completed": "tool_completed",
+                "failed": "tool_failed",
+            }[tool_event.phase],
+            payload=tool_event.to_payload(),
+        )
+        for tool_event in tool_events
+    ]
+    events.append(
+        RuntimeExecutionEvent(
+            type="assistant_segment_delta",
+            payload={
+                "segmentId": f"{run_id}:assistant-segment-1",
+                "delta": text,
+            },
+        )
+    )
+    return events
 
 
 SUPPORTED_METHODS = [
@@ -125,9 +156,8 @@ SUPPORTED_METHODS = [
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
     RUN_CANCEL_METHOD,
-    SESSION_CREATE_METHOD,
     CAPABILITIES_GET_METHOD,
-    MESSAGE_SEND_METHOD,
+    THINKING_CAPABILITY_GET_METHOD,
 ]
 
 
@@ -147,47 +177,69 @@ def test_post_root_legacy_methods_return_method_not_implemented() -> None:
 
 
 
-def test_post_root_session_first_flow_reuses_history_across_same_session() -> None:
+def test_post_root_thread_first_flow_reuses_history_across_same_thread() -> None:
     executor = CapturingStreamingExecutor(outputs=["First reply", "Second reply"])
     app = _create_app(executor)
 
     with TestClient(app) as client:
         agents_response = client.post("/", json={"method": "agents/list"})
-        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
-        session_payload = session_response.json()
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_payload = thread_response.json()
         capabilities_response = client.post(
             "/",
-            json=_build_capabilities_get_request(session_id=session_payload["sessionId"]),
+            json=_build_capabilities_get_request(thread_id=thread_payload["threadId"]),
         )
-        first_response = client.post(
+        first_start_response = client.post(
             "/",
-            json=_build_message_send_request(
-                session_id=session_payload["sessionId"],
+            json=_build_run_start_request(
+                thread_id=thread_payload["threadId"],
                 model_id="gpt-4.1",
                 user_text="Hello",
             ),
         )
-        second_response = client.post(
+        first_run_id = first_start_response.json()["run"]["runId"]
+        first_stream_response = client.post(
             "/",
-            json=_build_message_send_request(
-                session_id=session_payload["sessionId"],
+            json=_build_run_stream_request(run_id=first_run_id),
+        )
+        second_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_payload["threadId"],
                 model_id="gpt-4.1",
                 user_text="Follow up",
             ),
         )
+        second_run_id = second_start_response.json()["run"]["runId"]
+        second_stream_response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=second_run_id),
+        )
 
-    first_events = _parse_sse_events(first_response.text)
-    second_events = _parse_sse_events(second_response.text)
+    first_events = _parse_sse_events(first_stream_response.text)
+    second_events = _parse_sse_events(second_stream_response.text)
 
     assert agents_response.status_code == 200
-    assert session_response.status_code == 200
+    assert thread_response.status_code == 200
     assert capabilities_response.status_code == 200
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
+    assert first_start_response.status_code == 200
+    assert first_stream_response.status_code == 200
+    assert second_start_response.status_code == 200
+    assert second_stream_response.status_code == 200
     assert agents_response.json()["defaultAgentId"] == "default"
-    assert capabilities_response.json()["sessionId"] == session_payload["sessionId"]
-    assert [event["type"] for event in first_events] == ["run_started", "text_delta", "run_completed"]
-    assert [event["type"] for event in second_events] == ["run_started", "text_delta", "run_completed"]
+    assert capabilities_response.json()["sessionId"] == thread_payload["threadId"]
+    assert [event["type"] for event in first_events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_completed",
+    ]
+    assert [event["type"] for event in second_events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_completed",
+    ]
     assert first_events[-1]["payload"]["assistantText"] == "First reply"
     assert second_events[-1]["payload"]["assistantText"] == "Second reply"
 
@@ -207,31 +259,42 @@ def test_post_root_session_first_flow_reuses_history_across_same_session() -> No
 
 
 
-def test_post_root_message_send_succeeds_without_startup_model_when_route_is_present() -> None:
+def test_post_root_run_stream_succeeds_without_startup_model_when_route_is_present() -> None:
     app = _create_app(CapturingStreamingExecutor(outputs=["Route scoped reply"], model_configured=False))
 
     with TestClient(app) as client:
-        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
-        session_id = session_response.json()["sessionId"]
-        response = client.post(
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
             "/",
-            json=_build_message_send_request(
-                session_id=session_id,
+            json=_build_run_start_request(
+                thread_id=thread_id,
                 model_id="gpt-4.1",
                 user_text="Hello",
             ),
         )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=run_id),
+        )
 
     events = _parse_sse_events(response.text)
 
-    assert session_response.status_code == 200
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
     assert response.status_code == 200
-    assert [event["type"] for event in events] == ["run_started", "text_delta", "run_completed"]
+    assert [event["type"] for event in events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_completed",
+    ]
     assert events[-1]["payload"]["assistantText"] == "Route scoped reply"
 
 
 
-def test_post_root_message_send_emits_real_tool_lifecycle_events() -> None:
+def test_post_root_run_stream_emits_real_tool_lifecycle_events() -> None:
     tool_events = [
         RuntimeToolLifecycleEvent(
             tool_call_id="tool.weather-current:call-1",
@@ -258,48 +321,55 @@ def test_post_root_message_send_emits_real_tool_lifecycle_events() -> None:
     app = _create_app(executor)
 
     with TestClient(app) as client:
-        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
-        session_id = session_response.json()["sessionId"]
-        response = client.post(
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
             "/",
-            json=_build_message_send_request(
-                session_id=session_id,
+            json=_build_run_start_request(
+                thread_id=thread_id,
                 model_id="gpt-4.1",
                 user_text="Tell me the weather",
                 enabled_tools=[WEATHER_CURRENT_TOOL_ID],
             ),
         )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=run_id),
+        )
 
     events = _parse_sse_events(response.text)
 
-    assert session_response.status_code == 200
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
     assert response.status_code == 200
     assert [event["type"] for event in events] == [
         "run_started",
+        "run_metadata",
         "tool_event",
         "tool_event",
         "text_delta",
         "run_completed",
     ]
-    assert [event["payload"]["phase"] for event in events[1:3]] == ["started", "completed"]
-    assert events[1]["payload"]["toolId"] == WEATHER_CURRENT_TOOL_ID
-    assert events[2]["payload"]["resultSummary"] == "Shenzhen：晴 / 24°C / 湿度 60%"
-    assert events[3]["payload"]["delta"] == "Weather answer"
+    assert [event["payload"]["phase"] for event in events[2:4]] == ["started", "completed"]
+    assert events[2]["payload"]["toolId"] == WEATHER_CURRENT_TOOL_ID
+    assert events[3]["payload"]["resultSummary"] == "Shenzhen：晴 / 24°C / 湿度 60%"
+    assert events[4]["payload"]["delta"] == "Weather answer"
     assert events[-1]["payload"]["assistantText"] == "Weather answer"
     assert events[-1]["payload"]["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
     assert executor.captured_calls[0]["enabled_tools"] == [WEATHER_CURRENT_TOOL_ID]
 
 
 
-def test_post_root_message_send_corrupted_session_history_returns_failed_event() -> None:
+def test_post_root_run_stream_corrupted_thread_history_returns_failed_event() -> None:
     app = _create_app(CapturingStreamingExecutor(outputs=["unused reply"]))
 
     with TestClient(app) as client:
-        session_response = client.post("/", json=_build_session_create_request(agent_id="default"))
-        session_id = session_response.json()["sessionId"]
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
         store = app.state.copilot_runtime_session_store
         store.create_run(
-            thread_id=session_id,
+            thread_id=thread_id,
             run_id="run-corrupted",
             request=RuntimeStoredRunInput(
                 message_role="assistant",
@@ -307,10 +377,9 @@ def test_post_root_message_send_corrupted_session_history_returns_failed_event()
                 policy=RuntimeStoredRunPolicy(
                     model_route=RuntimeStoredModelRoute(
                         provider_profile_id="provider-1",
-                        snapshot=RuntimeStoredModelRouteSnapshot(
-                            provider="openai",
-                            endpoint_type="openai-compatible",
-                            base_url="https://example.com/v1",
+                        route_ref=RuntimeModelRouteRef(
+                            route_kind="provider-model",
+                            profile_id="provider-1",
                             model_id="gpt-4.1",
                         ),
                     )
@@ -319,17 +388,24 @@ def test_post_root_message_send_corrupted_session_history_returns_failed_event()
             ),
         )
         store.mark_run_completed("run-corrupted", assistant_text="projected assistant reply")
-        response = client.post(
+        run_start_response = client.post(
             "/",
-            json=_build_message_send_request(
-                session_id=session_id,
+            json=_build_run_start_request(
+                thread_id=thread_id,
                 model_id="gpt-4.1",
                 user_text="Hello again",
             ),
         )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=run_id),
+        )
 
     events = _parse_sse_events(response.text)
 
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
     assert response.status_code == 200
     assert [event["type"] for event in events] == ["run_started", "run_failed"]
     assert events[-1]["payload"]["code"] == "invalid_message_history"
@@ -346,9 +422,9 @@ def _create_app(executor: CapturingStreamingExecutor):
 
 
 
-def _build_session_create_request(*, agent_id: str) -> dict[str, Any]:
+def _build_thread_create_request(*, agent_id: str) -> dict[str, Any]:
     return {
-        "method": "session/create",
+        "method": "thread/create",
         "body": {
             "agentId": agent_id,
         },
@@ -356,28 +432,28 @@ def _build_session_create_request(*, agent_id: str) -> dict[str, Any]:
 
 
 
-def _build_capabilities_get_request(*, session_id: str) -> dict[str, Any]:
+def _build_capabilities_get_request(*, thread_id: str) -> dict[str, Any]:
     return {
         "method": "capabilities/get",
         "body": {
-            "sessionId": session_id,
+            "sessionId": thread_id,
         },
     }
 
 
 
-def _build_message_send_request(
+def _build_run_start_request(
     *,
-    session_id: str,
+    thread_id: str,
     model_id: str,
     user_text: str,
     enabled_tools: list[str] | None = None,
     debug_mode_enabled: bool = False,
 ) -> dict[str, Any]:
     return {
-        "method": "message/send",
+        "method": "run/start",
         "body": {
-            "sessionId": session_id,
+            "threadId": thread_id,
             "agent": "default",
             "message": {
                 "role": "user",
@@ -385,11 +461,9 @@ def _build_message_send_request(
             },
             "policy": {
                 "modelRoute": {
-                    "providerProfileId": "provider-1",
-                    "snapshot": {
-                        "provider": "openai",
-                        "endpointType": "openai-compatible",
-                        "baseUrl": "https://example.com/v1",
+                    "routeRef": {
+                        "routeKind": "provider-model",
+                        "profileId": "provider-1",
                         "modelId": model_id,
                     },
                 },
@@ -397,6 +471,16 @@ def _build_message_send_request(
                 "debugModeEnabled": debug_mode_enabled,
                 "requestOptions": {},
             },
+        },
+    }
+
+
+
+def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
+    return {
+        "method": "run/stream",
+        "body": {
+            "runId": run_id,
         },
     }
 

@@ -10,14 +10,14 @@ from app.copilot_runtime.bridge import AgentNotFoundError, RuntimeBridge, Sessio
 from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
-    RuntimeMessageSendRequest,
     RuntimeRunStartRequest,
     build_runtime_scaffold,
 )
-from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
+from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteRef
 from app.copilot_runtime.run_events import (
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
+    RUN_METADATA_EVENT_TYPE,
     RUN_STARTED_EVENT_TYPE,
     TEXT_DELTA_EVENT_TYPE,
     RuntimeRunEvent,
@@ -30,16 +30,19 @@ from app.copilot_runtime.tool_registry import build_default_tool_registry
 class _StubMessageRunOrchestrator:
     def __init__(self, *, events: list[RuntimeRunEvent]) -> None:
         self._events = list(events)
-        self.received_requests: list[RuntimeMessageSendRequest] = []
+        self.received_requests: list[RuntimeRunStartRequest] = []
+        self.received_run_ids: list[str | None] = []
         self.received_disconnect_callbacks: list[Callable[[], Awaitable[bool]] | None] = []
 
     async def stream_events(
         self,
         *,
-        request: RuntimeMessageSendRequest,
+        request: RuntimeRunStartRequest,
         is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
+        run_id: str | None = None,
     ):
         self.received_requests.append(request)
+        self.received_run_ids.append(run_id)
         self.received_disconnect_callbacks.append(is_client_disconnected)
         for event in self._events:
             yield event
@@ -53,8 +56,9 @@ class _CancelAwareMessageRunOrchestrator:
     async def stream_events(
         self,
         *,
-        request: RuntimeMessageSendRequest,
+        request: RuntimeRunStartRequest,
         is_client_disconnected=None,
+        run_id: str | None = None,
     ):
         assistant_message_id = f"{self._events.run_id}:assistant"
         yield self._events.build(
@@ -83,15 +87,22 @@ class _CancelAwareMessageRunOrchestrator:
         )
 
 
-def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> None:
+def test_stream_run_delegates_to_orchestrator_and_preserves_request() -> None:
     store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
     registry = build_default_agent_registry()
     scaffold = _build_scaffold(agent_registry=registry, session_store=store)
-    request = _build_message_send_request(session_id="session-1")
+    request = _build_run_start_request(thread_id="thread-1")
+    seed_bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = seed_bridge.start_run(request=request)
     expected_events = [
-        RuntimeRunEventFactory(session_id="session-1", run_id="run-test").build(
+        RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id).build(
             RUN_STARTED_EVENT_TYPE,
-            payload={"assistantMessageId": "run-test:assistant"},
+            payload={"assistantMessageId": f"{run.run_id}:assistant"},
         )
     ]
     orchestrator = _StubMessageRunOrchestrator(events=expected_events)
@@ -109,8 +120,8 @@ def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> Non
 
     events = asyncio.run(
         _collect_events(
-            bridge.stream_message(
-                request=request,
+            bridge.stream_run(
+                run_id=run.run_id,
                 is_client_disconnected=is_client_disconnected,
             )
         )
@@ -118,6 +129,7 @@ def test_stream_message_delegates_to_orchestrator_and_preserves_request() -> Non
 
     assert events == expected_events
     assert orchestrator.received_requests == [request]
+    assert orchestrator.received_run_ids == [run.run_id]
 
     checker = orchestrator.received_disconnect_callbacks[0]
     assert checker is not None
@@ -143,11 +155,36 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
     )
     run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
     events_factory = RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id)
+    thinking_capability_snapshot = {
+        "status": "unknown-without-override",
+        "source": "unknown",
+        "supported": False,
+        "supportedLevels": [],
+        "defaultLevel": None,
+        "reasonCode": "route_not_verified",
+        "providerHint": "unknown-route",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+        "overrideLevels": [],
+    }
     orchestrator = _StubMessageRunOrchestrator(
         events=[
             events_factory.build(
                 RUN_STARTED_EVENT_TYPE,
                 payload={"assistantMessageId": f"{run.run_id}:assistant"},
+            ),
+            events_factory.build(
+                RUN_METADATA_EVENT_TYPE,
+                payload={
+                    "requestedThinkingLevel": "medium",
+                    "appliedThinkingLevel": None,
+                    "thinkingCapabilitySnapshot": thinking_capability_snapshot,
+                },
             ),
             events_factory.build(
                 TEXT_DELTA_EVENT_TYPE,
@@ -176,15 +213,24 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
 
     assert [event.type for event in events] == [
         RUN_STARTED_EVENT_TYPE,
+        RUN_METADATA_EVENT_TYPE,
         TEXT_DELTA_EVENT_TYPE,
         RUN_COMPLETED_EVENT_TYPE,
     ]
     assert updated_run.status == "completed"
     assert updated_run.assistant_text == "Hello back"
+    assert updated_run.metadata["requestedThinkingLevel"] == "medium"
+    assert updated_run.metadata["appliedThinkingLevel"] is None
+    assert updated_run.metadata["thinkingCapabilitySnapshot"] == thinking_capability_snapshot
+    run_view = scaffold.build_run_view(run=updated_run)
+    assert run_view.requestedThinkingLevel == "medium"
+    assert run_view.appliedThinkingLevel is None
+    assert run_view.thinkingCapabilitySnapshot == thinking_capability_snapshot
     assert [(event.event_type, event.sequence) for event in store.list_run_events(run.run_id)] == [
         (RUN_STARTED_EVENT_TYPE, 1),
-        (TEXT_DELTA_EVENT_TYPE, 2),
-        (RUN_COMPLETED_EVENT_TYPE, 3),
+        (RUN_METADATA_EVENT_TYPE, 2),
+        (TEXT_DELTA_EVENT_TYPE, 3),
+        (RUN_COMPLETED_EVENT_TYPE, 4),
     ]
     assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
         ("user", "Hello"),
@@ -231,7 +277,7 @@ def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
 
 def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:
     store = InMemorySessionStore()
-    session = store.create(bound_agent_id="default", session_id="session-1")
+    thread = store.create_thread(bound_agent_id="default", thread_id="thread-1")
     registry = build_default_agent_registry()
     scaffold = _build_scaffold(agent_registry=registry, session_store=store)
     bridge = RuntimeBridge(
@@ -240,15 +286,16 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
         scaffold=scaffold,
     )
 
-    capabilities = bridge.get_capabilities(session_id=session.session_id)
+    capabilities = bridge.get_capabilities(session_id=thread.thread_id)
 
-    assert capabilities.sessionId == "session-1"
+    assert capabilities.sessionId == thread.thread_id
     assert capabilities.boundAgent.agentId == "default"
     assert capabilities.toolSelectionMode == "recommendation-only"
     assert capabilities.recommendedTools == ("tool.file-convert",)
     assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
     assert capabilities.tools[0].toolId == "tool.file-convert"
     assert capabilities.tools[0].displayName == "File Convert"
+
 
 
 def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -> None:
@@ -265,9 +312,10 @@ def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -
         bridge.get_capabilities(session_id="missing-session")
 
 
+
 def test_get_capabilities_raises_agent_not_found_for_unknown_bound_agent() -> None:
     store = InMemorySessionStore()
-    store.create(bound_agent_id="missing-agent", session_id="session-1")
+    store.create_thread(bound_agent_id="missing-agent", thread_id="thread-1")
     registry = build_default_agent_registry()
     scaffold = _build_scaffold(agent_registry=registry, session_store=store)
     bridge = RuntimeBridge(
@@ -277,9 +325,7 @@ def test_get_capabilities_raises_agent_not_found_for_unknown_bound_agent() -> No
     )
 
     with pytest.raises(AgentNotFoundError, match="Unknown agent 'missing-agent'."):
-        bridge.get_capabilities(session_id="session-1")
-
-
+        bridge.get_capabilities(session_id="thread-1")
 async def _collect_events(events) -> list[RuntimeRunEvent]:
     return [event async for event in events]
 
@@ -304,10 +350,9 @@ def _build_run_start_request(*, thread_id: str) -> RuntimeRunStartRequest:
         policy=RuntimeMessageExecutionPolicy(
             modelRoute=RuntimeModelRoute(
                 provider_profile_id="provider-1",
-                snapshot=RuntimeModelRouteSnapshot(
-                    provider="openai",
-                    endpoint_type="openai-compatible",
-                    base_url="https://example.com/v1",
+                route_ref=RuntimeModelRouteRef(
+                    route_kind="provider-model",
+                    profile_id="provider-1",
                     model_id="gpt-4.1",
                 ),
             ),
@@ -318,22 +363,3 @@ def _build_run_start_request(*, thread_id: str) -> RuntimeRunStartRequest:
     )
 
 
-def _build_message_send_request(*, session_id: str) -> RuntimeMessageSendRequest:
-    return RuntimeMessageSendRequest(
-        session_id=session_id,
-        message=RuntimeMessagePayload(role="user", content="Hello"),
-        policy=RuntimeMessageExecutionPolicy(
-            modelRoute=RuntimeModelRoute(
-                provider_profile_id="provider-1",
-                snapshot=RuntimeModelRouteSnapshot(
-                    provider="openai",
-                    endpoint_type="openai-compatible",
-                    base_url="https://example.com/v1",
-                    model_id="gpt-4.1",
-                ),
-            ),
-            enabledTools=(),
-            requestOptions={},
-        ),
-        agent_id="default",
-    )

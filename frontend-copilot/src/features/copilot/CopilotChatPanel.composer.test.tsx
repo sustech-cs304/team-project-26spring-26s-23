@@ -7,11 +7,12 @@ import { CopilotChatPanel } from './CopilotChatPanel'
 import {
   cancelRuntimeRun,
   RuntimeRequestError,
-  sendRuntimeMessage,
   type RuntimeRunEvent,
 } from './chat-contract'
+import type { CopilotMessageDispatchInput } from './copilot-send-controller'
 import {
   createRuntimeMessageEventStream,
+  createRuntimeResolvedModelRoute,
   createRuntimeRunCancelResponse,
   createRuntimeToolEvent,
 } from './chat-contract.test-support'
@@ -133,14 +134,193 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
       modelRoute: {
-        providerProfileId: 'provider-beta',
-        snapshot: {
-          provider: 'openai',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-beta',
           modelId: 'openai/gpt-4.1-mini',
         },
       },
       message: {
         content: '请总结刚才的内容',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('allows enabled anthropic routes to send without openai-compatible endpoint whitelists', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-anthropic',
+            name: 'Anthropic',
+            providerId: 'anthropic',
+            protocol: 'anthropic',
+            endpoint: 'https://api.anthropic.com/',
+            defaultModel: 'claude-3.7-sonnet',
+            fastModel: 'claude-3.7-sonnet',
+            fallbackModel: 'claude-3.7-sonnet',
+            availableModels: [
+              {
+                id: 'provider-anthropic:claude-3.7-sonnet',
+                modelId: 'claude-3.7-sonnet',
+                displayName: 'Claude 3.7 Sonnet',
+                groupName: 'Anthropic',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'claude-3.7-sonnet',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+
+    expect(modelTrigger.textContent).toContain('Claude 3.7 Sonnet')
+    await setFormControlValue(messageInput, '请用 Anthropic 路由发送这条消息')
+    expect(sendButton.disabled).toBe(false)
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-anthropic',
+          modelId: 'claude-3.7-sonnet',
+        },
+      },
+      message: {
+        content: '请用 Anthropic 路由发送这条消息',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('restores the workspace default model from route ref only when duplicate model ids exist across profiles', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-alpha',
+            name: 'Alpha Provider',
+            availableModels: [
+              {
+                id: 'provider-alpha:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Alpha',
+                groupName: 'Alpha',
+                capabilities: ['reasoning'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+          createProviderProfile({
+            id: 'provider-beta',
+            name: 'Beta Provider',
+            providerId: 'groq',
+            protocol: 'openai',
+            availableModels: [
+              {
+                id: 'provider-beta:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Beta',
+                groupName: 'Beta',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'shared-model',
+          primaryAssistantModelRoute: {
+            routeKind: 'provider-model',
+            profileId: 'provider-beta',
+            modelId: 'shared-model',
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+
+    expect(modelTrigger.textContent).toContain('Shared Model Beta')
+
+    await setFormControlValue(messageInput, '请使用稳定 route ref 默认模型发送')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-beta',
+          modelId: 'shared-model',
+        },
       },
     })
 
@@ -186,21 +366,21 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('keeps an invalid selected model visible after persisted settings remove it, excludes it from candidates, and clears invalid state after reselecting a valid model', async () => {
+  it('does not recover ambiguous shared-model defaults from legacy strings in workspace or session state', async () => {
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
       source: 'stored' as const,
       state: createPersistedWorkspaceState({
         providerProfiles: [
           createProviderProfile({
-            id: 'provider-active',
-            name: 'Active Provider',
+            id: 'provider-alpha',
+            name: 'Alpha Provider',
             availableModels: [
               {
-                id: 'provider-active:openai/gpt-4.1',
-                modelId: 'openai/gpt-4.1',
-                displayName: 'GPT 4.1',
-                groupName: 'OpenAI',
+                id: 'provider-alpha:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Alpha',
+                groupName: 'Alpha',
                 capabilities: ['reasoning', 'tools'],
                 supportsStreaming: true,
                 currency: 'usd',
@@ -210,13 +390,28 @@ describe('CopilotChatPanel composer interactions', () => {
             ],
           }),
           createProviderProfile({
-            id: 'provider-empty',
-            name: 'Empty Provider',
-            availableModels: [],
+            id: 'provider-beta',
+            name: 'Beta Provider',
+            providerId: 'groq',
+            protocol: 'openai',
+            availableModels: [
+              {
+                id: 'provider-beta:shared-model',
+                modelId: 'shared-model',
+                displayName: 'Shared Model Beta',
+                groupName: 'Beta',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
           }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'openai/gpt-4.1',
+          primaryAssistantModel: 'shared-model',
+          primaryAssistantModelRoute: null,
         },
       }),
     }))
@@ -227,11 +422,7 @@ describe('CopilotChatPanel composer interactions', () => {
         retrying={false}
         retry={() => {}}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'legacy/retired-model',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -244,22 +435,24 @@ describe('CopilotChatPanel composer interactions', () => {
     })
 
     const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
-    expect(modelTrigger.textContent).toContain('legacy/retired-model')
-    expect(rendered.getByTestId('chat-model-picker-invalid-badge').textContent).toContain('失效')
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+
+    expect(modelTrigger.textContent).toContain('尚未配置模型')
+    expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
+
+    await setFormControlValue(messageInput, '请不要再靠同名字符串恢复默认模型')
+    expect(sendButton.disabled).toBe(true)
+    expect(sendButton.title).toBe('请先选择本次发送要使用的模型路由。')
 
     await clickElement(modelTrigger)
-
-    expect(rendered.getByTestId('chat-model-group-empty-provider-empty')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-model-option-provider-active-legacy/retired-model')).toBeNull()
-    await clickElement(rendered.getByTestId('chat-model-option-provider-active-provider-active:openai/gpt-4.1'))
-
-    expect(modelTrigger.textContent).toContain('GPT 4.1')
-    expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
+    expect(rendered.getByTestId('chat-model-option-provider-alpha-provider-alpha:shared-model')).not.toBeNull()
+    expect(rendered.getByTestId('chat-model-option-provider-beta-provider-beta:shared-model')).not.toBeNull()
 
     rendered.unmount()
   })
 
-  it('shows the explicit no-model empty state and clears session-level fallback model when no configured models exist', async () => {
+  it('shows the explicit no-model empty state and clears session-level legacy string fallback when no configured models exist', async () => {
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
       source: 'initialized-defaults' as const,
@@ -278,11 +471,7 @@ describe('CopilotChatPanel composer interactions', () => {
         retrying={false}
         retry={() => {}}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'openai/gpt-4.1',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -903,7 +1092,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('disables send and surfaces an explicit message when the selected route endpoint type is not supported for streaming chat', async () => {
+  it('displays legacy-unsupported provider validation in the chat area without a composer error bar', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
@@ -944,11 +1133,7 @@ describe('CopilotChatPanel composer interactions', () => {
         retrying={false}
         retry={() => {}}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            defaultModelPreference: 'provider-response:gpt-5.4',
-          },
-        })}
+        sessionShell={createSessionShell()}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -964,15 +1149,112 @@ describe('CopilotChatPanel composer interactions', () => {
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
     const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
     await setFormControlValue(messageInput, '请执行一次真实流式对话')
 
     expect(sendButton.disabled).toBe(true)
-    expect(sendButton.title).toBe('当前流式聊天暂不支持“openai-response”端点类型，请切换到 openai-compatible 模型路由。')
+    expect(sendButton.title).toBe('历史兼容 / 当前未启用')
 
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(0)
-    expect(rendered.container.textContent).toContain('当前流式聊天暂不支持“openai-response”端点类型，请切换到 openai-compatible 模型路由。')
+    expect(scrollRegion.textContent).toContain('历史兼容 / 当前未启用')
+    expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('allows a subsequent successful send after a legacy-provider validation failure and clears the stale error message', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-response',
+            name: 'Response Provider',
+            protocol: 'openai-response',
+            defaultModel: 'gpt-5.4',
+            fastModel: 'gpt-5.4',
+            fallbackModel: 'gpt-5.4',
+            availableModels: [
+              {
+                id: 'provider-response:gpt-5.4',
+                modelId: 'gpt-5.4',
+                displayName: 'GPT 5.4',
+                groupName: 'Response',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'gpt-5.4',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
+    await setFormControlValue(messageInput, '第一次先触发不支持路由错误')
+    await submitForm(composer)
+
+    expect(scrollRegion.textContent).toContain('历史兼容 / 当前未启用')
+    expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
+
+    await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
+    await clickElement(rendered.getByTestId('chat-model-option-provider-openai-provider-openai:openai/gpt-4.1'))
+    await setFormControlValue(messageInput, '第二次发送应恢复成功')
+    await submitForm(composer)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(scrollRegion.textContent).not.toContain('历史兼容 / 当前未启用')
+    expect(scrollRegion.textContent).toContain('第二次发送应恢复成功')
+    expect(scrollRegion.textContent).toContain('这是助手回显')
 
     rendered.unmount()
   })
@@ -1062,7 +1344,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
 function createStartOnlyPendingSendMessageSpy() {
   return vi.fn(async function* (
-    input: Parameters<typeof sendRuntimeMessage>[0],
+    input: CopilotMessageDispatchInput,
   ): AsyncGenerator<RuntimeRunEvent> {
     yield {
       type: 'run_started',
@@ -1080,7 +1362,7 @@ function createStartOnlyPendingSendMessageSpy() {
 
 function createToolFirstPendingSendMessageSpy(control: DeferredSignal) {
   return vi.fn(async function* (
-    input: Parameters<typeof sendRuntimeMessage>[0],
+    input: CopilotMessageDispatchInput,
   ): AsyncGenerator<RuntimeRunEvent> {
     yield {
       type: 'run_started',
@@ -1113,7 +1395,7 @@ function createToolFirstPendingSendMessageSpy(control: DeferredSignal) {
 
 function createTextFirstPendingSendMessageSpy() {
   return vi.fn(async function* (
-    input: Parameters<typeof sendRuntimeMessage>[0],
+    input: CopilotMessageDispatchInput,
   ): AsyncGenerator<RuntimeRunEvent> {
     yield {
       type: 'run_started',
@@ -1143,7 +1425,7 @@ function createTextFirstPendingSendMessageSpy() {
 
 function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
   return vi.fn(async function* (
-    input: Parameters<typeof sendRuntimeMessage>[0],
+    input: CopilotMessageDispatchInput,
   ): AsyncGenerator<RuntimeRunEvent> {
     yield {
       type: 'run_started',
@@ -1173,110 +1455,148 @@ function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
 }
 
 function createResolvedSendMessageSpy() {
-  return vi.fn((input: Parameters<typeof sendRuntimeMessage>[0]) => createRuntimeMessageEventStream([
-    {
-      type: 'run_started',
-      runId: 'run-1',
-      sessionId: input.sessionId,
-      sequence: 1,
-      payload: {
-        assistantMessageId: 'run-1:assistant',
+  return vi.fn((input: CopilotMessageDispatchInput) => {
+    const routeRef = input.modelRoute.routeRef ?? {
+      routeKind: 'provider-model' as const,
+      profileId: 'unknown-profile',
+      modelId: 'unknown-model',
+    }
+
+    return createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-1',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+        },
       },
-    },
-    {
-      type: 'text_delta',
-      runId: 'run-1',
-      sessionId: input.sessionId,
-      sequence: 2,
-      payload: {
-        assistantMessageId: 'run-1:assistant',
-        delta: '这是助手回显',
+      {
+        type: 'text_delta',
+        runId: 'run-1',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          delta: '这是助手回显',
+        },
       },
-    },
-    {
-      type: 'run_completed',
-      runId: 'run-1',
-      sessionId: input.sessionId,
-      sequence: 3,
-      payload: {
-        assistantMessageId: 'run-1:assistant',
-        assistantText: '这是助手回显',
-        resolvedModelId: input.modelRoute.snapshot.modelId,
-        resolvedModelRoute: input.modelRoute,
-        resolvedToolIds: input.enabledTools,
-        requestOptions: input.requestOptions ?? {},
+      {
+        type: 'run_completed',
+        runId: 'run-1',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          assistantText: '这是助手回显',
+          resolvedModelId: routeRef.modelId,
+          resolvedModelRoute: createRuntimeResolvedModelRoute({
+            routeRef,
+            providerProfileId: routeRef.profileId,
+            provider: 'openai',
+            providerId: 'openai',
+            adapterId: 'openai',
+            endpointFamily: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: routeRef.modelId,
+            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+          }),
+          resolvedToolIds: input.enabledTools,
+          requestOptions: input.requestOptions ?? {},
+        },
       },
-    },
-  ]))
+    ])
+  })
 }
 
 function createToolLifecycleSendMessageSpy() {
-  return vi.fn((input: Parameters<typeof sendRuntimeMessage>[0]) => createRuntimeMessageEventStream([
-    {
-      type: 'run_started',
-      runId: 'run-tool-success',
-      sessionId: input.sessionId,
-      sequence: 1,
-      payload: {
-        assistantMessageId: 'run-tool-success:assistant',
+  return vi.fn((input: CopilotMessageDispatchInput) => {
+    const routeRef = input.modelRoute.routeRef ?? {
+      routeKind: 'provider-model' as const,
+      profileId: 'unknown-profile',
+      modelId: 'unknown-model',
+    }
+
+    return createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-tool-success:assistant',
+        },
       },
-    },
-    createRuntimeToolEvent({
-      runId: 'run-tool-success',
-      sessionId: input.sessionId,
-      sequence: 2,
-      payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
-        phase: 'started',
-        title: '调用天气工具',
-        summary: '正在获取 Shenzhen 的天气。',
-        inputSummary: '{"location":"Shenzhen"}',
+      createRuntimeToolEvent({
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'started',
+          title: '调用天气工具',
+          summary: '正在获取 Shenzhen 的天气。',
+          inputSummary: '{"location":"Shenzhen"}',
+        },
+      }),
+      createRuntimeToolEvent({
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'completed',
+          title: '天气工具已返回结果',
+          summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+          inputSummary: '{"location":"Shenzhen"}',
+          resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        },
+      }),
+      {
+        type: 'text_delta',
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 4,
+        payload: {
+          assistantMessageId: 'run-tool-success:assistant',
+          delta: '这是助手回显',
+        },
       },
-    }),
-    createRuntimeToolEvent({
-      runId: 'run-tool-success',
-      sessionId: input.sessionId,
-      sequence: 3,
-      payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
-        phase: 'completed',
-        title: '天气工具已返回结果',
-        summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
-        inputSummary: '{"location":"Shenzhen"}',
-        resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+      {
+        type: 'run_completed',
+        runId: 'run-tool-success',
+        sessionId: input.sessionId,
+        sequence: 5,
+        payload: {
+          assistantMessageId: 'run-tool-success:assistant',
+          assistantText: '这是助手回显',
+          resolvedModelId: routeRef.modelId,
+          resolvedModelRoute: createRuntimeResolvedModelRoute({
+            routeRef,
+            providerProfileId: routeRef.profileId,
+            provider: 'openai',
+            providerId: 'openai',
+            adapterId: 'openai',
+            endpointFamily: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: routeRef.modelId,
+            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+          }),
+          resolvedToolIds: ['tool.weather-current'],
+          requestOptions: input.requestOptions ?? {},
+        },
       },
-    }),
-    {
-      type: 'text_delta',
-      runId: 'run-tool-success',
-      sessionId: input.sessionId,
-      sequence: 4,
-      payload: {
-        assistantMessageId: 'run-tool-success:assistant',
-        delta: '这是助手回显',
-      },
-    },
-    {
-      type: 'run_completed',
-      runId: 'run-tool-success',
-      sessionId: input.sessionId,
-      sequence: 5,
-      payload: {
-        assistantMessageId: 'run-tool-success:assistant',
-        assistantText: '这是助手回显',
-        resolvedModelId: input.modelRoute.snapshot.modelId,
-        resolvedModelRoute: input.modelRoute,
-        resolvedToolIds: ['tool.weather-current'],
-        requestOptions: input.requestOptions ?? {},
-      },
-    },
-  ]))
+    ])
+  })
 }
 
 function createToolFailureSendMessageSpy() {
-  return vi.fn((input: Parameters<typeof sendRuntimeMessage>[0]) => createRuntimeMessageEventStream([
+  return vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
     {
       type: 'run_started',
       runId: 'run-tool-failed',
@@ -1340,7 +1660,7 @@ function createPersistedWorkspaceStateLoader() {
 
 function createAbortableSendMessageSpy() {
   return vi.fn(async function* (
-    input: Parameters<typeof sendRuntimeMessage>[0],
+    input: CopilotMessageDispatchInput,
   ): AsyncGenerator<RuntimeRunEvent> {
     yield {
       type: 'run_started',

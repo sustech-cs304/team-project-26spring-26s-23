@@ -1,19 +1,31 @@
-import type { ModelCapability, ProviderModelProfile, ProviderProfile } from '../../src/workbench/types'
+import {
+  getProviderCatalogEntry,
+  normalizeProviderCatalogIdentifier,
+} from '../../src/provider-catalog'
+import type {
+  ModelCapability,
+  ModelRouteRef,
+  ProviderModelProfile,
+  ProviderProfile,
+  ProviderProfileCompatibility,
+  ProviderProfileExtensions,
+} from '../../src/workbench/types'
 import { initialProviderProfiles } from '../../src/workbench/settings/config'
+import {
+  cloneThinkingCapabilityDeclaration,
+  normalizeThinkingCapabilityDeclaration,
+} from '../../src/workbench/thinking-capabilities'
 import { asRecord, normalizeBoolean, normalizeNonEmptyString, normalizeString } from './normalize'
 
 export interface SettingsWorkspaceStoredProviderProfile {
-  id: string
-  name: string
-  protocol: string
-  endpoint: string
-  defaultModel: string
-  fastModel: string
-  fallbackModel: string
-  organization: string
-  region: string
-  notes: string
-  availableModels: ProviderModelProfile[]
+  profileId: string
+  providerId: string
+  displayName: string
+  baseUrl: string
+  models: ProviderModelProfile[]
+  defaultModelId: string
+  compatibility: ProviderProfileCompatibility
+  extensions: ProviderProfileExtensions
 }
 
 export function createDefaultStoredProviderProfiles(): SettingsWorkspaceStoredProviderProfile[] {
@@ -21,28 +33,82 @@ export function createDefaultStoredProviderProfiles(): SettingsWorkspaceStoredPr
 }
 
 export function createDefaultSettingsWorkspaceDefaultModelRouting(): {
-  primaryAssistantModel: string
-  fastAssistantModel: string
+  primaryAssistantModel: ModelRouteRef | null
+  fastAssistantModel: ModelRouteRef | null
 } {
+  const primaryProfile = createDefaultStoredProviderProfiles()[0]
+  const fastModelId = primaryProfile === undefined
+    ? ''
+    : getProviderProfileExtensionString(primaryProfile.extensions, 'fastModel') || primaryProfile.defaultModelId
+
   return {
-    primaryAssistantModel: initialProviderProfiles[0]?.defaultModel ?? '',
-    fastAssistantModel: initialProviderProfiles[0]?.fastModel ?? '',
+    primaryAssistantModel: buildModelRouteRef(primaryProfile?.profileId ?? '', primaryProfile?.defaultModelId ?? ''),
+    fastAssistantModel: buildModelRouteRef(primaryProfile?.profileId ?? '', fastModelId),
   }
 }
 
 export function projectStoredProviderProfile(profile: ProviderProfile): SettingsWorkspaceStoredProviderProfile {
-  return {
-    id: profile.id,
-    name: profile.name,
+  const profileId = normalizeNonEmptyString(profile.profileId, profile.id)
+  const providerId = resolveStoredProviderId({
+    providerId: profile.providerId,
     protocol: profile.protocol,
-    endpoint: profile.endpoint,
-    defaultModel: profile.defaultModel,
-    fastModel: profile.fastModel,
-    fallbackModel: profile.fallbackModel,
-    organization: profile.organization,
-    region: profile.region,
-    notes: profile.notes,
-    availableModels: profile.availableModels.map(cloneProviderModelProfile),
+    profileId,
+  })
+  const displayName = normalizeNonEmptyString(profile.name, normalizeNonEmptyString(profile.displayName, profile.name))
+  const defaultModelId = normalizeNonEmptyString(profile.defaultModelId, profile.defaultModel)
+  const extensions = normalizeProviderProfileExtensions({
+    ...(profile.extensions ?? {}),
+    ...buildLegacyProviderProfileExtensionPatch(profile, providerId),
+  })
+  const models = ensureTrackedModels(
+    normalizeProviderModelProfiles(profile.availableModels, profileId),
+    profileId,
+    displayName,
+    [
+      defaultModelId,
+      getProviderProfileExtensionString(extensions, 'fastModel'),
+      getProviderProfileExtensionString(extensions, 'fallbackModel'),
+    ],
+  )
+
+  return {
+    profileId,
+    providerId,
+    displayName,
+    baseUrl: normalizeString(profile.baseUrl, profile.endpoint),
+    models,
+    defaultModelId: normalizeNonEmptyString(defaultModelId, models[0]?.modelId ?? ''),
+    compatibility: normalizeStoredProviderCompatibility(profile.compatibility, providerId),
+    extensions,
+  }
+}
+
+export function projectEditableProviderProfile(
+  profile: SettingsWorkspaceStoredProviderProfile,
+  hasApiKey: boolean,
+): ProviderProfile {
+  const protocol = getProviderProfileExtensionString(profile.extensions, 'legacyProtocol') || profile.providerId
+
+  return {
+    id: profile.profileId,
+    profileId: profile.profileId,
+    providerId: profile.providerId,
+    name: profile.displayName,
+    displayName: profile.displayName,
+    protocol,
+    endpoint: profile.baseUrl,
+    baseUrl: profile.baseUrl,
+    hasApiKey,
+    defaultModel: profile.defaultModelId,
+    defaultModelId: profile.defaultModelId,
+    fastModel: getProviderProfileExtensionString(profile.extensions, 'fastModel'),
+    fallbackModel: getProviderProfileExtensionString(profile.extensions, 'fallbackModel'),
+    organization: getProviderProfileExtensionString(profile.extensions, 'organization'),
+    region: getProviderProfileExtensionString(profile.extensions, 'region'),
+    notes: getProviderProfileExtensionString(profile.extensions, 'notes'),
+    compatibility: cloneStoredProviderCompatibility(profile.compatibility),
+    extensions: cloneProviderProfileExtensions(profile.extensions),
+    availableModels: profile.models.map(cloneProviderModelProfile),
   }
 }
 
@@ -51,7 +117,9 @@ export function cloneStoredProviderProfile(
 ): SettingsWorkspaceStoredProviderProfile {
   return {
     ...profile,
-    availableModels: profile.availableModels.map(cloneProviderModelProfile),
+    models: profile.models.map(cloneProviderModelProfile),
+    compatibility: cloneStoredProviderCompatibility(profile.compatibility),
+    extensions: cloneProviderProfileExtensions(profile.extensions),
   }
 }
 
@@ -59,6 +127,7 @@ export function cloneProviderModelProfile(model: ProviderModelProfile): Provider
   return {
     ...model,
     capabilities: [...model.capabilities],
+    thinkingCapability: cloneThinkingCapabilityDeclaration(model.thinkingCapability),
   }
 }
 
@@ -79,45 +148,86 @@ function normalizeStoredProviderProfile(
   index: number,
 ): SettingsWorkspaceStoredProviderProfile | null {
   const record = asRecord(input)
-  const providerId = normalizeNonEmptyString(record.id, `provider-${index + 1}`)
+  const profileId = normalizeNonEmptyString(record.profileId, normalizeNonEmptyString(record.id, `provider-${index + 1}`))
 
-  if (providerId === '') {
+  if (profileId === '') {
     return null
   }
 
-  const availableModels = normalizeProviderModelProfiles(record.availableModels, providerId)
-  const defaultModel = normalizeNonEmptyString(record.defaultModel, availableModels[0]?.modelId ?? 'default-model')
-  const fastModel = normalizeNonEmptyString(record.fastModel, availableModels[1]?.modelId ?? defaultModel)
-  const fallbackModel = normalizeNonEmptyString(record.fallbackModel, availableModels[2]?.modelId ?? defaultModel)
+  const providerId = resolveStoredProviderId({
+    providerId: normalizeString(record.providerId, ''),
+    protocol: normalizeString(record.protocol, ''),
+    profileId,
+  })
+  const displayName = normalizeNonEmptyString(record.displayName, normalizeNonEmptyString(record.name, `Provider ${index + 1}`))
+  const defaultBaseUrl = getProviderCatalogEntry(providerId)?.baseUrlPolicy.defaultBaseUrl ?? ''
+  const baseUrl = normalizeString(record.baseUrl, normalizeString(record.endpoint, defaultBaseUrl))
+  const extensions = normalizeProviderProfileExtensions({
+    ...asRecord(record.extensions),
+    ...buildLegacyProviderProfileExtensionPatch({
+      id: profileId,
+      profileId,
+      providerId,
+      name: displayName,
+      displayName,
+      protocol: normalizeString(record.protocol, providerId),
+      endpoint: baseUrl,
+      baseUrl,
+      hasApiKey: false,
+      defaultModel: normalizeString(record.defaultModel, ''),
+      defaultModelId: normalizeString(record.defaultModelId, ''),
+      fastModel: normalizeString(record.fastModel, ''),
+      fallbackModel: normalizeString(record.fallbackModel, ''),
+      organization: normalizeString(record.organization, ''),
+      region: normalizeString(record.region, ''),
+      notes: normalizeString(record.notes, ''),
+      compatibility: undefined,
+      extensions: undefined,
+      availableModels: [],
+    }, providerId),
+  })
+  const rawModels = normalizeProviderModelProfiles(
+    Array.isArray(record.models) ? record.models : record.availableModels,
+    profileId,
+  )
+  const defaultModelId = normalizeNonEmptyString(
+    record.defaultModelId,
+    normalizeNonEmptyString(
+      record.defaultModel,
+      rawModels[0]?.modelId ?? '',
+    ),
+  )
+  const models = ensureTrackedModels(rawModels, profileId, displayName, [
+    defaultModelId,
+    getProviderProfileExtensionString(extensions, 'fastModel'),
+    getProviderProfileExtensionString(extensions, 'fallbackModel'),
+  ])
 
   return {
-    id: providerId,
-    name: normalizeNonEmptyString(record.name, `Provider ${index + 1}`),
-    protocol: normalizeNonEmptyString(record.protocol, 'openai'),
-    endpoint: normalizeNonEmptyString(record.endpoint, 'https://api.example.com/v1'),
-    defaultModel,
-    fastModel,
-    fallbackModel,
-    organization: normalizeString(record.organization, ''),
-    region: normalizeNonEmptyString(record.region, 'Global'),
-    notes: normalizeString(record.notes, ''),
-    availableModels,
+    profileId,
+    providerId,
+    displayName,
+    baseUrl,
+    models,
+    defaultModelId: normalizeNonEmptyString(defaultModelId, models[0]?.modelId ?? ''),
+    compatibility: normalizeStoredProviderCompatibility(record.compatibility, providerId),
+    extensions,
   }
 }
 
-function normalizeProviderModelProfiles(input: unknown, providerId: string): ProviderModelProfile[] {
+function normalizeProviderModelProfiles(input: unknown, profileId: string): ProviderModelProfile[] {
   if (!Array.isArray(input)) {
     return []
   }
 
   return input
-    .map((model, index) => normalizeProviderModelProfile(model, providerId, index))
+    .map((model, index) => normalizeProviderModelProfile(model, profileId, index))
     .filter((model): model is ProviderModelProfile => model !== null)
 }
 
 function normalizeProviderModelProfile(
   input: unknown,
-  providerId: string,
+  profileId: string,
   index: number,
 ): ProviderModelProfile | null {
   const record = asRecord(input)
@@ -128,11 +238,12 @@ function normalizeProviderModelProfile(
   }
 
   return {
-    id: normalizeNonEmptyString(record.id, `${providerId}-model-${index + 1}`),
+    id: normalizeNonEmptyString(record.id, `${profileId}-model-${index + 1}`),
     modelId,
     displayName: normalizeNonEmptyString(record.displayName, modelId),
-    groupName: normalizeNonEmptyString(record.groupName, providerId),
+    groupName: normalizeNonEmptyString(record.groupName, profileId),
     capabilities: normalizeModelCapabilities(record.capabilities),
+    thinkingCapability: normalizeThinkingCapabilityDeclaration(record.thinkingCapability),
     supportsStreaming: normalizeBoolean(record.supportsStreaming, true),
     currency: normalizeNonEmptyString(record.currency, 'usd'),
     inputPrice: normalizeNonEmptyString(record.inputPrice, '0.50'),
@@ -157,4 +268,187 @@ function normalizeModelCapabilities(input: unknown): ModelCapability[] {
     })
 
   return capabilities.length > 0 ? Array.from(new Set(capabilities)) : ['reasoning']
+}
+
+function resolveStoredProviderId(input: {
+  providerId?: string
+  protocol?: string
+  profileId: string
+}): string {
+  const directProviderId = normalizeProviderCatalogIdentifier(input.providerId ?? '')
+  if (directProviderId !== '') {
+    return getProviderCatalogEntry(directProviderId)?.providerId ?? directProviderId
+  }
+
+  const protocolProviderId = normalizeProviderCatalogIdentifier(input.protocol ?? '')
+  if (protocolProviderId !== '') {
+    return getProviderCatalogEntry(protocolProviderId)?.providerId ?? protocolProviderId
+  }
+
+  const fallbackProfileId = normalizeProviderCatalogIdentifier(input.profileId)
+  return fallbackProfileId || 'unknown-provider'
+}
+
+function normalizeStoredProviderCompatibility(
+  input: unknown,
+  providerId: string,
+): ProviderProfileCompatibility {
+  const record = asRecord(input)
+  const status = normalizeNonEmptyString(record.status, '')
+  const reason = normalizeString(record.reason, '')
+
+  if (status === 'active' || status === 'legacy' || status === 'unsupported') {
+    return {
+      status,
+      reason,
+    }
+  }
+
+  const catalogEntry = getProviderCatalogEntry(providerId)
+  if (catalogEntry === null) {
+    return {
+      status: 'unsupported',
+      reason: `Provider '${providerId}' is not defined in the current provider catalog.`,
+    }
+  }
+
+  if (catalogEntry.runtimeStatus === 'legacy-unsupported') {
+    return {
+      status: 'legacy',
+      reason: `Provider '${catalogEntry.providerId}' is marked as legacy / unsupported in the provider catalog.`,
+    }
+  }
+
+  return {
+    status: 'active',
+    reason: '',
+  }
+}
+
+function ensureTrackedModels(
+  models: ProviderModelProfile[],
+  profileId: string,
+  displayName: string,
+  trackedModelIds: string[],
+): ProviderModelProfile[] {
+  const normalizedModels = models.map(cloneProviderModelProfile)
+  const knownModelIds = new Set(
+    normalizedModels
+      .map((model) => normalizeNonEmptyString(model.modelId, ''))
+      .filter((modelId) => modelId !== ''),
+  )
+
+  trackedModelIds.forEach((modelId, index) => {
+    const normalizedModelId = normalizeNonEmptyString(modelId, '')
+    if (normalizedModelId === '' || knownModelIds.has(normalizedModelId)) {
+      return
+    }
+
+    normalizedModels.push(createPlaceholderProviderModelProfile(profileId, displayName, normalizedModelId, index))
+    knownModelIds.add(normalizedModelId)
+  })
+
+  return normalizedModels
+}
+
+function createPlaceholderProviderModelProfile(
+  profileId: string,
+  displayName: string,
+  modelId: string,
+  index: number,
+): ProviderModelProfile {
+  return {
+    id: `${profileId}-migrated-model-${index + 1}`,
+    modelId,
+    displayName: modelId,
+    groupName: displayName,
+    capabilities: ['reasoning'],
+    thinkingCapability: undefined,
+    supportsStreaming: true,
+    currency: 'usd',
+    inputPrice: '0.50',
+    outputPrice: '3.00',
+  }
+}
+
+function buildLegacyProviderProfileExtensionPatch(
+  profile: ProviderProfile,
+  providerId: string,
+): ProviderProfileExtensions {
+  const protocol = normalizeProviderCatalogIdentifier(profile.protocol)
+
+  return normalizeProviderProfileExtensions({
+    fastModel: profile.fastModel,
+    fallbackModel: profile.fallbackModel,
+    organization: profile.organization,
+    region: profile.region,
+    notes: profile.notes,
+    ...(protocol !== '' && protocol !== providerId ? { legacyProtocol: protocol } : {}),
+  })
+}
+
+function normalizeProviderProfileExtensions(input: unknown): ProviderProfileExtensions {
+  const record = asRecord(input)
+  const normalizedExtensions: ProviderProfileExtensions = {}
+
+  for (const [key, value] of Object.entries(record)) {
+    const normalizedKey = normalizeNonEmptyString(key, '')
+    if (normalizedKey === '') {
+      continue
+    }
+
+    if (typeof value === 'string') {
+      const normalizedValue = value.trim()
+      if (normalizedValue !== '') {
+        normalizedExtensions[normalizedKey] = normalizedValue
+      }
+      continue
+    }
+
+    if (typeof value === 'number') {
+      if (Number.isFinite(value)) {
+        normalizedExtensions[normalizedKey] = value
+      }
+      continue
+    }
+
+    if (typeof value === 'boolean' || value === null) {
+      normalizedExtensions[normalizedKey] = value
+    }
+  }
+
+  return normalizedExtensions
+}
+
+function cloneProviderProfileExtensions(extensions: ProviderProfileExtensions): ProviderProfileExtensions {
+  return { ...extensions }
+}
+
+function cloneStoredProviderCompatibility(
+  compatibility: ProviderProfileCompatibility,
+): ProviderProfileCompatibility {
+  return {
+    status: compatibility.status,
+    reason: compatibility.reason,
+  }
+}
+
+function getProviderProfileExtensionString(extensions: ProviderProfileExtensions, key: string): string {
+  const value = extensions[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function buildModelRouteRef(profileId: string, modelId: string): ModelRouteRef | null {
+  const normalizedProfileId = normalizeNonEmptyString(profileId, '')
+  const normalizedModelId = normalizeNonEmptyString(modelId, '')
+
+  if (normalizedProfileId === '' || normalizedModelId === '') {
+    return null
+  }
+
+  return {
+    routeKind: 'provider-model',
+    profileId: normalizedProfileId,
+    modelId: normalizedModelId,
+  }
 }

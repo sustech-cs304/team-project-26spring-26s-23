@@ -1,4 +1,4 @@
-"""Compatibility projection from unified execution events to legacy runtime run events."""
+"""Projection from unified execution events to runtime run events."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from .execution_event_graph import (
     ASSISTANT_SEGMENT_DELTA_EVENT_TYPE,
     ASSISTANT_SEGMENT_STARTED_EVENT_TYPE,
     DIAGNOSTIC_EVENT_TYPE,
+    REASONING_SEGMENT_COMPLETED_EVENT_TYPE,
+    REASONING_SEGMENT_DELTA_EVENT_TYPE,
+    REASONING_SEGMENT_STARTED_EVENT_TYPE,
     RUN_CANCELLED_EVENT_TYPE as EXECUTION_RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE as EXECUTION_RUN_COMPLETED_EVENT_TYPE,
     RUN_FAILED_EVENT_TYPE as EXECUTION_RUN_FAILED_EVENT_TYPE,
@@ -18,10 +21,12 @@ from .execution_event_graph import (
 )
 from .model_routes import ResolvedRuntimeModelRoute
 from .run_events import (
+    REASONING_DELTA_EVENT_TYPE,
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
     RUN_DIAGNOSTIC_EVENT_TYPE,
     RUN_FAILED_EVENT_TYPE,
+    RUN_METADATA_EVENT_TYPE,
     RUN_STARTED_EVENT_TYPE,
     TEXT_DELTA_EVENT_TYPE,
     TOOL_EVENT_EVENT_TYPE,
@@ -31,7 +36,7 @@ from .run_events import (
 
 
 @dataclass(slots=True)
-class LegacyRuntimeRunEventProjector:
+class RuntimeRunEventProjector:
     events: RuntimeRunEventFactory
     assistant_message_id: str
     resolved_model_route: ResolvedRuntimeModelRoute | None = None
@@ -57,10 +62,28 @@ class LegacyRuntimeRunEventProjector:
             },
         )
 
+    def build_run_metadata(
+        self,
+        *,
+        requested_thinking_level: str | None,
+        applied_thinking_level: str | None,
+        thinking_capability_snapshot: Mapping[str, Any],
+    ) -> RuntimeRunEvent:
+        return self.events.build(
+            RUN_METADATA_EVENT_TYPE,
+            payload={
+                "requestedThinkingLevel": requested_thinking_level,
+                "appliedThinkingLevel": applied_thinking_level,
+                "thinkingCapabilitySnapshot": dict(thinking_capability_snapshot),
+            },
+        )
+
     def project(self, event: RuntimeExecutionEvent) -> tuple[RuntimeRunEvent, ...]:
         if event.type in {
             ASSISTANT_SEGMENT_STARTED_EVENT_TYPE,
             ASSISTANT_SEGMENT_COMPLETED_EVENT_TYPE,
+            REASONING_SEGMENT_STARTED_EVENT_TYPE,
+            REASONING_SEGMENT_COMPLETED_EVENT_TYPE,
         }:
             return ()
 
@@ -70,6 +93,16 @@ class LegacyRuntimeRunEventProjector:
                     TEXT_DELTA_EVENT_TYPE,
                     payload={
                         "assistantMessageId": self.assistant_message_id,
+                        "delta": str(event.payload.get("delta", "")),
+                    },
+                ),
+            )
+
+        if event.type == REASONING_SEGMENT_DELTA_EVENT_TYPE:
+            return (
+                self.events.build(
+                    REASONING_DELTA_EVENT_TYPE,
+                    payload={
                         "delta": str(event.payload.get("delta", "")),
                     },
                 ),
@@ -130,4 +163,4 @@ class LegacyRuntimeRunEventProjector:
         raise ValueError(f"Unsupported execution event type '{event.type}'.")
 
 
-__all__ = ["LegacyRuntimeRunEventProjector"]
+__all__ = ["RuntimeRunEventProjector"]

@@ -11,11 +11,14 @@ import {
   resolveCopilotModelOption,
   type CopilotModelOption,
 } from './model-picker'
-import type {
-  CopilotAssistantMessageItem,
-  CopilotAssistantPlaceholderState,
-  CopilotMessageListItem,
-  CopilotToolMessageItem,
+import {
+  formatCopilotReasoningDurationLabel,
+  type CopilotAssistantMessageItem,
+  type CopilotAssistantPlaceholderState,
+  type CopilotMessageListItem,
+  type CopilotReasoningMessageItem,
+  type CopilotTerminalMessageItem,
+  type CopilotToolMessageItem,
 } from './run-segment-view-model'
 
 const assistantMarkdownComponents: Components = {
@@ -36,6 +39,7 @@ const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
 const assistantMarkdownRehypePlugins = [rehypeMathjax]
 
 const assistantPlaceholderExitMs = 180
+const reasoningTimerRefreshMs = 100
 
 interface JsonViewComponentProps {
   src: unknown
@@ -52,6 +56,7 @@ interface CopilotMessageListProps {
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
   showDiagnostics?: boolean
+  transientError?: string | null
   emptyState?: {
     title: string
     description: string
@@ -69,11 +74,17 @@ export function CopilotMessageList({
   assistantPlaceholder = null,
   models = [],
   showDiagnostics = true,
+  transientError = null,
   emptyState = null,
 }: CopilotMessageListProps) {
-  const visibleConversation = showDiagnostics
-    ? conversation
-    : conversation.filter((turn) => turn.kind !== 'diagnostic')
+  const visibleConversation = useMemo(
+    () => buildVisibleConversation({
+      conversation,
+      showDiagnostics,
+      transientError,
+    }),
+    [conversation, showDiagnostics, transientError],
+  )
   const [renderedAssistantPlaceholder, setRenderedAssistantPlaceholder] = useState<RenderedAssistantPlaceholderState>(
     () => createRenderedAssistantPlaceholderState(assistantPlaceholder),
   )
@@ -155,7 +166,7 @@ export function CopilotMessageList({
             </div>
           )
         : visibleConversation.map((turn, index) => {
-            const detailRows = buildDetailRows(turn)
+            const detailRows = buildDetailRows(turn, showDiagnostics)
             return (
               <article
                 key={turn.id}
@@ -170,39 +181,81 @@ export function CopilotMessageList({
                   ? (
                       <ToolMessageCard turn={turn} index={index} />
                     )
-                  : (
-                      <>
-                        {turn.kind !== 'user' && renderMessageHeader(turn, index, models)}
-                        {renderMessageBody(turn)}
-                        {detailRows.length > 0 && (
-                          <div className="copilot-chat__message-detail-list">
-                            {detailRows.map((detail) => (
-                              <p
-                                key={`${turn.id}:${detail.label}`}
-                                className={[
-                                  'copilot-chat__message-detail',
-                                  `copilot-chat__message-detail--${detail.kind}`,
-                                ].join(' ')}
-                              >
-                                <span className="copilot-chat__message-detail-label">{detail.label}</span>
-                                <span>{detail.value}</span>
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                        {turn.kind === 'diagnostic' && (
-                          <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
-                            诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
-                          </p>
-                        )}
-                      </>
-                    )}
+                  : turn.kind === 'reasoning'
+                    ? (
+                        <ReasoningMessageCard turn={turn} index={index} />
+                      )
+                    : (
+                        <>
+                          {turn.kind !== 'user' && renderMessageHeader(turn, index, models)}
+                          {renderMessageBody(turn)}
+                          {detailRows.length > 0 && (
+                            <div className="copilot-chat__message-detail-list">
+                              {detailRows.map((detail) => (
+                                <p
+                                  key={`${turn.id}:${detail.label}`}
+                                  className={[
+                                    'copilot-chat__message-detail',
+                                    `copilot-chat__message-detail--${detail.kind}`,
+                                  ].join(' ')}
+                                >
+                                  <span className="copilot-chat__message-detail-label">{detail.label}</span>
+                                  <span>{detail.value}</span>
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                          {turn.kind === 'diagnostic' && (
+                            <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
+                              诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
+                            </p>
+                          )}
+                        </>
+                      )}
               </article>
             )
           })}
       {renderedAssistantPlaceholder.visible && renderAssistantPlaceholder(renderedAssistantPlaceholder)}
     </div>
   )
+}
+
+function buildVisibleConversation(input: {
+  conversation: CopilotMessageListItem[]
+  showDiagnostics: boolean
+  transientError: string | null
+}): CopilotMessageListItem[] {
+  const filteredConversation = input.showDiagnostics
+    ? input.conversation
+    : input.conversation.filter((turn) => turn.kind !== 'diagnostic')
+  const trimmedTransientError = input.transientError?.trim() ?? ''
+
+  if (trimmedTransientError === '') {
+    return filteredConversation
+  }
+
+  return [
+    ...filteredConversation,
+    createTransientErrorMessage(trimmedTransientError, filteredConversation.length + 1),
+  ]
+}
+
+function createTransientErrorMessage(
+  content: string,
+  sequence: number,
+): Extract<CopilotMessageListItem, { kind: 'terminal' }> {
+  return {
+    id: `transient-error:${sequence}`,
+    kind: 'terminal',
+    runId: 'transient-error',
+    sequence,
+    title: '发送失败',
+    content,
+    status: 'failed',
+    terminalPhase: 'failed',
+    cancelReason: null,
+    failure: null,
+  }
 }
 
 function renderMessageHeader(
@@ -256,7 +309,7 @@ function resolveAssistantMessageHeader(
 
   const resolvedModelId = findFirstNonEmptyValue(
     turn.resolvedModelId,
-    turn.resolvedModelRoute?.snapshot.modelId,
+    readModelIdFromRoute(turn.resolvedModelRoute),
   )
   if (resolvedModelId !== null) {
     const fallbackModel = createFallbackCopilotModel(resolvedModelId)
@@ -280,6 +333,16 @@ function resolveAssistantMessageHeader(
   }
 }
 
+function readModelIdFromRoute(
+  route: CopilotAssistantMessageItem['resolvedModelRoute'],
+): string | null {
+  if (route === null || route === undefined) {
+    return null
+  }
+
+  return 'providerId' in route ? route.modelId : route.routeRef?.modelId ?? null
+}
+
 function findFirstNonEmptyValue(...values: Array<string | null | undefined>): string | null {
   for (const value of values) {
     const trimmedValue = value?.trim() ?? ''
@@ -291,19 +354,23 @@ function findFirstNonEmptyValue(...values: Array<string | null | undefined>): st
   return null
 }
 
+function renderMarkdownMessageBody(content: string) {
+  return (
+    <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
+      <ReactMarkdown
+        components={assistantMarkdownComponents}
+        remarkPlugins={assistantMarkdownRemarkPlugins}
+        rehypePlugins={assistantMarkdownRehypePlugins}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 function renderMessageBody(turn: CopilotMessageListItem) {
   if (turn.kind === 'assistant') {
-    return (
-      <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
-        <ReactMarkdown
-          components={assistantMarkdownComponents}
-          remarkPlugins={assistantMarkdownRemarkPlugins}
-          rehypePlugins={assistantMarkdownRehypePlugins}
-        >
-          {turn.content}
-        </ReactMarkdown>
-      </div>
-    )
+    return renderMarkdownMessageBody(turn.content)
   }
 
   if (turn.kind === 'user') {
@@ -313,12 +380,16 @@ function renderMessageBody(turn: CopilotMessageListItem) {
   return <p className="copilot-chat__message-text">{turn.content}</p>
 }
 
-function buildDetailRows(turn: CopilotMessageListItem): Array<{
+function buildDetailRows(
+  turn: CopilotMessageListItem,
+  showDiagnostics: boolean,
+): Array<{
   kind: 'input' | 'result' | 'error' | 'meta'
   label: string
   value: string
 }> {
   switch (turn.kind) {
+    case 'reasoning':
     case 'tool':
       return []
     case 'diagnostic':
@@ -334,18 +405,167 @@ function buildDetailRows(turn: CopilotMessageListItem): Array<{
           value: turn.diagnostic.code,
         },
       ]
-    case 'terminal':
-      return turn.terminalPhase === 'failed' && turn.failure !== null
+    case 'terminal': {
+      const terminalRows = turn.terminalPhase === 'failed' && turn.failure !== null
         ? [{
-            kind: 'error',
+            kind: 'error' as const,
             label: '代码',
             value: turn.failure.code,
           }]
         : []
+      return [...terminalRows, ...buildThinkingDetailRows(turn, showDiagnostics)]
+    }
     case 'assistant':
+      return buildThinkingDetailRows(turn, showDiagnostics)
     case 'user':
       return []
   }
+}
+
+function buildThinkingDetailRows(
+  turn: CopilotAssistantMessageItem | CopilotTerminalMessageItem,
+  showDiagnostics: boolean,
+): Array<{
+  kind: 'meta'
+  label: string
+  value: string
+}> {
+  if (!showDiagnostics) {
+    return []
+  }
+
+  const rows: Array<{
+    kind: 'meta'
+    label: string
+    value: string
+  }> = []
+
+  if (turn.requestedThinkingLevel !== undefined) {
+    rows.push({
+      kind: 'meta',
+      label: '请求思考',
+      value: turn.requestedThinkingLevel ?? '未请求',
+    })
+  }
+
+  if (turn.appliedThinkingLevel !== undefined) {
+    rows.push({
+      kind: 'meta',
+      label: '应用思考',
+      value: turn.appliedThinkingLevel ?? '未应用',
+    })
+  }
+
+  if (turn.thinkingCapabilitySnapshot !== undefined && turn.thinkingCapabilitySnapshot !== null) {
+    rows.push({
+      kind: 'meta',
+      label: '能力来源',
+      value: `${turn.thinkingCapabilitySnapshot.source} / ${turn.thinkingCapabilitySnapshot.status}`,
+    })
+    rows.push({
+      kind: 'meta',
+      label: '原因码',
+      value: turn.thinkingCapabilitySnapshot.reasonCode,
+    })
+    if (turn.thinkingCapabilitySnapshot.providerHint !== null) {
+      rows.push({
+        kind: 'meta',
+        label: 'Provider Hint',
+        value: turn.thinkingCapabilitySnapshot.providerHint,
+      })
+    }
+  }
+
+  return rows
+}
+
+function ReasoningMessageCard({
+  turn,
+  index,
+}: {
+  turn: CopilotReasoningMessageItem
+  index: number
+}) {
+  const [expanded, setExpanded] = useState(turn.isCollapsedByDefault !== true)
+  const [observedNow, setObservedNow] = useState(() => turn.observedFinishedAt ?? Date.now())
+  const panelId = `chat-message-reasoning-panel-${turn.id}`
+
+  useEffect(() => {
+    setObservedNow(turn.observedFinishedAt ?? Date.now())
+  }, [turn.observedFinishedAt, turn.observedStartedAt])
+
+  useEffect(() => {
+    if (turn.observedFinishedAt !== null || turn.status !== 'streaming') {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      setObservedNow(Date.now())
+    }, reasoningTimerRefreshMs)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [turn.observedFinishedAt, turn.status])
+
+  const reasoningTitle = formatCopilotReasoningDurationLabel(turn, observedNow)
+
+  return (
+    <div className="copilot-chat__reasoning-card" data-testid={`chat-message-reasoning-card-${index}`}>
+      {expanded
+        ? (
+            <button
+              type="button"
+              className="copilot-chat__reasoning-toggle"
+              aria-controls={panelId}
+              aria-expanded="true"
+              data-expanded="true"
+              data-testid={`chat-message-reasoning-toggle-${index}`}
+              onClick={() => {
+                setExpanded((current) => !current)
+              }}
+            >
+              <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▾</span>
+                <span className="copilot-chat__message-label">{reasoningTitle}</span>
+              </span>
+              {turn.status === 'streaming' && (
+                <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
+                  生成中
+                </span>
+              )}
+            </button>
+          )
+        : (
+            <button
+              type="button"
+              className="copilot-chat__reasoning-toggle"
+              aria-controls={panelId}
+              aria-expanded="false"
+              data-expanded="false"
+              data-testid={`chat-message-reasoning-toggle-${index}`}
+              onClick={() => {
+                setExpanded((current) => !current)
+              }}
+            >
+              <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▸</span>
+                <span className="copilot-chat__message-label">{reasoningTitle}</span>
+              </span>
+              {turn.status === 'streaming' && (
+                <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
+                  生成中
+                </span>
+              )}
+            </button>
+          )}
+      {expanded && (
+        <div className="copilot-chat__reasoning-panel" id={panelId} data-testid={`chat-message-reasoning-panel-${index}`}>
+          {renderMarkdownMessageBody(turn.content)}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ToolMessageCard({

@@ -4,7 +4,10 @@ import { projectConversationTurnsFromRunState } from './run-state-projection'
 import { createIdleCopilotRunState } from './run-segment-reducer'
 import type { CopilotConversationTurn } from './copilot-chat-helpers'
 import type { CopilotRunState } from './types'
-import { createRuntimeModelRoute } from './thread-run-contract.test-support'
+import {
+  createRuntimeModelRoute,
+  createRuntimeThinkingCapability,
+} from './thread-run-contract.test-support'
 
 describe('run state projection', () => {
   it('projects assistant/tool segments into stable legacy turns while preserving prior user turns', () => {
@@ -17,6 +20,15 @@ describe('run state projection', () => {
         status: 'completed',
       },
     ]
+    const thinkingCapabilitySnapshot = createRuntimeThinkingCapability({
+      status: 'unknown-with-override',
+      source: 'override',
+      supportedLevels: ['off', 'auto', 'medium'],
+      defaultLevel: 'auto',
+      reasonCode: 'override_candidate_levels_applied',
+      providerHint: 'unknown-route-override',
+      overrideLevels: ['off', 'auto', 'medium'],
+    })
     const runState: CopilotRunState = {
       ...createIdleCopilotRunState(),
       phase: 'completed',
@@ -26,6 +38,9 @@ describe('run state projection', () => {
       resolvedModelRoute: createRuntimeModelRoute(),
       resolvedToolIds: ['tool.weather-current'],
       requestOptions: { trace: true },
+      requestedThinkingLevel: 'medium',
+      appliedThinkingLevel: 'auto',
+      thinkingCapabilitySnapshot: thinkingCapabilitySnapshot,
       segments: [
         {
           id: 'assistant:run-1:1',
@@ -116,6 +131,9 @@ describe('run state projection', () => {
       kind: 'assistant',
       content: '第二段',
       resolvedModelId: 'qwen-plus',
+      requestedThinkingLevel: 'medium',
+      appliedThinkingLevel: 'auto',
+      thinkingCapabilitySnapshot,
     })
   })
 })

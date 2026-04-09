@@ -1,5 +1,5 @@
 import {
-  createRuntimeSession,
+  createRuntimeThread,
   getRuntimeCapabilities,
 } from '../../features/copilot/chat-contract'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
@@ -14,7 +14,7 @@ export type AssistantWorkspaceSessionStatus = 'idle' | 'creating' | 'error'
 export async function createAssistantSessionShellForAgent(input: {
   runtimeUrl: string
   selectedAgent: AgentType
-  createSession: typeof createRuntimeSession
+  createSession: typeof createRuntimeThread
   getCapabilities: typeof getRuntimeCapabilities
 }): Promise<AssistantSessionShell> {
   const sessionResponse = await input.createSession({
@@ -23,7 +23,7 @@ export async function createAssistantSessionShellForAgent(input: {
   })
   const capabilitiesResponse = await input.getCapabilities({
     runtimeUrl: input.runtimeUrl,
-    sessionId: sessionResponse.sessionId,
+    sessionId: sessionResponse.threadId,
   })
 
   return createAssistantSessionShell({

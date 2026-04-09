@@ -105,6 +105,7 @@ function renderShell(debugModeEnabled: boolean): string {
       sessionError={null}
       sendError={null}
       modelGroups={[]}
+      thinkingCapability={null}
       composerDraft={createEmptyComposerDraft()}
       onComposerDraftChange={vi.fn()}
       onSend={vi.fn()}

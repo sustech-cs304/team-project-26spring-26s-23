@@ -1,6 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 
 import type { ModelCapability, ProviderModelProfile, ProviderProfile } from '../types'
+import { initializeSupportedThinkingCapabilityDeclaration } from '../thinking-capabilities'
 import { createModelProfileId } from './config'
 import {
   createEmptyModelEditorState,
@@ -9,6 +10,7 @@ import {
   syncTrackedModelValue,
   type ModelEditorState,
 } from './provider-profiles'
+import { syncTrackedModelSelectionValue } from './settings-workspace-model-options'
 
 interface UseSettingsWorkspaceProviderModelEditorArgs {
   activeProviderId: string
@@ -69,8 +71,18 @@ export function useSettingsWorkspaceProviderModelEditor({
       }),
     )
 
-    setPrimaryAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
-    setFastAssistantModel((current) => syncTrackedModelValue(current, previousModelId, nextModelId))
+    setPrimaryAssistantModel((current) => syncTrackedModelSelectionValue(
+      current,
+      activeProviderId,
+      previousModelId,
+      nextModelId,
+    ))
+    setFastAssistantModel((current) => syncTrackedModelSelectionValue(
+      current,
+      activeProviderId,
+      previousModelId,
+      nextModelId,
+    ))
   }
 
   const handleOpenCreateModelEditor = () => {
@@ -142,12 +154,23 @@ export function useSettingsWorkspaceProviderModelEditor({
       return
     }
 
+    if (modelEditorState.thinkingCapability?.supported === true) {
+      const normalizedThinkingCapability = initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
+      if (normalizedThinkingCapability.levels.length === 0) {
+        setModelEditorError('显式支持思考时，至少需要选择一个可用档位。')
+        return
+      }
+    }
+
     const nextModel: ProviderModelProfile = {
       id: modelEditorState.isNew ? createModelProfileId(activeProvider.id, nextModelId) : modelEditorState.id,
       modelId: nextModelId,
       displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
       groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
       capabilities: modelEditorState.capabilities.length > 0 ? modelEditorState.capabilities : ['reasoning'],
+      thinkingCapability: modelEditorState.thinkingCapability?.supported === true
+        ? initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
+        : modelEditorState.thinkingCapability,
       supportsStreaming: modelEditorState.supportsStreaming,
       currency: modelEditorState.currency,
       inputPrice: modelEditorState.inputPrice,

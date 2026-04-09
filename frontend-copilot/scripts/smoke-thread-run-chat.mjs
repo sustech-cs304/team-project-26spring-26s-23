@@ -101,8 +101,8 @@ async function main() {
       console.log(JSON.stringify({
         smokeType: 'thread-run',
         runtimeUrl: harness.runtimeUrl,
-        providerProfileId: harness.route.providerProfileId,
-        modelId: harness.route.snapshot.modelId,
+        providerProfileId: harness.route.routeRef.profileId,
+        modelId: harness.route.routeRef.modelId,
         runId: runStartPayload.run.runId,
         threadId: threadPayload.threadId,
         cancelAccepted: cancelPayload?.cancelAccepted ?? null,
@@ -126,8 +126,8 @@ async function main() {
     console.log(JSON.stringify({
       smokeType: 'thread-run',
       runtimeUrl: harness.runtimeUrl,
-      providerProfileId: harness.route.providerProfileId,
-      modelId: harness.route.snapshot.modelId,
+      providerProfileId: harness.route.routeRef.profileId,
+      modelId: harness.route.routeRef.modelId,
       runId: runStartPayload.run.runId,
       threadId: threadPayload.threadId,
       enabledTools,

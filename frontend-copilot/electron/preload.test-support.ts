@@ -103,6 +103,8 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     defaultModelRouting: {
       primaryAssistantModel: '',
       fastAssistantModel: '',
+      primaryAssistantModelRoute: null,
+      fastAssistantModelRoute: null,
     },
     general: {
       language: 'zh-CN',

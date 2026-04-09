@@ -18,30 +18,44 @@ afterEach(async () => {
 })
 
 describe('createHostModelRouteBridge', () => {
-  it('resolves a provider route for authenticated private runtime requests', async () => {
+  it('resolves a provider route for authenticated private runtime requests from stable route refs', async () => {
     const bridge = await createHostModelRouteBridge({
       async resolveProviderRoute(request) {
         expect(request).toEqual({
-          providerProfileId: 'provider-1',
-          snapshot: {
-            provider: 'openai',
-            endpointType: 'openai-compatible',
-            baseUrl: 'https://api.example.com/v1',
+          routeRef: {
+            routeKind: 'provider-model',
+            profileId: 'provider-1',
             modelId: 'gpt-4.1',
           },
+          catalogRevision: '2026-04-06-provider-catalog-v1',
         })
 
         return {
           ok: true,
-          route: {
+          resolvedRoute: {
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'provider-1',
+              modelId: 'gpt-4.1',
+            },
             providerProfileId: 'provider-1',
             provider: 'openai',
+            providerId: 'openai',
+            adapterId: 'openai',
+            runtimeStatus: 'enabled',
+            catalogRevision: '2026-04-06-provider-catalog-v1',
+            endpointFamily: 'openai',
             endpointType: 'openai-compatible',
             baseUrl: 'https://api.example.com/v1',
             modelId: 'gpt-4.1',
-            auth: {
+            authKind: 'api-key',
+          },
+          privateAuth: {
+            authKind: 'api-key',
+            authPayload: {
               apiKey: 'secret-value',
             },
+            apiKey: 'secret-value',
           },
         }
       },
@@ -55,7 +69,68 @@ describe('createHostModelRouteBridge', () => {
         [HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token,
       },
       body: JSON.stringify({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-1',
+          modelId: 'gpt-4.1',
+        },
+        catalogRevision: '2026-04-06-provider-catalog-v1',
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      resolvedRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-1',
+          modelId: 'gpt-4.1',
+        },
         providerProfileId: 'provider-1',
+        provider: 'openai',
+        providerId: 'openai',
+        adapterId: 'openai',
+        runtimeStatus: 'enabled',
+        catalogRevision: '2026-04-06-provider-catalog-v1',
+        endpointFamily: 'openai',
+        endpointType: 'openai-compatible',
+        baseUrl: 'https://api.example.com/v1',
+        modelId: 'gpt-4.1',
+        authKind: 'api-key',
+      },
+      privateAuth: {
+        authKind: 'api-key',
+        authPayload: {
+          apiKey: 'secret-value',
+        },
+        apiKey: 'secret-value',
+      },
+    })
+  })
+
+  it('rejects legacy snapshot request bodies even when routeRef is present', async () => {
+    let resolverCalls = 0
+    const bridge = await createHostModelRouteBridge({
+      resolveProviderRoute() {
+        resolverCalls += 1
+        throw new Error('resolveProviderRoute should not be called for legacy requests.')
+      },
+    })
+    activeStops.push(bridge.stop)
+
+    const response = await fetch(bridge.bootstrap.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token,
+      },
+      body: JSON.stringify({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-1',
+          modelId: 'gpt-4.1',
+        },
         snapshot: {
           provider: 'openai',
           endpointType: 'openai-compatible',
@@ -65,20 +140,16 @@ describe('createHostModelRouteBridge', () => {
       }),
     })
 
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({
-      ok: true,
-      route: {
-        providerProfileId: 'provider-1',
-        provider: 'openai',
-        endpointType: 'openai-compatible',
-        baseUrl: 'https://api.example.com/v1',
-        modelId: 'gpt-4.1',
-        auth: {
-          apiKey: 'secret-value',
-        },
+      ok: false,
+      error: {
+        code: HOST_MODEL_ROUTE_BRIDGE_ERROR_CODES.INVALID_REQUEST,
+        message: 'Host model route bridge request body is invalid.',
+        details: {},
       },
     })
+    expect(resolverCalls).toBe(0)
   })
 
   it('rejects requests with an invalid private bridge token', async () => {
@@ -96,11 +167,9 @@ describe('createHostModelRouteBridge', () => {
         [HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER]: 'wrong-token',
       },
       body: JSON.stringify({
-        providerProfileId: 'provider-1',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://api.example.com/v1',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-1',
           modelId: 'gpt-4.1',
         },
       }),
@@ -126,15 +195,30 @@ describe('createHostModelRouteBridge', () => {
         resolverCalls += 1
         return {
           ok: true,
-          route: {
+          resolvedRoute: {
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'provider-1',
+              modelId: 'gpt-4.1',
+            },
             providerProfileId: 'provider-1',
             provider: 'openai',
+            providerId: 'openai',
+            adapterId: 'openai',
+            runtimeStatus: 'enabled',
+            catalogRevision: '2026-04-06-provider-catalog-v1',
+            endpointFamily: 'openai',
             endpointType: 'openai-compatible',
             baseUrl: 'https://api.example.com/v1',
             modelId: 'gpt-4.1',
-            auth: {
+            authKind: 'api-key',
+          },
+          privateAuth: {
+            authKind: 'api-key',
+            authPayload: {
               apiKey: 'secret-value',
             },
+            apiKey: 'secret-value',
           },
         }
       },
@@ -151,11 +235,9 @@ describe('createHostModelRouteBridge', () => {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        providerProfileId: 'provider-1',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://api.example.com/v1',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-1',
           modelId: 'gpt-4.1',
         },
       }),

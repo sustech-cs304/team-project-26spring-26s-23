@@ -1,12 +1,15 @@
 import type {
-  RuntimeModelRoute,
+  RuntimeReasoningDeltaEvent,
+  RuntimeResolvedModelRoute,
   RuntimeRunCompletedEvent,
   RuntimeRunDiagnosticEvent,
   RuntimeRunEvent,
   RuntimeRunFailedEvent,
+  RuntimeRunMetadataEvent,
   RuntimeRunStartedEvent,
   RuntimeRunTerminalEvent,
   RuntimeTextDeltaEvent,
+  RuntimeThinkingCapability,
   RuntimeToolEvent,
   RuntimeToolEventPhase,
 } from './thread-run-contract'
@@ -112,6 +115,27 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
           ),
         },
       } satisfies RuntimeRunStartedEvent
+    case 'run_metadata':
+      return {
+        type: 'run_metadata',
+        runId,
+        sessionId,
+        sequence,
+        payload: {
+          requestedThinkingLevel: requireOptionalThinkingLevel(
+            payload.requestedThinkingLevel,
+            'runtime event payload.requestedThinkingLevel',
+          ),
+          appliedThinkingLevel: requireOptionalThinkingLevel(
+            payload.appliedThinkingLevel,
+            'runtime event payload.appliedThinkingLevel',
+          ),
+          thinkingCapabilitySnapshot: requireRuntimeThinkingCapability(
+            payload.thinkingCapabilitySnapshot,
+            'runtime event payload.thinkingCapabilitySnapshot',
+          ),
+        },
+      } satisfies RuntimeRunMetadataEvent
     case 'text_delta':
       return {
         type: 'text_delta',
@@ -126,6 +150,16 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
           delta: requireString(payload.delta, 'runtime event payload.delta'),
         },
       } satisfies RuntimeTextDeltaEvent
+    case 'reasoning_delta':
+      return {
+        type: 'reasoning_delta',
+        runId,
+        sessionId,
+        sequence,
+        payload: {
+          delta: requireString(payload.delta, 'runtime event payload.delta'),
+        },
+      } satisfies RuntimeReasoningDeltaEvent
     case 'run_completed':
       return {
         type: 'run_completed',
@@ -142,7 +176,7 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
             payload.resolvedModelId,
             'runtime event payload.resolvedModelId',
           ),
-          resolvedModelRoute: requireRuntimeModelRoute(
+          resolvedModelRoute: requireRuntimeResolvedModelRoute(
             payload.resolvedModelRoute,
             'runtime event payload.resolvedModelRoute',
           ),
@@ -220,18 +254,37 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
   }
 }
 
-function requireRuntimeModelRoute(value: unknown, label: string): RuntimeModelRoute {
+function requireRuntimeResolvedModelRoute(value: unknown, label: string): RuntimeResolvedModelRoute {
   const record = requireRecord(value, label)
-  const snapshot = requireRecord(record.snapshot, `${label}.snapshot`)
+  const routeRef = requireRuntimeModelRouteRef(record.routeRef, `${label}.routeRef`)
 
   return {
+    routeRef,
     providerProfileId: requireNonEmptyString(record.providerProfileId, `${label}.providerProfileId`),
-    snapshot: {
-      provider: requireNonEmptyString(snapshot.provider, `${label}.snapshot.provider`),
-      endpointType: requireNonEmptyString(snapshot.endpointType, `${label}.snapshot.endpointType`),
-      baseUrl: requireNonEmptyString(snapshot.baseUrl, `${label}.snapshot.baseUrl`),
-      modelId: requireNonEmptyString(snapshot.modelId, `${label}.snapshot.modelId`),
-    },
+    provider: requireNonEmptyString(record.provider, `${label}.provider`),
+    providerId: requireNonEmptyString(record.providerId, `${label}.providerId`),
+    adapterId: requireNonEmptyString(record.adapterId, `${label}.adapterId`),
+    runtimeStatus: requireNonEmptyString(record.runtimeStatus, `${label}.runtimeStatus`),
+    catalogRevision: requireString(record.catalogRevision, `${label}.catalogRevision`),
+    endpointFamily: requireNonEmptyString(record.endpointFamily, `${label}.endpointFamily`),
+    endpointType: requireNonEmptyString(record.endpointType, `${label}.endpointType`),
+    baseUrl: requireNonEmptyString(record.baseUrl, `${label}.baseUrl`),
+    modelId: requireNonEmptyString(record.modelId, `${label}.modelId`),
+    authKind: requireNonEmptyString(record.authKind, `${label}.authKind`),
+  }
+}
+
+function requireRuntimeModelRouteRef(value: unknown, label: string): RuntimeResolvedModelRoute['routeRef'] {
+  const record = requireRecord(value, label)
+  const routeKind = requireNonEmptyString(record.routeKind, `${label}.routeKind`)
+  if (routeKind !== 'provider-model') {
+    throw new Error(`${label}.routeKind must be 'provider-model'.`)
+  }
+
+  return {
+    routeKind,
+    profileId: requireNonEmptyString(record.profileId, `${label}.profileId`),
+    modelId: requireNonEmptyString(record.modelId, `${label}.modelId`),
   }
 }
 
@@ -239,7 +292,9 @@ function requireRuntimeRunEventType(value: unknown): RuntimeRunEvent['type'] {
   const eventType = requireNonEmptyString(value, 'runtime event.type')
   switch (eventType) {
     case 'run_started':
+    case 'run_metadata':
     case 'text_delta':
+    case 'reasoning_delta':
     case 'run_completed':
     case 'run_failed':
     case 'run_cancelled':
@@ -249,6 +304,113 @@ function requireRuntimeRunEventType(value: unknown): RuntimeRunEvent['type'] {
     default:
       throw new Error(`Unsupported runtime event type: ${eventType}`)
   }
+}
+
+function requireRuntimeThinkingCapability(value: unknown, label: string): RuntimeThinkingCapability {
+  const record = requireRecord(value, label)
+  const routeFingerprint = requireRecord(record.routeFingerprint, `${label}.routeFingerprint`)
+
+  return {
+    status: requireRuntimeThinkingCapabilityStatus(record.status, `${label}.status`),
+    source: requireRuntimeThinkingCapabilitySource(record.source, `${label}.source`),
+    supported: requireBoolean(record.supported, `${label}.supported`),
+    supportedLevels: requireThinkingLevelArray(record.supportedLevels, `${label}.supportedLevels`),
+    defaultLevel: requireOptionalThinkingLevel(record.defaultLevel, `${label}.defaultLevel`),
+    reasonCode: requireNonEmptyString(record.reasonCode, `${label}.reasonCode`),
+    providerHint: requireNullableString(record.providerHint, `${label}.providerHint`),
+    routeFingerprint: {
+      providerProfileId: requireNonEmptyString(routeFingerprint.providerProfileId, `${label}.routeFingerprint.providerProfileId`),
+      provider: requireNonEmptyString(routeFingerprint.provider, `${label}.routeFingerprint.provider`),
+      endpointType: requireNonEmptyString(routeFingerprint.endpointType, `${label}.routeFingerprint.endpointType`),
+      baseUrl: requireNonEmptyString(routeFingerprint.baseUrl, `${label}.routeFingerprint.baseUrl`),
+      modelId: requireNonEmptyString(routeFingerprint.modelId, `${label}.routeFingerprint.modelId`),
+    },
+    overrideLevels: requireThinkingLevelArray(record.overrideLevels, `${label}.overrideLevels`),
+  }
+}
+
+function requireRuntimeThinkingCapabilityStatus(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability['status'] {
+  const normalized = requireNonEmptyString(value, label)
+  switch (normalized) {
+    case 'verified-supported':
+    case 'verified-unsupported':
+    case 'unknown-without-override':
+    case 'unknown-with-override':
+      return normalized
+    default:
+      throw new Error(`${label} must be a supported thinking capability status.`)
+  }
+}
+
+function requireRuntimeThinkingCapabilitySource(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability['source'] {
+  const normalized = requireNonEmptyString(value, label)
+  switch (normalized) {
+    case 'verified':
+    case 'override':
+    case 'unknown':
+      return normalized
+    default:
+      throw new Error(`${label} must be a supported thinking capability source.`)
+  }
+}
+
+function requireThinkingLevelArray(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability['supportedLevels'] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array of thinking levels.`)
+  }
+
+  return value.map((item, index) => requireThinkingLevel(item, `${label}[${index}]`))
+}
+
+function requireOptionalThinkingLevel(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability['defaultLevel'] {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return requireThinkingLevel(value, label)
+}
+
+function requireThinkingLevel(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability['supportedLevels'][number] {
+  const normalized = requireNonEmptyString(value, label)
+  switch (normalized) {
+    case 'off':
+    case 'auto':
+    case 'low':
+    case 'medium':
+    case 'high':
+    case 'xhigh':
+      return normalized
+    default:
+      throw new Error(`${label} must be a supported thinking level.`)
+  }
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`${label} must be a boolean.`)
+  }
+  return value
+}
+
+function requireNullableString(value: unknown, label: string): string | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return requireString(value, label)
 }
 
 function requireRuntimeToolEventPhase(value: unknown): RuntimeToolEventPhase {

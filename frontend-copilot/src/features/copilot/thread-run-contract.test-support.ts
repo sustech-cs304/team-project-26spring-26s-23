@@ -6,11 +6,14 @@ import type {
   RuntimeCapabilitiesGetResponse,
   RuntimeMessagePayload,
   RuntimeModelRoute,
+  RuntimeResolvedModelRoute,
   RuntimeRunCancelResponse,
   RuntimeRunCompletedEvent,
   RuntimeRunEvent,
+  RuntimeRunMetadataEvent,
   RuntimeRunStartResponse,
-  RuntimeSessionCreateResponse,
+  RuntimeRunView,
+  RuntimeThinkingCapability,
   RuntimeThreadCreateResponse,
   RuntimeThreadGetResponse,
   RuntimeToolEvent,
@@ -45,7 +48,6 @@ export function createRuntimeAgentsListResponse(
         agentId,
         status: 'active',
         recommendedTools: ['tool.file-convert'],
-        defaultModelPreference: 'openai/gpt-4.1',
         displayName: '通用助手',
         description: '默认通用智能体',
         iconKey: 'sparkles',
@@ -65,42 +67,11 @@ export function createRuntimeThreadCreateResponse(
     createdAt: '2026-03-27T10:00:00Z',
     updatedAt: '2026-03-27T10:00:00Z',
     recommendedTools: ['tool.file-convert'],
-    defaultModelPreference: 'openai/gpt-4.1',
     capabilities: {
       tools: {
         selectionMode: 'recommendation-only',
       },
     },
-    ...overrides,
-  }
-}
-
-export function createRuntimeSessionCreateResponse(
-  overrides: Partial<RuntimeSessionCreateResponse> = {},
-): RuntimeSessionCreateResponse {
-  const threadResponse = createRuntimeThreadCreateResponse({
-    threadId: overrides.sessionId ?? sessionId,
-    boundAgent: overrides.boundAgent ?? createBoundAgent(),
-    createdAt: overrides.createdAt ?? '2026-03-27T10:00:00Z',
-    updatedAt: overrides.updatedAt ?? '2026-03-27T10:00:00Z',
-    recommendedTools: overrides.recommendedTools ?? ['tool.file-convert'],
-    defaultModelPreference: overrides.defaultModelPreference ?? 'openai/gpt-4.1',
-    capabilities: overrides.capabilities ?? {
-      tools: {
-        selectionMode: 'recommendation-only',
-      },
-    },
-  })
-
-  return {
-    ok: true,
-    sessionId: threadResponse.threadId,
-    boundAgent: threadResponse.boundAgent,
-    createdAt: threadResponse.createdAt,
-    updatedAt: threadResponse.updatedAt,
-    recommendedTools: [...threadResponse.recommendedTools],
-    defaultModelPreference: threadResponse.defaultModelPreference,
-    capabilities: { ...threadResponse.capabilities },
     ...overrides,
   }
 }
@@ -133,7 +104,6 @@ export function createRuntimeThreadGetResponse(
     ],
     recommendedTools: ['tool.file-convert'],
     toolSelectionMode: 'recommendation-only',
-    defaultModelPreference: 'openai/gpt-4.1',
     latestRunId: null,
     ...overrides,
   }
@@ -164,7 +134,6 @@ export function createRuntimeCapabilitiesGetResponse(
     ],
     recommendedTools: overrides.recommendedTools ?? ['tool.file-convert'],
     toolSelectionMode: overrides.toolSelectionMode ?? 'recommendation-only',
-    defaultModelPreference: overrides.defaultModelPreference ?? 'openai/gpt-4.1',
   })
 
   return {
@@ -175,27 +144,87 @@ export function createRuntimeCapabilitiesGetResponse(
     tools: threadResponse.tools.map((tool) => ({ ...tool })),
     recommendedTools: [...threadResponse.recommendedTools],
     toolSelectionMode: threadResponse.toolSelectionMode,
-    defaultModelPreference: threadResponse.defaultModelPreference,
     ...overrides,
   }
 }
 
-export function createRuntimeModelRoute(
-  overrides: Partial<RuntimeModelRoute> = {},
-): RuntimeModelRoute {
-  return {
-    providerProfileId: overrides.providerProfileId ?? 'provider-openai',
-    snapshot: {
-      provider: overrides.snapshot?.provider ?? 'openai',
-      endpointType: overrides.snapshot?.endpointType ?? 'openai-compatible',
-      baseUrl: overrides.snapshot?.baseUrl ?? 'https://api.example.com/v1',
-      modelId: overrides.snapshot?.modelId ?? 'qwen-plus',
-    },
+type RuntimeModelRouteFixtureOverrides = Partial<RuntimeResolvedModelRoute> & {
+  providerProfileId?: string
+  modelId?: string
+  snapshot?: {
+    provider?: string
+    endpointType?: string
+    baseUrl?: string
+    modelId?: string
   }
 }
 
+export function createRuntimeModelRoute(
+  overrides: RuntimeModelRouteFixtureOverrides = {},
+): RuntimeModelRoute & RuntimeResolvedModelRoute {
+  const providerProfileId = overrides.providerProfileId ?? overrides.routeRef?.profileId ?? 'provider-openai'
+  const modelId = overrides.snapshot?.modelId ?? overrides.modelId ?? overrides.routeRef?.modelId ?? 'qwen-plus'
+  const provider = overrides.snapshot?.provider ?? overrides.provider ?? 'openai'
+  const endpointType = overrides.snapshot?.endpointType ?? overrides.endpointType ?? 'openai-compatible'
+  const baseUrl = overrides.snapshot?.baseUrl ?? overrides.baseUrl ?? 'https://api.example.com/v1'
+  const routeRef = overrides.routeRef ?? {
+    routeKind: 'provider-model' as const,
+    profileId: providerProfileId,
+    modelId,
+  }
+
+  return {
+    routeRef,
+    catalogRevision: overrides.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+    providerProfileId,
+    provider,
+    providerId: overrides.providerId ?? provider,
+    adapterId: overrides.adapterId ?? provider,
+    runtimeStatus: overrides.runtimeStatus ?? 'enabled',
+    endpointFamily: overrides.endpointFamily ?? endpointType.split('-')[0] ?? endpointType,
+    endpointType,
+    baseUrl,
+    modelId,
+    authKind: overrides.authKind ?? 'api-key',
+  }
+}
+
+export function createRuntimeResolvedModelRoute(
+  overrides: Partial<RuntimeResolvedModelRoute> = {},
+): RuntimeResolvedModelRoute {
+  const providerProfileId = overrides.providerProfileId ?? 'provider-openai'
+  const modelId = overrides.modelId ?? overrides.routeRef?.modelId ?? 'qwen-plus'
+
+  return {
+    routeRef: overrides.routeRef ?? {
+      routeKind: 'provider-model',
+      profileId: providerProfileId,
+      modelId,
+    },
+    providerProfileId,
+    provider: overrides.provider ?? 'openai',
+    providerId: overrides.providerId ?? 'openai',
+    adapterId: overrides.adapterId ?? 'openai',
+    runtimeStatus: overrides.runtimeStatus ?? 'enabled',
+    catalogRevision: overrides.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+    endpointFamily: overrides.endpointFamily ?? 'openai',
+    endpointType: overrides.endpointType ?? 'openai-compatible',
+    baseUrl: overrides.baseUrl ?? 'https://api.example.com/v1',
+    modelId,
+    authKind: overrides.authKind ?? 'api-key',
+  }
+}
+
+type RuntimeRunStartResponseOverrides = Omit<Partial<RuntimeRunStartResponse>, 'run'> & {
+  run?: Partial<RuntimeRunView>
+}
+
+type RuntimeRunCancelResponseOverrides = Omit<Partial<RuntimeRunCancelResponse>, 'run'> & {
+  run?: Partial<RuntimeRunView>
+}
+
 export function createRuntimeRunStartResponse(
-  overrides: Partial<RuntimeRunStartResponse> = {},
+  overrides: RuntimeRunStartResponseOverrides = {},
 ): RuntimeRunStartResponse {
   return {
     ok: true,
@@ -208,6 +237,9 @@ export function createRuntimeRunStartResponse(
       startedAt: overrides.run?.startedAt ?? null,
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? false,
+      requestedThinkingLevel: overrides.run?.requestedThinkingLevel ?? null,
+      appliedThinkingLevel: overrides.run?.appliedThinkingLevel ?? null,
+      thinkingCapabilitySnapshot: overrides.run?.thinkingCapabilitySnapshot ?? null,
     },
     assistantMessageId: overrides.assistantMessageId ?? 'run-1:assistant',
     stream: overrides.stream ?? {
@@ -226,7 +258,7 @@ export function createRuntimeRunStartResponse(
 }
 
 export function createRuntimeRunCancelResponse(
-  overrides: Partial<RuntimeRunCancelResponse> = {},
+  overrides: RuntimeRunCancelResponseOverrides = {},
 ): RuntimeRunCancelResponse {
   return {
     ok: true,
@@ -239,8 +271,49 @@ export function createRuntimeRunCancelResponse(
       startedAt: overrides.run?.startedAt ?? '2026-03-27T10:00:01Z',
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? true,
+      requestedThinkingLevel: overrides.run?.requestedThinkingLevel ?? null,
+      appliedThinkingLevel: overrides.run?.appliedThinkingLevel ?? null,
+      thinkingCapabilitySnapshot: overrides.run?.thinkingCapabilitySnapshot ?? null,
     },
     cancelAccepted: overrides.cancelAccepted ?? true,
+  }
+}
+
+export function createRuntimeThinkingCapability(
+  overrides: Partial<RuntimeThinkingCapability> = {},
+): RuntimeThinkingCapability {
+  return {
+    status: overrides.status ?? 'verified-supported',
+    source: overrides.source ?? 'verified',
+    supported: overrides.supported ?? true,
+    supportedLevels: overrides.supportedLevels ?? ['off', 'auto', 'low', 'medium', 'high', 'xhigh'],
+    defaultLevel: overrides.defaultLevel ?? 'auto',
+    reasonCode: overrides.reasonCode ?? 'verified_supported',
+    providerHint: overrides.providerHint ?? 'openai-compatible',
+    routeFingerprint: overrides.routeFingerprint ?? {
+      providerProfileId: 'provider-openai',
+      provider: 'openai',
+      endpointType: 'openai-compatible',
+      baseUrl: 'https://api.example.com/v1',
+      modelId: 'qwen-plus',
+    },
+    overrideLevels: overrides.overrideLevels ?? [],
+  }
+}
+
+export function createRuntimeRunMetadataEvent(
+  overrides: Partial<RuntimeRunMetadataEvent> = {},
+): RuntimeRunMetadataEvent {
+  return {
+    type: 'run_metadata',
+    runId: overrides.runId ?? 'run-1',
+    sessionId: overrides.sessionId ?? sessionId,
+    sequence: overrides.sequence ?? 2,
+    payload: {
+      requestedThinkingLevel: overrides.payload?.requestedThinkingLevel ?? 'auto',
+      appliedThinkingLevel: overrides.payload?.appliedThinkingLevel ?? 'auto',
+      thinkingCapabilitySnapshot: overrides.payload?.thinkingCapabilitySnapshot ?? createRuntimeThinkingCapability(),
+    },
   }
 }
 
@@ -256,7 +329,7 @@ export function createRuntimeRunCompletedEvent(
       assistantMessageId: overrides.payload?.assistantMessageId ?? 'run-1:assistant',
       assistantText: overrides.payload?.assistantText ?? '这是总结结果。',
       resolvedModelId: overrides.payload?.resolvedModelId ?? 'qwen-plus',
-      resolvedModelRoute: overrides.payload?.resolvedModelRoute ?? createRuntimeModelRoute(),
+      resolvedModelRoute: overrides.payload?.resolvedModelRoute ?? createRuntimeResolvedModelRoute(),
       resolvedToolIds: overrides.payload?.resolvedToolIds ?? ['tool.file-convert'],
       requestOptions: overrides.payload?.requestOptions ?? { trace: true },
     },
@@ -342,12 +415,12 @@ export function createSseEventStream(events: unknown[]): ReadableStream<Uint8Arr
 
 export function createUserMessage(
   overrides: Partial<RuntimeMessagePayload> = {},
-): RuntimeMessagePayload {
+): Extract<RuntimeMessagePayload, { role: 'user' }> {
   return {
     role: 'user',
     content: '请总结这份文档',
     ...overrides,
-  }
+  } as Extract<RuntimeMessagePayload, { role: 'user' }>
 }
 
 export function createFetchResponse(
@@ -395,14 +468,19 @@ export function createFetchSequence(...responses: Array<ReturnType<typeof create
   return fetchFn
 }
 
-export function createRuntimeErrorPayload(input: { code?: string; message?: string } = {}) {
+export function createRuntimeErrorPayload(input: {
+  code?: string
+  message?: string
+  details?: Record<string, unknown>
+} = {}) {
   return {
     ok: false as const,
-    ...(input.code || input.message
+    ...(input.code || input.message || input.details
       ? {
           error: {
             ...(input.code ? { code: input.code } : {}),
             ...(input.message ? { message: input.message } : {}),
+            ...(input.details ? { details: input.details } : {}),
           },
         }
       : {}),

@@ -3,10 +3,10 @@ import { createSettingsWorkspacePaths } from './paths'
 import type { SettingsWorkspaceProviderRouteResolveRequest, SettingsWorkspaceProviderRouteResolveResult } from './provider-route-resolver'
 import { createSettingsWorkspaceStorage } from './service'
 import type {
-  SettingsWorkspaceClearProviderApiKeyRequest,
-  SettingsWorkspaceProviderSecretMutationResult,
+  SettingsWorkspaceClearProfileApiKeyRequest,
+  SettingsWorkspaceProfileSecretMutationResult,
+  SettingsWorkspaceSaveProfileApiKeyRequest,
   SettingsWorkspaceSaveSustechCasPasswordRequest,
-  SettingsWorkspaceSaveProviderApiKeyRequest,
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
   SettingsWorkspaceSecretsLoadStatusesRequest,
@@ -36,12 +36,12 @@ export interface ElectronSettingsWorkspaceService {
     request?: SettingsWorkspaceSecretsLoadStatusesRequest,
   ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
   loadSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretLoadResult>
-  saveProviderSecret: (
-    request: SettingsWorkspaceSaveProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
-  clearProviderSecret: (
-    request: SettingsWorkspaceClearProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  saveProfileSecret: (
+    request: SettingsWorkspaceSaveProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
+  clearProfileSecret: (
+    request: SettingsWorkspaceClearProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
   saveSustechCasSecret: (
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
@@ -98,7 +98,7 @@ export function createElectronSettingsWorkspaceService(
   ): Promise<SettingsWorkspaceSecretsLoadStatusesResult> => {
     try {
       const storage = await createStorage(options)
-      const result = await storage.loadSecretStates(request?.providerIds)
+      const result = await storage.loadSecretStates(request?.profileIds)
 
       return {
         ok: true,
@@ -129,42 +129,42 @@ export function createElectronSettingsWorkspaceService(
     }
   }
 
-  const saveProviderSecret = async (
-    request: SettingsWorkspaceSaveProviderApiKeyRequest,
-  ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
+  const saveProfileSecret = async (
+    request: SettingsWorkspaceSaveProfileApiKeyRequest,
+  ): Promise<SettingsWorkspaceProfileSecretMutationResult> => {
     try {
       const storage = await createStorage(options)
-      const result = await storage.saveProviderSecret(request.providerId, request.apiKey)
+      const result = await storage.saveProfileSecret(request.profileId, request.apiKey)
 
       return {
         ok: true,
-        providerId: request.providerId,
+        profileId: request.profileId,
         state: result.state,
       }
     } catch (error) {
       return {
         ok: false,
-        error: `Failed to save settings workspace provider secret: ${formatUnknownError(error)}`,
+        error: `Failed to save settings workspace profile secret: ${formatUnknownError(error)}`,
       }
     }
   }
 
-  const clearProviderSecret = async (
-    request: SettingsWorkspaceClearProviderApiKeyRequest,
-  ): Promise<SettingsWorkspaceProviderSecretMutationResult> => {
+  const clearProfileSecret = async (
+    request: SettingsWorkspaceClearProfileApiKeyRequest,
+  ): Promise<SettingsWorkspaceProfileSecretMutationResult> => {
     try {
       const storage = await createStorage(options)
-      const result = await storage.clearProviderSecret(request.providerId)
+      const result = await storage.clearProfileSecret(request.profileId)
 
       return {
         ok: true,
-        providerId: request.providerId,
+        profileId: request.profileId,
         state: result.state,
       }
     } catch (error) {
       return {
         ok: false,
-        error: `Failed to clear settings workspace provider secret: ${formatUnknownError(error)}`,
+        error: `Failed to clear settings workspace profile secret: ${formatUnknownError(error)}`,
       }
     }
   }
@@ -217,8 +217,8 @@ export function createElectronSettingsWorkspaceService(
     saveState,
     loadSecretStates,
     loadSustechCasSecret,
-    saveProviderSecret,
-    clearProviderSecret,
+    saveProfileSecret,
+    clearProfileSecret,
     saveSustechCasSecret,
     clearSustechCasSecret,
     resolveProviderRoute,

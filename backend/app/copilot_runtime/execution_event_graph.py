@@ -15,6 +15,9 @@ RuntimeExecutionEventType = Literal[
     "assistant_segment_started",
     "assistant_segment_delta",
     "assistant_segment_completed",
+    "reasoning_segment_started",
+    "reasoning_segment_delta",
+    "reasoning_segment_completed",
     "tool_started",
     "tool_completed",
     "tool_failed",
@@ -27,6 +30,9 @@ RuntimeExecutionEventType = Literal[
 ASSISTANT_SEGMENT_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "assistant_segment_started"
 ASSISTANT_SEGMENT_DELTA_EVENT_TYPE: RuntimeExecutionEventType = "assistant_segment_delta"
 ASSISTANT_SEGMENT_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "assistant_segment_completed"
+REASONING_SEGMENT_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_started"
+REASONING_SEGMENT_DELTA_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_delta"
+REASONING_SEGMENT_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_completed"
 TOOL_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "tool_started"
 TOOL_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "tool_completed"
 TOOL_FAILED_EVENT_TYPE: RuntimeExecutionEventType = "tool_failed"
@@ -61,6 +67,7 @@ class RuntimeExecutionEvent:
 class RuntimeExecutionEventFactory:
     run_id: str
     _assistant_segment_sequence: int = 0
+    _reasoning_segment_sequence: int = 0
 
     def build(
         self,
@@ -106,6 +113,45 @@ class RuntimeExecutionEventFactory:
     ) -> RuntimeExecutionEvent:
         return self.build(
             ASSISTANT_SEGMENT_COMPLETED_EVENT_TYPE,
+            payload={"segmentId": segment_id},
+        )
+
+    def next_reasoning_segment_id(self) -> str:
+        self._reasoning_segment_sequence += 1
+        return f"{self.run_id}:reasoning-segment-{self._reasoning_segment_sequence}"
+
+    def build_reasoning_segment_started(
+        self,
+        *,
+        segment_id: str | None = None,
+    ) -> RuntimeExecutionEvent:
+        resolved_segment_id = segment_id or self.next_reasoning_segment_id()
+        return self.build(
+            REASONING_SEGMENT_STARTED_EVENT_TYPE,
+            payload={"segmentId": resolved_segment_id},
+        )
+
+    def build_reasoning_segment_delta(
+        self,
+        *,
+        segment_id: str,
+        delta: str,
+    ) -> RuntimeExecutionEvent:
+        return self.build(
+            REASONING_SEGMENT_DELTA_EVENT_TYPE,
+            payload={
+                "segmentId": segment_id,
+                "delta": delta,
+            },
+        )
+
+    def build_reasoning_segment_completed(
+        self,
+        *,
+        segment_id: str,
+    ) -> RuntimeExecutionEvent:
+        return self.build(
+            REASONING_SEGMENT_COMPLETED_EVENT_TYPE,
             payload={"segmentId": segment_id},
         )
 
@@ -162,16 +208,23 @@ class RuntimeExecutionEventBuffer:
     debug_enabled: bool = False
     _pending_events: list[RuntimeExecutionEvent] = field(default_factory=list)
     _assistant_segment_id: str | None = None
+    _reasoning_segment_id: str | None = None
     _assistant_text_chunks: list[str] = field(default_factory=list)
+    _reasoning_text_chunks: list[str] = field(default_factory=list)
 
     @property
     def observed_assistant_text(self) -> str:
         return "".join(self._assistant_text_chunks)
 
+    @property
+    def observed_reasoning_text(self) -> str:
+        return "".join(self._reasoning_text_chunks)
+
     def record_assistant_delta(self, delta: str) -> None:
         if delta == "":
             return
 
+        self.finish_reasoning_segment()
         if self._assistant_segment_id is None:
             self._assistant_segment_id = self.event_factory.next_assistant_segment_id()
             self._pending_events.append(
@@ -188,9 +241,32 @@ class RuntimeExecutionEventBuffer:
         )
         self._assistant_text_chunks.append(delta)
 
+    def record_reasoning_delta(self, delta: str) -> None:
+        if delta == "":
+            return
+
+        self.finish_assistant_segment()
+        if self._reasoning_segment_id is None:
+            self._reasoning_segment_id = self.event_factory.next_reasoning_segment_id()
+            self._pending_events.append(
+                self.event_factory.build_reasoning_segment_started(
+                    segment_id=self._reasoning_segment_id,
+                )
+            )
+
+        self._pending_events.append(
+            self.event_factory.build_reasoning_segment_delta(
+                segment_id=self._reasoning_segment_id,
+                delta=delta,
+            )
+        )
+        self._reasoning_text_chunks.append(delta)
+
     def record_event(self, event: RuntimeExecutionEvent) -> None:
         if event.type != ASSISTANT_SEGMENT_DELTA_EVENT_TYPE:
             self.finish_assistant_segment()
+        if event.type != REASONING_SEGMENT_DELTA_EVENT_TYPE:
+            self.finish_reasoning_segment()
         self._pending_events.append(event)
         log_runtime_chain_debug(
             "execution_buffer.record_event",
@@ -210,6 +286,16 @@ class RuntimeExecutionEventBuffer:
             self.event_factory.build_assistant_segment_completed(segment_id=segment_id)
         )
 
+    def finish_reasoning_segment(self) -> None:
+        if self._reasoning_segment_id is None:
+            return
+
+        segment_id = self._reasoning_segment_id
+        self._reasoning_segment_id = None
+        self._pending_events.append(
+            self.event_factory.build_reasoning_segment_completed(segment_id=segment_id)
+        )
+
     def drain(self) -> tuple[RuntimeExecutionEvent, ...]:
         drained = tuple(self._pending_events)
         self._pending_events.clear()
@@ -221,6 +307,9 @@ __all__ = [
     "ASSISTANT_SEGMENT_DELTA_EVENT_TYPE",
     "ASSISTANT_SEGMENT_STARTED_EVENT_TYPE",
     "DIAGNOSTIC_EVENT_TYPE",
+    "REASONING_SEGMENT_COMPLETED_EVENT_TYPE",
+    "REASONING_SEGMENT_DELTA_EVENT_TYPE",
+    "REASONING_SEGMENT_STARTED_EVENT_TYPE",
     "RUN_CANCELLED_EVENT_TYPE",
     "RUN_COMPLETED_EVENT_TYPE",
     "RUN_FAILED_EVENT_TYPE",

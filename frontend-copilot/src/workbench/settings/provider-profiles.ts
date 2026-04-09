@@ -1,3 +1,7 @@
+import {
+  getDefaultProviderCatalogEntry,
+  getProviderCatalogEntry,
+} from '../../provider-catalog'
 import type {
   ModelCapability,
   ProviderModelProfile,
@@ -99,6 +103,7 @@ export function createProviderModelProfile(providerId: string, modelId: string, 
     displayName: formatModelDisplayName(modelId),
     groupName: formatModelGroupName(modelId, providerName),
     capabilities: getDefaultModelCapabilities(modelId),
+    thinkingCapability: undefined,
     supportsStreaming: true,
     currency: 'usd',
     inputPrice: '0.50',
@@ -114,6 +119,7 @@ export function createEmptyModelEditorState(providerName: string, index: number)
     displayName: '',
     groupName: providerName,
     capabilities: ['reasoning', 'tools'],
+    thinkingCapability: undefined,
     supportsStreaming: true,
     currency: 'usd',
     inputPrice: '0.50',
@@ -131,39 +137,58 @@ export function syncTrackedModelValue(currentValue: string, previousModelId: str
   return nextModelId ?? ''
 }
 
-export function createCustomProvider(index: number): ProviderProfile {
-  const providerId = `custom-provider-${index}`
-  const providerName = `Custom Provider ${index}`
+export function createCustomProvider(index: number, providerTypeId?: string): ProviderProfile {
+  const catalogEntry = getProviderCatalogEntry(providerTypeId ?? '') ?? getDefaultProviderCatalogEntry()
+  const providerId = `${catalogEntry.providerId}-${index}`
+  const providerName = index > 1 ? `${catalogEntry.displayName} ${index}` : catalogEntry.displayName
+  const defaultBaseUrl = catalogEntry.baseUrlPolicy.defaultBaseUrl ?? ''
 
   return {
     id: providerId,
+    profileId: providerId,
+    providerId: catalogEntry.providerId,
     name: providerName,
-    protocol: 'openai',
-    endpoint: '',
+    displayName: providerName,
+    protocol: catalogEntry.providerId,
+    endpoint: defaultBaseUrl,
+    baseUrl: defaultBaseUrl,
     hasApiKey: false,
     defaultModel: '',
+    defaultModelId: '',
     fastModel: '',
     fallbackModel: '',
     organization: '',
     region: '',
     notes: '',
+    compatibility: buildCatalogBackedProviderCompatibility(catalogEntry.providerId),
+    extensions: {},
     availableModels: [],
   }
 }
 
 export function createPlaceholderProviderProfile(): ProviderProfile {
+  const catalogEntry = getDefaultProviderCatalogEntry()
+  const defaultBaseUrl = catalogEntry.baseUrlPolicy.defaultBaseUrl ?? ''
+
   return {
     id: '',
+    profileId: '',
+    providerId: catalogEntry.providerId,
     name: '',
-    protocol: 'openai',
-    endpoint: '',
+    displayName: '',
+    protocol: catalogEntry.providerId,
+    endpoint: defaultBaseUrl,
+    baseUrl: defaultBaseUrl,
     hasApiKey: false,
     defaultModel: '',
+    defaultModelId: '',
     fastModel: '',
     fallbackModel: '',
     organization: '',
     region: '',
     notes: '',
+    compatibility: buildCatalogBackedProviderCompatibility(catalogEntry.providerId),
+    extensions: {},
     availableModels: [],
   }
 }
@@ -200,4 +225,27 @@ export function computeProviderPreviewIndex(listElement: HTMLUListElement, clien
   }
 
   return nextPreviewIndex
+}
+
+function buildCatalogBackedProviderCompatibility(providerId: string): ProviderProfile['compatibility'] {
+  const catalogEntry = getProviderCatalogEntry(providerId)
+
+  if (catalogEntry === null) {
+    return {
+      status: 'unsupported',
+      reason: `Provider '${providerId}' is not defined in the current provider catalog.`,
+    }
+  }
+
+  if (catalogEntry.runtimeStatus === 'legacy-unsupported') {
+    return {
+      status: 'legacy',
+      reason: `Provider '${providerId}' is marked as legacy / unsupported in the provider catalog.`,
+    }
+  }
+
+  return {
+    status: 'active',
+    reason: '',
+  }
 }

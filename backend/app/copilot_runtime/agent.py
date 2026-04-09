@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterable, AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -24,12 +23,13 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPart,
     TextPartDelta,
+    ThinkingPart,
+    ThinkingPartDelta,
     ToolCallPart,
     ToolCallPartDelta,
 )
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.result import StreamedRunResult
+from pydantic_ai.settings import ModelSettings
 
 from .debug_logging import (
     log_runtime_chain_debug,
@@ -50,6 +50,11 @@ from .execution_event_graph import (
     RuntimeExecutionEventType,
 )
 from .model_routes import ResolvedRuntimeModelRoute
+from .provider_adapter_registry import (
+    RuntimeProviderAdapterError,
+    RuntimeProviderAdapterRegistry,
+    build_default_provider_adapter_registry,
+)
 from .tool_registry import (
     DEFAULT_WEATHER_LOCATION,
     ToolRegistry,
@@ -66,8 +71,6 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
     "Provide concise, accurate, text-only answers. "
     "Do not claim to have used tools when no tools are available."
 )
-MODEL_ENVIRONMENT_KEYS = ("COPILOT_RUNTIME_MODEL", "COPILOT_MODEL")
-_SUPPORTED_STREAM_ENDPOINT_TYPES = frozenset({"openai-compatible"})
 ToolLifecyclePhase = Literal["started", "completed", "failed"]
 _EVENT_STREAM_DONE = object()
 AgentStreamEvent = (
@@ -100,6 +103,15 @@ class RuntimeAgentExecutor(Protocol):
 AgentExecutorFactory = Callable[[], RuntimeAgentExecutor]
 
 
+def _coerce_model_settings(model_settings: Mapping[str, Any] | None) -> ModelSettings | None:
+    if model_settings is None:
+        return None
+    normalized = dict(model_settings)
+    if len(normalized) == 0:
+        return None
+    return cast(ModelSettings, normalized)
+
+
 class ModelNotConfiguredError(RuntimeError):
     """Raised when no runtime model is configured for the default executor."""
 
@@ -129,6 +141,21 @@ class ToolInvocationError(AgentExecutionError):
         if details is not None:
             normalized_details.update(dict(details))
         self.details = normalized_details
+        super().__init__(message)
+
+
+class ProviderAdapterExecutionError(AgentExecutionError):
+    """Raised when provider adapter registry cannot build a runtime execution model."""
+
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.code = code
+        self.details = dict(details or {})
         super().__init__(message)
 
 
@@ -194,58 +221,6 @@ class _ObservedToolCall:
     arguments_completed_emitted: bool = False
 
 
-class _PydanticAITextStream:
-    def __init__(
-        self,
-        *,
-        stream_context: AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
-        resolved_model_id: str,
-        tool_events: list[RuntimeToolLifecycleEvent],
-    ) -> None:
-        self.resolved_model_id = resolved_model_id
-        self._stream_context = stream_context
-        self._stream_result: StreamedRunResult[Any, Any] | None = None
-        self._tool_events = tool_events
-
-    async def __aenter__(self) -> _PydanticAITextStream:
-        self._stream_result = await self._stream_context.__aenter__()
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: Any,
-    ) -> bool | None:
-        return await self._stream_context.__aexit__(exc_type, exc, tb)
-
-    async def iter_deltas(self) -> AsyncIterator[str]:
-        result = self._require_stream_result()
-        async for delta in result.stream_text(delta=True, debounce_by=None):
-            if delta == "":
-                continue
-            yield delta
-
-    async def get_output(self) -> str:
-        result = self._require_stream_result()
-        output = await result.get_output()
-        if not isinstance(output, str):
-            raise AgentExecutionError("PydanticAI agent returned a non-text output.")
-        if output.strip() == "":
-            raise AgentExecutionError("PydanticAI agent returned an empty text response.")
-        return output
-
-    def drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]:
-        drained = tuple(self._tool_events)
-        self._tool_events.clear()
-        return drained
-
-    def _require_stream_result(self) -> StreamedRunResult[Any, Any]:
-        if self._stream_result is None:
-            raise RuntimeError("PydanticAI text stream has not been entered.")
-        return self._stream_result
-
-
 class _PydanticAIEventStream:
     def __init__(
         self,
@@ -258,6 +233,7 @@ class _PydanticAIEventStream:
         deps: _PydanticAIAgentRunDeps,
         resolved_model_id: str,
         event_buffer: RuntimeExecutionEventBuffer,
+        model_settings: Mapping[str, Any] | None = None,
         model_route_summary: Mapping[str, Any] | None = None,
         debug_enabled: bool = False,
     ) -> None:
@@ -268,12 +244,14 @@ class _PydanticAIEventStream:
         self._message_history = tuple(message_history)
         self._resolved_model = resolved_model
         self._deps = deps
+        self._model_settings = dict(model_settings or {})
         self._stream_context: AbstractAsyncContextManager[StreamedRunResult[Any, Any]] | None = None
         self._stream_result: StreamedRunResult[Any, Any] | None = None
         self._event_buffer = event_buffer
         self._model_route_summary = dict(model_route_summary or {})
         self._debug_enabled = debug_enabled
         self._text_delta_index = 0
+        self._reasoning_delta_index = 0
         self._cached_output: str | None = None
         self._observed_tool_calls: dict[int, _ObservedToolCall] = {}
         self._raw_tool_call_observation_count = 0
@@ -339,6 +317,8 @@ class _PydanticAIEventStream:
                 error=summarize_exception(self._run_exception),
                 observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
                 observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+                observedReasoningTextLength=len(self._event_buffer.observed_reasoning_text),
+                observedReasoningTextPreview=preview_text(self._event_buffer.observed_reasoning_text),
                 rawToolCallObservationCount=self._raw_tool_call_observation_count,
                 rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
                 toolLifecycleEmissionCount=len(self._tool_lifecycle_emitted_ids),
@@ -353,8 +333,11 @@ class _PydanticAIEventStream:
             resolvedModelId=self.resolved_model_id,
             collectorMode="agent_graph",
             totalTextDeltaCount=self._text_delta_index,
+            totalReasoningDeltaCount=self._reasoning_delta_index,
             observedAssistantTextLength=len(self._event_buffer.observed_assistant_text),
             observedAssistantTextPreview=preview_text(self._event_buffer.observed_assistant_text),
+            observedReasoningTextLength=len(self._event_buffer.observed_reasoning_text),
+            observedReasoningTextPreview=preview_text(self._event_buffer.observed_reasoning_text),
             rawToolCallObservationCount=self._raw_tool_call_observation_count,
             rawToolCallArgumentsCompletedCount=self._raw_tool_call_arguments_completed_count,
             toolLifecycleEmissionCount=len(self._tool_lifecycle_emitted_ids),
@@ -379,6 +362,7 @@ class _PydanticAIEventStream:
                 message_history=self._message_history,
                 model=self._resolved_model,
                 deps=self._deps,
+                model_settings=_coerce_model_settings(self._model_settings),
                 event_stream_handler=self._handle_runtime_events,
             )
             output = result.output
@@ -395,6 +379,7 @@ class _PydanticAIEventStream:
             self._run_exception = exc
         finally:
             self._event_buffer.finish_assistant_segment()
+            self._event_buffer.finish_reasoning_segment()
             self._flush_pending_events_to_queue(reason="run_finished")
             self._event_queue.put_nowait(_EVENT_STREAM_DONE)
 
@@ -640,6 +625,13 @@ class _PydanticAIEventStream:
                 source_event_kind=raw_event.event_kind,
             )
             return
+        if isinstance(part, ThinkingPart):
+            self._record_reasoning_delta(
+                part.content,
+                part_index=raw_event.index,
+                source_event_kind=raw_event.event_kind,
+            )
+            return
         if isinstance(part, ToolCallPart):
             state = self._observed_tool_calls.get(raw_event.index)
             if state is None:
@@ -658,6 +650,13 @@ class _PydanticAIEventStream:
         delta = raw_event.delta
         if isinstance(delta, TextPartDelta):
             self._record_text_delta(
+                delta.content_delta,
+                part_index=raw_event.index,
+                source_event_kind=raw_event.event_kind,
+            )
+            return
+        if isinstance(delta, ThinkingPartDelta):
+            self._record_reasoning_delta(
                 delta.content_delta,
                 part_index=raw_event.index,
                 source_event_kind=raw_event.event_kind,
@@ -714,6 +713,39 @@ class _PydanticAIEventStream:
             deltaPreview=preview_text(delta),
         )
         self._event_buffer.record_assistant_delta(delta)
+
+    def _record_reasoning_delta(
+        self,
+        delta: str | None,
+        *,
+        part_index: int | None,
+        source_event_kind: str,
+    ) -> None:
+        if delta in (None, ""):
+            log_runtime_chain_debug(
+                "collector.empty_reasoning_delta",
+                enabled=self._debug_enabled,
+                runId=self._run_id,
+                resolvedModelId=self.resolved_model_id,
+                collectorMode="raw",
+                partIndex=part_index,
+                rawEventKind=source_event_kind,
+            )
+            return
+        self._reasoning_delta_index += 1
+        log_runtime_chain_debug(
+            "collector.reasoning_delta",
+            enabled=self._debug_enabled,
+            runId=self._run_id,
+            resolvedModelId=self.resolved_model_id,
+            collectorMode="raw",
+            rawEventKind=source_event_kind,
+            partIndex=part_index,
+            deltaIndex=self._reasoning_delta_index,
+            deltaLength=len(delta),
+            deltaPreview=preview_text(delta),
+        )
+        self._event_buffer.record_reasoning_delta(delta)
 
     def _emit_tool_call_observation_if_needed(
         self,
@@ -800,16 +832,12 @@ class _PydanticAIEventStream:
         result: StreamedRunResult[Any, Any],
     ) -> AsyncIterator[Any] | None:
         endpoint_type = str(self._model_route_summary.get("endpointType") or "")
-        if endpoint_type not in _SUPPORTED_STREAM_ENDPOINT_TYPES:
-            log_runtime_chain_debug(
-                "collector.raw_stream_unavailable",
-                enabled=self._debug_enabled,
-                runId=self._run_id,
-                resolvedModelId=self.resolved_model_id,
-                reason="unsupported_endpoint_type",
-                endpointType=endpoint_type,
-            )
-            return None
+        provider_id = str(
+            self._model_route_summary.get("providerId")
+            or self._model_route_summary.get("provider")
+            or ""
+        )
+        adapter_id = str(self._model_route_summary.get("adapterId") or "")
         raw_stream = getattr(result, "_stream_response", None)
         if raw_stream is None or not hasattr(raw_stream, "__aiter__"):
             log_runtime_chain_debug(
@@ -818,6 +846,8 @@ class _PydanticAIEventStream:
                 runId=self._run_id,
                 resolvedModelId=self.resolved_model_id,
                 reason="missing_stream_response",
+                providerId=provider_id,
+                adapterId=adapter_id,
                 endpointType=endpoint_type,
             )
             return None
@@ -826,6 +856,8 @@ class _PydanticAIEventStream:
             enabled=self._debug_enabled,
             runId=self._run_id,
             resolvedModelId=self.resolved_model_id,
+            providerId=provider_id,
+            adapterId=adapter_id,
             endpointType=endpoint_type,
         )
         return cast(AsyncIterator[Any], raw_stream)
@@ -847,6 +879,9 @@ class _PydanticAIEventStream:
         if isinstance(part, TextPart):
             summary["partKind"] = "text"
             summary["deltaPreview"] = preview_text(part.content)
+        elif isinstance(part, ThinkingPart):
+            summary["partKind"] = "thinking"
+            summary["deltaPreview"] = preview_text(part.content)
         elif isinstance(part, ToolCallPart):
             summary["partKind"] = "tool-call"
             summary["toolCallId"] = part.tool_call_id
@@ -855,6 +890,9 @@ class _PydanticAIEventStream:
         delta = getattr(raw_event, "delta", None)
         if isinstance(delta, TextPartDelta):
             summary["deltaKind"] = "text"
+            summary["deltaPreview"] = preview_text(delta.content_delta)
+        elif isinstance(delta, ThinkingPartDelta):
+            summary["deltaKind"] = "thinking"
             summary["deltaPreview"] = preview_text(delta.content_delta)
         elif isinstance(delta, ToolCallPartDelta):
             summary["deltaKind"] = "tool-call"
@@ -969,11 +1007,15 @@ class PydanticAIAgentExecutor:
         env: Mapping[str, str] | None = None,
         agent_name: str = DEFAULT_AGENT_NAME,
         tool_registry: ToolRegistry | None = None,
+        provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
     ) -> None:
+        _ = env
         self.agent_name = agent_name
         self._model_override = model
-        self._env = dict(os.environ if env is None else env)
         self._tool_registry = tool_registry or build_default_tool_registry()
+        self._provider_adapter_registry = (
+            provider_adapter_registry or build_default_provider_adapter_registry()
+        )
         self._agent = Agent(
             name=agent_name,
             output_type=str,
@@ -985,11 +1027,15 @@ class PydanticAIAgentExecutor:
 
     @property
     def model_configured(self) -> bool:
-        return self._resolved_explicit_model() is not None or self._configured_model_name() is not None
+        return self._resolved_explicit_model() is not None
 
     @property
     def model_environment_keys(self) -> tuple[str, ...]:
-        return MODEL_ENVIRONMENT_KEYS
+        return ()
+
+    @property
+    def provider_adapter_registry(self) -> RuntimeProviderAdapterRegistry:
+        return self._provider_adapter_registry
 
     async def run(
         self,
@@ -1035,45 +1081,6 @@ class PydanticAIAgentExecutor:
 
         return output
 
-    def open_text_stream(
-        self,
-        *,
-        agent_name: str,
-        user_prompt: str,
-        message_history: Sequence[ModelMessage],
-        model_route: ResolvedRuntimeModelRoute,
-        enabled_tools: Sequence[str] = (),
-        debug_enabled: bool = False,
-        request_options: Mapping[str, Any] | None = None,
-    ) -> _PydanticAITextStream:
-        if agent_name != self.agent_name:
-            raise AgentExecutionError(f"Unsupported agent '{agent_name}'.")
-
-        _ = dict(request_options or {})
-        stream_model = self._resolved_explicit_model()
-        if stream_model is None:
-            stream_model = self._build_stream_model(model_route)
-        resolved_model = self.resolve_model(model_override=stream_model)
-        tool_events: list[RuntimeToolLifecycleEvent] = []
-        deps = self._build_runtime_deps(
-            enabled_tools=enabled_tools,
-            emit_tool_event=tool_events.append,
-            debug_enabled=debug_enabled,
-        )
-        return _PydanticAITextStream(
-            stream_context=cast(
-                AbstractAsyncContextManager[StreamedRunResult[Any, Any]],
-                self._agent.run_stream(
-                    user_prompt,
-                    message_history=message_history,
-                    model=resolved_model,
-                    deps=deps,
-                ),
-            ),
-            resolved_model_id=model_route.model_id,
-            tool_events=tool_events,
-        )
-
     def open_event_stream(
         self,
         *,
@@ -1085,6 +1092,7 @@ class PydanticAIAgentExecutor:
         enabled_tools: Sequence[str] = (),
         debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
+        model_settings: Mapping[str, Any] | None = None,
     ) -> _PydanticAIEventStream:
         if agent_name != self.agent_name:
             raise AgentExecutionError(f"Unsupported agent '{agent_name}'.")
@@ -1130,6 +1138,7 @@ class PydanticAIAgentExecutor:
             deps=deps,
             resolved_model_id=model_route.model_id,
             event_buffer=event_buffer,
+            model_settings=model_settings,
             model_route_summary=model_route_summary,
             debug_enabled=debug_enabled,
         )
@@ -1139,24 +1148,21 @@ class PydanticAIAgentExecutor:
         explicit_model = self._resolved_explicit_model(model_override)
         if explicit_model is not None:
             return explicit_model
-
-        model_name = self._configured_model_name()
-        if model_name is None:
-            raise ModelNotConfiguredError(
-                "No runtime model is configured. Provide an explicit executor model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL."
-            )
-        return model_name
-
-    def _build_stream_model(self, model_route: ResolvedRuntimeModelRoute) -> OpenAIModel:
-        if model_route.endpoint_type not in _SUPPORTED_STREAM_ENDPOINT_TYPES:
-            raise AgentExecutionError(
-                f"Unsupported model endpoint type '{model_route.endpoint_type}' for streamed execution."
-            )
-        provider = OpenAIProvider(
-            base_url=model_route.base_url,
-            api_key=model_route.api_key,
+        raise ModelNotConfiguredError(
+            "No runtime model is configured. Provide an explicit executor model."
         )
-        return OpenAIModel(model_route.model_id, provider=provider)
+
+    def _build_stream_model(self, model_route: ResolvedRuntimeModelRoute) -> Any:
+        try:
+            return self._provider_adapter_registry.build_stream_model(
+                model_route=model_route
+            )
+        except RuntimeProviderAdapterError as exc:
+            raise ProviderAdapterExecutionError(
+                code=exc.code,
+                message=str(exc),
+                details=exc.details,
+            ) from exc
 
     def _build_runtime_deps(
         self,
@@ -1393,23 +1399,11 @@ class PydanticAIAgentExecutor:
             return value or None
         return candidate
 
-    def _configured_model_name(self) -> str | None:
-        for key in MODEL_ENVIRONMENT_KEYS:
-            raw_value = self._env.get(key)
-            if raw_value is None:
-                continue
-            value = raw_value.strip()
-            if value:
-                return value
-        return None
-
-
 __all__ = [
     "AgentExecutionError",
     "AgentExecutorFactory",
     "DEFAULT_AGENT_NAME",
     "DEFAULT_AGENT_SYSTEM_PROMPT",
-    "MODEL_ENVIRONMENT_KEYS",
     "ModelNotConfiguredError",
     "PydanticAIAgentExecutor",
     "RuntimeAgentExecutor",

@@ -75,7 +75,6 @@ export function enhanceRuntimeAgents(agents: RuntimeAgentDirectoryEntry[]): Agen
       status: agent.status,
       icon: resolveAgentIcon(agent),
       recommendedTools: [...agent.recommendedTools],
-      defaultModelPreference: agent.defaultModelPreference,
     }
   })
 }

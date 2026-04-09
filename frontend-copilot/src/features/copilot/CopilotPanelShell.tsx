@@ -18,6 +18,7 @@ import type {
 } from './run-segment-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
+import type { RuntimeThinkingCapability } from './thread-run-contract'
 import type { CopilotBootstrapState, CopilotConnectableState } from './types'
 
 export interface CopilotPanelShellProps {
@@ -31,6 +32,7 @@ export interface CopilotPanelShellProps {
   sessionError: string | null
   sendError: string | null
   modelGroups: CopilotModelGroup[]
+  thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
@@ -125,6 +127,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           assistantPlaceholder={props.assistantPlaceholder}
           models={props.modelGroups.flatMap((group) => group.models)}
           showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
+          transientError={props.sendError ?? props.sessionError}
           emptyState={hasAvailableModels
             ? null
             : {
@@ -135,6 +138,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
         <CopilotComposer
           capabilities={props.sessionShell.capabilities}
           modelGroups={props.modelGroups}
+          thinkingCapability={props.thinkingCapability}
           draft={props.composerDraft}
           onDraftChange={props.onComposerDraftChange}
           onSubmit={props.onSend}
@@ -142,7 +146,6 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           sendStatus={props.sendStatus}
           canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
-          composerError={props.sendError ?? props.sessionError}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}

@@ -34,10 +34,10 @@ export function createSettingsWorkspaceStateStorage(documentIO: SettingsWorkspac
     }
 
     return {
-      state: projectLoadedState(stateResult.document.values.providerProfiles.map((profile) => profile.id), {
+      state: projectLoadedState(stateResult.document.values.providerProfiles.map((profile) => profile.profileId), {
         values: stateResult.document.values,
         secretStates: projectProviderSecretStateById(
-          stateResult.document.values.providerProfiles.map((profile) => profile.id),
+          stateResult.document.values.providerProfiles.map((profile) => profile.profileId),
           secretsResult.document,
         ),
       }),
@@ -49,16 +49,16 @@ export function createSettingsWorkspaceStateStorage(documentIO: SettingsWorkspac
     const stateDocument = createSettingsWorkspaceStateDocument(normalizeSettingsWorkspaceStateValues(input))
     const secretsDocument = pruneSettingsWorkspaceSecretsDocument(
       (await documentIO.readSecretsDocument()).document,
-      new Set(stateDocument.values.providerProfiles.map((profile) => profile.id)),
+      new Set(stateDocument.values.providerProfiles.map((profile) => profile.profileId)),
     )
 
     await documentIO.writeDocuments(stateDocument, secretsDocument)
 
     return {
-      state: projectLoadedState(stateDocument.values.providerProfiles.map((profile) => profile.id), {
+      state: projectLoadedState(stateDocument.values.providerProfiles.map((profile) => profile.profileId), {
         values: stateDocument.values,
         secretStates: projectProviderSecretStateById(
-          stateDocument.values.providerProfiles.map((profile) => profile.id),
+          stateDocument.values.providerProfiles.map((profile) => profile.profileId),
           secretsDocument,
         ),
       }),

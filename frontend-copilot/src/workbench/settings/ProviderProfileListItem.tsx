@@ -2,7 +2,10 @@ import { Fragment, type MouseEvent as ReactMouseEvent, type PointerEvent as Reac
 
 import type { ProviderProfile } from '../types'
 
-import { getProviderProtocolLabel } from './provider-profile-list-helpers'
+import {
+  resolveProviderStatusNotice,
+  resolveProviderTypeLabel,
+} from './settings-workspace-provider-helpers'
 
 interface ProviderProfileListItemProps {
   profile: ProviderProfile
@@ -23,6 +26,10 @@ export function ProviderProfileListItem({
   onClick,
   onContextMenu,
 }: ProviderProfileListItemProps) {
+  const providerTypeLabel = resolveProviderTypeLabel(profile)
+  const providerStatusNotice = resolveProviderStatusNotice(profile)
+  const providerLocation = (profile.baseUrl?.trim() || profile.endpoint.trim()) || '未设置 Base URL'
+
   return (
     <Fragment>
       {showDropGapBefore ? <li className="topic-list__drop-gap" aria-hidden="true" /> : null}
@@ -41,12 +48,23 @@ export function ProviderProfileListItem({
         >
           <span className="provider-card__title-row">
             <span className="provider-card__title">{profile.name}</span>
+            {providerStatusNotice ? (
+              <span
+                className={`provider-card__status provider-card__status--${providerStatusNotice.tone}`}
+                data-testid={`settings-provider-status-${profile.id}`}
+              >
+                {providerStatusNotice.title}
+              </span>
+            ) : null}
           </span>
           <span className="provider-card__meta-row">
-            <span className="provider-card__meta">{getProviderProtocolLabel(profile.protocol)}</span>
+            <span className="provider-card__meta">{providerTypeLabel}</span>
             <span className="provider-card__meta">{profile.hasApiKey ? '已配置密钥' : '未配置密钥'}</span>
           </span>
-          <span className="provider-card__description">{profile.endpoint}</span>
+          <span className="provider-card__description">{providerLocation}</span>
+          {providerStatusNotice ? (
+            <span className="provider-card__description">{providerStatusNotice.description}</span>
+          ) : null}
         </button>
       </li>
     </Fragment>

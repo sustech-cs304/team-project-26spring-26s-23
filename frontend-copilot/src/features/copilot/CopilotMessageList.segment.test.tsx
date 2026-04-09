@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { CopilotMessageList } from './CopilotMessageList'
-import { createRuntimeModelRoute } from './chat-contract.test-support'
+import {
+  createRuntimeModelRoute,
+  createRuntimeThinkingCapability,
+} from './chat-contract.test-support'
 import { createIdleCopilotRunState } from './run-segment-reducer'
 import { createCopilotModelCatalog } from './model-picker'
 import {
@@ -290,6 +293,74 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
   })
 
+  it('renders thinking metadata detail rows for assistant and terminal items in diagnostic mode', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'failed',
+      runId: 'run-thinking-details',
+      threadId: 'session-1',
+      requestedThinkingLevel: 'medium',
+      appliedThinkingLevel: 'auto',
+      thinkingCapabilitySnapshot: createRuntimeThinkingCapability({
+        status: 'unknown-with-override',
+        source: 'override',
+        supportedLevels: ['off', 'auto', 'medium'],
+        defaultLevel: 'auto',
+        reasonCode: 'override_candidate_levels_applied',
+        providerHint: 'unknown-route-override',
+        overrideLevels: ['off', 'auto', 'medium'],
+      }),
+      segments: [
+        {
+          id: 'assistant:run-thinking-details:1',
+          kind: 'assistant',
+          runId: 'run-thinking-details',
+          assistantMessageId: 'run-thinking-details:assistant',
+          text: '这是一条回答。',
+          firstContentSequence: 1,
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'completed',
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+        {
+          id: 'terminal:run-thinking-details:failed',
+          kind: 'terminal',
+          runId: 'run-thinking-details',
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'failed',
+          terminalPhase: 'failed',
+          assistantMessageId: 'run-thinking-details:assistant',
+          cancelReason: null,
+          failure: {
+            code: 'thinking_not_supported_for_route',
+            message: 'route rejected',
+            details: {},
+          },
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).toContain('请求思考')
+    expect(html).toContain('medium')
+    expect(html).toContain('应用思考')
+    expect(html).toContain('auto')
+    expect(html).toContain('能力来源')
+    expect(html).toContain('override / unknown-with-override')
+    expect(html).toContain('原因码')
+    expect(html).toContain('override_candidate_levels_applied')
+    expect(html).toContain('Provider Hint')
+    expect(html).toContain('unknown-route-override')
+  })
+
   it('keeps completed segments visible when a run is cancelled and appends a terminal marker', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),
@@ -354,6 +425,101 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('本次响应已取消：user_cancelled')
     expect(html.indexOf('已保留的回答前半段')).toBeLessThan(html.indexOf('本次响应已取消：user_cancelled'))
   })
+
+  it('renders reasoning content as a dedicated collapsed card without merging it into assistant text', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'completed',
+      runId: 'run-reasoning',
+      threadId: 'session-1',
+      resolvedModelId: 'qwen-plus',
+      resolvedModelRoute: createRuntimeModelRoute(),
+      resolvedToolIds: [],
+      requestOptions: {},
+      segments: [
+        {
+          id: 'reasoning:run-reasoning:1',
+          kind: 'reasoning',
+          runId: 'run-reasoning',
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'completed',
+          text: '先分析用户问题，再整理答案。',
+          observedStartedAt: 1_000,
+          observedFinishedAt: 3_279,
+          isCollapsedByDefault: true,
+        },
+        {
+          id: 'assistant:run-reasoning:2',
+          kind: 'assistant',
+          runId: 'run-reasoning',
+          assistantMessageId: 'run-reasoning:assistant',
+          text: '最终答复。',
+          firstContentSequence: 2,
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'completed',
+          resolvedModelId: 'qwen-plus',
+          resolvedModelRoute: createRuntimeModelRoute(),
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+        {
+          id: 'terminal:run-reasoning:completed',
+          kind: 'terminal',
+          runId: 'run-reasoning',
+          startedSequence: 3,
+          lastSequence: 3,
+          status: 'completed',
+          terminalPhase: 'completed',
+          assistantMessageId: 'run-reasoning:assistant',
+          cancelReason: null,
+          failure: null,
+          resolvedModelId: 'qwen-plus',
+          resolvedModelRoute: createRuntimeModelRoute(),
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).toContain('chat-message-reasoning-card-1')
+    expect(html).toContain('chat-message-reasoning-toggle-1')
+    expect(html).toContain('思考 2.2s')
+    expect(html).not.toContain('chat-message-reasoning-panel-1')
+    expect(html).toContain('最终答复。')
+    expect(html.indexOf('思考')).toBeLessThan(html.indexOf('最终答复。'))
+    expect(html).not.toContain('copilot-chat__message-text--markdown">先分析用户问题，再整理答案。')
+  })
+
+  it('shows the reasoning streaming status only on the dedicated reasoning card', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'streaming',
+      runId: 'run-reasoning-streaming',
+      threadId: 'session-1',
+      segments: [
+        {
+          id: 'reasoning:run-reasoning-streaming:1',
+          kind: 'reasoning',
+          runId: 'run-reasoning-streaming',
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'streaming',
+          text: '正在推理中。',
+          observedStartedAt: 1_000,
+          observedFinishedAt: null,
+          isCollapsedByDefault: true,
+        },
+      ],
+    })
+
+    expect(html).toContain('chat-message-reasoning-card-1')
+    expect(html).toContain('chat-message-reasoning-status-1')
+    expect(html).toContain('生成中')
+    expect(html).not.toContain('chat-message-assistant-icon-1')
+  })
+
   it('renders assistant content as structured markdown with dividers and MathJax formulas', () => {
     const modelCatalog = createTestModelCatalog()
     const conversation: CopilotMessageListItem[] = [{

@@ -82,3 +82,8 @@
   gap: 1rem;
   padding: 1rem;
 }
+
+.settings-stack--compact {
+  gap: 0.75rem;
+  padding-bottom: 0;
+}
