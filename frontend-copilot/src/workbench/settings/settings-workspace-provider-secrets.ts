@@ -3,8 +3,8 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ProviderProfile } from '../types'
 import { omitProviderSecretValue } from './settings-workspace-provider-helpers'
 import {
-  clearSettingsWorkspaceProviderApiKey,
-  saveSettingsWorkspaceProviderApiKey,
+  clearSettingsWorkspaceProfileApiKey,
+  saveSettingsWorkspaceProfileApiKey,
 } from './workspace-state'
 
 interface UseSettingsWorkspaceProviderSecretsArgs {
@@ -102,20 +102,20 @@ export function useSettingsWorkspaceProviderSecrets({
     }
 
     if (!normalizedDraft) {
-      const result = await clearSettingsWorkspaceProviderApiKey({ providerId })
+      const result = await clearSettingsWorkspaceProfileApiKey({ profileId: providerId })
 
       if (!result.ok) {
         setApiKeyFeedback('清除失败，请稍后重试')
         return
       }
 
-      syncProviderApiKeyState(result.providerId, result.state.apiKey)
+      syncProviderApiKeyState(result.profileId, result.state.apiKey)
       setApiKeyFeedback('已清除 API 密钥')
       return
     }
 
-    const result = await saveSettingsWorkspaceProviderApiKey({
-      providerId,
+    const result = await saveSettingsWorkspaceProfileApiKey({
+      profileId: providerId,
       apiKey: normalizedDraft,
     })
 
@@ -124,7 +124,7 @@ export function useSettingsWorkspaceProviderSecrets({
       return
     }
 
-    syncProviderApiKeyState(result.providerId, result.state.apiKey)
+    syncProviderApiKeyState(result.profileId, result.state.apiKey)
     setApiKeyFeedback('已自动保存 API 密钥')
   }
 
@@ -163,8 +163,8 @@ export function useSettingsWorkspaceProviderSecrets({
       return true
     }
 
-    const result = await saveSettingsWorkspaceProviderApiKey({
-      providerId,
+    const result = await saveSettingsWorkspaceProfileApiKey({
+      profileId: providerId,
       apiKey,
     })
 
@@ -173,7 +173,7 @@ export function useSettingsWorkspaceProviderSecrets({
       return false
     }
 
-    syncProviderApiKeyState(result.providerId, result.state.apiKey)
+    syncProviderApiKeyState(result.profileId, result.state.apiKey)
     return true
   }
 
@@ -187,7 +187,7 @@ export function useSettingsWorkspaceProviderSecrets({
       return true
     }
 
-    const result = await clearSettingsWorkspaceProviderApiKey({ providerId })
+    const result = await clearSettingsWorkspaceProfileApiKey({ profileId: providerId })
 
     if (!result.ok) {
       setApiKeyFeedback('删除服务商后未能清除 API 密钥')

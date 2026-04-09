@@ -20,19 +20,20 @@ _BROWSER_TEST_USER_AGENT = (
 )
 
 from app.copilot_runtime import PydanticAIAgentExecutor
+from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
-    MESSAGE_SEND_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
-    SESSION_CREATE_METHOD,
+    THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
 )
+from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
-from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
 
 from app.desktop_runtime.config import (
@@ -47,19 +48,21 @@ from app.desktop_runtime.config import (
 from app.desktop_runtime.server import BACKEND_DIR, create_app
 
 
-class _ImmediateTextStream:
-    def __init__(self, *, output: str, resolved_model_id: str) -> None:
+class _ImmediateEventStream:
+    def __init__(self, *, output: str, resolved_model_id: str, events: list[RuntimeExecutionEvent]) -> None:
         self.resolved_model_id = resolved_model_id
         self._output = output
+        self._events = list(events)
 
-    async def __aenter__(self) -> "_ImmediateTextStream":
+    async def __aenter__(self) -> "_ImmediateEventStream":
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         return None
 
-    async def iter_deltas(self):
-        yield self._output
+    async def iter_events(self):
+        for event in self._events:
+            yield event
 
     async def get_output(self) -> str:
         return self._output
@@ -75,11 +78,13 @@ class _StreamingExecutor:
     ) -> None:
         self.model_configured = model_configured
         self.model_environment_keys = model_environment_keys
+        self.provider_adapter_registry = build_default_provider_adapter_registry()
         self._reply = reply
 
-    def open_text_stream(
+    def open_event_stream(
         self,
         *,
+        run_id: str,
         agent_name: str,
         user_prompt: str,
         message_history: list[object],
@@ -87,21 +92,47 @@ class _StreamingExecutor:
         enabled_tools: tuple[str, ...] = (),
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
-    ) -> _ImmediateTextStream:
-        _ = (agent_name, user_prompt, message_history, enabled_tools, request_options)
-        return _ImmediateTextStream(output=self._reply, resolved_model_id=model_route.model_id)
+        model_settings: dict[str, object] | None = None,
+    ) -> _ImmediateEventStream:
+        _ = (
+            agent_name,
+            user_prompt,
+            message_history,
+            enabled_tools,
+            debug_enabled,
+            request_options,
+            model_settings,
+        )
+        return _ImmediateEventStream(
+            output=self._reply,
+            resolved_model_id=model_route.model_id,
+            events=_build_text_execution_events(run_id=run_id, text=self._reply),
+        )
 
 
 class _ResolvedRouteResolver:
     async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
         return ResolvedRuntimeModelRoute(
             provider_profile_id=model_route.provider_profile_id,
-            provider=model_route.snapshot.provider,
-            endpoint_type=model_route.snapshot.endpoint_type,
-            base_url=model_route.snapshot.base_url,
-            model_id=model_route.snapshot.model_id,
+            provider="openai",
+            endpoint_type="openai-compatible",
+            base_url="https://example.com/v1",
+            model_id=model_route.route_ref.model_id,
             api_key="test-api-key",
+            route_ref=model_route.route_ref,
         )
+
+
+def _build_text_execution_events(*, run_id: str, text: str) -> list[RuntimeExecutionEvent]:
+    return [
+        RuntimeExecutionEvent(
+            type="assistant_segment_delta",
+            payload={
+                "segmentId": f"{run_id}:assistant-segment-1",
+                "delta": text,
+            },
+        )
+    ]
 
 
 SUPPORTED_METHODS = [
@@ -111,10 +142,8 @@ SUPPORTED_METHODS = [
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
     RUN_CANCEL_METHOD,
-    SESSION_CREATE_METHOD,
     CAPABILITIES_GET_METHOD,
-    "thinking/capability/get",
-    MESSAGE_SEND_METHOD,
+    THINKING_CAPABILITY_GET_METHOD,
 ]
 
 
@@ -168,7 +197,6 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
     assert agent_summary["status"] == "active"
     assert agent_summary["toolsetName"] == "default"
     assert agent_summary["recommendedTools"] == [FILE_CONVERT_TOOL_ID]
-    assert agent_summary["defaultModelPreference"] is None
     assert agent_summary["iconKey"] is None
     assert agent_summary["hasExecutorFactory"] is True
 
@@ -198,7 +226,7 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
 
 
 
-def test_create_app_uses_environment_backed_default_executor_without_exposing_retired_startup_model(
+def test_create_app_ignores_retired_startup_model_environment_variables(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -212,11 +240,12 @@ def test_create_app_uses_environment_backed_default_executor_without_exposing_re
         runtime_executor = app.state.copilot_runtime_agent_executor
 
     assert response.status_code == 200
-    assert runtime_executor.resolve_model() == "runtime-env-model"
+    with pytest.raises(RuntimeError, match="Provide an explicit executor model"):
+        runtime_executor.resolve_model()
 
     payload = response.json()
     assert "model" not in payload["configuration"]
-    assert payload["capabilities"]["model_configured"] is True
+    assert payload["capabilities"]["model_configured"] is False
 
 
 
@@ -225,15 +254,20 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
 
     with TestClient(app) as client:
         agents_response = client.post("/", json={"method": "agents/list"})
-        session_response = client.post("/", json=_build_session_create_request())
-        session_payload = session_response.json()
+        thread_response = client.post("/", json=_build_thread_create_request())
+        thread_payload = thread_response.json()
         capabilities_response = client.post(
             "/",
-            json={"method": "capabilities/get", "body": {"sessionId": session_payload["sessionId"]}},
+            json={"method": "capabilities/get", "body": {"sessionId": thread_payload["threadId"]}},
         )
-        message_response = client.post(
+        run_start_response = client.post(
             "/",
-            json=_build_message_send_request(session_id=session_payload["sessionId"]),
+            json=_build_run_start_request(thread_id=thread_payload["threadId"]),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        run_stream_response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=run_id),
         )
         preflight_response = client.options(
             "/",
@@ -249,9 +283,10 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
         diagnostics_response = client.get("/diagnostics/runtime-info")
 
     assert agents_response.status_code == 200
-    assert session_response.status_code == 200
+    assert thread_response.status_code == 200
     assert capabilities_response.status_code == 200
-    assert message_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert run_stream_response.status_code == 200
     assert preflight_response.status_code == 200
     assert health_response.status_code == 200
     assert ready_response.status_code == 200
@@ -261,7 +296,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
 
     agents_payload = agents_response.json()
     capabilities_payload = capabilities_response.json()
-    run_events = _parse_sse_events(message_response.text)
+    run_events = _parse_sse_events(run_stream_response.text)
     run_payload = run_events[-1]["payload"]
     health_payload = health_response.json()
     ready_payload = ready_response.json()
@@ -272,10 +307,10 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert agents_payload["defaultAgentId"] == "default"
     assert agents_payload["agents"][0]["agentId"] == "default"
     _assert_supported_methods(diagnostics_payload["capabilities"]["supported_methods"])
-    assert capabilities_payload["sessionId"] == session_payload["sessionId"]
+    assert capabilities_payload["sessionId"] == thread_payload["threadId"]
     assert capabilities_payload["boundAgent"]["agentId"] == "default"
     assert capabilities_payload["tools"][0]["toolId"] == FILE_CONVERT_TOOL_ID
-    assert message_response.headers["content-type"].startswith("text/event-stream")
+    assert run_stream_response.headers["content-type"].startswith("text/event-stream")
     assert preflight_response.headers["access-control-allow-origin"] == "http://localhost:5173"
     assert "POST" in preflight_response.headers["access-control-allow-methods"]
     assert [event["type"] for event in run_events] == [
@@ -308,9 +343,12 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
     assert diagnostics_payload["capabilities"]["session_store_type"] == "in-memory"
     assert diagnostics_payload["capabilities"]["current_stage_supports_agents_list"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_session_create"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_thread_create"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_thread_get"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_run_start"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_run_stream"] is True
+    assert diagnostics_payload["capabilities"]["current_stage_supports_run_cancel"] is True
     assert diagnostics_payload["capabilities"]["current_stage_supports_capabilities_get"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_message_send"] is True
     assert diagnostics_payload["capabilities"]["model_configured"] is True
     assert diagnostics_payload["capabilities"]["model_environment_keys"] == []
     assert "/" in diagnostics_payload["capabilities"]["contract_paths"]
@@ -382,11 +420,11 @@ def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_e
 
     with caplog.at_level("INFO", logger="uvicorn.error"):
         with TestClient(app, raise_server_exceptions=False) as client:
-            session_response = client.post("/", json=_build_session_create_request())
-            session_id = session_response.json()["sessionId"]
+            thread_response = client.post("/", json=_build_thread_create_request())
+            thread_id = thread_response.json()["threadId"]
             response = client.post(
                 "/",
-                json=_build_run_start_request(thread_id=session_id),
+                json=_build_run_start_request(thread_id=thread_id),
                 headers={"Origin": "http://localhost:5173"},
             )
 
@@ -396,7 +434,7 @@ def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_e
         if "copilot-runtime-chain" in record.getMessage()
     ]
 
-    assert session_response.status_code == 200
+    assert thread_response.status_code == 200
     assert response.status_code == 200
     assert any('"event":"run_start.request_received"' in message for message in chain_logs)
     assert any(
@@ -432,11 +470,11 @@ def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
 
     with caplog.at_level("ERROR", logger="uvicorn.error"):
         with TestClient(app, raise_server_exceptions=False) as client:
-            session_response = client.post("/", json=_build_session_create_request())
-            session_id = session_response.json()["sessionId"]
+            thread_response = client.post("/", json=_build_thread_create_request())
+            thread_id = thread_response.json()["threadId"]
             response = client.post(
                 "/",
-                json=_build_run_start_request(thread_id=session_id),
+                json=_build_run_start_request(thread_id=thread_id),
                 headers={"Origin": "http://localhost:5173"},
             )
 
@@ -448,7 +486,7 @@ def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
         if "run/start unexpected exception" in record.getMessage()
     ]
 
-    assert session_response.status_code == 200
+    assert thread_response.status_code == 200
     assert response.status_code == 500
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
@@ -462,7 +500,7 @@ def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
     assert "path=/" in run_start_logs[0]
     assert "origin=http://localhost:5173" in run_start_logs[0]
     assert "runtime_method=run/start" in run_start_logs[0]
-    assert f"thread_id={session_id}" in run_start_logs[0]
+    assert f"thread_id={thread_id}" in run_start_logs[0]
     assert "agent_id=default" in run_start_logs[0]
     assert "phase=create_run_record" in run_start_logs[0]
     assert "exception_type=RuntimeError" in run_start_logs[0]
@@ -599,7 +637,7 @@ def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> Non
 
 
 
-def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scoped_message_send_still_runs(
+def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scoped_run_still_runs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -617,17 +655,25 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
 
     with TestClient(app) as client:
         agents_response = client.post("/", json={"method": "agents/list"})
-        session_response = client.post("/", json=_build_session_create_request())
-        session_id = session_response.json()["sessionId"]
-        message_response = client.post("/", json=_build_message_send_request(session_id=session_id))
+        thread_response = client.post("/", json=_build_thread_create_request())
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post("/", json=_build_run_start_request(thread_id=thread_id))
+        run_id = run_start_response.json()["run"]["runId"]
+        run_stream_response = client.post("/", json=_build_run_stream_request(run_id=run_id))
         diagnostics_response = client.get("/diagnostics")
 
-    events = _parse_sse_events(message_response.text)
+    events = _parse_sse_events(run_stream_response.text)
 
     assert agents_response.status_code == 200
-    assert session_response.status_code == 200
-    assert message_response.status_code == 200
-    assert [event["type"] for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert run_stream_response.status_code == 200
+    assert [event["type"] for event in events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_completed",
+    ]
     assert events[-1]["payload"]["assistantText"] == "Hello from the desktop runtime test model."
     assert diagnostics_response.status_code == 200
     assert diagnostics_response.json()["capabilities"]["model_configured"] is False
@@ -658,9 +704,9 @@ def _create_test_app(tmp_path: Path) -> FastAPI:
 
 
 
-def _build_session_create_request() -> dict[str, Any]:
+def _build_thread_create_request() -> dict[str, Any]:
     return {
-        "method": "session/create",
+        "method": "thread/create",
         "body": {
             "agentId": "default",
         },
@@ -680,11 +726,9 @@ def _build_run_start_request(*, thread_id: str, debug_mode_enabled: bool = False
             },
             "policy": {
                 "modelRoute": {
-                    "providerProfileId": "provider-1",
-                    "snapshot": {
-                        "provider": "openai",
-                        "endpointType": "openai-compatible",
-                        "baseUrl": "https://example.com/v1",
+                    "routeRef": {
+                        "routeKind": "provider-model",
+                        "profileId": "provider-1",
                         "modelId": "gpt-4.1",
                     },
                 },
@@ -697,30 +741,11 @@ def _build_run_start_request(*, thread_id: str, debug_mode_enabled: bool = False
 
 
 
-def _build_message_send_request(*, session_id: str, debug_mode_enabled: bool = False) -> dict[str, Any]:
+def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
     return {
-        "method": "message/send",
+        "method": "run/stream",
         "body": {
-            "sessionId": session_id,
-            "agent": "default",
-            "message": {
-                "role": "user",
-                "content": "hello desktop runtime",
-            },
-            "policy": {
-                "modelRoute": {
-                    "providerProfileId": "provider-1",
-                    "snapshot": {
-                        "provider": "openai",
-                        "endpointType": "openai-compatible",
-                        "baseUrl": "https://example.com/v1",
-                        "modelId": "gpt-4.1",
-                    },
-                },
-                "enabledTools": [],
-                "debugModeEnabled": debug_mode_enabled,
-                "requestOptions": {},
-            },
+            "runId": run_id,
         },
     }
 

@@ -6,6 +6,13 @@ from typing import Any, Literal
 
 from .contracts import RuntimeThinkingSelection, RuntimeThinkingValue
 from .model_routes import ResolvedRuntimeModelRoute
+from .provider_adapter_registry import (
+    RuntimeProviderAdapterError,
+    RuntimeProviderAdapterRegistry,
+    RuntimeProviderThinkingCapability,
+    RuntimeProviderThinkingMapping,
+    build_default_provider_adapter_registry,
+)
 
 ThinkingCapabilityStatus = Literal[
     'verified-supported',
@@ -271,9 +278,13 @@ def _normalize_series_allowed_values(
         if value.valueType != 'code':
             deduped_values.append(value)
             continue
-        if value.code in seen_codes:
+        code = value.code
+        if code is None:
+            deduped_values.append(value)
             continue
-        seen_codes.add(value.code)
+        if code in seen_codes:
+            continue
+        seen_codes.add(code)
         deduped_values.append(value)
     return tuple(deduped_values)
 
@@ -523,6 +534,7 @@ def resolve_canonical_thinking_capability(
     *,
     model_route: ResolvedRuntimeModelRoute,
     thinking_capability_override: Mapping[str, Any] | None = None,
+    provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
 ) -> CanonicalThinkingCapability:
     route_fingerprint = _build_route_fingerprint(model_route)
     verified = _resolve_verified_series_spec(model_route)
@@ -592,10 +604,12 @@ def adapt_thinking_selection(
     selection: RuntimeThinkingSelection | None,
     model_route: ResolvedRuntimeModelRoute,
     thinking_capability_override: Mapping[str, Any] | None = None,
+    provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
 ) -> ThinkingAdaptationResult:
     capability = resolve_canonical_thinking_capability(
         model_route=model_route,
         thinking_capability_override=thinking_capability_override,
+        provider_adapter_registry=provider_adapter_registry,
     )
     if selection is None:
         return _build_adaptation_result(
@@ -869,8 +883,10 @@ def _normalize_default_value(
                     return None
                 snapped = _clamp_budget_tokens(candidate.budgetTokens, budget)
                 return _budget_value('budget', candidate.labelZh or f'{snapped} Tokens', snapped)
-            if candidate.mode in {'off', 'dynamic'}:
-                return _budget_value(candidate.mode, candidate.labelZh or ('动态' if candidate.mode == 'dynamic' else '关闭'))
+            if candidate.mode == 'off':
+                return _budget_value('off', candidate.labelZh or '关闭')
+            if candidate.mode == 'dynamic':
+                return _budget_value('dynamic', candidate.labelZh or '动态')
         off_value = next((value for value in allowed_values if value.valueType == 'budget' and value.mode == 'off'), None)
         return off_value
     if candidate is not None and candidate.valueType == 'code':
@@ -935,8 +951,12 @@ def _normalize_runtime_selection(selection: RuntimeThinkingSelection) -> Runtime
 
 
 def _parse_editor_type(value: Any, *, fallback: ThinkingSeriesEditorType | None) -> ThinkingSeriesEditorType | None:
-    if isinstance(value, str) and value in {'discrete', 'budget', 'fixed'}:
-        return value
+    if value == 'discrete':
+        return 'discrete'
+    if value == 'budget':
+        return 'budget'
+    if value == 'fixed':
+        return 'fixed'
     return fallback
 
 
@@ -1042,7 +1062,7 @@ def _parse_runtime_thinking_value(value: Any) -> RuntimeThinkingValue | None:
 def _build_route_fingerprint(model_route: ResolvedRuntimeModelRoute) -> dict[str, str]:
     return {
         'providerProfileId': model_route.provider_profile_id,
-        'provider': model_route.provider,
+        'provider': _normalize_identifier(model_route.provider_id or model_route.provider),
         'endpointType': model_route.endpoint_type,
         'baseUrl': model_route.base_url,
         'modelId': model_route.model_id,

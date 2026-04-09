@@ -9,7 +9,7 @@ from app.copilot_runtime.execution_event_graph import (
     RuntimeExecutionEventBuffer,
     RuntimeExecutionEventFactory,
 )
-from app.copilot_runtime.legacy_event_projection import LegacyRuntimeRunEventProjector
+from app.copilot_runtime.legacy_event_projection import RuntimeRunEventProjector
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.run_events import TERMINAL_RUNTIME_RUN_EVENT_TYPES, RuntimeRunEventFactory
 
@@ -95,10 +95,10 @@ def test_execution_event_buffer_keeps_reasoning_distinct_from_tool_and_assistant
 
 
 
-def test_legacy_runtime_projector_projects_interleaved_chain_without_early_terminal() -> None:
+def test_runtime_projector_projects_interleaved_chain_without_early_terminal() -> None:
     execution_factory = RuntimeExecutionEventFactory(run_id="run-1")
     events = RuntimeRunEventFactory(session_id="session-1", run_id="run-1")
-    projector = LegacyRuntimeRunEventProjector(
+    projector = RuntimeRunEventProjector(
         events=events,
         assistant_message_id="run-1:assistant",
     )
@@ -152,10 +152,10 @@ def test_legacy_runtime_projector_projects_interleaved_chain_without_early_termi
 
 
 
-def test_legacy_runtime_projector_projects_reasoning_as_standalone_delta_event() -> None:
+def test_runtime_projector_projects_reasoning_as_standalone_delta_event() -> None:
     execution_factory = RuntimeExecutionEventFactory(run_id="run-1")
     events = RuntimeRunEventFactory(session_id="session-1", run_id="run-1")
-    projector = LegacyRuntimeRunEventProjector(
+    projector = RuntimeRunEventProjector(
         events=events,
         assistant_message_id="run-1:assistant",
     )
@@ -195,10 +195,10 @@ def test_legacy_runtime_projector_projects_reasoning_as_standalone_delta_event()
 
 
 
-def test_legacy_runtime_projector_preserves_failed_terminal_after_diagnostic() -> None:
+def test_runtime_projector_preserves_failed_terminal_after_diagnostic() -> None:
     execution_factory = RuntimeExecutionEventFactory(run_id="run-1")
     events = RuntimeRunEventFactory(session_id="session-1", run_id="run-1")
-    projector = LegacyRuntimeRunEventProjector(
+    projector = RuntimeRunEventProjector(
         events=events,
         assistant_message_id="run-1:assistant",
     )
@@ -229,10 +229,10 @@ def test_legacy_runtime_projector_preserves_failed_terminal_after_diagnostic() -
 
 
 @pytest.mark.parametrize("reason", ["cancelled", "client_disconnected"])
-def test_legacy_runtime_projector_preserves_cancelled_terminal_reason(reason: str) -> None:
+def test_runtime_projector_preserves_cancelled_terminal_reason(reason: str) -> None:
     execution_factory = RuntimeExecutionEventFactory(run_id="run-1")
     events = RuntimeRunEventFactory(session_id="session-1", run_id="run-1")
-    projector = LegacyRuntimeRunEventProjector(
+    projector = RuntimeRunEventProjector(
         events=events,
         assistant_message_id="run-1:assistant",
     )

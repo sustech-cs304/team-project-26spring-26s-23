@@ -45,18 +45,18 @@ describe('SettingsWorkspace secrets', () => {
   })
 
   it('auto-saves provider api keys on blur and clears them when the draft becomes empty', async () => {
-    const { saveProviderApiKey, clearProviderApiKey } = installSettingsWorkspaceBridge({
-      saveProviderApiKeyResult: {
+    const { saveProfileApiKey, clearProfileApiKey } = installSettingsWorkspaceBridge({
+      saveProfileApiKeyResult: {
         ok: true,
-        providerId: 'openrouter',
+        profileId: 'openrouter',
         state: {
           hasApiKey: true,
           apiKey: 'rotated-secret',
         },
       },
-      clearProviderApiKeyResult: {
+      clearProfileApiKeyResult: {
         ok: true,
-        providerId: 'openrouter',
+        profileId: 'openrouter',
         state: {
           hasApiKey: false,
           apiKey: '',
@@ -74,8 +74,8 @@ describe('SettingsWorkspace secrets', () => {
     await setFormControlValue(apiKeyInput, 'rotated-secret')
     await blurElement(apiKeyInput)
 
-    expect(saveProviderApiKey).toHaveBeenCalledWith({
-      providerId: 'openrouter',
+    expect(saveProfileApiKey).toHaveBeenCalledWith({
+      profileId: 'openrouter',
       apiKey: 'rotated-secret',
     })
     expect(apiKeyInput.value).toBe('rotated-secret')
@@ -84,8 +84,8 @@ describe('SettingsWorkspace secrets', () => {
     await setFormControlValue(apiKeyInput, '')
     await blurElement(apiKeyInput)
 
-    expect(clearProviderApiKey).toHaveBeenCalledWith({
-      providerId: 'openrouter',
+    expect(clearProfileApiKey).toHaveBeenCalledWith({
+      profileId: 'openrouter',
     })
     expect(apiKeyInput.value).toBe('')
     expect(rendered.getByTestId('provider-api-key-feedback').textContent).toBe('已清除 API 密钥')
@@ -125,10 +125,10 @@ describe('SettingsWorkspace secrets', () => {
   })
 
   it('keeps provider api key drafts visible after auto-save and preserves show hide toggle behavior', async () => {
-    const { saveProviderApiKey } = installSettingsWorkspaceBridge({
-      saveProviderApiKeyResult: {
+    const { saveProfileApiKey } = installSettingsWorkspaceBridge({
+      saveProfileApiKeyResult: {
         ok: true,
-        providerId: 'openrouter',
+        profileId: 'openrouter',
         state: {
           hasApiKey: true,
           apiKey: 'secret-after-blur',
@@ -148,8 +148,8 @@ describe('SettingsWorkspace secrets', () => {
     await setFormControlValue(apiKeyInput, 'secret-after-blur')
     await blurElement(apiKeyInput)
 
-    expect(saveProviderApiKey).toHaveBeenCalledWith({
-      providerId: 'openrouter',
+    expect(saveProfileApiKey).toHaveBeenCalledWith({
+      profileId: 'openrouter',
       apiKey: 'secret-after-blur',
     })
     expect(apiKeyInput.value).toBe('secret-after-blur')
@@ -164,8 +164,8 @@ describe('SettingsWorkspace secrets', () => {
   })
 
   it('keeps provider api key drafts and shows feedback when auto-save fails', async () => {
-    const { saveProviderApiKey } = installSettingsWorkspaceBridge({
-      saveProviderApiKeyResult: {
+    const { saveProfileApiKey } = installSettingsWorkspaceBridge({
+      saveProfileApiKeyResult: {
         ok: false,
         error: 'save failed',
       },
@@ -181,8 +181,8 @@ describe('SettingsWorkspace secrets', () => {
     await setFormControlValue(apiKeyInput, 'failed-secret')
     await blurElement(apiKeyInput)
 
-    expect(saveProviderApiKey).toHaveBeenCalledWith({
-      providerId: 'openrouter',
+    expect(saveProfileApiKey).toHaveBeenCalledWith({
+      profileId: 'openrouter',
       apiKey: 'failed-secret',
     })
     expect(apiKeyInput.value).toBe('failed-secret')

@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .model_routes import RuntimeModelRoute
-from .session_store import RuntimeRunRecord, RuntimeSessionRecord, RuntimeThreadRecord
+from .session_store import RuntimeRunRecord, RuntimeThreadRecord
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
 AGENTS_LIST_METHOD = "agents/list"
@@ -17,10 +17,8 @@ THREAD_GET_METHOD = "thread/get"
 RUN_START_METHOD = "run/start"
 RUN_STREAM_METHOD = "run/stream"
 RUN_CANCEL_METHOD = "run/cancel"
-SESSION_CREATE_METHOD = "session/create"
 CAPABILITIES_GET_METHOD = "capabilities/get"
 THINKING_CAPABILITY_GET_METHOD = "thinking/capability/get"
-MESSAGE_SEND_METHOD = "message/send"
 THINKING_CAPABILITY_SCHEMA_VERSION = "canonical-thinking-capability-v2"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
 DEFAULT_RUNTIME_STAGE = "phase3-run-bridge"
@@ -35,6 +33,16 @@ ThinkingSeriesValueType = Literal["code", "budget", "fixed"]
 COMPAT_THINKING_SELECTION_SERIES = "compat-discrete-selection-v1"
 _THINKING_LEVEL_VALUES = frozenset({"off", "auto", "low", "medium", "high", "xhigh"})
 _BUDGET_VALUE_MODES = frozenset({"off", "dynamic", "budget"})
+THINKING_LEVEL_INTENTS = _THINKING_LEVEL_VALUES
+
+
+def normalize_thinking_level_intent(value: Any) -> ThinkingLevelIntent | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in THINKING_LEVEL_INTENTS:
+        return None
+    return cast(ThinkingLevelIntent, normalized)
 
 
 class RuntimeContract:
@@ -100,7 +108,7 @@ class RuntimeThinkingSelection(RuntimeContract):
         value: ThinkingLevelIntent | None,
         *,
         series: str = COMPAT_THINKING_SELECTION_SERIES,
-    ) -> "RuntimeThinkingSelection" | None:
+    ) -> RuntimeThinkingSelection | None:
         if value is None:
             return None
         return cls(series=series, level=value, labelZh=value)
@@ -130,7 +138,6 @@ class RuntimeAgentDirectoryEntry(RuntimeContract):
     agentId: str
     status: str
     recommendedTools: tuple[str, ...] = ()
-    defaultModelPreference: str | None = None
     displayName: str | None = None
     description: str | None = None
     iconKey: str | None = None
@@ -155,11 +162,6 @@ class RuntimeAgentsListResponse(RuntimeContract):
 
 @dataclass(frozen=True, slots=True)
 class RuntimeThreadCreateRequest(RuntimeContract):
-    agent_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeSessionCreateRequest(RuntimeContract):
     agent_id: str
 
 
@@ -197,19 +199,6 @@ class RuntimeThreadCreateResponse(RuntimeContract):
     createdAt: datetime
     updatedAt: datetime
     recommendedTools: tuple[str, ...] = ()
-    defaultModelPreference: str | None = None
-    capabilities: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeSessionCreateResponse(RuntimeContract):
-    ok: bool
-    sessionId: str
-    boundAgent: RuntimeBoundAgent
-    createdAt: datetime
-    updatedAt: datetime
-    recommendedTools: tuple[str, ...] = ()
-    defaultModelPreference: str | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
 
 
@@ -224,7 +213,6 @@ class RuntimeThreadGetResponse(RuntimeContract):
     tools: tuple[RuntimeToolDirectoryEntry, ...]
     recommendedTools: tuple[str, ...] = ()
     toolSelectionMode: str = "recommendation-only"
-    defaultModelPreference: str | None = None
     latestRunId: str | None = None
 
 
@@ -237,7 +225,6 @@ class RuntimeCapabilitiesResponse(RuntimeContract):
     tools: tuple[RuntimeToolDirectoryEntry, ...]
     recommendedTools: tuple[str, ...] = ()
     toolSelectionMode: str = "recommendation-only"
-    defaultModelPreference: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,14 +261,6 @@ class RuntimeMessageExecutionPolicy(RuntimeContract):
 @dataclass(frozen=True, slots=True)
 class RuntimeRunStartRequest(RuntimeContract):
     thread_id: str
-    message: RuntimeMessagePayload
-    policy: RuntimeMessageExecutionPolicy
-    agent_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeMessageSendRequest(RuntimeContract):
-    session_id: str
     message: RuntimeMessagePayload
     policy: RuntimeMessageExecutionPolicy
     agent_id: str | None = None
@@ -383,30 +362,12 @@ class RuntimeScaffold(RuntimeContract):
             createdAt=thread.created_at,
             updatedAt=thread.updated_at,
             recommendedTools=entry.recommendedTools,
-            defaultModelPreference=entry.defaultModelPreference,
             capabilities={
                 "tools": {
                     "selectionMode": "recommendation-only",
                     "recommendedTools": list(entry.recommendedTools),
                 }
             },
-        )
-
-    def build_session_create_response(
-        self,
-        *,
-        session: RuntimeSessionRecord,
-    ) -> RuntimeSessionCreateResponse:
-        thread_response = self.build_thread_create_response(thread=session)
-        return RuntimeSessionCreateResponse(
-            ok=thread_response.ok,
-            sessionId=thread_response.threadId,
-            boundAgent=thread_response.boundAgent,
-            createdAt=thread_response.createdAt,
-            updatedAt=thread_response.updatedAt,
-            recommendedTools=thread_response.recommendedTools,
-            defaultModelPreference=thread_response.defaultModelPreference,
-            capabilities=dict(thread_response.capabilities),
         )
 
     def build_capabilities_version(self) -> str:
@@ -429,16 +390,15 @@ class RuntimeScaffold(RuntimeContract):
             tools=self._get_tool_catalog(toolset_name),
             recommendedTools=entry.recommendedTools,
             toolSelectionMode="recommendation-only",
-            defaultModelPreference=entry.defaultModelPreference,
             latestRunId=thread.last_run_id,
         )
 
     def build_capabilities_response(
         self,
         *,
-        session: RuntimeSessionRecord,
+        thread: RuntimeThreadRecord,
     ) -> RuntimeCapabilitiesResponse:
-        thread_response = self.build_thread_get_response(thread=session)
+        thread_response = self.build_thread_get_response(thread=thread)
         return RuntimeCapabilitiesResponse(
             ok=thread_response.ok,
             sessionId=thread_response.threadId,
@@ -447,7 +407,6 @@ class RuntimeScaffold(RuntimeContract):
             tools=thread_response.tools,
             recommendedTools=thread_response.recommendedTools,
             toolSelectionMode=thread_response.toolSelectionMode,
-            defaultModelPreference=thread_response.defaultModelPreference,
         )
 
     def build_thinking_capability_response(
@@ -574,10 +533,8 @@ class RuntimeScaffold(RuntimeContract):
             "current_stage_supports_run_start": RUN_START_METHOD in self.supported_methods,
             "current_stage_supports_run_stream": RUN_STREAM_METHOD in self.supported_methods,
             "current_stage_supports_run_cancel": RUN_CANCEL_METHOD in self.supported_methods,
-            "current_stage_supports_session_create": SESSION_CREATE_METHOD in self.supported_methods,
             "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD in self.supported_methods,
             "current_stage_supports_thinking_capability_get": THINKING_CAPABILITY_GET_METHOD in self.supported_methods,
-            "current_stage_supports_message_send": MESSAGE_SEND_METHOD in self.supported_methods,
             "model_configured": self.model_configured,
             "model_environment_keys": list(self.model_environment_keys),
         }
@@ -631,10 +588,8 @@ def build_runtime_scaffold(
             RUN_START_METHOD,
             RUN_STREAM_METHOD,
             RUN_CANCEL_METHOD,
-            SESSION_CREATE_METHOD,
             CAPABILITIES_GET_METHOD,
             THINKING_CAPABILITY_GET_METHOD,
-            MESSAGE_SEND_METHOD,
         ),
         default_agent=resolved_agent_registry.get_default().name,
         agent_directory_version=resolved_agent_registry.directory_version,

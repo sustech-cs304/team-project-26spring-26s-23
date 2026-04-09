@@ -17,8 +17,8 @@ export function projectLoadedProviderSecretValues(
   states: Record<string, { apiKey: string }>,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(states).flatMap(([providerId, state]) => {
-      return state.apiKey ? [[providerId, state.apiKey]] : []
+    Object.entries(states).flatMap(([profileId, state]) => {
+      return state.apiKey ? [[profileId, state.apiKey]] : []
     }),
   )
 }
@@ -36,7 +36,7 @@ export async function loadSettingsWorkspaceHydration(
   let casPasswordValue = ''
 
   const secretStatusesResult = await loadSettingsWorkspaceSecretStatuses({
-    providerIds: result.state.providerProfiles.map((profile) => profile.id),
+    profileIds: result.state.providerProfiles.map((profile) => profile.id),
   })
   const sustechCasPasswordResult = await loadSettingsWorkspaceSustechCasPassword()
 

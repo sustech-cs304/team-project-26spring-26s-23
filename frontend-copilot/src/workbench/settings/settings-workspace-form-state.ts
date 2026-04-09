@@ -1,5 +1,5 @@
 import type { SettingsWorkspaceEditableState } from '../../../electron/settings-workspace/schema'
-import type { ProviderProfile } from '../types'
+import type { ModelRouteRef, ProviderProfile } from '../types'
 
 import { initialProviderProfiles } from './config'
 import {
@@ -15,6 +15,8 @@ export interface SettingsWorkspaceFormState {
   providerProfiles: ProviderProfile[]
   primaryAssistantModel: string
   fastAssistantModel: string
+  primaryAssistantModelRoute: ModelRouteRef | null
+  fastAssistantModelRoute: ModelRouteRef | null
   language: string
   proxyMode: string
   assistantNotificationsEnabled: boolean
@@ -48,6 +50,8 @@ const INITIAL_SETTINGS_WORKSPACE_FORM_STATE: SettingsWorkspaceFormState = {
   providerProfiles: cloneProviderProfiles(initialProviderProfiles),
   primaryAssistantModel: '',
   fastAssistantModel: initialProviderProfiles[0]?.fastModel ?? '',
+  primaryAssistantModelRoute: null,
+  fastAssistantModelRoute: null,
   language: 'zh-CN',
   proxyMode: 'system',
   assistantNotificationsEnabled: false,
@@ -86,6 +90,8 @@ export function createSettingsWorkspaceFormStateFromEditableState(
     providerProfiles: cloneProviderProfiles(state.providerProfiles),
     primaryAssistantModel: state.defaultModelRouting.primaryAssistantModel,
     fastAssistantModel: state.defaultModelRouting.fastAssistantModel,
+    primaryAssistantModelRoute: cloneModelRouteRef(state.defaultModelRouting.primaryAssistantModelRoute ?? null),
+    fastAssistantModelRoute: cloneModelRouteRef(state.defaultModelRouting.fastAssistantModelRoute ?? null),
     language: state.general.language,
     proxyMode: state.general.proxyMode,
     assistantNotificationsEnabled: state.general.assistantNotificationsEnabled,
@@ -108,4 +114,14 @@ export function createSettingsWorkspaceFormStateFromEditableState(
     autoFileNameEnabled: state.docs.autoFileNameEnabled,
     wakeupShareLink: state.externalSource.wakeupShareLink,
   }
+}
+
+function cloneModelRouteRef(routeRef: ModelRouteRef | null): ModelRouteRef | null {
+  return routeRef === null
+    ? null
+    : {
+      routeKind: routeRef.routeKind,
+      profileId: routeRef.profileId,
+      modelId: routeRef.modelId,
+    }
 }

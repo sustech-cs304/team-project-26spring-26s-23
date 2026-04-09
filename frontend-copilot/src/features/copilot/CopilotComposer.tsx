@@ -29,6 +29,7 @@ import type { AssistantSessionShell } from '../../workbench/types'
 import {
   applyModelSelectionToComposerDraft,
   applyThinkingSelectionToComposerDraft,
+  describeThinkingCapabilityUnavailableReason,
   resolveThinkingSelectionForCapability,
   type CopilotChatComposerDraft,
 } from './copilot-chat-helpers'
@@ -80,6 +81,7 @@ export function CopilotComposer({
   const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
 
   const canRenderThinkingControl = thinkingCapability !== null
+    && thinkingCapability.supported !== false
     && thinkingCapability.series !== null
     && thinkingCapability.editorType !== null
   const effectiveThinkingSelection = useMemo(
@@ -99,12 +101,23 @@ export function CopilotComposer({
     [currentThinkingValue],
   )
   const thinkingTriggerLabel = currentThinkingLabel === null ? '思考' : currentThinkingLabel
+  const unavailableThinkingReason = useMemo(
+    () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
+    [thinkingCapability],
+  )
   const thinkingTriggerTitle = canRenderThinkingControl
     ? thinkingTriggerLabel
-    : '思考'
+    : unavailableThinkingReason ?? '思考'
   const thinkingTriggerActive = effectiveThinkingSelection === null
     ? false
     : isThinkingSelectionActive(effectiveThinkingSelection)
+  const thinkingTriggerAriaProps = canRenderThinkingControl
+    ? {
+        'aria-haspopup': 'dialog' as const,
+        'aria-controls': thinkingPanelId,
+        'aria-expanded': thinkingPanelOpen,
+      }
+    : {}
 
   useEffect(() => {
     if (!thinkingPanelOpen) {
@@ -173,7 +186,7 @@ export function CopilotComposer({
 
   const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
     onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
-      modelRoute: draft.selectedModelRoute,
+      modelRoute: current.selectedModelRoute,
       thinkingSelection,
     }))
   }
@@ -187,7 +200,7 @@ export function CopilotComposer({
           disabled={!hasAvailableModels || controlsDisabled}
           onSelectModel={(model) => {
             onDraftChange((current) => applyModelSelectionToComposerDraft(current, {
-              modelId: model.id,
+              modelId: model.selectionValue,
               modelRoute: model.route,
             }))
           }}
@@ -205,10 +218,10 @@ export function CopilotComposer({
               thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
             ].filter((className) => className !== '').join(' ')}
             data-testid="chat-thinking-trigger"
-            aria-label={`思考设置：${thinkingTriggerTitle}`}
+            aria-label={thinkingTriggerTitle}
             title={thinkingTriggerTitle}
-            aria-controls={canRenderThinkingControl ? thinkingPanelId : undefined}
             disabled={controlsDisabled}
+            {...thinkingTriggerAriaProps}
             onClick={() => {
               if (!canRenderThinkingControl) {
                 setThinkingPanelOpen(false)
@@ -537,6 +550,10 @@ function resolveThinkingSelectionValue(
   selection: RuntimeThinkingSelection | null,
   capability: RuntimeThinkingCapability | null,
 ): RuntimeThinkingValue | null {
+  if (capability?.supported === false) {
+    return null
+  }
+
   if (selection?.value != null) {
     return selection.value
   }

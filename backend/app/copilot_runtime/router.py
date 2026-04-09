@@ -20,11 +20,9 @@ from .bridge import (
 from .contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
-    MESSAGE_SEND_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
-    SESSION_CREATE_METHOD,
     THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
@@ -33,16 +31,19 @@ from .contracts import (
 from .debug_logging import log_runtime_chain_debug, summarize_exception
 from .errors import (
     RuntimeErrorResponse,
+    build_agent_execution_failed_error,
     build_agent_not_found_error,
     build_internal_server_error,
     build_method_not_implemented_error,
     build_run_not_found_error,
+    build_runtime_operation_error,
     build_session_not_found_error,
     build_thread_not_found_error,
 )
 from .protocol import RuntimeProtocolError, RuntimeProtocolParser
 from .run_events import RuntimeRunEvent, encode_runtime_run_events
-from .session_store import InMemorySessionStore
+from .model_routes import RuntimeModelRouteResolutionError
+from .provider_adapter_registry import RuntimeProviderAdapterError
 
 
 _RUNTIME_ERROR_LOGGER = logging.getLogger("uvicorn.error")
@@ -50,7 +51,6 @@ _RUNTIME_ERROR_LOGGER = logging.getLogger("uvicorn.error")
 
 def build_router(
     scaffold: RuntimeScaffold,
-    session_store: InMemorySessionStore,
     runtime_bridge: RuntimeBridge,
 ) -> APIRouter:
     router = APIRouter()
@@ -110,15 +110,6 @@ def build_router(
                 runtime_bridge=runtime_bridge,
             )
 
-        if requested_method == SESSION_CREATE_METHOD:
-            return _handle_session_create_request(
-                parser=parser,
-                payload=payload,
-                scaffold=scaffold,
-                runtime_bridge=runtime_bridge,
-                session_store=session_store,
-            )
-
         if requested_method == CAPABILITIES_GET_METHOD:
             return _handle_capabilities_get_request(
                 parser=parser,
@@ -133,15 +124,6 @@ def build_router(
                 payload=payload,
                 scaffold=scaffold,
                 runtime_bridge=runtime_bridge,
-            )
-
-        if requested_method == MESSAGE_SEND_METHOD:
-            return await _handle_message_send_request(
-                parser=parser,
-                payload=payload,
-                scaffold=scaffold,
-                runtime_bridge=runtime_bridge,
-                http_request=request,
             )
 
         error = build_method_not_implemented_error(
@@ -352,34 +334,6 @@ def _handle_run_cancel_request(
 
 
 
-def _handle_session_create_request(
-    *,
-    parser: RuntimeProtocolParser,
-    payload: dict[str, Any] | None,
-    scaffold: RuntimeScaffold,
-    runtime_bridge: RuntimeBridge,
-    session_store: InMemorySessionStore,
-) -> JSONResponse:
-    del session_store
-    try:
-        session_create_request = parser.extract_session_create_request(payload)
-        thread_record = runtime_bridge.create_session(agent_id=session_create_request.agent_id)
-    except RuntimeProtocolError as exc:
-        return _error_response(exc.status_code, exc.error)
-    except AgentNotFoundError as exc:
-        return _error_response(
-            status.HTTP_404_NOT_FOUND,
-            build_agent_not_found_error(
-                agent_name=exc.agent_name,
-                scaffold=scaffold,
-                requested_method=SESSION_CREATE_METHOD,
-            ),
-        )
-
-    return JSONResponse(content=scaffold.build_session_create_response(session=thread_record).to_dict())
-
-
-
 def _handle_capabilities_get_request(
     *,
     parser: RuntimeProtocolParser,
@@ -448,29 +402,39 @@ async def _handle_thinking_capability_get_request(
                 requested_method=THINKING_CAPABILITY_GET_METHOD,
             ),
         )
+    except RuntimeModelRouteResolutionError as exc:
+        return _error_response(
+            status.HTTP_409_CONFLICT,
+            build_runtime_operation_error(
+                code=exc.code,
+                message=str(exc),
+                scaffold=scaffold,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+                details=exc.details,
+            ),
+        )
+    except RuntimeProviderAdapterError as exc:
+        return _error_response(
+            status.HTTP_409_CONFLICT,
+            build_runtime_operation_error(
+                code=exc.code,
+                message=str(exc),
+                scaffold=scaffold,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+                details=exc.details,
+            ),
+        )
+    except RuntimeError as exc:
+        return _error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            build_agent_execution_failed_error(
+                message=str(exc),
+                scaffold=scaffold,
+                requested_method=THINKING_CAPABILITY_GET_METHOD,
+            ),
+        )
 
     return JSONResponse(content=response.to_dict())
-
-
-async def _handle_message_send_request(
-    *,
-    parser: RuntimeProtocolParser,
-    payload: dict[str, Any] | None,
-    scaffold: RuntimeScaffold,
-    runtime_bridge: RuntimeBridge,
-    http_request: Request,
-) -> JSONResponse | StreamingResponse:
-    try:
-        message_send_request = parser.extract_message_send_request(payload)
-        return _stream_runtime_run_events(
-            runtime_bridge.stream_message(
-                request=message_send_request,
-                is_client_disconnected=http_request.is_disconnected,
-            )
-        )
-    except RuntimeProtocolError as exc:
-        return _error_response(exc.status_code, exc.error)
-
 
 
 def _stream_runtime_run_events(events: AsyncIterable[RuntimeRunEvent]) -> StreamingResponse:

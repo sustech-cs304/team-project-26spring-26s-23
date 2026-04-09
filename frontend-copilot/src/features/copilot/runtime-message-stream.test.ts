@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createRuntimeResolvedModelRoute,
   createRuntimeRunMetadataEvent,
   createRuntimeThinkingCapability,
   createRuntimeThinkingSelection,
@@ -43,15 +44,10 @@ describe('parseRuntimeRunEventStream', () => {
           assistantMessageId: 'run-1:assistant',
           assistantText: '这是助手回显',
           resolvedModelId: 'qwen-plus',
-          resolvedModelRoute: {
+          resolvedModelRoute: createRuntimeResolvedModelRoute({
             providerProfileId: 'provider-openai',
-            snapshot: {
-              provider: 'openai',
-              endpointType: 'openai-compatible',
-              baseUrl: 'https://api.example.com/v1',
-              modelId: 'qwen-plus',
-            },
-          },
+            modelId: 'qwen-plus',
+          }),
           resolvedToolIds: ['tool.weather-current'],
           requestOptions: {},
         },
@@ -105,15 +101,10 @@ describe('parseRuntimeRunEventStream', () => {
           assistantMessageId: 'run-1:assistant',
           assistantText: '最终答案',
           resolvedModelId: 'qwen-plus',
-          resolvedModelRoute: {
+          resolvedModelRoute: createRuntimeResolvedModelRoute({
             providerProfileId: 'provider-openai',
-            snapshot: {
-              provider: 'openai',
-              endpointType: 'openai-compatible',
-              baseUrl: 'https://api.example.com/v1',
-              modelId: 'qwen-plus',
-            },
-          },
+            modelId: 'qwen-plus',
+          }),
           resolvedToolIds: [],
           requestOptions: {},
         },

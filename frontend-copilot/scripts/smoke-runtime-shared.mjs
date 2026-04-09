@@ -22,10 +22,9 @@ export const WEATHER_TOOL_ID = 'tool.weather-current'
 export const DEFAULT_USER_DATA_DIR = path.join(process.env.APPDATA ?? 'C:/Users/24352/AppData/Roaming', 'CanDue')
 export const DEFAULT_AGENT_ID = 'default'
 
+const PROVIDER_CATALOG_PATH = path.resolve(workspaceRoot, 'provider-catalog', 'registry.json')
 const BRIDGE_PATH = '/host/private/provider-routes/resolve'
 const BRIDGE_TOKEN_HEADER = 'X-Host-Model-Route-Token'
-const SUPPORTED_STREAM_ENDPOINT_TYPES = new Set(['openai-compatible'])
-const SUPPORTED_STREAM_ENDPOINT_TYPE_HINT = 'openai-compatible'
 
 export function parseCommonArgs(argv) {
   const options = {
@@ -104,7 +103,12 @@ export function resolveSmokeMessage(
 export async function createRuntimeSmokeHarness(input) {
   const label = normalizeNonEmptyString(input.label) || 'smoke'
   const workspaceState = await loadWorkspaceState(input.userDataDir)
-  const candidates = workspaceState.providerProfiles.map((profile) => summarizeProviderProfile(profile, workspaceState.providerSecrets))
+  const providerCatalog = await loadProviderCatalog()
+  const candidates = workspaceState.providerProfiles.map((profile) => summarizeProviderProfile(
+    profile,
+    workspaceState.providerSecrets,
+    providerCatalog,
+  ))
 
   console.log(`=== ${label} provider candidates ===`)
   console.table(candidates)
@@ -117,22 +121,22 @@ export async function createRuntimeSmokeHarness(input) {
   const selectedProfile = selectProviderProfile({
     providerProfiles: workspaceState.providerProfiles,
     providerSecrets: workspaceState.providerSecrets,
+    providerCatalog,
     preferredProfileId: input.providerProfileId ?? null,
   })
 
   if (selectedProfile === null) {
-    throw new Error('No provider profile with a secret and a stream-supported endpoint type is available.')
+    throw new Error('No provider profile with a runtime-enabled streaming route and required auth is available.')
   }
 
-  const route = createRuntimeModelRoute(selectedProfile)
+  const route = createRuntimeModelRoute(selectedProfile, providerCatalog)
   console.log(`=== ${label} selected provider route ===`)
   console.log(JSON.stringify(route, null, 2))
-
-  ensureStreamingRouteIsSupported(route)
 
   const resolvedRoute = resolveProviderRoute({
     providerProfiles: workspaceState.providerProfiles,
     providerSecrets: workspaceState.providerSecrets,
+    providerCatalog,
     request: route,
   })
   console.log(`=== ${label} host route resolution preview ===`)
@@ -158,6 +162,7 @@ export async function createRuntimeSmokeHarness(input) {
       host: DEFAULT_HOST,
       providerProfiles: workspaceState.providerProfiles,
       providerSecrets: workspaceState.providerSecrets,
+      providerCatalog,
     })
     const runtimePort = await allocateLoopbackPort(DEFAULT_HOST)
     const runtimeUrl = `http://${DEFAULT_HOST}:${runtimePort}`
@@ -381,51 +386,60 @@ async function loadWorkspaceState(userDataDir) {
   }
 }
 
-function summarizeProviderProfile(profile, providerSecrets) {
-  const route = createRuntimeModelRoute(profile)
+function summarizeProviderProfile(profile, providerSecrets, providerCatalog) {
+  const profileId = resolveProfileId(profile)
+  const providerId = resolveProviderId(profile)
+  const catalogEntry = getProviderCatalogEntry(providerCatalog, providerId)
+  const route = createRuntimeModelRoute(profile, providerCatalog)
   return {
-    id: normalizeNonEmptyString(profile.id),
-    protocol: normalizeNonEmptyString(profile.protocol),
-    endpointType: route.snapshot.endpointType,
-    modelId: route.snapshot.modelId,
-    hasSecret: hasProviderSecret(providerSecrets, profile.id),
-    supported: SUPPORTED_STREAM_ENDPOINT_TYPES.has(route.snapshot.endpointType),
+    id: profileId,
+    providerId,
+    runtimeStatus: normalizeNonEmptyString(catalogEntry?.runtimeStatus),
+    endpointType: normalizeNonEmptyString(catalogEntry?.endpointType),
+    modelId: route.routeRef.modelId,
+    hasSecret: hasProviderSecret(providerSecrets, profileId),
+    supported: canUseProfileForSmoke({
+      profile,
+      providerSecrets,
+      providerCatalog,
+    }),
   }
 }
 
 function selectProviderProfile(input) {
   if (input.preferredProfileId !== null) {
-    return input.providerProfiles.find((profile) => normalizeIdentifier(profile.id) === normalizeIdentifier(input.preferredProfileId)) ?? null
+    return input.providerProfiles.find((profile) => {
+      return normalizeIdentifier(resolveProfileId(profile)) === normalizeIdentifier(input.preferredProfileId)
+    }) ?? null
   }
 
   return input.providerProfiles.find((profile) => {
-    const route = createRuntimeModelRoute(profile)
-    return hasProviderSecret(input.providerSecrets, profile.id)
-      && route.snapshot.modelId !== ''
-      && SUPPORTED_STREAM_ENDPOINT_TYPES.has(route.snapshot.endpointType)
+    return canUseProfileForSmoke({
+      profile,
+      providerSecrets: input.providerSecrets,
+      providerCatalog: input.providerCatalog,
+    })
   }) ?? null
 }
 
-function createRuntimeModelRoute(profile) {
-  const provider = normalizeIdentifier(profile.protocol)
+function createRuntimeModelRoute(profile, providerCatalog) {
+  const profileId = resolveProfileId(profile)
+  const modelId = pickProfileModelId(profile)
+  const catalogRevision = readProviderCatalogRevision(providerCatalog)
   return {
-    providerProfileId: normalizeNonEmptyString(profile.id),
-    snapshot: {
-      provider,
-      endpointType: provider === 'openai' ? 'openai-compatible' : provider,
-      baseUrl: normalizeBaseUrl(profile.endpoint),
-      modelId: pickProfileModelId(profile),
+    routeRef: {
+      routeKind: 'provider-model',
+      profileId,
+      modelId,
     },
+    ...(catalogRevision === '' ? {} : { catalogRevision }),
   }
 }
 
 function pickProfileModelId(profile) {
-  for (const candidate of [
-    profile.defaultModel,
-    profile.fastModel,
-    profile.fallbackModel,
-    ...(Array.isArray(profile.availableModels) ? profile.availableModels.map((model) => model?.modelId) : []),
-  ]) {
+  for (const candidate of Array.isArray(profile.availableModels)
+    ? profile.availableModels.map((model) => model?.modelId)
+    : []) {
     const normalized = normalizeNonEmptyString(candidate)
     if (normalized !== '') {
       return normalized
@@ -435,57 +449,138 @@ function pickProfileModelId(profile) {
   return ''
 }
 
-function ensureStreamingRouteIsSupported(route) {
-  if (SUPPORTED_STREAM_ENDPOINT_TYPES.has(route.snapshot.endpointType)) {
-    return
-  }
-
-  throw new Error(
-    `Provider profile '${route.providerProfileId}' uses unsupported streamed endpoint type '${route.snapshot.endpointType}'. Current smoke only supports ${SUPPORTED_STREAM_ENDPOINT_TYPE_HINT}.`,
-  )
-}
 
 function resolveProviderRoute(input) {
-  const normalizedProviderProfileId = normalizeIdentifier(input.request.providerProfileId)
-  const providerProfile = input.providerProfiles.find((profile) => normalizeIdentifier(profile.id) === normalizedProviderProfileId)
+  if (!isRuntimeModelRouteRequest(input.request)) {
+    return {
+      ok: false,
+      error: {
+        code: 'invalid_provider_route_request',
+        message: 'Provider route request must include only routeRef and optional catalogRevision.',
+        details: {},
+      },
+    }
+  }
+
+  const requestedRouteRef = input.request.routeRef
+  const providerProfileId = normalizeNonEmptyString(requestedRouteRef.profileId)
+  const providerProfile = input.providerProfiles.find((profile) => {
+    return normalizeIdentifier(resolveProfileId(profile)) === normalizeIdentifier(providerProfileId)
+  })
 
   if (providerProfile === undefined) {
     return {
       ok: false,
       error: {
         code: 'provider_profile_not_found',
-        message: `Provider profile '${input.request.providerProfileId}' does not exist.`,
+        message: `Provider profile '${providerProfileId}' does not exist.`,
         details: {
-          providerProfileId: input.request.providerProfileId,
+          providerProfileId,
+          routeRef: requestedRouteRef,
         },
       },
     }
   }
 
-  const mismatches = collectSnapshotMismatches(providerProfile, input.request.snapshot)
-  if (mismatches.length > 0) {
+  const providerId = resolveProviderId(providerProfile)
+  const providerCatalogEntry = getProviderCatalogEntry(input.providerCatalog, providerId)
+  if (providerCatalogEntry === null) {
     return {
       ok: false,
       error: {
-        code: 'route_snapshot_mismatch',
-        message: `Provider profile '${providerProfile.id}' no longer matches the requested route snapshot.`,
+        code: 'provider_catalog_entry_not_found',
+        message: `Provider '${providerId}' is not defined in provider catalog.`,
         details: {
-          providerProfileId: providerProfile.id,
-          mismatches,
+          providerProfileId,
+          providerId,
+          routeRef: requestedRouteRef,
         },
       },
     }
   }
 
-  const apiKey = getProviderSecret(input.providerSecrets, providerProfile.id)
-  if (apiKey === '') {
+  const catalogRevision = readProviderCatalogRevision(input.providerCatalog)
+  const requestedCatalogRevision = normalizeNonEmptyString(input.request.catalogRevision)
+  if (requestedCatalogRevision !== '' && requestedCatalogRevision !== catalogRevision) {
+    return {
+      ok: false,
+      error: {
+        code: 'provider_catalog_revision_mismatch',
+        message: `Requested provider catalog revision '${requestedCatalogRevision}' does not match current revision '${catalogRevision}'.`,
+        details: {
+          providerProfileId,
+          providerId: providerCatalogEntry.providerId,
+          routeRef: requestedRouteRef,
+          expectedCatalogRevision: requestedCatalogRevision,
+          actualCatalogRevision: catalogRevision,
+        },
+      },
+    }
+  }
+
+  if (normalizeNonEmptyString(providerCatalogEntry.runtimeStatus) === 'catalog-only') {
+    return {
+      ok: false,
+      error: {
+        code: 'provider_runtime_catalog_only',
+        message: `Provider '${providerCatalogEntry.providerId}' is catalog-only and cannot be resolved for runtime execution.`,
+        details: {
+          providerProfileId,
+          providerId: providerCatalogEntry.providerId,
+          routeRef: requestedRouteRef,
+          runtimeStatus: providerCatalogEntry.runtimeStatus,
+        },
+      },
+    }
+  }
+
+  if (normalizeNonEmptyString(providerCatalogEntry.runtimeStatus) === 'legacy-unsupported') {
+    return {
+      ok: false,
+      error: {
+        code: 'provider_runtime_legacy_unsupported',
+        message: `Provider '${providerCatalogEntry.providerId}' is marked as legacy-unsupported in provider catalog.`,
+        details: {
+          providerProfileId,
+          providerId: providerCatalogEntry.providerId,
+          routeRef: requestedRouteRef,
+          runtimeStatus: providerCatalogEntry.runtimeStatus,
+        },
+      },
+    }
+  }
+
+  const normalizedModelId = normalizeNonEmptyString(requestedRouteRef.modelId)
+  if (!providerProfileSupportsModel(providerProfile, normalizedModelId)) {
+    return {
+      ok: false,
+      error: {
+        code: 'provider_model_not_found',
+        message: `Provider profile '${providerProfileId}' does not define model '${normalizedModelId}'.`,
+        details: {
+          providerProfileId,
+          providerId: providerCatalogEntry.providerId,
+          routeRef: requestedRouteRef,
+          modelId: normalizedModelId,
+          supportedModelIds: buildSupportedModelIds(providerProfile),
+        },
+      },
+    }
+  }
+
+  const authKind = normalizeNonEmptyString(providerCatalogEntry.authSchema?.defaultKind) || 'api-key'
+  const apiKey = getProviderSecret(input.providerSecrets, providerProfileId)
+  if (authKind !== 'none' && apiKey === '') {
     return {
       ok: false,
       error: {
         code: 'provider_secret_missing',
-        message: `Provider profile '${providerProfile.id}' is missing an API key.`,
+        message: `Provider profile '${providerProfileId}' is missing an API key.`,
         details: {
-          providerProfileId: providerProfile.id,
+          providerProfileId,
+          providerId: providerCatalogEntry.providerId,
+          routeRef: requestedRouteRef,
+          authKind,
         },
       },
     }
@@ -493,88 +588,131 @@ function resolveProviderRoute(input) {
 
   return {
     ok: true,
-    route: {
-      providerProfileId: providerProfile.id,
-      provider: normalizeIdentifier(providerProfile.protocol),
-      endpointType: normalizeIdentifier(providerProfile.protocol) === 'openai' ? 'openai-compatible' : normalizeIdentifier(providerProfile.protocol),
-      baseUrl: normalizeBaseUrl(providerProfile.endpoint),
-      modelId: normalizeNonEmptyString(input.request.snapshot.modelId),
-      auth: {
-        apiKey,
+    resolvedRoute: {
+      routeRef: {
+        routeKind: 'provider-model',
+        profileId: providerProfileId,
+        modelId: normalizedModelId,
       },
+      providerProfileId,
+      provider: normalizeNonEmptyString(providerCatalogEntry.providerId),
+      providerId: normalizeNonEmptyString(providerCatalogEntry.providerId),
+      adapterId: normalizeNonEmptyString(providerCatalogEntry.adapterId),
+      runtimeStatus: normalizeNonEmptyString(providerCatalogEntry.runtimeStatus),
+      catalogRevision,
+      endpointFamily: resolveEndpointFamily(providerCatalogEntry.endpointType),
+      endpointType: normalizeNonEmptyString(providerCatalogEntry.endpointType),
+      baseUrl: resolveExpectedBaseUrl(providerProfile, providerCatalogEntry),
+      modelId: normalizedModelId,
+      authKind,
+    },
+    privateAuth: {
+      authKind,
+      authPayload: apiKey === '' ? {} : { apiKey },
+      apiKey,
     },
   }
 }
 
-function collectSnapshotMismatches(profile, snapshot) {
-  const mismatches = []
-  const expectedProvider = normalizeIdentifier(profile.protocol)
-  const actualProvider = normalizeIdentifier(snapshot.provider)
-  if (expectedProvider !== actualProvider) {
-    mismatches.push({
-      field: 'provider',
-      expected: expectedProvider,
-      actual: actualProvider,
-    })
-  }
-
-  const expectedEndpointType = expectedProvider === 'openai' ? 'openai-compatible' : expectedProvider
-  const actualEndpointType = normalizeIdentifier(snapshot.endpointType)
-  if (expectedEndpointType !== actualEndpointType) {
-    mismatches.push({
-      field: 'endpointType',
-      expected: expectedEndpointType,
-      actual: actualEndpointType,
-    })
-  }
-
-  const expectedBaseUrl = normalizeBaseUrl(profile.endpoint)
-  const actualBaseUrl = normalizeBaseUrl(snapshot.baseUrl)
-  if (expectedBaseUrl !== actualBaseUrl) {
-    mismatches.push({
-      field: 'baseUrl',
-      expected: expectedBaseUrl,
-      actual: actualBaseUrl,
-    })
-  }
-
-  const normalizedModelId = normalizeNonEmptyString(snapshot.modelId)
-  if (!providerProfileSupportsModel(profile, normalizedModelId)) {
-    mismatches.push({
-      field: 'modelId',
-      expected: buildSupportedModelSummary(profile),
-      actual: normalizedModelId,
-    })
-  }
-
-  return mismatches
-}
-
 function providerProfileSupportsModel(profile, modelId) {
-  const supportedModelIds = new Set()
-
-  for (const candidate of [
-    ...(Array.isArray(profile.availableModels) ? profile.availableModels.map((model) => model?.modelId) : []),
-    profile.defaultModel,
-    profile.fastModel,
-    profile.fallbackModel,
-  ]) {
-    const normalized = normalizeNonEmptyString(candidate)
-    if (normalized !== '') {
-      supportedModelIds.add(normalized)
-    }
-  }
-
-  return supportedModelIds.has(modelId)
+  return buildSupportedModelIds(profile).includes(modelId)
 }
 
-function buildSupportedModelSummary(profile) {
-  return Array.from(new Set([
-    ...(Array.isArray(profile.availableModels) ? profile.availableModels.map((model) => normalizeNonEmptyString(model?.modelId)) : []),
-    normalizeNonEmptyString(profile.defaultModel),
-    normalizeNonEmptyString(profile.fastModel),
-    normalizeNonEmptyString(profile.fallbackModel),
-  ].filter((modelId) => modelId !== ''))).join(', ')
+function buildSupportedModelIds(profile) {
+  return Array.from(new Set(
+    (Array.isArray(profile.availableModels) ? profile.availableModels : [])
+      .map((model) => normalizeNonEmptyString(model?.modelId))
+      .filter((candidate) => candidate !== ''),
+  ))
+}
+
+async function loadProviderCatalog() {
+  const providerCatalog = await readJsonFile(PROVIDER_CATALOG_PATH)
+  if (!isRecord(providerCatalog)) {
+    throw new Error('Provider catalog JSON must be an object.')
+  }
+  return providerCatalog
+}
+
+function canUseProfileForSmoke(input) {
+  const profileId = resolveProfileId(input.profile)
+  const catalogEntry = getProviderCatalogEntry(input.providerCatalog, resolveProviderId(input.profile))
+  const route = createRuntimeModelRoute(input.profile, input.providerCatalog)
+  const authKind = normalizeNonEmptyString(catalogEntry?.authSchema?.defaultKind) || 'api-key'
+
+  return catalogEntry !== null
+    && normalizeNonEmptyString(catalogEntry.runtimeStatus) === 'enabled'
+    && catalogEntry.capabilityHints?.streaming === true
+    && route.routeRef.modelId !== ''
+    && (authKind === 'none' || hasProviderSecret(input.providerSecrets, profileId))
+}
+
+function resolveProfileId(profile) {
+  return normalizeNonEmptyString(profile.profileId) || normalizeNonEmptyString(profile.id)
+}
+
+function resolveProviderId(profile) {
+  return normalizeIdentifier(profile.providerId ?? profile.protocol)
+}
+
+function getProviderCatalogEntry(providerCatalog, providerId) {
+  const normalizedProviderId = normalizeIdentifier(providerId)
+  const providerEntries = Array.isArray(providerCatalog?.providers) ? providerCatalog.providers : []
+  return providerEntries.find((entry) => {
+    if (!isRecord(entry)) {
+      return false
+    }
+
+    const aliases = Array.isArray(entry.aliases) ? entry.aliases : []
+    return [entry.providerId, ...aliases].some((candidate) => normalizeIdentifier(candidate) === normalizedProviderId)
+  }) ?? null
+}
+
+function readProviderCatalogRevision(providerCatalog) {
+  return normalizeNonEmptyString(providerCatalog?.catalogRevision)
+}
+
+function resolveExpectedBaseUrl(profile, providerCatalogEntry) {
+  return normalizeBaseUrl(
+    profile.baseUrl
+      ?? profile.endpoint
+      ?? providerCatalogEntry?.baseUrlPolicy?.defaultBaseUrl
+      ?? '',
+  )
+}
+
+function resolveEndpointFamily(endpointType) {
+  const normalizedEndpointType = normalizeIdentifier(endpointType)
+  if (normalizedEndpointType === '') {
+    return ''
+  }
+
+  const separatorIndex = normalizedEndpointType.indexOf('-')
+  return separatorIndex < 0 ? normalizedEndpointType : normalizedEndpointType.slice(0, separatorIndex)
+}
+
+function isRuntimeModelRouteRequest(value) {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  const allowedKeys = new Set(['routeRef', 'catalogRevision'])
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+    return false
+  }
+
+  if (!isRuntimeModelRouteRef(value.routeRef)) {
+    return false
+  }
+
+  return value.catalogRevision === undefined || typeof value.catalogRevision === 'string'
+}
+
+function isRuntimeModelRouteRef(value) {
+  return isRecord(value)
+    && value.routeKind === 'provider-model'
+    && normalizeNonEmptyString(value.profileId) !== ''
+    && normalizeNonEmptyString(value.modelId) !== ''
 }
 
 async function createHostModelRouteBridge(input) {
@@ -616,9 +754,22 @@ async function createHostModelRouteBridge(input) {
       return
     }
 
+    if (!isRuntimeModelRouteRequest(requestBody)) {
+      writeJsonResponse(response, 400, {
+        ok: false,
+        error: {
+          code: 'invalid_host_model_route_bridge_request',
+          message: 'Host model route bridge request body is invalid.',
+          details: {},
+        },
+      })
+      return
+    }
+
     const resolution = resolveProviderRoute({
       providerProfiles: input.providerProfiles,
       providerSecrets: input.providerSecrets,
+      providerCatalog: input.providerCatalog,
       request: requestBody,
     })
     writeJsonResponse(response, 200, resolution)
@@ -648,13 +799,11 @@ function sanitizeRouteResolutionResult(result) {
   if (result.ok === true) {
     return {
       ok: true,
-      route: {
-        providerProfileId: result.route.providerProfileId,
-        provider: result.route.provider,
-        endpointType: result.route.endpointType,
-        baseUrl: result.route.baseUrl,
-        modelId: result.route.modelId,
-        auth: { apiKey: '[redacted]' },
+      resolvedRoute: result.resolvedRoute,
+      privateAuth: {
+        authKind: result.privateAuth.authKind,
+        authPayload: result.privateAuth.apiKey === '' ? {} : { apiKey: '[redacted]' },
+        apiKey: result.privateAuth.apiKey === '' ? '' : '[redacted]',
       },
     }
   }

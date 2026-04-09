@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { ConfigCenterPublicTextFieldCard } from './ConfigCenterPublicFieldCard'
 import { hostConfigRuntimeUrlField } from './config-center-public-field-definitions'
 

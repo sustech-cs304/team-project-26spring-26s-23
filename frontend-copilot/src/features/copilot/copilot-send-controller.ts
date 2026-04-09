@@ -1,20 +1,30 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { AssistantSessionShell } from '../../workbench/types'
-import { sendRuntimeMessage } from './thread-run-contract'
+import {
+  startRuntimeRun,
+  streamRuntimeRun,
+  type FetchLike,
+  type RuntimeRunEvent,
+  type RuntimeRunStartResponse,
+} from './thread-run-contract'
 import {
   buildRuntimeMessageSendInput,
   formatRequestOptionsError,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
   type CopilotChatComposerDraft,
+  type RuntimeMessageSendInput,
 } from './copilot-chat-helpers'
 import {
   buildCopilotRunSegmentViewModel,
   createUserMessageListItem,
   type CopilotMessageListItem,
 } from './run-segment-view-model'
-import { getRuntimeModelRouteStreamingSupportReason } from './model-picker'
+import {
+  getRuntimeModelRouteStreamingSupportReason,
+  type CopilotModelOption,
+} from './model-picker'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import {
   applyRuntimeRunEventToCopilotRunState,
@@ -30,12 +40,57 @@ import type {
 
 export { createIdleCopilotRunState } from './run-segment-reducer'
 
+export interface CopilotMessageDispatchInput extends RuntimeMessageSendInput {
+  debugModeEnabled?: boolean
+  fetchFn?: FetchLike
+  signal?: AbortSignal
+  onRunStart?: (response: RuntimeRunStartResponse) => void
+}
+
+export async function* dispatchCopilotMessage(
+  input: CopilotMessageDispatchInput,
+): AsyncGenerator<RuntimeRunEvent> {
+  const runStartResponse = await startRuntimeRun({
+    runtimeUrl: input.runtimeUrl,
+    threadId: input.sessionId,
+    agent: input.agent,
+    message: input.message,
+    modelRoute: input.modelRoute,
+    thinkingSelection: input.thinkingSelection,
+    thinkingCapabilityOverride: input.thinkingCapabilityOverride,
+    enabledTools: input.enabledTools,
+    debugModeEnabled: input.debugModeEnabled,
+    requestOptions: input.requestOptions,
+    fetchFn: input.fetchFn,
+    signal: input.signal,
+  })
+
+  input.onRunStart?.(runStartResponse)
+
+  for await (const event of streamRuntimeRun({
+    runtimeUrl: input.runtimeUrl,
+    runId: runStartResponse.run.runId,
+    fetchFn: input.fetchFn,
+    signal: input.signal,
+  })) {
+    if (event.runId !== runStartResponse.run.runId) {
+      throw new Error(
+        `Runtime event stream changed runId from ${runStartResponse.run.runId} to ${event.runId}.`,
+      )
+    }
+
+    yield event
+  }
+}
+
 export function getCopilotSendDisabledReason(input: {
   state: CopilotBootstrapState
   sessionShell: AssistantSessionShell | null
   runState: CopilotRunState
   composerDraft: CopilotChatComposerDraft
+  hasConfiguredModels: boolean
   hasAvailableModels: boolean
+  selectedModelOption: CopilotModelOption | null
 }): string | null {
   if (!isCopilotConnectableState(input.state)) {
     return '当前运行态未就绪，无法发送消息。'
@@ -49,8 +104,16 @@ export function getCopilotSendDisabledReason(input: {
     return '当前消息仍在发送中。'
   }
 
-  if (!input.hasAvailableModels) {
+  if (!input.hasConfiguredModels) {
     return '尚未配置模型，请先前往设置页添加模型服务商和模型。'
+  }
+
+  if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
+    return input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。'
+  }
+
+  if (!input.hasAvailableModels) {
+    return '当前没有可用于聊天发送的模型路由，请前往设置页调整 provider 与模型配置。'
   }
 
   if (input.composerDraft.messageText.trim() === '') {
@@ -58,6 +121,10 @@ export function getCopilotSendDisabledReason(input: {
   }
 
   if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
+    if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
+      return input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。'
+    }
+
     return '请先选择本次发送要使用的模型路由。'
   }
 
@@ -74,9 +141,11 @@ export async function orchestrateCopilotSend(input: {
   sessionShell: AssistantSessionShell | null
   composerDraft: CopilotChatComposerDraft
   runState: CopilotRunState
+  hasConfiguredModels: boolean
   hasAvailableModels: boolean
+  selectedModelOption: CopilotModelOption | null
   composerInputRef: RefObject<HTMLTextAreaElement>
-  sendMessage: typeof sendRuntimeMessage
+  sendMessage: typeof dispatchCopilotMessage
   debugModeEnabled: boolean
   setRunState: Dispatch<SetStateAction<CopilotRunState>>
   setSendError: Dispatch<SetStateAction<string | null>>
@@ -93,8 +162,18 @@ export async function orchestrateCopilotSend(input: {
     return
   }
 
-  if (!input.hasAvailableModels) {
+  if (!input.hasConfiguredModels) {
     input.setSendError('尚未配置模型，请先前往设置页添加模型服务商和模型。')
+    return
+  }
+
+  if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
+    input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。')
+    return
+  }
+
+  if (!input.hasAvailableModels) {
+    input.setSendError('当前没有可用于聊天发送的模型路由，请前往设置页调整 provider 与模型配置。')
     return
   }
 
@@ -105,6 +184,11 @@ export async function orchestrateCopilotSend(input: {
   }
 
   if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
+    if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
+      input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。')
+      return
+    }
+
     input.setSendError('请先选择本次发送要使用的模型路由。')
     return
   }

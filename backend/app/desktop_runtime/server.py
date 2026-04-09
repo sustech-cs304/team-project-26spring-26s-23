@@ -170,7 +170,7 @@ def create_app(
     )
     app.add_middleware(DesktopNullOriginMiddleware)
 
-    app.include_router(build_router(runtime_scaffold, runtime_session_store, runtime_bridge))
+    app.include_router(build_router(runtime_scaffold, runtime_bridge))
 
     @app.get("/health")
     def get_health(request: Request) -> dict[str, object]:

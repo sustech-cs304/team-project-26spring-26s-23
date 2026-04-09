@@ -4,6 +4,7 @@ import {
   cloneRuntimeThinkingSelection as cloneRuntimeThinkingSelectionValue,
   cloneRuntimeThinkingSelectionResult as cloneRuntimeThinkingSelectionResultValue,
   type RuntimeModelRoute,
+  type RuntimeResolvedModelRoute,
   type RuntimeRunCompletedEvent,
   type RuntimeRunEvent,
   type RuntimeRunFailedEvent,
@@ -314,7 +315,7 @@ function applyRunCompletedToState(
     runId: event.runId,
     threadId: event.sessionId,
     resolvedModelId: event.payload.resolvedModelId,
-    resolvedModelRoute: cloneRuntimeModelRoute(event.payload.resolvedModelRoute),
+    resolvedModelRoute: cloneRuntimeResolvedModelRoute(event.payload.resolvedModelRoute),
     resolvedToolIds: [...event.payload.resolvedToolIds],
     requestOptions: { ...event.payload.requestOptions },
     failure: null,
@@ -542,7 +543,7 @@ function completeAssistantSegments(
         lastSequence: event.sequence,
         status: 'completed',
         resolvedModelId: event.payload.resolvedModelId,
-        resolvedModelRoute: cloneRuntimeModelRoute(event.payload.resolvedModelRoute),
+        resolvedModelRoute: cloneRuntimeResolvedModelRoute(event.payload.resolvedModelRoute),
         resolvedToolIds: [...event.payload.resolvedToolIds],
         requestOptions: { ...event.payload.requestOptions },
       } satisfies CopilotAssistantSegment,
@@ -566,7 +567,7 @@ function completeAssistantSegments(
       text: isLastAssistantSegment && segment.text === '' ? event.payload.assistantText : segment.text,
       resolvedModelId: isLastAssistantSegment ? event.payload.resolvedModelId : segment.resolvedModelId,
       resolvedModelRoute: isLastAssistantSegment
-        ? cloneRuntimeModelRoute(event.payload.resolvedModelRoute)
+        ? cloneRuntimeResolvedModelRoute(event.payload.resolvedModelRoute)
         : segment.resolvedModelRoute,
       resolvedToolIds: isLastAssistantSegment ? [...event.payload.resolvedToolIds] : [...segment.resolvedToolIds],
       requestOptions: isLastAssistantSegment ? { ...event.payload.requestOptions } : { ...segment.requestOptions },
@@ -670,7 +671,7 @@ function buildCompletedTerminalSegment(input: {
   sequence: number
   assistantMessageId: string
   resolvedModelId: string
-  resolvedModelRoute: RuntimeModelRoute
+  resolvedModelRoute: RuntimeResolvedModelRoute
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
 }): CopilotTerminalSegment {
@@ -686,7 +687,7 @@ function buildCompletedTerminalSegment(input: {
     cancelReason: null,
     failure: null,
     resolvedModelId: input.resolvedModelId,
-    resolvedModelRoute: cloneRuntimeModelRoute(input.resolvedModelRoute),
+    resolvedModelRoute: cloneRuntimeResolvedModelRoute(input.resolvedModelRoute),
     resolvedToolIds: [...input.resolvedToolIds],
     requestOptions: { ...input.requestOptions },
   }
@@ -865,12 +866,36 @@ function hasReasoningSegments(segments: CopilotRunSegment[]): boolean {
 
 function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
   return {
-    providerProfileId: route.providerProfileId,
-    snapshot: {
-      provider: route.snapshot.provider,
-      endpointType: route.snapshot.endpointType,
-      baseUrl: route.snapshot.baseUrl,
-      modelId: route.snapshot.modelId,
+    ...(route.routeRef === undefined || route.routeRef === null
+      ? {}
+      : {
+          routeRef: {
+            routeKind: route.routeRef.routeKind,
+            profileId: route.routeRef.profileId,
+            modelId: route.routeRef.modelId,
+          },
+        }),
+    ...(route.catalogRevision === undefined ? {} : { catalogRevision: route.catalogRevision }),
+  }
+}
+
+function cloneRuntimeResolvedModelRoute(route: RuntimeResolvedModelRoute): RuntimeResolvedModelRoute {
+  return {
+    routeRef: {
+      routeKind: route.routeRef.routeKind,
+      profileId: route.routeRef.profileId,
+      modelId: route.routeRef.modelId,
     },
+    providerProfileId: route.providerProfileId,
+    provider: route.provider,
+    providerId: route.providerId,
+    adapterId: route.adapterId,
+    runtimeStatus: route.runtimeStatus,
+    catalogRevision: route.catalogRevision,
+    endpointFamily: route.endpointFamily,
+    endpointType: route.endpointType,
+    baseUrl: route.baseUrl,
+    modelId: route.modelId,
+    authKind: route.authKind,
   }
 }

@@ -9,28 +9,27 @@ from fastapi import Request, status
 
 from .contracts import (
     CAPABILITIES_GET_METHOD,
-    MESSAGE_SEND_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
-    SESSION_CREATE_METHOD,
     THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
+    THINKING_LEVEL_INTENTS,
     RuntimeCapabilitiesGetRequest,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
-    RuntimeMessageSendRequest,
+    ThinkingLevelIntent,
     RuntimeRunCancelRequest,
     RuntimeRunStartRequest,
     RuntimeRunStreamRequest,
     RuntimeScaffold,
-    RuntimeSessionCreateRequest,
     RuntimeThinkingCapabilityGetRequest,
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
     RuntimeThreadCreateRequest,
     RuntimeThreadGetRequest,
+    normalize_thinking_level_intent,
 )
 from .errors import (
     RuntimeErrorResponse,
@@ -38,10 +37,7 @@ from .errors import (
     build_invalid_request_error,
     build_unsupported_message_shape_error,
 )
-from .model_routes import RuntimeModelRoute, RuntimeModelRouteSnapshot
-
-
-_THINKING_LEVEL_INTENTS = frozenset({"off", "auto", "low", "medium", "high", "xhigh"})
+from .model_routes import RuntimeModelRoute, RuntimeModelRouteRef
 
 
 class RuntimeProtocolError(RuntimeError):
@@ -134,16 +130,6 @@ class RuntimeProtocolParser:
             )
         )
 
-    def extract_session_create_request(
-        self,
-        payload: dict[str, Any] | None,
-    ) -> RuntimeSessionCreateRequest:
-        request = self._extract_agent_id_request(
-            payload=payload,
-            requested_method=SESSION_CREATE_METHOD,
-        )
-        return RuntimeSessionCreateRequest(agent_id=request)
-
     def extract_thread_get_request(
         self,
         payload: dict[str, Any] | None,
@@ -204,23 +190,6 @@ class RuntimeProtocolParser:
             requested_method=RUN_START_METHOD,
             id_field_name="threadId",
             id_value_name="thread_id",
-        )
-
-    def extract_message_send_request(
-        self,
-        payload: dict[str, Any] | None,
-    ) -> RuntimeMessageSendRequest:
-        request = self._extract_chat_request(
-            payload=payload,
-            requested_method=MESSAGE_SEND_METHOD,
-            id_field_name="sessionId",
-            id_value_name="thread_id",
-        )
-        return RuntimeMessageSendRequest(
-            session_id=request.thread_id,
-            message=request.message,
-            policy=request.policy,
-            agent_id=request.agent_id,
         )
 
     def extract_run_stream_request(
@@ -451,13 +420,19 @@ class RuntimeProtocolParser:
             )
         return value
 
+    def _optional_non_empty_string(self, value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip()
+        return normalized or None
+
     def _optional_thinking_level_intent(
         self,
         value: Any,
         *,
         field_name: str,
         requested_method: str,
-    ) -> str | None:
+    ) -> ThinkingLevelIntent | None:
         if value is None:
             return None
         if not isinstance(value, str) or value.strip() == "":
@@ -470,14 +445,14 @@ class RuntimeProtocolParser:
                     details={"field": field_name},
                 ),
             )
-        normalized_value = value.strip().lower()
-        if normalized_value not in _THINKING_LEVEL_INTENTS:
+        normalized_value = normalize_thinking_level_intent(value)
+        if normalized_value is None:
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
                     message=(
                         f"Runtime request field '{field_name}' must be one of "
-                        f"{', '.join(sorted(_THINKING_LEVEL_INTENTS))}."
+                        f"{', '.join(sorted(THINKING_LEVEL_INTENTS))}."
                     ),
                     scaffold=self._scaffold,
                     requested_method=requested_method,
@@ -541,6 +516,49 @@ class RuntimeProtocolParser:
                 )
             normalized_items.append(item.strip())
         return tuple(normalized_items)
+
+    def _extract_required_model_route_ref(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeModelRouteRef:
+        route_ref = self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+        route_kind = self._require_non_empty_string(
+            route_ref.get("routeKind"),
+            field_name=f"{field_name}.routeKind",
+            requested_method=requested_method,
+        )
+        profile_id = self._require_non_empty_string(
+            route_ref.get("profileId"),
+            field_name=f"{field_name}.profileId",
+            requested_method=requested_method,
+        )
+        model_id = self._require_non_empty_string(
+            route_ref.get("modelId"),
+            field_name=f"{field_name}.modelId",
+            requested_method=requested_method,
+        )
+        if route_kind != "provider-model":
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}.routeKind' must be 'provider-model'.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": f"{field_name}.routeKind"},
+                ),
+            )
+        return RuntimeModelRouteRef(
+            route_kind=route_kind,
+            profile_id=profile_id,
+            model_id=model_id,
+        )
 
     def _extract_message_payload(
         self,
@@ -798,38 +816,31 @@ class RuntimeProtocolParser:
             field_name=field_name,
             requested_method=requested_method,
         )
-        provider_profile_id = self._require_non_empty_string(
-            route.get("providerProfileId"),
-            field_name=f"{field_name}.providerProfileId",
+        route_ref = self._extract_required_model_route_ref(
+            route.get("routeRef"),
+            field_name=f"{field_name}.routeRef",
             requested_method=requested_method,
         )
-        snapshot = self._require_object(
-            route.get("snapshot"),
-            field_name=f"{field_name}.snapshot",
-            requested_method=requested_method,
+        unsupported_fields = sorted(
+            key for key in route.keys() if key not in {"routeRef", "catalogRevision"}
         )
+        if unsupported_fields:
+            unsupported_field = unsupported_fields[0]
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=(
+                        f"Runtime request field '{field_name}.{unsupported_field}' is no longer supported. "
+                        "Provide only 'routeRef' and optional 'catalogRevision'."
+                    ),
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": f"{field_name}.{unsupported_field}"},
+                ),
+            )
+        catalog_revision = self._optional_non_empty_string(route.get("catalogRevision"))
         return RuntimeModelRoute(
-            provider_profile_id=provider_profile_id,
-            snapshot=RuntimeModelRouteSnapshot(
-                provider=self._require_non_empty_string(
-                    snapshot.get("provider"),
-                    field_name=f"{field_name}.snapshot.provider",
-                    requested_method=requested_method,
-                ),
-                endpoint_type=self._require_non_empty_string(
-                    snapshot.get("endpointType"),
-                    field_name=f"{field_name}.snapshot.endpointType",
-                    requested_method=requested_method,
-                ),
-                base_url=self._require_non_empty_string(
-                    snapshot.get("baseUrl"),
-                    field_name=f"{field_name}.snapshot.baseUrl",
-                    requested_method=requested_method,
-                ),
-                model_id=self._require_non_empty_string(
-                    snapshot.get("modelId"),
-                    field_name=f"{field_name}.snapshot.modelId",
-                    requested_method=requested_method,
-                ),
-            ),
+            provider_profile_id=route_ref.profile_id,
+            route_ref=route_ref,
+            catalog_revision=catalog_revision,
         )

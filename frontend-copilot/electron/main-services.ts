@@ -15,9 +15,9 @@ import {
   type ElectronSettingsWorkspaceService,
 } from './settings-workspace/main-process'
 import type {
-  SettingsWorkspaceClearProviderApiKeyRequest,
-  SettingsWorkspaceProviderSecretMutationResult,
-  SettingsWorkspaceSaveProviderApiKeyRequest,
+  SettingsWorkspaceClearProfileApiKeyRequest,
+  SettingsWorkspaceProfileSecretMutationResult,
+  SettingsWorkspaceSaveProfileApiKeyRequest,
   SettingsWorkspaceSaveSustechCasPasswordRequest,
   SettingsWorkspaceSecretsLoadStatusesRequest,
   SettingsWorkspaceSecretsLoadStatusesResult,
@@ -53,12 +53,12 @@ export interface MainProcessServices {
     request?: SettingsWorkspaceSecretsLoadStatusesRequest,
   ) => Promise<SettingsWorkspaceSecretsLoadStatusesResult>
   loadSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretLoadResult>
-  saveSettingsWorkspaceProviderSecret: (
-    request: SettingsWorkspaceSaveProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
-  clearSettingsWorkspaceProviderSecret: (
-    request: SettingsWorkspaceClearProviderApiKeyRequest,
-  ) => Promise<SettingsWorkspaceProviderSecretMutationResult>
+  saveSettingsWorkspaceProfileSecret: (
+    request: SettingsWorkspaceSaveProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
+  clearSettingsWorkspaceProfileSecret: (
+    request: SettingsWorkspaceClearProfileApiKeyRequest,
+  ) => Promise<SettingsWorkspaceProfileSecretMutationResult>
   saveSettingsWorkspaceSustechCasSecret: (
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
@@ -124,15 +124,15 @@ export function createMainProcessServices(
     async loadSettingsWorkspaceSustechCasSecret(): Promise<SettingsWorkspaceSustechCasSecretLoadResult> {
       return await getSettingsWorkspaceService().loadSustechCasSecret()
     },
-    async saveSettingsWorkspaceProviderSecret(
-      request: SettingsWorkspaceSaveProviderApiKeyRequest,
-    ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
-      return await getSettingsWorkspaceService().saveProviderSecret(request)
+    async saveSettingsWorkspaceProfileSecret(
+      request: SettingsWorkspaceSaveProfileApiKeyRequest,
+    ): Promise<SettingsWorkspaceProfileSecretMutationResult> {
+      return await getSettingsWorkspaceService().saveProfileSecret(request)
     },
-    async clearSettingsWorkspaceProviderSecret(
-      request: SettingsWorkspaceClearProviderApiKeyRequest,
-    ): Promise<SettingsWorkspaceProviderSecretMutationResult> {
-      return await getSettingsWorkspaceService().clearProviderSecret(request)
+    async clearSettingsWorkspaceProfileSecret(
+      request: SettingsWorkspaceClearProfileApiKeyRequest,
+    ): Promise<SettingsWorkspaceProfileSecretMutationResult> {
+      return await getSettingsWorkspaceService().clearProfileSecret(request)
     },
     async saveSettingsWorkspaceSustechCasSecret(
       request: SettingsWorkspaceSaveSustechCasPasswordRequest,

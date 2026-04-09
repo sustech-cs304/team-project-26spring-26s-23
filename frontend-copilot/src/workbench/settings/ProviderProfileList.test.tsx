@@ -115,6 +115,7 @@ function renderList(overrides?: {
             protocol: 'openai',
             endpoint: 'https://alpha.example.com/v1',
             hasApiKey: true,
+            defaultModel: '',
             fastModel: 'openai/gpt-4.1-mini',
             fallbackModel: 'anthropic/claude-3.7-sonnet',
             organization: '',
@@ -128,6 +129,7 @@ function renderList(overrides?: {
             protocol: 'gemini',
             endpoint: 'https://beta.example.com',
             hasApiKey: false,
+            defaultModel: '',
             fastModel: 'google/gemini-2.5-flash',
             fallbackModel: 'google/gemini-2.0-flash',
             organization: '',
@@ -138,7 +140,9 @@ function renderList(overrides?: {
         ]}
         activeProviderId="provider-a"
         providerQuery=""
+        addProviderTypeId="openai"
         onProviderQueryChange={vi.fn()}
+        onAddProviderTypeChange={vi.fn()}
         onActiveProviderChange={vi.fn()}
         onAddProvider={vi.fn()}
         onCopyProvider={overrides?.onCopyProvider ?? vi.fn()}

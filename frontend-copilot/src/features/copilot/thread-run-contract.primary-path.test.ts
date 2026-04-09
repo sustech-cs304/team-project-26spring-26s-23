@@ -76,7 +76,14 @@ describe('thread run primary path', () => {
             content: '请总结这份文档',
           },
           policy: {
-            modelRoute: createRuntimeModelRoute(),
+            modelRoute: {
+              routeRef: {
+                routeKind: 'provider-model',
+                profileId: 'provider-openai',
+                modelId: 'qwen-plus',
+              },
+              catalogRevision: '2026-04-06-provider-catalog-v1',
+            },
             thinkingSelection: {
               series: 'compat-discrete-selection-v1',
               value: {
@@ -144,7 +151,14 @@ describe('thread run primary path', () => {
             content: '请总结这份文档',
           },
           policy: {
-            modelRoute: createRuntimeModelRoute(),
+            modelRoute: {
+              routeRef: {
+                routeKind: 'provider-model',
+                profileId: 'provider-openai',
+                modelId: 'qwen-plus',
+              },
+              catalogRevision: '2026-04-06-provider-catalog-v1',
+            },
             enabledTools: ['tool.file-convert'],
             requestOptions: {
               trace: true,
@@ -257,15 +271,8 @@ describe('thread run primary path', () => {
     }))).rejects.toThrow('Runtime event sequence regressed from 1 to 1.')
   })
 
-  it('keeps dual smoke entry points with explicit compat versus mainline boundaries', async () => {
-    const [legacyCompatSmoke, threadRunSmoke] = await Promise.all([
-      readSmokeScript('smoke-streaming-chat.mjs'),
-      readSmokeScript('smoke-thread-run-chat.mjs'),
-    ])
-
-    expect(legacyCompatSmoke).toContain("legacy compat smoke")
-    expect(legacyCompatSmoke).toContain("method: 'message/send'")
-    expect(legacyCompatSmoke).toContain("smokeType: 'legacy-compat'")
+  it('keeps the canonical thread/run smoke entry point aligned with the runtime contract', async () => {
+    const threadRunSmoke = await readSmokeScript('smoke-thread-run-chat.mjs')
 
     expect(threadRunSmoke).toContain("thread run smoke")
     expect(threadRunSmoke).toContain("method: 'thread/create'")

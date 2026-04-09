@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createProviderProfile } from '../../src/workbench/settings/settings-workspace-test-fixtures'
+import { normalizeSettingsWorkspaceStateValues } from './state-schema'
 import { createElectronUnifiedConfigService } from '../config-center/main-process'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createSettingsWorkspacePaths } from './paths'
@@ -42,19 +43,21 @@ describe('createSettingsWorkspaceStorage', () => {
 
       expect(result.source).toBe('initialized-defaults')
       expect(result.state.providerProfiles).toEqual([])
-      expect(result.state.defaultModelRouting).toEqual({
+      expect(result.state.defaultModelRouting).toMatchObject({
         primaryAssistantModel: '',
         fastAssistantModel: '',
+        primaryAssistantModelRoute: null,
+        fastAssistantModelRoute: null,
       })
       expect(result.state.providerProfiles.flatMap((profile) => profile.availableModels)).toEqual([])
       expect(result.state.providerProfiles.every((profile) => profile.hasApiKey === false)).toBe(true)
 
       expect(await readJsonFile(fixture.paths.stateDocument)).toMatchObject({
-        version: 1,
+        version: 2,
         kind: 'settings-workspace-state',
       })
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({
-        version: 1,
+        version: 2,
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {},
@@ -86,8 +89,8 @@ describe('createSettingsWorkspaceStorage', () => {
           },
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'persisted-primary',
-          fastAssistantModel: 'persisted-fast',
+          primaryAssistantModel: persistedProvider.defaultModel,
+          fastAssistantModel: persistedProvider.fastModel,
         },
         general: {
           ...initial.state.general,
@@ -95,10 +98,7 @@ describe('createSettingsWorkspaceStorage', () => {
         },
       }
 
-      await fixture.storage.saveState({
-        ...stateToSave,
-        providerProfiles: stateToSave.providerProfiles.map(({ hasApiKey: _hasApiKey, ...profile }) => profile),
-      })
+      await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues(stateToSave))
 
       const reloadedStorage = createSettingsWorkspaceStorage({ paths: fixture.paths })
       const reloaded = await reloadedStorage.loadState()
@@ -110,9 +110,19 @@ describe('createSettingsWorkspaceStorage', () => {
         notes: 'persisted-note',
         hasApiKey: false,
       })
-      expect(reloaded.state.defaultModelRouting).toEqual({
-        primaryAssistantModel: 'persisted-primary',
-        fastAssistantModel: 'persisted-fast',
+      expect(reloaded.state.defaultModelRouting).toMatchObject({
+        primaryAssistantModel: persistedProvider.defaultModel,
+        fastAssistantModel: persistedProvider.fastModel,
+        primaryAssistantModelRoute: {
+          routeKind: 'provider-model',
+          profileId: 'persisted-provider',
+          modelId: persistedProvider.defaultModel,
+        },
+        fastAssistantModelRoute: {
+          routeKind: 'provider-model',
+          profileId: 'persisted-provider',
+          modelId: persistedProvider.fastModel,
+        },
       })
       expect(reloaded.state.general.language).toBe('en-US')
     } finally {
@@ -155,7 +165,7 @@ describe('createSettingsWorkspaceStorage', () => {
         kind: 'settings-workspace-state',
         values: {
           ...initial.state,
-          providerProfiles: [legacyProvider].map(({ hasApiKey: _hasApiKey, ...profile }) => profile),
+          providerProfiles: [legacyProvider].map((profile) => ({ ...profile, hasApiKey: undefined })),
         },
       }, null, 2)}\n`)
 
@@ -184,7 +194,7 @@ describe('createSettingsWorkspaceStorage', () => {
 
     try {
       const initial = await fixture.storage.loadState()
-      await fixture.storage.saveProviderSecret('legacy-provider', 'legacy-secret')
+      await fixture.storage.saveProfileSecret('legacy-provider', 'legacy-secret')
 
       await writeFile(fixture.paths.stateDocument, `${JSON.stringify({
         version: 1,
@@ -225,16 +235,14 @@ describe('createSettingsWorkspaceStorage', () => {
 
       expect(loaded.state.providerProfiles[0]).toMatchObject({
         id: 'legacy-provider',
-        fastModel: 'legacy-model',
-        fallbackModel: 'legacy-model',
+        defaultModel: 'legacy-model',
+        defaultModelId: 'legacy-model',
+        fastModel: '',
+        fallbackModel: '',
         hasApiKey: true,
       })
-      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
 
-      await fixture.storage.saveState({
-        ...loaded.state,
-        providerProfiles: loaded.state.providerProfiles.map(({ hasApiKey: _hasApiKey, ...profile }) => profile),
-      })
+      await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues(loaded.state))
 
       const persistedDocument = await readJsonFile(fixture.paths.stateDocument) as {
         values: {
@@ -261,14 +269,18 @@ describe('createSettingsWorkspaceStorage', () => {
     try {
       await fixture.storage.loadState()
 
-      await fixture.storage.saveProviderSecret('persisted-provider', 'first-secret')
+      await fixture.storage.saveProfileSecret('persisted-provider', 'first-secret')
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({
-        version: 1,
+        version: 2,
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {
             'persisted-provider': {
-              apiKey: 'first-secret',
+              profileId: 'persisted-provider',
+              authKind: 'api-key',
+              secretValues: {
+                apiKey: 'first-secret',
+              },
             },
           },
           sustech: {
@@ -277,19 +289,23 @@ describe('createSettingsWorkspaceStorage', () => {
         },
       })
 
-      await fixture.storage.saveState({
+      await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues({
         ...(await fixture.storage.loadState()).state,
         providerProfiles: [createProviderProfile({ id: 'persisted-provider', name: 'Persisted Router' })],
-      })
+      }))
 
-      await fixture.storage.saveProviderSecret('persisted-provider', 'second-secret')
+      await fixture.storage.saveProfileSecret('persisted-provider', 'second-secret')
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({
-        version: 1,
+        version: 2,
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {
             'persisted-provider': {
-              apiKey: 'second-secret',
+              profileId: 'persisted-provider',
+              authKind: 'api-key',
+              secretValues: {
+                apiKey: 'second-secret',
+              },
             },
           },
           sustech: {
@@ -336,9 +352,9 @@ describe('createSettingsWorkspaceStorage', () => {
       expect(publicSnapshotJson).not.toContain('providerSecrets')
       expect(publicSnapshotJson).not.toContain('apiKey')
 
-      await fixture.storage.clearProviderSecret('persisted-provider')
+      await fixture.storage.clearProfileSecret('persisted-provider')
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({
-        version: 1,
+        version: 2,
         kind: 'settings-workspace-secrets',
         values: {
           providerSecrets: {},
@@ -360,7 +376,7 @@ describe('createSettingsWorkspaceStorage', () => {
     }
   })
 
-  it('resolves provider routes from stable ids plus route snapshots without leaking secrets into public snapshots', async () => {
+  it('resolves provider routes from stable route refs with optional snapshot validation and private auth separation', async () => {
     const fixture = await createSettingsWorkspaceFixture()
 
     try {
@@ -385,13 +401,65 @@ describe('createSettingsWorkspaceStorage', () => {
           },
         ],
       })
-      await fixture.storage.saveState({
+      await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues({
         ...(await fixture.storage.loadState()).state,
         providerProfiles: [persistedProvider],
-      })
-      await fixture.storage.saveProviderSecret('resolved-provider', 'resolved-secret')
+      }))
+      await fixture.storage.saveProfileSecret('resolved-provider', 'resolved-secret')
+
+      const expectedResolvedRoute = {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'resolved-provider',
+          modelId: 'gpt-4.1',
+        },
+        providerProfileId: 'resolved-provider',
+        provider: 'openai',
+        providerId: 'openai',
+        adapterId: 'openai',
+        runtimeStatus: 'enabled',
+        catalogRevision: '2026-04-06-provider-catalog-v1',
+        endpointFamily: 'openai',
+        endpointType: 'openai-compatible',
+        baseUrl: 'https://resolved.example.com/v1',
+        modelId: 'gpt-4.1',
+        authKind: 'api-key',
+      }
+      const expectedPrivateAuth = {
+        authKind: 'api-key',
+        authPayload: {
+          apiKey: 'resolved-secret',
+        },
+        apiKey: 'resolved-secret',
+      }
 
       await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'resolved-provider',
+          modelId: 'gpt-4.1',
+        },
+        catalogRevision: '2026-04-06-provider-catalog-v1',
+      })).resolves.toEqual({
+        ok: true,
+        resolvedRoute: expectedResolvedRoute,
+        privateAuth: expectedPrivateAuth,
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'resolved-provider',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toEqual({
+        ok: true,
+        resolvedRoute: expectedResolvedRoute,
+        privateAuth: expectedPrivateAuth,
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        // @ts-expect-error legacy providerProfileId + snapshot requests are no longer accepted
         providerProfileId: 'resolved-provider',
         snapshot: {
           provider: 'openai',
@@ -400,25 +468,18 @@ describe('createSettingsWorkspaceStorage', () => {
           modelId: 'gpt-4.1',
         },
       })).resolves.toEqual({
-        ok: true,
-        route: {
-          providerProfileId: 'resolved-provider',
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://resolved.example.com/v1',
-          modelId: 'gpt-4.1',
-          auth: {
-            apiKey: 'resolved-secret',
-          },
+        ok: false,
+        error: {
+          code: 'invalid_provider_route_request',
+          message: 'Provider route request must include a stable routeRef.',
+          details: {},
         },
       })
 
       await expect(fixture.storage.resolveProviderRoute({
-        providerProfileId: 'missing-provider',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://resolved.example.com/v1',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'missing-provider',
           modelId: 'gpt-4.1',
         },
       })).resolves.toEqual({
@@ -428,43 +489,20 @@ describe('createSettingsWorkspaceStorage', () => {
           message: "Provider profile 'missing-provider' does not exist.",
           details: {
             providerProfileId: 'missing-provider',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'missing-provider',
+              modelId: 'gpt-4.1',
+            },
           },
         },
       })
 
+      await fixture.storage.clearProfileSecret('resolved-provider')
       await expect(fixture.storage.resolveProviderRoute({
-        providerProfileId: 'resolved-provider',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://drifted.example.com/v1',
-          modelId: 'gpt-4.1',
-        },
-      })).resolves.toEqual({
-        ok: false,
-        error: {
-          code: 'route_snapshot_mismatch',
-          message: "Provider profile 'resolved-provider' no longer matches the requested route snapshot.",
-          details: {
-            providerProfileId: 'resolved-provider',
-            mismatches: [
-              {
-                field: 'baseUrl',
-                expected: 'https://resolved.example.com/v1',
-                actual: 'https://drifted.example.com/v1',
-              },
-            ],
-          },
-        },
-      })
-
-      await fixture.storage.clearProviderSecret('resolved-provider')
-      await expect(fixture.storage.resolveProviderRoute({
-        providerProfileId: 'resolved-provider',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://resolved.example.com/v1',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'resolved-provider',
           modelId: 'gpt-4.1',
         },
       })).resolves.toEqual({
@@ -474,6 +512,13 @@ describe('createSettingsWorkspaceStorage', () => {
           message: "Provider profile 'resolved-provider' is missing an API key.",
           details: {
             providerProfileId: 'resolved-provider',
+            providerId: 'openai',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'resolved-provider',
+              modelId: 'gpt-4.1',
+            },
+            authKind: 'api-key',
           },
         },
       })
@@ -491,6 +536,244 @@ describe('createSettingsWorkspaceStorage', () => {
       expect(publicSnapshotJson).not.toContain('resolved-secret')
       expect(publicSnapshotJson).not.toContain('resolved-provider')
       expect(publicSnapshotJson).not.toContain('apiKey')
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('returns stable resolver error codes for catalog-only, legacy, unsupported, model drift, catalog mismatch, and unknown catalog providers', async () => {
+    const fixture = await createSettingsWorkspaceFixture()
+
+    try {
+      await fixture.storage.loadState()
+      const activeProvider = createProviderProfile({
+        id: 'active-openai',
+        protocol: 'openai',
+        endpoint: 'https://active.example.com/v1/',
+        defaultModel: 'gpt-4.1',
+        fastModel: 'gpt-4.1-mini',
+        fallbackModel: 'gpt-4.1-mini',
+      })
+      const catalogOnlyProvider = createProviderProfile({
+        id: 'catalog-openrouter',
+        protocol: 'openrouter',
+        providerId: 'openrouter',
+        endpoint: 'https://openrouter.ai/api/v1/',
+        defaultModel: 'openai/gpt-4.1',
+        fastModel: 'openai/gpt-4.1-mini',
+        fallbackModel: 'openai/gpt-4.1-mini',
+      })
+      const legacyCatalogProvider = createProviderProfile({
+        id: 'legacy-catalog-provider',
+        protocol: 'openai-response',
+        providerId: 'openai-response',
+        endpoint: 'https://legacy.example.com/v1/',
+        defaultModel: 'gpt-4.1',
+        fastModel: 'gpt-4.1',
+        fallbackModel: 'gpt-4.1',
+      })
+      const legacyProfile = createProviderProfile({
+        id: 'legacy-profile',
+        protocol: 'openai',
+        endpoint: 'https://legacy-profile.example.com/v1/',
+        defaultModel: 'gpt-4.1',
+        fastModel: 'gpt-4.1-mini',
+        fallbackModel: 'gpt-4.1-mini',
+        compatibility: {
+          status: 'legacy',
+          reason: 'legacy profile preserved for migration',
+        },
+      })
+      const unsupportedProfile = createProviderProfile({
+        id: 'unsupported-profile',
+        protocol: 'openai',
+        endpoint: 'https://unsupported.example.com/v1/',
+        defaultModel: 'gpt-4.1',
+        fastModel: 'gpt-4.1-mini',
+        fallbackModel: 'gpt-4.1-mini',
+        compatibility: {
+          status: 'unsupported',
+          reason: 'unsupported provider profile',
+        },
+      })
+      const missingCatalogProvider = createProviderProfile({
+        id: 'missing-catalog-provider',
+        protocol: 'custom-missing',
+        providerId: 'custom-missing',
+        endpoint: 'https://missing.example.com/v1/',
+        defaultModel: 'custom-model',
+        fastModel: 'custom-model',
+        fallbackModel: 'custom-model',
+      })
+
+      await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues({
+        ...(await fixture.storage.loadState()).state,
+        providerProfiles: [
+          activeProvider,
+          catalogOnlyProvider,
+          legacyCatalogProvider,
+          legacyProfile,
+          unsupportedProfile,
+          missingCatalogProvider,
+        ],
+      }))
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'missing-catalog-provider',
+          modelId: 'custom-model',
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'provider_catalog_entry_not_found',
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'catalog-openrouter',
+          modelId: 'openai/gpt-4.1',
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'provider_runtime_catalog_only',
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'legacy-catalog-provider',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'provider_runtime_legacy_unsupported',
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'legacy-profile',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'provider_profile_legacy',
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'unsupported-profile',
+          modelId: 'gpt-4.1',
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'provider_profile_unsupported',
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'active-openai',
+          modelId: 'missing-model',
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'provider_model_not_found',
+          details: {
+            providerProfileId: 'active-openai',
+            modelId: 'missing-model',
+          },
+        },
+      })
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'active-openai',
+          modelId: 'gpt-4.1',
+        },
+        catalogRevision: 'stale-revision',
+      })).resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'provider_catalog_revision_mismatch',
+          details: {
+            providerProfileId: 'active-openai',
+            expectedCatalogRevision: 'stale-revision',
+            actualCatalogRevision: '2026-04-06-provider-catalog-v1',
+          },
+        },
+      })
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('resolves ollama routes without requiring an API key when catalog auth kind is none', async () => {
+    const fixture = await createSettingsWorkspaceFixture()
+
+    try {
+      await fixture.storage.loadState()
+      const persistedProvider = createProviderProfile({
+        id: 'ollama-local',
+        protocol: 'ollama',
+        endpoint: 'http://127.0.0.1:11434/v1/',
+        hasApiKey: false,
+        defaultModel: 'llama3.2',
+        fastModel: 'llama3.2',
+        fallbackModel: 'llama3.2',
+      })
+      await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues({
+        ...(await fixture.storage.loadState()).state,
+        providerProfiles: [persistedProvider],
+      }))
+
+      await expect(fixture.storage.resolveProviderRoute({
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'ollama-local',
+          modelId: 'llama3.2',
+        },
+      })).resolves.toEqual({
+        ok: true,
+        resolvedRoute: {
+          routeRef: {
+            routeKind: 'provider-model',
+            profileId: 'ollama-local',
+            modelId: 'llama3.2',
+          },
+          providerProfileId: 'ollama-local',
+          provider: 'ollama',
+          providerId: 'ollama',
+          adapterId: 'ollama',
+          runtimeStatus: 'enabled',
+          catalogRevision: '2026-04-06-provider-catalog-v1',
+          endpointFamily: 'ollama',
+          endpointType: 'ollama-native',
+          baseUrl: 'http://127.0.0.1:11434/v1',
+          modelId: 'llama3.2',
+          authKind: 'none',
+        },
+        privateAuth: {
+          authKind: 'none',
+          authPayload: {},
+          apiKey: '',
+        },
+      })
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }

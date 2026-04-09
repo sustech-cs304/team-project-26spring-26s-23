@@ -184,14 +184,20 @@ export function ModelPicker({
                             </p>
                           )
                         : group.models.map((model) => {
-                            const isSelected = model.id === selectedModelId
+                            const isSelected = model.selectionValue === selectedModelId
 
                             return (
                               <button
                                 key={`${group.key}:${model.id}`}
                                 type="button"
                                 className={`copilot-model-picker__option${isSelected ? ' copilot-model-picker__option--selected' : ''}`}
+                                disabled={!model.available}
+                                title={model.unavailableReason ?? model.name}
                                 onClick={() => {
+                                  if (!model.available) {
+                                    return
+                                  }
+
                                   onSelectModel(model)
                                   setIsOpen(false)
                                 }}
@@ -201,6 +207,9 @@ export function ModelPicker({
                                 <span className="copilot-model-picker__option-body">
                                   <span className="copilot-model-picker__option-name">{model.name}</span>
                                   <span className="copilot-model-picker__option-meta">{model.id}</span>
+                                  {model.unavailableReason !== null && (
+                                    <span className="copilot-model-picker__option-meta">{model.unavailableReason}</span>
+                                  )}
                                 </span>
                                 <span className="copilot-model-picker__option-tags" aria-hidden="true">
                                   {model.tags.map((tag) => (

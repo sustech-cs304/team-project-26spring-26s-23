@@ -116,7 +116,8 @@ export function formatThinkingTokenCount(value: number): string {
   return String(value)
 }
 
-export function normalizeThinkingBudgetAnchorTokens(_anchorTokens: number[] | null | undefined): number[] {
+export function normalizeThinkingBudgetAnchorTokens(anchorTokens: number[] | null | undefined): number[] {
+  void anchorTokens
   return [...THINKING_BUDGET_FIXED_ANCHOR_TOKENS]
 }
 

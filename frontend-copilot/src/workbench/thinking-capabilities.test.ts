@@ -8,39 +8,26 @@ import {
 } from './thinking-capabilities'
 
 describe('thinking capabilities', () => {
-  it.each([
-    {
-      endpoint: 'https://api.z.ai/api/paas/v4',
-      modelId: 'glm-5-turbo',
-    },
-    {
-      endpoint: 'https://open.bigmodel.cn/api/paas/v4',
-      modelId: 'glm-5',
-    },
-    {
-      endpoint: 'https://api.z.ai/api/paas/v4',
-      modelId: 'zai/glm-5',
-    },
-  ])('falls back to built-in rules for supported glm variants on verified openai-compatible routes', ({ endpoint, modelId }) => {
+  it('treats routes without explicit declarations as unsupported instead of applying built-in inference', () => {
     const resolved = resolveThinkingCapability({
       providerProfile: createProviderProfile({
         protocol: 'openai',
-        endpoint,
+        endpoint: 'https://api.z.ai/api/paas/v4',
       }),
       modelProfile: {
-        modelId,
+        modelId: 'glm-5-turbo',
         thinkingCapability: undefined,
       },
     })
 
     expect(resolved).toEqual({
-      supported: true,
-      levels: ['off', 'auto'],
-      defaultLevel: 'auto',
+      supported: false,
+      levels: [],
+      defaultLevel: null,
     })
   })
 
-  it('lets explicit supported series templates override built-in inference', () => {
+  it('resolves explicit supported declarations without consulting built-in rules', () => {
     const resolved = resolveThinkingCapability({
       providerProfile: createProviderProfile({
         protocol: 'openai',
@@ -71,7 +58,7 @@ describe('thinking capabilities', () => {
     })
   })
 
-  it('lets explicit unsupported declarations override built-in inference', () => {
+  it('resolves explicit unsupported declarations without consulting built-in rules', () => {
     const resolved = resolveThinkingCapability({
       providerProfile: createProviderProfile({
         protocol: 'openai',
@@ -238,6 +225,8 @@ function createProviderProfile(overrides: Partial<ProviderProfile>): ProviderPro
     protocol: overrides.protocol ?? 'openai',
     endpoint: overrides.endpoint ?? 'https://api.example.com/v1',
     hasApiKey: overrides.hasApiKey ?? true,
+    defaultModel: overrides.defaultModel ?? '',
+    defaultModelId: overrides.defaultModelId,
     fastModel: overrides.fastModel ?? '',
     fallbackModel: overrides.fallbackModel ?? '',
     organization: overrides.organization ?? '',

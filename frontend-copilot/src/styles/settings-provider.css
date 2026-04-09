@@ -28,6 +28,13 @@
   padding: 0 1rem 1rem;
 }
 
+.settings-provider-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
 .provider-card {
   display: flex;
   flex-direction: column;
@@ -67,6 +74,46 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
+}
+
+.provider-card__status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.provider-card__status--info {
+  color: var(--accent-strong);
+  background: var(--surface-accent);
+}
+
+.provider-card__status--warning {
+  color: var(--warning-strong);
+  background: color-mix(in srgb, var(--warning-strong) 12%, var(--surface-bg));
+}
+
+.provider-status-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-radius: var(--radius-md);
+  padding: 0.8rem 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.provider-status-banner--info {
+  color: var(--accent-strong);
+  background: var(--surface-accent);
+}
+
+.provider-status-banner--warning {
+  color: var(--warning-strong);
+  background: color-mix(in srgb, var(--warning-strong) 12%, var(--surface-bg));
 }
 
 .provider-card__title {

@@ -59,7 +59,7 @@ export function getOffMock() {
   return preloadMocks.off
 }
 
-export function getRegisteredOnListener<TListener extends (...args: any[]) => void>(channel: string): TListener {
+export function getRegisteredOnListener<TListener>(channel: string): TListener {
   const onCall = preloadMocks.on.mock.calls.find(([candidateChannel]) => candidateChannel === channel)
 
   if (onCall === undefined || typeof onCall[1] !== 'function') {
@@ -103,6 +103,8 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     defaultModelRouting: {
       primaryAssistantModel: '',
       fastAssistantModel: '',
+      primaryAssistantModelRoute: null,
+      fastAssistantModelRoute: null,
     },
     general: {
       language: 'zh-CN',

@@ -43,7 +43,7 @@ describe('assistant-workspace-session-controller', () => {
     expect(shell.capabilities.recommendedToolsForAgent).toEqual(['tool.file-convert'])
   })
 
-  it('rejects session creation before callers can append a new shell into the existing list', async () => {
+  it('rejects thread creation before callers can append a new shell into the existing list', async () => {
     const selectedAgent = getSelectedAgent()
     const existingSession = createAssistantSessionShell({
       response: createSessionResponse(),
@@ -52,7 +52,7 @@ describe('assistant-workspace-session-controller', () => {
     })
     const existingState = createAssistantSessionListState(existingSession)
     const createSession = async () => {
-      throw new Error('session/create failed')
+      throw new Error('thread/create failed')
     }
     const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse())
 
@@ -61,7 +61,7 @@ describe('assistant-workspace-session-controller', () => {
       selectedAgent,
       createSession,
       getCapabilities,
-    })).rejects.toThrow('session/create failed')
+    })).rejects.toThrow('thread/create failed')
 
     expect(getCapabilities).not.toHaveBeenCalled()
     expect(existingState.sessions.map((sessionItem) => sessionItem.sessionId)).toEqual(['session-1'])

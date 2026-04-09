@@ -211,6 +211,24 @@ def build_model_not_configured_error(
 
 
 
+def build_runtime_operation_error(
+    *,
+    code: str,
+    message: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+    details: dict[str, Any] | None = None,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=code,
+        message=message,
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details=details,
+    )
+
+
+
 def build_agent_execution_failed_error(
     *,
     message: str,
@@ -218,7 +236,7 @@ def build_agent_execution_failed_error(
     requested_method: str,
     details: dict[str, Any] | None = None,
 ) -> RuntimeErrorResponse:
-    return _build_runtime_error(
+    return build_runtime_operation_error(
         code=AGENT_EXECUTION_FAILED_CODE,
         message=message,
         scaffold=scaffold,

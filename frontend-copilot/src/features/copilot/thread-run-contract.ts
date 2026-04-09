@@ -1,3 +1,4 @@
+import type { ModelRouteRef } from '../../workbench/types'
 import {
   isTerminalRuntimeRunEvent,
   parseRuntimeRunEventStream,
@@ -8,7 +9,6 @@ export interface RuntimeAgentDirectoryEntry {
   agentId: string
   status: string
   recommendedTools: string[]
-  defaultModelPreference: string | null
   displayName: string | null
   description: string | null
   iconKey: string | null
@@ -36,18 +36,6 @@ export interface RuntimeThreadCreateResponse {
   createdAt: string
   updatedAt: string
   recommendedTools: string[]
-  defaultModelPreference: string | null
-  capabilities: Record<string, unknown>
-}
-
-export interface RuntimeSessionCreateResponse {
-  ok: true
-  sessionId: string
-  boundAgent: RuntimeBoundAgent
-  createdAt: string
-  updatedAt: string
-  recommendedTools: string[]
-  defaultModelPreference: string | null
   capabilities: Record<string, unknown>
 }
 
@@ -69,7 +57,6 @@ export interface RuntimeThreadGetResponse {
   tools: RuntimeToolDirectoryEntry[]
   recommendedTools: string[]
   toolSelectionMode: string
-  defaultModelPreference: string | null
   latestRunId: string | null
 }
 
@@ -228,7 +215,6 @@ export interface RuntimeCapabilitiesGetResponse {
   tools: RuntimeToolDirectoryEntry[]
   recommendedTools: string[]
   toolSelectionMode: string
-  defaultModelPreference: string | null
 }
 
 export interface RuntimeThinkingCapabilityGetResponse {
@@ -242,16 +228,24 @@ export interface RuntimeMessagePayload {
   content: string
 }
 
-export interface RuntimeModelRouteSnapshot {
+export interface RuntimeModelRoute {
+  routeRef?: ModelRouteRef | null
+  catalogRevision?: string
+}
+
+export interface RuntimeResolvedModelRoute {
+  routeRef: ModelRouteRef
+  providerProfileId: string
   provider: string
+  providerId: string
+  adapterId: string
+  runtimeStatus: string
+  catalogRevision: string
+  endpointFamily: string
   endpointType: string
   baseUrl: string
   modelId: string
-}
-
-export interface RuntimeModelRoute {
-  providerProfileId: string
-  snapshot: RuntimeModelRouteSnapshot
+  authKind: string
 }
 
 export interface RuntimeThinkingSelection {
@@ -324,7 +318,7 @@ export type RuntimeRunCompletedEvent = RuntimeRunEventBase<'run_completed', {
   assistantMessageId: string
   assistantText: string
   resolvedModelId: string
-  resolvedModelRoute: RuntimeModelRoute
+  resolvedModelRoute: RuntimeResolvedModelRoute
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
 }>
@@ -381,6 +375,7 @@ interface RuntimeErrorPayload {
   error?: {
     code?: string
     message?: string
+    details?: Record<string, unknown>
   }
 }
 
@@ -392,10 +387,8 @@ interface RuntimeMethodRequest {
     | 'run/start'
     | 'run/stream'
     | 'run/cancel'
-    | 'session/create'
     | 'capabilities/get'
     | 'thinking/capability/get'
-    | 'message/send'
   body?: Record<string, unknown>
 }
 
@@ -406,12 +399,14 @@ const RUNTIME_CONNECTIVITY_ERROR_MESSAGE = '无法连接到本地运行时，可
 export class RuntimeRequestError extends Error {
   readonly code: string | null
   readonly status: number
+  readonly details: Record<string, unknown>
 
-  constructor(message: string, input: { code?: string; status: number }) {
+  constructor(message: string, input: { code?: string; status: number; details?: Record<string, unknown> }) {
     super(message)
     this.name = 'RuntimeRequestError'
     this.code = input.code ?? null
     this.status = input.status
+    this.details = { ...(input.details ?? {}) }
   }
 }
 
@@ -460,25 +455,6 @@ export async function getRuntimeThread(input: {
   })
 }
 
-export async function createRuntimeSession(input: {
-  runtimeUrl: string
-  agentId: string
-  fetchFn?: FetchLike
-  signal?: AbortSignal
-}): Promise<RuntimeSessionCreateResponse> {
-  const response = await createRuntimeThread(input)
-  return {
-    ok: true,
-    sessionId: response.threadId,
-    boundAgent: { ...response.boundAgent },
-    createdAt: response.createdAt,
-    updatedAt: response.updatedAt,
-    recommendedTools: [...response.recommendedTools],
-    defaultModelPreference: response.defaultModelPreference,
-    capabilities: { ...response.capabilities },
-  }
-}
-
 export async function getRuntimeCapabilities(input: {
   runtimeUrl: string
   sessionId: string
@@ -500,7 +476,6 @@ export async function getRuntimeCapabilities(input: {
     tools: response.tools.map((tool) => ({ ...tool })),
     recommendedTools: [...response.recommendedTools],
     toolSelectionMode: response.toolSelectionMode,
-    defaultModelPreference: response.defaultModelPreference,
   }
 }
 
@@ -517,7 +492,7 @@ export async function getRuntimeThinkingCapability(input: {
     method: 'thinking/capability/get',
     body: {
       sessionId: input.sessionId,
-      modelRoute: input.modelRoute,
+      modelRoute: serializeRuntimeModelRouteForRequest(input.modelRoute),
       ...(input.thinkingCapabilityOverride === undefined || input.thinkingCapabilityOverride === null
         ? {}
         : { thinkingCapabilityOverride: input.thinkingCapabilityOverride }),
@@ -551,7 +526,7 @@ export async function startRuntimeRun(input: {
       ...(input.agent === undefined ? {} : { agent: input.agent }),
       message: input.message,
       policy: {
-        modelRoute: input.modelRoute,
+        modelRoute: serializeRuntimeModelRouteForRequest(input.modelRoute),
         ...(thinkingSelection === null
           ? {}
           : { thinkingSelection }),
@@ -838,6 +813,7 @@ function buildRuntimeRequestError(payload: RuntimeErrorPayload, status: number):
   return new RuntimeRequestError(buildRuntimeErrorMessage(payload, status), {
     code: payload.error?.code,
     status,
+    details: isRecord(payload.error?.details) ? payload.error?.details : {},
   })
 }
 
@@ -903,6 +879,40 @@ function cloneRunStartResponse(response: RuntimeRunStartResponse): RuntimeRunSta
         runId: response.cancel.body.runId,
       },
     },
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function serializeRuntimeModelRouteForRequest(route: RuntimeModelRoute): {
+  routeRef: ModelRouteRef
+  catalogRevision?: string
+} {
+  const routeRef = serializeRuntimeModelRouteRef(route)
+  if (routeRef === null) {
+    throw new Error('Runtime model route request must include a stable routeRef.')
+  }
+
+  return {
+    routeRef,
+    ...(typeof route.catalogRevision === 'string' && route.catalogRevision.trim() !== ''
+      ? { catalogRevision: route.catalogRevision.trim() }
+      : {}),
+  }
+}
+
+function serializeRuntimeModelRouteRef(route: RuntimeModelRoute): ModelRouteRef | null {
+  const routeRef = route.routeRef
+  if (routeRef === undefined || routeRef === null) {
+    return null
+  }
+
+  return {
+    routeKind: routeRef.routeKind,
+    profileId: routeRef.profileId,
+    modelId: routeRef.modelId,
   }
 }
 

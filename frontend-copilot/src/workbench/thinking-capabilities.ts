@@ -654,12 +654,14 @@ export function resolveThinkingCapability(input: {
   providerProfile: Pick<ProviderProfile, 'id' | 'protocol' | 'endpoint'>
   modelProfile: Pick<ProviderModelProfile, 'modelId' | 'thinkingCapability'>
 }): ResolvedThinkingCapability {
-  const explicit = resolveExplicitThinkingCapability(input.modelProfile.thinkingCapability)
-  if (explicit !== null) {
-    return explicit
-  }
+  void input.providerProfile
+  void input.modelProfile.modelId
 
-  return resolveBuiltInThinkingCapability(input)
+  return resolveExplicitThinkingCapability(input.modelProfile.thinkingCapability) ?? {
+    supported: false,
+    levels: [],
+    defaultLevel: null,
+  }
 }
 
 export function resolveThinkingLevelIntent(
@@ -717,8 +719,9 @@ function buildSupportedDeclaration(
 function hydrateThinkingSeriesTemplate(
   record: Record<string, unknown>,
   preset: ThinkingSeriesPreset,
-  _series: ThinkingCapabilitySeriesId,
+  series: ThinkingCapabilitySeriesId,
 ): ThinkingSeriesTemplate {
+  void series
   if (record.input === undefined && record.defaultSelection === undefined && record.levels === undefined) {
     return cloneThinkingSeriesTemplate(preset.template)
   }
@@ -1021,33 +1024,6 @@ function resolveExplicitThinkingCapability(
     supported: true,
     levels,
     defaultLevel: deriveLegacyDefaultLevelFromTemplate(supported.template),
-  }
-}
-
-function resolveBuiltInThinkingCapability(input: {
-  providerProfile: Pick<ProviderProfile, 'id' | 'protocol' | 'endpoint'>
-  modelProfile: Pick<ProviderModelProfile, 'modelId' | 'thinkingCapability'>
-}): ResolvedThinkingCapability {
-  const protocol = normalizeIdentifier(input.providerProfile.protocol)
-  const endpoint = normalizeIdentifier(input.providerProfile.endpoint)
-  const modelId = normalizeIdentifier(input.modelProfile.modelId)
-
-  if (
-    protocol === 'openai'
-    && matchesZaiGlmThinkingModel(modelId)
-    && (endpoint === '' || endpoint.includes('z.ai') || endpoint.includes('bigmodel.cn'))
-  ) {
-    return {
-      supported: true,
-      levels: ['off', 'auto'],
-      defaultLevel: 'auto',
-    }
-  }
-
-  return {
-    supported: false,
-    levels: [],
-    defaultLevel: null,
   }
 }
 
@@ -1380,13 +1356,6 @@ function mapLegacyLevelToSeriesCode(
 
 function normalizeBudgetMode(value: unknown): 'off' | 'dynamic' | 'budget' | null {
   return value === 'off' || value === 'dynamic' || value === 'budget' ? value : null
-}
-
-function matchesZaiGlmThinkingModel(modelId: string): boolean {
-  return modelId === 'glm-5'
-    || modelId === 'glm-5-turbo'
-    || modelId.endsWith('/glm-5')
-    || modelId.endsWith('/glm-5-turbo')
 }
 
 function normalizeThinkingSeriesInputKind(value: unknown): ThinkingCapabilitySeriesInputKind | undefined {

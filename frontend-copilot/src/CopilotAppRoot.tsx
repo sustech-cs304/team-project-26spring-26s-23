@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { ConfigCenterPublicSnapshot } from '../electron/config-center/public-snapshot'

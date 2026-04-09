@@ -1,114 +1,124 @@
 import { describe, expect, it } from 'vitest'
 
-import { createProviderProfile, createPersistedWorkspaceState } from '../../src/workbench/settings/settings-workspace-test-fixtures'
-import type { ProviderProfile } from '../../src/workbench/types'
+import { createPersistedWorkspaceState, createProviderProfile } from '../../src/workbench/settings/settings-workspace-test-fixtures'
 import { resolveSettingsWorkspaceProviderRoute } from './provider-route-resolver'
 
 describe('resolveSettingsWorkspaceProviderRoute', () => {
-  it('accepts models from availableModels plus fast/fallback tracked fields', () => {
-    const providerProfile = createProviderProfile({
-      id: 'route-provider',
-      endpoint: 'https://route.example.com/v1/',
-      fastModel: 'fast-only-model',
-      fallbackModel: 'fallback-only-model',
+  it('resolves stable route refs against the requested provider profile even when model ids overlap', () => {
+    const alphaProfile = createProviderProfile({
+      id: 'alpha-profile',
+      profileId: 'alpha-profile',
+      providerId: 'openai',
+      protocol: 'openai',
+      endpoint: 'https://alpha.example.com/v1/',
+      baseUrl: 'https://alpha.example.com/v1/',
+      defaultModel: 'shared-model',
+      defaultModelId: 'shared-model',
+      fastModel: 'shared-model',
+      fallbackModel: 'shared-model',
       availableModels: [
         {
-          id: 'route-provider:model-1',
-          modelId: 'available-model',
-          displayName: 'Available Model',
-          groupName: 'Route',
-          capabilities: ['reasoning', 'tools'],
-          supportsStreaming: true,
-          currency: 'usd',
-          inputPrice: '1',
-          outputPrice: '2',
+          ...createProviderProfile({ id: 'alpha-seed' }).availableModels[0]!,
+          id: 'alpha-model-1',
+          modelId: 'shared-model',
+          displayName: 'Shared Alpha',
+          groupName: 'Alpha',
+        },
+      ],
+    })
+    const betaProfile = createProviderProfile({
+      id: 'beta-profile',
+      profileId: 'beta-profile',
+      providerId: 'openai',
+      protocol: 'openai',
+      endpoint: 'https://beta.example.com/v1/',
+      baseUrl: 'https://beta.example.com/v1/',
+      defaultModel: 'shared-model',
+      defaultModelId: 'shared-model',
+      fastModel: 'shared-model',
+      fallbackModel: 'shared-model',
+      availableModels: [
+        {
+          ...createProviderProfile({ id: 'beta-seed' }).availableModels[0]!,
+          id: 'beta-model-1',
+          modelId: 'shared-model',
+          displayName: 'Shared Beta',
+          groupName: 'Beta',
         },
       ],
     })
 
-    const baseInput = {
+    const result = resolveSettingsWorkspaceProviderRoute({
       state: createPersistedWorkspaceState({
-        providerProfiles: [providerProfile],
+        providerProfiles: [alphaProfile, betaProfile],
       }),
       secretStates: {
-        'route-provider': {
+        'alpha-profile': {
           hasApiKey: true,
-          apiKey: 'route-secret',
+          apiKey: 'alpha-secret',
+        },
+        'beta-profile': {
+          hasApiKey: true,
+          apiKey: 'beta-secret',
         },
       },
       request: {
-        providerProfileId: 'route-provider',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://route.example.com/v1',
-          modelId: 'available-model',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'beta-profile',
+          modelId: 'shared-model',
         },
       },
-    } as const
+    })
 
-    expect(resolveSettingsWorkspaceProviderRoute(baseInput)).toEqual({
+    expect(result).toEqual({
       ok: true,
-      route: {
-        providerProfileId: 'route-provider',
+      resolvedRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'beta-profile',
+          modelId: 'shared-model',
+        },
+        providerProfileId: 'beta-profile',
         provider: 'openai',
+        providerId: 'openai',
+        adapterId: 'openai',
+        runtimeStatus: 'enabled',
+        catalogRevision: '2026-04-06-provider-catalog-v1',
+        endpointFamily: 'openai',
         endpointType: 'openai-compatible',
-        baseUrl: 'https://route.example.com/v1',
-        modelId: 'available-model',
-        auth: {
-          apiKey: 'route-secret',
+        baseUrl: 'https://beta.example.com/v1',
+        modelId: 'shared-model',
+        authKind: 'api-key',
+      },
+      privateAuth: {
+        authKind: 'api-key',
+        authPayload: {
+          apiKey: 'beta-secret',
         },
-      },
-    })
-
-    expect(resolveSettingsWorkspaceProviderRoute({
-      ...baseInput,
-      request: {
-        ...baseInput.request,
-        snapshot: {
-          ...baseInput.request.snapshot,
-          modelId: 'fast-only-model',
-        },
-      },
-    })).toMatchObject({
-      ok: true,
-      route: {
-        modelId: 'fast-only-model',
-      },
-    })
-
-    expect(resolveSettingsWorkspaceProviderRoute({
-      ...baseInput,
-      request: {
-        ...baseInput.request,
-        snapshot: {
-          ...baseInput.request.snapshot,
-          modelId: 'fallback-only-model',
-        },
-      },
-    })).toMatchObject({
-      ok: true,
-      route: {
-        modelId: 'fallback-only-model',
+        apiKey: 'beta-secret',
       },
     })
   })
 
-  it('ignores stray legacy defaultModel runtime properties when checking supported models', () => {
-    const providerWithLegacyDefaultModel = {
-      ...createProviderProfile({
-        id: 'legacy-route-provider',
-        endpoint: 'https://legacy-route.example.com/v1/',
-        fastModel: '',
-        fallbackModel: '',
-        availableModels: [],
-      }),
+  it('ignores legacy default model aliases when the requested routeRef model is not in the profile model list', () => {
+    const providerWithLegacyDefaultModel = createProviderProfile({
+      id: 'legacy-route-provider',
+      profileId: 'legacy-route-provider',
+      providerId: 'openai',
+      protocol: 'openai',
+      endpoint: 'https://legacy-route.example.com/v1/',
+      baseUrl: 'https://legacy-route.example.com/v1/',
       defaultModel: 'legacy-only-model',
-    } as ProviderProfile & { defaultModel: string }
+      defaultModelId: 'legacy-only-model',
+      fastModel: '',
+      fallbackModel: '',
+      availableModels: [],
+    })
 
     const result = resolveSettingsWorkspaceProviderRoute({
       state: createPersistedWorkspaceState({
-        providerProfiles: [providerWithLegacyDefaultModel as unknown as ProviderProfile],
+        providerProfiles: [providerWithLegacyDefaultModel],
       }),
       secretStates: {
         'legacy-route-provider': {
@@ -117,11 +127,9 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
         },
       },
       request: {
-        providerProfileId: 'legacy-route-provider',
-        snapshot: {
-          provider: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://legacy-route.example.com/v1',
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'legacy-route-provider',
           modelId: 'legacy-only-model',
         },
       },
@@ -130,17 +138,18 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
     expect(result).toEqual({
       ok: false,
       error: {
-        code: 'route_snapshot_mismatch',
-        message: "Provider profile 'legacy-route-provider' no longer matches the requested route snapshot.",
+        code: 'provider_model_not_found',
+        message: "Provider profile 'legacy-route-provider' does not define model 'legacy-only-model'.",
         details: {
           providerProfileId: 'legacy-route-provider',
-          mismatches: [
-            {
-              field: 'modelId',
-              expected: '',
-              actual: 'legacy-only-model',
-            },
-          ],
+          providerId: 'openai',
+          routeRef: {
+            routeKind: 'provider-model',
+            profileId: 'legacy-route-provider',
+            modelId: 'legacy-only-model',
+          },
+          modelId: 'legacy-only-model',
+          supportedModelIds: [],
         },
       },
     })

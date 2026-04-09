@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import type { ConfigCenterPublicTextFieldDefinition } from './config-center-public-field-definitions'

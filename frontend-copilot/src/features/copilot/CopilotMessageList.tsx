@@ -21,7 +21,7 @@ import {
 } from './run-segment-view-model'
 
 const assistantMarkdownComponents: Components = {
-  hr({ node: _node, className, ...props }) {
+  hr({ className, ...props }) {
     return (
       <hr
         {...props}
@@ -308,7 +308,7 @@ function resolveAssistantMessageHeader(
 
   const resolvedModelId = findFirstNonEmptyValue(
     turn.resolvedModelId,
-    turn.resolvedModelRoute?.snapshot.modelId,
+    readModelIdFromRoute(turn.resolvedModelRoute),
   )
   if (resolvedModelId !== null) {
     const fallbackModel = createFallbackCopilotModel(resolvedModelId)
@@ -330,6 +330,16 @@ function resolveAssistantMessageHeader(
     name: '助手响应',
     icon: createEmptyCopilotModel().icon,
   }
+}
+
+function readModelIdFromRoute(
+  route: CopilotAssistantMessageItem['resolvedModelRoute'],
+): string | null {
+  if (route === null || route === undefined) {
+    return null
+  }
+
+  return 'providerId' in route ? route.modelId : route.routeRef?.modelId ?? null
 }
 
 function findFirstNonEmptyValue(...values: Array<string | null | undefined>): string | null {

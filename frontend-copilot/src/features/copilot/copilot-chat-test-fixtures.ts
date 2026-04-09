@@ -135,7 +135,6 @@ export function createSelectedAgent(): AgentType {
     status: 'active',
     icon: ((() => null) as unknown) as AgentType['icon'],
     recommendedTools: ['tool.file-convert'],
-    defaultModelPreference: 'openai/gpt-4.1',
   }
 }
 
@@ -195,7 +194,6 @@ export function createSessionShell(overrides: SessionShellOverrides = {}): Assis
       recommendedToolsForAgent: ['tool.file-convert'],
       defaultEnabledTools: ['tool.file-convert'],
       toolSelectionMode: 'recommendation-only',
-      defaultModelPreference: 'openai/gpt-4.1',
       ...overrides.capabilities,
     },
   }

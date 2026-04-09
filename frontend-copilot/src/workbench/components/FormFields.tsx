@@ -10,6 +10,7 @@ interface SelectFieldProps {
   options: SelectOption[]
   onChange: (value: string) => void
   placeholder?: string
+  triggerTestId?: string
 }
 
 interface TextFieldProps {
@@ -21,6 +22,8 @@ interface TextFieldProps {
   type?: 'text' | 'password' | 'url'
   inputRef?: Ref<HTMLInputElement>
   containerClassName?: string
+  disabled?: boolean
+  inputTestId?: string
 }
 
 interface TextareaFieldProps {
@@ -38,7 +41,7 @@ interface ToggleSwitchProps {
   onChange: (checked: boolean) => void
 }
 
-export function SelectField({ label, description, value, options, onChange, placeholder }: SelectFieldProps) {
+export function SelectField({ label, description, value, options, onChange, placeholder, triggerTestId }: SelectFieldProps) {
   const [open, setOpen] = useState(false)
   const [dropdownDirection, setDropdownDirection] = useState<'up' | 'down'>('down')
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -46,6 +49,7 @@ export function SelectField({ label, description, value, options, onChange, plac
   const dropdownRef = useRef<HTMLDivElement | null>(null)
 
   const selectedOption = options.find((option) => option.value === value)
+  const selectedOptionDisabled = selectedOption?.disabled === true
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -92,11 +96,13 @@ export function SelectField({ label, description, value, options, onChange, plac
         className={`select-trigger${open ? ' select-trigger--open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
+        data-testid={triggerTestId}
         onClick={handleToggleOpen}
       >
         <span className="select-trigger__copy">
           <span className="select-trigger__value">{selectedOption?.label ?? placeholder ?? '请选择'}</span>
           {selectedOption?.hint ? <span className="select-trigger__hint">{selectedOption.hint}</span> : null}
+          {selectedOptionDisabled ? <span className="select-trigger__hint">当前选项不可用于新保存</span> : null}
         </span>
         <ChevronDown size={16} className="select-trigger__icon" />
       </button>
@@ -109,6 +115,7 @@ export function SelectField({ label, description, value, options, onChange, plac
       >
         {options.map((option) => {
           const active = option.value === value
+          const disabled = option.disabled === true
 
           return (
             <button
@@ -116,9 +123,15 @@ export function SelectField({ label, description, value, options, onChange, plac
               type="button"
               role="option"
               aria-selected={active}
+              aria-disabled={disabled}
+              disabled={disabled}
               tabIndex={open ? 0 : -1}
-              className={`select-option${active ? ' select-option--active' : ''}`}
+              className={`select-option${active ? ' select-option--active' : ''}${disabled ? ' select-option--disabled' : ''}`}
               onClick={() => {
+                if (disabled) {
+                  return
+                }
+
                 onChange(option.value)
                 setOpen(false)
               }}
@@ -145,6 +158,8 @@ export function TextField({
   type = 'text',
   inputRef,
   containerClassName,
+  disabled = false,
+  inputTestId,
 }: TextFieldProps) {
   return (
     <label className={containerClassName ? `form-field ${containerClassName}` : 'form-field'}>
@@ -154,10 +169,12 @@ export function TextField({
       </span>
       <input
         ref={inputRef}
+        data-testid={inputTestId}
         className="text-input"
         type={type}
         value={value}
         placeholder={placeholder}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       />
     </label>

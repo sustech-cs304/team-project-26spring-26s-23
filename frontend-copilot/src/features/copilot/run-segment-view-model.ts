@@ -3,7 +3,7 @@ import {
   cloneRuntimeThinkingCapability as cloneRuntimeThinkingCapabilityValue,
   cloneRuntimeThinkingSelection as cloneRuntimeThinkingSelectionValue,
   type RuntimeModelRoute,
-  type RuntimeThinkingCapability,
+  type RuntimeResolvedModelRoute,
 } from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
@@ -33,7 +33,7 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   title: string
   content: string
   resolvedModelId: string | null
-  resolvedModelRoute: RuntimeModelRoute | null
+  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
   resolvedToolIds: string[]
   requestOptions: Record<string, unknown>
   requestedThinkingSelection?: CopilotRunState['requestedThinkingSelection']
@@ -170,22 +170,32 @@ export function resolveCopilotAssistantPlaceholderState(
   }
 }
 
+type CopilotRunThinkingProjectionState = Partial<Pick<
+  CopilotRunState,
+  | 'requestedThinkingSelection'
+  | 'appliedThinkingSelection'
+  | 'requestedThinkingLevel'
+  | 'appliedThinkingLevel'
+  | 'thinkingCapabilitySnapshot'
+  | 'reasoningTraceState'
+  | 'reasoningSuppressionBasis'
+  | 'reasoningSuppressed'
+>>
+
+type CopilotRunResolvedRouteProjectionState = Pick<
+  CopilotRunState,
+  | 'activeModelRoute'
+  | 'resolvedModelId'
+  | 'resolvedModelRoute'
+>
+
+type CopilotRunSegmentProjectionState = Pick<
+  CopilotRunState,
+  | 'segments'
+> & CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState
+
 export function buildCopilotRunSegmentViewModel(
-  runState: Pick<
-    CopilotRunState,
-    | 'segments'
-    | 'activeModelRoute'
-    | 'resolvedModelId'
-    | 'resolvedModelRoute'
-    | 'requestedThinkingSelection'
-    | 'appliedThinkingSelection'
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-    | 'reasoningSuppressed'
-    | 'reasoningTraceState'
-    | 'reasoningSuppressionBasis'
-  >,
+  runState: CopilotRunSegmentProjectionState,
 ): CopilotRunSegmentViewItem[] {
   return runState.segments.flatMap((segment) => projectSegmentToViewItems(segment, runState))
 }
@@ -208,20 +218,7 @@ export function resolveCopilotReasoningElapsedMs(
 
 function projectSegmentToViewItems(
   segment: CopilotRunSegment,
-  runState: Pick<
-    CopilotRunState,
-    | 'activeModelRoute'
-    | 'resolvedModelId'
-    | 'resolvedModelRoute'
-    | 'requestedThinkingSelection'
-    | 'appliedThinkingSelection'
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-    | 'reasoningSuppressed'
-    | 'reasoningTraceState'
-    | 'reasoningSuppressionBasis'
-  >,
+  runState: Omit<CopilotRunSegmentProjectionState, 'segments'>,
 ): CopilotRunSegmentViewItem[] {
   switch (segment.kind) {
     case 'assistant':
@@ -241,19 +238,7 @@ function projectSegmentToViewItems(
 
 function projectAssistantSegment(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
-  runState: Pick<
-    CopilotRunState,
-    | 'activeModelRoute'
-    | 'resolvedModelId'
-    | 'resolvedModelRoute'
-    | 'requestedThinkingSelection'
-    | 'appliedThinkingSelection'
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-    | 'reasoningTraceState'
-    | 'reasoningSuppressionBasis'
-  >,
+  runState: CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState,
 ): CopilotRunSegmentViewItem[] {
   if (!isRenderableAssistantSegment(segment)) {
     return []
@@ -267,7 +252,7 @@ function projectAssistantSegment(
     kind: 'assistant',
     runId: segment.runId,
     sequence: segment.startedSequence,
-    title: resolvedModelId ?? resolvedModelRoute?.snapshot.modelId ?? '助手响应',
+    title: resolvedModelId ?? readModelIdFromRoute(resolvedModelRoute) ?? '助手响应',
     content: segment.text,
     status: mapSegmentStatus(segment.status),
     resolvedModelId,
@@ -343,16 +328,7 @@ function projectDiagnosticSegment(
 
 function projectTerminalSegment(
   segment: Extract<CopilotRunSegment, { kind: 'terminal' }>,
-  runState: Pick<
-    CopilotRunState,
-    | 'requestedThinkingSelection'
-    | 'appliedThinkingSelection'
-    | 'requestedThinkingLevel'
-    | 'appliedThinkingLevel'
-    | 'thinkingCapabilitySnapshot'
-    | 'reasoningTraceState'
-    | 'reasoningSuppressionBasis'
-  >,
+  runState: CopilotRunThinkingProjectionState,
 ): CopilotTerminalMessageItem | null {
   switch (segment.terminalPhase) {
     case 'completed':
@@ -427,9 +403,9 @@ function resolveAssistantModelId(
   const modelIdCandidates = [
     segment.resolvedModelId,
     runState.resolvedModelId,
-    segment.resolvedModelRoute?.snapshot.modelId ?? null,
-    runState.resolvedModelRoute?.snapshot.modelId ?? null,
-    runState.activeModelRoute?.snapshot.modelId ?? null,
+    readModelIdFromRoute(segment.resolvedModelRoute),
+    readModelIdFromRoute(runState.resolvedModelRoute),
+    readModelIdFromRoute(runState.activeModelRoute),
   ]
 
   for (const candidate of modelIdCandidates) {
@@ -445,7 +421,7 @@ function resolveAssistantModelId(
 function resolveAssistantModelRoute(
   segment: Extract<CopilotRunSegment, { kind: 'assistant' }>,
   runState: Pick<CopilotRunState, 'activeModelRoute' | 'resolvedModelId' | 'resolvedModelRoute'>,
-): RuntimeModelRoute | null {
+): RuntimeResolvedModelRoute | RuntimeModelRoute | null {
   const routeCandidates = [
     segment.resolvedModelRoute,
     runState.resolvedModelRoute,
@@ -462,54 +438,90 @@ function resolveAssistantModelRoute(
   return null
 }
 
-function cloneRuntimeModelRoute(route: RuntimeModelRoute | null): RuntimeModelRoute | null {
+function cloneRuntimeModelRoute(
+  route: RuntimeResolvedModelRoute | RuntimeModelRoute | null,
+): RuntimeResolvedModelRoute | RuntimeModelRoute | null {
   if (route === null) {
     return null
   }
 
+  if ('providerId' in route) {
+    return {
+      routeRef: {
+        routeKind: route.routeRef.routeKind,
+        profileId: route.routeRef.profileId,
+        modelId: route.routeRef.modelId,
+      },
+      providerProfileId: route.providerProfileId,
+      provider: route.provider,
+      providerId: route.providerId,
+      adapterId: route.adapterId,
+      runtimeStatus: route.runtimeStatus,
+      catalogRevision: route.catalogRevision,
+      endpointFamily: route.endpointFamily,
+      endpointType: route.endpointType,
+      baseUrl: route.baseUrl,
+      modelId: route.modelId,
+      authKind: route.authKind,
+    }
+  }
+
   return {
-    providerProfileId: route.providerProfileId,
-    snapshot: {
-      provider: route.snapshot.provider,
-      endpointType: route.snapshot.endpointType,
-      baseUrl: route.snapshot.baseUrl,
-      modelId: route.snapshot.modelId,
-    },
+    ...(route.routeRef === undefined || route.routeRef === null
+      ? {}
+      : {
+          routeRef: {
+            routeKind: route.routeRef.routeKind,
+            profileId: route.routeRef.profileId,
+            modelId: route.routeRef.modelId,
+          },
+        }),
+    ...(route.catalogRevision === undefined ? {} : { catalogRevision: route.catalogRevision }),
   }
 }
 
+function readModelIdFromRoute(
+  route: RuntimeResolvedModelRoute | RuntimeModelRoute | null | undefined,
+): string | null {
+  if (route === null || route === undefined) {
+    return null
+  }
+
+  return 'providerId' in route ? route.modelId : route.routeRef?.modelId ?? null
+}
+
 function cloneRuntimeThinkingCapability(
-  capability: RuntimeThinkingCapability | null,
-): RuntimeThinkingCapability | null {
+  capability: CopilotRunState['thinkingCapabilitySnapshot'] | undefined,
+): CopilotRunState['thinkingCapabilitySnapshot'] | undefined {
   return cloneRuntimeThinkingCapabilityValue(capability)
 }
 
 function cloneRuntimeThinkingSelection(
-  selection: CopilotRunState['requestedThinkingSelection'],
-): CopilotRunState['requestedThinkingSelection'] {
+  selection: CopilotRunState['requestedThinkingSelection'] | undefined,
+): CopilotRunState['requestedThinkingSelection'] | undefined {
   return cloneRuntimeThinkingSelectionValue(selection)
 }
 
 function cloneRuntimeReasoningSuppressionBasis(
-  basis: CopilotRunState['reasoningSuppressionBasis'],
-): CopilotRunState['reasoningSuppressionBasis'] {
+  basis: CopilotRunState['reasoningSuppressionBasis'] | undefined,
+): CopilotRunState['reasoningSuppressionBasis'] | undefined {
   return cloneRuntimeReasoningSuppressionBasisValue(basis)
 }
 
 function shouldProjectReasoningSegment(
-  runState: Pick<
+  runState: Partial<Pick<
     CopilotRunState,
     'reasoningSuppressed' | 'reasoningTraceState' | 'reasoningSuppressionBasis'
-  >,
+  >>,
 ): boolean {
   return !isReasoningSuppressedForRun(runState)
 }
 
 function isReasoningSuppressedForRun(
-  runState: Pick<
+  runState: Partial<Pick<
     CopilotRunState,
     'reasoningSuppressed' | 'reasoningTraceState' | 'reasoningSuppressionBasis'
-  >,
+  >>,
 ): boolean {
   return runState.reasoningSuppressed === true
     || runState.reasoningTraceState === 'suppressed'

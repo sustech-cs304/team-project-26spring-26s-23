@@ -1,10 +1,9 @@
-"""Run orchestration for streamed [`message/send`](docs/system/chat-runtime-contract.md:268) execution."""
+"""Run orchestration for streamed [`run/start`](docs/system/chat-runtime-contract.md:268) execution."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Protocol, cast
 from uuid import uuid4
@@ -14,13 +13,12 @@ from pydantic_ai.messages import ModelMessage
 from .agent import (
     AgentExecutionError,
     ModelNotConfiguredError,
-    RuntimeToolLifecycleEvent,
+    ProviderAdapterExecutionError,
     ToolInvocationError,
-    tool_lifecycle_event_to_execution_event,
 )
 from .agent_registry import AgentDescriptor, AgentRegistry
 from .contracts import (
-    RuntimeMessageSendRequest,
+    RuntimeRunStartRequest,
     RuntimeScaffold,
     RuntimeThinkingSelection,
     _build_reasoning_suppression_basis as build_reasoning_suppression_basis,
@@ -29,7 +27,6 @@ from .debug_logging import (
     is_runtime_chain_debug_enabled,
     log_runtime_chain_debug,
     preview_text,
-    summarize_event_types,
     summarize_exception,
     summarize_runtime_execution_event,
     summarize_runtime_model_route,
@@ -39,43 +36,29 @@ from .debug_logging import (
     summarize_runtime_thinking_selection_result,
     summarize_runtime_tool_event,
 )
-from .execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventBuffer, RuntimeExecutionEventFactory
+from .execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventFactory
 from .execution_support import (
     AgentNotFoundError,
     InvalidSessionHistoryError,
-    SessionNotFoundError,
+    ThreadNotFoundError,
     ToolNotFoundError,
     build_message_history,
     extract_unknown_tool_id,
 )
-from .legacy_event_projection import LegacyRuntimeRunEventProjector
+from .legacy_event_projection import RuntimeRunEventProjector
 from .model_routes import (
     ResolvedRuntimeModelRoute,
     RuntimeModelRouteResolutionError,
     RuntimeModelRouteResolver,
 )
+from .provider_adapter_registry import (
+    RuntimeProviderAdapterError,
+    RuntimeProviderAdapterRegistry,
+    build_default_provider_adapter_registry,
+)
 from .run_events import RuntimeRunEvent, RuntimeRunEventFactory
-from .session_store import BoundAgentMismatchError, InMemorySessionStore, RuntimeSessionRecord
+from .session_store import BoundAgentMismatchError, InMemorySessionStore
 from .thinking_adapter import adapt_thinking_selection
-
-
-class RuntimeAgentTextStream(Protocol):
-    resolved_model_id: str
-
-    async def __aenter__(self) -> "RuntimeAgentTextStream": ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> bool | None: ...
-
-    def iter_deltas(self) -> AsyncIterator[str]: ...
-
-    async def get_output(self) -> str: ...
-
-    def drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]: ...
 
 
 class RuntimeAgentExecutionEventStream(Protocol):
@@ -111,154 +94,6 @@ class RuntimeStreamingAgentExecutor(Protocol):
     ) -> RuntimeAgentExecutionEventStream: ...
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeMessageRunSuccess:
-    assistant_text: str
-    session: RuntimeSessionRecord
-    resolved_model_route: ResolvedRuntimeModelRoute
-    resolved_tool_ids: tuple[str, ...]
-    request_options: dict[str, Any]
-
-
-@dataclass(slots=True)
-class _LegacyTextExecutionEventStreamAdapter:
-    stream: RuntimeAgentTextStream
-    run_id: str
-    debug_enabled: bool = False
-    resolved_model_id: str = field(init=False)
-    _event_buffer: RuntimeExecutionEventBuffer = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self.resolved_model_id = self.stream.resolved_model_id
-        self._event_buffer = RuntimeExecutionEventBuffer(
-            event_factory=RuntimeExecutionEventFactory(run_id=self.run_id),
-            debug_enabled=self.debug_enabled,
-        )
-
-    async def __aenter__(self) -> "_LegacyTextExecutionEventStreamAdapter":
-        await self.stream.__aenter__()
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> bool | None:
-        return await self.stream.__aexit__(exc_type, exc, tb)
-
-    async def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
-        debug_enabled = self.debug_enabled
-        try:
-            async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
-                yield event
-            async for delta in self.stream.iter_deltas():
-                async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
-                    yield event
-                self._event_buffer.record_assistant_delta(delta)
-                drained = self._event_buffer.drain()
-                log_runtime_chain_debug(
-                    "legacy_adapter.execution_drain",
-                    enabled=debug_enabled,
-                    runId=self.run_id,
-                    resolvedModelId=self.resolved_model_id,
-                    reason="after_text_delta",
-                    executionEventTypes=summarize_event_types(drained),
-                    executionEvents=[
-                        summarize_runtime_execution_event(event)
-                        for event in drained
-                    ],
-                )
-                for event in drained:
-                    yield event
-            async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
-                yield event
-        except Exception as exc:
-            log_runtime_chain_debug(
-                "legacy_adapter.stream_exception",
-                enabled=debug_enabled,
-                runId=self.run_id,
-                resolvedModelId=self.resolved_model_id,
-                error=summarize_exception(exc),
-            )
-            async for event in self._emit_pending_tool_events(debug_enabled=debug_enabled):
-                yield event
-            self._event_buffer.finish_assistant_segment()
-            drained = self._event_buffer.drain()
-            log_runtime_chain_debug(
-                "legacy_adapter.execution_drain",
-                enabled=debug_enabled,
-                runId=self.run_id,
-                resolvedModelId=self.resolved_model_id,
-                reason="exception_finish_segment",
-                executionEventTypes=summarize_event_types(drained),
-                executionEvents=[
-                    summarize_runtime_execution_event(event)
-                    for event in drained
-                ],
-            )
-            for event in drained:
-                yield event
-            raise
-
-        self._event_buffer.finish_assistant_segment()
-        drained = self._event_buffer.drain()
-        log_runtime_chain_debug(
-            "legacy_adapter.execution_drain",
-            enabled=debug_enabled,
-            runId=self.run_id,
-            resolvedModelId=self.resolved_model_id,
-            reason="stream_completed",
-            executionEventTypes=summarize_event_types(drained),
-            executionEvents=[
-                summarize_runtime_execution_event(event)
-                for event in drained
-            ],
-        )
-        for event in drained:
-            yield event
-
-    async def get_output(self) -> str:
-        return await self.stream.get_output()
-
-    async def _emit_pending_tool_events(self, *, debug_enabled: bool) -> AsyncIterator[RuntimeExecutionEvent]:
-        tool_events = self._drain_tool_events()
-        if len(tool_events) > 0:
-            log_runtime_chain_debug(
-                "legacy_adapter.tool_event_drain",
-                enabled=debug_enabled,
-                runId=self.run_id,
-                resolvedModelId=self.resolved_model_id,
-                toolEvents=[summarize_runtime_tool_event(event) for event in tool_events],
-            )
-        for tool_event in tool_events:
-            self._event_buffer.record_event(tool_lifecycle_event_to_execution_event(tool_event))
-        drained = self._event_buffer.drain()
-        log_runtime_chain_debug(
-            "legacy_adapter.execution_drain",
-            enabled=debug_enabled,
-            runId=self.run_id,
-            resolvedModelId=self.resolved_model_id,
-            reason="emit_pending_tool_events",
-            executionEventTypes=summarize_event_types(drained),
-            executionEvents=[
-                summarize_runtime_execution_event(event)
-                for event in drained
-            ],
-        )
-        for event in drained:
-            yield event
-
-    def _drain_tool_events(self) -> tuple[RuntimeToolLifecycleEvent, ...]:
-        drain = getattr(self.stream, "drain_tool_events", None)
-        if drain is None:
-            return ()
-        drained = drain()
-        if not isinstance(drained, tuple):
-            return tuple(drained)
-        return drained
-
-
 class RuntimeMessageRunOrchestrator:
     """Coordinates request-scoped route resolution, streaming execution, and final archival."""
 
@@ -269,16 +104,20 @@ class RuntimeMessageRunOrchestrator:
         agent_registry: AgentRegistry,
         scaffold: RuntimeScaffold,
         model_route_resolver: RuntimeModelRouteResolver,
+        provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
         self._scaffold = scaffold
         self._model_route_resolver = model_route_resolver
+        self._provider_adapter_registry = (
+            provider_adapter_registry or build_default_provider_adapter_registry()
+        )
 
     async def stream_events(
         self,
         *,
-        request: RuntimeMessageSendRequest,
+        request: RuntimeRunStartRequest,
         is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
         run_id: str | None = None,
     ) -> AsyncIterator[RuntimeRunEvent]:
@@ -290,8 +129,8 @@ class RuntimeMessageRunOrchestrator:
             else request_debug_enabled
         )
         assistant_message_id = f"{resolved_run_id}:assistant"
-        events = RuntimeRunEventFactory(session_id=request.session_id, run_id=resolved_run_id)
-        projector = LegacyRuntimeRunEventProjector(
+        events = RuntimeRunEventFactory(session_id=request.thread_id, run_id=resolved_run_id)
+        projector = RuntimeRunEventProjector(
             events=events,
             assistant_message_id=assistant_message_id,
         )
@@ -302,7 +141,7 @@ class RuntimeMessageRunOrchestrator:
             "orchestrator.run_started",
             enabled=debug_enabled,
             runId=resolved_run_id,
-            threadId=request.session_id,
+            threadId=request.thread_id,
             agentId=request.agent_id,
             userPromptPreview=preview_text(request.message.content),
             yieldedEvent=summarize_runtime_run_event(run_started),
@@ -310,14 +149,14 @@ class RuntimeMessageRunOrchestrator:
         yield run_started
 
         try:
-            session = self._require_session(request)
-            agent_descriptor = self._resolve_agent(session.bound_agent_id)
+            thread = self._require_thread(request)
+            agent_descriptor = self._resolve_agent(thread.bound_agent_id)
             resolved_tool_ids = self._resolve_enabled_tools(
-                agent_id=session.bound_agent_id,
+                agent_id=thread.bound_agent_id,
                 enabled_tools=request.policy.enabledTools,
             )
             message_history = build_message_history(
-                self._session_store.list_messages(session.session_id)
+                self._session_store.list_messages(thread.thread_id)
             )
             resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
             requested_thinking_selection = request.policy.resolve_thinking_selection()
@@ -325,12 +164,22 @@ class RuntimeMessageRunOrchestrator:
                 selection=requested_thinking_selection,
                 model_route=resolved_model_route,
                 thinking_capability_override=request.policy.thinkingCapabilityOverride,
+                provider_adapter_registry=self._provider_adapter_registry,
+            )
+            capability_series = (
+                thinking_adaptation.capability.series
+                or (
+                    requested_thinking_selection.series
+                    if requested_thinking_selection is not None
+                    else None
+                )
+                or "compat-discrete-selection-v1"
             )
             applied_thinking_selection = _resolve_applied_thinking_selection(
                 requested_selection=requested_thinking_selection,
                 requested_canonical_selection=thinking_adaptation.requested_selection,
                 applied_canonical_selection=thinking_adaptation.applied_selection,
-                capability_series=thinking_adaptation.capability.series,
+                capability_series=capability_series,
             )
             selection_result = thinking_adaptation.to_public_dict()
             selection_result_summary = summarize_runtime_thinking_selection_result(selection_result)
@@ -345,7 +194,7 @@ class RuntimeMessageRunOrchestrator:
                 "thinking.capability_resolved",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
-                threadId=request.session_id,
+                threadId=request.thread_id,
                 requestedThinkingSelection=(
                     None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
                 ),
@@ -362,7 +211,7 @@ class RuntimeMessageRunOrchestrator:
                 "thinking.request_validated",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
-                threadId=request.session_id,
+                threadId=request.thread_id,
                 requestedThinkingSelection=(
                     None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
                 ),
@@ -379,7 +228,7 @@ class RuntimeMessageRunOrchestrator:
                 "thinking.provider_mapping_resolved",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
-                threadId=request.session_id,
+                threadId=request.thread_id,
                 requestedThinkingSelection=(
                     None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
                 ),
@@ -409,7 +258,7 @@ class RuntimeMessageRunOrchestrator:
                 "thinking.run_metadata_attached",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
-                threadId=request.session_id,
+                threadId=request.thread_id,
                 yieldedEvent=summarize_runtime_run_event(run_metadata),
             )
             yield run_metadata
@@ -425,7 +274,7 @@ class RuntimeMessageRunOrchestrator:
                     "thinking.fail_fast",
                     enabled=debug_enabled,
                     runId=resolved_run_id,
-                    threadId=request.session_id,
+                    threadId=request.thread_id,
                     code=fail_fast_code,
                     requestedThinkingSelection=requested_thinking_selection.to_dict(),
                     appliedThinkingSelection=(
@@ -455,8 +304,8 @@ class RuntimeMessageRunOrchestrator:
                 "orchestrator.execution_prepared",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
-                threadId=request.session_id,
-                boundAgentId=session.bound_agent_id,
+                threadId=request.thread_id,
+                boundAgentId=thread.bound_agent_id,
                 enabledToolIds=list(resolved_tool_ids),
                 modelRoute=summarize_runtime_model_route(resolved_model_route),
                 historyMessageCount=len(message_history),
@@ -473,12 +322,23 @@ class RuntimeMessageRunOrchestrator:
                 for projected in projector.project(event):
                     yield projected
             return
-        except SessionNotFoundError as exc:
+        except RuntimeProviderAdapterError as exc:
             for event in self._build_failed_execution_events(
                 execution_events=execution_events,
-                code="session_not_found",
+                code=exc.code,
                 message=str(exc),
-                details={"sessionId": exc.session_id},
+                details=dict(exc.details),
+                diagnostic_stage="resolve_thinking_capability",
+            ):
+                for projected in projector.project(event):
+                    yield projected
+            return
+        except ThreadNotFoundError as exc:
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
+                code="thread_not_found",
+                message=str(exc),
+                details={"threadId": exc.thread_id},
             ):
                 for projected in projector.project(event):
                     yield projected
@@ -571,7 +431,7 @@ class RuntimeMessageRunOrchestrator:
             async with self._open_execution_stream(
                 agent_executor=agent_executor,
                 run_id=resolved_run_id,
-                agent_name=session.bound_agent_id,
+                agent_name=thread.bound_agent_id,
                 user_prompt=request.message.content,
                 message_history=message_history,
                 model_route=resolved_model_route,
@@ -584,7 +444,7 @@ class RuntimeMessageRunOrchestrator:
                     "orchestrator.stream_opened",
                     enabled=debug_enabled,
                     runId=resolved_run_id,
-                    threadId=request.session_id,
+                    threadId=request.thread_id,
                     resolvedModelId=stream.resolved_model_id,
                 )
                 async for event in stream.iter_events():
@@ -598,7 +458,7 @@ class RuntimeMessageRunOrchestrator:
                             "thinking.reasoning_suppressed",
                             enabled=debug_enabled,
                             runId=resolved_run_id,
-                            threadId=request.session_id,
+                            threadId=request.thread_id,
                             suppressionEnabled=True,
                             suppressionSource=reasoning_suppression_basis_summary.get("source"),
                             suppressionReasonCode=reasoning_suppression_basis_summary.get("reasonCode"),
@@ -610,7 +470,7 @@ class RuntimeMessageRunOrchestrator:
                         "orchestrator.execution_event_projected",
                         enabled=debug_enabled,
                         runId=resolved_run_id,
-                        threadId=request.session_id,
+                        threadId=request.thread_id,
                         executionEvent=summarize_runtime_execution_event(event),
                         projectedEventTypes=[projected.type for projected in projected_events],
                         projectedEvents=[
@@ -623,35 +483,35 @@ class RuntimeMessageRunOrchestrator:
                     await self._raise_if_client_disconnected(
                         is_client_disconnected,
                         run_id=resolved_run_id,
-                        thread_id=request.session_id,
+                        thread_id=request.thread_id,
                     )
                     for projected in projected_events:
                         log_runtime_chain_debug(
                             "orchestrator.yield_projected_event",
                             enabled=debug_enabled,
                             runId=resolved_run_id,
-                            threadId=request.session_id,
+                            threadId=request.thread_id,
                             projectedEvent=summarize_runtime_run_event(projected),
                         )
                         yield projected
                 await self._raise_if_client_disconnected(
                     is_client_disconnected,
                     run_id=resolved_run_id,
-                    thread_id=request.session_id,
+                    thread_id=request.thread_id,
                 )
                 assistant_text = await stream.get_output()
                 log_runtime_chain_debug(
                     "orchestrator.stream_output",
                     enabled=debug_enabled,
                     runId=resolved_run_id,
-                    threadId=request.session_id,
+                    threadId=request.thread_id,
                     assistantTextLength=len(assistant_text),
                     assistantTextPreview=preview_text(assistant_text),
                 )
                 await self._raise_if_client_disconnected(
                     is_client_disconnected,
                     run_id=resolved_run_id,
-                    thread_id=request.session_id,
+                    thread_id=request.thread_id,
                 )
         except asyncio.CancelledError:
             projected_events = projector.project(
@@ -661,7 +521,7 @@ class RuntimeMessageRunOrchestrator:
                 "orchestrator.terminal",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
-                threadId=request.session_id,
+                threadId=request.thread_id,
                 terminalReason="cancelled",
                 projectedEventTypes=[projected.type for projected in projected_events],
                 projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
@@ -681,7 +541,7 @@ class RuntimeMessageRunOrchestrator:
                 "orchestrator.terminal",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
-                threadId=request.session_id,
+                threadId=request.thread_id,
                 terminalReason="failed",
                 error=summarize_exception(exc),
                 projectedEventTypes=[projected.type for projected in projected_events],
@@ -696,6 +556,17 @@ class RuntimeMessageRunOrchestrator:
                 code="model_not_configured",
                 message=str(exc),
                 details={"modelEnvironmentKeys": list(self._scaffold.model_environment_keys)},
+            ):
+                for projected in projector.project(event):
+                    yield projected
+            return
+        except ProviderAdapterExecutionError as exc:
+            for event in self._build_failed_execution_events(
+                execution_events=execution_events,
+                code=exc.code,
+                message=str(exc),
+                details=dict(exc.details),
+                diagnostic_stage="execute_model",
             ):
                 for projected in projector.project(event):
                     yield projected
@@ -726,33 +597,16 @@ class RuntimeMessageRunOrchestrator:
         await self._raise_if_client_disconnected(
             is_client_disconnected,
             run_id=resolved_run_id,
-            thread_id=request.session_id,
-        )
-        persisted_session, _created = self._session_store.append_turn(
-            session_id=session.session_id,
-            bound_agent_id=session.bound_agent_id,
-            user_text=request.message.content,
-            assistant_text=assistant_text,
-            metadata={
-                "last_model_id": resolved_model_route.model_id,
-                "last_run_id": resolved_run_id,
-            },
-        )
-        success = RuntimeMessageRunSuccess(
-            assistant_text=assistant_text,
-            session=persisted_session,
-            resolved_model_route=resolved_model_route,
-            resolved_tool_ids=resolved_tool_ids,
-            request_options=dict(request.policy.requestOptions),
+            thread_id=request.thread_id,
         )
         projected_events = projector.project(
-            execution_events.build_run_completed(assistant_text=success.assistant_text)
+            execution_events.build_run_completed(assistant_text=assistant_text)
         )
         log_runtime_chain_debug(
             "orchestrator.terminal",
             enabled=debug_enabled,
             runId=resolved_run_id,
-            threadId=request.session_id,
+            threadId=request.thread_id,
             terminalReason="completed",
             projectedEventTypes=[projected.type for projected in projected_events],
             projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
@@ -760,17 +614,17 @@ class RuntimeMessageRunOrchestrator:
         for projected in projected_events:
             yield projected
 
-    def _require_session(self, request: RuntimeMessageSendRequest) -> RuntimeSessionRecord:
-        session = self._session_store.get(request.session_id)
-        if session is None:
-            raise SessionNotFoundError(request.session_id)
-        if request.agent_id is not None and request.agent_id != session.bound_agent_id:
+    def _require_thread(self, request: RuntimeRunStartRequest):
+        thread = self._session_store.get_thread(request.thread_id)
+        if thread is None:
+            raise ThreadNotFoundError(request.thread_id)
+        if request.agent_id is not None and request.agent_id != thread.bound_agent_id:
             raise BoundAgentMismatchError(
-                session_id=session.session_id,
-                expected_agent_id=session.bound_agent_id,
+                session_id=thread.thread_id,
+                expected_agent_id=thread.bound_agent_id,
                 actual_agent_id=request.agent_id,
             )
-        return session
+        return thread
 
     def _resolve_agent(self, agent_name: str) -> AgentDescriptor:
         descriptor = self._agent_registry.get(agent_name)
@@ -785,9 +639,9 @@ class RuntimeMessageRunOrchestrator:
                 f"Agent '{descriptor.name}' has no executor factory configured."
             )
         executor = executor_factory()
-        if not hasattr(executor, "open_event_stream") and not hasattr(executor, "open_text_stream"):
+        if not hasattr(executor, "open_event_stream"):
             raise AgentExecutionError(
-                f"Agent '{descriptor.name}' does not support streamed execution."
+                f"Agent '{descriptor.name}' must provide open_event_stream() for streamed execution."
             )
         return executor
 
@@ -806,85 +660,44 @@ class RuntimeMessageRunOrchestrator:
         model_settings: Mapping[str, Any] | None,
     ) -> RuntimeAgentExecutionEventStream:
         open_event_stream = getattr(agent_executor, "open_event_stream", None)
-        if callable(open_event_stream):
-            log_runtime_chain_debug(
-                "orchestrator.open_execution_stream",
-                runId=run_id,
-                agentName=agent_name,
-                streamKind="event_stream",
-                enabledToolIds=list(enabled_tools),
-                modelRoute=summarize_runtime_model_route(model_route),
+        if not callable(open_event_stream):
+            raise AgentExecutionError(
+                f"Agent '{agent_name}' must provide open_event_stream() for streamed execution."
             )
-            try:
-                stream = open_event_stream(
-                    run_id=run_id,
-                    agent_name=agent_name,
-                    user_prompt=user_prompt,
-                    message_history=message_history,
-                    model_route=model_route,
-                    enabled_tools=enabled_tools,
-                    debug_enabled=debug_enabled,
-                    request_options=request_options,
-                    model_settings=model_settings,
-                )
-            except TypeError as exc:
-                if "model_settings" not in str(exc):
-                    raise
-                stream = open_event_stream(
-                    run_id=run_id,
-                    agent_name=agent_name,
-                    user_prompt=user_prompt,
-                    message_history=message_history,
-                    model_route=model_route,
-                    enabled_tools=enabled_tools,
-                    debug_enabled=debug_enabled,
-                    request_options=request_options,
-                )
-            return cast(RuntimeAgentExecutionEventStream, stream)
-
-        open_text_stream = getattr(agent_executor, "open_text_stream", None)
-        if callable(open_text_stream):
-            log_runtime_chain_debug(
-                "orchestrator.open_execution_stream",
-                runId=run_id,
-                agentName=agent_name,
-                streamKind="legacy_text_adapter",
-                enabledToolIds=list(enabled_tools),
-                modelRoute=summarize_runtime_model_route(model_route),
-            )
-            try:
-                raw_legacy_stream = open_text_stream(
-                    agent_name=agent_name,
-                    user_prompt=user_prompt,
-                    message_history=message_history,
-                    model_route=model_route,
-                    enabled_tools=enabled_tools,
-                    debug_enabled=debug_enabled,
-                    request_options=request_options,
-                    model_settings=model_settings,
-                )
-            except TypeError as exc:
-                if "model_settings" not in str(exc):
-                    raise
-                raw_legacy_stream = open_text_stream(
-                    agent_name=agent_name,
-                    user_prompt=user_prompt,
-                    message_history=message_history,
-                    model_route=model_route,
-                    enabled_tools=enabled_tools,
-                    debug_enabled=debug_enabled,
-                    request_options=request_options,
-                )
-            legacy_stream = cast(RuntimeAgentTextStream, raw_legacy_stream)
-            return _LegacyTextExecutionEventStreamAdapter(
-                stream=legacy_stream,
-                run_id=run_id,
-                debug_enabled=debug_enabled,
-            )
-
-        raise AgentExecutionError(
-            f"Agent '{agent_name}' does not support streamed execution."
+        log_runtime_chain_debug(
+            "orchestrator.open_execution_stream",
+            runId=run_id,
+            agentName=agent_name,
+            streamKind="event_stream",
+            enabledToolIds=list(enabled_tools),
+            modelRoute=summarize_runtime_model_route(model_route),
         )
+        try:
+            stream = open_event_stream(
+                run_id=run_id,
+                agent_name=agent_name,
+                user_prompt=user_prompt,
+                message_history=message_history,
+                model_route=model_route,
+                enabled_tools=enabled_tools,
+                debug_enabled=debug_enabled,
+                request_options=request_options,
+                model_settings=model_settings,
+            )
+        except TypeError as exc:
+            if "model_settings" not in str(exc):
+                raise
+            stream = open_event_stream(
+                run_id=run_id,
+                agent_name=agent_name,
+                user_prompt=user_prompt,
+                message_history=message_history,
+                model_route=model_route,
+                enabled_tools=enabled_tools,
+                debug_enabled=debug_enabled,
+                request_options=request_options,
+            )
+        return cast(RuntimeAgentExecutionEventStream, stream)
 
     def _resolve_enabled_tools(
         self,
@@ -1042,8 +855,7 @@ def _next_run_id() -> str:
 
 __all__ = [
     "RuntimeAgentExecutionEventStream",
-    "RuntimeAgentTextStream",
     "RuntimeMessageRunOrchestrator",
-    "RuntimeMessageRunSuccess",
     "RuntimeStreamingAgentExecutor",
 ]
+

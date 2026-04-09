@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
 import { act } from 'react'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
 import type { RuntimeRunEvent } from './chat-contract'
+import type { CopilotMessageDispatchInput } from './copilot-send-controller'
 import {
   createRuntimeCanonicalThinkingSelection,
   createRuntimeRunCompletedEvent,
@@ -35,14 +36,6 @@ declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
 }
-
-beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
-})
-
-afterAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
-})
 
 describe('Copilot thinking selector', () => {
   it('uses backend canonical capability instead of local model declaration as chat control truth', async () => {
@@ -113,6 +106,90 @@ describe('Copilot thinking selector', () => {
     }))
     expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
     expect(rendered.queryByTestId('chat-thinking-editor-discrete')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('relies on runtime capability results instead of frontend built-in rules for chat thinking availability', async () => {
+    const getThinkingCapability = vi.fn(async (input: {
+      runtimeUrl: string
+      sessionId: string
+      modelRoute: {
+        routeRef?: {
+          modelId: string
+        } | null
+      }
+    }) => ({
+      ok: true as const,
+      sessionId: input.sessionId,
+      capability: createRuntimeThinkingCapability({
+        status: 'unknown-without-override',
+        source: 'unknown',
+        supported: false,
+        supportedLevels: [],
+        defaultLevel: null,
+        reasonCode: 'route_not_verified',
+        providerHint: 'runtime-truth-only',
+        overrideLevels: [],
+      }),
+    }))
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-runtime-truth',
+            name: 'Runtime Truth Provider',
+            endpoint: 'https://api.z.ai/api/paas/v4',
+            defaultModel: 'glm-5-turbo',
+            availableModels: [
+              {
+                id: 'provider-runtime-truth:glm-5-turbo',
+                modelId: 'glm-5-turbo',
+                displayName: 'GLM 5 Turbo',
+                groupName: 'RuntimeTruth',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'glm-5-turbo',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => undefined}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
+      />,
+    )
+
+    await flushUi()
+    await flushUi()
+
+    const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+    expect(getThinkingCapability).toHaveBeenCalledTimes(1)
+    expect(thinkingTrigger.title).toBe('当前模型不支持')
+    expect(thinkingTrigger.getAttribute('aria-label')).toBe('当前模型不支持')
+    expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
+
+    await clickElement(thinkingTrigger)
+    expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
 
     rendered.unmount()
   })
@@ -433,9 +510,10 @@ describe('Copilot thinking selector', () => {
 
   it('sends structured budget selection without reviving compat thinkingLevelIntent payloads', async () => {
     const sendMessage = vi.fn(async function* (
-      _input: Parameters<typeof import('./chat-contract').sendRuntimeMessage>[0],
+      input: CopilotMessageDispatchInput,
     ): AsyncGenerator<RuntimeRunEvent> {
-      return
+      void input
+      yield* []
     })
     const getThinkingCapability = createThinkingCapabilityGetter({
       'budget-send-model': createBudgetCapability(),
@@ -507,7 +585,7 @@ describe('Copilot thinking selector', () => {
       'run-metadata-model': queriedCapability,
     })
     const sendMessage = vi.fn(async function* (
-      input: Parameters<typeof import('./chat-contract').sendRuntimeMessage>[0],
+      input: CopilotMessageDispatchInput,
     ): AsyncGenerator<RuntimeRunEvent> {
       input.onRunStart?.(createRuntimeRunStartResponse({
         run: {
@@ -571,6 +649,73 @@ describe('Copilot thinking selector', () => {
 
     rendered.unmount()
   })
+
+  it('surfaces provider runtime status from thinking capability query errors in the trigger tooltip', async () => {
+    const getThinkingCapability = vi.fn(async () => {
+      throw new (await import('./chat-contract')).RuntimeRequestError('adapter_missing: provider adapter not registered', {
+        code: 'adapter_missing',
+        status: 409,
+        details: {
+          providerId: 'openai',
+          adapterId: 'openai',
+        },
+      })
+    })
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            providerId: 'openai',
+            protocol: 'openai',
+            name: 'OpenAI',
+            defaultModel: 'gpt-4.1',
+            availableModels: [
+              {
+                id: 'provider-openai:gpt-4.1',
+                modelId: 'gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'gpt-4.1',
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => undefined}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        loadWorkspaceState={loadWorkspaceState}
+        getThinkingCapability={getThinkingCapability}
+      />,
+    )
+
+    await flushUi()
+
+    const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+    expect(thinkingTrigger.title).toContain('当前 provider 缺少 runtime adapter')
+    expect(thinkingTrigger.disabled).toBe(false)
+
+    rendered.unmount()
+  })
 })
 
 function renderThinkingPanel(input: {
@@ -585,11 +730,7 @@ function renderThinkingPanel(input: {
       retrying={false}
       retry={() => undefined}
       selectedAgent={createSelectedAgent()}
-      sessionShell={createSessionShell({
-        capabilities: {
-          defaultModelPreference: input.sessionModelPreference,
-        },
-      })}
+      sessionShell={createSessionShell()}
       directoryState={createDirectoryState()}
       sessionStatus="idle"
       sessionError={null}
@@ -635,14 +776,14 @@ function createThinkingCapabilityGetter(capabilitiesByModelId: Record<string, Ru
   return vi.fn(async (input: {
     sessionId: string
     modelRoute: {
-      snapshot: {
+      routeRef?: {
         modelId: string
-      }
+      } | null
     }
   }) => ({
     ok: true as const,
     sessionId: input.sessionId,
-    capability: capabilitiesByModelId[input.modelRoute.snapshot.modelId],
+    capability: capabilitiesByModelId[input.modelRoute.routeRef?.modelId ?? ''],
   }))
 }
 

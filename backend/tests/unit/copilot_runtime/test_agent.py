@@ -31,7 +31,7 @@ def test_run_raises_model_not_configured_when_no_model_is_available() -> None:
 
     with pytest.raises(
         ModelNotConfiguredError,
-        match="Provide an explicit executor model or set COPILOT_RUNTIME_MODEL or COPILOT_MODEL",
+        match="Provide an explicit executor model",
     ):
         asyncio.run(
             executor.run(
@@ -57,21 +57,18 @@ def test_resolve_model_prefers_explicit_model_over_environment_keys() -> None:
 
 
 
-def test_resolve_model_falls_back_to_environment_keys_in_priority_order() -> None:
+def test_resolve_model_no_longer_falls_back_to_environment_keys() -> None:
     runtime_env_executor = PydanticAIAgentExecutor(
         env={
             "COPILOT_RUNTIME_MODEL": "runtime-env-model",
             "COPILOT_MODEL": "legacy-env-model",
         }
     )
-    legacy_env_executor = PydanticAIAgentExecutor(
-        env={"COPILOT_MODEL": "legacy-env-model"}
-    )
 
-    assert runtime_env_executor.resolve_model() == "runtime-env-model"
-    assert legacy_env_executor.resolve_model() == "legacy-env-model"
-    assert runtime_env_executor.model_configured is True
-    assert legacy_env_executor.model_configured is True
+    with pytest.raises(ModelNotConfiguredError, match="Provide an explicit executor model"):
+        runtime_env_executor.resolve_model()
+
+    assert runtime_env_executor.model_configured is False
 
 
 
@@ -160,7 +157,7 @@ def test_run_returns_stable_text_from_controlled_agent_stub(
 
 
 
-def test_open_text_stream_executes_weather_tool_and_records_started_completed_events() -> None:
+def test_open_event_stream_executes_weather_tool_and_records_started_completed_events() -> None:
     executor = PydanticAIAgentExecutor(
         model=TestModel(
             call_tools=["weather_current"],
@@ -170,8 +167,9 @@ def test_open_text_stream_executes_weather_tool_and_records_started_completed_ev
     )
 
     result = asyncio.run(
-        _collect_stream(
-            executor.open_text_stream(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-weather-success",
                 agent_name="default",
                 user_prompt="Tell me the weather.",
                 message_history=[],
@@ -182,15 +180,21 @@ def test_open_text_stream_executes_weather_tool_and_records_started_completed_ev
         )
     )
 
+    tool_events = [
+        event.payload
+        for event in result["events"]
+        if event.type in {"tool_started", "tool_completed", "tool_failed"}
+    ]
+
     assert result["error"] is None
     assert result["output"] == "Weather reply"
-    assert [event.phase for event in result["tool_events"]] == ["started", "completed"]
-    assert all(event.tool_id == WEATHER_CURRENT_TOOL_ID for event in result["tool_events"])
-    assert result["tool_events"][1].result_summary is not None
+    assert [payload["phase"] for payload in tool_events] == ["started", "completed"]
+    assert all(payload["toolId"] == WEATHER_CURRENT_TOOL_ID for payload in tool_events)
+    assert tool_events[1]["resultSummary"] is not None
 
 
 
-def test_open_text_stream_fails_when_weather_tool_is_not_enabled() -> None:
+def test_open_event_stream_fails_when_weather_tool_is_not_enabled() -> None:
     executor = PydanticAIAgentExecutor(
         model=TestModel(
             call_tools=["weather_current"],
@@ -200,8 +204,9 @@ def test_open_text_stream_fails_when_weather_tool_is_not_enabled() -> None:
     )
 
     result = asyncio.run(
-        _collect_stream(
-            executor.open_text_stream(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-weather-disabled",
                 agent_name="default",
                 user_prompt="Tell me the weather.",
                 message_history=[],
@@ -212,10 +217,16 @@ def test_open_text_stream_fails_when_weather_tool_is_not_enabled() -> None:
         )
     )
 
+    tool_events = [
+        event.payload
+        for event in result["events"]
+        if event.type in {"tool_started", "tool_completed", "tool_failed"}
+    ]
+
     assert isinstance(result["error"], ToolInvocationError)
     assert result["error"].code == "tool_not_enabled"
-    assert [event.phase for event in result["tool_events"]] == ["started", "failed"]
-    assert result["tool_events"][-1].error_summary is not None
+    assert [payload["phase"] for payload in tool_events] == ["started", "failed"]
+    assert tool_events[-1]["errorSummary"] is not None
 
 
 
@@ -492,33 +503,6 @@ async def _collect_event_stream(stream) -> dict[str, object]:
         "output": output,
         "error": error,
     }
-
-
-async def _collect_stream(stream) -> dict[str, object]:
-    deltas: list[str] = []
-    tool_events = []
-    output: str | None = None
-    error: Exception | None = None
-
-    try:
-        async with stream:
-            async for delta in stream.iter_deltas():
-                deltas.append(delta)
-                tool_events.extend(stream.drain_tool_events())
-            tool_events.extend(stream.drain_tool_events())
-            output = await stream.get_output()
-            tool_events.extend(stream.drain_tool_events())
-    except Exception as exc:  # pragma: no cover - exercised by assertions
-        tool_events.extend(stream.drain_tool_events())
-        error = exc
-
-    return {
-        "deltas": deltas,
-        "tool_events": tool_events,
-        "output": output,
-        "error": error,
-    }
-
 
 
 def _build_resolved_route() -> ResolvedRuntimeModelRoute:
