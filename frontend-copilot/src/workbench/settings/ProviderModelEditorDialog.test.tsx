@@ -117,8 +117,7 @@ describe('ProviderModelEditorDialog', () => {
     rendered.unmount()
   })
 
-  it('labels the configured selection as default and keeps available options read-only', () => {
-    const handleStateChange = vi.fn()
+  it('labels the configured selection as default', () => {
     const rendered = renderWithRoot(
       <ProviderModelEditorDialog
         modelEditorState={createModelEditorState({
@@ -139,7 +138,7 @@ describe('ProviderModelEditorDialog', () => {
         modelEditorError={null}
         onClose={vi.fn()}
         onSave={vi.fn()}
-        onStateChange={handleStateChange}
+        onStateChange={vi.fn()}
         onToggleCapability={vi.fn()}
         onClearError={vi.fn()}
       />,
@@ -147,11 +146,6 @@ describe('ProviderModelEditorDialog', () => {
 
     expect(rendered.queryByText('当前值')).toBeNull()
     expect(rendered.getByText('默认值')).toBeTruthy()
-
-    const availableOption = rendered.getByTestId('settings-thinking-allowed-false') as HTMLButtonElement
-    expect(availableOption.hasAttribute('disabled')).toBe(true)
-    availableOption.click()
-    expect(handleStateChange).toHaveBeenCalledTimes(0)
 
     rendered.unmount()
   })

@@ -171,7 +171,6 @@ export function ProviderModelEditorDialog({
     )
   const currentThinkingValue = normalizedThinkingCapability?.template.defaultValue ?? null
   const currentAllowedCodeValues = (normalizedThinkingCapability?.template.allowedValues ?? []).filter(isCodeThinkingValue)
-  const presetCodeValues = (presetSeriesCapability?.template.allowedValues ?? []).filter(isCodeThinkingValue)
   const presetBudgetValues = (presetSeriesCapability?.template.allowedValues ?? []).filter(isBudgetThinkingValue)
   const supportsBudgetDefaultModes = presetSeriesCapability?.template.editorType === 'budget'
   const budgetDefaultValue = isBudgetThinkingValue(currentThinkingValue) ? currentThinkingValue : null
@@ -243,19 +242,6 @@ export function ProviderModelEditorDialog({
       )
     },
   }))
-
-  const availableCodeOptions: ThinkingPillOption[] = presetCodeValues.map((value) => {
-    const active = currentAllowedCodeValues.some((candidate) => candidate.code === value.code)
-
-    return {
-      key: `allowed-${value.code}`,
-      labelZh: value.labelZh,
-      code: value.code,
-      selected: active,
-      muted: !active,
-      testId: `settings-thinking-allowed-${value.code}`,
-    }
-  })
 
   const budgetModeOptions: ThinkingPillOption[] = !supportsBudgetDefaultModes
     ? []
@@ -439,18 +425,6 @@ export function ProviderModelEditorDialog({
                       ariaLabel="默认值"
                       options={currentValueOptions}
                       className="model-editor-thinking-panel__pill-group"
-                    />
-                  </div>
-                ) : null}
-
-                {availableCodeOptions.length > 0 ? (
-                  <div className="model-editor-thinking-panel__section">
-                    <span className="form-field__label">可选项</span>
-                    <ThinkingPillGroup
-                      ariaLabel="当前模型可选项"
-                      options={availableCodeOptions}
-                      className="model-editor-thinking-panel__pill-group"
-                      readOnly
                     />
                   </div>
                 ) : null}
