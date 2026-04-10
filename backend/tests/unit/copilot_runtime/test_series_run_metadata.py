@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from app.copilot_runtime import build_runtime_scaffold
 from app.copilot_runtime.contracts import RuntimeThinkingSelection, RuntimeThinkingValue
+from app.copilot_runtime.model_routes import RuntimeModelRouteRef
 from app.copilot_runtime.session_store import (
     RuntimeRunRecord,
     RuntimeStoredModelRoute,
-    RuntimeStoredModelRouteSnapshot,
     RuntimeStoredRunInput,
     RuntimeStoredRunPolicy,
 )
@@ -22,10 +22,9 @@ def test_build_run_view_exposes_series_metadata_without_legacy_level_fields() ->
             policy=RuntimeStoredRunPolicy(
                 model_route=RuntimeStoredModelRoute(
                     provider_profile_id="provider-1",
-                    snapshot=RuntimeStoredModelRouteSnapshot(
-                        provider="openai",
-                        endpoint_type="openai-compatible",
-                        base_url="https://example.com/v1",
+                    route_ref=RuntimeModelRouteRef(
+                        route_kind="provider-model",
+                        profile_id="provider-1",
                         model_id="gpt-5",
                     ),
                 ),

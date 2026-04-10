@@ -1103,7 +1103,7 @@ def test_stream_events_unknown_with_override_fails_fast_when_mapping_missing() -
 
 
 
-def test_stream_events_fails_when_thinking_intent_cannot_be_mapped() -> None:
+def test_stream_events_fails_when_thinking_intent_targets_unverified_route_without_override() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
@@ -1132,13 +1132,22 @@ def test_stream_events_fails_when_thinking_intent_cannot_be_mapped() -> None:
     )
 
     assert [event.type for event in events] == ["run_started", "run_metadata", "run_diagnostic", "run_failed"]
-    assert events[2].payload["code"] == "thinking_not_supported_for_route"
-    assert events[2].payload["details"]["reasonCode"] == "openai_thinking_not_supported_for_model"
+    metadata = events[1].payload
+    assert metadata["thinkingCapabilitySnapshot"]["status"] == "unknown-without-override"
+    assert metadata["thinkingCapabilitySnapshot"]["source"] == "unknown"
+    assert metadata["thinkingCapabilitySnapshot"]["series"] is None
+    assert metadata["thinkingSeriesDecision"]["reasonCode"] == "thinking_series_unknown_without_override"
+    assert metadata["thinkingSeriesDecision"]["errorCode"] == "thinking_series_unknown_without_override"
+    assert metadata["thinkingSeriesDecision"]["mappingReasonCode"] == "series_unresolved"
+    assert events[2].payload["code"] == "thinking_series_unknown_without_override"
+    assert events[2].payload["details"]["reasonCode"] == "route_not_verified"
+    assert events[2].payload["details"]["mappingReasonCode"] == "series_unresolved"
+    assert events[3].payload["code"] == "thinking_series_unknown_without_override"
     assert executor.calls == []
 
 
 
-def test_stream_events_fails_when_thinking_intent_cannot_be_mapped() -> None:
+def test_stream_events_fails_when_legacy_thinking_intent_maps_to_unsupported_series() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")

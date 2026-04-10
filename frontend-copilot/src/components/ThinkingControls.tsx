@@ -55,6 +55,7 @@ export function ThinkingPillGroup({
         readOnly ? 'thinking-pill-group--read-only' : '',
         className ?? '',
       ].filter((value) => value !== '').join(' ')}
+      role="group"
       aria-label={ariaLabel}
     >
       {options.map((option) => {

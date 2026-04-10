@@ -7,7 +7,6 @@ import pytest
 
 from app.copilot_runtime.agent_registry import AgentRegistry, build_default_agent_registry
 from app.copilot_runtime.bridge import AgentNotFoundError, RuntimeBridge, SessionNotFoundError
-from app.copilot_runtime.debug_logging import summarize_runtime_thinking_capability
 from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,

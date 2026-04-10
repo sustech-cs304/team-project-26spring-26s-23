@@ -95,10 +95,10 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--surface-bg);
-  animation: panel-fade-in 0.2s ease-out forwards;
+  animation: thinking-budget-slider-fade-in 0.2s ease-out forwards;
 }
 
-@keyframes panel-fade-in {
+@keyframes thinking-budget-slider-fade-in {
   from {
     opacity: 0;
     transform: translateY(2px);
