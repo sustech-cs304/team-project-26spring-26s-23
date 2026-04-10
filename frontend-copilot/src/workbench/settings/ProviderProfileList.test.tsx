@@ -24,6 +24,15 @@ afterEach(() => {
 })
 
 describe('ProviderProfileList', () => {
+  it('renders the add button without the provider type selector', () => {
+    const rendered = renderList()
+
+    expect(rendered.container.textContent).toContain('添加')
+    expect(rendered.container.textContent).not.toContain('新增 Provider 类型')
+
+    rendered.unmount()
+  })
+
   it('opens the context menu and wires copy delete actions to callbacks', async () => {
     const onCopyProvider = vi.fn()
     const onDeleteProvider = vi.fn()
@@ -138,9 +147,7 @@ function renderList(overrides?: {
         ]}
         activeProviderId="provider-a"
         providerQuery=""
-        addProviderTypeId="openai"
         onProviderQueryChange={vi.fn()}
-        onAddProviderTypeChange={vi.fn()}
         onActiveProviderChange={vi.fn()}
         onAddProvider={vi.fn()}
         onCopyProvider={overrides?.onCopyProvider ?? vi.fn()}
@@ -151,6 +158,7 @@ function renderList(overrides?: {
   })
 
   return {
+    container,
     getByTestId(testId: string) {
       const target = container.querySelector(`[data-testid="${testId}"]`)
       if (target === null) {

@@ -1,6 +1,5 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 
-import { getDefaultProviderCatalogEntry } from '../../provider-catalog'
 import type { ProviderProfile } from '../types'
 import { createModelProfileId } from './config'
 import { createCustomProvider, createProviderId } from './provider-profiles'
@@ -23,14 +22,14 @@ interface UseSettingsWorkspaceProviderListControllerArgs {
 interface UseSettingsWorkspaceProviderListControllerResult {
   providerQuery: string
   setProviderQuery: (value: string) => void
-  addProviderTypeId: string
-  setAddProviderTypeId: (value: string) => void
   updateActiveProvider: (patch: Partial<ProviderProfile>) => void
   handleAddProvider: () => void
   moveProviderToIndex: (draggingProviderId: string, nextIndex: number) => void
   handleCopyProvider: (providerId: string) => Promise<void>
   handleDeleteProvider: (providerId: string) => Promise<void>
 }
+
+const NEW_PROVIDER_TYPE_ID = 'openai'
 
 export function useSettingsWorkspaceProviderListController({
   providerProfiles,
@@ -42,7 +41,6 @@ export function useSettingsWorkspaceProviderListController({
   removeProviderSecret,
 }: UseSettingsWorkspaceProviderListControllerArgs): UseSettingsWorkspaceProviderListControllerResult {
   const [providerQuery, setProviderQuery] = useState('')
-  const [addProviderTypeId, setAddProviderTypeId] = useState(() => getDefaultProviderCatalogEntry().providerId)
 
   useEffect(() => {
     const nextActiveProviderId = resolveSettingsWorkspaceActiveProviderId(providerProfiles, activeProviderId)
@@ -61,8 +59,8 @@ export function useSettingsWorkspaceProviderListController({
 
   const handleAddProvider = () => {
     const nextProvider = createCustomProvider(
-      resolveNextProviderOrdinal(providerProfiles, addProviderTypeId),
-      addProviderTypeId,
+      resolveNextProviderOrdinal(providerProfiles, NEW_PROVIDER_TYPE_ID),
+      NEW_PROVIDER_TYPE_ID,
     )
 
     setProviderProfiles((previous) => [...previous, nextProvider])
@@ -143,8 +141,6 @@ export function useSettingsWorkspaceProviderListController({
   return {
     providerQuery,
     setProviderQuery,
-    addProviderTypeId,
-    setAddProviderTypeId,
     updateActiveProvider,
     handleAddProvider,
     moveProviderToIndex,

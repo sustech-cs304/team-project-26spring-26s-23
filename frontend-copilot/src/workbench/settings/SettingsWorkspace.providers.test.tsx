@@ -63,12 +63,26 @@ describe('SettingsWorkspace provider interactions', () => {
     })
 
     await flushAsyncEffects()
+    await flushAsyncEffects()
+    await flushAsyncEffects()
 
     expect(rendered.container.textContent).toContain('可在左侧添加服务商信息')
 
-    await clickElement(rendered.getByText('添加'))
+    const addProviderButton = rendered.container.querySelector('.settings-provider-add-row .secondary-button')
+    if (!(addProviderButton instanceof HTMLButtonElement)) {
+      throw new Error('Missing add provider button')
+    }
 
-    expect(rendered.getByTestId('settings-provider-card-openai-1').textContent).toContain('OpenAI')
+    await clickElement(addProviderButton)
+
+    let addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
+    for (let attempt = 0; attempt < 5 && addedProviderCard === null; attempt += 1) {
+      await flushAsyncEffects()
+      await waitForNextFrame()
+      addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
+    }
+
+    expect(addedProviderCard?.textContent).toContain('OpenAI')
     expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('OpenAI')
     expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('https://api.openai.com/v1')
 

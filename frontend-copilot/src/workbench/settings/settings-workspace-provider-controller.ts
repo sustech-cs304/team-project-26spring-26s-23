@@ -25,8 +25,6 @@ interface UseSettingsWorkspaceProviderControllerResult {
   activeProviderDetail: ProviderProfile
   providerQuery: string
   setProviderQuery: (value: string) => void
-  addProviderTypeId: string
-  setAddProviderTypeId: (value: string) => void
   activeProviderApiKeyDraft: string
   apiKeyVisible: boolean
   apiKeyFeedback: string | null
@@ -84,8 +82,6 @@ export function useSettingsWorkspaceProviderController({
   const {
     providerQuery,
     setProviderQuery,
-    addProviderTypeId,
-    setAddProviderTypeId,
     updateActiveProvider,
     handleAddProvider,
     moveProviderToIndex,
@@ -125,8 +121,6 @@ export function useSettingsWorkspaceProviderController({
     activeProviderDetail,
     providerQuery,
     setProviderQuery,
-    addProviderTypeId,
-    setAddProviderTypeId,
     activeProviderApiKeyDraft,
     apiKeyVisible,
     apiKeyFeedback,

@@ -88,7 +88,8 @@ describe('SettingsWorkspace structure', () => {
 
     expect(html).toContain('模型服务商')
     expect(html).toContain('可在左侧添加服务商信息')
-    expect(html).toContain('OpenRouter')
+    expect(html).toContain('添加')
+    expect(html).not.toContain('新增 Provider 类型')
     expect(html).not.toContain('Ollama Local')
     expect(html).not.toContain('BaiLiOpenAI')
   })

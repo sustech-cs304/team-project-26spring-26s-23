@@ -2,12 +2,10 @@ import { Plus } from 'lucide-react'
 import { useMemo } from 'react'
 
 import type { ProviderProfile } from '../types'
-import { SelectField } from '../components/FormFields'
 import { ProviderProfileContextMenu } from './ProviderProfileContextMenu'
 import { ProviderProfileDragOverlay } from './ProviderProfileDragOverlay'
 import { ProviderProfileListItem } from './ProviderProfileListItem'
 import { filterProviderProfiles } from './provider-profile-list-helpers'
-import { createProviderTypeSelectOptions } from './settings-workspace-provider-helpers'
 import { useProviderProfileContextMenu } from './useProviderProfileContextMenu'
 import { useProviderProfileListDrag } from './useProviderProfileListDrag'
 
@@ -15,9 +13,7 @@ interface ProviderProfileListProps {
   providerProfiles: ProviderProfile[]
   activeProviderId: string
   providerQuery: string
-  addProviderTypeId: string
   onProviderQueryChange: (value: string) => void
-  onAddProviderTypeChange: (value: string) => void
   onActiveProviderChange: (providerId: string) => void
   onAddProvider: () => void
   onCopyProvider: (providerId: string) => void | Promise<void>
@@ -29,9 +25,7 @@ export function ProviderProfileList({
   providerProfiles,
   activeProviderId,
   providerQuery,
-  addProviderTypeId,
   onProviderQueryChange,
-  onAddProviderTypeChange,
   onActiveProviderChange,
   onAddProvider,
   onCopyProvider,
@@ -42,11 +36,6 @@ export function ProviderProfileList({
     () => providerProfiles.find((profile) => profile.id === activeProviderId) ?? providerProfiles[0] ?? null,
     [activeProviderId, providerProfiles],
   )
-  const addProviderTypeOptions = useMemo(
-    () => createProviderTypeSelectOptions(null),
-    [],
-  )
-
   const filteredProviderProfiles = useMemo(
     () => filterProviderProfiles(providerProfiles, providerQuery),
     [providerProfiles, providerQuery],
@@ -77,12 +66,6 @@ export function ProviderProfileList({
 
       <div className="settings-stack settings-stack--compact">
         <div className="settings-provider-add-row">
-          <SelectField
-            label="新增 Provider 类型"
-            value={addProviderTypeId}
-            options={addProviderTypeOptions}
-            onChange={onAddProviderTypeChange}
-          />
           <button type="button" className="secondary-button" onClick={onAddProvider}>
             <Plus size={14} />
             <span>添加</span>
