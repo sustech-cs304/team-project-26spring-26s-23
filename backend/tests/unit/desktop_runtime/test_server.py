@@ -424,7 +424,7 @@ def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_e
             thread_id = thread_response.json()["threadId"]
             response = client.post(
                 "/",
-                json=_build_run_start_request(thread_id=thread_id),
+                json=_build_run_start_request(thread_id=thread_id, debug_mode_enabled=True),
                 headers={"Origin": "http://localhost:5173"},
             )
 
