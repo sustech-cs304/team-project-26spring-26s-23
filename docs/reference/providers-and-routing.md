@@ -87,7 +87,7 @@ provider catalog 里的 `runtimeStatus` 会直接影响这条 Provider 能不能
 
 ## 当前 route 的主形态是什么
 
-当前最核心的 route 形态是 `provider-model`。它至少包含：
+当前最核心的 route 形态是 `provider-model`。请求体里的 `modelRoute` 以 `routeRef` 为核心，其中 `routeRef` 至少包含：
 
 ```json
 {
@@ -97,7 +97,7 @@ provider catalog 里的 `runtimeStatus` 会直接影响这条 Provider 能不能
 }
 ```
 
-在运行时请求里，它会再和 `providerProfileId` 一起出现，用来稳定定位这次执行要走的 profile 和 model。
+如果请求方同时带了 `catalogRevision`，它表达的是“这次请求基于哪一版 catalog 组装出的 route 引用”。`providerProfileId` 更适合作为宿主解析后的 resolved route 字段，或出现在对应的 run 元数据 / 公共视图里理解，而不是请求组装时必须额外带上的字段。
 
 ## 宿主现在怎样解析 route
 

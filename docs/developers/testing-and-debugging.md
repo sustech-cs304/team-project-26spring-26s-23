@@ -63,21 +63,22 @@ npm run start
 
 ## 当前最重要的 smoke 入口
 
-当前聊天 smoke 是双轨：
+当前聊天 smoke 目前以现有 `thread/run` smoke 为主：
 
 ```powershell
 cd frontend-copilot
 node .\scripts\smoke-thread-run-chat.mjs --provider-profile-id custom-provider-1
 node .\scripts\smoke-thread-run-chat.mjs --provider-profile-id custom-provider-1 --enable-weather-tool
-node .\scripts\smoke-streaming-chat.mjs --provider-profile-id custom-provider-1
 ```
+
+当前仓库没有单独的 streaming smoke 脚本；相关验证目前主要通过 `smoke-thread-run-chat.mjs` 完成，公共的 runtime 启动、路由解析预检和共享 harness 逻辑收口在 `smoke-runtime-shared.mjs`。
 
 它们的区别是：
 
-| 脚本 | 主要验证什么 | 当前状态 |
+| 项目 | 主要验证什么 | 当前状态 |
 | --- | --- | --- |
-| `smoke-thread-run-chat.mjs` | 直接验证 `thread/run` 主链。 | 已可用 |
-| `smoke-streaming-chat.mjs` | 继续验证兼容壳 `session/create → message/send`。 | 已可用 |
+| `smoke-thread-run-chat.mjs` | 直接验证 `thread/run` 主链，也可附带天气工具闭环。 | 已可用 |
+| `smoke-runtime-shared.mjs` | 供现有 smoke 脚本复用的共享逻辑，不是单独执行的 streaming smoke 入口。 | 已可用 |
 | `--enable-weather-tool` | 顺带验证真实工具步骤闭环。 | 已可用 |
 
 ## 如果你要查聊天主链问题，建议这样排

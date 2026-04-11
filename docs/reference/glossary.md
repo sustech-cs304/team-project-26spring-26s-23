@@ -28,10 +28,10 @@ sidebar_position: 1
 | --- | --- |
 | provider catalog | 项目共享的 provider 清单。它定义 providerId、endpointType、authSchema、runtimeStatus、能力提示等公共事实。 |
 | provider profile | 用户在 settings workspace 里保存的一条具体 provider 配置。它会引用某个 provider catalog 条目，并带上实际可用的模型、地址和 secret 状态。 |
-| model route | 运行时要走哪条模型路径的稳定引用。当前核心是 `providerProfileId + routeRef`，其中 `routeRef` 的主形态是 `provider-model`。 |
+| model route | 运行时要走哪条模型路径的稳定引用。请求体里的 `modelRoute` 以 `routeRef` 为核心，要求 `routeRef.profileId + modelId`，并可选带 `catalogRevision`；`routeRef` 的主形态是 `provider-model`。 |
 | 默认模型路由 | settings workspace 里保存的首选模型路由，例如主助手模型路由。它提供默认值，但不代替每次请求显式携带的 route。 |
 | 请求级模型路由 | 每次 `run/start` 或兼容层消息请求里显式带上的模型路由。真正执行哪条 route，最终以这一步为准。 |
-| resolved route | 宿主完成 route 解析后，运行时真正拿到的执行信息。它会补齐 provider、baseUrl、认证方式等执行所需字段。 |
+| resolved route | 宿主完成 route 解析后，运行时真正拿到的执行信息。它会补齐 provider、baseUrl、认证方式等执行所需字段，也可能重复携带 `providerProfileId` 这类已解析标识。 |
 | host model route bridge | 宿主侧私有解析桥。它负责把请求里的 route 解析成 runtime 可执行的 resolved route，并在边界内注入私有认证信息。 |
 
 ## 配置分层相关术语
