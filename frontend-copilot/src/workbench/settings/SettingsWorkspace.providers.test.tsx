@@ -176,7 +176,7 @@ describe('SettingsWorkspace provider interactions', () => {
 
     await flushAsyncEffects()
 
-    expect(rendered.container.textContent).toContain('Provider: Ollama')
+    expect(rendered.container.textContent).toContain('支持：流式、工具、视觉、推理')
     expect(rendered.container.textContent).toContain('API 密钥（可选）')
     expect(rendered.container.textContent).toContain('本地 Ollama 默认无需 API Key')
     expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1')
@@ -222,9 +222,9 @@ describe('SettingsWorkspace provider interactions', () => {
 
     await flushAsyncEffects()
 
-    expect(rendered.getByTestId('settings-provider-status-legacy-provider').textContent).toContain('不受支持的配置')
-    expect(rendered.getByTestId('provider-status-banner').textContent).toContain('历史 provider 不在当前 catalog 中，仅保留查看与迁移。')
-    expect(rendered.container.textContent).toContain('Provider 类型、运行状态与基础语义均来自统一 catalog。')
+    expect(rendered.getByTestId('settings-provider-status-legacy-provider').textContent).toContain('当前服务不可用')
+    expect(rendered.getByTestId('provider-status-banner').textContent).toContain('请重新选择服务类型或检查配置。')
+    expect(rendered.container.textContent).toContain('在这里管理可用的模型服务。')
 
     rendered.unmount()
   })

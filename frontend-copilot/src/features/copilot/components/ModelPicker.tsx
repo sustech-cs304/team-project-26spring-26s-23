@@ -206,7 +206,6 @@ export function ModelPicker({
                                 <ModelPickerIcon icon={model.icon} title={model.name} />
                                 <span className="copilot-model-picker__option-body">
                                   <span className="copilot-model-picker__option-name">{model.name}</span>
-                                  <span className="copilot-model-picker__option-meta">{model.id}</span>
                                   {model.unavailableReason !== null && (
                                     <span className="copilot-model-picker__option-meta">{model.unavailableReason}</span>
                                   )}

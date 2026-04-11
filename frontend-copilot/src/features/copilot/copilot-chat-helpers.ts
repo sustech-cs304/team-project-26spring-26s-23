@@ -531,40 +531,29 @@ export function formatRuntimeMessageSendError(error: unknown): string {
   if (error instanceof RuntimeRequestError) {
     switch (error.code) {
       case 'agent_mismatch':
-        return `agent_mismatch：当前消息携带的 agent 校验值与会话绑定智能体不一致。${error.message}`
-      case 'tool_not_found':
-        return `tool_not_found：本次消息启用了后端未注册的 toolId。${error.message}`
-      case 'tool_unavailable':
-        return `tool_unavailable：本次消息请求的工具当前不可用。${error.message}`
-      case 'invalid_request':
-        return `invalid_request：消息请求结构无效。${error.message}`
       case 'capabilities_version_stale':
-        return `capabilities_version_stale：当前能力面版本已过期，需要重新拉取 capabilities 后再发。${error.message}`
+        return '当前会话已更新，请重新发送。'
+      case 'tool_not_found':
+      case 'tool_unavailable':
+        return '当前所选工具暂不可用，请调整后重试。'
+      case 'invalid_request':
+        return '当前消息暂时无法发送，请调整内容后重试。'
       case 'thinking_not_supported_for_route':
-        return `thinking_not_supported_for_route：当前模型路由不支持所选思考档位。${error.message}`
+        return '当前模型暂不支持所选思考设置，请调整后重试。'
       case 'provider_catalog_only':
-        return `provider_catalog_only：当前 provider 仅完成 catalog 接入，运行时尚未启用。${error.message}`
       case 'provider_legacy_unsupported':
-        return `provider_legacy_unsupported：当前 provider 已标记为历史兼容 / 不受支持。${error.message}`
       case 'provider_runtime_not_enabled':
-        return `provider_runtime_not_enabled：当前 provider 运行时未启用。${error.message}`
       case 'adapter_missing':
-        return `adapter_missing：当前 provider 缺少 Python runtime adapter。${error.message}`
+      case 'provider_adapter_mismatch':
+      case 'provider_profile_not_found':
+      case 'route_ref_snapshot_mismatch':
+      case 'host_model_route_unavailable':
+      case 'host_model_route_access_denied':
+        return '当前模型不可用，请重新选择模型。'
       case 'provider_auth_missing':
       case 'provider_secret_missing':
-        return `${error.code}：当前 provider 缺少必需认证信息。${error.message}`
       case 'provider_auth_kind_unsupported':
-        return `provider_auth_kind_unsupported：当前 provider 不支持该认证方式。${error.message}`
-      case 'provider_adapter_mismatch':
-        return `provider_adapter_mismatch：当前模型路由的 adapter 信息与 catalog 不一致。${error.message}`
-      case 'provider_profile_not_found':
-        return `provider_profile_not_found：当前模型路由对应的 provider 配置不存在。${error.message}`
-      case 'route_ref_snapshot_mismatch':
-        return `route_ref_snapshot_mismatch：当前模型路由已失效，请重新选择。${error.message}`
-      case 'host_model_route_unavailable':
-        return `host_model_route_unavailable：宿主模型路由解析服务当前不可用。${error.message}`
-      case 'host_model_route_access_denied':
-        return `host_model_route_access_denied：宿主模型路由解析凭据无效。${error.message}`
+        return '请先完成模型服务配置后再试。'
       default:
         return error.message
     }
@@ -623,27 +612,23 @@ export function describeThinkingCapabilityUnavailableReason(
   }
 
   switch (capability.reasonCode) {
-    case 'provider_catalog_only':
-      return '当前 provider 仅完成 catalog 接入'
-    case 'provider_legacy_unsupported':
-      return '当前 provider 已废弃或不受支持'
-    case 'provider_runtime_not_enabled':
-      return '当前 provider 运行时未启用'
-    case 'adapter_missing':
-      return '当前 provider 缺少 runtime adapter'
     case 'provider_auth_missing':
     case 'provider_secret_missing':
-      return '当前 provider 缺少认证信息'
     case 'provider_auth_kind_unsupported':
-      return '当前 provider 认证方式不受支持'
+      return '请先完成模型配置'
     case 'provider_profile_not_found':
     case 'route_ref_snapshot_mismatch':
-      return '当前模型路由已失效'
+      return '当前模型不可用，请重新选择'
+    case 'provider_catalog_only':
+    case 'provider_legacy_unsupported':
+    case 'provider_runtime_not_enabled':
+    case 'adapter_missing':
+    case 'provider_adapter_mismatch':
     case 'host_model_route_unavailable':
     case 'host_model_route_access_denied':
-      return 'thinking 能力查询失败'
+      return '当前无法调整思考设置'
     default:
-      return '当前模型不支持'
+      return '当前模型暂不支持思考设置'
   }
 }
 

@@ -93,7 +93,7 @@ export function ProviderModelListPanel({
             })
           ) : (
             <div className="model-list-empty">
-              {canEditModels ? '当前服务商还没有可用模型。点击下方按钮添加第一个模型。' : '当前 provider 的模型列表为只读。'}
+              {canEditModels ? '当前服务还没有可用模型。点击下方按钮添加第一个模型。' : '当前模型列表暂不可编辑。'}
             </div>
           )}
         </div>

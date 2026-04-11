@@ -444,7 +444,7 @@ export function ProviderModelEditorDialog({
                   <div className="model-editor-thinking-panel__section">
                     <span className="form-field__label">预算</span>
                     <ThinkingBudgetSlider
-                      label="精确推理 Token 预算"
+                      label="思考预算"
                       ariaLabel="默认预算"
                       budgetTokens={budgetDefaultTokens}
                       inputTestId="settings-thinking-budget-input"

@@ -184,8 +184,8 @@ describe('Copilot thinking selector', () => {
 
     const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
     expect(getThinkingCapability).toHaveBeenCalledTimes(1)
-    expect(thinkingTrigger.title).toBe('当前模型不支持')
-    expect(thinkingTrigger.getAttribute('aria-label')).toBe('当前模型不支持')
+    expect(thinkingTrigger.title).toBe('当前模型暂不支持思考设置')
+    expect(thinkingTrigger.getAttribute('aria-label')).toBe('当前模型暂不支持思考设置')
     expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
 
     await clickElement(thinkingTrigger)
@@ -711,7 +711,7 @@ describe('Copilot thinking selector', () => {
     await flushUi()
 
     const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
-    expect(thinkingTrigger.title).toContain('当前 provider 缺少 runtime adapter')
+    expect(thinkingTrigger.title).toContain('当前无法调整思考设置')
     expect(thinkingTrigger.disabled).toBe(false)
 
     rendered.unmount()

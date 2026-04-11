@@ -131,9 +131,36 @@ function createBudgetTemplate(overrides: Partial<ThinkingSeriesBudgetTemplate> =
 
 const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
   {
+    id: 'qwen-thinking-switch-v1',
+    label: '思考开关',
+    hint: '关闭 / 开启',
+    editorType: 'discrete',
+    inputKind: 'binary',
+    template: {
+      editorType: 'discrete',
+      allowedValues: [
+        createCodeValue('false', '关闭'),
+        createCodeValue('true', '开启'),
+      ],
+      defaultValue: createCodeValue('true', '开启'),
+    },
+  },
+  {
+    id: 'deepseek-fixed-reasoning-v1',
+    label: '固定思考',
+    hint: '固定思考，不可调整',
+    editorType: 'fixed',
+    inputKind: 'fixed',
+    template: {
+      editorType: 'fixed',
+      allowedValues: [createFixedValue('固定推理')],
+      defaultValue: createFixedValue('固定推理'),
+    },
+  },
+  {
     id: 'openai-6-level-superset-v1',
-    label: 'OpenAI 6 档总超集',
-    hint: '无（none）/ 极简（minimal）/ 低 / 中 / 高 / 超高',
+    label: '六档思考',
+    hint: '无 / 极简 / 低 / 中 / 高 / 超高',
     editorType: 'discrete',
     inputKind: 'discrete',
     template: {
@@ -150,59 +177,9 @@ const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
     },
   },
   {
-    id: 'openai-4-level-minimal-v1',
-    label: 'OpenAI 4 档 Minimal 系',
-    hint: '极简（minimal）/ 低 / 中 / 高',
-    editorType: 'discrete',
-    inputKind: 'discrete',
-    template: {
-      editorType: 'discrete',
-      allowedValues: [
-        createCodeValue('minimal', '极简'),
-        createCodeValue('low', '低'),
-        createCodeValue('medium', '中'),
-        createCodeValue('high', '高'),
-      ],
-      defaultValue: createCodeValue('medium', '中'),
-    },
-  },
-  {
-    id: UNIFIED_4_LEVEL_SERIES_ID,
-    label: '统一 4 档系列',
-    hint: '无（none）/ 低 / 中 / 高',
-    editorType: 'discrete',
-    inputKind: 'discrete',
-    template: {
-      editorType: 'discrete',
-      allowedValues: [
-        createCodeValue('none', '无'),
-        createCodeValue('low', '低'),
-        createCodeValue('medium', '中'),
-        createCodeValue('high', '高'),
-      ],
-      defaultValue: createCodeValue('medium', '中'),
-    },
-  },
-  {
-    id: 'openai-3-level-classic-v1',
-    label: 'OpenAI 3 档 Classic 系',
-    hint: '低 / 中 / 高',
-    editorType: 'discrete',
-    inputKind: 'discrete',
-    template: {
-      editorType: 'discrete',
-      allowedValues: [
-        createCodeValue('low', '低'),
-        createCodeValue('medium', '中'),
-        createCodeValue('high', '高'),
-      ],
-      defaultValue: createCodeValue('medium', '中'),
-    },
-  },
-  {
     id: 'anthropic-adaptive-max-v1',
-    label: 'Anthropic Adaptive Max 5 态',
-    hint: '关闭（disabled）/ 低 / 中 / 高 / 最大（max）',
+    label: '五档思考',
+    hint: '关闭 / 低 / 中 / 高 / 最大',
     editorType: 'discrete',
     inputKind: 'discrete',
     template: {
@@ -218,9 +195,59 @@ const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
     },
   },
   {
+    id: 'openai-4-level-minimal-v1',
+    label: '四档思考（扩展）',
+    hint: '极简 / 低 / 中 / 高',
+    editorType: 'discrete',
+    inputKind: 'discrete',
+    template: {
+      editorType: 'discrete',
+      allowedValues: [
+        createCodeValue('minimal', '极简'),
+        createCodeValue('low', '低'),
+        createCodeValue('medium', '中'),
+        createCodeValue('high', '高'),
+      ],
+      defaultValue: createCodeValue('medium', '中'),
+    },
+  },
+  {
+    id: UNIFIED_4_LEVEL_SERIES_ID,
+    label: '四档思考',
+    hint: '无 / 低 / 中 / 高',
+    editorType: 'discrete',
+    inputKind: 'discrete',
+    template: {
+      editorType: 'discrete',
+      allowedValues: [
+        createCodeValue('none', '无'),
+        createCodeValue('low', '低'),
+        createCodeValue('medium', '中'),
+        createCodeValue('high', '高'),
+      ],
+      defaultValue: createCodeValue('medium', '中'),
+    },
+  },
+  {
+    id: 'openai-3-level-classic-v1',
+    label: '三档思考',
+    hint: '低 / 中 / 高',
+    editorType: 'discrete',
+    inputKind: 'discrete',
+    template: {
+      editorType: 'discrete',
+      allowedValues: [
+        createCodeValue('low', '低'),
+        createCodeValue('medium', '中'),
+        createCodeValue('high', '高'),
+      ],
+      defaultValue: createCodeValue('medium', '中'),
+    },
+  },
+  {
     id: 'anthropic-budget-v1',
-    label: 'Anthropic Budget',
-    hint: '关闭（off）/ 预算（budget_tokens）',
+    label: '思考预算',
+    hint: '关闭 / 预算',
     editorType: 'budget',
     inputKind: 'budget',
     template: {
@@ -234,8 +261,8 @@ const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
   },
   {
     id: 'gemini-2.5-budget-v1',
-    label: 'Gemini 2.5 Budget',
-    hint: '关闭（off）/ 动态（dynamic）/ 预算（budget_tokens）',
+    label: '动态思考预算',
+    hint: '关闭 / 动态 / 预算',
     editorType: 'budget',
     inputKind: 'budget',
     template: {
@@ -246,33 +273,6 @@ const THINKING_SERIES_PRESETS: ThinkingSeriesPreset[] = [
       ],
       defaultValue: createBudgetValue('dynamic', '动态'),
       budget: createBudgetTemplate(),
-    },
-  },
-  {
-    id: 'qwen-thinking-switch-v1',
-    label: 'Qwen Thinking 开关',
-    hint: '关闭（false）/ 开启（true）',
-    editorType: 'discrete',
-    inputKind: 'binary',
-    template: {
-      editorType: 'discrete',
-      allowedValues: [
-        createCodeValue('false', '关闭'),
-        createCodeValue('true', '开启'),
-      ],
-      defaultValue: createCodeValue('true', '开启'),
-    },
-  },
-  {
-    id: 'deepseek-fixed-reasoning-v1',
-    label: 'DeepSeek 固定推理',
-    hint: '固定推理，不可调',
-    editorType: 'fixed',
-    inputKind: 'fixed',
-    template: {
-      editorType: 'fixed',
-      allowedValues: [createFixedValue('固定推理')],
-      defaultValue: createFixedValue('固定推理'),
     },
   },
 ]
@@ -314,8 +314,8 @@ export function buildThinkingDeclarationSeriesOptions(currentSeries: string | un
     ...THINKING_SERIES_OPTIONS,
     {
       value: normalizedCurrentSeries,
-      label: normalizedCurrentSeries,
-      hint: '自定义系列',
+      label: '自定义方案',
+      hint: '按当前模型设置',
     },
   ]
 }

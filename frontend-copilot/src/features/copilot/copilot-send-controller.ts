@@ -105,15 +105,15 @@ export function getCopilotSendDisabledReason(input: {
   }
 
   if (!input.hasConfiguredModels) {
-    return '尚未配置模型，请先前往设置页添加模型服务商和模型。'
+    return '尚未配置模型，请先前往设置页完成模型配置。'
   }
 
   if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
-    return input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。'
+    return input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。'
   }
 
   if (!input.hasAvailableModels) {
-    return '当前没有可用于聊天发送的模型路由，请前往设置页调整 provider 与模型配置。'
+    return '当前没有可用模型，请前往设置页调整模型配置。'
   }
 
   if (input.composerDraft.messageText.trim() === '') {
@@ -122,10 +122,10 @@ export function getCopilotSendDisabledReason(input: {
 
   if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
     if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
-      return input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。'
+      return input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。'
     }
 
-    return '请先选择本次发送要使用的模型路由。'
+    return '请先选择模型。'
   }
 
   const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
@@ -163,17 +163,17 @@ export async function orchestrateCopilotSend(input: {
   }
 
   if (!input.hasConfiguredModels) {
-    input.setSendError('尚未配置模型，请先前往设置页添加模型服务商和模型。')
+    input.setSendError('尚未配置模型，请先前往设置页完成模型配置。')
     return
   }
 
   if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
-    input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。')
+    input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。')
     return
   }
 
   if (!input.hasAvailableModels) {
-    input.setSendError('当前没有可用于聊天发送的模型路由，请前往设置页调整 provider 与模型配置。')
+    input.setSendError('当前没有可用模型，请前往设置页调整模型配置。')
     return
   }
 
@@ -185,11 +185,11 @@ export async function orchestrateCopilotSend(input: {
 
   if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
     if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
-      input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选中的模型路由不可用于聊天发送。')
+      input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。')
       return
     }
 
-    input.setSendError('请先选择本次发送要使用的模型路由。')
+    input.setSendError('请先选择模型。')
     return
   }
 

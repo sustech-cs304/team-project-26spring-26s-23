@@ -442,27 +442,27 @@ describe('copilot chat helpers', () => {
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('agent_mismatch: session bound agent differs', {
       code: 'agent_mismatch',
       status: 409,
-    }))).toContain('agent_mismatch：当前消息携带的 agent 校验值与会话绑定智能体不一致')
+    }))).toBe('当前会话已更新，请重新发送。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('tool_not_found: unknown tool', {
       code: 'tool_not_found',
       status: 400,
-    }))).toContain('tool_not_found：本次消息启用了后端未注册的 toolId')
+    }))).toBe('当前所选工具暂不可用，请调整后重试。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('invalid_request: bad payload', {
       code: 'invalid_request',
       status: 400,
-    }))).toContain('invalid_request：消息请求结构无效')
+    }))).toBe('当前消息暂时无法发送，请调整内容后重试。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('thinking_not_supported_for_route: unsupported thinking selection', {
       code: 'thinking_not_supported_for_route',
       status: 400,
-    }))).toContain('thinking_not_supported_for_route：当前模型路由不支持所选思考档位')
+    }))).toBe('当前模型暂不支持所选思考设置，请调整后重试。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('provider_catalog_only: not enabled', {
       code: 'provider_catalog_only',
       status: 409,
-    }))).toContain('provider_catalog_only：当前 provider 仅完成 catalog 接入，运行时尚未启用')
+    }))).toBe('当前模型不可用，请重新选择模型。')
   })
 
   it('builds a stable unsupported thinking capability snapshot from runtime request errors', () => {
@@ -507,6 +507,6 @@ describe('copilot chat helpers', () => {
       },
       overrideLevels: [],
     })
-    expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前 provider 仅完成 catalog 接入')
+    expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前无法调整思考设置')
   })
 })

@@ -250,10 +250,15 @@ function mapToolSegmentStatus(
 
 function formatFailureMessage(terminal: CopilotTerminalSegment): string {
   if (terminal.failure === null) {
-    return 'run_failed: Runtime run failed.'
+    return '当前响应失败，请重试。'
   }
 
-  return `${terminal.failure.code}: ${terminal.failure.message}`
+  switch (terminal.failure.code) {
+    case 'tool_execution_failed':
+      return '工具执行失败，请重试。'
+    default:
+      return '当前响应失败，请重试。'
+  }
 }
 
 function formatCancelledReason(reason: string): string {

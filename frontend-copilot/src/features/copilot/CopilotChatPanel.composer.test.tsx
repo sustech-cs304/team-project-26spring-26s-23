@@ -443,7 +443,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     await setFormControlValue(messageInput, '请不要再靠同名字符串恢复默认模型')
     expect(sendButton.disabled).toBe(true)
-    expect(sendButton.title).toBe('请先选择本次发送要使用的模型路由。')
+    expect(sendButton.title).toBe('请先选择模型。')
 
     await clickElement(modelTrigger)
     expect(rendered.getByTestId('chat-model-option-provider-alpha-provider-alpha:shared-model')).not.toBeNull()
@@ -492,7 +492,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(modelTrigger.textContent).toContain('尚未配置模型')
     expect(modelTrigger.textContent).not.toContain('openai/gpt-4.1')
     expect(sendButton.disabled).toBe(true)
-    expect(sendButton.title).toBe('尚未配置模型，请先前往设置页添加模型服务商和模型。')
+    expect(sendButton.title).toBe('尚未配置模型，请先前往设置页完成模型配置。')
     expect(rendered.getByTestId('chat-no-model-empty-state').textContent).toContain('尚未配置模型')
     expect(rendered.getByTestId('chat-no-model-empty-state').textContent).toContain('请先前往设置页添加模型服务商和模型。')
 
@@ -877,7 +877,7 @@ describe('CopilotChatPanel composer interactions', () => {
       'assistant placeholder removed after failed run',
     )
 
-    expect(rendered.container.textContent).toContain('tool_execution_failed: Tool failed: boom')
+    expect(rendered.container.textContent).toContain('工具执行失败，请重试。')
 
     rendered.unmount()
   })
@@ -1087,7 +1087,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(rendered.container.textContent).toContain('请使用不存在的工具')
     expect(rendered.container.textContent).toContain('发送失败')
-    expect(rendered.container.textContent).toContain('tool_not_found：本次消息启用了后端未注册的 toolId')
+    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
 
     rendered.unmount()
   })
@@ -1152,12 +1152,12 @@ describe('CopilotChatPanel composer interactions', () => {
     await setFormControlValue(messageInput, '请执行一次真实流式对话')
 
     expect(sendButton.disabled).toBe(true)
-    expect(sendButton.title).toBe('历史兼容 / 当前未启用')
+    expect(sendButton.title).toBe('当前模型暂不可用于聊天。')
 
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(0)
-    expect(scrollRegion.textContent).toContain('历史兼容 / 当前未启用')
+    expect(scrollRegion.textContent).toContain('当前模型暂不可用于聊天。')
     expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
 
     rendered.unmount()
@@ -1240,7 +1240,7 @@ describe('CopilotChatPanel composer interactions', () => {
     await setFormControlValue(messageInput, '第一次先触发不支持路由错误')
     await submitForm(composer)
 
-    expect(scrollRegion.textContent).toContain('历史兼容 / 当前未启用')
+    expect(scrollRegion.textContent).toContain('当前模型暂不可用于聊天。')
     expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
 
     await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
@@ -1250,7 +1250,7 @@ describe('CopilotChatPanel composer interactions', () => {
     await waitForText(rendered.container, '这是助手回显')
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
-    expect(scrollRegion.textContent).not.toContain('历史兼容 / 当前未启用')
+    expect(scrollRegion.textContent).not.toContain('当前模型暂不可用于聊天。')
     expect(scrollRegion.textContent).toContain('第二次发送应恢复成功')
     expect(scrollRegion.textContent).toContain('这是助手回显')
 

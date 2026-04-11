@@ -534,10 +534,15 @@ function isRenderableAssistantSegment(segment: CopilotRunSegment): boolean {
 
 function formatFailureMessage(failure: CopilotRunFailureSummary | null): string {
   if (failure === null) {
-    return 'run_failed: Runtime run failed.'
+    return '当前响应失败，请重试。'
   }
 
-  return `${failure.code}: ${failure.message}`
+  switch (failure.code) {
+    case 'tool_execution_failed':
+      return '工具执行失败，请重试。'
+    default:
+      return '当前响应失败，请重试。'
+  }
 }
 
 function formatCancelledReason(reason: string): string {

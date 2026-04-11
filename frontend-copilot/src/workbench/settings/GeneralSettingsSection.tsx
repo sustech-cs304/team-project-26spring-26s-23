@@ -51,7 +51,7 @@ export function GeneralSettingsSection({
             <ToggleSwitch label="自动备份" checked={backupEnabled} onChange={onBackupEnabledChange} />
             <ToggleSwitch
               label="启用调试模式"
-              description="显示运行诊断，并让新的聊天运行自动开启后端 runtime chain debug 日志。"
+              description="开启后会显示更多问题排查信息。"
               checked={debugModeEnabled}
               onChange={onDebugModeEnabledChange}
             />

@@ -204,11 +204,6 @@ export function CopilotMessageList({
                               ))}
                             </div>
                           )}
-                          {turn.kind === 'diagnostic' && (
-                            <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
-                              诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
-                            </p>
-                          )}
                         </>
                       )}
               </article>
@@ -224,9 +219,7 @@ function buildVisibleConversation(input: {
   showDiagnostics: boolean
   transientError: string | null
 }): CopilotMessageListItem[] {
-  const filteredConversation = input.showDiagnostics
-    ? input.conversation
-    : input.conversation.filter((turn) => turn.kind !== 'diagnostic')
+  const filteredConversation = input.conversation.filter((turn) => turn.kind !== 'diagnostic')
   const trimmedTransientError = input.transientError?.trim() ?? ''
 
   if (trimmedTransientError === '') {
@@ -379,34 +372,6 @@ function renderMessageBody(turn: CopilotMessageListItem) {
   return <p className="copilot-chat__message-text">{turn.content}</p>
 }
 
-type ThinkingDetailTurn = {
-  requestedThinkingSelection?: CopilotAssistantMessageItem['requestedThinkingSelection']
-  appliedThinkingSelection?: CopilotAssistantMessageItem['appliedThinkingSelection']
-  requestedThinkingLevel?: CopilotAssistantMessageItem['requestedThinkingLevel']
-  appliedThinkingLevel?: CopilotAssistantMessageItem['appliedThinkingLevel']
-  thinkingCapabilitySnapshot?: CopilotAssistantMessageItem['thinkingCapabilitySnapshot']
-  reasoningTraceState?: CopilotAssistantMessageItem['reasoningTraceState']
-  reasoningSuppressionBasis?: CopilotAssistantMessageItem['reasoningSuppressionBasis']
-}
-
-function extractThinkingDetailTurn(turn: CopilotMessageListItem): ThinkingDetailTurn {
-  switch (turn.kind) {
-    case 'assistant':
-    case 'terminal':
-      return {
-        requestedThinkingSelection: turn.requestedThinkingSelection,
-        appliedThinkingSelection: turn.appliedThinkingSelection,
-        requestedThinkingLevel: turn.requestedThinkingLevel,
-        appliedThinkingLevel: turn.appliedThinkingLevel,
-        thinkingCapabilitySnapshot: turn.thinkingCapabilitySnapshot,
-        reasoningTraceState: turn.reasoningTraceState,
-        reasoningSuppressionBasis: turn.reasoningSuppressionBasis,
-      }
-    default:
-      return {}
-  }
-}
-
 function buildDetailRows(
   turn: CopilotMessageListItem,
   showDiagnostics: boolean,
@@ -415,175 +380,9 @@ function buildDetailRows(
   label: string
   value: string
 }> {
-  const thinkingDetailTurn = extractThinkingDetailTurn(turn)
-  const thinkingDetailRows = buildThinkingDetailRows(thinkingDetailTurn, showDiagnostics)
-
-  switch (turn.kind) {
-    case 'reasoning':
-    case 'tool':
-      return []
-    case 'diagnostic':
-      return [
-        {
-          kind: 'meta',
-          label: '阶段',
-          value: turn.diagnostic.stage,
-        },
-        {
-          kind: 'meta',
-          label: '代码',
-          value: turn.diagnostic.code,
-        },
-      ]
-    case 'terminal': {
-      const terminalRows = turn.terminalPhase === 'failed' && turn.failure !== null
-        ? [{
-            kind: 'error' as const,
-            label: '代码',
-            value: turn.failure.code,
-          }]
-        : []
-      return [...terminalRows, ...thinkingDetailRows]
-    }
-    case 'assistant':
-      return thinkingDetailRows
-    case 'user':
-      return []
-  }
-}
-
-function buildThinkingDetailRows(
-  turn: ThinkingDetailTurn,
-  showDiagnostics: boolean,
-): Array<{
-  kind: 'meta'
-  label: string
-  value: string
-}> {
-  if (!showDiagnostics) {
-    return []
-  }
-
-  const rows: Array<{
-    kind: 'meta'
-    label: string
-    value: string
-  }> = []
-
-  if (turn.requestedThinkingSelection !== undefined) {
-    rows.push({
-      kind: 'meta',
-      label: '请求系列值',
-      value: formatThinkingSelection(turn.requestedThinkingSelection),
-    })
-  }
-
-  if (turn.appliedThinkingSelection !== undefined) {
-    rows.push({
-      kind: 'meta',
-      label: '应用系列值',
-      value: formatThinkingSelection(turn.appliedThinkingSelection),
-    })
-  }
-
-  if (turn.thinkingCapabilitySnapshot !== undefined && turn.thinkingCapabilitySnapshot !== null) {
-    rows.push({
-      kind: 'meta',
-      label: '能力来源',
-      value: `${turn.thinkingCapabilitySnapshot.source} / ${turn.thinkingCapabilitySnapshot.status}`,
-    })
-    rows.push({
-      kind: 'meta',
-      label: '原因码',
-      value: turn.thinkingCapabilitySnapshot.reasonCode,
-    })
-    if (
-      turn.thinkingCapabilitySnapshot.providerHint !== undefined
-      && turn.thinkingCapabilitySnapshot.providerHint !== null
-    ) {
-      rows.push({
-        kind: 'meta',
-        label: 'Provider Hint',
-        value: turn.thinkingCapabilitySnapshot.providerHint,
-      })
-    }
-  }
-
-  if (turn.reasoningTraceState !== undefined) {
-    rows.push({
-      kind: 'meta',
-      label: '思考轨迹',
-      value: formatReasoningTraceState(turn.reasoningTraceState),
-    })
-  }
-
-  if (turn.reasoningSuppressionBasis !== undefined && turn.reasoningSuppressionBasis !== null) {
-    rows.push({
-      kind: 'meta',
-      label: '抑制依据',
-      value: formatReasoningSuppressionBasis(turn.reasoningSuppressionBasis),
-    })
-  }
-
-  return rows
-}
-
-function formatReasoningTraceState(
-  traceState: NonNullable<ThinkingDetailTurn['reasoningTraceState']>,
-): string {
-  switch (traceState) {
-    case 'not_observed':
-      return '未收到'
-    case 'suppressed':
-      return '已抑制'
-    case 'visible':
-      return '已显示'
-  }
-}
-
-function formatReasoningSuppressionBasis(
-  basis: NonNullable<ThinkingDetailTurn['reasoningSuppressionBasis']>,
-): string {
-  const suppressionLabel = basis.shouldSuppress ? '已启用抑制' : '未启用抑制'
-  const reasonCode = basis.reasonCode?.trim() ?? ''
-  const reasoningVisibility = basis.reasoningVisibility?.trim() ?? 'visible'
-
-  return reasonCode === ''
-    ? `${suppressionLabel} / ${basis.source} / ${reasoningVisibility}`
-    : `${suppressionLabel} / ${basis.source} / ${reasonCode} / ${reasoningVisibility}`
-}
-
-function formatThinkingSelection(
-  selection: ThinkingDetailTurn['requestedThinkingSelection'],
-): string {
-  if (selection === undefined) {
-    return '未提供'
-  }
-  if (selection === null) {
-    return '未请求'
-  }
-
-  const value = selection.value
-  if (value?.valueType === 'code') {
-    return `${selection.series} / ${value.code}`
-  }
-  if (value?.valueType === 'budget') {
-    return value.mode === 'budget'
-      ? `${selection.series} / budget:${value.budgetTokens ?? 0}`
-      : `${selection.series} / ${value.mode}`
-  }
-  if (value?.valueType === 'fixed') {
-    return `${selection.series} / fixed`
-  }
-
-  if (typeof selection.level === 'string' && selection.level.trim() !== '') {
-    return `${selection.series} / ${selection.level}`
-  }
-  if (selection.mode === 'budget' && typeof selection.budgetTokens === 'number') {
-    return `${selection.series} / budget:${selection.budgetTokens}`
-  }
-
-  return selection.series
+  void turn
+  void showDiagnostics
+  return []
 }
 
 function ReasoningMessageCard({

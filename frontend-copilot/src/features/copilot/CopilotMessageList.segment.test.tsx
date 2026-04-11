@@ -199,7 +199,7 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html.indexOf('天气工具被调用')).toBeLessThan(html.indexOf('第二段'))
   })
 
-  it('keeps rendered segments visible when a run fails and adds diagnostic plus terminal markers', () => {
+  it('keeps rendered segments visible when a run fails and shows a simplified terminal message', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),
       phase: 'failed',
@@ -287,15 +287,15 @@ describe('CopilotMessageList segment rendering', () => {
 
     expect(html).toContain('已生成的第一段')
     expect(html).toContain('工具调用失败')
-    expect(html).toContain('boom')
-    expect(html).toContain('运行诊断')
-    expect(html).toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
+    expect(html).not.toContain('boom')
+    expect(html).not.toContain('运行诊断')
+    expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
     expect(html).toContain('发送失败')
-    expect(html).toContain('tool_execution_failed: Tool failed: boom')
+    expect(html).toContain('工具执行失败，请重试。')
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
   })
 
-  it('renders thinking metadata detail rows for assistant and terminal items in diagnostic mode', () => {
+  it('does not render removed thinking metadata detail rows in diagnostic mode', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),
       phase: 'failed',
@@ -359,18 +359,12 @@ describe('CopilotMessageList segment rendering', () => {
       ],
     })
 
-    expect(html).toContain('请求系列值')
-    expect(html).toContain('compat-discrete-levels-v1 / medium')
-    expect(html).toContain('应用系列值')
-    expect(html).toContain('compat-discrete-levels-v1 / auto')
-    expect(html).toContain('能力来源')
-    expect(html).toContain('override / unknown-with-override')
-    expect(html).toContain('原因码')
-    expect(html).toContain('override_candidate_levels_applied')
-    expect(html).toContain('Provider Hint')
-    expect(html).toContain('unknown-route-override')
-    expect(html).toContain('思考轨迹')
-    expect(html).toContain('未收到')
+    expect(html).not.toContain('请求系列值')
+    expect(html).not.toContain('应用系列值')
+    expect(html).not.toContain('能力来源')
+    expect(html).not.toContain('原因码')
+    expect(html).not.toContain('Provider Hint')
+    expect(html).not.toContain('思考轨迹')
   })
 
   it('keeps completed segments visible when a run is cancelled and appends a terminal marker', () => {
@@ -555,10 +549,9 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).not.toContain('chat-message-reasoning-card-1')
     expect(html).not.toContain('这段推理内容不应显示。')
     expect(html).toContain('最终答复仍应显示。')
-    expect(html).toContain('思考轨迹')
-    expect(html).toContain('已抑制')
-    expect(html).toContain('抑制依据')
-    expect(html).toContain('capability_visibility_suppressed')
+    expect(html).not.toContain('思考轨迹')
+    expect(html).not.toContain('抑制依据')
+    expect(html).not.toContain('capability_visibility_suppressed')
   })
 
   it('shows the reasoning streaming status only on the dedicated reasoning card', () => {

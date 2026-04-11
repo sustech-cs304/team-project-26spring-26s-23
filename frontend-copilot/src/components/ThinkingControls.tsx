@@ -80,7 +80,6 @@ export function ThinkingPillGroup({
             onClick={option.onSelect}
           >
             <span className="thinking-pill__label">{option.labelZh}</span>
-            {option.code ? <code className="thinking-pill__code">{option.code}</code> : null}
           </button>
         )
       })}

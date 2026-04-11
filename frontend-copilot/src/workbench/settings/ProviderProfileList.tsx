@@ -59,8 +59,8 @@ export function ProviderProfileList({
     <section className="settings-card">
       <div className="settings-card__header settings-card__header--spaced">
         <div>
-          <h3 className="settings-card__title">模型服务商</h3>
-          <p className="settings-card__subtitle">Provider 类型、运行状态与基础提示均来自统一 catalog。</p>
+          <h3 className="settings-card__title">模型服务</h3>
+          <p className="settings-card__subtitle">在这里管理可用的模型服务。</p>
         </div>
       </div>
 
@@ -78,7 +78,7 @@ export function ProviderProfileList({
           type="text"
           className="search-box__input"
           value={providerQuery}
-          placeholder="搜索服务商、地址、模型或兼容状态..."
+          placeholder="搜索服务、地址或模型..."
           onChange={(event) => onProviderQueryChange(event.target.value)}
         />
       </div>

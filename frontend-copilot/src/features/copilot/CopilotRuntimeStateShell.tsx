@@ -25,9 +25,9 @@ export function CopilotRuntimeStateShell({
       return (
         <section className="copilot-panel__card" aria-live="polite">
           <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">正在等待根层完成运行态装配</h2>
+          <h2 className="copilot-panel__title">正在准备服务连接</h2>
           <p className="copilot-panel__description">
-            当前主入口只等待运行态，不再把旧全局 agent 作为聊天就绪前提。
+            请稍候，准备完成后即可开始聊天。
           </p>
         </section>
       )
@@ -36,9 +36,9 @@ export function CopilotRuntimeStateShell({
       return (
         <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
           <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">读取运行态失败</h2>
+          <h2 className="copilot-panel__title">读取连接状态失败</h2>
           <p className="copilot-panel__description">
-            当前无法从 Electron 预加载桥接读取运行态摘要。该状态与“后端未启动”不同，需优先检查 preload 与 IPC 链路。
+            当前无法读取服务连接状态，请稍后重试。
           </p>
           <pre className="copilot-panel__error">{state.error}</pre>
         </section>
@@ -47,8 +47,8 @@ export function CopilotRuntimeStateShell({
     case 'empty':
       return (
         <NotConnectedNotice
-          title="尚未获得可用运行时"
-          description="当前既没有可用的宿主运行时地址，也没有开发态覆盖地址。主入口已切到 session-first 壳层，但仍需要 runtime URL 才能继续向后端拉取智能体目录。"
+          title="尚未连接服务"
+          description="请先完成服务连接配置，然后再开始聊天。"
           missingFields={state.missingFields}
           details={buildCopilotRuntimeDetails(state)}
         />
@@ -57,8 +57,8 @@ export function CopilotRuntimeStateShell({
     case 'incomplete':
       return (
         <NotConnectedNotice
-          title="连接信息仍不完整"
-          description="宿主运行态与本地设置已由根层统一读取，但当前缺少继续访问后端目录所需的最小字段。这里不再把旧全局 agentName 视为聊天必填项。"
+          title="连接信息不完整"
+          description="请先补全所需配置，然后再开始聊天。"
           missingFields={state.missingFields}
           details={buildCopilotRuntimeDetails(state)}
         />
@@ -68,9 +68,9 @@ export function CopilotRuntimeStateShell({
       return (
         <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
           <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">宿主正在启动本地后端</h2>
+          <h2 className="copilot-panel__title">正在连接服务</h2>
           <p className="copilot-panel__description">
-            当前由 Electron 主进程托管 hosted backend；Renderer 只会在拿到有效 runtime URL 后继续拉取智能体目录与创建会话。
+            请稍候，连接成功后即可继续使用。
           </p>
           <dl className="copilot-panel__details-grid">
             {buildCopilotRuntimeDetails(state).map((detail) => (
@@ -87,9 +87,9 @@ export function CopilotRuntimeStateShell({
       return (
         <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
           <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">宿主启动后端失败</h2>
+          <h2 className="copilot-panel__title">连接服务失败</h2>
           <p className="copilot-panel__description">
-            当前未拿到可用的 hosted backend 运行地址，因此无法继续进入“后端智能体目录 + 会话创建”主路径。
+            当前无法连接服务，请检查设置后重试。
           </p>
           <dl className="copilot-panel__details-grid">
             {buildCopilotRuntimeDetails(state).map((detail) => (
@@ -109,7 +109,7 @@ export function CopilotRuntimeStateShell({
               onClick={onRetry}
               disabled={retrying || !canRetryCopilotRuntime(state)}
             >
-              {retrying ? '正在重试…' : '重试启动宿主后端'}
+              {retrying ? '正在重试…' : '重试连接'}
             </button>
           </div>
         </section>

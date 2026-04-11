@@ -96,10 +96,6 @@ export function CopilotComposer({
     () => resolveThinkingValueLabel(currentThinkingValue),
     [currentThinkingValue],
   )
-  const currentThinkingCode = useMemo(
-    () => buildThinkingValueCode(currentThinkingValue),
-    [currentThinkingValue],
-  )
   const thinkingTriggerLabel = currentThinkingLabel === null ? '思考' : currentThinkingLabel
   const unavailableThinkingReason = useMemo(
     () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
@@ -251,9 +247,6 @@ export function CopilotComposer({
                     <span className="copilot-chat__thinking-panel-current-value" data-testid="chat-thinking-current-value">
                       {currentThinkingLabel ?? '未设置'}
                     </span>
-                    {currentThinkingCode ? (
-                      <code className="copilot-chat__thinking-panel-current-code">{currentThinkingCode}</code>
-                    ) : null}
                   </span>
                 </div>
               </div>
@@ -360,14 +353,12 @@ function renderFixedThinkingControl(input: {
   currentSelection: RuntimeThinkingSelection | null
 }) {
   const currentValue = resolveThinkingSelectionValue(input.currentSelection, input.capability)
-  const fixedCode = currentValue?.valueType === 'fixed' ? currentValue.code : 'fixed'
 
   return (
     <div className="copilot-chat__thinking-fixed" data-testid="chat-thinking-editor-fixed">
       <span className="copilot-chat__thinking-fixed-value">
         {currentValue?.labelZh ?? '固定推理'}
       </span>
-      <code className="copilot-chat__thinking-option-code">{fixedCode}</code>
       <span className="copilot-chat__thinking-fixed-badge" data-testid="chat-thinking-fixed-lock">
         锁定
       </span>
@@ -589,21 +580,6 @@ function resolveThinkingSelectionValue(
   }
 
   return capability?.defaultValue ?? null
-}
-
-function buildThinkingValueCode(value: RuntimeThinkingValue | null | undefined): string | null {
-  if (value == null) {
-    return null
-  }
-
-  switch (value.valueType) {
-    case 'code':
-      return value.code
-    case 'fixed':
-      return value.code
-    case 'budget':
-      return value.mode === 'budget' ? 'budget_tokens' : value.mode
-  }
 }
 
 function isCodeThinkingSelection(selection: RuntimeThinkingSelection | null, code: string): boolean {

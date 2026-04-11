@@ -28,7 +28,7 @@ export function ProviderProfileListItem({
 }: ProviderProfileListItemProps) {
   const providerTypeLabel = resolveProviderTypeLabel(profile)
   const providerStatusNotice = resolveProviderStatusNotice(profile)
-  const providerLocation = (profile.baseUrl?.trim() || profile.endpoint.trim()) || '未设置 Base URL'
+  const providerLocation = (profile.baseUrl?.trim() || profile.endpoint.trim()) || '未设置服务地址'
 
   return (
     <Fragment>

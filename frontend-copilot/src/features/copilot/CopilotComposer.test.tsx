@@ -74,14 +74,15 @@ describe('CopilotComposer thinking controls', () => {
     }
   })
 
-  it('falls back to the thinking level value when a label entry is blank', async () => {
+  it('keeps thinking options product-facing without showing internal codes', async () => {
     const originalMediumLabel = THINKING_LEVEL_LABELS.medium
     THINKING_LEVEL_LABELS.medium = ''
     const rendered = renderWithRoot(<ComposerHarness />)
 
     try {
       await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('medium')
+      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('中')
+      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).not.toContain('medium')
     } finally {
       THINKING_LEVEL_LABELS.medium = originalMediumLabel
       rendered.unmount()

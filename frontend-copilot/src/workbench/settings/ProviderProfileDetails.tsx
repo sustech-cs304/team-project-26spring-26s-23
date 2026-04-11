@@ -46,7 +46,7 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">服务商基础信息</h3>
+            <h3 className="settings-card__title">服务信息</h3>
             <p className="settings-card__subtitle">{resolveProviderCapabilitySummary(activeProviderDetail)}</p>
           </div>
         </div>
@@ -64,7 +64,7 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
 
           {extensionNotice ? (
             <div className="provider-status-banner provider-status-banner--info" data-testid="provider-extension-banner">
-              <strong>已保留扩展字段</strong>
+              <strong>附加信息</strong>
               <span>{extensionNotice}</span>
             </div>
           ) : null}
@@ -72,22 +72,22 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
           <div className="form-grid form-grid--two">
             <TextField
               label="显示名称"
-              description="用户自定义的 profile 名称。"
+              description="可自定义显示名称，方便区分不同服务。"
               value={activeProviderDetail.name}
               onChange={(value) => onUpdateActiveProvider({ name: value, displayName: value })}
               placeholder="输入服务商名称"
               inputTestId="provider-display-name-input"
             />
             <SelectField
-              label="Provider 类型"
-              description="Provider 类型、运行状态与基础语义均来自统一 catalog。"
+              label="服务类型"
+              description="请选择要使用的服务类型。"
               value={providerTypeValue}
               options={providerTypeOptions}
               onChange={(value) => onUpdateActiveProvider(buildProviderTypeSelectionPatch(activeProviderDetail, value))}
               triggerTestId="provider-type-select-trigger"
             />
             <TextField
-              label="Base URL"
+              label="服务地址"
               description={providerBaseUrlFieldState.description}
               value={baseUrlValue}
               onChange={(value) => onUpdateActiveProvider({ baseUrl: value, endpoint: value })}
@@ -138,5 +138,5 @@ function resolveProviderExtensionNotice(detail: ProviderProfileDetailsDomain['ac
     return null
   }
 
-  return 'organization / region / notes 及扩展字典仍会在保存链路中透传保留，本阶段设置页不额外提供复杂编辑 UI。'
+  return '当前服务包含附加信息，保存时会一并保留。'
 }

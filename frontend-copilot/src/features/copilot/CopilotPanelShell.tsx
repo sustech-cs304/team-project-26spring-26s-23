@@ -74,10 +74,10 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   if (props.directoryState.status === 'loading' || props.directoryState.status === 'idle') {
     return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
-        <p className="copilot-panel__eyebrow">Session Shell</p>
-        <h2 className="copilot-panel__title">正在准备智能体目录</h2>
+        <p className="copilot-panel__eyebrow">Copilot</p>
+        <h2 className="copilot-panel__title">正在加载助手列表</h2>
         <p className="copilot-panel__description">
-          主入口正在等待后端 agents/list 返回目录数据。
+          请稍候，加载完成后即可开始聊天。
         </p>
       </section>
     )
@@ -86,12 +86,11 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   if (props.directoryState.status === 'error') {
     return (
       <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
-        <p className="copilot-panel__eyebrow">Session Shell</p>
-        <h2 className="copilot-panel__title">后端智能体目录加载失败</h2>
+        <p className="copilot-panel__eyebrow">Copilot</p>
+        <h2 className="copilot-panel__title">加载助手列表失败</h2>
         <p className="copilot-panel__description">
-          当前主入口只认后端目录为真源，因此不会回落到本地静态智能体列表。
+          当前无法获取可用助手，请稍后重试。
         </p>
-        <pre className="copilot-panel__error">{props.directoryState.error}</pre>
       </section>
     )
   }
@@ -99,10 +98,10 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   if (props.selectedAgent === null) {
     return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
-        <p className="copilot-panel__eyebrow">Session Shell</p>
-        <h2 className="copilot-panel__title">后端目录中暂无可选智能体</h2>
+        <p className="copilot-panel__eyebrow">Copilot</p>
+        <h2 className="copilot-panel__title">暂无可用助手</h2>
         <p className="copilot-panel__description">
-          当前未拿到可用于创建会话的智能体条目，因此消息区保持占位，不会静默走旧路径。
+          请检查连接状态，或稍后再试。
         </p>
       </section>
     )
@@ -111,9 +110,9 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   if (props.sessionShell === null) {
     return (
       <section className="copilot-panel__inline-placeholder" aria-live="polite" data-testid="chat-session-placeholder">
-        <p className="copilot-panel__inline-placeholder-text">可在左侧选择智能体与新建会话</p>
+        <p className="copilot-panel__inline-placeholder-text">可在左侧选择助手并新建会话</p>
         {props.sessionError !== null && (
-          <pre className="copilot-panel__error">{props.sessionError}</pre>
+          <p className="copilot-panel__error">当前无法创建会话，请重试。</p>
         )}
       </section>
     )

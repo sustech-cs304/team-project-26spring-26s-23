@@ -1,7 +1,3 @@
-import {
-  formatModeSummary,
-  formatRuntimeSource,
-} from './copilot-chat-helpers'
 import type {
   CopilotBootstrapState,
   CopilotConfigState,
@@ -23,36 +19,8 @@ export function isCopilotConnectableState(
 export function buildCopilotRuntimeDetails(
   state: Exclude<CopilotConfigState, { status: 'error' }>,
 ): CopilotPanelDetail[] {
-  const details: CopilotPanelDetail[] = [
-    {
-      label: '宿主状态',
-      value: state.diagnostics.hostedStatus,
-    },
-    {
-      label: '运行模式',
-      value: formatModeSummary(state.diagnostics),
-    },
-    {
-      label: 'Runtime 来源',
-      value: formatRuntimeSource(state.runtimeSource),
-    },
-  ]
-
-  if (state.runtimeUrl !== null) {
-    details.push({
-      label: '当前 Runtime URL',
-      value: state.runtimeUrl,
-    })
-  }
-
-  if (state.diagnostics.failure !== null) {
-    details.push({
-      label: '失败摘要',
-      value: `${state.diagnostics.failure.code} / ${state.diagnostics.failure.phase}`,
-    })
-  }
-
-  return details
+  void state
+  return []
 }
 
 export function formatCopilotFailureSummary(
@@ -61,29 +29,12 @@ export function formatCopilotFailureSummary(
   const failure = diagnostics.failure
 
   if (failure === null) {
-    return 'No hosted failure summary.'
+    return '当前无法连接服务，请稍后重试。'
   }
 
-  const lines = [
-    `状态：${diagnostics.hostedStatus}`,
-    `模式：${formatModeSummary(diagnostics)}`,
-    `失败代码：${failure.code}`,
-    `阶段：${failure.phase}`,
-    `消息：${failure.message}`,
-  ]
-
-  if (failure.exitCode !== null) {
-    lines.push(`退出码：${failure.exitCode}`)
-  }
-
-  if (failure.signal !== null) {
-    lines.push(`信号：${failure.signal}`)
-  }
-
-  lines.push(`可重试：${failure.retryable ? '是' : '否'}`)
-  lines.push(`记录时间：${failure.timestamp}`)
-
-  return lines.join('\n')
+  return failure.retryable
+    ? '当前无法连接服务，请重试。'
+    : '当前无法连接服务，请检查设置后重试。'
 }
 
 export function canRetryCopilotRuntime(state: CopilotConfigState): boolean {
