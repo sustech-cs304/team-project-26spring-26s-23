@@ -27,6 +27,7 @@ import {
   createEmptyComposerDraft,
   syncComposerDraftThinkingSelection,
   type CopilotChatComposerDraft,
+  type CopilotTransientErrorState,
 } from './copilot-chat-helpers'
 import {
   buildCopilotMessageListItems,
@@ -83,7 +84,7 @@ export function CopilotChatPanel({
   const [conversation, setConversation] = useState<CopilotMessageListItem[]>([])
   const [runState, setRunState] = useState<CopilotRunState>(createIdleCopilotRunState)
   const [thinkingCapability, setThinkingCapability] = useState<RuntimeThinkingCapability | null>(null)
-  const [sendError, setSendError] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<CopilotTransientErrorState | null>(null)
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
   const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
   const [workspacePrimaryModelRoute, setWorkspacePrimaryModelRoute] = useState<ModelRouteRef | null>(null)

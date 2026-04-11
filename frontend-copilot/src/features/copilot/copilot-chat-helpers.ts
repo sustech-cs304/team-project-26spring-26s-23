@@ -13,6 +13,10 @@ import {
 import { serializeModelRouteRef } from '../../workbench/settings/settings-workspace-model-options'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
+  createCopilotErrorDetailSource,
+  type CopilotErrorDetailSource,
+} from './error-detail-overlay-view-model'
+import {
   RuntimeRequestError,
   cloneRuntimeThinkingSelection,
   type RuntimeModelRoute,
@@ -56,6 +60,11 @@ export interface RuntimeMessageSendInput {
 
 export type CopilotToolStepPhase = RuntimeToolEventPhase | 'cancelled'
 
+export interface CopilotTransientErrorState {
+  message: string
+  errorDetail: CopilotErrorDetailSource | null
+}
+
 export interface CopilotConversationTurn {
   id: string
   runId?: string
@@ -77,6 +86,18 @@ export interface CopilotConversationTurn {
   inputSummary?: string | null
   resultSummary?: string | null
   errorSummary?: string | null
+}
+
+export function createCopilotTransientErrorState(input: {
+  message: string
+  errorDetail?: CopilotErrorDetailSource | null
+}): CopilotTransientErrorState {
+  const trimmedMessage = input.message.trim()
+
+  return {
+    message: trimmedMessage === '' ? '当前响应失败，请重试。' : trimmedMessage,
+    errorDetail: input.errorDetail ?? null,
+  }
 }
 
 export const DEFAULT_COPILOT_COMPOSER_HEIGHT = 160
@@ -560,6 +581,61 @@ export function formatRuntimeMessageSendError(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : String(error)
+}
+
+export function createPreflightErrorDetail(input: {
+  summaryMessage: string
+  rawMessage?: string | null
+  code?: string | null
+  details?: Record<string, unknown> | null
+  requestedMethod?: string | null
+  resolvedModelId?: string | null
+  resolvedModelRoute?: RuntimeModelRoute | null
+  resolvedToolIds?: string[] | null
+  requestOptions?: Record<string, unknown> | null
+}): CopilotErrorDetailSource {
+  return createCopilotErrorDetailSource({
+    source: 'preflight',
+    title: '发送失败',
+    summaryMessage: input.summaryMessage,
+    rawMessage: input.rawMessage ?? input.summaryMessage,
+    code: input.code ?? null,
+    stage: 'preflight',
+    requestedMethod: input.requestedMethod ?? 'run/start',
+    details: input.details ?? {},
+    resolvedModelId: input.resolvedModelId ?? null,
+    resolvedModelRoute: input.resolvedModelRoute ?? null,
+    resolvedToolIds: input.resolvedToolIds ?? [],
+    requestOptions: input.requestOptions ?? {},
+  })
+}
+
+export function createRuntimeRequestErrorDetail(input: {
+  error: RuntimeRequestError
+  stage?: 'preflight' | 'run-start'
+  requestedMethod?: string | null
+  resolvedModelId?: string | null
+  resolvedModelRoute?: RuntimeModelRoute | null
+  resolvedToolIds?: string[] | null
+  requestOptions?: Record<string, unknown> | null
+}): CopilotErrorDetailSource {
+  const stage = input.stage ?? 'run-start'
+
+  return createCopilotErrorDetailSource({
+    source: stage === 'preflight' ? 'preflight' : 'run-start',
+    title: '发送失败',
+    summaryMessage: formatRuntimeMessageSendError(input.error),
+    rawMessage: input.error.message,
+    code: input.error.code,
+    stage,
+    requestedMethod: input.requestedMethod ?? 'run/start',
+    status: input.error.status,
+    details: input.error.details,
+    resolvedModelId: input.resolvedModelId ?? null,
+    resolvedModelRoute: input.resolvedModelRoute ?? null,
+    resolvedToolIds: input.resolvedToolIds ?? [],
+    requestOptions: input.requestOptions ?? {},
+  })
 }
 
 export function buildRuntimeThinkingCapabilityFromError(input: {

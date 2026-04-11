@@ -1,6 +1,7 @@
-/* Copilot chat stylesheet manifest: keep import order stable for shared shell styles, message stream, composer dock, model picker primitives, and tool picker overrides. */
+/* Copilot chat stylesheet manifest: keep import order stable for shared shell styles, message stream, composer dock, model picker primitives, overlay details, and tool picker overrides. */
 @import './copilot-panel.css';
 @import './copilot-message-list.css';
 @import './copilot-composer.css';
 @import './copilot-model-picker.css';
+@import './error-detail-overlay.css';
 @import './copilot-tool-picker.css';

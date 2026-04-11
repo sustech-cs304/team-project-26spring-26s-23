@@ -532,6 +532,41 @@
   gap: 0.75rem;
 }
 
+.copilot-chat__message-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.copilot-chat__message-detail-trigger {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+}
+
+.copilot-chat__message-detail-trigger > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-0.5px);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.copilot-chat__message-detail-trigger:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.copilot-chat__message-detail-trigger:disabled:hover,
+.copilot-chat__message-detail-trigger:disabled:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
 .copilot-chat__message-status {
   display: inline-flex;
   align-items: center;

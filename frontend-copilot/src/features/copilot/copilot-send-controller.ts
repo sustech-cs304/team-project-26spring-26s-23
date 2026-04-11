@@ -2,6 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { AssistantSessionShell } from '../../workbench/types'
 import {
+  RuntimeRequestError,
   startRuntimeRun,
   streamRuntimeRun,
   type FetchLike,
@@ -10,12 +11,17 @@ import {
 } from './thread-run-contract'
 import {
   buildRuntimeMessageSendInput,
+  createCopilotTransientErrorState,
+  createPreflightErrorDetail,
+  createRuntimeRequestErrorDetail,
   formatRequestOptionsError,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
   type CopilotChatComposerDraft,
+  type CopilotTransientErrorState,
   type RuntimeMessageSendInput,
 } from './copilot-chat-helpers'
+import { createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 import {
   buildCopilotRunSegmentViewModel,
   createUserMessageListItem,
@@ -28,6 +34,7 @@ import {
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import {
   applyRuntimeRunEventToCopilotRunState,
+  createIdleCopilotRunState,
   createStartingCopilotRunState,
   markCopilotRunCancelled,
   markCopilotRunTransportFailed,
@@ -136,6 +143,108 @@ export function getCopilotSendDisabledReason(input: {
   return null
 }
 
+function createPreflightTransientErrorState(input: {
+  message: string
+  code?: string | null
+  rawMessage?: string | null
+  details?: Record<string, unknown> | null
+  composerDraft: Pick<CopilotChatComposerDraft, 'selectedModelId' | 'selectedModelRoute' | 'enabledTools'>
+  selectedModelOption: CopilotModelOption | null
+  requestOptions?: Record<string, unknown> | null
+}): CopilotTransientErrorState {
+  return createCopilotTransientErrorState({
+    message: input.message,
+    errorDetail: createPreflightErrorDetail({
+      summaryMessage: input.message,
+      rawMessage: input.rawMessage ?? input.message,
+      code: input.code ?? null,
+      details: input.details ?? {},
+      resolvedModelId: resolveSelectedModelId({
+        selectedModelOption: input.selectedModelOption,
+        selectedModelId: input.composerDraft.selectedModelId,
+        selectedModelRoute: input.composerDraft.selectedModelRoute,
+      }),
+      resolvedModelRoute: input.composerDraft.selectedModelRoute,
+      resolvedToolIds: input.composerDraft.enabledTools,
+      requestOptions: input.requestOptions ?? {},
+    }),
+  })
+}
+
+function createRunStartTransientErrorState(input: {
+  error: unknown
+  runtimeInput: RuntimeMessageSendInput
+  selectedModelOption: CopilotModelOption | null
+}): CopilotTransientErrorState {
+  const summaryMessage = formatRuntimeMessageSendError(input.error)
+  const rawMessage = input.error instanceof Error ? input.error.message : String(input.error)
+  const resolvedModelId = resolveSelectedModelId({
+    selectedModelOption: input.selectedModelOption,
+    selectedModelId: '',
+    selectedModelRoute: input.runtimeInput.modelRoute,
+  })
+
+  return createCopilotTransientErrorState({
+    message: summaryMessage,
+    errorDetail: input.error instanceof RuntimeRequestError
+      ? createRuntimeRequestErrorDetail({
+          error: input.error,
+          stage: 'run-start',
+          requestedMethod: 'run/start',
+          resolvedModelId,
+          resolvedModelRoute: input.runtimeInput.modelRoute,
+          resolvedToolIds: input.runtimeInput.enabledTools,
+          requestOptions: input.runtimeInput.requestOptions,
+        })
+      : createCopilotErrorDetailSource({
+          source: 'run-start',
+          title: '发送失败',
+          summaryMessage,
+          rawMessage,
+          stage: 'run-start',
+          requestedMethod: 'run/start',
+          details: {},
+          resolvedModelId,
+          resolvedModelRoute: input.runtimeInput.modelRoute,
+          resolvedToolIds: input.runtimeInput.enabledTools,
+          requestOptions: input.runtimeInput.requestOptions,
+        }),
+  })
+}
+
+function createTransportFailureInput(error: unknown): {
+  code: string
+  message: string
+  details: Record<string, unknown>
+} {
+  if (error instanceof RuntimeRequestError) {
+    return {
+      code: error.code ?? 'stream_transport_failed',
+      message: error.message,
+      details: { ...error.details },
+    }
+  }
+
+  return {
+    code: 'stream_transport_failed',
+    message: error instanceof Error ? error.message : String(error),
+    details: {},
+  }
+}
+
+function resolveSelectedModelId(input: {
+  selectedModelOption: CopilotModelOption | null
+  selectedModelId: string
+  selectedModelRoute: RuntimeMessageSendInput['modelRoute'] | CopilotChatComposerDraft['selectedModelRoute'] | null
+}): string | null {
+  const fallbackModelId = input.selectedModelId.trim()
+  const resolvedModelId = input.selectedModelOption?.modelId
+    ?? input.selectedModelRoute?.routeRef?.modelId
+    ?? fallbackModelId
+
+  return resolvedModelId === '' ? null : resolvedModelId
+}
+
 export async function orchestrateCopilotSend(input: {
   state: CopilotBootstrapState
   sessionShell: AssistantSessionShell | null
@@ -148,7 +257,7 @@ export async function orchestrateCopilotSend(input: {
   sendMessage: typeof dispatchCopilotMessage
   debugModeEnabled: boolean
   setRunState: Dispatch<SetStateAction<CopilotRunState>>
-  setSendError: Dispatch<SetStateAction<string | null>>
+  setSendError: Dispatch<SetStateAction<CopilotTransientErrorState | null>>
   setComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   setConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>>
   signal?: AbortSignal
@@ -163,39 +272,97 @@ export async function orchestrateCopilotSend(input: {
   }
 
   if (!input.hasConfiguredModels) {
-    input.setSendError('尚未配置模型，请先前往设置页完成模型配置。')
+    input.setSendError(createPreflightTransientErrorState({
+      message: '尚未配置模型，请先前往设置页完成模型配置。',
+      code: 'no_configured_models',
+      details: {
+        hasConfiguredModels: false,
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
     return
   }
 
   if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
-    input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。')
+    input.setSendError(createPreflightTransientErrorState({
+      message: input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。',
+      code: 'selected_model_unavailable',
+      details: {
+        selectedModelId: input.selectedModelOption.modelId,
+        unavailableReason: input.selectedModelOption.unavailableReason,
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
     return
   }
 
   if (!input.hasAvailableModels) {
-    input.setSendError('当前没有可用模型，请前往设置页调整模型配置。')
+    input.setSendError(createPreflightTransientErrorState({
+      message: '当前没有可用模型，请前往设置页调整模型配置。',
+      code: 'no_available_models',
+      details: {
+        hasAvailableModels: false,
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
     return
   }
 
   const trimmedMessage = input.composerDraft.messageText.trim()
   if (trimmedMessage === '') {
-    input.setSendError('请输入消息内容后再发送。')
+    input.setSendError(createPreflightTransientErrorState({
+      message: '请输入消息内容后再发送。',
+      code: 'message_required',
+      details: {
+        field: 'messageText',
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
     return
   }
 
   if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
     if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
-      input.setSendError(input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。')
+      input.setSendError(createPreflightTransientErrorState({
+        message: input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。',
+        code: 'selected_model_unavailable',
+        details: {
+          selectedModelId: input.selectedModelOption.modelId,
+          unavailableReason: input.selectedModelOption.unavailableReason,
+        },
+        composerDraft: input.composerDraft,
+        selectedModelOption: input.selectedModelOption,
+      }))
       return
     }
 
-    input.setSendError('请先选择模型。')
+    input.setSendError(createPreflightTransientErrorState({
+      message: '请先选择模型。',
+      code: 'model_required',
+      details: {
+        field: 'selectedModelRoute',
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
     return
   }
 
   const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
   if (streamingSupportReason !== null) {
-    input.setSendError(streamingSupportReason)
+    input.setSendError(createPreflightTransientErrorState({
+      message: streamingSupportReason,
+      code: 'streaming_not_supported',
+      details: {
+        reason: streamingSupportReason,
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
     return
   }
 
@@ -203,11 +370,20 @@ export async function orchestrateCopilotSend(input: {
   try {
     requestOptions = parseRequestOptionsText(input.composerDraft.requestOptionsText)
   } catch (error) {
-    input.setSendError(formatRequestOptionsError(error))
+    input.setSendError(createPreflightTransientErrorState({
+      message: formatRequestOptionsError(error),
+      code: 'request_options_invalid',
+      rawMessage: error instanceof Error ? error.message : String(error),
+      details: {
+        requestOptionsText: input.composerDraft.requestOptionsText,
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
     return
   }
 
-  let runtimeInput
+  let runtimeInput: RuntimeMessageSendInput
   try {
     runtimeInput = buildRuntimeMessageSendInput({
       runtimeUrl: input.state.runtimeUrl,
@@ -220,7 +396,14 @@ export async function orchestrateCopilotSend(input: {
       thinkingCapabilityOverride: input.thinkingCapabilityOverride,
     })
   } catch (error) {
-    input.setSendError(formatRuntimeMessageSendError(error))
+    input.setSendError(createPreflightTransientErrorState({
+      message: formatRuntimeMessageSendError(error),
+      code: 'build_runtime_input_failed',
+      rawMessage: error instanceof Error ? error.message : String(error),
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+      requestOptions,
+    }))
     return
   }
 
@@ -243,12 +426,15 @@ export async function orchestrateCopilotSend(input: {
     input.composerInputRef.current.value = ''
   }
 
+  let runStarted = false
+
   try {
     for await (const event of input.sendMessage({
       ...runtimeInput,
       debugModeEnabled: input.debugModeEnabled,
       signal: input.signal,
       onRunStart: (response) => {
+        runStarted = true
         input.setRunState((current) => registerCopilotRunStartResponse(current, response.run))
       },
     })) {
@@ -268,14 +454,16 @@ export async function orchestrateCopilotSend(input: {
       input.setRunState((current) => markCopilotRunCancelled(current, {
         reason: 'cancelled',
       }))
-    } else {
-      const formattedError = formatRuntimeMessageSendError(error)
-      input.setSendError(null)
-      input.setRunState((current) => markCopilotRunTransportFailed(current, {
-        code: 'stream_transport_failed',
-        message: formattedError,
-        details: {},
+    } else if (!runStarted) {
+      input.setSendError(createRunStartTransientErrorState({
+        error,
+        runtimeInput,
+        selectedModelOption: input.selectedModelOption,
       }))
+      input.setRunState(createIdleCopilotRunState())
+    } else {
+      input.setSendError(null)
+      input.setRunState((current) => markCopilotRunTransportFailed(current, createTransportFailureInput(error)))
     }
   } finally {
     requestAnimationFrame(() => {

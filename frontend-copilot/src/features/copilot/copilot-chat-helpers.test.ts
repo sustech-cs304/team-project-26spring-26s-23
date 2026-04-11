@@ -11,8 +11,11 @@ import {
   buildSessionDebugSummary,
   cancelStreamingToolTurns,
   createComposerDraftFromSession,
+  createCopilotTransientErrorState,
   createEmptyComposerDraft,
   createPendingAssistantTurn,
+  createPreflightErrorDetail,
+  createRuntimeRequestErrorDetail,
   describeThinkingCapabilityUnavailableReason,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
@@ -508,5 +511,90 @@ describe('copilot chat helpers', () => {
       overrideLevels: [],
     })
     expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前无法调整思考设置')
+  })
+
+  it('creates a minimal transient error state with normalized fallback text', () => {
+    expect(createCopilotTransientErrorState({
+      message: '   ',
+    })).toEqual({
+      message: '当前响应失败，请重试。',
+      errorDetail: null,
+    })
+  })
+
+  it('builds preflight error details with request and model context preserved', () => {
+    const detail = createPreflightErrorDetail({
+      summaryMessage: '当前模型不可用，请重新选择模型。',
+      rawMessage: 'provider_catalog_only: not enabled',
+      code: 'provider_catalog_only',
+      details: {
+        providerId: 'openrouter',
+      },
+      resolvedModelId: 'openrouter/auto',
+      resolvedModelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openrouter',
+        modelId: 'openrouter/auto',
+      }),
+      resolvedToolIds: ['tool.remote-search'],
+      requestOptions: {
+        trace: true,
+      },
+    })
+
+    expect(detail).toMatchObject({
+      source: 'preflight',
+      title: '发送失败',
+      summaryMessage: '当前模型不可用，请重新选择模型。',
+      rawMessage: 'provider_catalog_only: not enabled',
+      code: 'provider_catalog_only',
+      stage: 'preflight',
+      requestedMethod: 'run/start',
+      resolvedModelId: 'openrouter/auto',
+      resolvedToolIds: ['tool.remote-search'],
+      requestOptions: {
+        trace: true,
+      },
+    })
+  })
+
+  it('builds run-start request error details without losing raw diagnostics', () => {
+    const detail = createRuntimeRequestErrorDetail({
+      error: new RuntimeRequestError('tool_not_found: unknown tool', {
+        code: 'tool_not_found',
+        status: 400,
+        details: {
+          supportedMethods: ['run/start'],
+        },
+      }),
+      stage: 'run-start',
+      requestedMethod: 'run/start',
+      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openai',
+        modelId: 'openai/gpt-4.1',
+      }),
+      resolvedToolIds: ['tool.weather-current'],
+      requestOptions: {
+        trace: true,
+      },
+    })
+
+    expect(detail).toMatchObject({
+      source: 'run-start',
+      summaryMessage: '当前所选工具暂不可用，请调整后重试。',
+      rawMessage: 'tool_not_found: unknown tool',
+      code: 'tool_not_found',
+      stage: 'run-start',
+      requestedMethod: 'run/start',
+      status: 400,
+      details: {
+        supportedMethods: ['run/start'],
+      },
+      resolvedModelId: 'openai/gpt-4.1',
+      resolvedToolIds: ['tool.weather-current'],
+      requestOptions: {
+        trace: true,
+      },
+    })
   })
 })

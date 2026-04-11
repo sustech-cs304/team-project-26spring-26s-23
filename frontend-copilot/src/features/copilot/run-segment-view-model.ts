@@ -5,6 +5,10 @@ import {
   type RuntimeModelRoute,
   type RuntimeResolvedModelRoute,
 } from './thread-run-contract'
+import {
+  createCopilotErrorDetailSource,
+  type CopilotErrorDetailSource,
+} from './error-detail-overlay-view-model'
 import type {
   CopilotRunDiagnosticSummary,
   CopilotRunFailureSummary,
@@ -80,6 +84,11 @@ export interface CopilotTerminalMessageItem extends CopilotRunSegmentViewItemBas
   terminalPhase: 'failed' | 'cancelled'
   cancelReason: string | null
   failure: CopilotRunFailureSummary | null
+  resolvedModelId: string | null
+  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
+  resolvedToolIds: string[]
+  requestOptions: Record<string, unknown>
+  errorDetail?: CopilotErrorDetailSource | null
   requestedThinkingSelection?: CopilotRunState['requestedThinkingSelection']
   appliedThinkingSelection?: CopilotRunState['appliedThinkingSelection']
   requestedThinkingLevel?: CopilotRunState['requestedThinkingLevel']
@@ -187,6 +196,8 @@ type CopilotRunResolvedRouteProjectionState = Pick<
   | 'activeModelRoute'
   | 'resolvedModelId'
   | 'resolvedModelRoute'
+  | 'resolvedToolIds'
+  | 'requestOptions'
 >
 
 type CopilotRunSegmentProjectionState = Pick<
@@ -218,7 +229,7 @@ export function resolveCopilotReasoningElapsedMs(
 
 function projectSegmentToViewItems(
   segment: CopilotRunSegment,
-  runState: Omit<CopilotRunSegmentProjectionState, 'segments'>,
+  runState: CopilotRunSegmentProjectionState,
 ): CopilotRunSegmentViewItem[] {
   switch (segment.kind) {
     case 'assistant':
@@ -328,12 +339,13 @@ function projectDiagnosticSegment(
 
 function projectTerminalSegment(
   segment: Extract<CopilotRunSegment, { kind: 'terminal' }>,
-  runState: CopilotRunThinkingProjectionState,
+  runState: CopilotRunSegmentProjectionState,
 ): CopilotTerminalMessageItem | null {
   switch (segment.terminalPhase) {
     case 'completed':
       return null
-    case 'cancelled':
+    case 'cancelled': {
+      const terminalContext = resolveTerminalContext(segment, runState)
       return {
         id: segment.id,
         kind: 'terminal',
@@ -345,6 +357,11 @@ function projectTerminalSegment(
         terminalPhase: 'cancelled',
         cancelReason: segment.cancelReason,
         failure: null,
+        resolvedModelId: terminalContext.resolvedModelId,
+        resolvedModelRoute: terminalContext.resolvedModelRoute,
+        resolvedToolIds: terminalContext.resolvedToolIds,
+        requestOptions: terminalContext.requestOptions,
+        errorDetail: null,
         requestedThinkingSelection: cloneRuntimeThinkingSelection(runState.requestedThinkingSelection),
         appliedThinkingSelection: cloneRuntimeThinkingSelection(runState.appliedThinkingSelection),
         requestedThinkingLevel: runState.requestedThinkingLevel,
@@ -353,7 +370,16 @@ function projectTerminalSegment(
         reasoningTraceState: runState.reasoningTraceState,
         reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(runState.reasoningSuppressionBasis),
       }
-    case 'failed':
+    }
+    case 'failed': {
+      const terminalContext = resolveTerminalContext(segment, runState)
+      const failure = segment.failure === null
+        ? null
+        : {
+            code: segment.failure.code,
+            message: segment.failure.message,
+            details: { ...segment.failure.details },
+          }
       return {
         id: segment.id,
         kind: 'terminal',
@@ -364,13 +390,27 @@ function projectTerminalSegment(
         status: 'failed',
         terminalPhase: 'failed',
         cancelReason: null,
-        failure: segment.failure === null
+        failure,
+        resolvedModelId: terminalContext.resolvedModelId,
+        resolvedModelRoute: terminalContext.resolvedModelRoute,
+        resolvedToolIds: terminalContext.resolvedToolIds,
+        requestOptions: terminalContext.requestOptions,
+        errorDetail: failure === null
           ? null
-          : {
-              code: segment.failure.code,
-              message: segment.failure.message,
-              details: { ...segment.failure.details },
-            },
+          : createCopilotErrorDetailSource({
+              source: 'streaming',
+              title: '发送失败',
+              summaryMessage: formatFailureMessage(failure),
+              rawMessage: failure.message,
+              code: failure.code,
+              stage: 'streaming',
+              requestedMethod: 'run/stream',
+              details: failure.details,
+              resolvedModelId: terminalContext.resolvedModelId,
+              resolvedModelRoute: terminalContext.resolvedModelRoute,
+              resolvedToolIds: terminalContext.resolvedToolIds,
+              requestOptions: terminalContext.requestOptions,
+            }),
         requestedThinkingSelection: cloneRuntimeThinkingSelection(runState.requestedThinkingSelection),
         appliedThinkingSelection: cloneRuntimeThinkingSelection(runState.appliedThinkingSelection),
         requestedThinkingLevel: runState.requestedThinkingLevel,
@@ -379,6 +419,7 @@ function projectTerminalSegment(
         reasoningTraceState: runState.reasoningTraceState,
         reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(runState.reasoningSuppressionBasis),
       }
+    }
   }
 }
 
@@ -488,6 +529,56 @@ function readModelIdFromRoute(
   }
 
   return 'providerId' in route ? route.modelId : route.routeRef?.modelId ?? null
+}
+
+function resolveTerminalContext(
+  segment: Extract<CopilotRunSegment, { kind: 'terminal' }>,
+  runState: CopilotRunSegmentProjectionState,
+): Pick<CopilotTerminalMessageItem, 'resolvedModelId' | 'resolvedModelRoute' | 'resolvedToolIds' | 'requestOptions'> {
+  const resolvedModelRoute = cloneRuntimeModelRoute(
+    segment.resolvedModelRoute
+    ?? runState.resolvedModelRoute
+    ?? runState.activeModelRoute,
+  )
+  const resolvedModelId = [
+    segment.resolvedModelId,
+    runState.resolvedModelId,
+    readModelIdFromRoute(segment.resolvedModelRoute),
+    readModelIdFromRoute(runState.resolvedModelRoute),
+    readModelIdFromRoute(runState.activeModelRoute),
+  ].find((candidate) => (candidate?.trim() ?? '') !== '') ?? null
+  const requestOptions = Object.keys(segment.requestOptions).length > 0
+    ? { ...segment.requestOptions }
+    : { ...runState.requestOptions }
+  const resolvedToolIds = dedupeToolIds([
+    ...segment.resolvedToolIds,
+    ...runState.resolvedToolIds,
+    ...runState.segments.flatMap((runSegment) => runSegment.kind === 'tool' ? [runSegment.toolId] : []),
+  ])
+
+  return {
+    resolvedModelId,
+    resolvedModelRoute,
+    resolvedToolIds,
+    requestOptions,
+  }
+}
+
+function dedupeToolIds(toolIds: string[]): string[] {
+  const seen = new Set<string>()
+  const nextToolIds: string[] = []
+
+  for (const toolId of toolIds) {
+    const trimmedToolId = toolId.trim()
+    if (trimmedToolId === '' || seen.has(trimmedToolId)) {
+      continue
+    }
+
+    seen.add(trimmedToolId)
+    nextToolIds.push(trimmedToolId)
+  }
+
+  return nextToolIds
 }
 
 function cloneRuntimeThinkingCapability(

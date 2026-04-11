@@ -5,6 +5,8 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 
 import { ModelPickerIcon } from './components/ModelPicker'
+import type { CopilotTransientErrorState } from './copilot-chat-helpers'
+import type { CopilotErrorDetailSource } from './error-detail-overlay-view-model'
 import {
   createEmptyCopilotModel,
   createFallbackCopilotModel,
@@ -54,7 +56,8 @@ interface CopilotMessageListProps {
   conversation: CopilotMessageListItem[]
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
-  transientError?: string | null
+  transientError?: CopilotTransientErrorState | null
+  onOpenErrorDetail?: ((errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void) | null
   emptyState?: {
     title: string
     description: string
@@ -72,6 +75,7 @@ export function CopilotMessageList({
   assistantPlaceholder = null,
   models = [],
   transientError = null,
+  onOpenErrorDetail = null,
   emptyState = null,
 }: CopilotMessageListProps) {
   const visibleConversation = useMemo(
@@ -183,7 +187,7 @@ export function CopilotMessageList({
                       )
                     : (
                         <>
-                          {turn.kind !== 'user' && renderMessageHeader(turn, index, models)}
+                          {turn.kind !== 'user' && renderMessageHeader(turn, index, models, onOpenErrorDetail)}
                           {renderMessageBody(turn)}
                           {detailRows.length > 0 && (
                             <div className="copilot-chat__message-detail-list">
@@ -213,23 +217,23 @@ export function CopilotMessageList({
 
 function buildVisibleConversation(input: {
   conversation: CopilotMessageListItem[]
-  transientError: string | null
+  transientError: CopilotTransientErrorState | null
 }): CopilotMessageListItem[] {
   const filteredConversation = input.conversation.filter((turn) => turn.kind !== 'diagnostic')
-  const trimmedTransientError = input.transientError?.trim() ?? ''
+  const transientMessage = input.transientError?.message.trim() ?? ''
 
-  if (trimmedTransientError === '') {
+  if (transientMessage === '') {
     return filteredConversation
   }
 
   return [
     ...filteredConversation,
-    createTransientErrorMessage(trimmedTransientError, filteredConversation.length + 1),
+    createTransientErrorMessage(input.transientError!, filteredConversation.length + 1),
   ]
 }
 
 function createTransientErrorMessage(
-  content: string,
+  transientError: CopilotTransientErrorState,
   sequence: number,
 ): Extract<CopilotMessageListItem, { kind: 'terminal' }> {
   return {
@@ -238,11 +242,16 @@ function createTransientErrorMessage(
     runId: 'transient-error',
     sequence,
     title: '发送失败',
-    content,
+    content: transientError.message,
     status: 'failed',
     terminalPhase: 'failed',
     cancelReason: null,
     failure: null,
+    resolvedModelId: transientError.errorDetail?.resolvedModelId ?? null,
+    resolvedModelRoute: transientError.errorDetail?.resolvedModelRoute ?? null,
+    resolvedToolIds: [...(transientError.errorDetail?.resolvedToolIds ?? [])],
+    requestOptions: { ...(transientError.errorDetail?.requestOptions ?? {}) },
+    errorDetail: transientError.errorDetail,
   }
 }
 
@@ -250,11 +259,32 @@ function renderMessageHeader(
   turn: Exclude<CopilotMessageListItem, { kind: 'user' }>,
   index: number,
   models: CopilotModelOption[],
+  onOpenErrorDetail: ((errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void) | null,
 ) {
+  const errorDetail = resolveMessageErrorDetailSource(turn)
+
   if (turn.kind !== 'assistant') {
     return (
       <div className="copilot-chat__message-header">
         <p className="copilot-chat__message-label">{turn.title}</p>
+        {errorDetail !== null && (
+          <div className="copilot-chat__message-actions">
+            <button
+              type="button"
+              className="icon-button copilot-chat__message-detail-trigger"
+              aria-label="查看错误详情"
+              aria-haspopup="dialog"
+              title="查看错误详情"
+              data-testid={`chat-message-error-detail-button-${index}`}
+              disabled={onOpenErrorDetail === null}
+              onClick={(event) => {
+                onOpenErrorDetail?.(errorDetail, event.currentTarget)
+              }}
+            >
+              <span aria-hidden="true">ⓘ</span>
+            </button>
+          </div>
+        )}
       </div>
     )
   }
@@ -274,6 +304,16 @@ function renderMessageHeader(
       </p>
     </div>
   )
+}
+
+function resolveMessageErrorDetailSource(
+  turn: Exclude<CopilotMessageListItem, { kind: 'user' }>,
+): CopilotErrorDetailSource | null {
+  if (turn.kind !== 'terminal' || turn.status !== 'failed') {
+    return null
+  }
+
+  return turn.errorDetail ?? null
 }
 
 function resolveAssistantMessageHeader(
