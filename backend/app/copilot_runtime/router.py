@@ -301,6 +301,15 @@ async def _handle_run_stream_request(
                 requested_method=RUN_STREAM_METHOD,
             ),
         )
+    except RuntimeError as exc:
+        return _error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            build_agent_execution_failed_error(
+                message=str(exc),
+                scaffold=scaffold,
+                requested_method=RUN_STREAM_METHOD,
+            ),
+        )
 
 
 

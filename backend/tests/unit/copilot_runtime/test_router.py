@@ -798,6 +798,47 @@ def test_root_post_run_stream_unknown_run_returns_structured_error() -> None:
 
 
 
+def test_root_post_run_stream_runtime_error_before_sse_starts_returns_structured_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    def _raise_stream_run(
+        self: RuntimeBridge,
+        *,
+        run_id: str,
+        is_client_disconnected: Any | None = None,
+    ) -> None:
+        _ = (self, run_id, is_client_disconnected)
+        raise RuntimeError("forced run/stream failure before sse starts")
+
+    monkeypatch.setattr(RuntimeBridge, "stream_run", _raise_stream_run)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        start_response = client.post(
+            "/",
+            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+        )
+        run_id = start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    payload = response.json()
+    run = store.get_run(run_id)
+
+    assert start_response.status_code == 200
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "agent_execution_failed"
+    assert payload["error"]["message"] == "forced run/stream failure before sse starts"
+    assert payload["error"]["requestedMethod"] == "run/stream"
+    assert payload["error"]["details"] == {}
+    assert run is not None
+    assert run.status == "pending"
+
+
+
 def test_root_post_run_stream_execution_failure_preserves_streaming_failure_semantics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -54,7 +54,6 @@ interface CopilotMessageListProps {
   conversation: CopilotMessageListItem[]
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
-  showDiagnostics?: boolean
   transientError?: string | null
   emptyState?: {
     title: string
@@ -72,17 +71,15 @@ export function CopilotMessageList({
   conversation,
   assistantPlaceholder = null,
   models = [],
-  showDiagnostics = true,
   transientError = null,
   emptyState = null,
 }: CopilotMessageListProps) {
   const visibleConversation = useMemo(
     () => buildVisibleConversation({
       conversation,
-      showDiagnostics,
       transientError,
     }),
-    [conversation, showDiagnostics, transientError],
+    [conversation, transientError],
   )
   const [renderedAssistantPlaceholder, setRenderedAssistantPlaceholder] = useState<RenderedAssistantPlaceholderState>(
     () => createRenderedAssistantPlaceholderState(assistantPlaceholder),
@@ -165,7 +162,7 @@ export function CopilotMessageList({
             </div>
           )
         : visibleConversation.map((turn, index) => {
-            const detailRows = buildDetailRows(turn, showDiagnostics)
+            const detailRows = buildDetailRows()
             return (
               <article
                 key={turn.id}
@@ -216,7 +213,6 @@ export function CopilotMessageList({
 
 function buildVisibleConversation(input: {
   conversation: CopilotMessageListItem[]
-  showDiagnostics: boolean
   transientError: string | null
 }): CopilotMessageListItem[] {
   const filteredConversation = input.conversation.filter((turn) => turn.kind !== 'diagnostic')
@@ -372,16 +368,11 @@ function renderMessageBody(turn: CopilotMessageListItem) {
   return <p className="copilot-chat__message-text">{turn.content}</p>
 }
 
-function buildDetailRows(
-  turn: CopilotMessageListItem,
-  showDiagnostics: boolean,
-): Array<{
+function buildDetailRows(): Array<{
   kind: 'input' | 'result' | 'error' | 'meta'
   label: string
   value: string
 }> {
-  void turn
-  void showDiagnostics
   return []
 }
 

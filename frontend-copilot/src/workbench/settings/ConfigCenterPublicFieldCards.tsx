@@ -25,10 +25,8 @@ export type {
   ConfigCenterPublicTextFieldStatus,
   ConfigCenterPublicTextFieldStatusView,
 } from './config-center-public-field-state'
-export {
-  ConfigCenterPublicTextFieldCard,
-  handleConfigCenterPublicTextFieldKeyDown,
-} from './ConfigCenterPublicFieldCard'
+export { ConfigCenterPublicTextFieldCard } from './ConfigCenterPublicFieldCard'
+export { handleConfigCenterPublicTextFieldKeyDown } from './config-center-public-field-card-keydown'
 export { useConfigCenterPublicTextField } from './useConfigCenterPublicField'
 
 export function HostConfigRuntimeOverrideCard() {

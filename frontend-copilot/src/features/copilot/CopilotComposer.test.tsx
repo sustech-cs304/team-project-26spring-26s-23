@@ -117,6 +117,38 @@ describe('CopilotComposer thinking controls', () => {
       rendered.unmount()
     }
   })
+
+  it('supports Home, End, Space, and Enter selection inside the same thinking group', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+
+      await clickElement(thinkingTrigger)
+      await pressKey(rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement, 'End')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      await pressKey(rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement, 'Home')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-off') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      await pressKey(rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement, ' ')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      await pressKey(rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement, 'Enter')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+    } finally {
+      rendered.unmount()
+    }
+  })
 })
 
 function ComposerHarness() {

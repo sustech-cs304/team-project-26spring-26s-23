@@ -65,6 +65,28 @@ function findNextNavigableThinkingPillOptionIndex(
   return null
 }
 
+function findEdgeNavigableThinkingPillOptionIndex(
+  options: readonly ThinkingPillOption[],
+  boundary: 'start' | 'end',
+  readOnly: boolean,
+): number | null {
+  const startIndex = boundary === 'start' ? 0 : options.length - 1
+  const step = boundary === 'start' ? 1 : -1
+
+  for (
+    let candidateIndex = startIndex;
+    candidateIndex >= 0 && candidateIndex < options.length;
+    candidateIndex += step
+  ) {
+    const candidate = options[candidateIndex]
+    if (candidate !== undefined && isNavigableThinkingPillOption(candidate, readOnly)) {
+      return candidateIndex
+    }
+  }
+
+  return null
+}
+
 export function ThinkingPillGroup({
   options,
   ariaLabel,
@@ -80,25 +102,35 @@ export function ThinkingPillGroup({
     : (firstFocusableIndex >= 0 ? firstFocusableIndex : 0)
 
   const handleOptionKeyDown = (index: number): KeyboardEventHandler<HTMLDivElement> => (event) => {
-    let direction: -1 | 1 | null = null
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-      direction = -1
-    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-      direction = 1
-    }
-
-    if (direction === null || readOnly) {
+    const currentOption = options[index]
+    if (currentOption === undefined || !isNavigableThinkingPillOption(currentOption, readOnly)) {
       return
     }
 
-    const nextIndex = findNextNavigableThinkingPillOptionIndex(options, index, direction, readOnly)
-    if (nextIndex === null) {
+    let targetIndex: number | null = null
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      targetIndex = findNextNavigableThinkingPillOptionIndex(options, index, -1, readOnly)
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      targetIndex = findNextNavigableThinkingPillOptionIndex(options, index, 1, readOnly)
+    } else if (event.key === 'Home') {
+      targetIndex = findEdgeNavigableThinkingPillOptionIndex(options, 'start', readOnly)
+    } else if (event.key === 'End') {
+      targetIndex = findEdgeNavigableThinkingPillOptionIndex(options, 'end', readOnly)
+    } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar') {
+      event.preventDefault()
+      currentOption.onSelect?.()
+      return
+    } else {
+      return
+    }
+
+    if (targetIndex === null) {
       return
     }
 
     event.preventDefault()
-    optionRefs.current[nextIndex]?.focus()
-    options[nextIndex]?.onSelect?.()
+    optionRefs.current[targetIndex]?.focus()
+    options[targetIndex]?.onSelect?.()
   }
 
   return (

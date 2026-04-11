@@ -59,7 +59,7 @@ export function getOffMock() {
   return preloadMocks.off
 }
 
-export function getRegisteredOnListener<TListener>(channel: string): TListener {
+export function getRegisteredOnListener<TListener extends (...args: any[]) => unknown>(channel: string): TListener {
   const onCall = preloadMocks.on.mock.calls.find(([candidateChannel]) => candidateChannel === channel)
 
   if (onCall === undefined || typeof onCall[1] !== 'function') {

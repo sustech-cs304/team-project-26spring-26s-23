@@ -1,8 +1,5 @@
-/* eslint-disable react-refresh/only-export-components */
-
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-
 import type { ConfigCenterPublicTextFieldDefinition } from './config-center-public-field-definitions'
+import { handleConfigCenterPublicTextFieldKeyDown } from './config-center-public-field-card-keydown'
 import { getConfigCenterPublicTextFieldStatusView } from './config-center-public-field-state'
 import { useConfigCenterPublicTextField } from './useConfigCenterPublicField'
 
@@ -61,14 +58,3 @@ export function ConfigCenterPublicTextFieldCard({ definition }: { definition: Co
   )
 }
 
-export function handleConfigCenterPublicTextFieldKeyDown(
-  event: ReactKeyboardEvent<HTMLInputElement>,
-  commitDraftValue: () => Promise<void>,
-) {
-  if (event.key !== 'Enter') {
-    return
-  }
-
-  event.preventDefault()
-  void commitDraftValue()
-}

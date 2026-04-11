@@ -125,7 +125,6 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           conversation={props.conversation}
           assistantPlaceholder={props.assistantPlaceholder}
           models={props.modelGroups.flatMap((group) => group.models)}
-          showDiagnostics={props.state.bootstrapFields.debugModeEnabled}
           transientError={props.sendError ?? props.sessionError}
           emptyState={hasAvailableModels
             ? null
