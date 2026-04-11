@@ -14,7 +14,7 @@ describe('settings workspace save input', () => {
   it('keeps reading legacy model strings for display state but stops writing them back as new saved routes', () => {
     const alphaProvider = createProviderProfile({
       id: 'alpha-profile',
-      defaultModel: 'alpha-model',
+      primaryModelId: 'alpha-model',
       fastModel: 'alpha-fast',
       fallbackModel: 'alpha-fast',
     })
@@ -48,8 +48,7 @@ describe('settings workspace save input', () => {
       profileId: 'alpha-profile',
       providerId: 'openai',
       protocol: 'openai',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
+      primaryModelId: 'shared-model',
       fastModel: 'shared-model',
       fallbackModel: 'shared-model',
       availableModels: [
@@ -66,8 +65,7 @@ describe('settings workspace save input', () => {
       profileId: 'beta-profile',
       providerId: 'gemini',
       protocol: 'gemini',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
+      primaryModelId: 'shared-model',
       fastModel: 'shared-model',
       fallbackModel: 'shared-model',
       availableModels: [
@@ -119,7 +117,7 @@ describe('settings workspace save input', () => {
   it('clears ambiguous default routes instead of guessing when multiple profiles share a model id', () => {
     const alphaProvider = createProviderProfile({
       id: 'alpha-profile',
-      defaultModel: 'shared-model',
+      primaryModelId: 'shared-model',
       fastModel: 'alpha-fast',
       fallbackModel: 'alpha-fast',
       availableModels: [
@@ -135,7 +133,7 @@ describe('settings workspace save input', () => {
       id: 'beta-profile',
       providerId: 'openai',
       protocol: 'openai',
-      defaultModel: 'shared-model',
+      primaryModelId: 'shared-model',
       fastModel: 'beta-fast',
       fallbackModel: 'beta-fast',
       availableModels: [
@@ -171,8 +169,7 @@ describe('settings workspace save input', () => {
       profileId: 'alpha-profile',
       providerId: 'openai',
       protocol: 'openai',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
+      primaryModelId: 'shared-model',
       availableModels: [
         {
           ...createProviderProfile({ id: 'alpha-profile' }).availableModels[0]!,
@@ -187,8 +184,7 @@ describe('settings workspace save input', () => {
       profileId: 'beta-profile',
       providerId: 'gemini',
       protocol: 'gemini',
-      defaultModel: 'shared-model',
-      defaultModelId: 'shared-model',
+      primaryModelId: 'shared-model',
       availableModels: [
         {
           ...createProviderProfile({ id: 'beta-profile' }).availableModels[0]!,

@@ -1,6 +1,5 @@
 import {
   createProviderSelectOptions,
-  describeProviderRuntimeStatus,
   getProviderCatalogEntry,
   type ProviderCatalogEntry,
 } from '../../provider-catalog'
@@ -73,7 +72,8 @@ export function omitProviderSecretValue(
   providerSecretValues: Record<string, string>,
   providerId: string,
 ): Record<string, string> {
-  const { [providerId]: _removedProviderSecretValue, ...remainingProviderSecretValues } = providerSecretValues
+  const remainingProviderSecretValues = { ...providerSecretValues }
+  delete remainingProviderSecretValues[providerId]
   return remainingProviderSecretValues
 }
 
@@ -92,11 +92,14 @@ export function resolveProviderTypeLabel(profile: ProviderProfile): string {
   }
 
   const providerIdentity = resolveProviderIdentity(profile)
-  return providerIdentity === '' ? '未知 Provider' : providerIdentity
+  return providerIdentity === '' ? '未知服务' : providerIdentity
 }
 
 export function createProviderTypeSelectOptions(activeProvider: ProviderProfile | null): SelectOption[] {
-  const options = createProviderSelectOptions()
+  const options = createProviderSelectOptions().map((option) => ({
+    value: option.value,
+    label: option.label,
+  }))
   const currentProviderIdentity = activeProvider === null ? '' : resolveProviderIdentity(activeProvider)
 
   if (currentProviderIdentity === '' || options.some((option) => option.value === currentProviderIdentity)) {
@@ -106,8 +109,8 @@ export function createProviderTypeSelectOptions(activeProvider: ProviderProfile 
   return [
     {
       value: currentProviderIdentity,
-      label: `历史配置 · ${currentProviderIdentity}`,
-      hint: '当前 provider 不在 catalog 中，仅保留查看与迁移。',
+      label: '当前服务不可用',
+      hint: '请重新选择服务类型。',
     },
     ...options,
   ]
@@ -147,19 +150,11 @@ export function buildProviderTypeSelectionPatch(
 
 export function resolveProviderStatusNotice(profile: ProviderProfile): ProviderStatusNotice | null {
   const compatibility = profile.compatibility
-  if (compatibility?.status === 'legacy') {
+  if (compatibility?.status === 'legacy' || compatibility?.status === 'unsupported') {
     return {
       tone: 'warning',
-      title: '历史兼容配置',
-      description: compatibility.reason.trim() || '当前 provider 已进入历史兼容状态，仅保留查看与迁移。',
-    }
-  }
-
-  if (compatibility?.status === 'unsupported') {
-    return {
-      tone: 'warning',
-      title: '不受支持的配置',
-      description: compatibility.reason.trim() || '当前 provider 不在 catalog 中，设置页仅保留原始配置。',
+      title: '当前服务不可用',
+      description: '请重新选择服务类型或检查配置。',
     }
   }
 
@@ -167,24 +162,16 @@ export function resolveProviderStatusNotice(profile: ProviderProfile): ProviderS
   if (catalogEntry === null) {
     return {
       tone: 'warning',
-      title: '不受支持的 Provider',
-      description: `Provider '${resolveProviderIdentity(profile) || profile.id}' 不在当前 catalog 中，设置页会保留原始字段但不会把它视为已支持的新链路配置。`,
+      title: '当前服务不可用',
+      description: '请重新选择服务类型或检查配置。',
     }
   }
 
-  if (catalogEntry.runtimeStatus === 'catalog-only') {
+  if (catalogEntry.runtimeStatus !== 'enabled') {
     return {
       tone: 'info',
-      title: '仅数据层兼容',
-      description: '当前 provider 已进入统一 catalog，并可在设置页保存，但聊天主链与运行时尚未启用。',
-    }
-  }
-
-  if (catalogEntry.runtimeStatus === 'legacy-unsupported') {
-    return {
-      tone: 'warning',
-      title: '历史兼容 / 当前未启用',
-      description: '当前 provider 在 catalog 中被标记为 legacy-unsupported，仅保留查看与迁移。',
+      title: '当前服务不可用',
+      description: '请重新选择服务类型或检查配置。',
     }
   }
 
@@ -194,7 +181,7 @@ export function resolveProviderStatusNotice(profile: ProviderProfile): ProviderS
 export function resolveProviderCapabilitySummary(profile: ProviderProfile): string {
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
-    return '当前 provider 不在 catalog 中，无法提供可信的能力提示。'
+    return '请完成服务配置后再使用。'
   }
 
   const capabilityLabels = [
@@ -205,15 +192,9 @@ export function resolveProviderCapabilitySummary(profile: ProviderProfile): stri
     catalogEntry.capabilityHints.search ? '联网' : null,
   ].filter((value): value is string => value !== null)
 
-  const runtimeStatusLabel = describeProviderRuntimeStatus(catalogEntry.runtimeStatus)
-  const summaryParts = [
-    `Provider: ${catalogEntry.displayName}`,
-    `Endpoint: ${catalogEntry.endpointType}`,
-    capabilityLabels.length > 0 ? `基础能力提示：${capabilityLabels.join('、')}` : 'catalog 未提供能力提示',
-    runtimeStatusLabel === null ? null : `状态：${runtimeStatusLabel}`,
-  ].filter((value): value is string => value !== null)
-
-  return summaryParts.join(' · ')
+  return capabilityLabels.length > 0
+    ? `支持：${capabilityLabels.join('、')}`
+    : '可用功能信息暂未提供。'
 }
 
 export function resolveProviderAuthFieldState(profile: ProviderProfile): ProviderAuthFieldState {
@@ -223,7 +204,7 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
       visible: true,
       required: profile.hasApiKey,
       label: 'API 密钥',
-      description: '当前 provider 不在 catalog 中，设置页保留原始 API Key 字段以便迁移。',
+      description: '如需访问该服务，请填写 API 密钥。',
       placeholder: profile.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥',
     }
   }
@@ -236,7 +217,7 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
       visible: false,
       required: false,
       label: 'API 密钥',
-      description: catalogEntry.authSchema.helpText ?? '当前 provider 不需要 API Key。',
+      description: catalogEntry.authSchema.helpText ?? '当前服务无需填写 API 密钥。',
       placeholder: '',
     }
   }
@@ -246,10 +227,10 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
     required,
     label: required ? 'API 密钥' : 'API 密钥（可选）',
     description: catalogEntry.authSchema.helpText
-      ?? (required ? '当前 provider 需要 API Key。' : '当前 provider 默认无需 API Key，可按需填写。'),
+      ?? (required ? '请填写 API 密钥。' : '可按需填写 API 密钥。'),
     placeholder: required
       ? (profile.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥')
-      : (profile.hasApiKey ? '已配置，可输入新密钥以替换' : '当前无需填写，可按需配置'),
+      : (profile.hasApiKey ? '已配置，可输入新密钥以替换' : '可按需填写'),
   }
 }
 
@@ -258,7 +239,7 @@ export function resolveProviderBaseUrlFieldState(profile: ProviderProfile): Prov
   if (catalogEntry === null) {
     return {
       editable: true,
-      description: '当前 provider 不在 catalog 中，保留原始 Base URL 输入。',
+      description: '可按需填写服务地址。',
       placeholder: profile.baseUrl?.trim() || profile.endpoint,
     }
   }
@@ -269,13 +250,13 @@ export function resolveProviderBaseUrlFieldState(profile: ProviderProfile): Prov
     case 'required':
       return {
         editable: true,
-        description: '该 provider 需要显式填写 Base URL。',
+        description: '请填写服务地址。',
         placeholder: defaultBaseUrl || 'https://api.example.com/v1',
       }
     case 'fixed':
       return {
         editable: false,
-        description: '该 provider 的 Base URL 由 catalog 固定，不在设置页中编辑。',
+        description: '该服务地址不可修改。',
         placeholder: defaultBaseUrl,
       }
     case 'optional':
@@ -283,8 +264,8 @@ export function resolveProviderBaseUrlFieldState(profile: ProviderProfile): Prov
       return {
         editable: true,
         description: defaultBaseUrl
-          ? `可留空以使用 catalog 默认地址：${defaultBaseUrl}`
-          : '可按需填写自定义 Base URL。',
+          ? `留空时将使用默认地址：${defaultBaseUrl}`
+          : '可按需填写服务地址。',
         placeholder: defaultBaseUrl || 'https://api.example.com/v1',
       }
   }
@@ -298,22 +279,20 @@ export function resolveProviderModelEditingAvailability(profile: ProviderProfile
   if (catalogEntry === null) {
     return {
       canEditModels: true,
-      description: '当前 provider 不在 catalog 中，模型列表按兼容模式继续允许编辑。',
+      description: '可按需管理模型列表。',
     }
   }
 
   if (catalogEntry.modelConfigPolicy.mode === 'read-only' || !catalogEntry.modelConfigPolicy.allowCustomModels) {
     return {
       canEditModels: false,
-      description: '该 provider 的模型列表当前为只读。',
+      description: '当前模型列表暂不可编辑。',
     }
   }
 
   return {
     canEditModels: true,
-    description: catalogEntry.modelConfigPolicy.defaultModelRequired
-      ? '模型列表由当前 profile 维护，并要求选择默认模型。'
-      : '模型列表由当前 profile 维护。',
+    description: '可按需管理模型列表。',
   }
 }
 
@@ -343,7 +322,7 @@ function buildCatalogBackedProviderCompatibility(
   if (catalogEntry.runtimeStatus === 'legacy-unsupported') {
     return {
       status: 'legacy',
-      reason: `Provider '${catalogEntry.providerId}' is marked as legacy / unsupported in the provider catalog.`,
+      reason: '当前服务暂不可用。',
     }
   }
 

@@ -51,7 +51,7 @@ describe('SettingsWorkspace structure', () => {
       />,
     )
 
-    expect(html).toContain('默认模型路由')
+    expect(html).toContain('默认模型')
     expect(html).toContain('主助手模型')
     expect(html).toContain('快速执行模型')
     expect(html).not.toContain('后端模型')
@@ -86,9 +86,10 @@ describe('SettingsWorkspace structure', () => {
       />,
     )
 
-    expect(html).toContain('模型服务商')
+    expect(html).toContain('模型服务')
     expect(html).toContain('可在左侧添加服务商信息')
-    expect(html).toContain('OpenRouter')
+    expect(html).toContain('添加')
+    expect(html).not.toContain('新增 Provider 类型')
     expect(html).not.toContain('Ollama Local')
     expect(html).not.toContain('BaiLiOpenAI')
   })

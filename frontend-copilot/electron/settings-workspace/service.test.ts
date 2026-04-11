@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -80,6 +80,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'persisted-provider',
         name: 'Persisted Router',
       })
+      const primaryModelId = persistedProvider.availableModels[0]!.modelId
       const stateToSave = {
         ...initial.state,
         providerProfiles: [
@@ -89,7 +90,7 @@ describe('createSettingsWorkspaceStorage', () => {
           },
         ],
         defaultModelRouting: {
-          primaryAssistantModel: persistedProvider.defaultModel,
+          primaryAssistantModel: primaryModelId,
           fastAssistantModel: persistedProvider.fastModel,
         },
         general: {
@@ -111,12 +112,12 @@ describe('createSettingsWorkspaceStorage', () => {
         hasApiKey: false,
       })
       expect(reloaded.state.defaultModelRouting).toMatchObject({
-        primaryAssistantModel: persistedProvider.defaultModel,
+        primaryAssistantModel: primaryModelId,
         fastAssistantModel: persistedProvider.fastModel,
         primaryAssistantModelRoute: {
           routeKind: 'provider-model',
           profileId: 'persisted-provider',
-          modelId: persistedProvider.defaultModel,
+          modelId: primaryModelId,
         },
         fastAssistantModelRoute: {
           routeKind: 'provider-model',
@@ -125,6 +126,141 @@ describe('createSettingsWorkspaceStorage', () => {
         },
       })
       expect(reloaded.state.general.language).toBe('en-US')
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('loads legacy flat thinking declarations and normalizes them into structured override inputs', async () => {
+    const fixture = await createSettingsWorkspaceFixture()
+
+    try {
+      const initial = await fixture.storage.loadState()
+      const legacyProvider = createProviderProfile({
+        id: 'legacy-provider',
+        name: 'Legacy Provider',
+        fastModel: 'legacy-model',
+        fallbackModel: 'legacy-model',
+        availableModels: [
+          {
+            id: 'legacy-provider:model-1',
+            modelId: 'legacy-model',
+            displayName: 'Legacy Model',
+            groupName: 'Legacy',
+            capabilities: ['reasoning', 'tools'],
+            thinkingCapability: {
+              supported: true,
+              levels: ['low', 'high'],
+              defaultLevel: 'high',
+            },
+            supportsStreaming: true,
+            currency: 'usd',
+            inputPrice: '1',
+            outputPrice: '2',
+          },
+        ],
+      })
+
+      await writeFile(fixture.paths.stateDocument, `${JSON.stringify({
+        version: 1,
+        kind: 'settings-workspace-state',
+        values: {
+          ...initial.state,
+          providerProfiles: [legacyProvider].map((profile) => ({ ...profile, hasApiKey: undefined })),
+        },
+      }, null, 2)}\n`)
+
+      const loaded = await fixture.storage.loadState()
+
+      expect(loaded.state.providerProfiles[0]?.availableModels[0]?.thinkingCapability).toEqual({
+        supported: true,
+        series: 'openai-6-level-superset-v1',
+        template: {
+          editorType: 'discrete',
+          allowedValues: [
+            { valueType: 'code', code: 'none', labelZh: '无' },
+            { valueType: 'code', code: 'low', labelZh: '低' },
+            { valueType: 'code', code: 'high', labelZh: '高' },
+          ],
+          defaultValue: { valueType: 'code', code: 'high', labelZh: '高' },
+        },
+      })
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('drops legacy provider defaultModel fields from editable state and clears them on save', async () => {
+    const fixture = await createSettingsWorkspaceFixture()
+
+    try {
+      const initial = await fixture.storage.loadState()
+      await fixture.storage.saveProfileSecret('legacy-provider', 'legacy-secret')
+
+      await writeFile(fixture.paths.stateDocument, `${JSON.stringify({
+        version: 1,
+        kind: 'settings-workspace-state',
+        values: {
+          ...initial.state,
+          providerProfiles: [
+            {
+              id: 'legacy-provider',
+              name: 'Legacy Provider',
+              protocol: 'openai',
+              endpoint: 'https://legacy.example.com/v1',
+              defaultModel: 'legacy-model',
+              fastModel: '',
+              fallbackModel: '',
+              organization: '',
+              region: 'Global',
+              notes: 'legacy-default-model',
+              availableModels: [
+                {
+                  id: 'legacy-provider:model-1',
+                  modelId: 'legacy-model',
+                  displayName: 'Legacy Model',
+                  groupName: 'Legacy',
+                  capabilities: ['reasoning', 'tools'],
+                  supportsStreaming: true,
+                  currency: 'usd',
+                  inputPrice: '1',
+                  outputPrice: '2',
+                },
+              ],
+            },
+          ],
+        },
+      }, null, 2)}\n`)
+
+      const loaded = await fixture.storage.loadState()
+
+      expect(loaded.state.providerProfiles[0]).toMatchObject({
+        id: 'legacy-provider',
+        fastModel: '',
+        fallbackModel: '',
+        hasApiKey: true,
+      })
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
+
+      const saveResult = await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues(loaded.state))
+      expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
+
+      const persistedDocument = await readJsonFile(fixture.paths.stateDocument) as {
+        values: {
+          providerProfiles: Array<Record<string, unknown>>
+        }
+      }
+      expect(persistedDocument.values.providerProfiles[0]).not.toHaveProperty('defaultModel')
+      expect(await fixture.storage.loadSecretStates(['legacy-provider'])).toEqual({
+        states: {
+          'legacy-provider': {
+            hasApiKey: true,
+            apiKey: 'legacy-secret',
+          },
+        },
+      })
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
@@ -252,9 +388,21 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'resolved-provider',
         protocol: 'openai',
         endpoint: 'https://resolved.example.com/v1/',
-        defaultModel: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
+        availableModels: [
+          {
+            id: 'resolved-provider:model-1',
+            modelId: 'gpt-4.1',
+            displayName: 'GPT 4.1',
+            groupName: 'Resolved',
+            capabilities: ['reasoning', 'tools'],
+            supportsStreaming: true,
+            currency: 'usd',
+            inputPrice: '1',
+            outputPrice: '2',
+          },
+        ],
       })
       await fixture.storage.saveState(normalizeSettingsWorkspaceStateValues({
         ...(await fixture.storage.loadState()).state,
@@ -405,7 +553,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'active-openai',
         protocol: 'openai',
         endpoint: 'https://active.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
       })
@@ -414,7 +562,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'openrouter',
         providerId: 'openrouter',
         endpoint: 'https://openrouter.ai/api/v1/',
-        defaultModel: 'openai/gpt-4.1',
+        primaryModelId: 'openai/gpt-4.1',
         fastModel: 'openai/gpt-4.1-mini',
         fallbackModel: 'openai/gpt-4.1-mini',
       })
@@ -423,7 +571,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'openai-response',
         providerId: 'openai-response',
         endpoint: 'https://legacy.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1',
         fallbackModel: 'gpt-4.1',
       })
@@ -431,7 +579,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'legacy-profile',
         protocol: 'openai',
         endpoint: 'https://legacy-profile.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
         compatibility: {
@@ -443,7 +591,7 @@ describe('createSettingsWorkspaceStorage', () => {
         id: 'unsupported-profile',
         protocol: 'openai',
         endpoint: 'https://unsupported.example.com/v1/',
-        defaultModel: 'gpt-4.1',
+        primaryModelId: 'gpt-4.1',
         fastModel: 'gpt-4.1-mini',
         fallbackModel: 'gpt-4.1-mini',
         compatibility: {
@@ -456,7 +604,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'custom-missing',
         providerId: 'custom-missing',
         endpoint: 'https://missing.example.com/v1/',
-        defaultModel: 'custom-model',
+        primaryModelId: 'custom-model',
         fastModel: 'custom-model',
         fallbackModel: 'custom-model',
       })
@@ -588,7 +736,7 @@ describe('createSettingsWorkspaceStorage', () => {
         protocol: 'ollama',
         endpoint: 'http://127.0.0.1:11434/v1/',
         hasApiKey: false,
-        defaultModel: 'llama3.2',
+        primaryModelId: 'llama3.2',
         fastModel: 'llama3.2',
         fallbackModel: 'llama3.2',
       })

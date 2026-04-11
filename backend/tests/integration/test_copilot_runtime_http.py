@@ -25,6 +25,7 @@ from app.copilot_runtime.model_routes import (
 )
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.session_store import (
+    InMemorySessionStore,
     RuntimeStoredModelRoute,
     RuntimeStoredRunInput,
     RuntimeStoredRunPolicy,
@@ -176,7 +177,6 @@ def test_post_root_legacy_methods_return_method_not_implemented() -> None:
             _assert_supported_methods(payload["error"]["supportedMethods"])
 
 
-
 def test_post_root_thread_first_flow_reuses_history_across_same_thread() -> None:
     executor = CapturingStreamingExecutor(outputs=["First reply", "Second reply"])
     app = _create_app(executor)
@@ -258,7 +258,6 @@ def test_post_root_thread_first_flow_reuses_history_across_same_thread() -> None
     assert reused_history[1].parts[0].content == "First reply"
 
 
-
 def test_post_root_run_stream_succeeds_without_startup_model_when_route_is_present() -> None:
     app = _create_app(CapturingStreamingExecutor(outputs=["Route scoped reply"], model_configured=False))
 
@@ -292,6 +291,58 @@ def test_post_root_run_stream_succeeds_without_startup_model_when_route_is_prese
     ]
     assert events[-1]["payload"]["assistantText"] == "Route scoped reply"
 
+
+def test_post_root_run_start_unexpected_failure_with_origin_returns_json_and_cors_headers(caplog) -> None:
+    class _FailingRunStartSessionStore(InMemorySessionStore):
+        def create_run(self, *args: Any, **kwargs: Any):
+            raise RuntimeError("forced run/start failure")
+
+    app = create_app(
+        session_store=_FailingRunStartSessionStore(),
+        agent_executor=CapturingStreamingExecutor(outputs=["unused reply"]),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    with caplog.at_level("ERROR", logger="uvicorn.error"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+            thread_id = thread_response.json()["threadId"]
+            response = client.post(
+                "/",
+                json=_build_run_start_request(
+                    thread_id=thread_id,
+                    model_id="gpt-4.1",
+                    user_text="Hello",
+                ),
+                headers={"Origin": "http://localhost:5173"},
+            )
+
+    payload = response.json()
+    request_id = payload["error"]["details"]["requestId"]
+    run_start_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "run/start unexpected exception" in record.getMessage()
+    ]
+
+    assert thread_response.status_code == 200
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "internal_server_error"
+    assert payload["error"]["requestedMethod"] == "run/start"
+    assert request_id
+    assert len(run_start_logs) == 1
+    assert f"request_id={request_id}" in run_start_logs[0]
+    assert "runtime_method=run/start" in run_start_logs[0]
+    assert f"thread_id={thread_id}" in run_start_logs[0]
+    assert "agent_id=default" in run_start_logs[0]
+    assert "phase=create_run_record" in run_start_logs[0]
+    assert all(
+        "desktop-runtime unexpected exception" not in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_post_root_run_stream_emits_real_tool_lifecycle_events() -> None:
@@ -360,7 +411,6 @@ def test_post_root_run_stream_emits_real_tool_lifecycle_events() -> None:
     assert executor.captured_calls[0]["enabled_tools"] == [WEATHER_CURRENT_TOOL_ID]
 
 
-
 def test_post_root_run_stream_corrupted_thread_history_returns_failed_event() -> None:
     app = _create_app(CapturingStreamingExecutor(outputs=["unused reply"]))
 
@@ -413,13 +463,11 @@ def test_post_root_run_stream_corrupted_thread_history_returns_failed_event() ->
     assert events[-1]["payload"]["details"] == {}
 
 
-
 def _create_app(executor: CapturingStreamingExecutor):
     return create_app(
         agent_executor=executor,
         model_route_resolver=_ResolvedRouteResolver(),
     )
-
 
 
 def _build_thread_create_request(*, agent_id: str) -> dict[str, Any]:
@@ -431,7 +479,6 @@ def _build_thread_create_request(*, agent_id: str) -> dict[str, Any]:
     }
 
 
-
 def _build_capabilities_get_request(*, thread_id: str) -> dict[str, Any]:
     return {
         "method": "capabilities/get",
@@ -439,7 +486,6 @@ def _build_capabilities_get_request(*, thread_id: str) -> dict[str, Any]:
             "sessionId": thread_id,
         },
     }
-
 
 
 def _build_run_start_request(
@@ -475,7 +521,6 @@ def _build_run_start_request(
     }
 
 
-
 def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
     return {
         "method": "run/stream",
@@ -483,7 +528,6 @@ def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
             "runId": run_id,
         },
     }
-
 
 
 def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
@@ -495,7 +539,6 @@ def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
         payload = "\n".join(line[6:] for line in lines)
         events.append(json.loads(payload))
     return events
-
 
 
 def _assert_supported_methods(supported_methods: list[str]) -> None:

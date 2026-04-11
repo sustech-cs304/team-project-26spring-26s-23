@@ -21,6 +21,7 @@ interface TextFieldProps {
   placeholder?: string
   type?: 'text' | 'password' | 'url'
   inputRef?: Ref<HTMLInputElement>
+  containerClassName?: string
   disabled?: boolean
   inputTestId?: string
 }
@@ -156,11 +157,12 @@ export function TextField({
   placeholder,
   type = 'text',
   inputRef,
+  containerClassName,
   disabled = false,
   inputTestId,
 }: TextFieldProps) {
   return (
-    <label className="form-field">
+    <label className={containerClassName ? `form-field ${containerClassName}` : 'form-field'}>
       <span className="form-field__meta">
         <span className="form-field__label">{label}</span>
         {description ? <span className="form-field__description">{description}</span> : null}

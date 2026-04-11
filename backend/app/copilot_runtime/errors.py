@@ -19,6 +19,7 @@ UNSUPPORTED_MESSAGE_SHAPE_CODE = "unsupported_message_shape"
 INVALID_MESSAGE_HISTORY_CODE = "invalid_message_history"
 MODEL_NOT_CONFIGURED_CODE = "model_not_configured"
 AGENT_EXECUTION_FAILED_CODE = "agent_execution_failed"
+INTERNAL_SERVER_ERROR_CODE = "internal_server_error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +242,22 @@ def build_agent_execution_failed_error(
         scaffold=scaffold,
         requested_method=requested_method,
         details=details,
+    )
+
+
+
+def build_internal_server_error(
+    *,
+    scaffold: RuntimeScaffold,
+    requested_method: str | None,
+    request_id: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=INTERNAL_SERVER_ERROR_CODE,
+        message="Desktop runtime encountered an unexpected error. See runtime console logs with requestId.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"requestId": request_id},
     )
 
 

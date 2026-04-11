@@ -17,12 +17,11 @@ import {
   type CopilotAssistantPlaceholderState,
   type CopilotMessageListItem,
   type CopilotReasoningMessageItem,
-  type CopilotTerminalMessageItem,
   type CopilotToolMessageItem,
 } from './run-segment-view-model'
 
 const assistantMarkdownComponents: Components = {
-  hr({ node: _node, className, ...props }) {
+  hr({ className, ...props }) {
     return (
       <hr
         {...props}
@@ -55,7 +54,6 @@ interface CopilotMessageListProps {
   conversation: CopilotMessageListItem[]
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
-  showDiagnostics?: boolean
   transientError?: string | null
   emptyState?: {
     title: string
@@ -73,17 +71,15 @@ export function CopilotMessageList({
   conversation,
   assistantPlaceholder = null,
   models = [],
-  showDiagnostics = true,
   transientError = null,
   emptyState = null,
 }: CopilotMessageListProps) {
   const visibleConversation = useMemo(
     () => buildVisibleConversation({
       conversation,
-      showDiagnostics,
       transientError,
     }),
-    [conversation, showDiagnostics, transientError],
+    [conversation, transientError],
   )
   const [renderedAssistantPlaceholder, setRenderedAssistantPlaceholder] = useState<RenderedAssistantPlaceholderState>(
     () => createRenderedAssistantPlaceholderState(assistantPlaceholder),
@@ -166,7 +162,7 @@ export function CopilotMessageList({
             </div>
           )
         : visibleConversation.map((turn, index) => {
-            const detailRows = buildDetailRows(turn, showDiagnostics)
+            const detailRows = buildDetailRows()
             return (
               <article
                 key={turn.id}
@@ -205,11 +201,6 @@ export function CopilotMessageList({
                               ))}
                             </div>
                           )}
-                          {turn.kind === 'diagnostic' && (
-                            <p className="copilot-chat__message-diagnostic" data-testid={`chat-message-diagnostic-${turn.id}`}>
-                              诊断：{turn.diagnostic.stage} / {turn.diagnostic.code} / {turn.diagnostic.message}
-                            </p>
-                          )}
                         </>
                       )}
               </article>
@@ -222,12 +213,9 @@ export function CopilotMessageList({
 
 function buildVisibleConversation(input: {
   conversation: CopilotMessageListItem[]
-  showDiagnostics: boolean
   transientError: string | null
 }): CopilotMessageListItem[] {
-  const filteredConversation = input.showDiagnostics
-    ? input.conversation
-    : input.conversation.filter((turn) => turn.kind !== 'diagnostic')
+  const filteredConversation = input.conversation.filter((turn) => turn.kind !== 'diagnostic')
   const trimmedTransientError = input.transientError?.trim() ?? ''
 
   if (trimmedTransientError === '') {
@@ -380,103 +368,12 @@ function renderMessageBody(turn: CopilotMessageListItem) {
   return <p className="copilot-chat__message-text">{turn.content}</p>
 }
 
-function buildDetailRows(
-  turn: CopilotMessageListItem,
-  showDiagnostics: boolean,
-): Array<{
+function buildDetailRows(): Array<{
   kind: 'input' | 'result' | 'error' | 'meta'
   label: string
   value: string
 }> {
-  switch (turn.kind) {
-    case 'reasoning':
-    case 'tool':
-      return []
-    case 'diagnostic':
-      return [
-        {
-          kind: 'meta',
-          label: '阶段',
-          value: turn.diagnostic.stage,
-        },
-        {
-          kind: 'meta',
-          label: '代码',
-          value: turn.diagnostic.code,
-        },
-      ]
-    case 'terminal': {
-      const terminalRows = turn.terminalPhase === 'failed' && turn.failure !== null
-        ? [{
-            kind: 'error' as const,
-            label: '代码',
-            value: turn.failure.code,
-          }]
-        : []
-      return [...terminalRows, ...buildThinkingDetailRows(turn, showDiagnostics)]
-    }
-    case 'assistant':
-      return buildThinkingDetailRows(turn, showDiagnostics)
-    case 'user':
-      return []
-  }
-}
-
-function buildThinkingDetailRows(
-  turn: CopilotAssistantMessageItem | CopilotTerminalMessageItem,
-  showDiagnostics: boolean,
-): Array<{
-  kind: 'meta'
-  label: string
-  value: string
-}> {
-  if (!showDiagnostics) {
-    return []
-  }
-
-  const rows: Array<{
-    kind: 'meta'
-    label: string
-    value: string
-  }> = []
-
-  if (turn.requestedThinkingLevel !== undefined) {
-    rows.push({
-      kind: 'meta',
-      label: '请求思考',
-      value: turn.requestedThinkingLevel ?? '未请求',
-    })
-  }
-
-  if (turn.appliedThinkingLevel !== undefined) {
-    rows.push({
-      kind: 'meta',
-      label: '应用思考',
-      value: turn.appliedThinkingLevel ?? '未应用',
-    })
-  }
-
-  if (turn.thinkingCapabilitySnapshot !== undefined && turn.thinkingCapabilitySnapshot !== null) {
-    rows.push({
-      kind: 'meta',
-      label: '能力来源',
-      value: `${turn.thinkingCapabilitySnapshot.source} / ${turn.thinkingCapabilitySnapshot.status}`,
-    })
-    rows.push({
-      kind: 'meta',
-      label: '原因码',
-      value: turn.thinkingCapabilitySnapshot.reasonCode,
-    })
-    if (turn.thinkingCapabilitySnapshot.providerHint !== null) {
-      rows.push({
-        kind: 'meta',
-        label: 'Provider Hint',
-        value: turn.thinkingCapabilitySnapshot.providerHint,
-      })
-    }
-  }
-
-  return rows
+  return []
 }
 
 function ReasoningMessageCard({

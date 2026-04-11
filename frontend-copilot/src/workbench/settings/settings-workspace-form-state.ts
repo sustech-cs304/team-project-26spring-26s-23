@@ -48,7 +48,7 @@ const INITIAL_SETTINGS_WORKSPACE_FORM_STATE: SettingsWorkspaceFormState = {
   blackboardAutoDownloadEnabled: false,
   blackboardDownloadLimitMb: '0',
   providerProfiles: cloneProviderProfiles(initialProviderProfiles),
-  primaryAssistantModel: initialProviderProfiles[0]?.defaultModel ?? '',
+  primaryAssistantModel: '',
   fastAssistantModel: initialProviderProfiles[0]?.fastModel ?? '',
   primaryAssistantModelRoute: null,
   fastAssistantModelRoute: null,

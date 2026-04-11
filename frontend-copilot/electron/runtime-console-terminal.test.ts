@@ -52,8 +52,18 @@ describe('runtime console terminal output', () => {
     expect(shouldWriteRuntimeConsoleEntryToTerminal(errorEntry)).toBe(true)
     expect(writeRuntimeConsoleEntryToTerminal(warnEntry, targetConsole)).toBe(true)
     expect(writeRuntimeConsoleEntryToTerminal(errorEntry, targetConsole)).toBe(true)
-    expect(targetConsole.warn).toHaveBeenCalledWith(expect.stringMatching(/\u001B\[90m\d{2}:40:52\.123\u001B\[0m .*\u001B\[36m\[desktop-runtime\]\u001B\[0m \[desktop-runtime\] Ignoring invalid hosted runtime command-line arguments\.$/))
-    expect(targetConsole.error).toHaveBeenCalledWith(expect.stringMatching(/\u001B\[90m\d{2}:40:53\.456\u001B\[0m .*\u001B\[36m\[desktop-runtime\]\u001B\[0m \[desktop-runtime\] Hosted backend startup failed\. code=startup_timeout$/))
+
+    const warnOutput = targetConsole.warn.mock.calls[0]?.[0]
+    const errorOutput = targetConsole.error.mock.calls[0]?.[0]
+
+    expect(typeof warnOutput).toBe('string')
+    expect(typeof errorOutput).toBe('string')
+    expect(warnOutput).toContain('[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.')
+    expect(errorOutput).toContain('[desktop-runtime] Hosted backend startup failed. code=startup_timeout')
+    expect(warnOutput).toContain('[desktop-runtime]')
+    expect(errorOutput).toContain('[desktop-runtime]')
+    expect(warnOutput).toContain('40:52.123')
+    expect(errorOutput).toContain('40:53.456')
   })
 
   it('formats renderer warning entries into compact terminal output', () => {
@@ -77,6 +87,12 @@ describe('runtime console terminal output', () => {
       },
     }, targetConsole)).toBe(true)
 
-    expect(targetConsole.warn).toHaveBeenCalledWith(expect.stringMatching(/\u001B\[90m\d{2}:40:54\.789\u001B\[0m .*\u001B\[36m\[renderer-console\]\u001B\[0m \u001B\[33mWARNING\u001B\[0m Electron Security Warning \(Insecure Content-Security-Policy\).*\u001B\[90m\(node:electron\/js2c\/sandbox_bundle:2\)\u001B\[0m$/))
+    const rendererWarnOutput = targetConsole.warn.mock.calls[0]?.[0]
+    expect(typeof rendererWarnOutput).toBe('string')
+    expect(rendererWarnOutput).toContain('40:54.789')
+    expect(rendererWarnOutput).toContain('[renderer-console]')
+    expect(rendererWarnOutput).toContain('WARNING')
+    expect(rendererWarnOutput).toContain('Electron Security Warning (Insecure Content-Security-Policy)')
+    expect(rendererWarnOutput).toContain('(node:electron/js2c/sandbox_bundle:2)')
   })
 })

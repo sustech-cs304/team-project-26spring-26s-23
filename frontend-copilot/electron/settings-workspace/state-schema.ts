@@ -5,7 +5,6 @@ import type {
 import type { SettingsWorkspaceProviderSecretStateById } from './secret-schema'
 import {
   cloneStoredProviderProfile,
-  createDefaultSettingsWorkspaceDefaultModelRouting,
   createDefaultStoredProviderProfiles,
   normalizeStoredProviderProfiles,
   projectEditableProviderProfile,
@@ -98,7 +97,10 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
     blackboardDownloadLimitMb: '0',
   },
   providerProfiles: createDefaultStoredProviderProfiles(),
-  defaultModelRouting: createDefaultSettingsWorkspaceDefaultModelRouting(),
+  defaultModelRouting: {
+    primaryAssistantModel: null,
+    fastAssistantModel: null,
+  },
   general: {
     language: 'zh-CN',
     proxyMode: 'system',

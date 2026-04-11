@@ -134,7 +134,7 @@ describe('copilot model picker bridge', () => {
     ])
 
     expect(catalog.models[0]?.available).toBe(false)
-    expect(catalog.models[0]?.unavailableReason).toBe('历史兼容 / 当前未启用')
+    expect(catalog.models[0]?.unavailableReason).toBe('当前模型暂不可用于聊天。')
     expect(isRuntimeModelRouteSupportedForStreamingChat(catalog.models[0]?.route ?? null)).toBe(true)
     expect(getRuntimeModelRouteStreamingSupportReason(catalog.models[0]?.route ?? null)).toBeNull()
   })
@@ -245,7 +245,7 @@ describe('copilot model picker bridge', () => {
 
     const catalogOnlyModel = catalog.models.find((model) => model.id === 'provider-openrouter:router-model')
     expect(catalogOnlyModel?.available).toBe(false)
-    expect(catalogOnlyModel?.unavailableReason).toBe('仅数据层兼容，当前聊天运行时尚未启用该 provider。')
+    expect(catalogOnlyModel?.unavailableReason).toBe('当前模型暂不可用于聊天。')
   })
 
   it('returns an empty preferred model id when no configured models exist', () => {

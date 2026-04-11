@@ -1,283 +1,289 @@
 from __future__ import annotations
 
-import pytest
-
+from app.copilot_runtime.contracts import RuntimeThinkingSelection, RuntimeThinkingValue
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
-from app.copilot_runtime.provider_adapter_registry import (
-    RuntimeProviderAdapterError,
-    RuntimeProviderAdapterRegistry,
-)
 from app.copilot_runtime.thinking_adapter import (
-    adapt_thinking_intent,
+    adapt_thinking_selection,
+    parse_thinking_capability_override,
     resolve_canonical_thinking_capability,
 )
 
 
-@pytest.mark.parametrize(
-    (
-        "provider_id",
-        "adapter_id",
-        "endpoint_type",
-        "base_url",
-        "model_id",
-        "expected_status",
-        "expected_reason_code",
-        "expected_provider_hint",
-    ),
-    [
-        (
-            "openai",
-            "openai",
-            "openai-compatible",
-            "https://api.z.ai/api/paas/v4",
-            "glm-5-turbo",
-            "verified-unsupported",
-            "openai_thinking_not_supported_for_model",
-            "openai",
-        ),
-        (
-            "anthropic",
-            "anthropic",
-            "anthropic-native",
-            "https://api.anthropic.com",
-            "claude-3-7-sonnet",
-            "verified-unsupported",
-            "anthropic_thinking_not_supported_for_model",
-            "anthropic",
-        ),
-        (
-            "gemini",
-            "gemini",
-            "gemini-native",
-            "https://generativelanguage.googleapis.com",
-            "gemini-2.5-pro",
-            "verified-unsupported",
-            "gemini_thinking_not_supported_for_model",
-            "gemini",
-        ),
-        (
-            "ollama",
-            "ollama",
-            "ollama-native",
-            "http://127.0.0.1:11434/v1",
-            "llama3.2",
-            "verified-unsupported",
-            "ollama_thinking_not_supported_for_model",
-            "ollama",
-        ),
-        (
-            "groq",
-            "groq",
-            "openai-compatible",
-            "https://api.groq.com/openai/v1",
-            "llama-3.3-70b-versatile",
-            "verified-unsupported",
-            "groq_thinking_not_supported_for_model",
-            "groq",
-        ),
-        (
-            "mistral",
-            "mistral",
-            "openai-compatible",
-            "https://api.mistral.ai/v1",
-            "mistral-large-latest",
-            "verified-unsupported",
-            "mistral_thinking_not_supported_for_model",
-            "mistral",
-        ),
-    ],
-)
-def test_resolve_canonical_thinking_capability_returns_stable_results_for_first_batch_providers(
-    provider_id: str,
-    adapter_id: str,
-    endpoint_type: str,
-    base_url: str,
-    model_id: str,
-    expected_status: str,
-    expected_reason_code: str,
-    expected_provider_hint: str,
-) -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_build_route(
-            provider_id=provider_id,
-            adapter_id=adapter_id,
-            endpoint_type=endpoint_type,
-            base_url=base_url,
-            model_id=model_id,
-            auth_kind="none" if provider_id == "ollama" else "api-key",
-            api_key="" if provider_id == "ollama" else "test-api-key",
-        )
+def test_resolve_verified_openai_6_level_series_for_gpt5_route() -> None:
+    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-5")).to_public_dict()
+
+    assert capability == {
+        "status": "verified-supported",
+        "source": "verified",
+        "series": "openai-6-level-superset-v1",
+        "seriesLabelZh": "OpenAI 6 档总超集",
+        "editorType": "discrete",
+        "allowedValues": [
+            {"valueType": "code", "code": "none", "labelZh": "无", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "minimal", "labelZh": "极简", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "low", "labelZh": "低", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "medium", "labelZh": "中", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "high", "labelZh": "高", "mode": None, "budgetTokens": None},
+            {"valueType": "code", "code": "xhigh", "labelZh": "超高", "mode": None, "budgetTokens": None},
+        ],
+        "defaultValue": {
+            "valueType": "code",
+            "code": "medium",
+            "labelZh": "中",
+            "mode": None,
+            "budgetTokens": None,
+        },
+        "providerBuilderKey": "openai_reasoning_effort_v1",
+        "reasonCode": "verified_series_resolved",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-5",
+        },
+    }
+
+
+def test_resolve_verified_openai_4_level_series_for_gpt41_route() -> None:
+    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-4.1")).to_public_dict()
+
+    assert capability["series"] == "openai-4-level-minimal-v1"
+    assert capability["seriesLabelZh"] == "OpenAI 4 档 Minimal 系"
+    assert capability["editorType"] == "discrete"
+    assert [value["code"] for value in capability["allowedValues"]] == [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+    ]
+    assert capability["defaultValue"]["code"] == "medium"
+
+
+def test_openai_6_level_and_4_level_are_different_series() -> None:
+    gpt5_capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-5"))
+    gpt41_capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-4.1"))
+
+    assert gpt5_capability.series == "openai-6-level-superset-v1"
+    assert gpt41_capability.series == "openai-4-level-minimal-v1"
+    assert gpt5_capability.series != gpt41_capability.series
+
+
+def test_resolve_unknown_route_without_override_returns_empty_series_snapshot() -> None:
+    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="unknown-model")).to_public_dict()
+
+    assert capability == {
+        "status": "unknown-without-override",
+        "source": "unknown",
+        "series": None,
+        "seriesLabelZh": None,
+        "editorType": None,
+        "allowedValues": [],
+        "defaultValue": None,
+        "providerBuilderKey": None,
+        "reasonCode": "route_not_verified",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "unknown-model",
+        },
+    }
+
+
+def test_parse_thinking_capability_override_accepts_series_template_shape() -> None:
+    override = parse_thinking_capability_override(
+        {
+            "supported": True,
+            "series": "gemini-2.5-budget-v1",
+            "source": "settings-page",
+            "template": {
+                "editorType": "budget",
+                "allowedValues": [
+                    {"valueType": "budget", "mode": "off", "labelZh": "关闭"},
+                    {"valueType": "budget", "mode": "dynamic", "labelZh": "动态"},
+                ],
+                "defaultValue": {
+                    "valueType": "budget",
+                    "mode": "budget",
+                    "budgetTokens": 4096,
+                    "labelZh": "4096 Tokens",
+                },
+                "budget": {
+                    "minTokens": 0,
+                    "maxTokens": 32768,
+                    "stepTokens": 1024,
+                    "anchorTokens": [0, 4096, 8192],
+                },
+            },
+        }
     )
 
-    assert capability.status == expected_status
-    assert capability.source == "verified"
-    assert capability.reason_code == expected_reason_code
-    assert capability.provider_hint == expected_provider_hint
-    if expected_status == "verified-supported":
-        assert capability.supported is True
-        assert capability.supported_levels == ("off", "auto")
-        assert capability.default_level == "auto"
-    else:
-        assert capability.supported is False
-        assert capability.supported_levels == ()
-        assert capability.default_level is None
+    assert override is not None
+    assert override.supported is True
+    assert override.series == "gemini-2.5-budget-v1"
+    assert override.source == "settings-page"
+    assert override.editor_type == "budget"
+    assert [value.to_dict() for value in override.allowed_values] == [
+        {"valueType": "budget", "code": None, "mode": "off", "budgetTokens": None, "labelZh": "关闭"},
+        {"valueType": "budget", "code": None, "mode": "dynamic", "budgetTokens": None, "labelZh": "动态"},
+    ]
+    assert override.default_value is not None
+    assert override.default_value.to_dict() == {
+        "valueType": "budget",
+        "code": None,
+        "mode": "budget",
+        "budgetTokens": 4096,
+        "labelZh": "4096 Tokens",
+    }
+    assert override.budget is not None
+    assert override.budget.to_public_dict() == {
+        "minTokens": 0,
+        "maxTokens": 32768,
+        "stepTokens": 1024,
+        "anchorTokens": [0, 4096, 32768, 131072, 1048576],
+    }
 
 
-@pytest.mark.parametrize(
-    ("provider_id", "adapter_id", "runtime_status", "endpoint_type", "expected_reason_code"),
-    [
-        (
-            "openrouter",
-            "openrouter",
-            "catalog-only",
-            "openai-compatible",
-            "provider_catalog_only",
-        ),
-        (
-            "openai-response",
-            "openai-response",
-            "legacy-unsupported",
-            "openai-response",
-            "provider_legacy_unsupported",
-        ),
-    ],
-)
-def test_resolve_canonical_thinking_capability_marks_catalog_only_and_legacy_routes_as_verified_unsupported(
-    provider_id: str,
-    adapter_id: str,
-    runtime_status: str,
-    endpoint_type: str,
-    expected_reason_code: str,
-) -> None:
+def test_resolve_unknown_route_with_override_uses_override_series_template() -> None:
     capability = resolve_canonical_thinking_capability(
-        model_route=_build_route(
-            provider_id=provider_id,
-            adapter_id=adapter_id,
-            runtime_status=runtime_status,
-            endpoint_type=endpoint_type,
-            base_url="https://example.com/v1",
-            model_id="test-model",
-        )
+        model_route=_route(model_id="unknown-model"),
+        thinking_capability_override={
+            "supported": True,
+            "series": "qwen-thinking-switch-v1",
+            "template": {
+                "editorType": "discrete",
+                "allowedValues": [
+                    {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                    {"valueType": "code", "code": "true", "labelZh": "开启"},
+                ],
+                "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
+            },
+        },
+    ).to_public_dict()
+
+    assert capability["status"] == "unknown-with-override"
+    assert capability["source"] == "override"
+    assert capability["series"] == "qwen-thinking-switch-v1"
+    assert capability["seriesLabelZh"] == "Qwen Thinking 开关"
+    assert capability["editorType"] == "discrete"
+    assert capability["providerBuilderKey"] == "qwen_switch_v1"
+    assert [value["code"] for value in capability["allowedValues"]] == ["false", "true"]
+    assert capability["defaultValue"]["code"] == "true"
+
+
+def test_adapt_thinking_selection_applies_verified_series_builder() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="openai-6-level-superset-v1",
+            value=RuntimeThinkingValue(valueType="code", code="high", labelZh="高"),
+        ),
+        model_route=_route(model_id="gpt-5"),
     )
 
-    assert capability.status == "verified-unsupported"
-    assert capability.source == "verified"
-    assert capability.supported is False
-    assert capability.reason_code == expected_reason_code
-    assert capability.provider_hint == provider_id
+    assert result.applied is True
+    assert result.reason == "verified_series_builder_applied"
+    assert result.error_code is None
+    assert result.provider_builder_key == "openai_reasoning_effort_v1"
+    assert result.mapping_reason_code == "openai_reasoning_effort_high"
+    assert result.model_settings == {"reasoning_effort": "high"}
+    assert result.requested_selection is not None
+    assert result.applied_selection is not None
+    assert result.requested_selection.to_dict() == result.applied_selection.to_dict()
 
 
-def test_resolve_canonical_thinking_capability_propagates_adapter_and_auth_failures_for_query_error_normalization() -> None:
-    with pytest.raises(RuntimeProviderAdapterError) as adapter_missing_info:
-        resolve_canonical_thinking_capability(
-            model_route=_build_route(
-                provider_id="openai",
-                adapter_id="openai",
-                endpoint_type="openai-compatible",
-                base_url="https://api.openai.com/v1",
-                model_id="gpt-4.1",
+def test_adapt_thinking_selection_rejects_requested_series_mismatch() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="openai-4-level-minimal-v1",
+            value=RuntimeThinkingValue(valueType="code", code="medium", labelZh="中"),
+        ),
+        model_route=_route(model_id="gpt-5"),
+    )
+
+    assert result.applied is False
+    assert result.reason == "requested_series_mismatch"
+    assert result.error_code == "thinking_series_not_supported_for_route"
+    assert result.mapping_reason_code == "requested_series_mismatch"
+    assert result.provider_builder_key == "openai_reasoning_effort_v1"
+    assert result.applied_selection is None
+
+
+def test_adapt_thinking_selection_rejects_unknown_route_without_override() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="openai-6-level-superset-v1",
+            value=RuntimeThinkingValue(valueType="code", code="high", labelZh="高"),
+        ),
+        model_route=_route(model_id="unknown-model"),
+    )
+
+    assert result.applied is False
+    assert result.reason == "thinking_series_unknown_without_override"
+    assert result.error_code == "thinking_series_unknown_without_override"
+    assert result.mapping_reason_code == "series_unresolved"
+    assert result.provider_builder_key is None
+
+
+def test_adapt_thinking_selection_uses_override_budget_builder() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="gemini-2.5-budget-v1",
+            value=RuntimeThinkingValue(
+                valueType="budget",
+                mode="budget",
+                budgetTokens=8192,
+                labelZh="8192 Tokens",
             ),
-            provider_adapter_registry=RuntimeProviderAdapterRegistry(),
-        )
-
-    with pytest.raises(RuntimeProviderAdapterError) as auth_missing_info:
-        resolve_canonical_thinking_capability(
-            model_route=_build_route(
-                provider_id="openai",
-                adapter_id="openai",
-                endpoint_type="openai-compatible",
-                base_url="https://api.openai.com/v1",
-                model_id="gpt-4.1",
-                api_key="",
-                auth_kind="api-key",
-            )
-        )
-
-    assert adapter_missing_info.value.code == "adapter_missing"
-    assert adapter_missing_info.value.details["providerId"] == "openai"
-
-    assert auth_missing_info.value.code == "provider_auth_missing"
-    assert auth_missing_info.value.details["providerId"] == "openai"
-
-
-def test_resolve_canonical_thinking_capability_falls_back_to_unknown_for_catalog_unknown_routes() -> None:
-    capability = resolve_canonical_thinking_capability(
-        model_route=_build_route(
-            provider_id="missing-provider",
-            adapter_id="missing-provider",
-            endpoint_type="openai-compatible",
-            base_url="https://example.com/v1",
-            model_id="mystery-model",
-        )
-    )
-
-    assert capability.status == "unknown-without-override"
-    assert capability.source == "unknown"
-    assert capability.supported is False
-    assert capability.reason_code == "route_not_verified"
-    assert capability.provider_hint == "unknown-route"
-
-
-def test_adapt_thinking_intent_does_not_apply_legacy_openai_compatible_mapping_for_glm_route() -> None:
-    adaptation = adapt_thinking_intent(
-        intent="auto",
-        model_route=_build_route(
-            provider_id="openai",
-            adapter_id="openai",
-            endpoint_type="openai-compatible",
-            base_url="https://api.z.ai/api/paas/v4",
-            model_id="glm-5-turbo",
         ),
+        model_route=_route(model_id="unknown-model"),
+        thinking_capability_override={
+            "supported": True,
+            "series": "gemini-2.5-budget-v1",
+            "template": {
+                "editorType": "budget",
+                "allowedValues": [
+                    {"valueType": "budget", "mode": "off", "labelZh": "关闭"},
+                    {"valueType": "budget", "mode": "dynamic", "labelZh": "动态"},
+                ],
+                "defaultValue": {
+                    "valueType": "budget",
+                    "mode": "dynamic",
+                    "budgetTokens": None,
+                    "labelZh": "动态",
+                },
+                "budget": {
+                    "minTokens": 0,
+                    "maxTokens": 32768,
+                    "stepTokens": 1024,
+                    "anchorTokens": [0, 4096, 8192],
+                },
+            },
+        },
     )
 
-    assert adaptation.applied is False
-    assert adaptation.applied_intent is None
-    assert adaptation.reason == "requested_level_not_in_capability"
-    assert adaptation.provider_mapping is None
-    assert adaptation.model_settings is None
-    assert adaptation.capability.status == "verified-unsupported"
-    assert adaptation.capability.reason_code == "openai_thinking_not_supported_for_model"
+    assert result.applied is True
+    assert result.reason == "override_series_builder_applied"
+    assert result.error_code is None
+    assert result.provider_builder_key == "gemini_budget_v1"
+    assert result.mapping_reason_code == "gemini_budget_tokens"
+    assert result.model_settings == {
+        "extra_body": {
+            "thinking": {
+                "type": "budget_tokens",
+                "budget_tokens": 8192,
+            }
+        }
+    }
 
 
-def test_adapt_thinking_intent_fails_fast_for_verified_unsupported_model() -> None:
-    adaptation = adapt_thinking_intent(
-        intent="medium",
-        model_route=_build_route(
-            provider_id="mistral",
-            adapter_id="mistral",
-            endpoint_type="openai-compatible",
-            base_url="https://api.mistral.ai/v1",
-            model_id="mistral-large-latest",
-        ),
-    )
-
-    assert adaptation.applied is False
-    assert adaptation.applied_intent is None
-    assert adaptation.reason == "requested_level_not_in_capability"
-    assert adaptation.capability.status == "verified-unsupported"
-    assert adaptation.capability.reason_code == "mistral_thinking_not_supported_for_model"
-
-
-def _build_route(
-    *,
-    provider_id: str,
-    adapter_id: str,
-    endpoint_type: str,
-    base_url: str,
-    model_id: str,
-    runtime_status: str = "enabled",
-    auth_kind: str = "api-key",
-    api_key: str = "test-api-key",
-) -> ResolvedRuntimeModelRoute:
+def _route(*, model_id: str, base_url: str = "https://example.com/v1") -> ResolvedRuntimeModelRoute:
     return ResolvedRuntimeModelRoute(
-        provider_profile_id=f"profile-{provider_id}",
-        provider=provider_id,
-        provider_id=provider_id,
-        adapter_id=adapter_id,
-        runtime_status=runtime_status,
-        endpoint_type=endpoint_type,
+        provider_profile_id="provider-1",
+        provider="openai",
+        endpoint_type="openai-compatible",
         base_url=base_url,
         model_id=model_id,
-        auth_kind=auth_kind,
-        api_key=api_key,
+        api_key="test-api-key",
     )

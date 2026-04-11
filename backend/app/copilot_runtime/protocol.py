@@ -25,6 +25,8 @@ from .contracts import (
     RuntimeRunStreamRequest,
     RuntimeScaffold,
     RuntimeThinkingCapabilityGetRequest,
+    RuntimeThinkingSelection,
+    RuntimeThinkingValue,
     RuntimeThreadCreateRequest,
     RuntimeThreadGetRequest,
     normalize_thinking_level_intent,
@@ -376,6 +378,48 @@ class RuntimeProtocolParser:
             )
         return value
 
+    def _optional_string(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value.strip() == "":
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be a non-empty string.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        return value.strip()
+
+    def _optional_non_negative_int(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> int | None:
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be a non-negative integer.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        return value
+
     def _optional_non_empty_string(self, value: Any) -> str | None:
         if not isinstance(value, str):
             return None
@@ -573,9 +617,22 @@ class RuntimeProtocolParser:
             field_name="policy.modelRoute",
             requested_method=requested_method,
         )
-        thinking_level_intent = self._optional_thinking_level_intent(
-            policy.get("thinkingLevelIntent"),
-            field_name="policy.thinkingLevelIntent",
+        if policy.get("thinkingLevelIntent") is not None:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=(
+                        "Runtime request field 'policy.thinkingLevelIntent' has been removed. "
+                        "Use 'policy.thinkingSelection.value' with series-based selection payloads instead."
+                    ),
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": "policy.thinkingLevelIntent"},
+                ),
+            )
+        thinking_selection = self._optional_thinking_selection(
+            policy.get("thinkingSelection"),
+            field_name="policy.thinkingSelection",
             requested_method=requested_method,
         )
         thinking_capability_override = self._optional_object(
@@ -600,11 +657,151 @@ class RuntimeProtocolParser:
         )
         return RuntimeMessageExecutionPolicy(
             modelRoute=model_route,
-            thinkingLevelIntent=thinking_level_intent,
+            thinkingSelection=thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
             debugModeEnabled=debug_mode_enabled,
             requestOptions=request_options,
+        )
+
+    def _optional_thinking_selection(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeThinkingSelection | None:
+        if value is None:
+            return None
+        selection = self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+        value_payload = self._require_object(
+            selection.get("value"),
+            field_name=f"{field_name}.value",
+            requested_method=requested_method,
+        )
+        return RuntimeThinkingSelection(
+            series=self._require_non_empty_string(
+                selection.get("series"),
+                field_name=f"{field_name}.series",
+                requested_method=requested_method,
+            ),
+            value=self._extract_thinking_value(
+                value_payload,
+                field_name=f"{field_name}.value",
+                requested_method=requested_method,
+            ),
+        )
+
+    def _extract_thinking_value(
+        self,
+        value: dict[str, Any],
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeThinkingValue:
+        value_type = self._require_non_empty_string(
+            value.get("valueType"),
+            field_name=f"{field_name}.valueType",
+            requested_method=requested_method,
+        )
+        if value_type == "code":
+            return RuntimeThinkingValue(
+                valueType="code",
+                code=self._require_non_empty_string(
+                    value.get("code"),
+                    field_name=f"{field_name}.code",
+                    requested_method=requested_method,
+                ),
+                labelZh=self._optional_string(
+                    value.get("labelZh"),
+                    field_name=f"{field_name}.labelZh",
+                    requested_method=requested_method,
+                ),
+            )
+        if value_type == "budget":
+            mode = self._require_non_empty_string(
+                value.get("mode"),
+                field_name=f"{field_name}.mode",
+                requested_method=requested_method,
+            )
+            if mode not in {"off", "dynamic", "budget"}:
+                raise RuntimeProtocolError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error=build_invalid_request_error(
+                        message=(
+                            f"Runtime request field '{field_name}.mode' must be one of off, dynamic, budget."
+                        ),
+                        scaffold=self._scaffold,
+                        requested_method=requested_method,
+                        details={"field": f"{field_name}.mode"},
+                    ),
+                )
+            budget_tokens = self._optional_non_negative_int(
+                value.get("budgetTokens"),
+                field_name=f"{field_name}.budgetTokens",
+                requested_method=requested_method,
+            )
+            if mode == "budget" and budget_tokens is None:
+                raise RuntimeProtocolError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error=build_invalid_request_error(
+                        message=(
+                            f"Runtime request field '{field_name}.budgetTokens' is required when mode is budget."
+                        ),
+                        scaffold=self._scaffold,
+                        requested_method=requested_method,
+                        details={"field": f"{field_name}.budgetTokens"},
+                    ),
+                )
+            return RuntimeThinkingValue(
+                valueType="budget",
+                mode=mode,
+                budgetTokens=budget_tokens,
+                labelZh=self._optional_string(
+                    value.get("labelZh"),
+                    field_name=f"{field_name}.labelZh",
+                    requested_method=requested_method,
+                ),
+            )
+        if value_type == "fixed":
+            code = self._require_non_empty_string(
+                value.get("code"),
+                field_name=f"{field_name}.code",
+                requested_method=requested_method,
+            )
+            if code != "fixed":
+                raise RuntimeProtocolError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error=build_invalid_request_error(
+                        message=f"Runtime request field '{field_name}.code' must be 'fixed'.",
+                        scaffold=self._scaffold,
+                        requested_method=requested_method,
+                        details={"field": f"{field_name}.code"},
+                    ),
+                )
+            return RuntimeThinkingValue(
+                valueType="fixed",
+                code="fixed",
+                labelZh=self._optional_string(
+                    value.get("labelZh"),
+                    field_name=f"{field_name}.labelZh",
+                    requested_method=requested_method,
+                ),
+            )
+        raise RuntimeProtocolError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error=build_invalid_request_error(
+                message=(
+                    f"Runtime request field '{field_name}.valueType' must be one of code, budget, fixed."
+                ),
+                scaffold=self._scaffold,
+                requested_method=requested_method,
+                details={"field": f"{field_name}.valueType"},
+            ),
         )
 
     def _extract_model_route(

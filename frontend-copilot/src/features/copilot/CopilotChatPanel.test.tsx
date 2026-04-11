@@ -42,7 +42,7 @@ describe('CopilotChatPanel', () => {
       />,
     )
 
-    expect(html).toContain('可在左侧选择智能体与新建会话')
+    expect(html).toContain('可在左侧选择助手并新建会话')
     expect(html).toContain('data-testid="chat-session-placeholder"')
     expect(html).not.toContain('请选择智能体并创建会话')
     expect(html).not.toContain('当前选择：通用智能体')
@@ -123,8 +123,8 @@ describe('CopilotChatPanel', () => {
       />,
     )
 
-    expect(html).toContain('尚未获得可用运行时')
-    expect(html).toContain('Runtime URL（仅开发态可手填）')
+    expect(html).toContain('尚未连接服务')
+    expect(html).toContain('服务地址')
     expect(html).not.toContain('session-1')
   })
 
@@ -142,9 +142,9 @@ describe('CopilotChatPanel', () => {
       />,
     )
 
-    expect(html).toContain('宿主启动后端失败')
-    expect(html).toContain('重试启动宿主后端')
-    expect(html).toContain('spawn_failed')
+    expect(html).toContain('连接服务失败')
+    expect(html).toContain('重试连接')
+    expect(html).toContain('当前无法连接服务，请重试。')
     expect(html).not.toContain('当前 threadId')
   })
 })

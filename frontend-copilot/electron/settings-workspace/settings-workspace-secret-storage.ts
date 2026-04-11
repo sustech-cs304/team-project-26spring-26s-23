@@ -82,7 +82,8 @@ export function createSettingsWorkspaceSecretStorage(
   const clearProfileSecret = async (profileId: string) => {
     const normalizedProfileId = normalizeSettingsWorkspaceIdentifier(profileId, 'profileId')
     const secretsDocument = (await documentIO.readSecretsDocument()).document
-    const { [normalizedProfileId]: _removedSecret, ...remainingProviderSecrets } = secretsDocument.values.providerSecrets
+    const remainingProviderSecrets = { ...secretsDocument.values.providerSecrets }
+    delete remainingProviderSecrets[normalizedProfileId]
     const nextSecretsDocument = createSettingsWorkspaceSecretsDocument({
       providerSecrets: remainingProviderSecrets,
       sustech: secretsDocument.values.sustech,

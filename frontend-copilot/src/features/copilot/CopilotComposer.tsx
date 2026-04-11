@@ -13,16 +13,32 @@ import {
 } from 'react'
 import { ArrowUp, Lightbulb, Square } from 'lucide-react'
 
-import { THINKING_LEVEL_LABELS } from '../../workbench/thinking-capabilities'
-import type { AssistantSessionShell, ThinkingLevelIntent } from '../../workbench/types'
+import {
+  ThinkingBudgetSlider,
+  ThinkingPillGroup,
+  type ThinkingPillOption,
+} from '../../components/ThinkingControls'
+import {
+  THINKING_BUDGET_DEFAULT_SELECTION_TOKENS,
+  findThinkingCodeValue,
+  formatThinkingTokenCount,
+  isThinkingValueActive,
+  resolveThinkingValueLabel,
+} from '../../workbench/thinking-display'
+import type { AssistantSessionShell } from '../../workbench/types'
 import {
   applyModelSelectionToComposerDraft,
-  applyThinkingLevelSelectionToComposerDraft,
+  applyThinkingSelectionToComposerDraft,
   describeThinkingCapabilityUnavailableReason,
+  resolveThinkingSelectionForCapability,
   type CopilotChatComposerDraft,
 } from './copilot-chat-helpers'
 import type { CopilotModelGroup } from './model-picker'
-import type { RuntimeThinkingCapability } from './thread-run-contract'
+import type {
+  RuntimeThinkingCapability,
+  RuntimeThinkingSelection,
+  RuntimeThinkingValue,
+} from './thread-run-contract'
 import { ModelPicker } from './components/ModelPicker'
 import { ToolPicker } from './components/ToolPicker'
 
@@ -60,28 +76,38 @@ export function CopilotComposer({
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
   const isSending = sendStatus === 'sending'
   const controlsDisabled = isSending
-  const thinkingSupported = thinkingCapability?.supported === true
-  const thinkingOptions = useMemo(
-    () => (thinkingSupported && thinkingCapability !== null
-      ? buildRuntimeThinkingLevelOptions(thinkingCapability)
-      : []),
-    [thinkingCapability, thinkingSupported],
-  )
-  const thinkingValue = draft.thinkingLevelIntent ?? thinkingCapability?.defaultLevel ?? 'off'
-  const unsupportedThinkingHint = draft.selectedModelRoute !== null && thinkingCapability !== null && !thinkingSupported
-    ? describeThinkingCapabilityUnavailableReason(thinkingCapability) ?? '当前模型不支持'
-    : null
-  const thinkingSourceHint = thinkingCapability?.source === 'override'
-    ? '候选来源：设置页 override'
-    : null
   const thinkingControlRef = useRef<HTMLDivElement | null>(null)
   const thinkingPanelId = useId()
   const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
-  const currentThinkingLabel = useMemo(
-    () => thinkingOptions.find((option) => option.value === thinkingValue)?.label ?? '思考',
-    [thinkingOptions, thinkingValue],
+
+  const canRenderThinkingControl = thinkingCapability !== null
+    && thinkingCapability.supported !== false
+    && thinkingCapability.series !== null
+    && thinkingCapability.editorType !== null
+  const effectiveThinkingSelection = useMemo(
+    () => (thinkingCapability === null ? draft.thinkingSelection : resolveThinkingSelectionForCapability(thinkingCapability, draft.thinkingSelection)),
+    [draft.thinkingSelection, thinkingCapability],
   )
-  const thinkingTriggerAriaProps = thinkingSupported
+  const currentThinkingValue = useMemo(
+    () => resolveThinkingSelectionValue(effectiveThinkingSelection, thinkingCapability),
+    [effectiveThinkingSelection, thinkingCapability],
+  )
+  const currentThinkingLabel = useMemo(
+    () => resolveThinkingValueLabel(currentThinkingValue),
+    [currentThinkingValue],
+  )
+  const thinkingTriggerLabel = currentThinkingLabel === null ? '思考' : currentThinkingLabel
+  const unavailableThinkingReason = useMemo(
+    () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
+    [thinkingCapability],
+  )
+  const thinkingTriggerTitle = canRenderThinkingControl
+    ? thinkingTriggerLabel
+    : unavailableThinkingReason ?? '思考'
+  const thinkingTriggerActive = effectiveThinkingSelection === null
+    ? false
+    : isThinkingSelectionActive(effectiveThinkingSelection)
+  const thinkingTriggerAriaProps = canRenderThinkingControl
     ? {
         'aria-haspopup': 'dialog' as const,
         'aria-controls': thinkingPanelId,
@@ -118,10 +144,10 @@ export function CopilotComposer({
   }, [thinkingPanelOpen])
 
   useEffect(() => {
-    if (controlsDisabled || !thinkingSupported) {
+    if (controlsDisabled || !canRenderThinkingControl) {
       setThinkingPanelOpen(false)
     }
-  }, [controlsDisabled, thinkingSupported])
+  }, [canRenderThinkingControl, controlsDisabled])
 
   const handleMessageInputKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey) {
@@ -154,6 +180,13 @@ export function CopilotComposer({
     }
   }
 
+  const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
+    onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
+      modelRoute: current.selectedModelRoute,
+      thinkingSelection,
+    }))
+  }
+
   return (
     <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={onSubmit}>
       <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
@@ -178,15 +211,15 @@ export function CopilotComposer({
             className={[
               'copilot-chat__thinking-trigger',
               controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
-              thinkingSupported && thinkingValue !== 'off' ? 'copilot-chat__thinking-trigger--active' : '',
+              thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
             ].filter((className) => className !== '').join(' ')}
             data-testid="chat-thinking-trigger"
-            aria-label={unsupportedThinkingHint ?? `思考档位：${currentThinkingLabel}`}
-            title={unsupportedThinkingHint ?? '思考档位'}
+            aria-label={thinkingTriggerTitle}
+            title={thinkingTriggerTitle}
             disabled={controlsDisabled}
             {...thinkingTriggerAriaProps}
             onClick={() => {
-              if (!thinkingSupported) {
+              if (!canRenderThinkingControl) {
                 setThinkingPanelOpen(false)
                 return
               }
@@ -196,49 +229,34 @@ export function CopilotComposer({
           >
             <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
           </button>
-          {thinkingSupported && thinkingPanelOpen && (
+          {canRenderThinkingControl && thinkingCapability !== null && thinkingPanelOpen && (
             <section
               id={thinkingPanelId}
               className="copilot-model-picker__panel copilot-chat__thinking-panel"
               role="dialog"
-              aria-label="选择思考档位"
+              aria-label="推理设置"
               data-testid="chat-thinking-panel"
             >
-              <p className="copilot-panel__eyebrow">推理强度</p>
-              {thinkingSourceHint !== null && (
-                <p className="copilot-chat__thinking-hint" data-testid="chat-thinking-override-hint">
-                  {thinkingSourceHint}
-                </p>
-              )}
-              <div className="copilot-chat__thinking-option-list">
-                {thinkingOptions.map((option) => {
-                  const selected = option.value === thinkingValue
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={[
-                        'copilot-model-picker__option',
-                        'copilot-chat__thinking-option',
-                        selected ? 'copilot-model-picker__option--selected copilot-chat__thinking-option--selected' : '',
-                      ].filter((className) => className !== '').join(' ')}
-                      data-testid={`chat-thinking-option-${option.value}`}
-                      onClick={() => {
-                        onDraftChange((current) => applyThinkingLevelSelectionToComposerDraft(current, {
-                          modelRoute: current.selectedModelRoute,
-                          thinkingLevelIntent: option.value as ThinkingLevelIntent,
-                        }))
-                        setThinkingPanelOpen(false)
-                      }}
-                    >
-                      <span className="copilot-chat__thinking-option-check" aria-hidden="true">{selected ? '✓' : ''}</span>
-                      <span className="copilot-model-picker__option-body">
-                        <span className="copilot-model-picker__option-name">{option.label}</span>
-                      </span>
-                    </button>
-                  )
-                })}
+              <div className="copilot-chat__thinking-panel-header">
+                <div className="copilot-chat__thinking-panel-summary">
+                  <span className="copilot-chat__thinking-panel-title" data-testid="chat-thinking-series-title">
+                    {buildThinkingSeriesLabel(thinkingCapability)}
+                  </span>
+                  <span className="copilot-chat__thinking-panel-current-shell">
+                    <span className="copilot-chat__thinking-panel-current-label">当前值</span>
+                    <span className="copilot-chat__thinking-panel-current-value" data-testid="chat-thinking-current-value">
+                      {currentThinkingLabel ?? '未设置'}
+                    </span>
+                  </span>
+                </div>
               </div>
+              {renderThinkingControlBody({
+                capability: thinkingCapability,
+                currentSelection: effectiveThinkingSelection,
+                disabled: controlsDisabled,
+                onChange: handleThinkingSelectionChange,
+                onClose: () => setThinkingPanelOpen(false),
+              })}
             </section>
           )}
         </div>
@@ -311,14 +329,288 @@ export function CopilotComposer({
   )
 }
 
-function buildRuntimeThinkingLevelOptions(capability: RuntimeThinkingCapability) {
-  return capability.supportedLevels.map((level) => ({
-    value: level,
-    label: getThinkingLevelLabel(level),
-  }))
+function renderThinkingControlBody(input: {
+  capability: RuntimeThinkingCapability
+  currentSelection: RuntimeThinkingSelection | null
+  disabled: boolean
+  onChange: (thinkingSelection: RuntimeThinkingSelection | null) => void
+  onClose: () => void
+}) {
+  switch (input.capability.editorType) {
+    case 'fixed':
+      return renderFixedThinkingControl(input)
+    case 'budget':
+      return renderBudgetThinkingControl(input)
+    case 'discrete':
+      return renderDiscreteThinkingControl(input)
+    default:
+      return null
+  }
 }
 
-function getThinkingLevelLabel(level: ThinkingLevelIntent): string {
-  const label = THINKING_LEVEL_LABELS[level]
-  return typeof label === 'string' && label.trim() !== '' ? label : level
+function renderFixedThinkingControl(input: {
+  capability: RuntimeThinkingCapability
+  currentSelection: RuntimeThinkingSelection | null
+}) {
+  const currentValue = resolveThinkingSelectionValue(input.currentSelection, input.capability)
+
+  return (
+    <div className="copilot-chat__thinking-fixed" data-testid="chat-thinking-editor-fixed">
+      <span className="copilot-chat__thinking-fixed-value">
+        {currentValue?.labelZh ?? '固定推理'}
+      </span>
+      <span className="copilot-chat__thinking-fixed-badge" data-testid="chat-thinking-fixed-lock">
+        锁定
+      </span>
+    </div>
+  )
+}
+
+function renderDiscreteThinkingControl(input: {
+  capability: RuntimeThinkingCapability
+  currentSelection: RuntimeThinkingSelection | null
+  disabled: boolean
+  onChange: (thinkingSelection: RuntimeThinkingSelection | null) => void
+  onClose: () => void
+}) {
+  const discreteOptions = input.capability.allowedValues.filter(
+    (value): value is Extract<RuntimeThinkingValue, { valueType: 'code' }> => value.valueType === 'code',
+  )
+  const options: ThinkingPillOption[] = discreteOptions.map((value) => ({
+    key: value.code,
+    labelZh: value.labelZh,
+    code: value.code,
+    selected: isCodeThinkingSelection(input.currentSelection, value.code),
+    disabled: input.disabled,
+    testId: `chat-thinking-option-${value.code}`,
+    onSelect: () => {
+      input.onChange(buildThinkingSelectionFromValue(input.capability.series, value))
+      input.onClose()
+    },
+  }))
+
+  return (
+    <div className="copilot-chat__thinking-option-list" data-testid="chat-thinking-editor-discrete">
+      <ThinkingPillGroup
+        compact
+        ariaLabel="推理可选项"
+        options={options}
+        className="copilot-chat__thinking-pill-group"
+      />
+    </div>
+  )
+}
+
+function renderBudgetThinkingControl(input: {
+  capability: RuntimeThinkingCapability
+  currentSelection: RuntimeThinkingSelection | null
+  disabled: boolean
+  onChange: (thinkingSelection: RuntimeThinkingSelection | null) => void
+}) {
+  const currentValue = resolveThinkingSelectionValue(input.currentSelection, input.capability)
+  const currentBudgetMode = currentValue?.valueType === 'budget' ? currentValue.mode : 'off'
+  const currentBudgetTokens = resolveBudgetTokens(currentValue, input.capability)
+  const supportsExactBudgetSelection = supportsExactBudgetThinkingSelection(input.capability)
+  const budgetModes = input.capability.allowedValues.filter(
+    (value): value is Extract<RuntimeThinkingValue, { valueType: 'budget' }> => value.valueType === 'budget',
+  )
+  const budgetModeOptions: ThinkingPillOption[] = [
+    ...budgetModes
+      .filter((value) => value.mode === 'off' || value.mode === 'dynamic')
+      .map((value) => ({
+        key: `budget-${value.mode}`,
+        labelZh: value.labelZh,
+        code: value.mode,
+        selected: currentBudgetMode === value.mode,
+        disabled: input.disabled,
+        testId: `chat-thinking-budget-mode-${value.mode}`,
+        onSelect: () => {
+          input.onChange(buildThinkingSelectionFromValue(input.capability.series, value))
+        },
+      })),
+    ...(supportsExactBudgetSelection
+      ? [{
+          key: 'budget-budget',
+          labelZh: '预算',
+          code: 'budget_tokens',
+          selected: currentBudgetMode === 'budget',
+          disabled: input.disabled,
+          testId: 'chat-thinking-budget-mode-budget',
+          onSelect: () => {
+            input.onChange(buildBudgetThinkingSelection(input.capability.series, currentBudgetTokens))
+          },
+        } satisfies ThinkingPillOption]
+      : []),
+  ]
+
+  return (
+    <div className="copilot-chat__thinking-budget" data-testid="chat-thinking-editor-budget">
+      <ThinkingPillGroup
+        compact
+        ariaLabel="推理预算模式"
+        options={budgetModeOptions}
+        className="copilot-chat__thinking-pill-group"
+      />
+      {supportsExactBudgetSelection && currentBudgetMode === 'budget' ? (
+        <ThinkingBudgetSlider
+          compact
+          ariaLabel="推理预算"
+          budgetTokens={currentBudgetTokens}
+          inputTestId="chat-thinking-budget-input"
+          valueTestId="chat-thinking-budget-value"
+          className="copilot-chat__thinking-budget-slider"
+          onBudgetTokensChange={(budgetTokens) => {
+            input.onChange(buildBudgetThinkingSelection(input.capability.series, budgetTokens))
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function buildThinkingSeriesLabel(capability: RuntimeThinkingCapability): string {
+  return capability.seriesLabelZh ?? capability.series ?? '未命名系列'
+}
+
+function isThinkingSelectionActive(selection: RuntimeThinkingSelection): boolean {
+  return isThinkingValueActive(resolveThinkingSelectionValue(selection, null))
+}
+
+function buildThinkingSelectionFromValue(
+  series: string | null,
+  value: NonNullable<RuntimeThinkingSelection['value']>,
+): RuntimeThinkingSelection | null {
+  if (series === null) {
+    return null
+  }
+
+  switch (value.valueType) {
+    case 'code':
+      return {
+        series,
+        value: {
+          valueType: 'code',
+          code: value.code,
+          labelZh: value.labelZh,
+        },
+        mode: 'preset',
+        level: value.code,
+        budgetTokens: null,
+      }
+    case 'fixed':
+      return {
+        series,
+        value: {
+          valueType: 'fixed',
+          code: 'fixed',
+          labelZh: value.labelZh,
+        },
+        mode: 'preset',
+        level: 'fixed',
+        budgetTokens: null,
+      }
+    case 'budget':
+      return {
+        series,
+        value: {
+          valueType: 'budget',
+          mode: value.mode,
+          budgetTokens: value.budgetTokens,
+          labelZh: value.labelZh,
+        },
+        mode: 'budget',
+        level: null,
+        budgetTokens: value.mode === 'budget' ? value.budgetTokens : null,
+      }
+  }
+}
+
+function buildBudgetThinkingSelection(
+  series: string | null,
+  budgetTokens: number,
+): RuntimeThinkingSelection | null {
+  return buildThinkingSelectionFromValue(series, {
+    valueType: 'budget',
+    mode: 'budget',
+    budgetTokens,
+    labelZh: formatThinkingTokenCount(budgetTokens),
+  })
+}
+
+function resolveThinkingSelectionValue(
+  selection: RuntimeThinkingSelection | null,
+  capability: RuntimeThinkingCapability | null,
+): RuntimeThinkingValue | null {
+  if (capability?.supported === false) {
+    return null
+  }
+
+  if (selection?.value != null) {
+    return selection.value
+  }
+
+  if (selection?.mode === 'budget' && typeof selection.budgetTokens === 'number') {
+    return {
+      valueType: 'budget',
+      mode: 'budget',
+      budgetTokens: selection.budgetTokens,
+      labelZh: formatThinkingTokenCount(selection.budgetTokens),
+    }
+  }
+
+  if (typeof selection?.level === 'string' && selection.level.trim() !== '') {
+    if (selection.level === 'fixed') {
+      return {
+        valueType: 'fixed',
+        code: 'fixed',
+        labelZh: '固定推理',
+      }
+    }
+
+    const capabilityCodeValue = findThinkingCodeValue(capability?.allowedValues, selection.level)
+    if (capabilityCodeValue !== null) {
+      return capabilityCodeValue
+    }
+
+    return {
+      valueType: 'code',
+      code: selection.level,
+      labelZh: selection.level,
+    }
+  }
+
+  return capability?.defaultValue ?? null
+}
+
+function isCodeThinkingSelection(selection: RuntimeThinkingSelection | null, code: string): boolean {
+  const currentValue = resolveThinkingSelectionValue(selection, null)
+  return currentValue?.valueType === 'code' && currentValue.code === code
+}
+
+function resolveBudgetTokens(
+  value: RuntimeThinkingValue | null,
+  capability: RuntimeThinkingCapability,
+): number {
+  const runtimeBudget = value?.valueType === 'budget' && value.mode === 'budget'
+    ? value.budgetTokens
+    : null
+  if (typeof runtimeBudget === 'number' && Number.isFinite(runtimeBudget)) {
+    return runtimeBudget
+  }
+
+  const defaultBudget = capability.defaultValue?.valueType === 'budget' && capability.defaultValue.mode === 'budget'
+    ? capability.defaultValue.budgetTokens
+    : null
+  if (typeof defaultBudget === 'number' && Number.isFinite(defaultBudget)) {
+    return defaultBudget
+  }
+
+  return THINKING_BUDGET_DEFAULT_SELECTION_TOKENS
+}
+
+function supportsExactBudgetThinkingSelection(capability: RuntimeThinkingCapability): boolean {
+  return capability.editorType === 'budget'
+    && capability.controlSpec?.kind === 'budget'
+    && capability.controlSpec.budget !== null
+    && capability.controlSpec.budget !== undefined
 }

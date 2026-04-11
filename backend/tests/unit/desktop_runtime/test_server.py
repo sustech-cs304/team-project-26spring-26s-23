@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
@@ -20,6 +20,7 @@ _BROWSER_TEST_USER_AGENT = (
 )
 
 from app.copilot_runtime import PydanticAIAgentExecutor
+from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
@@ -408,6 +409,151 @@ def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "null"
+
+
+
+def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_error(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app = _create_test_app(tmp_path)
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            thread_response = client.post("/", json=_build_thread_create_request())
+            thread_id = thread_response.json()["threadId"]
+            response = client.post(
+                "/",
+                json=_build_run_start_request(thread_id=thread_id, debug_mode_enabled=True),
+                headers={"Origin": "http://localhost:5173"},
+            )
+
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert thread_response.status_code == 200
+    assert response.status_code == 200
+    assert any('"event":"run_start.request_received"' in message for message in chain_logs)
+    assert any(
+        '"event":"run_start.prime_run_metadata.enter"' in message
+        and '"phase":"prime_run_metadata"' in message
+        and '"requestId":' in message
+        and '"threadId":"' in message
+        for message in chain_logs
+    )
+    assert any(
+        '"event":"thinking.run_metadata_primed"' in message
+        and '"phase":"prime_run_metadata"' in message
+        and '"requestId":' in message
+        for message in chain_logs
+    )
+
+
+
+def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _FailingRunStartSessionStore(InMemorySessionStore):
+        def create_run(self, *args: Any, **kwargs: Any):
+            raise RuntimeError("forced run/start failure")
+
+    app = create_app(
+        _build_config(tmp_path),
+        session_store=_FailingRunStartSessionStore(),
+        agent_executor=_build_test_agent_executor(),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    with caplog.at_level("ERROR", logger="uvicorn.error"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            thread_response = client.post("/", json=_build_thread_create_request())
+            thread_id = thread_response.json()["threadId"]
+            response = client.post(
+                "/",
+                json=_build_run_start_request(thread_id=thread_id),
+                headers={"Origin": "http://localhost:5173"},
+            )
+
+    payload = response.json()
+    request_id = payload["error"]["details"]["requestId"]
+    run_start_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "run/start unexpected exception" in record.getMessage()
+    ]
+
+    assert thread_response.status_code == 200
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "internal_server_error"
+    assert payload["error"]["requestedMethod"] == "run/start"
+    assert request_id
+    assert len(run_start_logs) == 1
+    assert f"request_id={request_id}" in run_start_logs[0]
+    assert "http_method=POST" in run_start_logs[0]
+    assert "path=/" in run_start_logs[0]
+    assert "origin=http://localhost:5173" in run_start_logs[0]
+    assert "runtime_method=run/start" in run_start_logs[0]
+    assert f"thread_id={thread_id}" in run_start_logs[0]
+    assert "agent_id=default" in run_start_logs[0]
+    assert "phase=create_run_record" in run_start_logs[0]
+    assert "exception_type=RuntimeError" in run_start_logs[0]
+    assert "exception_summary=forced run/start failure" in run_start_logs[0]
+    assert all(
+        "desktop-runtime unexpected exception" not in record.getMessage()
+        for record in caplog.records
+    )
+
+
+
+def test_runtime_failure_envelope_logs_request_context_fields(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app = _create_test_app(tmp_path)
+
+    @app.get("/boom")
+    def _boom(request: Request) -> dict[str, str]:
+        request.state.copilot_runtime_requested_method = RUN_START_METHOD
+        request.state.copilot_runtime_thread_id = "thread-log"
+        request.state.copilot_runtime_agent_id = "default"
+        request.state.copilot_runtime_run_id = "run-log"
+        request.state.copilot_runtime_phase = "build_run_start_response"
+        raise RuntimeError("forced middleware failure")
+
+    with caplog.at_level("ERROR", logger="uvicorn.error"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/boom", headers={"Origin": "http://localhost:5173"})
+
+    payload = response.json()
+    request_id = payload["error"]["details"]["requestId"]
+    unexpected_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "desktop-runtime unexpected exception" in record.getMessage()
+    ]
+
+    assert response.status_code == 500
+    assert payload["error"]["code"] == "internal_server_error"
+    assert request_id
+    assert len(unexpected_logs) == 1
+    assert f"request_id={request_id}" in unexpected_logs[0]
+    assert "http_method=GET" in unexpected_logs[0]
+    assert "path=/boom" in unexpected_logs[0]
+    assert "origin=http://localhost:5173" in unexpected_logs[0]
+    assert "runtime_method=run/start" in unexpected_logs[0]
+    assert "thread_id=thread-log" in unexpected_logs[0]
+    assert "agent_id=default" in unexpected_logs[0]
+    assert "run_id=run-log" in unexpected_logs[0]
+    assert "phase=build_run_start_response" in unexpected_logs[0]
+    assert "exception_type=RuntimeError" in unexpected_logs[0]
+    assert "exception_summary=forced middleware failure" in unexpected_logs[0]
 
 
 

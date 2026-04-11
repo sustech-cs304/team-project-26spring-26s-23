@@ -104,6 +104,7 @@ function rememberConfigState(state: CopilotBootstrapState) {
   initialConfigStatePromise = Promise.resolve(state)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export async function refreshCopilotBootstrapStateFromPublicSnapshot(input: {
   snapshot: ConfigCenterPublicSnapshot
   applyState: (state: CopilotBootstrapState) => void

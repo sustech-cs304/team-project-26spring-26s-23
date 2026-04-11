@@ -17,7 +17,13 @@ from .agent import (
     ToolInvocationError,
 )
 from .agent_registry import AgentDescriptor, AgentRegistry
-from .contracts import RuntimeRunStartRequest, RuntimeScaffold
+from .contracts import (
+    RuntimeRunStartRequest,
+    RuntimeScaffold,
+    RuntimeThinkingSelection,
+    RuntimeThinkingValue,
+    _build_reasoning_suppression_basis as build_reasoning_suppression_basis,
+)
 from .debug_logging import (
     is_runtime_chain_debug_enabled,
     log_runtime_chain_debug,
@@ -25,8 +31,11 @@ from .debug_logging import (
     summarize_exception,
     summarize_runtime_execution_event,
     summarize_runtime_model_route,
+    summarize_runtime_reasoning_suppression_basis,
     summarize_runtime_run_event,
     summarize_runtime_thinking_capability,
+    summarize_runtime_thinking_selection_result,
+    summarize_runtime_tool_event,
 )
 from .execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventFactory
 from .execution_support import (
@@ -50,7 +59,7 @@ from .provider_adapter_registry import (
 )
 from .run_events import RuntimeRunEvent, RuntimeRunEventFactory
 from .session_store import BoundAgentMismatchError, InMemorySessionStore
-from .thinking_adapter import adapt_thinking_intent
+from .thinking_adapter import adapt_thinking_selection
 
 
 class RuntimeAgentExecutionEventStream(Protocol):
@@ -151,49 +160,100 @@ class RuntimeMessageRunOrchestrator:
                 self._session_store.list_messages(thread.thread_id)
             )
             resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
-            thinking_adaptation = adapt_thinking_intent(
-                intent=request.policy.thinkingLevelIntent,
+            requested_thinking_selection = request.policy.resolve_thinking_selection()
+            thinking_adaptation = adapt_thinking_selection(
+                selection=requested_thinking_selection,
                 model_route=resolved_model_route,
                 thinking_capability_override=request.policy.thinkingCapabilityOverride,
                 provider_adapter_registry=self._provider_adapter_registry,
             )
-            agent_executor = self._build_streaming_executor(agent_descriptor)
+            capability_series = (
+                thinking_adaptation.capability.series
+                or (
+                    requested_thinking_selection.series
+                    if requested_thinking_selection is not None
+                    else None
+                )
+                or "compat-discrete-selection-v1"
+            )
+            applied_thinking_selection = _resolve_applied_thinking_selection(
+                requested_selection=requested_thinking_selection,
+                requested_canonical_selection=thinking_adaptation.requested_selection,
+                applied_canonical_selection=thinking_adaptation.applied_selection,
+                capability_series=capability_series,
+            )
+            selection_result = thinking_adaptation.to_public_dict()
+            selection_result_summary = summarize_runtime_thinking_selection_result(selection_result)
+            reasoning_suppression_basis = build_reasoning_suppression_basis(
+                capability=thinking_adaptation.capability.to_public_dict(),
+                applied_selection=applied_thinking_selection,
+            )
+            reasoning_suppression_basis_summary = summarize_runtime_reasoning_suppression_basis(
+                reasoning_suppression_basis
+            )
             log_runtime_chain_debug(
                 "thinking.capability_resolved",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
                 threadId=request.thread_id,
-                requestedThinkingLevel=thinking_adaptation.requested_intent,
-                appliedThinkingLevel=thinking_adaptation.applied_intent,
+                requestedThinkingSelection=(
+                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                ),
+                appliedThinkingSelection=(
+                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                ),
+                resolvedModelRoute=summarize_runtime_model_route(resolved_model_route),
+                overrideInput=request.policy.thinkingCapabilityOverride,
                 capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                selectionResult=selection_result_summary,
+                reasoningSuppressionBasis=reasoning_suppression_basis_summary,
             )
             log_runtime_chain_debug(
                 "thinking.request_validated",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
                 threadId=request.thread_id,
-                requestedThinkingLevel=thinking_adaptation.requested_intent,
-                appliedThinkingLevel=thinking_adaptation.applied_intent,
+                requestedThinkingSelection=(
+                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                ),
+                appliedThinkingSelection=(
+                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                ),
                 applied=thinking_adaptation.applied,
                 reason=thinking_adaptation.reason,
                 capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                selectionResult=selection_result_summary,
+                reasoningSuppressionBasis=reasoning_suppression_basis_summary,
             )
             log_runtime_chain_debug(
                 "thinking.provider_mapping_resolved",
                 enabled=debug_enabled,
                 runId=resolved_run_id,
                 threadId=request.thread_id,
-                requestedThinkingLevel=thinking_adaptation.requested_intent,
-                appliedThinkingLevel=thinking_adaptation.applied_intent,
-                providerMapping=thinking_adaptation.provider_mapping,
+                requestedThinkingSelection=(
+                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                ),
+                appliedThinkingSelection=(
+                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                ),
+                providerBuilderKey=thinking_adaptation.provider_builder_key,
                 modelSettings=thinking_adaptation.model_settings,
+                mappingReasonCode=thinking_adaptation.mapping_reason_code,
                 reason=thinking_adaptation.reason,
                 capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                selectionResult=selection_result_summary,
+                reasoningSuppressionBasis=reasoning_suppression_basis_summary,
             )
             run_metadata = projector.build_run_metadata(
-                requested_thinking_level=thinking_adaptation.requested_intent,
-                applied_thinking_level=thinking_adaptation.applied_intent,
+                requested_thinking_selection=None
+                if requested_thinking_selection is None
+                else requested_thinking_selection.to_dict(),
+                applied_thinking_selection=None
+                if applied_thinking_selection is None
+                else applied_thinking_selection.to_dict(),
                 thinking_capability_snapshot=thinking_adaptation.capability.to_public_dict(),
+                thinking_series_decision=selection_result,
+                reasoning_suppression_basis=reasoning_suppression_basis,
             )
             log_runtime_chain_debug(
                 "thinking.run_metadata_attached",
@@ -203,36 +263,44 @@ class RuntimeMessageRunOrchestrator:
                 yieldedEvent=summarize_runtime_run_event(run_metadata),
             )
             yield run_metadata
-            if request.policy.thinkingLevelIntent not in (None, "off") and not thinking_adaptation.applied:
+            if requested_thinking_selection is not None and not thinking_adaptation.applied:
+                fail_fast_code = (
+                    thinking_adaptation.error_code or "thinking_series_not_supported_for_route"
+                )
+                fail_fast_details = {
+                    **thinking_adaptation.diagnostics,
+                    "reason": thinking_adaptation.reason,
+                }
                 log_runtime_chain_debug(
                     "thinking.fail_fast",
                     enabled=debug_enabled,
                     runId=resolved_run_id,
                     threadId=request.thread_id,
-                    code="thinking_not_supported_for_route",
-                    requestedThinkingLevel=thinking_adaptation.requested_intent,
-                    appliedThinkingLevel=thinking_adaptation.applied_intent,
+                    code=fail_fast_code,
+                    requestedThinkingSelection=requested_thinking_selection.to_dict(),
+                    appliedThinkingSelection=(
+                        None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                    ),
                     reason=thinking_adaptation.reason,
                     capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
-                    diagnostics=thinking_adaptation.diagnostics,
+                    diagnostics=fail_fast_details,
+                    selectionResult=selection_result_summary,
+                    reasoningSuppressionBasis=reasoning_suppression_basis_summary,
                 )
                 for event in self._build_failed_execution_events(
                     execution_events=execution_events,
-                    code="thinking_not_supported_for_route",
-                    message=(
-                        f"Selected thinking level '{request.policy.thinkingLevelIntent}' is not supported by the current model route. "
-                        "This request was cancelled instead of continuing without provider thinking parameters."
+                    code=fail_fast_code,
+                    message=_build_thinking_fail_fast_message(
+                        code=fail_fast_code,
+                        requested_selection=requested_thinking_selection,
                     ),
-                    details={
-                        **thinking_adaptation.diagnostics,
-                        "intent": request.policy.thinkingLevelIntent,
-                        "reason": thinking_adaptation.reason,
-                    },
+                    details=fail_fast_details,
                     diagnostic_stage="adapt_thinking",
                 ):
                     for projected in projector.project(event):
                         yield projected
                 return
+            agent_executor = self._build_streaming_executor(agent_descriptor)
             log_runtime_chain_debug(
                 "orchestrator.execution_prepared",
                 enabled=debug_enabled,
@@ -382,6 +450,23 @@ class RuntimeMessageRunOrchestrator:
                 )
                 async for event in stream.iter_events():
                     projected_events = projector.project(event)
+                    if (
+                        event.type == "reasoning_segment_delta"
+                        and isinstance(reasoning_suppression_basis_summary, dict)
+                        and reasoning_suppression_basis_summary.get("shouldSuppress") is True
+                    ):
+                        log_runtime_chain_debug(
+                            "thinking.reasoning_suppressed",
+                            enabled=debug_enabled,
+                            runId=resolved_run_id,
+                            threadId=request.thread_id,
+                            suppressionEnabled=True,
+                            suppressionSource=reasoning_suppression_basis_summary.get("source"),
+                            suppressionReasonCode=reasoning_suppression_basis_summary.get("reasonCode"),
+                            reasoningSuppressionBasis=reasoning_suppression_basis_summary,
+                            executionEvent=summarize_runtime_execution_event(event),
+                            projectedEventTypes=[projected.type for projected in projected_events],
+                        )
                     log_runtime_chain_debug(
                         "orchestrator.execution_event_projected",
                         enabled=debug_enabled,
@@ -684,6 +769,100 @@ class RuntimeMessageRunOrchestrator:
         )
 
 
+def _resolve_applied_thinking_selection(
+    *,
+    requested_selection: RuntimeThinkingSelection | None,
+    requested_canonical_selection: Any,
+    applied_canonical_selection: Any,
+    capability_series: str,
+) -> RuntimeThinkingSelection | None:
+    if applied_canonical_selection is None:
+        return None
+    if (
+        requested_selection is not None
+        and requested_canonical_selection is not None
+        and requested_canonical_selection == applied_canonical_selection
+    ):
+        return requested_selection
+    return _to_runtime_thinking_selection(
+        selection=applied_canonical_selection,
+        series=capability_series,
+    )
+
+
+
+def _to_runtime_thinking_selection(
+    *,
+    selection: Any,
+    series: str,
+) -> RuntimeThinkingSelection | None:
+    if isinstance(selection, RuntimeThinkingSelection):
+        return selection
+
+    if isinstance(selection, dict):
+        kind = selection.get("kind")
+        budget_tokens = selection.get("budget_tokens", selection.get("budgetTokens"))
+        preset_value = selection.get("value")
+    else:
+        kind = getattr(selection, "kind", None)
+        budget_tokens = getattr(selection, "budget_tokens", getattr(selection, "budgetTokens", None))
+        preset_value = getattr(selection, "value", None)
+
+    if kind == "budget":
+        if not isinstance(budget_tokens, int) or isinstance(budget_tokens, bool) or budget_tokens < 0:
+            return None
+        return RuntimeThinkingSelection(
+            series=series,
+            value=RuntimeThinkingValue(
+                valueType="budget",
+                mode="budget",
+                budgetTokens=budget_tokens,
+            ),
+        )
+
+    if kind != "preset":
+        return None
+
+    normalized_value = preset_value.strip() if isinstance(preset_value, str) else None
+    if not normalized_value:
+        return None
+    return RuntimeThinkingSelection(
+        series=series,
+        value=RuntimeThinkingValue(
+            valueType="code",
+            code=normalized_value,
+        ),
+    )
+
+
+
+def _build_thinking_fail_fast_message(
+    *,
+    code: str,
+    requested_selection: RuntimeThinkingSelection,
+) -> str:
+    requested_value = requested_selection.value.to_dict()
+    if code == "thinking_series_mapping_failed":
+        return (
+            f"Thinking 系列 '{requested_selection.series}' 的请求值 {requested_value} 无法映射为当前模型路由的 provider 参数，"
+            "请求已在执行前终止。"
+        )
+    if code == "thinking_series_value_not_allowed":
+        return (
+            f"Thinking 系列 '{requested_selection.series}' 的请求值 {requested_value} 不在当前模型路由允许集合中。"
+        )
+    if code == "thinking_series_builder_missing":
+        return (
+            f"当前模型路由缺少 Thinking 系列 '{requested_selection.series}' 的 provider builder。"
+        )
+    if code == "thinking_series_unknown_without_override":
+        return "当前模型路由未解析出 Thinking 系列，且未提供 override 系列模板，无法发送 Thinking 请求。"
+    return (
+        f"Thinking 系列 '{requested_selection.series}' 不适用于当前模型路由，请求已终止。"
+    )
+
+
+
 def _next_run_id() -> str:
     return f"run-{uuid4().hex}"
 
@@ -691,6 +870,6 @@ def _next_run_id() -> str:
 __all__ = [
     "RuntimeAgentExecutionEventStream",
     "RuntimeMessageRunOrchestrator",
-    "RuntimeMessageRunSuccess",
     "RuntimeStreamingAgentExecutor",
 ]
+

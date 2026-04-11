@@ -106,6 +106,108 @@ def summarize_runtime_execution_event(event: Any | None) -> dict[str, Any] | Non
     return summary
 
 
+def summarize_runtime_thinking_value(value: Any | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    summary = {
+        "valueType": _lookup_value(value, attr_name="value_type", key_name="valueType"),
+        "code": _lookup_value(value, attr_name="code", key_name="code"),
+        "mode": _lookup_value(value, attr_name="mode", key_name="mode"),
+        "budgetTokens": _lookup_value(value, attr_name="budget_tokens", key_name="budgetTokens"),
+        "labelZh": _lookup_value(value, attr_name="label_zh", key_name="labelZh"),
+    }
+    return {key: _sanitize_value(item) for key, item in summary.items() if item is not None}
+
+
+
+def summarize_runtime_thinking_selection(selection: Any | None) -> dict[str, Any] | None:
+    if selection is None:
+        return None
+
+    series = _lookup_value(selection, attr_name="series", key_name="series")
+    value_summary = summarize_runtime_thinking_value(
+        _lookup_value(selection, attr_name="value", key_name="value")
+    )
+    if series is not None and value_summary is not None:
+        return {
+            "series": _sanitize_value(series),
+            "value": value_summary,
+        }
+
+    mode = _lookup_value(selection, attr_name="mode", key_name="mode")
+    level = _lookup_value(selection, attr_name="level", key_name="level")
+    if series is not None or mode is not None or level is not None:
+        summary = {
+            "series": _sanitize_value(series),
+            "mode": _sanitize_value(mode),
+            "level": _sanitize_value(level),
+        }
+        budget_tokens = _lookup_value(selection, attr_name="budget_tokens", key_name="budgetTokens")
+        summary["budgetTokens"] = _sanitize_value(budget_tokens)
+        return summary
+
+    summary = {
+        "kind": _lookup_value(selection, attr_name="kind", key_name="kind"),
+    }
+    value = _lookup_value(selection, attr_name="value", key_name="value")
+    if value is not None:
+        summary["value"] = _sanitize_value(value)
+    budget_tokens = _lookup_value(selection, attr_name="budget_tokens", key_name="budgetTokens")
+    if budget_tokens is not None:
+        summary["budgetTokens"] = _sanitize_value(budget_tokens)
+    return summary
+
+
+def summarize_runtime_thinking_control_spec(control_spec: Any | None) -> dict[str, Any] | None:
+    if control_spec is None:
+        return None
+    summary = {
+        "kind": _lookup_value(control_spec, attr_name="kind", key_name="kind"),
+        "selectionKind": _lookup_value(control_spec, attr_name="selection_kind", key_name="selectionKind"),
+    }
+    if summary["selectionKind"] is None:
+        summary["selectionKind"] = 'budget' if summary["kind"] == 'budget' else 'preset'
+
+    preset_options = _lookup_value(control_spec, attr_name="preset_options", key_name="presetOptions")
+    summarized_preset_options: list[dict[str, Any]] = []
+    if isinstance(preset_options, Sequence) and not isinstance(preset_options, str):
+        summarized_preset_options = [
+            summarized
+            for option in preset_options
+            for summarized in [summarize_runtime_thinking_selection(option)]
+            if summarized is not None
+        ]
+        summary["presetOptions"] = summarized_preset_options
+
+    fixed_selection = summarize_runtime_thinking_selection(
+        _lookup_value(control_spec, attr_name="fixed_selection", key_name="fixedSelection")
+    )
+    if fixed_selection is None and summary["kind"] == "fixed" and len(summarized_preset_options) > 0:
+        fixed_selection = summarized_preset_options[0]
+    if fixed_selection is not None:
+        summary["fixedSelection"] = fixed_selection
+
+    budget_value = _lookup_value(control_spec, attr_name="budget", key_name="budget")
+    budget = budget_value if isinstance(budget_value, Mapping) else None
+    budget_summary: dict[str, Any] = {}
+    if budget is not None:
+        for key in ("minTokens", "maxTokens", "stepTokens"):
+            if key in budget:
+                budget_summary[key] = _sanitize_value(budget[key])
+    else:
+        min_tokens = _lookup_value(control_spec, attr_name="budget_min_tokens", key_name="budgetMinTokens")
+        max_tokens = _lookup_value(control_spec, attr_name="budget_max_tokens", key_name="budgetMaxTokens")
+        step_tokens = _lookup_value(control_spec, attr_name="budget_step_tokens", key_name="budgetStepTokens")
+        if min_tokens is not None:
+            budget_summary["minTokens"] = _sanitize_value(min_tokens)
+        if max_tokens is not None:
+            budget_summary["maxTokens"] = _sanitize_value(max_tokens)
+        if step_tokens is not None:
+            budget_summary["stepTokens"] = _sanitize_value(step_tokens)
+    if len(budget_summary) > 0:
+        summary["budget"] = budget_summary
+    return summary
+
 def summarize_runtime_thinking_capability(capability: Any | None) -> dict[str, Any] | None:
     if capability is None:
         return None
@@ -113,10 +215,37 @@ def summarize_runtime_thinking_capability(capability: Any | None) -> dict[str, A
         "status": _lookup_value(capability, attr_name="status", key_name="status"),
         "source": _lookup_value(capability, attr_name="source", key_name="source"),
         "supported": _lookup_value(capability, attr_name="supported", key_name="supported"),
+        "series": _lookup_value(capability, attr_name="series", key_name="series"),
+        "seriesLabelZh": _lookup_value(capability, attr_name="series_label_zh", key_name="seriesLabelZh"),
+        "editorType": _lookup_value(capability, attr_name="editor_type", key_name="editorType"),
         "defaultLevel": _lookup_value(capability, attr_name="default_level", key_name="defaultLevel"),
         "reasonCode": _lookup_value(capability, attr_name="reason_code", key_name="reasonCode"),
         "providerHint": _lookup_value(capability, attr_name="provider_hint", key_name="providerHint"),
+        "providerBuilderKey": _lookup_value(capability, attr_name="provider_builder_key", key_name="providerBuilderKey"),
     }
+    control_spec = summarize_runtime_thinking_control_spec(
+        _lookup_value(capability, attr_name="control_spec", key_name="controlSpec")
+    )
+    if control_spec is not None:
+        summary["controlSpec"] = control_spec
+    default_selection = summarize_runtime_thinking_selection(
+        _lookup_value(capability, attr_name="default_selection", key_name="defaultSelection")
+    )
+    if default_selection is not None:
+        summary["defaultSelection"] = default_selection
+    allowed_values = _lookup_value(capability, attr_name="allowed_values", key_name="allowedValues")
+    if isinstance(allowed_values, Sequence) and not isinstance(allowed_values, str):
+        summary["allowedValues"] = [
+            summarized
+            for value in allowed_values
+            for summarized in [summarize_runtime_thinking_value(value)]
+            if summarized is not None
+        ]
+    default_value = summarize_runtime_thinking_value(
+        _lookup_value(capability, attr_name="default_value", key_name="defaultValue")
+    )
+    if default_value is not None:
+        summary["defaultValue"] = default_value
     supported_levels = _lookup_value(capability, attr_name="supported_levels", key_name="supportedLevels")
     if isinstance(supported_levels, Sequence) and not isinstance(supported_levels, str):
         summary["supportedLevels"] = [_sanitize_value(level) for level in supported_levels]
@@ -126,10 +255,140 @@ def summarize_runtime_thinking_capability(capability: Any | None) -> dict[str, A
             str(key): _sanitize_value(value)
             for key, value in route_fingerprint.items()
         }
+    provenance = _lookup_value(capability, attr_name="provenance", key_name="provenance")
+    if isinstance(provenance, Mapping):
+        summary["provenance"] = _sanitize_value(provenance)
+    elif provenance is not None:
+        route_status = _lookup_value(provenance, attr_name="route_status", key_name="routeStatus")
+        override = {
+            "present": _lookup_value(provenance, attr_name="override_present", key_name="present"),
+            "applied": _lookup_value(provenance, attr_name="override_applied", key_name="applied"),
+            "source": _lookup_value(provenance, attr_name="override_source", key_name="source"),
+            "format": _lookup_value(provenance, attr_name="override_format", key_name="format"),
+        }
+        summary["provenance"] = {
+            "routeStatus": _sanitize_value(route_status),
+            "override": _sanitize_value(override),
+        }
+    visibility = _lookup_value(capability, attr_name="visibility", key_name="visibility")
+    if isinstance(visibility, Mapping):
+        summary["visibility"] = _sanitize_value(visibility)
+    elif visibility is not None:
+        summary["visibility"] = {
+            "reasoning": _sanitize_value(_lookup_value(visibility, attr_name="reasoning", key_name="reasoning")),
+            "supportsSuppression": _sanitize_value(
+                _lookup_value(visibility, attr_name="supports_suppression", key_name="supportsSuppression")
+            ),
+        }
     override_levels = _lookup_value(capability, attr_name="override_levels", key_name="overrideLevels")
     if isinstance(override_levels, Sequence) and not isinstance(override_levels, str):
         summary["overrideLevels"] = [_sanitize_value(level) for level in override_levels]
-    return summary
+    return {key: value for key, value in summary.items() if value is not None}
+
+
+
+def summarize_runtime_thinking_selection_result(result: Any | None) -> dict[str, Any] | None:
+    if result is None:
+        return None
+    summary: dict[str, Any] = {
+        "requestedSelection": summarize_runtime_thinking_selection(
+            _lookup_value(result, attr_name="requested_selection", key_name="requestedSelection")
+        ),
+        "appliedSelection": summarize_runtime_thinking_selection(
+            _lookup_value(result, attr_name="applied_selection", key_name="appliedSelection")
+        ),
+        "requestedThinkingLevel": _lookup_value(
+            result,
+            attr_name="requested_intent",
+            key_name="requestedThinkingLevel",
+        ),
+        "appliedThinkingLevel": _lookup_value(
+            result,
+            attr_name="applied_intent",
+            key_name="appliedThinkingLevel",
+        ),
+        "applied": _lookup_value(result, attr_name="applied", key_name="applied"),
+        "reasonCode": _lookup_value(result, attr_name="reason", key_name="reasonCode"),
+        "errorCode": _lookup_value(result, attr_name="error_code", key_name="errorCode"),
+        "providerBuilderKey": _lookup_value(
+            result,
+            attr_name="provider_builder_key",
+            key_name="providerBuilderKey",
+        ),
+        "mappingReasonCode": _lookup_value(
+            result,
+            attr_name="mapping_reason_code",
+            key_name="mappingReasonCode",
+        ),
+        "providerMapping": _lookup_value(result, attr_name="provider_mapping", key_name="providerMapping"),
+        "capabilityStatus": _lookup_value(result, attr_name="capability_status", key_name="capabilityStatus"),
+        "capabilitySource": _lookup_value(result, attr_name="capability_source", key_name="capabilitySource"),
+        "capabilitySeries": _lookup_value(result, attr_name="capability_series", key_name="capabilitySeries"),
+        "capabilitySeriesLabelZh": _lookup_value(
+            result,
+            attr_name="capability_series_label_zh",
+            key_name="capabilitySeriesLabelZh",
+        ),
+        "capabilityReasonCode": _lookup_value(
+            result,
+            attr_name="capability_reason_code",
+            key_name="capabilityReasonCode",
+        ),
+        "overridePresent": _lookup_value(result, attr_name="override_present", key_name="overridePresent"),
+        "overrideApplied": _lookup_value(result, attr_name="override_applied", key_name="overrideApplied"),
+        "overrideSource": _lookup_value(result, attr_name="override_source", key_name="overrideSource"),
+        "reasoningVisibility": _lookup_value(
+            result,
+            attr_name="reasoning_visibility",
+            key_name="reasoningVisibility",
+        ),
+        "supportsSuppression": _lookup_value(
+            result,
+            attr_name="supports_suppression",
+            key_name="supportsSuppression",
+        ),
+    }
+    model_settings = _lookup_value(result, attr_name="model_settings", key_name="modelSettings")
+    if model_settings is not None:
+        summary["modelSettings"] = _sanitize_value(model_settings)
+    return {key: value for key, value in summary.items() if value is not None}
+
+
+
+def summarize_runtime_reasoning_suppression_basis(basis: Any | None) -> dict[str, Any] | None:
+    if basis is None:
+        return None
+    summary = {
+        "shouldSuppress": _lookup_value(basis, attr_name="should_suppress", key_name="shouldSuppress"),
+        "source": _lookup_value(basis, attr_name="source", key_name="source"),
+        "reasonCode": _lookup_value(basis, attr_name="reason_code", key_name="reasonCode"),
+        "reasoningVisibility": _lookup_value(
+            basis,
+            attr_name="reasoning_visibility",
+            key_name="reasoningVisibility",
+        ),
+        "supportsSuppression": _lookup_value(
+            basis,
+            attr_name="supports_suppression",
+            key_name="supportsSuppression",
+        ),
+        "capabilitySource": _lookup_value(basis, attr_name="capability_source", key_name="capabilitySource"),
+        "capabilitySeries": _lookup_value(basis, attr_name="capability_series", key_name="capabilitySeries"),
+    }
+    applied_thinking_level = _lookup_value(
+        basis,
+        attr_name="applied_thinking_level",
+        key_name="appliedThinkingLevel",
+    )
+    if applied_thinking_level is not None:
+        summary["appliedThinkingLevel"] = applied_thinking_level
+    applied_selection = summarize_runtime_thinking_selection(
+        _lookup_value(basis, attr_name="applied_thinking_selection", key_name="appliedThinkingSelection")
+    )
+    if applied_selection is not None:
+        summary["appliedThinkingSelection"] = applied_selection
+    return {key: value for key, value in summary.items() if value is not None}
+
 
 
 def summarize_runtime_run_event(event: Any | None) -> dict[str, Any] | None:
@@ -174,6 +433,12 @@ def summarize_runtime_run_event(event: Any | None) -> dict[str, Any] | None:
     reason = _lookup_mapping_value(payload, "reason")
     if reason is not None:
         summary["reason"] = reason
+    summary["requestedThinkingSelection"] = summarize_runtime_thinking_selection(
+        _lookup_mapping_value(payload, "requestedThinkingSelection")
+    )
+    summary["appliedThinkingSelection"] = summarize_runtime_thinking_selection(
+        _lookup_mapping_value(payload, "appliedThinkingSelection")
+    )
     requested_thinking_level = _lookup_mapping_value(payload, "requestedThinkingLevel")
     if requested_thinking_level is not None:
         summary["requestedThinkingLevel"] = requested_thinking_level
@@ -185,6 +450,21 @@ def summarize_runtime_run_event(event: Any | None) -> dict[str, Any] | None:
     )
     if thinking_capability_snapshot is not None:
         summary["thinkingCapability"] = thinking_capability_snapshot
+    thinking_selection_result = summarize_runtime_thinking_selection_result(
+        _lookup_mapping_value(payload, "thinkingSelectionResult")
+    )
+    if thinking_selection_result is not None:
+        summary["thinkingSelectionResult"] = thinking_selection_result
+    thinking_series_decision = summarize_runtime_thinking_selection_result(
+        _lookup_mapping_value(payload, "thinkingSeriesDecision")
+    )
+    if thinking_series_decision is not None:
+        summary["thinkingSeriesDecision"] = thinking_series_decision
+    reasoning_suppression_basis = summarize_runtime_reasoning_suppression_basis(
+        _lookup_mapping_value(payload, "reasoningSuppressionBasis")
+    )
+    if reasoning_suppression_basis is not None:
+        summary["reasoningSuppressionBasis"] = reasoning_suppression_basis
     assistant_text = _lookup_mapping_value(payload, "assistantText")
     if assistant_text not in (None, ""):
         summary["assistantTextLength"] = len(str(assistant_text))
@@ -251,6 +531,8 @@ def _lookup_value(value: Any, *, attr_name: str, key_name: str) -> Any:
         return None
     if hasattr(value, attr_name):
         return getattr(value, attr_name)
+    if hasattr(value, key_name):
+        return getattr(value, key_name)
     if isinstance(value, Mapping):
         return value.get(key_name)
     return None
@@ -279,7 +561,9 @@ __all__ = [
     "summarize_exception",
     "summarize_runtime_execution_event",
     "summarize_runtime_model_route",
+    "summarize_runtime_reasoning_suppression_basis",
     "summarize_runtime_run_event",
     "summarize_runtime_thinking_capability",
+    "summarize_runtime_thinking_selection_result",
     "summarize_runtime_tool_event",
 ]

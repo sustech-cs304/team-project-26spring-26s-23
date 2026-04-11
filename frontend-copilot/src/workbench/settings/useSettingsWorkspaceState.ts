@@ -54,12 +54,13 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
   const [providerSecretValues, setProviderSecretValues] = useState<Record<string, string>>({})
   const [casPasswordValue, setCasPasswordValue] = useState('')
   const skipNextWorkspaceSaveRef = useRef(true)
+  const [initialHydrationActiveProviderId] = useState(() => initialActiveProviderId)
 
   useEffect(() => {
     let cancelled = false
 
     void (async () => {
-      const hydration = await loadSettingsWorkspaceHydration(activeProviderId)
+      const hydration = await loadSettingsWorkspaceHydration(initialHydrationActiveProviderId)
 
       if (!cancelled && hydration) {
         setFormState(hydration.state)
@@ -76,7 +77,7 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [initialHydrationActiveProviderId])
 
   const workspaceStateInput = useMemo(() => createSettingsWorkspaceStateSaveInput(formState), [formState])
 

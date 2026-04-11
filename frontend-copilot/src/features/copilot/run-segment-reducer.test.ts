@@ -8,6 +8,7 @@ import {
 } from './run-segment-reducer'
 import {
   createRuntimeModelRoute,
+  createRuntimeReasoningSuppressionBasis,
   createRuntimeRunCompletedEvent,
   createRuntimeRunMetadataEvent,
   createRuntimeThinkingCapability,
@@ -283,9 +284,17 @@ describe('run segment reducer', () => {
         sessionId: 'session-1',
         sequence: 3,
         payload: {
+          requestedThinkingSelection: null,
+          appliedThinkingSelection: null,
           requestedThinkingLevel: 'high',
           appliedThinkingLevel: 'off',
           thinkingCapabilitySnapshot: capabilitySnapshot,
+          reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
+            shouldSuppress: true,
+            source: 'applied-selection',
+            reasonCode: 'applied_selection_off',
+            appliedThinkingLevel: 'off',
+          }),
         },
       }),
       {
@@ -325,11 +334,77 @@ describe('run segment reducer', () => {
     expect(stateAfterEvents.requestedThinkingLevel).toBe('high')
     expect(stateAfterEvents.appliedThinkingLevel).toBe('off')
     expect(stateAfterEvents.reasoningSuppressed).toBe(true)
+    expect(stateAfterEvents.reasoningTraceState).toBe('suppressed')
+    expect(stateAfterEvents.reasoningSuppressionBasis).toEqual(
+      createRuntimeReasoningSuppressionBasis({
+        shouldSuppress: true,
+        source: 'applied-selection',
+        reasonCode: 'applied_selection_off',
+        appliedThinkingLevel: 'off',
+      }),
+    )
     expect(stateAfterEvents.thinkingCapabilitySnapshot).toEqual(capabilitySnapshot)
     expect(stateAfterEvents.segments.map((segment) => segment.kind)).toEqual([
       'assistant',
       'terminal',
     ])
+  })
+
+  it('keeps reasoning trace as not observed until a hidden reasoning delta is actually suppressed', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const hiddenReasoningState = [
+      {
+        type: 'run_started' as const,
+        runId: 'run-hidden-reasoning',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-hidden-reasoning:assistant',
+        },
+      },
+      createRuntimeRunMetadataEvent({
+        runId: 'run-hidden-reasoning',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          requestedThinkingSelection: null,
+          appliedThinkingSelection: null,
+          requestedThinkingLevel: 'auto',
+          appliedThinkingLevel: 'auto',
+          thinkingCapabilitySnapshot: createRuntimeThinkingCapability(),
+          reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
+            shouldSuppress: true,
+            source: 'capability-visibility',
+            reasonCode: 'capability_visibility_suppressed',
+            appliedThinkingLevel: 'auto',
+            reasoningVisibility: 'suppressed',
+          }),
+        },
+      }),
+    ].reduce(applyRuntimeRunEventToCopilotRunState, initialState)
+
+    expect(hiddenReasoningState.reasoningSuppressed).toBe(true)
+    expect(hiddenReasoningState.reasoningTraceState).toBe('not_observed')
+    expect(hiddenReasoningState.segments).toEqual([])
+
+    const suppressedReasoningState = applyRuntimeRunEventToCopilotRunState(hiddenReasoningState, {
+      type: 'reasoning_delta',
+      runId: 'run-hidden-reasoning',
+      sessionId: 'session-1',
+      sequence: 3,
+      payload: {
+        delta: '这段隐藏推理只能被记录为抑制。',
+      },
+    })
+
+    expect(suppressedReasoningState.reasoningSuppressed).toBe(true)
+    expect(suppressedReasoningState.reasoningTraceState).toBe('suppressed')
+    expect(suppressedReasoningState.segments).toEqual([])
   })
 
   it('marks streaming segments cancelled when transport abort happens before terminal event', () => {

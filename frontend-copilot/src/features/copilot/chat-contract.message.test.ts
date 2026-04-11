@@ -10,14 +10,17 @@ import {
   createRuntimeModelRoute,
   createRuntimeRunCompletedEvent,
   createRuntimeRunStartResponse,
+  createRuntimeThinkingSelection,
   createSseEventStream,
   createUserMessage,
   runtimeUrl,
   sessionId,
 } from './thread-run-contract.test-support'
 
+const RUNTIME_CONNECTIVITY_ERROR_MESSAGE = '无法连接到本地运行时，可能由后端异常、CORS 或网络拒绝导致，请查看运行时控制台日志。'
+
 describe('dispatchCopilotMessage', () => {
-  it('posts run/start then run/stream with request-scoped modelRoute, enabledTools and requestOptions', async () => {
+  it('posts run/start then run/stream with structured thinking payload as the main transport path', async () => {
     const runEvents: RuntimeRunEvent[] = [
       {
         type: 'run_started',
@@ -87,7 +90,7 @@ describe('dispatchCopilotMessage', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
-      thinkingLevelIntent: null,
+      thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
       enabledTools: ['tool.file-convert'],
       debugModeEnabled: true,
       requestOptions: {
@@ -131,6 +134,14 @@ describe('dispatchCopilotMessage', () => {
                 modelId: 'qwen-plus',
               },
               catalogRevision: '2026-04-06-provider-catalog-v1',
+            },
+            thinkingSelection: {
+              series: 'compat-discrete-selection-v1',
+              value: {
+                valueType: 'code',
+                code: 'auto',
+                labelZh: '自动',
+              },
             },
             enabledTools: ['tool.file-convert'],
             debugModeEnabled: true,
@@ -182,7 +193,7 @@ describe('dispatchCopilotMessage', () => {
         agent: 'blackboard',
         message: createUserMessage(),
         modelRoute: createRuntimeModelRoute(),
-        thinkingLevelIntent: null,
+        thinkingSelection: null,
         enabledTools: ['tool.file-convert'],
         requestOptions: {},
         fetchFn,
@@ -196,11 +207,69 @@ describe('dispatchCopilotMessage', () => {
     })
   })
 
+  it.each([
+    ['native TypeError rejection', new TypeError('Failed to fetch')],
+    ['plain Failed to fetch rejection', new Error('Failed to fetch')],
+    ['CORS rejection', new Error('CORS policy blocked the request')],
+  ])('maps %s during run/start into a readable RuntimeRequestError', async (_label, fetchError) => {
+    const rawFetchFn = vi.fn().mockRejectedValue(fetchError)
+    const fetchFn = rawFetchFn as unknown as typeof fetch
+
+    await expect(collectEvents(dispatchCopilotMessage({
+      runtimeUrl,
+      sessionId,
+      agent: agentId,
+      message: createUserMessage(),
+      modelRoute: createRuntimeModelRoute(),
+      thinkingSelection: null,
+      enabledTools: ['tool.file-convert'],
+      requestOptions: {},
+      fetchFn,
+    }))).rejects.toMatchObject({
+      name: 'RuntimeRequestError',
+      code: null,
+      status: 0,
+      message: RUNTIME_CONNECTIVITY_ERROR_MESSAGE,
+    })
+
+    expect(rawFetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps browser connectivity failures during run/stream into a readable RuntimeRequestError', async () => {
+    const rawFetchFn = vi.fn()
+    rawFetchFn.mockResolvedValueOnce(createFetchResponse(createRuntimeRunStartResponse(), {
+      headers: {
+        'content-type': 'application/json',
+      },
+    }))
+    rawFetchFn.mockRejectedValueOnce(new Error('CORS policy blocked the request'))
+    const fetchFn = rawFetchFn as unknown as typeof fetch
+
+    await expect(collectEvents(dispatchCopilotMessage({
+      runtimeUrl,
+      sessionId,
+      agent: agentId,
+      message: createUserMessage(),
+      modelRoute: createRuntimeModelRoute(),
+      thinkingSelection: null,
+      enabledTools: ['tool.file-convert'],
+      requestOptions: {},
+      fetchFn,
+    }))).rejects.toMatchObject({
+      name: 'RuntimeRequestError',
+      code: null,
+      status: 0,
+      message: RUNTIME_CONNECTIVITY_ERROR_MESSAGE,
+    })
+
+    expect(rawFetchFn).toHaveBeenCalledTimes(2)
+  })
+
   it('forwards abort signals into both run/start and run/stream requests', async () => {
     const abortError = new Error('The operation was aborted.')
     abortError.name = 'AbortError'
     let callIndex = 0
-    const rawFetchFn = vi.fn(async (..._args: Parameters<typeof fetch>) => {
+    const rawFetchFn = vi.fn(async () => {
       callIndex += 1
       if (callIndex === 1) {
         return createFetchResponse(createRuntimeRunStartResponse(), {
@@ -220,7 +289,7 @@ describe('dispatchCopilotMessage', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
-      thinkingLevelIntent: null,
+      thinkingSelection: null,
       enabledTools: [],
       requestOptions: {},
       fetchFn,

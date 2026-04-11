@@ -3,7 +3,6 @@ import type {
   RuntimeResolvedModelRoute,
 } from './thread-run-contract'
 import {
-  describeProviderRuntimeStatus,
   getProviderCatalogEntry,
   getProviderCatalogRevision,
 } from '../../provider-catalog'
@@ -11,8 +10,8 @@ import type {
   ModelCapability,
   ModelRouteRef,
   ProviderProfile,
-  ThinkingCapabilityDeclaration,
 } from '../../workbench/types'
+import { serializeThinkingCapabilityOverrideInput } from '../../workbench/thinking-capabilities'
 import {
   parseSerializedModelRouteRef,
   serializeModelRouteRef,
@@ -36,7 +35,7 @@ export interface CopilotModelOption {
   route: RuntimeModelRoute
   available: boolean
   unavailableReason: string | null
-  thinkingCapabilityOverride: ThinkingCapabilityDeclaration | null
+  thinkingCapabilityOverride: Record<string, unknown> | null
 }
 
 export interface CopilotModelGroup {
@@ -60,7 +59,7 @@ export function getRuntimeModelRouteStreamingSupportReason(route: RuntimeModelRo
   }
 
   return route.routeRef === undefined || route.routeRef === null
-    ? '当前模型路由缺少稳定 routeRef。'
+    ? '当前模型不可用，请重新选择。'
     : null
 }
 
@@ -133,7 +132,7 @@ export function createFallbackCopilotModel(modelId: string): CopilotModelOption 
 
   const parsedRouteRef = parseSerializedModelRouteRef(trimmedModelId)
   const fallbackModelId = parsedRouteRef?.modelId ?? trimmedModelId
-  const fallbackProvider = parsedRouteRef === null ? 'Custom' : `已失效路由 · ${parsedRouteRef.profileId}`
+  const fallbackProvider = '当前选择不可用'
 
   return {
     id: trimmedModelId,
@@ -154,7 +153,7 @@ export function createFallbackCopilotModel(modelId: string): CopilotModelOption 
           routeRef: cloneModelRouteRef(parsedRouteRef),
         },
     available: false,
-    unavailableReason: parsedRouteRef === null ? null : '原模型路由已失效，请重新选择。',
+    unavailableReason: '当前选择已失效，请重新选择。',
     thinkingCapabilityOverride: null,
   }
 }
@@ -328,7 +327,7 @@ function createCopilotModelOption(
     route: createRuntimeModelRoute(profile, routeRef),
     available: availability.available,
     unavailableReason: availability.reason,
-    thinkingCapabilityOverride: cloneThinkingCapabilityOverride(model.thinkingCapability),
+    thinkingCapabilityOverride: serializeThinkingCapabilityOverrideInput(model.thinkingCapability),
   }
 }
 
@@ -379,20 +378,6 @@ function resolveProviderTitle(name: string, fallbackId: string): string {
   return name.trim() || fallbackId.trim() || '未命名服务商'
 }
 
-function cloneThinkingCapabilityOverride(
-  declaration: ThinkingCapabilityDeclaration | undefined,
-): ThinkingCapabilityDeclaration | null {
-  if (declaration === undefined) {
-    return null
-  }
-
-  return {
-    supported: declaration.supported,
-    ...(declaration.levels === undefined ? {} : { levels: [...declaration.levels] }),
-    ...(declaration.defaultLevel === undefined ? {} : { defaultLevel: declaration.defaultLevel }),
-  }
-}
-
 function normalizeProviderIdentifier(value: string): string {
   return value.trim().toLowerCase()
 }
@@ -436,7 +421,7 @@ function resolveCopilotModelAvailability(profile: ProviderProfile): {
   if (compatibility?.status === 'legacy' || compatibility?.status === 'unsupported') {
     return {
       available: false,
-      reason: compatibility.reason.trim() || '历史兼容配置，当前不可用于聊天发送。',
+      reason: '当前模型暂不可用于聊天。',
     }
   }
 
@@ -445,16 +430,14 @@ function resolveCopilotModelAvailability(profile: ProviderProfile): {
   if (providerCatalogEntry === null) {
     return {
       available: false,
-      reason: `Provider '${providerIdentity}' 未包含在当前 catalog 中。`,
+      reason: '当前模型暂不可用于聊天。',
     }
   }
 
   if (providerCatalogEntry.runtimeStatus !== 'enabled') {
     return {
       available: false,
-      reason: providerCatalogEntry.runtimeStatus === 'catalog-only'
-        ? '仅数据层兼容，当前聊天运行时尚未启用该 provider。'
-        : describeProviderRuntimeStatus(providerCatalogEntry.runtimeStatus) ?? '当前 provider 未启用。',
+      reason: '当前模型暂不可用于聊天。',
     }
   }
 

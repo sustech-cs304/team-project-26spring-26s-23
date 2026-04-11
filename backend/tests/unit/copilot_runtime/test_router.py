@@ -4,13 +4,14 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from pydantic_ai.messages import ModelMessage
-
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app.copilot_runtime import (
     RuntimeBridge,
+    RuntimeRunStartResponse,
     RuntimeScaffold,
     ToolDescriptor,
     ToolRegistry,
@@ -20,6 +21,7 @@ from app.copilot_runtime import (
     build_router,
     build_runtime_scaffold,
 )
+from app.copilot_runtime.agent import ModelNotConfiguredError
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
@@ -286,9 +288,300 @@ def test_root_post_run_start_returns_run_shell_payload() -> None:
     assert run is not None
     assert payload == scaffold.build_run_start_response(run=run).to_dict()
     assert payload["run"]["status"] == "pending"
-    assert payload["run"]["requestedThinkingLevel"] is None
-    assert payload["run"]["appliedThinkingLevel"] is None
-    assert payload["run"]["thinkingCapabilitySnapshot"] is None
+    assert payload["run"]["requestedThinkingSelection"] is None
+    assert payload["run"]["appliedThinkingSelection"] is None
+    assert payload["run"]["thinkingCapabilitySnapshot"] == {
+        "status": "verified-supported",
+        "source": "verified",
+        "series": "openai-4-level-minimal-v1",
+        "seriesLabelZh": "OpenAI 4 档 Minimal 系",
+        "editorType": "discrete",
+        "allowedValues": [
+            {"valueType": "code", "code": "minimal", "mode": None, "budgetTokens": None, "labelZh": "极简"},
+            {"valueType": "code", "code": "low", "mode": None, "budgetTokens": None, "labelZh": "低"},
+            {"valueType": "code", "code": "medium", "mode": None, "budgetTokens": None, "labelZh": "中"},
+            {"valueType": "code", "code": "high", "mode": None, "budgetTokens": None, "labelZh": "高"},
+        ],
+        "defaultValue": {
+            "valueType": "code",
+            "code": "medium",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "中",
+        },
+        "providerBuilderKey": "openai_reasoning_effort_v1",
+        "reasonCode": "verified_series_resolved",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+    }
+    assert payload["run"]["thinkingSeriesDecision"] == {
+        "requestedSelection": None,
+        "appliedSelection": None,
+        "applied": False,
+        "reasonCode": "selection_missing",
+        "errorCode": None,
+        "providerBuilderKey": None,
+        "mappingReasonCode": "selection_missing",
+        "capabilityStatus": "verified-supported",
+        "capabilitySource": "verified",
+        "capabilitySeries": "openai-4-level-minimal-v1",
+        "capabilitySeriesLabelZh": "OpenAI 4 档 Minimal 系",
+        "capabilityReasonCode": "verified_series_resolved",
+    }
+    assert payload["run"]["reasoningSuppressionBasis"] == {
+        "shouldSuppress": False,
+        "source": "none",
+        "reasonCode": None,
+        "appliedThinkingSelection": None,
+        "reasoningVisibility": "visible",
+        "supportsSuppression": True,
+        "capabilitySource": "verified",
+        "capabilitySeries": "openai-4-level-minimal-v1",
+    }
+
+
+
+def test_root_post_run_start_provider_specific_thinking_selection_round_trips_without_500(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    thinking_selection = {
+        "series": "qwen-thinking-switch-v1",
+        "value": {
+            "valueType": "code",
+            "code": "true",
+            "labelZh": "开启",
+        },
+    }
+    thinking_capability_override = {
+        "supported": True,
+        "series": "qwen-thinking-switch-v1",
+        "template": {
+            "editorType": "discrete",
+            "allowedValues": [
+                {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                {"valueType": "code", "code": "true", "labelZh": "开启"},
+            ],
+            "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
+        },
+        "source": "settings-page",
+    }
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/",
+                json=_build_run_start_request(
+                    thread_id="thread-1",
+                    model="unknown-model",
+                    debug_mode_enabled=True,
+                    thinking_selection=thinking_selection,
+                    thinking_capability_override=thinking_capability_override,
+                ),
+            )
+
+    payload = response.json()
+    run = store.get_run(payload["run"]["runId"])
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert response.status_code == 200
+    assert run is not None
+    assert run.request.policy.thinking_selection is not None
+    assert run.request.policy.thinking_selection.value_payload == {
+        "valueType": "code",
+        "code": "true",
+        "mode": None,
+        "budgetTokens": None,
+        "labelZh": "开启",
+    }
+    assert payload["run"]["requestedThinkingSelection"] == {
+        "series": "qwen-thinking-switch-v1",
+        "value": {
+            "valueType": "code",
+            "code": "true",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "开启",
+        },
+    }
+    assert payload["run"]["appliedThinkingSelection"] == {
+        "series": "qwen-thinking-switch-v1",
+        "value": {
+            "valueType": "code",
+            "code": "true",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "开启",
+        },
+    }
+    assert payload["run"]["thinkingCapabilitySnapshot"]["status"] == "unknown-with-override"
+    assert payload["run"]["thinkingCapabilitySnapshot"]["series"] == "qwen-thinking-switch-v1"
+    assert payload["run"]["thinkingSeriesDecision"]["reasonCode"] == "override_series_builder_applied"
+    assert payload["run"]["thinkingSeriesDecision"]["mappingReasonCode"] == "qwen_switch_true"
+    assert any('"event":"run_start.prime_run_metadata.enter"' in message for message in chain_logs)
+    assert any(
+        '"event":"thinking.run_metadata_primed"' in message
+        and '"phase":"prime_run_metadata"' in message
+        and '"requestId":' in message
+        and '"runId":"' in message
+        for message in chain_logs
+    )
+
+
+
+def test_root_post_run_start_unexpected_create_run_failure_returns_structured_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    def _raise_create_run(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("forced run/start failure")
+
+    monkeypatch.setattr(store, "create_run", _raise_create_run)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/",
+            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "internal_server_error"
+    assert payload["error"]["requestedMethod"] == "run/start"
+    assert payload["error"]["details"]["requestId"]
+
+
+
+def test_root_post_run_start_serialization_failure_returns_structured_error_and_keeps_run_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    captured_logs: list[tuple[str, dict[str, object]]] = []
+    router_module = __import__("app.copilot_runtime.router", fromlist=["log_runtime_chain_debug"])
+
+    def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
+        captured_logs.append((event_name, payload))
+
+    def _raise_to_dict(self: RuntimeRunStartResponse) -> dict[str, object]:
+        raise RuntimeError("forced run/start serialization failure")
+
+    monkeypatch.setattr(router_module, "log_runtime_chain_debug", _capture_log)
+    monkeypatch.setattr(RuntimeRunStartResponse, "to_dict", _raise_to_dict)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id="thread-1",
+                model="gpt-4.1",
+                debug_mode_enabled=True,
+            ),
+        )
+
+    payload = response.json()
+    runs = store.list_runs("thread-1")
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "internal_server_error"
+    assert payload["error"]["requestedMethod"] == "run/start"
+    assert payload["error"]["details"]["requestId"]
+    assert len(runs) == 1
+    assert runs[0].status == "pending"
+    assert runs[0].metadata["thinkingCapabilitySnapshot"]["status"] == "verified-supported"
+
+    serialize_logs = [payload for name, payload in captured_logs if name == "run_start.serialize_run_start_response.failed"]
+    assert len(serialize_logs) == 1
+    assert serialize_logs[0]["phase"] == "serialize_run_start_response"
+    assert serialize_logs[0]["threadId"] == "thread-1"
+    assert serialize_logs[0]["runId"] == runs[0].run_id
+    assert serialize_logs[0]["runtimeMethod"] == "run/start"
+    assert serialize_logs[0]["exceptionType"] == "RuntimeError"
+    assert serialize_logs[0]["exception"]["message"] == "forced run/start serialization failure"
+
+
+def test_log_run_start_stage_skips_chain_logs_when_request_debug_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    request = _build_http_request(debug_mode_enabled=False)
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        router_module._log_run_start_stage(request, "run_start.request_received")
+
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert not any('"event":"run_start.request_received"' in message for message in chain_logs)
+
+
+
+def test_log_run_start_stage_emits_chain_logs_when_request_debug_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.delenv("COPILOT_RUNTIME_CHAIN_DEBUG", raising=False)
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    request = _build_http_request(debug_mode_enabled=True)
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        router_module._log_run_start_stage(request, "run_start.request_received")
+
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert any(
+        '"event":"run_start.request_received"' in message
+        and '"phase":"create_run_record"' in message
+        and '"threadId":"thread-1"' in message
+        for message in chain_logs
+    )
+
+
+
+def test_log_run_start_stage_uses_service_debug_default_when_request_debug_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    request = _build_http_request(debug_mode_enabled=None)
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        router_module._log_run_start_stage(request, "run_start.request_received")
+
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert any('"event":"run_start.request_received"' in message for message in chain_logs)
 
 
 
@@ -323,16 +616,29 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
         "run_completed",
     ]
     assert events[1]["payload"] == {
-        "requestedThinkingLevel": None,
-        "appliedThinkingLevel": None,
+        "requestedThinkingSelection": None,
+        "appliedThinkingSelection": None,
         "thinkingCapabilitySnapshot": {
-            "status": "verified-unsupported",
+            "status": "verified-supported",
             "source": "verified",
-            "supported": False,
-            "supportedLevels": [],
-            "defaultLevel": None,
-            "reasonCode": "openai_thinking_not_supported_for_model",
-            "providerHint": "openai",
+            "series": "openai-4-level-minimal-v1",
+            "seriesLabelZh": "OpenAI 4 档 Minimal 系",
+            "editorType": "discrete",
+            "allowedValues": [
+                {"valueType": "code", "code": "minimal", "mode": None, "budgetTokens": None, "labelZh": "极简"},
+                {"valueType": "code", "code": "low", "mode": None, "budgetTokens": None, "labelZh": "低"},
+                {"valueType": "code", "code": "medium", "mode": None, "budgetTokens": None, "labelZh": "中"},
+                {"valueType": "code", "code": "high", "mode": None, "budgetTokens": None, "labelZh": "高"},
+            ],
+            "defaultValue": {
+                "valueType": "code",
+                "code": "medium",
+                "mode": None,
+                "budgetTokens": None,
+                "labelZh": "中",
+            },
+            "providerBuilderKey": "openai_reasoning_effort_v1",
+            "reasonCode": "verified_series_resolved",
             "routeFingerprint": {
                 "providerProfileId": "provider-1",
                 "provider": "openai",
@@ -340,7 +646,30 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
                 "baseUrl": "https://example.com/v1",
                 "modelId": "gpt-4.1",
             },
-            "overrideLevels": [],
+        },
+        "thinkingSeriesDecision": {
+            "requestedSelection": None,
+            "appliedSelection": None,
+            "applied": False,
+            "reasonCode": "selection_missing",
+            "errorCode": None,
+            "providerBuilderKey": None,
+            "mappingReasonCode": "selection_missing",
+            "capabilityStatus": "verified-supported",
+            "capabilitySource": "verified",
+            "capabilitySeries": "openai-4-level-minimal-v1",
+            "capabilitySeriesLabelZh": "OpenAI 4 档 Minimal 系",
+            "capabilityReasonCode": "verified_series_resolved",
+        },
+        "reasoningSuppressionBasis": {
+            "shouldSuppress": False,
+            "source": "none",
+            "reasonCode": None,
+            "appliedThinkingSelection": None,
+            "reasoningVisibility": "visible",
+            "supportsSuppression": True,
+            "capabilitySource": "verified",
+            "capabilitySeries": "openai-4-level-minimal-v1",
         },
     }
     assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
@@ -387,9 +716,61 @@ def test_root_post_run_cancel_marks_pending_run_cancelled_and_stream_returns_can
     assert cancel_payload["run"]["runId"] == run_id
     assert cancel_payload["run"]["status"] == "cancelled"
     assert cancel_payload["run"]["cancelRequested"] is True
-    assert cancel_payload["run"]["requestedThinkingLevel"] is None
-    assert cancel_payload["run"]["appliedThinkingLevel"] is None
-    assert cancel_payload["run"]["thinkingCapabilitySnapshot"] is None
+    assert cancel_payload["run"]["requestedThinkingSelection"] is None
+    assert cancel_payload["run"]["appliedThinkingSelection"] is None
+    assert cancel_payload["run"]["thinkingCapabilitySnapshot"] == {
+        "status": "verified-supported",
+        "source": "verified",
+        "series": "openai-4-level-minimal-v1",
+        "seriesLabelZh": "OpenAI 4 档 Minimal 系",
+        "editorType": "discrete",
+        "allowedValues": [
+            {"valueType": "code", "code": "minimal", "mode": None, "budgetTokens": None, "labelZh": "极简"},
+            {"valueType": "code", "code": "low", "mode": None, "budgetTokens": None, "labelZh": "低"},
+            {"valueType": "code", "code": "medium", "mode": None, "budgetTokens": None, "labelZh": "中"},
+            {"valueType": "code", "code": "high", "mode": None, "budgetTokens": None, "labelZh": "高"},
+        ],
+        "defaultValue": {
+            "valueType": "code",
+            "code": "medium",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "中",
+        },
+        "providerBuilderKey": "openai_reasoning_effort_v1",
+        "reasonCode": "verified_series_resolved",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+    }
+    assert cancel_payload["run"]["thinkingSeriesDecision"] == {
+        "requestedSelection": None,
+        "appliedSelection": None,
+        "applied": False,
+        "reasonCode": "selection_missing",
+        "errorCode": None,
+        "providerBuilderKey": None,
+        "mappingReasonCode": "selection_missing",
+        "capabilityStatus": "verified-supported",
+        "capabilitySource": "verified",
+        "capabilitySeries": "openai-4-level-minimal-v1",
+        "capabilitySeriesLabelZh": "OpenAI 4 档 Minimal 系",
+        "capabilityReasonCode": "verified_series_resolved",
+    }
+    assert cancel_payload["run"]["reasoningSuppressionBasis"] == {
+        "shouldSuppress": False,
+        "source": "none",
+        "reasonCode": None,
+        "appliedThinkingSelection": None,
+        "reasoningVisibility": "visible",
+        "supportsSuppression": True,
+        "capabilitySource": "verified",
+        "capabilitySeries": "openai-4-level-minimal-v1",
+    }
 
     assert stream_response.status_code == 200
     assert [event["type"] for event in events] == ["run_cancelled"]
@@ -415,6 +796,137 @@ def test_root_post_run_stream_unknown_run_returns_structured_error() -> None:
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"runId": "run-missing"}
 
+
+
+def test_root_post_run_stream_runtime_error_before_sse_starts_returns_structured_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    def _raise_stream_run(
+        self: RuntimeBridge,
+        *,
+        run_id: str,
+        is_client_disconnected: Any | None = None,
+    ) -> None:
+        _ = (self, run_id, is_client_disconnected)
+        raise RuntimeError("forced run/stream failure before sse starts")
+
+    monkeypatch.setattr(RuntimeBridge, "stream_run", _raise_stream_run)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        start_response = client.post(
+            "/",
+            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+        )
+        run_id = start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    payload = response.json()
+    run = store.get_run(run_id)
+
+    assert start_response.status_code == 200
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "agent_execution_failed"
+    assert payload["error"]["message"] == "forced run/stream failure before sse starts"
+    assert payload["error"]["requestedMethod"] == "run/stream"
+    assert payload["error"]["details"] == {}
+    assert run is not None
+    assert run.status == "pending"
+
+
+
+def test_root_post_run_stream_execution_failure_preserves_streaming_failure_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _scaffold, store = _build_app()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    def _raise_open_event_stream(*args: Any, **kwargs: Any) -> None:
+        raise ModelNotConfiguredError("forced streaming execution failure")
+
+    monkeypatch.setattr(_PermissiveExecutor, "open_event_stream", _raise_open_event_stream)
+
+    with TestClient(app) as client:
+        start_response = client.post(
+            "/",
+            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+        )
+        run_id = start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+    run = store.get_run(run_id)
+
+    assert start_response.status_code == 200
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert [event["type"] for event in events] == ["run_started", "run_metadata", "run_failed"]
+    assert events[-1]["payload"] == {
+        "code": "model_not_configured",
+        "message": "forced streaming execution failure",
+        "details": {"modelEnvironmentKeys": []},
+    }
+    assert run is not None
+    assert run.status == "failed"
+    assert run.metadata["terminal_event"] == "run_failed"
+    assert run.metadata["terminal_payload"] == events[-1]["payload"]
+
+
+def test_root_post_thinking_capability_get_returns_canonical_schema_and_schema_version() -> None:
+    app, _scaffold, store = _build_app()
+    thread = store.create_thread(bound_agent_id="default", thread_id="session-1")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_thinking_capability_get_request(
+                session_id=thread.thread_id,
+                provider="openai",
+                model="gpt-4.1",
+            ),
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload == {
+        "ok": True,
+        "sessionId": thread.thread_id,
+        "capabilitySchemaVersion": "canonical-thinking-capability-v2",
+        "capability": {
+            "status": "verified-supported",
+            "source": "verified",
+            "series": "openai-4-level-minimal-v1",
+            "seriesLabelZh": "OpenAI 4 档 Minimal 系",
+            "editorType": "discrete",
+            "allowedValues": [
+                {"valueType": "code", "code": "minimal", "mode": None, "budgetTokens": None, "labelZh": "极简"},
+                {"valueType": "code", "code": "low", "mode": None, "budgetTokens": None, "labelZh": "低"},
+                {"valueType": "code", "code": "medium", "mode": None, "budgetTokens": None, "labelZh": "中"},
+                {"valueType": "code", "code": "high", "mode": None, "budgetTokens": None, "labelZh": "高"},
+            ],
+            "defaultValue": {
+                "valueType": "code",
+                "code": "medium",
+                "mode": None,
+                "budgetTokens": None,
+                "labelZh": "中",
+            },
+            "providerBuilderKey": "openai_reasoning_effort_v1",
+            "reasonCode": "verified_series_resolved",
+            "routeFingerprint": {
+                "providerProfileId": "provider-1",
+                "provider": "openai",
+                "endpointType": "openai-compatible",
+                "baseUrl": "https://example.com/v1",
+                "modelId": "gpt-4.1",
+            },
+        },
+    }
 
 
 def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool_catalog() -> None:
@@ -452,47 +964,6 @@ def test_root_post_capabilities_get_unknown_session_returns_structured_error() -
 
 
 
-def test_root_post_thinking_capability_get_returns_verified_capability_snapshot() -> None:
-    app, _scaffold, store = _build_app()
-    store.create_thread(bound_agent_id="default", thread_id="session-1")
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json=_build_thinking_capability_get_request(
-                session_id="session-1",
-                provider="openai",
-                model="gpt-4.1",
-            ),
-        )
-
-    payload = response.json()
-
-    assert response.status_code == 200
-    assert payload == {
-        "ok": True,
-        "sessionId": "session-1",
-        "capability": {
-            "status": "verified-unsupported",
-            "source": "verified",
-            "supported": False,
-            "supportedLevels": [],
-            "defaultLevel": None,
-            "reasonCode": "openai_thinking_not_supported_for_model",
-            "providerHint": "openai",
-            "routeFingerprint": {
-                "providerProfileId": "provider-1",
-                "provider": "openai",
-                "endpointType": "openai-compatible",
-                "baseUrl": "https://example.com/v1",
-                "modelId": "gpt-4.1",
-            },
-            "overrideLevels": [],
-        },
-    }
-
-
-
 def test_root_post_thinking_capability_get_returns_verified_unsupported_snapshot_for_catalog_only_provider() -> None:
     app, _scaffold, store = _build_app()
     store.create_thread(bound_agent_id="default", thread_id="session-1")
@@ -513,14 +984,17 @@ def test_root_post_thinking_capability_get_returns_verified_unsupported_snapshot
     assert payload == {
         "ok": True,
         "sessionId": "session-1",
+        "capabilitySchemaVersion": "canonical-thinking-capability-v2",
         "capability": {
-            "status": "verified-unsupported",
-            "source": "verified",
-            "supported": False,
-            "supportedLevels": [],
-            "defaultLevel": None,
-            "reasonCode": "provider_catalog_only",
-            "providerHint": "openrouter",
+            "status": "unknown-without-override",
+            "source": "unknown",
+            "series": None,
+            "seriesLabelZh": None,
+            "editorType": None,
+            "allowedValues": [],
+            "defaultValue": None,
+            "providerBuilderKey": None,
+            "reasonCode": "route_not_verified",
             "routeFingerprint": {
                 "providerProfileId": "provider-1",
                 "provider": "openrouter",
@@ -528,7 +1002,6 @@ def test_root_post_thinking_capability_get_returns_verified_unsupported_snapshot
                 "baseUrl": "https://example.com/v1",
                 "modelId": "openrouter/auto",
             },
-            "overrideLevels": [],
         },
     }
 
@@ -698,7 +1171,7 @@ def _build_runtime_bridge(
             scaffold=scaffold,
             model_route_resolver=model_route_resolver,
         ),
-        model_route_resolver=model_route_resolver,
+        model_route_resolver=_EchoModelRouteResolver(),
     )
 
 
@@ -846,6 +1319,37 @@ def _build_thinking_capability_get_request(
 
 
 
+def _build_http_request(*, debug_mode_enabled: bool | None) -> Request:
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+    )
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_set_runtime_request_context"])
+    if debug_mode_enabled is not None:
+        request.state.copilot_runtime_debug_mode_enabled = debug_mode_enabled
+    router_module._set_runtime_request_context(
+        request,
+        runtime_method="run/start",
+        thread_id="thread-1",
+        agent_id="default",
+        run_id="run-1",
+        phase="create_run_record",
+    )
+    return request
+
+
+
 def _build_run_start_request(
     *,
     thread_id: str,
@@ -855,6 +1359,8 @@ def _build_run_start_request(
     enabled_tools: list[str] | None = None,
     debug_mode_enabled: bool = False,
     request_options: dict[str, object] | None = None,
+    thinking_selection: dict[str, object] | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "threadId": thread_id,
@@ -864,6 +1370,8 @@ def _build_run_start_request(
             enabled_tools=enabled_tools,
             debug_mode_enabled=debug_mode_enabled,
             request_options=request_options,
+            thinking_selection=thinking_selection,
+            thinking_capability_override=thinking_capability_override,
         ),
     }
     if agent_id is not None:
@@ -898,8 +1406,10 @@ def _build_policy(
     enabled_tools: list[str] | None = None,
     debug_mode_enabled: bool = False,
     request_options: dict[str, object] | None = None,
+    thinking_selection: dict[str, object] | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    policy: dict[str, object] = {
         "modelRoute": {
             "routeRef": {
                 "routeKind": "provider-model",
@@ -911,6 +1421,11 @@ def _build_policy(
         "debugModeEnabled": debug_mode_enabled,
         "requestOptions": dict(request_options or {}),
     }
+    if thinking_selection is not None:
+        policy["thinkingSelection"] = dict(thinking_selection)
+    if thinking_capability_override is not None:
+        policy["thinkingCapabilityOverride"] = dict(thinking_capability_override)
+    return policy
 
 
 

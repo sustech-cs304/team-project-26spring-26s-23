@@ -7,14 +7,12 @@ export interface ProviderProfilesSectionDomain {
   activeProvider: ProviderProfile | null
   activeProviderDetail: ProviderProfile
   providerQuery: string
-  addProviderTypeId: string
   activeProviderApiKeyDraft: string
   apiKeyVisible: boolean
   apiKeyFeedback: string | null
   modelEditorState: ModelEditorState | null
   modelEditorError: string | null
   onProviderQueryChange: (value: string) => void
-  onAddProviderTypeChange: (value: string) => void
   onActiveProviderChange: (providerId: string) => void
   onAddProvider: () => void
   onReorderProviders: (providerId: string, nextIndex: number) => void
@@ -39,9 +37,7 @@ export interface ProviderProfileListDomain {
   providerProfiles: ProviderProfile[]
   activeProviderId: string
   providerQuery: string
-  addProviderTypeId: string
   onProviderQueryChange: (value: string) => void
-  onAddProviderTypeChange: (value: string) => void
   onActiveProviderChange: (providerId: string) => void
   onAddProvider: () => void
   onCopyProvider: (providerId: string) => void | Promise<void>
@@ -85,9 +81,7 @@ export function resolveProviderProfileListDomain(provider: ProviderProfilesSecti
     providerProfiles: provider.providerProfiles,
     activeProviderId: provider.activeProviderId,
     providerQuery: provider.providerQuery,
-    addProviderTypeId: provider.addProviderTypeId,
     onProviderQueryChange: provider.onProviderQueryChange,
-    onAddProviderTypeChange: provider.onAddProviderTypeChange,
     onActiveProviderChange: provider.onActiveProviderChange,
     onAddProvider: provider.onAddProvider,
     onCopyProvider: provider.onCopyProvider,

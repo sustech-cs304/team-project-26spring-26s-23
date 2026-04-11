@@ -30,12 +30,122 @@ export type ThemeMode = 'light' | 'dark'
 
 export type ModelCapability = 'vision' | 'search' | 'reasoning' | 'tools' | 'rerank' | 'embedding'
 export type ThinkingLevelIntent = 'off' | 'auto' | 'low' | 'medium' | 'high' | 'xhigh'
+export type PositiveThinkingLevelIntent = Exclude<ThinkingLevelIntent, 'off'>
+export type ThinkingCapabilitySeriesInputKind = 'fixed' | 'binary' | 'off-auto' | 'discrete' | 'budget'
+export type ThinkingCapabilitySeriesId = string
+export type ThinkingSeriesEditorType = 'discrete' | 'budget' | 'fixed'
+export type ThinkingSeriesValueType = 'code' | 'budget' | 'fixed'
 
-export interface ThinkingCapabilityDeclaration {
-  supported: boolean
-  levels?: Array<Exclude<ThinkingLevelIntent, 'off'>>
-  defaultLevel?: ThinkingLevelIntent
+export interface ThinkingSeriesCodeValue {
+  valueType: 'code'
+  code: string
+  labelZh: string
 }
+
+export interface ThinkingSeriesBudgetValue {
+  valueType: 'budget'
+  mode: 'off' | 'dynamic' | 'budget'
+  budgetTokens: number | null
+  labelZh: string
+}
+
+export interface ThinkingSeriesFixedValue {
+  valueType: 'fixed'
+  code: 'fixed'
+  labelZh: string
+}
+
+export type ThinkingSeriesValue =
+  | ThinkingSeriesCodeValue
+  | ThinkingSeriesBudgetValue
+  | ThinkingSeriesFixedValue
+
+export interface ThinkingSeriesBudgetTemplate {
+  minTokens: number
+  maxTokens: number
+  stepTokens: number
+  anchorTokens: number[]
+}
+
+export interface ThinkingSeriesTemplate {
+  editorType?: ThinkingSeriesEditorType
+  defaultValue: ThinkingSeriesValue | null
+  allowedValues?: ThinkingSeriesValue[]
+  budget?: ThinkingSeriesBudgetTemplate
+}
+
+export interface UnsupportedThinkingCapabilityDeclaration {
+  supported: false
+  source?: string
+}
+
+export interface LegacyThinkingCapabilityDeclaration {
+  supported: true
+  levels?: PositiveThinkingLevelIntent[]
+  defaultLevel?: ThinkingLevelIntent
+  source?: string
+}
+
+export interface ThinkingCapabilityPresetSelection {
+  mode: 'preset'
+  level: ThinkingLevelIntent
+}
+
+export interface ThinkingCapabilityBudgetSelection {
+  mode: 'budget'
+  budgetTokens: number
+}
+
+export type ThinkingCapabilityDefaultSelection =
+  | ThinkingCapabilityPresetSelection
+  | ThinkingCapabilityBudgetSelection
+
+export interface ThinkingCapabilityFixedSeriesInput {
+  kind: 'fixed'
+  level: PositiveThinkingLevelIntent
+}
+
+export interface ThinkingCapabilityBinarySeriesInput {
+  kind: 'binary'
+  enabledLevel: PositiveThinkingLevelIntent
+}
+
+export interface ThinkingCapabilityOffAutoSeriesInput {
+  kind: 'off-auto'
+}
+
+export interface ThinkingCapabilityDiscreteSeriesInput {
+  kind: 'discrete'
+  levels: PositiveThinkingLevelIntent[]
+}
+
+export interface ThinkingCapabilityBudgetSeriesInput {
+  kind: 'budget'
+  minTokens: number
+  maxTokens: number
+  stepTokens: number
+}
+
+export type ThinkingCapabilitySeriesInput =
+  | ThinkingCapabilityFixedSeriesInput
+  | ThinkingCapabilityBinarySeriesInput
+  | ThinkingCapabilityOffAutoSeriesInput
+  | ThinkingCapabilityDiscreteSeriesInput
+  | ThinkingCapabilityBudgetSeriesInput
+
+export interface StructuredThinkingCapabilityDeclaration {
+  supported: true
+  series?: ThinkingCapabilitySeriesId
+  template?: ThinkingSeriesTemplate
+  input?: ThinkingCapabilitySeriesInput
+  defaultSelection?: ThinkingCapabilityDefaultSelection
+  source?: string
+}
+
+export type ThinkingCapabilityDeclaration =
+  | UnsupportedThinkingCapabilityDeclaration
+  | LegacyThinkingCapabilityDeclaration
+  | StructuredThinkingCapabilityDeclaration
 
 export interface ResolvedThinkingCapability {
   supported: boolean
@@ -138,8 +248,6 @@ export interface ProviderProfile {
   endpoint: string
   baseUrl?: string
   hasApiKey: boolean
-  defaultModel: string
-  defaultModelId?: string
   fastModel: string
   fallbackModel: string
   organization: string

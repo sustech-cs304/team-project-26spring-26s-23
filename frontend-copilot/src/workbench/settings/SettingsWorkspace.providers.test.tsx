@@ -63,12 +63,26 @@ describe('SettingsWorkspace provider interactions', () => {
     })
 
     await flushAsyncEffects()
+    await flushAsyncEffects()
+    await flushAsyncEffects()
 
     expect(rendered.container.textContent).toContain('可在左侧添加服务商信息')
 
-    await clickElement(rendered.getByText('添加'))
+    const addProviderButton = rendered.container.querySelector('.settings-provider-add-row .secondary-button')
+    if (!(addProviderButton instanceof HTMLButtonElement)) {
+      throw new Error('Missing add provider button')
+    }
 
-    expect(rendered.getByTestId('settings-provider-card-openai-1').textContent).toContain('OpenAI')
+    await clickElement(addProviderButton)
+
+    let addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
+    for (let attempt = 0; attempt < 5 && addedProviderCard === null; attempt += 1) {
+      await flushAsyncEffects()
+      await waitForNextFrame()
+      addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
+    }
+
+    expect(addedProviderCard?.textContent).toContain('OpenAI')
     expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('OpenAI')
     expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('https://api.openai.com/v1')
 
@@ -136,8 +150,7 @@ describe('SettingsWorkspace provider interactions', () => {
             endpoint: 'http://127.0.0.1:11434/v1',
             baseUrl: 'http://127.0.0.1:11434/v1',
             hasApiKey: false,
-            defaultModel: 'llama3.2',
-            defaultModelId: 'llama3.2',
+            primaryModelId: 'llama3.2',
             fastModel: 'llama3.2',
             fallbackModel: 'llama3.2',
             organization: '',
@@ -163,7 +176,7 @@ describe('SettingsWorkspace provider interactions', () => {
 
     await flushAsyncEffects()
 
-    expect(rendered.container.textContent).toContain('Provider: Ollama')
+    expect(rendered.container.textContent).toContain('支持：流式、工具、视觉、推理')
     expect(rendered.container.textContent).toContain('API 密钥（可选）')
     expect(rendered.container.textContent).toContain('本地 Ollama 默认无需 API Key')
     expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1')
@@ -187,8 +200,7 @@ describe('SettingsWorkspace provider interactions', () => {
             endpoint: 'https://legacy.example.com/v1',
             baseUrl: 'https://legacy.example.com/v1',
             hasApiKey: false,
-            defaultModel: 'legacy-model',
-            defaultModelId: 'legacy-model',
+            primaryModelId: 'legacy-model',
             fastModel: 'legacy-model',
             fallbackModel: 'legacy-model',
             compatibility: {
@@ -210,9 +222,9 @@ describe('SettingsWorkspace provider interactions', () => {
 
     await flushAsyncEffects()
 
-    expect(rendered.getByTestId('settings-provider-status-legacy-provider').textContent).toContain('不受支持的配置')
-    expect(rendered.getByTestId('provider-status-banner').textContent).toContain('历史 provider 不在当前 catalog 中，仅保留查看与迁移。')
-    expect(rendered.container.textContent).toContain('Provider 类型、运行状态与基础语义均来自统一 catalog。')
+    expect(rendered.getByTestId('settings-provider-status-legacy-provider').textContent).toContain('当前服务不可用')
+    expect(rendered.getByTestId('provider-status-banner').textContent).toContain('请重新选择服务类型或检查配置。')
+    expect(rendered.container.textContent).toContain('在这里管理可用的模型服务。')
 
     rendered.unmount()
   })
@@ -255,6 +267,35 @@ describe('SettingsWorkspace provider interactions', () => {
     rendered.unmount()
   })
 
+  it('keeps the API 地址 field editable and renders it with the full-width form-field layout', async () => {
+    installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createSingleProviderWorkspaceState(),
+      },
+      loadStatusesResult: createPersistedSecretStatesResult(),
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    expect(rendered.container.textContent).not.toContain('默认模型 ID')
+    expect(rendered.container.querySelector('input[placeholder="例如 openai/gpt-4.1"]')).toBeNull()
+
+    const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+    expect(apiAddressInput.placeholder).toBe('https://api.openai.com/v1')
+    await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2')
+
+    expect(apiAddressInput.value).toBe('https://editable.example.com/v2')
+    expect(apiAddressInput.closest('.form-field')?.className).toContain('form-field--full')
+
+    rendered.unmount()
+  })
+
   it('reorders providers from drag interaction and persists the reordered list', async () => {
     vi.useFakeTimers()
 
@@ -271,8 +312,7 @@ describe('SettingsWorkspace provider interactions', () => {
       endpoint: 'https://beta.example.com/v1',
       baseUrl: 'https://beta.example.com/v1',
       hasApiKey: false,
-      defaultModel: 'google/gemini-2.5-pro',
-      defaultModelId: 'google/gemini-2.5-pro',
+      primaryModelId: 'google/gemini-2.5-pro',
       fastModel: 'google/gemini-2.5-flash',
       fallbackModel: 'google/gemini-2.0-flash',
     })

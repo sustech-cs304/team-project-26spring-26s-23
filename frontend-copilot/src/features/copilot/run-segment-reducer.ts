@@ -1,12 +1,18 @@
-import type {
-  RuntimeModelRoute,
-  RuntimeResolvedModelRoute,
-  RuntimeRunCompletedEvent,
-  RuntimeRunEvent,
-  RuntimeRunFailedEvent,
-  RuntimeRunMetadataEvent,
-  RuntimeThinkingCapability,
-  RuntimeToolEvent,
+import {
+  cloneRuntimeReasoningSuppressionBasis as cloneRuntimeReasoningSuppressionBasisValue,
+  cloneRuntimeThinkingCapability as cloneRuntimeThinkingCapabilityValue,
+  cloneRuntimeThinkingSelection as cloneRuntimeThinkingSelectionValue,
+  cloneRuntimeThinkingSelectionResult as cloneRuntimeThinkingSelectionResultValue,
+  type RuntimeModelRoute,
+  type RuntimeResolvedModelRoute,
+  type RuntimeRunCompletedEvent,
+  type RuntimeRunEvent,
+  type RuntimeRunFailedEvent,
+  type RuntimeRunMetadataEvent,
+  type RuntimeRunThinkingMetadata,
+  type RuntimeRunView,
+  type RuntimeThinkingCapability,
+  type RuntimeToolEvent,
 } from './thread-run-contract'
 import type {
   CopilotAssistantSegment,
@@ -30,10 +36,15 @@ export function createIdleCopilotRunState(): CopilotRunState {
     resolvedModelRoute: null,
     resolvedToolIds: [],
     requestOptions: {},
+    requestedThinkingSelection: null,
+    appliedThinkingSelection: null,
     requestedThinkingLevel: null,
     appliedThinkingLevel: null,
     thinkingCapabilitySnapshot: null,
+    thinkingSeriesDecision: null,
+    reasoningSuppressionBasis: null,
     reasoningSuppressed: false,
+    reasoningTraceState: 'not_observed',
     diagnostic: null,
     failure: null,
     cancelReason: null,
@@ -57,15 +68,65 @@ export function createStartingCopilotRunState(input: {
 
 export function registerCopilotRunStartResponse(
   state: CopilotRunState,
-  input: {
-    runId: string
-    threadId: string
-  },
+  input: Pick<RuntimeRunView, 'runId' | 'threadId'> & Partial<RuntimeRunThinkingMetadata>,
 ): CopilotRunState {
+  return applyRunThinkingMetadataToState(
+    {
+      ...state,
+      runId: input.runId,
+      threadId: input.threadId,
+    },
+    input,
+  )
+}
+
+function applyRunThinkingMetadataToState(
+  state: CopilotRunState,
+  metadata: Partial<RuntimeRunThinkingMetadata>,
+): CopilotRunState {
+  const requestedThinkingSelection = metadata.requestedThinkingSelection === undefined
+    ? state.requestedThinkingSelection
+    : cloneRuntimeThinkingSelection(metadata.requestedThinkingSelection)
+  const appliedThinkingSelection = metadata.appliedThinkingSelection === undefined
+    ? state.appliedThinkingSelection
+    : cloneRuntimeThinkingSelection(metadata.appliedThinkingSelection)
+  const requestedThinkingLevel = metadata.requestedThinkingLevel === undefined
+    ? state.requestedThinkingLevel
+    : metadata.requestedThinkingLevel
+  const appliedThinkingLevel = metadata.appliedThinkingLevel === undefined
+    ? state.appliedThinkingLevel
+    : metadata.appliedThinkingLevel
+  const thinkingCapabilitySnapshot = metadata.thinkingCapabilitySnapshot === undefined
+    ? state.thinkingCapabilitySnapshot
+    : cloneRuntimeThinkingCapability(metadata.thinkingCapabilitySnapshot)
+  const thinkingSeriesDecision = metadata.thinkingSeriesDecision === undefined
+    ? state.thinkingSeriesDecision
+    : cloneRuntimeThinkingSelectionResult(metadata.thinkingSeriesDecision)
+  const reasoningSuppressionBasis = metadata.reasoningSuppressionBasis === undefined
+    ? state.reasoningSuppressionBasis
+    : cloneRuntimeReasoningSuppressionBasis(metadata.reasoningSuppressionBasis)
+  const reasoningSuppressed = shouldSuppressReasoning({
+    previousSuppressed: state.reasoningSuppressed,
+    reasoningSuppressionBasis,
+  })
+  const reasoningTraceState = resolveReasoningTraceStateAfterMetadata({
+    previousTraceState: state.reasoningTraceState,
+    reasoningSuppressed,
+    segments: state.segments,
+  })
+
   return {
     ...state,
-    runId: input.runId,
-    threadId: input.threadId,
+    requestedThinkingSelection,
+    appliedThinkingSelection,
+    requestedThinkingLevel,
+    appliedThinkingLevel,
+    thinkingCapabilitySnapshot,
+    thinkingSeriesDecision,
+    reasoningSuppressionBasis,
+    reasoningSuppressed,
+    reasoningTraceState,
+    segments: reasoningSuppressed ? stripReasoningSegments(state.segments) : state.segments,
   }
 }
 
@@ -73,18 +134,14 @@ function applyRunMetadataToState(
   state: CopilotRunState,
   event: RuntimeRunMetadataEvent,
 ): CopilotRunState {
-  const reasoningSuppressed = state.reasoningSuppressed || event.payload.appliedThinkingLevel === 'off'
-
-  return {
-    ...state,
-    runId: event.runId,
-    threadId: event.sessionId,
-    requestedThinkingLevel: event.payload.requestedThinkingLevel,
-    appliedThinkingLevel: event.payload.appliedThinkingLevel,
-    thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(event.payload.thinkingCapabilitySnapshot),
-    reasoningSuppressed,
-    segments: reasoningSuppressed ? stripReasoningSegments(state.segments) : state.segments,
-  }
+  return applyRunThinkingMetadataToState(
+    {
+      ...state,
+      runId: event.runId,
+      threadId: event.sessionId,
+    },
+    event.payload,
+  )
 }
 
 export function applyRuntimeRunEventToCopilotRunState(
@@ -93,12 +150,15 @@ export function applyRuntimeRunEventToCopilotRunState(
 ): CopilotRunState {
   switch (event.type) {
     case 'run_started':
-      return {
-        ...state,
-        phase: 'streaming',
-        runId: event.runId,
-        threadId: event.sessionId,
-      }
+      return applyRunThinkingMetadataToState(
+        {
+          ...state,
+          phase: 'streaming',
+          runId: event.runId,
+          threadId: event.sessionId,
+        },
+        event.payload,
+      )
     case 'run_metadata':
       return applyRunMetadataToState(state, event)
     case 'text_delta': {
@@ -117,13 +177,17 @@ export function applyRuntimeRunEventToCopilotRunState(
       }
     }
     case 'reasoning_delta': {
-      if (state.appliedThinkingLevel === 'off') {
+      if (shouldSuppressReasoning({
+        previousSuppressed: state.reasoningSuppressed,
+        reasoningSuppressionBasis: state.reasoningSuppressionBasis,
+      })) {
         return {
           ...state,
           phase: 'streaming',
           runId: event.runId,
           threadId: event.sessionId,
           reasoningSuppressed: true,
+          reasoningTraceState: 'suppressed',
           segments: stripReasoningSegments(state.segments),
         }
       }
@@ -134,6 +198,8 @@ export function applyRuntimeRunEventToCopilotRunState(
         phase: 'streaming',
         runId: event.runId,
         threadId: event.sessionId,
+        reasoningSuppressed: false,
+        reasoningTraceState: 'visible',
         segments: appendReasoningDeltaSegment(state.segments, event, observedAt),
       }
     }
@@ -743,24 +809,59 @@ function mapToolPhaseToSegmentStatus(
   }
 }
 
-function cloneRuntimeThinkingCapability(capability: RuntimeThinkingCapability): RuntimeThinkingCapability {
-  return {
-    status: capability.status,
-    source: capability.source,
-    supported: capability.supported,
-    supportedLevels: [...capability.supportedLevels],
-    defaultLevel: capability.defaultLevel,
-    reasonCode: capability.reasonCode,
-    providerHint: capability.providerHint,
-    routeFingerprint: {
-      providerProfileId: capability.routeFingerprint.providerProfileId,
-      provider: capability.routeFingerprint.provider,
-      endpointType: capability.routeFingerprint.endpointType,
-      baseUrl: capability.routeFingerprint.baseUrl,
-      modelId: capability.routeFingerprint.modelId,
-    },
-    overrideLevels: [...capability.overrideLevels],
+function cloneRuntimeThinkingSelection(
+  selection: CopilotRunState['requestedThinkingSelection'],
+): CopilotRunState['requestedThinkingSelection'] {
+  return cloneRuntimeThinkingSelectionValue(selection)
+}
+
+function cloneRuntimeThinkingCapability(
+  capability: RuntimeThinkingCapability | null,
+): RuntimeThinkingCapability | null {
+  return cloneRuntimeThinkingCapabilityValue(capability)
+}
+
+function cloneRuntimeThinkingSelectionResult(
+  result: CopilotRunState['thinkingSeriesDecision'],
+): CopilotRunState['thinkingSeriesDecision'] {
+  return cloneRuntimeThinkingSelectionResultValue(result)
+}
+
+function cloneRuntimeReasoningSuppressionBasis(
+  basis: CopilotRunState['reasoningSuppressionBasis'],
+): CopilotRunState['reasoningSuppressionBasis'] {
+  return cloneRuntimeReasoningSuppressionBasisValue(basis)
+}
+
+function shouldSuppressReasoning(input: {
+  previousSuppressed: boolean
+  reasoningSuppressionBasis: CopilotRunState['reasoningSuppressionBasis']
+}): boolean {
+  return input.previousSuppressed
+    || input.reasoningSuppressionBasis?.shouldSuppress === true
+}
+
+function resolveReasoningTraceStateAfterMetadata(input: {
+  previousTraceState: CopilotRunState['reasoningTraceState']
+  reasoningSuppressed: boolean
+  segments: CopilotRunSegment[]
+}): CopilotRunState['reasoningTraceState'] {
+  if (input.previousTraceState === 'suppressed') {
+    return 'suppressed'
   }
+
+  const hasVisibleReasoning = hasReasoningSegments(input.segments)
+    || input.previousTraceState === 'visible'
+
+  if (input.reasoningSuppressed) {
+    return hasVisibleReasoning ? 'suppressed' : 'not_observed'
+  }
+
+  return hasVisibleReasoning ? 'visible' : 'not_observed'
+}
+
+function hasReasoningSegments(segments: CopilotRunSegment[]): boolean {
+  return segments.some((segment) => segment.kind === 'reasoning')
 }
 
 function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {

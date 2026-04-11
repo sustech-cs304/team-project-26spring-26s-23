@@ -4,6 +4,7 @@ import {
   createRuntimeResolvedModelRoute,
   createRuntimeRunMetadataEvent,
   createRuntimeThinkingCapability,
+  createRuntimeThinkingSelection,
 } from './thread-run-contract.test-support'
 import { parseRuntimeRunEventStream } from './runtime-message-stream'
 
@@ -138,9 +139,13 @@ describe('parseRuntimeRunEventStream', () => {
         sessionId: 'session-1',
         sequence: 2,
         payload: {
+          requestedThinkingSelection: createRuntimeThinkingSelection({ level: 'low' }),
+          appliedThinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
           requestedThinkingLevel: 'low',
           appliedThinkingLevel: 'auto',
           thinkingCapabilitySnapshot: capability,
+          thinkingSeriesDecision: null,
+          reasoningSuppressionBasis: null,
         },
       }),
     ]))
@@ -152,9 +157,13 @@ describe('parseRuntimeRunEventStream', () => {
         sessionId: 'session-1',
         sequence: 2,
         payload: {
+          requestedThinkingSelection: createRuntimeThinkingSelection({ level: 'low' }),
+          appliedThinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
           requestedThinkingLevel: 'low',
           appliedThinkingLevel: 'auto',
           thinkingCapabilitySnapshot: capability,
+          thinkingSeriesDecision: null,
+          reasoningSuppressionBasis: null,
         },
       },
     ])

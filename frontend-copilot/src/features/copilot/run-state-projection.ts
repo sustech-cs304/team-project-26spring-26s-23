@@ -1,5 +1,8 @@
 import type { CopilotConversationTurn } from './copilot-chat-helpers'
-import type { RuntimeThinkingCapability } from './thread-run-contract'
+import {
+  cloneRuntimeThinkingCapability as cloneRuntimeThinkingCapabilityValue,
+  type RuntimeThinkingCapability,
+} from './thread-run-contract'
 import type {
   CopilotRunDiagnosticSummary,
   CopilotRunState,
@@ -214,27 +217,7 @@ function createErrorTurn(input: {
 function cloneRuntimeThinkingCapability(
   capability: RuntimeThinkingCapability | null | undefined,
 ): RuntimeThinkingCapability | null | undefined {
-  if (capability === null || capability === undefined) {
-    return capability
-  }
-
-  return {
-    status: capability.status,
-    source: capability.source,
-    supported: capability.supported,
-    supportedLevels: [...capability.supportedLevels],
-    defaultLevel: capability.defaultLevel,
-    reasonCode: capability.reasonCode,
-    providerHint: capability.providerHint,
-    routeFingerprint: {
-      providerProfileId: capability.routeFingerprint.providerProfileId,
-      provider: capability.routeFingerprint.provider,
-      endpointType: capability.routeFingerprint.endpointType,
-      baseUrl: capability.routeFingerprint.baseUrl,
-      modelId: capability.routeFingerprint.modelId,
-    },
-    overrideLevels: [...capability.overrideLevels],
-  }
+  return cloneRuntimeThinkingCapabilityValue(capability)
 }
 
 function mapAssistantSegmentStatus(
@@ -267,10 +250,15 @@ function mapToolSegmentStatus(
 
 function formatFailureMessage(terminal: CopilotTerminalSegment): string {
   if (terminal.failure === null) {
-    return 'run_failed: Runtime run failed.'
+    return '当前响应失败，请重试。'
   }
 
-  return `${terminal.failure.code}: ${terminal.failure.message}`
+  switch (terminal.failure.code) {
+    case 'tool_execution_failed':
+      return '工具执行失败，请重试。'
+    default:
+      return '当前响应失败，请重试。'
+  }
 }
 
 function formatCancelledReason(reason: string): string {

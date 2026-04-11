@@ -3,14 +3,23 @@ import type {
   AssistantSessionShell,
   ThinkingLevelIntent,
 } from '../../workbench/types'
+import {
+  THINKING_BUDGET_DEFAULT_MAX_TOKENS,
+  THINKING_BUDGET_DEFAULT_MIN_TOKENS,
+  THINKING_BUDGET_DEFAULT_STEP_TOKENS,
+  findThinkingCodeValue,
+  formatThinkingTokenCount,
+} from '../../workbench/thinking-display'
 import { serializeModelRouteRef } from '../../workbench/settings/settings-workspace-model-options'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import {
   RuntimeRequestError,
+  cloneRuntimeThinkingSelection,
   type RuntimeModelRoute,
   type RuntimeResolvedModelRoute,
   type RuntimeRunCompletedEvent,
   type RuntimeThinkingCapability,
+  type RuntimeThinkingSelection,
   type RuntimeToolEvent,
   type RuntimeToolEventPhase,
 } from './thread-run-contract'
@@ -24,8 +33,8 @@ export interface CopilotChatComposerDraft {
   messageText: string
   selectedModelId: string
   selectedModelRoute: RuntimeModelRoute | null
-  thinkingLevelIntent: ThinkingLevelIntent | null
-  thinkingLevelByModelKey: Record<string, ThinkingLevelIntent>
+  thinkingSelection: RuntimeThinkingSelection | null
+  thinkingSelectionByModelKey: Record<string, RuntimeThinkingSelection | null>
   enabledTools: string[]
   requestOptionsText: string
 }
@@ -39,7 +48,7 @@ export interface RuntimeMessageSendInput {
     content: string
   }
   modelRoute: RuntimeModelRoute
-  thinkingLevelIntent: ThinkingLevelIntent | null
+  thinkingSelection: RuntimeThinkingSelection | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
   requestOptions: Record<string, unknown>
@@ -79,22 +88,23 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
     messageText: '',
     selectedModelId: '',
     selectedModelRoute: null,
-    thinkingLevelIntent: null,
-    thinkingLevelByModelKey: {},
+    thinkingSelection: null,
+    thinkingSelectionByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
   }
 }
 
 export function createComposerDraftFromSession(
-  _sessionShell?: AssistantSessionShell,
+  sessionShell?: AssistantSessionShell,
 ): CopilotChatComposerDraft {
+  void sessionShell
   return {
     messageText: '',
     selectedModelId: '',
     selectedModelRoute: null,
-    thinkingLevelIntent: null,
-    thinkingLevelByModelKey: {},
+    thinkingSelection: null,
+    thinkingSelectionByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
   }
@@ -111,6 +121,8 @@ export function buildRuntimeMessageSendInput(input: {
     throw new Error('请先选择可发送的模型路由。')
   }
 
+  const thinkingSelection = cloneRuntimeThinkingSelection(input.draft.thinkingSelection)
+
   return {
     runtimeUrl: input.runtimeUrl,
     sessionId: input.sessionShell.sessionId,
@@ -120,7 +132,7 @@ export function buildRuntimeMessageSendInput(input: {
       content: input.draft.messageText.trim(),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
-    thinkingLevelIntent: input.draft.thinkingLevelIntent,
+    thinkingSelection,
     ...(input.thinkingCapabilityOverride === undefined
       ? {}
       : {
@@ -154,32 +166,33 @@ export function applyModelSelectionToComposerDraft(
     ...draft,
     selectedModelId: input.modelId,
     selectedModelRoute: nextRoute,
-    thinkingLevelIntent: draft.thinkingLevelByModelKey[memoryKey] ?? null,
+    thinkingSelection: cloneRuntimeThinkingSelection(draft.thinkingSelectionByModelKey[memoryKey] ?? null),
   }
 }
 
-export function applyThinkingLevelSelectionToComposerDraft(
+export function applyThinkingSelectionToComposerDraft(
   draft: CopilotChatComposerDraft,
   input: {
     modelRoute: RuntimeModelRoute | null
-    thinkingLevelIntent: ThinkingLevelIntent | null
+    thinkingSelection: RuntimeThinkingSelection | null
   },
 ): CopilotChatComposerDraft {
-  if (input.modelRoute === null || input.thinkingLevelIntent === null) {
+  if (input.modelRoute === null || input.thinkingSelection === null) {
     return {
       ...draft,
-      thinkingLevelIntent: null,
+      thinkingSelection: null,
     }
   }
 
   const memoryKey = buildThinkingSessionMemoryKey(input.modelRoute)
+  const nextThinkingSelection = cloneRuntimeThinkingSelection(input.thinkingSelection)
 
   return {
     ...draft,
-    thinkingLevelIntent: input.thinkingLevelIntent,
-    thinkingLevelByModelKey: {
-      ...draft.thinkingLevelByModelKey,
-      [memoryKey]: input.thinkingLevelIntent,
+    thinkingSelection: nextThinkingSelection,
+    thinkingSelectionByModelKey: {
+      ...draft.thinkingSelectionByModelKey,
+      [memoryKey]: nextThinkingSelection,
     },
   }
 }
@@ -191,50 +204,313 @@ export function syncComposerDraftThinkingSelection(
     thinkingCapability: RuntimeThinkingCapability | null
   },
 ): CopilotChatComposerDraft {
-  if (input.modelRoute === null || input.thinkingCapability === null) {
-    return draft.thinkingLevelIntent === null
+  if (input.modelRoute === null) {
+    return draft.thinkingSelection === null
       ? draft
       : {
           ...draft,
-          thinkingLevelIntent: null,
+          thinkingSelection: null,
         }
   }
 
+  if (input.thinkingCapability === null) {
+    return draft
+  }
+
   const memoryKey = buildThinkingSessionMemoryKey(input.modelRoute)
-  const nextThinkingLevelIntent = resolveThinkingLevelIntentFromCapability(
+  const nextThinkingSelection = resolveThinkingSelectionForCapability(
     input.thinkingCapability,
-    draft.thinkingLevelByModelKey[memoryKey],
+    draft.thinkingSelectionByModelKey[memoryKey] ?? draft.thinkingSelection,
   )
 
-  if (nextThinkingLevelIntent === draft.thinkingLevelIntent) {
+  if (isSameRuntimeThinkingSelection(nextThinkingSelection, draft.thinkingSelection)) {
     return draft
   }
 
   return {
     ...draft,
-    thinkingLevelIntent: nextThinkingLevelIntent,
-    thinkingLevelByModelKey: nextThinkingLevelIntent === null
-      ? { ...draft.thinkingLevelByModelKey }
+    thinkingSelection: nextThinkingSelection,
+    thinkingSelectionByModelKey: nextThinkingSelection === null
+      ? { ...draft.thinkingSelectionByModelKey }
       : {
-          ...draft.thinkingLevelByModelKey,
-          [memoryKey]: nextThinkingLevelIntent,
+          ...draft.thinkingSelectionByModelKey,
+          [memoryKey]: nextThinkingSelection,
         },
   }
 }
 
-function resolveThinkingLevelIntentFromCapability(
+export function resolveThinkingSelectionForCapability(
   capability: RuntimeThinkingCapability,
-  value: ThinkingLevelIntent | null | undefined,
-): ThinkingLevelIntent | null {
-  if (!capability.supported || capability.supportedLevels.length === 0) {
+  value: RuntimeThinkingSelection | null | undefined,
+): RuntimeThinkingSelection | null {
+  if (
+    capability.supported === false
+    || capability.series == null
+    || capability.editorType == null
+    || capability.defaultValue == null
+  ) {
     return null
   }
 
-  if (value !== null && value !== undefined && capability.supportedLevels.includes(value)) {
-    return value
+  return normalizeRuntimeThinkingSelectionForCapability(value, capability)
+    ?? buildRuntimeThinkingSelectionFromValue(capability.series, capability.defaultValue)
+}
+
+function normalizeRuntimeThinkingSelectionForCapability(
+  value: RuntimeThinkingSelection | null | undefined,
+  capability: RuntimeThinkingCapability,
+): RuntimeThinkingSelection | null {
+  if (value == null || capability.series === null || capability.editorType === null) {
+    return null
   }
 
-  return capability.defaultLevel ?? capability.supportedLevels[0] ?? null
+  if (value.series !== capability.series) {
+    return null
+  }
+
+  const runtimeValue = cloneRuntimeThinkingValue(value.value)
+    ?? buildRuntimeThinkingValueFromLegacySelection(value)
+  if (runtimeValue === null) {
+    return null
+  }
+
+  const normalizedValue = normalizeRuntimeThinkingValueForCapability(runtimeValue, capability)
+  if (normalizedValue === null) {
+    return null
+  }
+
+  return buildRuntimeThinkingSelectionFromValue(capability.series, normalizedValue)
+}
+
+function normalizeRuntimeThinkingValueForCapability(
+  value: NonNullable<RuntimeThinkingSelection['value']> | null | undefined,
+  capability: RuntimeThinkingCapability,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value == null || capability.editorType === null) {
+    return null
+  }
+
+  switch (capability.editorType) {
+    case 'fixed': {
+      const fixedValue = capability.defaultValue?.valueType === 'fixed'
+        ? capability.defaultValue
+        : capability.allowedValues.find((candidate) => candidate.valueType === 'fixed') ?? null
+      return cloneRuntimeThinkingValue(fixedValue)
+    }
+    case 'budget':
+      if (value.valueType !== 'budget') {
+        return null
+      }
+      if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
+        if (!supportsExactBudgetThinkingSelection(capability)) {
+          return null
+        }
+        const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
+        return budgetTokens === null
+          ? null
+          : {
+              valueType: 'budget',
+              mode: 'budget',
+              budgetTokens,
+              labelZh: formatThinkingTokenCount(budgetTokens),
+            }
+      }
+      return cloneRuntimeThinkingValue(
+        capability.allowedValues.find((candidate) => (
+          candidate.valueType === 'budget' && candidate.mode === value.mode
+        )) ?? null,
+      )
+    case 'discrete':
+      if (value.valueType !== 'code') {
+        return null
+      }
+      return cloneRuntimeThinkingValue(findThinkingCodeValue(capability.allowedValues, value.code))
+  }
+}
+
+function supportsExactBudgetThinkingSelection(capability: RuntimeThinkingCapability): boolean {
+  return capability.editorType === 'budget'
+    && capability.controlSpec?.kind === 'budget'
+    && capability.controlSpec.budget !== null
+    && capability.controlSpec.budget !== undefined
+}
+
+function buildRuntimeThinkingSelectionFromValue(
+  capabilitySeries: string,
+  value: NonNullable<RuntimeThinkingSelection['value']>,
+): RuntimeThinkingSelection {
+  return {
+    series: capabilitySeries,
+    value: cloneRuntimeThinkingValue(value)!,
+    ...deriveLegacyThinkingSelectionFields(value),
+  }
+}
+
+function cloneRuntimeThinkingValue(
+  value: RuntimeThinkingSelection['value'] | null | undefined,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value == null) {
+    return null
+  }
+
+  switch (value.valueType) {
+    case 'code':
+      return {
+        valueType: 'code',
+        code: value.code,
+        labelZh: value.labelZh,
+      }
+    case 'budget':
+      return {
+        valueType: 'budget',
+        mode: value.mode,
+        budgetTokens: value.budgetTokens,
+        labelZh: value.labelZh,
+      }
+    case 'fixed':
+      return {
+        valueType: 'fixed',
+        code: 'fixed',
+        labelZh: value.labelZh,
+      }
+  }
+}
+
+function buildRuntimeThinkingValueFromLegacySelection(
+  selection: RuntimeThinkingSelection,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (selection.mode === 'budget' && typeof selection.budgetTokens === 'number') {
+    return {
+      valueType: 'budget',
+      mode: 'budget',
+      budgetTokens: selection.budgetTokens,
+      labelZh: formatThinkingTokenCount(selection.budgetTokens),
+    }
+  }
+
+  if (typeof selection.level !== 'string' || selection.level.trim() === '') {
+    return null
+  }
+
+  if (selection.level === 'fixed') {
+    return {
+      valueType: 'fixed',
+      code: 'fixed',
+      labelZh: '固定推理',
+    }
+  }
+
+  return {
+    valueType: 'code',
+    code: selection.level,
+    labelZh: selection.level,
+  }
+}
+
+function deriveLegacyThinkingSelectionFields(
+  value: NonNullable<RuntimeThinkingSelection['value']>,
+): Pick<RuntimeThinkingSelection, 'mode' | 'level' | 'budgetTokens'> {
+  switch (value.valueType) {
+    case 'budget':
+      return {
+        mode: 'budget',
+        level: null,
+        budgetTokens: value.mode === 'budget' ? value.budgetTokens : null,
+      }
+    case 'fixed':
+      return {
+        mode: 'preset',
+        level: 'fixed',
+        budgetTokens: null,
+      }
+    case 'code':
+      return {
+        mode: 'preset',
+        level: mapSeriesCodeToLegacyLevel(value.code),
+        budgetTokens: null,
+      }
+  }
+}
+
+function mapSeriesCodeToLegacyLevel(code: string): ThinkingLevelIntent {
+  switch (code) {
+    case 'none':
+    case 'off':
+    case 'disabled':
+    case 'false':
+      return 'off'
+    case 'minimal':
+    case 'dynamic':
+      return 'auto'
+    case 'low':
+      return 'low'
+    case 'medium':
+      return 'medium'
+    case 'high':
+    case 'true':
+    case 'enabled':
+      return 'high'
+    case 'max':
+    case 'xhigh':
+      return 'xhigh'
+    default:
+      return 'auto'
+  }
+}
+
+function normalizeBudgetTokens(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+
+  const minimum = THINKING_BUDGET_DEFAULT_MIN_TOKENS
+  const maximum = THINKING_BUDGET_DEFAULT_MAX_TOKENS
+  const step = THINKING_BUDGET_DEFAULT_STEP_TOKENS
+  const clamped = Math.min(maximum, Math.max(minimum, Math.trunc(value)))
+  const stepped = minimum + (Math.round((clamped - minimum) / step) * step)
+
+  return Math.min(maximum, Math.max(minimum, stepped))
+}
+
+function isSameRuntimeThinkingSelection(
+  left: RuntimeThinkingSelection | null,
+  right: RuntimeThinkingSelection | null,
+): boolean {
+  if (left === right) {
+    return true
+  }
+
+  if (left === null || right === null) {
+    return false
+  }
+
+  const leftValue = cloneRuntimeThinkingValue(left.value) ?? buildRuntimeThinkingValueFromLegacySelection(left)
+  const rightValue = cloneRuntimeThinkingValue(right.value) ?? buildRuntimeThinkingValueFromLegacySelection(right)
+  if (leftValue === null || rightValue === null) {
+    return false
+  }
+
+  return left.series === right.series && isSameRuntimeThinkingValue(leftValue, rightValue)
+}
+
+function isSameRuntimeThinkingValue(
+  left: NonNullable<RuntimeThinkingSelection['value']>,
+  right: NonNullable<RuntimeThinkingSelection['value']>,
+): boolean {
+  if (left.valueType !== right.valueType) {
+    return false
+  }
+
+  switch (left.valueType) {
+    case 'code':
+      return right.valueType === 'code' && left.code === right.code
+    case 'fixed':
+      return right.valueType === 'fixed'
+    case 'budget':
+      return right.valueType === 'budget'
+        && left.mode === right.mode
+        && left.budgetTokens === right.budgetTokens
+  }
 }
 
 export function parseRequestOptionsText(requestOptionsText: string): Record<string, unknown> {
@@ -255,40 +531,29 @@ export function formatRuntimeMessageSendError(error: unknown): string {
   if (error instanceof RuntimeRequestError) {
     switch (error.code) {
       case 'agent_mismatch':
-        return `agent_mismatch：当前消息携带的 agent 校验值与会话绑定智能体不一致。${error.message}`
-      case 'tool_not_found':
-        return `tool_not_found：本次消息启用了后端未注册的 toolId。${error.message}`
-      case 'tool_unavailable':
-        return `tool_unavailable：本次消息请求的工具当前不可用。${error.message}`
-      case 'invalid_request':
-        return `invalid_request：消息请求结构无效。${error.message}`
       case 'capabilities_version_stale':
-        return `capabilities_version_stale：当前能力面版本已过期，需要重新拉取 capabilities 后再发。${error.message}`
+        return '当前会话已更新，请重新发送。'
+      case 'tool_not_found':
+      case 'tool_unavailable':
+        return '当前所选工具暂不可用，请调整后重试。'
+      case 'invalid_request':
+        return '当前消息暂时无法发送，请调整内容后重试。'
       case 'thinking_not_supported_for_route':
-        return `thinking_not_supported_for_route：当前模型路由不支持所选思考档位。${error.message}`
+        return '当前模型暂不支持所选思考设置，请调整后重试。'
       case 'provider_catalog_only':
-        return `provider_catalog_only：当前 provider 仅完成 catalog 接入，运行时尚未启用。${error.message}`
       case 'provider_legacy_unsupported':
-        return `provider_legacy_unsupported：当前 provider 已标记为历史兼容 / 不受支持。${error.message}`
       case 'provider_runtime_not_enabled':
-        return `provider_runtime_not_enabled：当前 provider 运行时未启用。${error.message}`
       case 'adapter_missing':
-        return `adapter_missing：当前 provider 缺少 Python runtime adapter。${error.message}`
+      case 'provider_adapter_mismatch':
+      case 'provider_profile_not_found':
+      case 'route_ref_snapshot_mismatch':
+      case 'host_model_route_unavailable':
+      case 'host_model_route_access_denied':
+        return '当前模型不可用，请重新选择模型。'
       case 'provider_auth_missing':
       case 'provider_secret_missing':
-        return `${error.code}：当前 provider 缺少必需认证信息。${error.message}`
       case 'provider_auth_kind_unsupported':
-        return `provider_auth_kind_unsupported：当前 provider 不支持该认证方式。${error.message}`
-      case 'provider_adapter_mismatch':
-        return `provider_adapter_mismatch：当前模型路由的 adapter 信息与 catalog 不一致。${error.message}`
-      case 'provider_profile_not_found':
-        return `provider_profile_not_found：当前模型路由对应的 provider 配置不存在。${error.message}`
-      case 'route_ref_snapshot_mismatch':
-        return `route_ref_snapshot_mismatch：当前模型路由已失效，请重新选择。${error.message}`
-      case 'host_model_route_unavailable':
-        return `host_model_route_unavailable：宿主模型路由解析服务当前不可用。${error.message}`
-      case 'host_model_route_access_denied':
-        return `host_model_route_access_denied：宿主模型路由解析凭据无效。${error.message}`
+        return '请先完成模型服务配置后再试。'
       default:
         return error.message
     }
@@ -313,11 +578,21 @@ export function buildRuntimeThinkingCapabilityFromError(input: {
   return {
     status: verifiedReasonCode === null ? 'unknown-without-override' : 'verified-unsupported',
     source: verifiedReasonCode === null ? 'unknown' : 'verified',
+    series: null,
+    seriesLabelZh: null,
+    editorType: null,
+    allowedValues: [],
+    defaultValue: null,
+    providerBuilderKey: null,
     supported: false,
+    controlSpec: null,
+    defaultSelection: null,
     supportedLevels: [],
     defaultLevel: null,
     reasonCode,
     providerHint,
+    provenance: null,
+    visibility: null,
     routeFingerprint: {
       providerProfileId: routeRef?.profileId ?? '',
       provider: providerHint ?? 'unknown-provider',
@@ -337,27 +612,23 @@ export function describeThinkingCapabilityUnavailableReason(
   }
 
   switch (capability.reasonCode) {
-    case 'provider_catalog_only':
-      return '当前 provider 仅完成 catalog 接入'
-    case 'provider_legacy_unsupported':
-      return '当前 provider 已废弃或不受支持'
-    case 'provider_runtime_not_enabled':
-      return '当前 provider 运行时未启用'
-    case 'adapter_missing':
-      return '当前 provider 缺少 runtime adapter'
     case 'provider_auth_missing':
     case 'provider_secret_missing':
-      return '当前 provider 缺少认证信息'
     case 'provider_auth_kind_unsupported':
-      return '当前 provider 认证方式不受支持'
+      return '请先完成模型配置'
     case 'provider_profile_not_found':
     case 'route_ref_snapshot_mismatch':
-      return '当前模型路由已失效'
+      return '当前模型不可用，请重新选择'
+    case 'provider_catalog_only':
+    case 'provider_legacy_unsupported':
+    case 'provider_runtime_not_enabled':
+    case 'adapter_missing':
+    case 'provider_adapter_mismatch':
     case 'host_model_route_unavailable':
     case 'host_model_route_access_denied':
-      return 'thinking 能力查询失败'
+      return '当前无法调整思考设置'
     default:
-      return '当前模型不支持'
+      return '当前模型暂不支持思考设置'
   }
 }
 

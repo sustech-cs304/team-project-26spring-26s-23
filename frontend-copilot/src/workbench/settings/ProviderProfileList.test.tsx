@@ -24,6 +24,15 @@ afterEach(() => {
 })
 
 describe('ProviderProfileList', () => {
+  it('renders the add button without the provider type selector', () => {
+    const rendered = renderList()
+
+    expect(rendered.container.textContent).toContain('添加')
+    expect(rendered.container.textContent).not.toContain('新增 Provider 类型')
+
+    rendered.unmount()
+  })
+
   it('opens the context menu and wires copy delete actions to callbacks', async () => {
     const onCopyProvider = vi.fn()
     const onDeleteProvider = vi.fn()
@@ -115,7 +124,6 @@ function renderList(overrides?: {
             protocol: 'openai',
             endpoint: 'https://alpha.example.com/v1',
             hasApiKey: true,
-            defaultModel: 'openai/gpt-4.1',
             fastModel: 'openai/gpt-4.1-mini',
             fallbackModel: 'anthropic/claude-3.7-sonnet',
             organization: '',
@@ -129,7 +137,6 @@ function renderList(overrides?: {
             protocol: 'gemini',
             endpoint: 'https://beta.example.com',
             hasApiKey: false,
-            defaultModel: 'google/gemini-2.5-pro',
             fastModel: 'google/gemini-2.5-flash',
             fallbackModel: 'google/gemini-2.0-flash',
             organization: '',
@@ -140,9 +147,7 @@ function renderList(overrides?: {
         ]}
         activeProviderId="provider-a"
         providerQuery=""
-        addProviderTypeId="openai"
         onProviderQueryChange={vi.fn()}
-        onAddProviderTypeChange={vi.fn()}
         onActiveProviderChange={vi.fn()}
         onAddProvider={vi.fn()}
         onCopyProvider={overrides?.onCopyProvider ?? vi.fn()}
@@ -153,6 +158,7 @@ function renderList(overrides?: {
   })
 
   return {
+    container,
     getByTestId(testId: string) {
       const target = container.querySelector(`[data-testid="${testId}"]`)
       if (target === null) {

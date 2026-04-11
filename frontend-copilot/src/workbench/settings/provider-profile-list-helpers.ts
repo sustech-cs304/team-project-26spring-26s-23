@@ -19,7 +19,6 @@ export function filterProviderProfiles(providerProfiles: ProviderProfile[], prov
       profile.name.toLowerCase().includes(keyword)
       || resolveProviderTypeLabel(profile).toLowerCase().includes(keyword)
       || (profile.baseUrl ?? profile.endpoint).toLowerCase().includes(keyword)
-      || profile.defaultModel.toLowerCase().includes(keyword)
       || (statusNotice?.title.toLowerCase().includes(keyword) ?? false)
       || (statusNotice?.description.toLowerCase().includes(keyword) ?? false)
       || profile.availableModels.some((model) => {

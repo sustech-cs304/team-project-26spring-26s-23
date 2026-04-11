@@ -1,15 +1,34 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
-import { SelectField, TextField } from '../components/FormFields'
-import type { ModelCapability, ThinkingLevelIntent } from '../types'
 import {
-  buildThinkingDeclarationDefaultLevelOptions,
+  ThinkingBudgetSlider,
+  ThinkingPillGroup,
+  type ThinkingPillOption,
+} from '../../components/ThinkingControls'
+import { SelectField, TextField } from '../components/FormFields'
+import {
+  THINKING_BUDGET_DEFAULT_MAX_TOKENS,
+  THINKING_BUDGET_DEFAULT_MIN_TOKENS,
+  THINKING_BUDGET_DEFAULT_SELECTION_TOKENS,
+  THINKING_BUDGET_DEFAULT_STEP_TOKENS,
+} from '../thinking-display'
+import type {
+  ModelCapability,
+  ThinkingSeriesBudgetValue,
+  ThinkingSeriesCodeValue,
+  ThinkingSeriesValue,
+} from '../types'
+import {
+  buildThinkingDeclarationSeriesOptions,
   getThinkingCapabilityDeclarationMode,
-  setThinkingCapabilityDeclarationDefaultLevel,
+  initializeSupportedThinkingCapabilityDeclaration,
+  setThinkingCapabilityDeclarationBudgetConfig,
+  setThinkingCapabilityDeclarationBudgetDefaultMode,
+  setThinkingCapabilityDeclarationBudgetTokens,
+  setThinkingCapabilityDeclarationDefaultCodeValue,
   setThinkingCapabilityDeclarationMode,
+  setThinkingCapabilityDeclarationSeries,
   THINKING_DECLARATION_MODE_OPTIONS,
-  THINKING_LEVEL_OPTIONS,
-  toggleThinkingCapabilityDeclarationLevel,
 } from '../thinking-capabilities'
 import { currencyOptions, modelCapabilityOptions } from './config'
 import type { ModelEditorState } from './provider-profiles'
@@ -60,6 +79,22 @@ function getFocusableElements(container: HTMLElement) {
     }
 
     return isFocusableElementVisible(element)
+  })
+}
+
+function isCodeThinkingValue(value: ThinkingSeriesValue | null | undefined): value is ThinkingSeriesCodeValue {
+  return value?.valueType === 'code'
+}
+
+function isBudgetThinkingValue(value: ThinkingSeriesValue | null | undefined): value is ThinkingSeriesBudgetValue {
+  return value?.valueType === 'budget'
+}
+
+function normalizeBudgetDeclaration(declaration: ModelEditorState['thinkingCapability']) {
+  return setThinkingCapabilityDeclarationBudgetConfig(declaration, {
+    minTokens: THINKING_BUDGET_DEFAULT_MIN_TOKENS,
+    maxTokens: THINKING_BUDGET_DEFAULT_MAX_TOKENS,
+    stepTokens: THINKING_BUDGET_DEFAULT_STEP_TOKENS,
   })
 }
 
@@ -120,7 +155,35 @@ export function ProviderModelEditorDialog({
   }
 
   const thinkingDeclarationMode = getThinkingCapabilityDeclarationMode(modelEditorState.thinkingCapability)
-  const thinkingDefaultLevelOptions = buildThinkingDeclarationDefaultLevelOptions(modelEditorState.thinkingCapability)
+  const normalizedThinkingCapability = modelEditorState.thinkingCapability?.supported === true
+    ? initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
+    : null
+  const thinkingSeriesOptions = normalizedThinkingCapability === null
+    ? []
+    : buildThinkingDeclarationSeriesOptions(normalizedThinkingCapability.series)
+  const selectedSeriesOption = normalizedThinkingCapability === null
+    ? null
+    : thinkingSeriesOptions.find((option) => option.value === normalizedThinkingCapability.series) ?? null
+  const presetSeriesCapability = normalizedThinkingCapability === null
+    ? null
+    : initializeSupportedThinkingCapabilityDeclaration(
+      setThinkingCapabilityDeclarationSeries(undefined, normalizedThinkingCapability.series),
+    )
+  const currentThinkingValue = normalizedThinkingCapability?.template.defaultValue ?? null
+  const currentAllowedCodeValues = (normalizedThinkingCapability?.template.allowedValues ?? []).filter(isCodeThinkingValue)
+  const presetBudgetValues = (presetSeriesCapability?.template.allowedValues ?? []).filter(isBudgetThinkingValue)
+  const supportsBudgetDefaultModes = presetSeriesCapability?.template.editorType === 'budget'
+  const budgetDefaultValue = isBudgetThinkingValue(currentThinkingValue) ? currentThinkingValue : null
+  const budgetDefaultMode = budgetDefaultValue?.mode ?? 'off'
+  const budgetDefaultTokens = budgetDefaultValue?.mode === 'budget' && typeof budgetDefaultValue.budgetTokens === 'number'
+    ? budgetDefaultValue.budgetTokens
+    : THINKING_BUDGET_DEFAULT_SELECTION_TOKENS
+
+  const updateThinkingCapability = (nextThinkingCapability: ModelEditorState['thinkingCapability']) => {
+    onClearError()
+    onStateChange({ thinkingCapability: nextThinkingCapability })
+  }
+
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -166,6 +229,73 @@ export function ProviderModelEditorDialog({
       firstElement.focus()
     }
   }
+
+  const currentValueOptions: ThinkingPillOption[] = currentAllowedCodeValues.map((value) => ({
+    key: `default-${value.code}`,
+    labelZh: value.labelZh,
+    code: value.code,
+    selected: currentThinkingValue?.valueType === 'code' && currentThinkingValue.code === value.code,
+    testId: `settings-thinking-default-${value.code}`,
+    onSelect: () => {
+      updateThinkingCapability(
+        setThinkingCapabilityDeclarationDefaultCodeValue(modelEditorState.thinkingCapability, value.code),
+      )
+    },
+  }))
+
+  const budgetModeOptions: ThinkingPillOption[] = !supportsBudgetDefaultModes
+    ? []
+    : [
+        ...(presetBudgetValues.some((value) => value.mode === 'off')
+          ? [{
+              key: 'budget-off',
+              labelZh: '关闭',
+              code: 'off',
+              selected: budgetDefaultMode === 'off',
+              testId: 'settings-thinking-budget-mode-off',
+              onSelect: () => {
+                updateThinkingCapability(
+                  setThinkingCapabilityDeclarationBudgetDefaultMode(
+                    normalizeBudgetDeclaration(modelEditorState.thinkingCapability),
+                    'off',
+                  ),
+                )
+              },
+            } satisfies ThinkingPillOption]
+          : []),
+        ...(presetBudgetValues.some((value) => value.mode === 'dynamic')
+          ? [{
+              key: 'budget-dynamic',
+              labelZh: '动态',
+              code: 'dynamic',
+              selected: budgetDefaultMode === 'dynamic',
+              testId: 'settings-thinking-budget-mode-dynamic',
+              onSelect: () => {
+                updateThinkingCapability(
+                  setThinkingCapabilityDeclarationBudgetDefaultMode(
+                    normalizeBudgetDeclaration(modelEditorState.thinkingCapability),
+                    'dynamic',
+                  ),
+                )
+              },
+            } satisfies ThinkingPillOption]
+          : []),
+        {
+          key: 'budget-budget',
+          labelZh: '预算',
+          code: 'budget_tokens',
+          selected: budgetDefaultMode === 'budget',
+          testId: 'settings-thinking-budget-mode-budget',
+          onSelect: () => {
+            updateThinkingCapability(
+              setThinkingCapabilityDeclarationBudgetTokens(
+                normalizeBudgetDeclaration(modelEditorState.thinkingCapability),
+                budgetDefaultTokens,
+              ),
+            )
+          },
+        },
+      ]
 
   return (
     <div className="model-editor-backdrop" role="presentation" onClick={onClose}>
@@ -251,66 +381,87 @@ export function ProviderModelEditorDialog({
                 value={thinkingDeclarationMode}
                 options={THINKING_DECLARATION_MODE_OPTIONS}
                 onChange={(value) => {
-                  onClearError()
-                  onStateChange({
-                    thinkingCapability: setThinkingCapabilityDeclarationMode(
+                  updateThinkingCapability(
+                    setThinkingCapabilityDeclarationMode(
                       modelEditorState.thinkingCapability,
                       value as 'inherit' | 'unsupported' | 'supported',
                     ),
-                  })
+                  )
                 }}
               />
-              {thinkingDeclarationMode === 'supported' ? (
+              {thinkingDeclarationMode === 'supported' && normalizedThinkingCapability !== null ? (
                 <SelectField
-                  label="默认档位"
-                  value={modelEditorState.thinkingCapability?.defaultLevel ?? 'off'}
-                  options={thinkingDefaultLevelOptions}
+                  label="推理系列"
+                  value={normalizedThinkingCapability.series}
+                  options={thinkingSeriesOptions}
                   onChange={(value) => {
-                    onClearError()
-                    onStateChange({
-                      thinkingCapability: setThinkingCapabilityDeclarationDefaultLevel(
-                        modelEditorState.thinkingCapability,
-                        value as ThinkingLevelIntent,
-                      ),
-                    })
+                    updateThinkingCapability(
+                      setThinkingCapabilityDeclarationSeries(modelEditorState.thinkingCapability, value),
+                    )
                   }}
                 />
               ) : <div />}
             </div>
 
-            {thinkingDeclarationMode === 'supported' ? (
-              <>
-                <div className="model-editor-section__header">
-                  <span className="form-field__label">可用思考档位</span>
+            {thinkingDeclarationMode === 'supported' && normalizedThinkingCapability !== null ? (
+              <div className="model-editor-thinking-panel" data-testid="settings-thinking-panel">
+                <div className="model-editor-thinking-panel__summary">
+                  <div className="model-editor-thinking-panel__summary-copy">
+                    <span className="model-editor-thinking-panel__series-title">
+                      {selectedSeriesOption?.label ?? normalizedThinkingCapability.series}
+                    </span>
+                    {selectedSeriesOption?.hint ? (
+                      <p className="model-editor-thinking-panel__hint" data-testid="settings-thinking-series-hint">
+                        {selectedSeriesOption.hint}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="model-capability-picker">
-                  {THINKING_LEVEL_OPTIONS.filter((option) => option.value !== 'off').map((option) => {
-                    const active = modelEditorState.thinkingCapability?.supported === true
-                      && (modelEditorState.thinkingCapability.levels ?? []).includes(option.value as Exclude<ThinkingLevelIntent, 'off'>)
-                    const capabilityClassName = active ? ' model-capability-button--reasoning' : ' model-capability-button--inactive'
 
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        aria-pressed={active}
-                        className={`model-capability-button${capabilityClassName}${active ? ' model-capability-button--active' : ''}`}
-                        onClick={() => {
-                          onClearError()
-                          onStateChange({
-                            thinkingCapability: toggleThinkingCapabilityDeclarationLevel(
-                              modelEditorState.thinkingCapability,
-                              option.value as Exclude<ThinkingLevelIntent, 'off'>,
-                            ),
-                          })
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </>
+                {currentAllowedCodeValues.length > 0 ? (
+                  <div className="model-editor-thinking-panel__section">
+                    <span className="form-field__label">默认值</span>
+                    <ThinkingPillGroup
+                      ariaLabel="默认值"
+                      options={currentValueOptions}
+                      className="model-editor-thinking-panel__pill-group"
+                    />
+                  </div>
+                ) : null}
+
+                {budgetModeOptions.length > 0 ? (
+                  <div className="model-editor-thinking-panel__section">
+                    <span className="form-field__label">默认模式</span>
+                    <ThinkingPillGroup
+                      ariaLabel="预算默认模式"
+                      options={budgetModeOptions}
+                      className="model-editor-thinking-panel__pill-group"
+                    />
+                  </div>
+                ) : null}
+
+                {supportsBudgetDefaultModes && budgetDefaultMode === 'budget' ? (
+                  <div className="model-editor-thinking-panel__section">
+                    <span className="form-field__label">预算</span>
+                    <ThinkingBudgetSlider
+                      label="思考预算"
+                      ariaLabel="默认预算"
+                      budgetTokens={budgetDefaultTokens}
+                      inputTestId="settings-thinking-budget-input"
+                      valueTestId="settings-thinking-budget-value"
+                      className="model-editor-thinking-panel__budget"
+                      onBudgetTokensChange={(budgetTokens) => {
+                        updateThinkingCapability(
+                          setThinkingCapabilityDeclarationBudgetTokens(
+                            normalizeBudgetDeclaration(modelEditorState.thinkingCapability),
+                            budgetTokens,
+                          ),
+                        )
+                      }}
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
 

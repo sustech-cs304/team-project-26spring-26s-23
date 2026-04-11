@@ -8,7 +8,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { CopilotMessageList } from './CopilotMessageList'
 import {
   createRuntimeModelRoute,
+  createRuntimeReasoningSuppressionBasis,
   createRuntimeThinkingCapability,
+  createRuntimeThinkingSelection,
 } from './chat-contract.test-support'
 import { createIdleCopilotRunState } from './run-segment-reducer'
 import { createCopilotModelCatalog } from './model-picker'
@@ -197,7 +199,7 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html.indexOf('天气工具被调用')).toBeLessThan(html.indexOf('第二段'))
   })
 
-  it('keeps rendered segments visible when a run fails and adds diagnostic plus terminal markers', () => {
+  it('keeps rendered segments visible when a run fails and shows a simplified terminal message', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),
       phase: 'failed',
@@ -285,20 +287,28 @@ describe('CopilotMessageList segment rendering', () => {
 
     expect(html).toContain('已生成的第一段')
     expect(html).toContain('工具调用失败')
-    expect(html).toContain('boom')
-    expect(html).toContain('运行诊断')
-    expect(html).toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
+    expect(html).not.toContain('boom')
+    expect(html).not.toContain('运行诊断')
+    expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
     expect(html).toContain('发送失败')
-    expect(html).toContain('tool_execution_failed: Tool failed: boom')
+    expect(html).toContain('工具执行失败，请重试。')
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
   })
 
-  it('renders thinking metadata detail rows for assistant and terminal items in diagnostic mode', () => {
+  it('does not render removed thinking metadata detail rows in diagnostic mode', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),
       phase: 'failed',
       runId: 'run-thinking-details',
       threadId: 'session-1',
+      requestedThinkingSelection: createRuntimeThinkingSelection({
+        series: 'compat-discrete-levels-v1',
+        level: 'medium',
+      }),
+      appliedThinkingSelection: createRuntimeThinkingSelection({
+        series: 'compat-discrete-levels-v1',
+        level: 'auto',
+      }),
       requestedThinkingLevel: 'medium',
       appliedThinkingLevel: 'auto',
       thinkingCapabilitySnapshot: createRuntimeThinkingCapability({
@@ -349,16 +359,12 @@ describe('CopilotMessageList segment rendering', () => {
       ],
     })
 
-    expect(html).toContain('请求思考')
-    expect(html).toContain('medium')
-    expect(html).toContain('应用思考')
-    expect(html).toContain('auto')
-    expect(html).toContain('能力来源')
-    expect(html).toContain('override / unknown-with-override')
-    expect(html).toContain('原因码')
-    expect(html).toContain('override_candidate_levels_applied')
-    expect(html).toContain('Provider Hint')
-    expect(html).toContain('unknown-route-override')
+    expect(html).not.toContain('请求系列值')
+    expect(html).not.toContain('应用系列值')
+    expect(html).not.toContain('能力来源')
+    expect(html).not.toContain('原因码')
+    expect(html).not.toContain('Provider Hint')
+    expect(html).not.toContain('思考轨迹')
   })
 
   it('keeps completed segments visible when a run is cancelled and appends a terminal marker', () => {
@@ -490,6 +496,62 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('最终答复。')
     expect(html.indexOf('思考')).toBeLessThan(html.indexOf('最终答复。'))
     expect(html).not.toContain('copilot-chat__message-text--markdown">先分析用户问题，再整理答案。')
+  })
+
+  it('suppresses reasoning cards when run state marks the trace as hidden for this run', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'completed',
+      runId: 'run-hidden-reasoning',
+      threadId: 'session-1',
+      requestedThinkingLevel: 'auto',
+      appliedThinkingLevel: 'auto',
+      reasoningSuppressed: true,
+      reasoningTraceState: 'suppressed',
+      reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
+        shouldSuppress: true,
+        source: 'capability-visibility',
+        reasonCode: 'capability_visibility_suppressed',
+        appliedThinkingLevel: 'auto',
+        reasoningVisibility: 'suppressed',
+      }),
+      segments: [
+        {
+          id: 'reasoning:run-hidden-reasoning:1',
+          kind: 'reasoning',
+          runId: 'run-hidden-reasoning',
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'completed',
+          text: '这段推理内容不应显示。',
+          observedStartedAt: 1_000,
+          observedFinishedAt: 1_500,
+          isCollapsedByDefault: true,
+        },
+        {
+          id: 'assistant:run-hidden-reasoning:2',
+          kind: 'assistant',
+          runId: 'run-hidden-reasoning',
+          assistantMessageId: 'run-hidden-reasoning:assistant',
+          text: '最终答复仍应显示。',
+          firstContentSequence: 2,
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'completed',
+          resolvedModelId: 'qwen-plus',
+          resolvedModelRoute: createRuntimeModelRoute(),
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).not.toContain('chat-message-reasoning-card-1')
+    expect(html).not.toContain('这段推理内容不应显示。')
+    expect(html).toContain('最终答复仍应显示。')
+    expect(html).not.toContain('思考轨迹')
+    expect(html).not.toContain('抑制依据')
+    expect(html).not.toContain('capability_visibility_suppressed')
   })
 
   it('shows the reasoning streaming status only on the dedicated reasoning card', () => {

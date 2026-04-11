@@ -139,17 +139,35 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
     assert request.policy.modelRoute.route_ref.profile_id == "provider-1"
     assert request.policy.modelRoute.route_ref.model_id == "gpt-4.1"
     assert request.policy.modelRoute.catalog_revision == "2026-04-06-provider-catalog-v1"
-    assert request.policy.thinkingLevelIntent == "auto"
+    assert request.policy.resolve_thinking_selection() is not None
+    assert request.policy.resolve_thinking_selection().to_dict() == {
+        "series": "compat-discrete-selection-v1",
+        "value": {
+            "valueType": "code",
+            "code": "auto",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "自动",
+        },
+    }
     assert request.policy.enabledTools == ("tool.file-convert",)
     assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
 
 
 
-def test_extract_run_start_request_normalizes_thinking_level_intent_from_shared_contract() -> None:
+def test_extract_run_start_request_accepts_series_based_budget_selection() -> None:
     parser = _build_parser()
     policy = _build_policy_payload()
-    policy["thinkingLevelIntent"] = "  HIGH  "
+    policy["thinkingSelection"] = {
+        "series": "gemini-2.5-budget-v1",
+        "value": {
+            "valueType": "budget",
+            "mode": "budget",
+            "budgetTokens": 512,
+            "labelZh": "512 Tokens",
+        },
+    }
 
     request = parser.extract_run_start_request(
         {
@@ -162,11 +180,22 @@ def test_extract_run_start_request_normalizes_thinking_level_intent_from_shared_
         }
     )
 
-    assert request.policy.thinkingLevelIntent == "high"
+    assert request.policy.thinkingSelection is not None
+    assert request.policy.thinkingSelection.to_dict() == {
+        "series": "gemini-2.5-budget-v1",
+        "value": {
+            "valueType": "budget",
+            "code": None,
+            "mode": "budget",
+            "budgetTokens": 512,
+            "labelZh": "512 Tokens",
+        },
+    }
+    assert request.policy.resolve_thinking_level_intent() is None
 
 
 
-def test_extract_run_start_request_rejects_invalid_thinking_level_intent() -> None:
+def test_extract_run_start_request_rejects_removed_thinking_level_intent_entry() -> None:
     parser = _build_parser()
     policy = _build_policy_payload()
     policy["thinkingLevelIntent"] = "turbo"
@@ -188,7 +217,7 @@ def test_extract_run_start_request_rejects_invalid_thinking_level_intent() -> No
     assert exc.error.error.code == "invalid_request"
     assert exc.error.error.requestedMethod == "run/start"
     assert exc.error.error.details == {"field": "policy.thinkingLevelIntent"}
-    assert "auto, high, low, medium, off, xhigh" in exc.error.error.message
+    assert "has been removed" in exc.error.error.message
 
 
 
@@ -360,7 +389,14 @@ def _build_policy_payload() -> dict[str, object]:
             },
             "catalogRevision": "2026-04-06-provider-catalog-v1",
         },
-        "thinkingLevelIntent": "auto",
+        "thinkingSelection": {
+            "series": "compat-discrete-selection-v1",
+            "value": {
+                "valueType": "code",
+                "code": "auto",
+                "labelZh": "自动",
+            },
+        },
         "enabledTools": ["tool.file-convert"],
         "debugModeEnabled": True,
         "requestOptions": {"temperature": 0.2},

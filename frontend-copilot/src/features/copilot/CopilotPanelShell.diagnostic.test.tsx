@@ -20,7 +20,7 @@ describe('CopilotPanelShell diagnostic visibility', () => {
 
     expect(html).toContain('已生成的回答')
     expect(html).toContain('发送失败')
-    expect(html).toContain('tool_execution_failed: Tool failed: boom')
+    expect(html).toContain('工具执行失败，请重试。')
     expect(html).not.toContain('运行诊断')
     expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
   })
@@ -29,8 +29,8 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     const html = renderShell(true)
 
     expect(html).toContain('已生成的回答')
-    expect(html).toContain('运行诊断')
-    expect(html).toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
+    expect(html).not.toContain('运行诊断')
+    expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
     expect(html).toContain('发送失败')
   })
 })
@@ -73,7 +73,7 @@ function renderShell(debugModeEnabled: boolean): string {
       runId: 'run-1',
       sequence: 3,
       title: '发送失败',
-      content: 'tool_execution_failed: Tool failed: boom',
+      content: '工具执行失败，请重试。',
       status: 'failed',
       terminalPhase: 'failed',
       cancelReason: null,

@@ -3,21 +3,31 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  applyModelSelectionToComposerDraft,
+  applyThinkingSelectionToComposerDraft,
   buildRuntimeDebugSummary,
   buildRuntimeMessageSendInput,
   buildRuntimeThinkingCapabilityFromError,
-  createEmptyComposerDraft,
   buildSessionDebugSummary,
   cancelStreamingToolTurns,
   createComposerDraftFromSession,
+  createEmptyComposerDraft,
   createPendingAssistantTurn,
   describeThinkingCapabilityUnavailableReason,
   formatRuntimeMessageSendError,
   parseRequestOptionsText,
+  syncComposerDraftThinkingSelection,
   upsertToolStepTurn,
 } from './copilot-chat-helpers'
 import { RuntimeRequestError } from './thread-run-contract'
-import { createRuntimeModelRoute, createRuntimeToolEvent } from './thread-run-contract.test-support'
+import {
+  createRuntimeCanonicalThinkingSelection,
+  createRuntimeModelRoute,
+  createRuntimeThinkingCapability,
+  createRuntimeThinkingControlSpec,
+  createRuntimeThinkingSelection,
+  createRuntimeToolEvent,
+} from './thread-run-contract.test-support'
 import {
   createDirectoryState,
   createReadyState,
@@ -63,8 +73,8 @@ describe('copilot chat helpers', () => {
       messageText: '',
       selectedModelId: '',
       selectedModelRoute: null,
-      thinkingLevelIntent: null,
-      thinkingLevelByModelKey: {},
+      thinkingSelection: null,
+      thinkingSelectionByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
     })
@@ -75,15 +85,21 @@ describe('copilot chat helpers', () => {
       messageText: '',
       selectedModelId: '',
       selectedModelRoute: null,
-      thinkingLevelIntent: null,
-      thinkingLevelByModelKey: {},
+      thinkingSelection: null,
+      thinkingSelectionByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
     })
   })
 
-  it('builds request-scoped message input with sessionId, boundAgent validation value, modelRoute, enabledTools and requestOptions', () => {
+  it('builds request-scoped message input around structured thinking selection without legacy payload aliases', () => {
     const sessionShell = createSessionShell()
+    const thinkingSelection = createRuntimeThinkingSelection({
+      series: 'compat-discrete-levels-v1',
+      mode: 'preset',
+      level: 'auto',
+      budgetTokens: null,
+    })
     const input = buildRuntimeMessageSendInput({
       runtimeUrl: 'http://127.0.0.1:8765',
       sessionShell,
@@ -99,9 +115,9 @@ describe('copilot chat helpers', () => {
             modelId: 'qwen-plus',
           },
         }),
-        thinkingLevelIntent: 'auto',
-        thinkingLevelByModelKey: {
-          'provider-model|provider-openai|qwen-plus': 'auto',
+        thinkingSelection,
+        thinkingSelectionByModelKey: {
+          'provider-openai|openai|openai-compatible|https://api.example.com/v1|qwen-plus': thinkingSelection,
         },
         enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
@@ -127,11 +143,167 @@ describe('copilot chat helpers', () => {
         },
         catalogRevision: '2026-04-06-provider-catalog-v1',
       },
-      thinkingLevelIntent: 'auto',
+      thinkingSelection: {
+        series: 'compat-discrete-levels-v1',
+        value: {
+          valueType: 'code',
+          code: 'auto',
+          labelZh: '自动',
+        },
+        mode: 'preset',
+        level: 'auto',
+        budgetTokens: null,
+      },
       enabledTools: ['tool.remote-search', 'tool.file-convert'],
       requestOptions: {
         trace: true,
       },
+    })
+    expect(input).not.toHaveProperty('thinkingLevelIntent')
+  })
+
+  it('keeps budget selections structured without reviving compat intent aliases', () => {
+    const budgetSelection = createRuntimeThinkingSelection({
+      series: 'compat-budget-tokens-v1',
+      mode: 'budget',
+      level: null,
+      budgetTokens: 8192,
+    })
+
+    const input = buildRuntimeMessageSendInput({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionShell: createSessionShell(),
+      draft: {
+        ...createEmptyComposerDraft(),
+        messageText: '预算测试',
+        selectedModelId: 'provider-budget:model-budget',
+        selectedModelRoute: createRuntimeModelRoute({
+          providerProfileId: 'provider-budget',
+          snapshot: {
+            provider: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://budget.example.com/v1',
+            modelId: 'model-budget',
+          },
+        }),
+        thinkingSelection: budgetSelection,
+        thinkingSelectionByModelKey: {
+          'provider-budget|openai|openai-compatible|https://budget.example.com/v1|model-budget': budgetSelection,
+        },
+      },
+      requestOptions: {},
+    })
+
+    expect(input.thinkingSelection).toEqual(budgetSelection)
+    expect(input).not.toHaveProperty('thinkingLevelIntent')
+  })
+
+  it('remembers structured selections per model and normalizes them against the current capability shape', () => {
+    const budgetRoute = createRuntimeModelRoute({
+      providerProfileId: 'provider-budget',
+      snapshot: {
+        provider: 'openai',
+        endpointType: 'openai-compatible',
+        baseUrl: 'https://budget.example.com/v1',
+        modelId: 'budget-model',
+      },
+    })
+    const discreteRoute = createRuntimeModelRoute({
+      providerProfileId: 'provider-discrete',
+      snapshot: {
+        provider: 'openai',
+        endpointType: 'openai-compatible',
+        baseUrl: 'https://discrete.example.com/v1',
+        modelId: 'discrete-model',
+      },
+    })
+    const budgetCapability = createRuntimeThinkingCapability({
+      series: 'compat-budget-tokens-v1',
+      controlSpec: createRuntimeThinkingControlSpec({
+        kind: 'budget',
+        selectionKind: 'budget',
+        presetOptions: [createRuntimeCanonicalThinkingSelection({ value: 'off' })],
+        budget: {
+          minTokens: 0,
+          maxTokens: 32768,
+          stepTokens: 1024,
+        },
+      }),
+      defaultSelection: createRuntimeCanonicalThinkingSelection({ kind: 'budget', budgetTokens: 4096 }),
+      supportedLevels: ['off'],
+      defaultLevel: null,
+    })
+    const discreteCapability = createRuntimeThinkingCapability({
+      series: 'compat-discrete-levels-v1',
+      controlSpec: createRuntimeThinkingControlSpec({
+        kind: 'discrete',
+        selectionKind: 'preset',
+        presetOptions: [
+          createRuntimeCanonicalThinkingSelection({ value: 'off' }),
+          createRuntimeCanonicalThinkingSelection({ value: 'auto' }),
+          createRuntimeCanonicalThinkingSelection({ value: 'medium' }),
+        ],
+      }),
+      defaultSelection: createRuntimeCanonicalThinkingSelection({ value: 'auto' }),
+      supportedLevels: ['off', 'auto', 'medium'],
+      defaultLevel: 'auto',
+    })
+
+    let draft = applyModelSelectionToComposerDraft(createEmptyComposerDraft(), {
+      modelId: 'budget-model',
+      modelRoute: budgetRoute,
+    })
+    draft = syncComposerDraftThinkingSelection(draft, {
+      modelRoute: budgetRoute,
+      thinkingCapability: budgetCapability,
+    })
+    draft = applyThinkingSelectionToComposerDraft(draft, {
+      modelRoute: budgetRoute,
+      thinkingSelection: createRuntimeThinkingSelection({
+        series: 'compat-budget-tokens-v1',
+        mode: 'budget',
+        level: null,
+        budgetTokens: 12288,
+      }),
+    })
+
+    draft = applyModelSelectionToComposerDraft(draft, {
+      modelId: 'discrete-model',
+      modelRoute: discreteRoute,
+    })
+    expect(draft.thinkingSelection).toBeNull()
+
+    draft = syncComposerDraftThinkingSelection(draft, {
+      modelRoute: discreteRoute,
+      thinkingCapability: discreteCapability,
+    })
+    expect(draft.thinkingSelection).toEqual({
+      series: 'compat-discrete-levels-v1',
+      value: {
+        valueType: 'code',
+        code: 'auto',
+        labelZh: '自动',
+      },
+      mode: 'preset',
+      level: 'auto',
+      budgetTokens: null,
+    })
+
+    draft = applyModelSelectionToComposerDraft(draft, {
+      modelId: 'budget-model',
+      modelRoute: budgetRoute,
+    })
+    expect(draft.thinkingSelection).toEqual({
+      series: 'compat-budget-tokens-v1',
+      value: {
+        valueType: 'budget',
+        mode: 'budget',
+        budgetTokens: 12288,
+        labelZh: '12288',
+      },
+      mode: 'budget',
+      level: null,
+      budgetTokens: 12288,
     })
   })
 
@@ -270,27 +442,27 @@ describe('copilot chat helpers', () => {
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('agent_mismatch: session bound agent differs', {
       code: 'agent_mismatch',
       status: 409,
-    }))).toContain('agent_mismatch：当前消息携带的 agent 校验值与会话绑定智能体不一致')
+    }))).toBe('当前会话已更新，请重新发送。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('tool_not_found: unknown tool', {
       code: 'tool_not_found',
       status: 400,
-    }))).toContain('tool_not_found：本次消息启用了后端未注册的 toolId')
+    }))).toBe('当前所选工具暂不可用，请调整后重试。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('invalid_request: bad payload', {
       code: 'invalid_request',
       status: 400,
-    }))).toContain('invalid_request：消息请求结构无效')
+    }))).toBe('当前消息暂时无法发送，请调整内容后重试。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('thinking_not_supported_for_route: unsupported thinking selection', {
       code: 'thinking_not_supported_for_route',
       status: 400,
-    }))).toContain('thinking_not_supported_for_route：当前模型路由不支持所选思考档位')
+    }))).toBe('当前模型暂不支持所选思考设置，请调整后重试。')
 
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('provider_catalog_only: not enabled', {
       code: 'provider_catalog_only',
       status: 409,
-    }))).toContain('provider_catalog_only：当前 provider 仅完成 catalog 接入，运行时尚未启用')
+    }))).toBe('当前模型不可用，请重新选择模型。')
   })
 
   it('builds a stable unsupported thinking capability snapshot from runtime request errors', () => {
@@ -311,11 +483,21 @@ describe('copilot chat helpers', () => {
     expect(capability).toEqual({
       status: 'verified-unsupported',
       source: 'verified',
+      series: null,
+      seriesLabelZh: null,
+      editorType: null,
+      allowedValues: [],
+      defaultValue: null,
+      providerBuilderKey: null,
       supported: false,
+      controlSpec: null,
+      defaultSelection: null,
       supportedLevels: [],
       defaultLevel: null,
       reasonCode: 'provider_catalog_only',
       providerHint: 'openrouter',
+      provenance: null,
+      visibility: null,
       routeFingerprint: {
         providerProfileId: 'provider-openrouter',
         provider: 'openrouter',
@@ -325,6 +507,6 @@ describe('copilot chat helpers', () => {
       },
       overrideLevels: [],
     })
-    expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前 provider 仅完成 catalog 接入')
+    expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前无法调整思考设置')
   })
 })

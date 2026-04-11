@@ -1,5 +1,4 @@
 import {
-  describeProviderRuntimeStatus,
   getProviderCatalogEntry,
 } from '../../provider-catalog'
 import type {
@@ -21,8 +20,6 @@ export function collectAllModelOptions(
       const route = buildModelRouteRef(profile.id, model.modelId)
       const modelLabel = model.displayName.trim() || model.modelId
       const hintParts = [
-        modelLabel !== model.modelId ? model.modelId : null,
-        resolveProviderTypeLabel(profile),
         availability.available ? null : availability.reason,
       ].filter((value): value is string => value !== null && value !== '')
 
@@ -142,26 +139,22 @@ function resolveProviderDefaultRouteAvailability(profile: ProviderProfile): {
   if (compatibility?.status === 'legacy' || compatibility?.status === 'unsupported') {
     return {
       available: false,
-      reason: compatibility.reason.trim() || '历史兼容配置，当前不可作为新的默认模型路由。',
+      reason: '当前模型不可用，请重新选择。',
     }
   }
 
   const catalogEntry = getProviderCatalogEntry(profile.providerId ?? profile.protocol)
   if (catalogEntry === null) {
-    const providerIdentity = (profile.providerId ?? profile.protocol).trim() || profile.id
     return {
       available: false,
-      reason: `Provider '${providerIdentity}' 未包含在当前 catalog 中。`,
+      reason: '当前模型不可用，请重新选择。',
     }
   }
 
   if (catalogEntry.runtimeStatus !== 'enabled') {
     return {
       available: false,
-      reason:
-        catalogEntry.runtimeStatus === 'catalog-only'
-          ? '仅数据层兼容，当前不可作为新的默认模型路由。'
-          : describeProviderRuntimeStatus(catalogEntry.runtimeStatus) ?? '当前 provider 未启用。',
+      reason: '当前模型不可用，请重新选择。',
     }
   }
 
@@ -169,15 +162,6 @@ function resolveProviderDefaultRouteAvailability(profile: ProviderProfile): {
     available: true,
     reason: null,
   }
-}
-
-function resolveProviderTypeLabel(profile: ProviderProfile): string {
-  const catalogEntry = getProviderCatalogEntry(profile.providerId ?? profile.protocol)
-  if (catalogEntry !== null) {
-    return catalogEntry.displayName
-  }
-
-  return (profile.providerId ?? profile.protocol).trim() || '未知 Provider'
 }
 
 function createCurrentSelectionFallbackOption(
@@ -193,16 +177,16 @@ function createCurrentSelectionFallbackOption(
 
     return {
       value: currentValue,
-      label: `已失效路由 · ${parsedRoute.profileId} · ${parsedRoute.modelId}`,
-      hint: '原默认路由对应的 profile 或模型已不存在，请重新选择。',
+      label: '当前选择已失效',
+      hint: '请重新选择模型。',
       disabled: true,
     }
   }
 
   return {
     value: currentValue,
-    label: `旧配置 · ${currentValue}`,
-    hint: '当前仍保留旧版 modelId 字符串，无法稳定映射到 profile + model，请重新选择。',
+    label: '当前选择不可用',
+    hint: '请重新选择模型。',
     disabled: true,
   }
 }

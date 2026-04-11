@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CopilotComposer } from './CopilotComposer'
 import { createEmptyComposerDraft, type CopilotChatComposerDraft } from './copilot-chat-helpers'
 import type { CopilotModelGroup, CopilotModelOption } from './model-picker'
-import type { RuntimeThinkingCapability } from './thread-run-contract'
+import type { RuntimeThinkingCapability, RuntimeThinkingValue } from './thread-run-contract'
 import { THINKING_LEVEL_LABELS } from '../../workbench/thinking-capabilities'
 import type { AssistantSessionCapabilities } from '../../workbench/types'
 
@@ -74,16 +74,78 @@ describe('CopilotComposer thinking controls', () => {
     }
   })
 
-  it('falls back to the thinking level value when a label entry is blank', async () => {
+  it('keeps thinking options product-facing without showing internal codes', async () => {
     const originalMediumLabel = THINKING_LEVEL_LABELS.medium
     THINKING_LEVEL_LABELS.medium = ''
     const rendered = renderWithRoot(<ComposerHarness />)
 
     try {
       await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('medium')
+      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('中')
+      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).not.toContain('medium')
     } finally {
       THINKING_LEVEL_LABELS.medium = originalMediumLabel
+      rendered.unmount()
+    }
+  })
+
+  it('exposes radiogroup semantics and supports arrow-key selection inside the same thinking group', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      await clickElement(rendered.getByTestId('chat-thinking-trigger'))
+
+      const group = rendered.container.querySelector('[role="radiogroup"][aria-label="推理可选项"]')
+      const low = rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement
+      const medium = rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement
+      const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+
+      expect(group).not.toBeNull()
+      expect(low.getAttribute('role')).toBe('radio')
+      expect(low.getAttribute('aria-checked')).toBe('true')
+      expect(medium.getAttribute('aria-checked')).toBe('false')
+
+      await pressKey(low, 'ArrowRight')
+
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+      expect(thinkingTrigger.getAttribute('aria-label')).toContain('中')
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      expect((rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement).getAttribute('aria-checked')).toBe('false')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('supports Home, End, Space, and Enter selection inside the same thinking group', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+
+      await clickElement(thinkingTrigger)
+      await pressKey(rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement, 'End')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      await pressKey(rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement, 'Home')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-off') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      await pressKey(rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement, ' ')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      await pressKey(rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement, 'Enter')
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+    } finally {
       rendered.unmount()
     }
   })
@@ -140,12 +202,51 @@ function createCapabilities(): AssistantSessionCapabilities {
 }
 
 function createThinkingCapability(modelId: string): RuntimeThinkingCapability {
+  const allowedValues: RuntimeThinkingValue[] = [
+    {
+      valueType: 'code',
+      code: 'off',
+      labelZh: '关',
+    },
+    {
+      valueType: 'code',
+      code: 'low',
+      labelZh: '低',
+    },
+    {
+      valueType: 'code',
+      code: 'medium',
+      labelZh: '中',
+    },
+  ]
+
   return {
     status: 'verified-supported',
     source: 'verified',
     supported: true,
+    series: 'compat-discrete-levels-v1',
+    seriesLabelZh: '离散推理档位',
+    editorType: 'discrete',
+    allowedValues,
+    defaultValue: allowedValues[1] ?? null,
+    controlSpec: {
+      kind: 'discrete',
+      selectionKind: 'preset',
+      presetOptions: [
+        { kind: 'preset', value: 'off' },
+        { kind: 'preset', value: 'low' },
+        { kind: 'preset', value: 'medium' },
+      ],
+      fixedSelection: null,
+      budget: null,
+    },
+    defaultSelection: {
+      kind: 'preset',
+      value: 'low',
+    },
     supportedLevels: ['off', 'low', 'medium'],
     defaultLevel: 'low',
+    providerBuilderKey: null,
     reasonCode: `${modelId}:supported`,
     providerHint: 'provider-thinking',
     routeFingerprint: {
@@ -154,6 +255,19 @@ function createThinkingCapability(modelId: string): RuntimeThinkingCapability {
       endpointType: 'openai-compatible',
       baseUrl: 'https://example.com/v1',
       modelId,
+    },
+    provenance: {
+      routeStatus: 'verified',
+      override: {
+        present: false,
+        applied: false,
+        source: null,
+        format: null,
+      },
+    },
+    visibility: {
+      reasoning: 'visible',
+      supportsSuppression: true,
     },
     overrideLevels: [],
   }
@@ -235,5 +349,12 @@ function renderWithRoot(element: ReactElement) {
 async function clickElement(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function pressKey(element: HTMLElement, key: string) {
+  await act(async () => {
+    element.focus()
+    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key }))
   })
 }

@@ -1,5 +1,8 @@
+import { formatThinkingTokenCount } from '../../workbench/thinking-display'
 import type {
+  RuntimeCanonicalThinkingSelection,
   RuntimeReasoningDeltaEvent,
+  RuntimeReasoningSuppressionBasis,
   RuntimeResolvedModelRoute,
   RuntimeRunCompletedEvent,
   RuntimeRunDiagnosticEvent,
@@ -8,8 +11,15 @@ import type {
   RuntimeRunMetadataEvent,
   RuntimeRunStartedEvent,
   RuntimeRunTerminalEvent,
+  RuntimeRunThinkingMetadata,
   RuntimeTextDeltaEvent,
   RuntimeThinkingCapability,
+  RuntimeThinkingCapabilityProvenance,
+  RuntimeThinkingControlSpec,
+  RuntimeThinkingLevel,
+  RuntimeThinkingSelection,
+  RuntimeThinkingSelectionResult,
+  RuntimeThinkingVisibility,
   RuntimeToolEvent,
   RuntimeToolEventPhase,
 } from './thread-run-contract'
@@ -113,6 +123,7 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
             payload.assistantMessageId,
             'runtime event payload.assistantMessageId',
           ),
+          ...parseOptionalRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
         },
       } satisfies RuntimeRunStartedEvent
     case 'run_metadata':
@@ -121,20 +132,7 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
         runId,
         sessionId,
         sequence,
-        payload: {
-          requestedThinkingLevel: requireOptionalThinkingLevel(
-            payload.requestedThinkingLevel,
-            'runtime event payload.requestedThinkingLevel',
-          ),
-          appliedThinkingLevel: requireOptionalThinkingLevel(
-            payload.appliedThinkingLevel,
-            'runtime event payload.appliedThinkingLevel',
-          ),
-          thinkingCapabilitySnapshot: requireRuntimeThinkingCapability(
-            payload.thinkingCapabilitySnapshot,
-            'runtime event payload.thinkingCapabilitySnapshot',
-          ),
-        },
+        payload: requireRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
       } satisfies RuntimeRunMetadataEvent
     case 'text_delta':
       return {
@@ -306,6 +304,133 @@ function requireRuntimeRunEventType(value: unknown): RuntimeRunEvent['type'] {
   }
 }
 
+function requireNullableRuntimeThinkingSelection(
+  value: unknown,
+  label: string,
+): RuntimeThinkingSelection | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return requireRuntimeThinkingSelection(value, label)
+}
+
+function requireRuntimeThinkingSelection(value: unknown, label: string): RuntimeThinkingSelection {
+  const record = requireRecord(value, label)
+  const series = requireNonEmptyString(record.series, `${label}.series`)
+  const runtimeValue = record.value === undefined
+    ? buildRuntimeThinkingValueFromLegacyRecord(record, label)
+    : requireRuntimeThinkingValue(record.value, `${label}.value`)
+
+  if (runtimeValue === null) {
+    throw new Error(`${label}.value must describe a valid thinking series value.`)
+  }
+
+  return {
+    series,
+    value: runtimeValue,
+    ...deriveLegacyRuntimeThinkingSelectionFields(runtimeValue),
+  }
+}
+
+function requireRuntimeRunThinkingMetadata(
+  value: Record<string, unknown>,
+  label: string,
+): RuntimeRunThinkingMetadata {
+  const thinkingSeriesDecision = requireNullableRuntimeThinkingSelectionResult(
+    value.thinkingSeriesDecision ?? value.thinkingSelectionResult,
+    `${label}.thinkingSeriesDecision`,
+  )
+  const requestedThinkingLevel = hasOwn(value, 'requestedThinkingLevel')
+    ? requireOptionalThinkingLevel(value.requestedThinkingLevel, `${label}.requestedThinkingLevel`)
+    : undefined
+  const appliedThinkingLevel = hasOwn(value, 'appliedThinkingLevel')
+    ? requireOptionalThinkingLevel(value.appliedThinkingLevel, `${label}.appliedThinkingLevel`)
+    : undefined
+
+  return {
+    requestedThinkingSelection: requireNullableRuntimeThinkingSelection(
+      value.requestedThinkingSelection,
+      `${label}.requestedThinkingSelection`,
+    ),
+    appliedThinkingSelection: requireNullableRuntimeThinkingSelection(
+      value.appliedThinkingSelection,
+      `${label}.appliedThinkingSelection`,
+    ),
+    thinkingCapabilitySnapshot: requireNullableRuntimeThinkingCapability(
+      value.thinkingCapabilitySnapshot,
+      `${label}.thinkingCapabilitySnapshot`,
+    ),
+    thinkingSeriesDecision,
+    ...(requestedThinkingLevel === undefined ? {} : { requestedThinkingLevel }),
+    ...(appliedThinkingLevel === undefined ? {} : { appliedThinkingLevel }),
+    reasoningSuppressionBasis: requireNullableRuntimeReasoningSuppressionBasis(
+      value.reasoningSuppressionBasis,
+      `${label}.reasoningSuppressionBasis`,
+    ),
+  }
+}
+
+function parseOptionalRuntimeRunThinkingMetadata(
+  value: Record<string, unknown>,
+  label: string,
+): Partial<RuntimeRunThinkingMetadata> {
+  const partial: Partial<RuntimeRunThinkingMetadata> = {}
+  if (hasOwn(value, 'requestedThinkingSelection')) {
+    partial.requestedThinkingSelection = requireNullableRuntimeThinkingSelection(
+      value.requestedThinkingSelection,
+      `${label}.requestedThinkingSelection`,
+    )
+  }
+  if (hasOwn(value, 'appliedThinkingSelection')) {
+    partial.appliedThinkingSelection = requireNullableRuntimeThinkingSelection(
+      value.appliedThinkingSelection,
+      `${label}.appliedThinkingSelection`,
+    )
+  }
+  if (hasOwn(value, 'requestedThinkingLevel')) {
+    partial.requestedThinkingLevel = requireOptionalThinkingLevel(
+      value.requestedThinkingLevel,
+      `${label}.requestedThinkingLevel`,
+    )
+  }
+  if (hasOwn(value, 'appliedThinkingLevel')) {
+    partial.appliedThinkingLevel = requireOptionalThinkingLevel(
+      value.appliedThinkingLevel,
+      `${label}.appliedThinkingLevel`,
+    )
+  }
+  if (hasOwn(value, 'thinkingCapabilitySnapshot')) {
+    partial.thinkingCapabilitySnapshot = requireNullableRuntimeThinkingCapability(
+      value.thinkingCapabilitySnapshot,
+      `${label}.thinkingCapabilitySnapshot`,
+    )
+  }
+  if (hasOwn(value, 'thinkingSeriesDecision') || hasOwn(value, 'thinkingSelectionResult')) {
+    const thinkingSeriesDecision = requireNullableRuntimeThinkingSelectionResult(
+      value.thinkingSeriesDecision ?? value.thinkingSelectionResult,
+      `${label}.thinkingSeriesDecision`,
+    )
+    partial.thinkingSeriesDecision = thinkingSeriesDecision
+  }
+  if (hasOwn(value, 'reasoningSuppressionBasis')) {
+    partial.reasoningSuppressionBasis = requireNullableRuntimeReasoningSuppressionBasis(
+      value.reasoningSuppressionBasis,
+      `${label}.reasoningSuppressionBasis`,
+    )
+  }
+  return partial
+}
+
+function requireNullableRuntimeThinkingCapability(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return requireRuntimeThinkingCapability(value, label)
+}
+
 function requireRuntimeThinkingCapability(value: unknown, label: string): RuntimeThinkingCapability {
   const record = requireRecord(value, label)
   const routeFingerprint = requireRecord(record.routeFingerprint, `${label}.routeFingerprint`)
@@ -313,11 +438,13 @@ function requireRuntimeThinkingCapability(value: unknown, label: string): Runtim
   return {
     status: requireRuntimeThinkingCapabilityStatus(record.status, `${label}.status`),
     source: requireRuntimeThinkingCapabilitySource(record.source, `${label}.source`),
-    supported: requireBoolean(record.supported, `${label}.supported`),
-    supportedLevels: requireThinkingLevelArray(record.supportedLevels, `${label}.supportedLevels`),
-    defaultLevel: requireOptionalThinkingLevel(record.defaultLevel, `${label}.defaultLevel`),
+    series: requireNullableString(record.series, `${label}.series`),
+    seriesLabelZh: requireNullableString(record.seriesLabelZh, `${label}.seriesLabelZh`),
+    editorType: requireNullableRuntimeThinkingEditorType(record.editorType, `${label}.editorType`),
+    allowedValues: requireRuntimeThinkingValueArray(record.allowedValues, `${label}.allowedValues`),
+    defaultValue: requireNullableRuntimeThinkingValue(record.defaultValue, `${label}.defaultValue`),
+    providerBuilderKey: requireNullableString(record.providerBuilderKey, `${label}.providerBuilderKey`),
     reasonCode: requireNonEmptyString(record.reasonCode, `${label}.reasonCode`),
-    providerHint: requireNullableString(record.providerHint, `${label}.providerHint`),
     routeFingerprint: {
       providerProfileId: requireNonEmptyString(routeFingerprint.providerProfileId, `${label}.routeFingerprint.providerProfileId`),
       provider: requireNonEmptyString(routeFingerprint.provider, `${label}.routeFingerprint.provider`),
@@ -325,7 +452,375 @@ function requireRuntimeThinkingCapability(value: unknown, label: string): Runtim
       baseUrl: requireNonEmptyString(routeFingerprint.baseUrl, `${label}.routeFingerprint.baseUrl`),
       modelId: requireNonEmptyString(routeFingerprint.modelId, `${label}.routeFingerprint.modelId`),
     },
-    overrideLevels: requireThinkingLevelArray(record.overrideLevels, `${label}.overrideLevels`),
+    ...(hasOwn(record, 'supported') ? { supported: requireBoolean(record.supported, `${label}.supported`) } : {}),
+    ...(hasOwn(record, 'controlSpec')
+      ? { controlSpec: requireNullableRuntimeThinkingControlSpec(record.controlSpec, `${label}.controlSpec`) }
+      : {}),
+    ...(hasOwn(record, 'defaultSelection')
+      ? {
+          defaultSelection: requireNullableRuntimeCanonicalThinkingSelection(
+            record.defaultSelection,
+            `${label}.defaultSelection`,
+          ),
+        }
+      : {}),
+    ...(hasOwn(record, 'supportedLevels')
+      ? { supportedLevels: requireThinkingLevelArray(record.supportedLevels, `${label}.supportedLevels`) }
+      : {}),
+    ...(hasOwn(record, 'defaultLevel')
+      ? { defaultLevel: requireOptionalThinkingLevel(record.defaultLevel, `${label}.defaultLevel`) }
+      : {}),
+    ...(hasOwn(record, 'providerHint')
+      ? { providerHint: requireNullableString(record.providerHint, `${label}.providerHint`) }
+      : {}),
+    ...(hasOwn(record, 'provenance')
+      ? { provenance: requireNullableRuntimeThinkingCapabilityProvenance(record.provenance, `${label}.provenance`) }
+      : {}),
+    ...(hasOwn(record, 'visibility')
+      ? { visibility: requireNullableRuntimeThinkingVisibility(record.visibility, `${label}.visibility`) }
+      : {}),
+    ...(hasOwn(record, 'overrideLevels')
+      ? { overrideLevels: requireThinkingLevelArray(record.overrideLevels, `${label}.overrideLevels`) }
+      : {}),
+  }
+}
+
+function requireNullableRuntimeThinkingEditorType(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability['editorType'] {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const normalized = requireNonEmptyString(value, label)
+  switch (normalized) {
+    case 'discrete':
+    case 'budget':
+    case 'fixed':
+      return normalized
+    default:
+      throw new Error(`${label} must be a supported thinking editor type.`)
+  }
+}
+
+function requireRuntimeThinkingValueArray(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapability['allowedValues'] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`)
+  }
+  return value.map((item, index) => requireRuntimeThinkingValue(item, `${label}[${index}]`))
+}
+
+function requireNullableRuntimeThinkingValue(
+  value: unknown,
+  label: string,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return requireRuntimeThinkingValue(value, label)
+}
+
+function requireRuntimeThinkingValue(
+  value: unknown,
+  label: string,
+): NonNullable<RuntimeThinkingSelection['value']> {
+  const record = requireRecord(value, label)
+  const valueType = requireNonEmptyString(record.valueType, `${label}.valueType`)
+  switch (valueType) {
+    case 'code':
+      return {
+        valueType: 'code',
+        code: requireNonEmptyString(record.code, `${label}.code`),
+        labelZh: requireNonEmptyString(record.labelZh, `${label}.labelZh`),
+      }
+    case 'budget': {
+      const mode = requireNonEmptyString(record.mode, `${label}.mode`)
+      if (mode !== 'off' && mode !== 'dynamic' && mode !== 'budget') {
+        throw new Error(`${label}.mode must be off, dynamic, or budget.`)
+      }
+      return {
+        valueType: 'budget',
+        mode,
+        budgetTokens: requireNullableNonNegativeInteger(record.budgetTokens, `${label}.budgetTokens`),
+        labelZh: requireNonEmptyString(record.labelZh, `${label}.labelZh`),
+      }
+    }
+    case 'fixed':
+      return {
+        valueType: 'fixed',
+        code: 'fixed',
+        labelZh: requireNonEmptyString(record.labelZh, `${label}.labelZh`),
+      }
+    default:
+      throw new Error(`${label}.valueType must be a supported thinking value type.`)
+  }
+}
+
+function buildRuntimeThinkingValueFromLegacyRecord(
+  record: Record<string, unknown>,
+  label: string,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  const mode = requireNullableString(record.mode, `${label}.mode`)
+  const level = requireNullableString(record.level, `${label}.level`)
+  const budgetTokens = requireNullableNonNegativeInteger(record.budgetTokens, `${label}.budgetTokens`)
+
+  if (mode === 'budget' && budgetTokens !== null) {
+    return {
+      valueType: 'budget',
+      mode: 'budget',
+      budgetTokens,
+      labelZh: formatThinkingTokenCount(budgetTokens),
+    }
+  }
+
+  if (level === null) {
+    return null
+  }
+
+  if (level === 'fixed') {
+    return {
+      valueType: 'fixed',
+      code: 'fixed',
+      labelZh: '固定推理',
+    }
+  }
+
+  const normalizedLevel = requireThinkingLevel(level, `${label}.level`)
+  return {
+    valueType: 'code',
+    code: normalizedLevel,
+    labelZh: normalizedLevel,
+  }
+}
+
+function deriveLegacyRuntimeThinkingSelectionFields(
+  value: NonNullable<RuntimeThinkingSelection['value']>,
+): Pick<RuntimeThinkingSelection, 'mode' | 'level' | 'budgetTokens'> {
+  switch (value.valueType) {
+    case 'budget':
+      return {
+        mode: 'budget',
+        level: null,
+        budgetTokens: value.mode === 'budget' ? value.budgetTokens : null,
+      }
+    case 'fixed':
+      return {
+        mode: 'preset',
+        level: 'fixed',
+        budgetTokens: null,
+      }
+    case 'code':
+      return {
+        mode: 'preset',
+        level: value.code,
+        budgetTokens: null,
+      }
+  }
+}
+
+function requireNullableRuntimeCanonicalThinkingSelection(
+  value: unknown,
+  label: string,
+): RuntimeCanonicalThinkingSelection | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return requireRuntimeCanonicalThinkingSelection(value, label)
+}
+
+function requireRuntimeCanonicalThinkingSelection(
+  value: unknown,
+  label: string,
+): RuntimeCanonicalThinkingSelection {
+  const record = requireRecord(value, label)
+  const kind = requireRuntimeThinkingSelectionKind(record.kind, `${label}.kind`)
+  if (kind === 'budget') {
+    return {
+      kind,
+      budgetTokens: requireNonNegativeInteger(record.budgetTokens, `${label}.budgetTokens`),
+    }
+  }
+  return {
+    kind,
+    value: requireThinkingLevel(record.value, `${label}.value`),
+  }
+}
+
+function requireNullableRuntimeThinkingControlSpec(
+  value: unknown,
+  label: string,
+): RuntimeThinkingControlSpec | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const record = requireRecord(value, label)
+  return {
+    kind: requireRuntimeThinkingControlKind(record.kind, `${label}.kind`),
+    selectionKind: requireRuntimeThinkingSelectionKind(record.selectionKind, `${label}.selectionKind`),
+    ...(record.presetOptions === undefined
+      ? {}
+      : {
+          presetOptions: requireRuntimeCanonicalThinkingSelectionArray(
+            record.presetOptions,
+            `${label}.presetOptions`,
+          ),
+        }),
+    ...(record.fixedSelection === undefined
+      ? {}
+      : {
+          fixedSelection: requireNullableRuntimeCanonicalThinkingSelection(
+            record.fixedSelection,
+            `${label}.fixedSelection`,
+          ),
+        }),
+    ...(record.budget === undefined
+      ? {}
+      : {
+          budget: requireNullableRuntimeThinkingControlBudgetSpec(record.budget, `${label}.budget`),
+        }),
+  }
+}
+
+function requireRuntimeCanonicalThinkingSelectionArray(
+  value: unknown,
+  label: string,
+): RuntimeCanonicalThinkingSelection[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`)
+  }
+  return value.map((item, index) => requireRuntimeCanonicalThinkingSelection(item, `${label}[${index}]`))
+}
+
+function requireNullableRuntimeThinkingControlBudgetSpec(
+  value: unknown,
+  label: string,
+): RuntimeThinkingControlSpec['budget'] {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const record = requireRecord(value, label)
+  return {
+    ...(record.minTokens === undefined ? {} : { minTokens: requireNonNegativeInteger(record.minTokens, `${label}.minTokens`) }),
+    ...(record.maxTokens === undefined ? {} : { maxTokens: requireNonNegativeInteger(record.maxTokens, `${label}.maxTokens`) }),
+    ...(record.stepTokens === undefined ? {} : { stepTokens: requireNonNegativeInteger(record.stepTokens, `${label}.stepTokens`) }),
+  }
+}
+
+function requireNullableRuntimeThinkingCapabilityProvenance(
+  value: unknown,
+  label: string,
+): RuntimeThinkingCapabilityProvenance | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const record = requireRecord(value, label)
+  const override = requireRecord(record.override, `${label}.override`)
+  return {
+    routeStatus: requireNonEmptyString(record.routeStatus, `${label}.routeStatus`),
+    override: {
+      present: requireBoolean(override.present, `${label}.override.present`),
+      applied: requireBoolean(override.applied, `${label}.override.applied`),
+      source: requireNullableString(override.source, `${label}.override.source`),
+      format: requireNullableString(override.format, `${label}.override.format`),
+    },
+  }
+}
+
+function requireNullableRuntimeThinkingVisibility(
+  value: unknown,
+  label: string,
+): RuntimeThinkingVisibility | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const record = requireRecord(value, label)
+  return {
+    reasoning: requireNonEmptyString(record.reasoning, `${label}.reasoning`),
+    supportsSuppression: requireBoolean(record.supportsSuppression, `${label}.supportsSuppression`),
+  }
+}
+
+function requireNullableRuntimeThinkingSelectionResult(
+  value: unknown,
+  label: string,
+): RuntimeThinkingSelectionResult | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const record = requireRecord(value, label)
+  return {
+    requestedSelection: requireNullableRuntimeThinkingSelection(record.requestedSelection, `${label}.requestedSelection`),
+    appliedSelection: requireNullableRuntimeThinkingSelection(record.appliedSelection, `${label}.appliedSelection`),
+    applied: requireBoolean(record.applied, `${label}.applied`),
+    reasonCode: requireNonEmptyString(record.reasonCode, `${label}.reasonCode`),
+    errorCode: requireNullableString(record.errorCode, `${label}.errorCode`),
+    providerBuilderKey: requireNullableString(record.providerBuilderKey, `${label}.providerBuilderKey`),
+    mappingReasonCode: requireNullableString(record.mappingReasonCode, `${label}.mappingReasonCode`),
+    capabilityStatus: requireRuntimeThinkingCapabilityStatus(record.capabilityStatus, `${label}.capabilityStatus`),
+    capabilitySource: requireRuntimeThinkingCapabilitySource(record.capabilitySource, `${label}.capabilitySource`),
+    capabilitySeries: requireNullableString(record.capabilitySeries, `${label}.capabilitySeries`),
+    capabilitySeriesLabelZh: requireNullableString(record.capabilitySeriesLabelZh, `${label}.capabilitySeriesLabelZh`),
+    capabilityReasonCode: requireNullableString(record.capabilityReasonCode, `${label}.capabilityReasonCode`),
+    ...(hasOwn(record, 'requestedThinkingLevel')
+      ? { requestedThinkingLevel: requireOptionalThinkingLevel(record.requestedThinkingLevel, `${label}.requestedThinkingLevel`) }
+      : {}),
+    ...(hasOwn(record, 'appliedThinkingLevel')
+      ? { appliedThinkingLevel: requireOptionalThinkingLevel(record.appliedThinkingLevel, `${label}.appliedThinkingLevel`) }
+      : {}),
+    ...(hasOwn(record, 'providerMapping')
+      ? { providerMapping: requireNullableString(record.providerMapping, `${label}.providerMapping`) }
+      : {}),
+    ...(hasOwn(record, 'overridePresent')
+      ? { overridePresent: requireBoolean(record.overridePresent, `${label}.overridePresent`) }
+      : {}),
+    ...(hasOwn(record, 'overrideApplied')
+      ? { overrideApplied: requireBoolean(record.overrideApplied, `${label}.overrideApplied`) }
+      : {}),
+    ...(hasOwn(record, 'overrideSource')
+      ? { overrideSource: requireNullableString(record.overrideSource, `${label}.overrideSource`) }
+      : {}),
+    ...(hasOwn(record, 'reasoningVisibility')
+      ? { reasoningVisibility: requireNullableString(record.reasoningVisibility, `${label}.reasoningVisibility`) }
+      : {}),
+    ...(hasOwn(record, 'supportsSuppression')
+      ? { supportsSuppression: requireNullableBoolean(record.supportsSuppression, `${label}.supportsSuppression`) }
+      : {}),
+    ...(record.modelSettings === undefined
+      ? {}
+      : { modelSettings: requireRecord(record.modelSettings, `${label}.modelSettings`) }),
+  }
+}
+
+function requireNullableRuntimeReasoningSuppressionBasis(
+  value: unknown,
+  label: string,
+): RuntimeReasoningSuppressionBasis | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const record = requireRecord(value, label)
+  const appliedThinkingLevel = hasOwn(record, 'appliedThinkingLevel')
+    ? requireOptionalThinkingLevel(record.appliedThinkingLevel, `${label}.appliedThinkingLevel`)
+    : undefined
+  const appliedThinkingSelection = hasOwn(record, 'appliedThinkingSelection')
+    ? requireNullableRuntimeThinkingSelection(record.appliedThinkingSelection, `${label}.appliedThinkingSelection`)
+    : null
+
+  return {
+    shouldSuppress: requireBoolean(record.shouldSuppress, `${label}.shouldSuppress`),
+    source: requireNonEmptyString(record.source, `${label}.source`),
+    reasonCode: requireNullableString(record.reasonCode, `${label}.reasonCode`),
+    appliedThinkingSelection,
+    reasoningVisibility: requireNullableString(record.reasoningVisibility, `${label}.reasoningVisibility`),
+    supportsSuppression: requireBoolean(record.supportsSuppression, `${label}.supportsSuppression`),
+    capabilitySource: record.capabilitySource === null || record.capabilitySource === undefined
+      ? null
+      : requireRuntimeThinkingCapabilitySource(record.capabilitySource, `${label}.capabilitySource`),
+    capabilitySeries: requireNullableString(record.capabilitySeries, `${label}.capabilitySeries`),
+    ...(appliedThinkingLevel === undefined ? {} : { appliedThinkingLevel }),
   }
 }
 
@@ -363,7 +858,7 @@ function requireRuntimeThinkingCapabilitySource(
 function requireThinkingLevelArray(
   value: unknown,
   label: string,
-): RuntimeThinkingCapability['supportedLevels'] {
+): RuntimeThinkingLevel[] {
   if (!Array.isArray(value)) {
     throw new Error(`${label} must be an array of thinking levels.`)
   }
@@ -374,7 +869,7 @@ function requireThinkingLevelArray(
 function requireOptionalThinkingLevel(
   value: unknown,
   label: string,
-): RuntimeThinkingCapability['defaultLevel'] {
+): RuntimeThinkingLevel | null {
   if (value === null || value === undefined) {
     return null
   }
@@ -384,7 +879,7 @@ function requireOptionalThinkingLevel(
 function requireThinkingLevel(
   value: unknown,
   label: string,
-): RuntimeThinkingCapability['supportedLevels'][number] {
+): RuntimeThinkingLevel {
   const normalized = requireNonEmptyString(value, label)
   switch (normalized) {
     case 'off':
@@ -406,11 +901,66 @@ function requireBoolean(value: unknown, label: string): boolean {
   return value
 }
 
+function requireNullableBoolean(value: unknown, label: string): boolean | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  return requireBoolean(value, label)
+}
+
+function requireNonNegativeInteger(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`)
+  }
+  return value
+}
+
 function requireNullableString(value: unknown, label: string): string | null {
   if (value === null || value === undefined) {
     return null
   }
   return requireString(value, label)
+}
+
+function requireNullableNonNegativeInteger(value: unknown, label: string): number | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`)
+  }
+  return value
+}
+
+function requireRuntimeThinkingControlKind(
+  value: unknown,
+  label: string,
+): RuntimeThinkingControlSpec['kind'] {
+  const normalized = requireNonEmptyString(value, label)
+  switch (normalized) {
+    case 'fixed':
+    case 'binary':
+    case 'off-auto':
+    case 'discrete':
+    case 'budget':
+      return normalized
+    default:
+      throw new Error(`${label} must be a supported thinking control kind.`)
+  }
+}
+
+function requireRuntimeThinkingSelectionKind(
+  value: unknown,
+  label: string,
+): RuntimeCanonicalThinkingSelection['kind'] {
+  const normalized = requireNonEmptyString(value, label)
+  switch (normalized) {
+    case 'preset':
+    case 'budget':
+      return normalized
+    default:
+      throw new Error(`${label} must be a supported thinking selection kind.`)
+  }
 }
 
 function requireRuntimeToolEventPhase(value: unknown): RuntimeToolEventPhase {
@@ -472,6 +1022,10 @@ function requireNonEmptyString(value: unknown, label: string): string {
   }
 
   return normalizedValue
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
 }
 
 function normalizeSseBuffer(value: string): string {
