@@ -103,7 +103,7 @@ Python runtime 解析启动配置时，顺序仍然是：
 
 ### 聊天模型的当前定位
 
-聊天模型不再由 startup 参数解析。当前模型选择只在 [`message/send`](../system/chat-runtime-contract.md) 的请求体里通过 `modelRoute` 表达，并在执行阶段由宿主私桥校验与解析。
+聊天模型不再由 startup 参数解析。当前模型选择主要在 `run/start` 的请求体里通过 `modelRoute` 表达，并在执行阶段由宿主私桥校验与解析；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 只是映射到同一语义。
 
 ### 已退役的 startup model 路径
 
@@ -126,11 +126,11 @@ Python runtime 解析启动配置时，顺序仍然是：
 
 ## 当前本地主线验收命令
 
-### 流式聊天 smoke 验收
+### `thread/run` 聊天 smoke 验收
 
 ```bash
 cd frontend-copilot
-node ./scripts/smoke-streaming-chat.mjs --provider-profile-id custom-provider-1
+node ./scripts/smoke-thread-run-chat.mjs --provider-profile-id custom-provider-1
 ```
 
 这条脚本会：
@@ -138,8 +138,8 @@ node ./scripts/smoke-streaming-chat.mjs --provider-profile-id custom-provider-1
 1. 从 settings workspace 文档读取 provider profiles 与 secrets。
 2. 在本地创建宿主私桥。
 3. 拉起 Python runtime。
-4. 执行 `session/create`。
-5. 执行流式 [`message/send`](../system/chat-runtime-contract.md)，并校验最终事件为 `run_completed`。
+4. 执行 `thread/create`。
+5. 执行 `run/start` 与 `run/stream`，并校验最终事件为 `run_completed`。
 
 ## 其他已确认的 Python 入口
 

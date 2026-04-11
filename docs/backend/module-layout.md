@@ -1,12 +1,12 @@
 ---
-title: 后端模块布局
-description: 说明 Python 后端当前的目录结构、运行责任与流式聊天主线的模块边界。
+title: 后端模块布局（旧资料）
+description: 旧的 backend 分册目录说明。保留后端模块边界与实现细节，当前正式主链请先看新的开发者路径与共享事实层。
 sidebar_position: 2
 ---
 
-# 后端模块布局
+# 后端模块布局（旧资料）
 
-这页只说明当前代码已经形成的目录结构和职责边界。启动参数、路径差异和配置来源见 [后端运行与配置](./run-and-config.md)，HTTP 方法与前端接入方式见 [后端暴露契约与前端接入点](./frontend-connection.md)。
+这页属于旧的 `backend` 分册。它保留目录结构和职责边界的补充说明，但不再作为当前主阅读入口。第一次进入当前站点时，请先看 [给开发者](../developers/getting-started.md)、[后端实现](../developers/backend.md) 和 [运行时接口 / 事件参考](../reference/runtime-events.md)。
 
 ## 当前后端可以先分成四层
 
@@ -66,20 +66,24 @@ backend/app/
 
 ## `copilot_runtime/` 是当前聊天主契约的核心
 
-`copilot_runtime/` 才是今天聊天后端的核心实现。它已经不再围绕旧的整包 `message/send` 叙事组织，而是围绕 session-first 主路径和 run 流式主线展开。
+`copilot_runtime/` 才是今天聊天后端的核心实现。它已经不再围绕旧的整包 `message/send` 叙事组织，而是围绕 `thread/run` 主路径和 run 流式主线展开。
 
-当前正式主路径是四个方法：
+当前正式主路径是六个方法：
 
 - `agents/list`
-- `session/create`
-- `capabilities/get`
-- `message/send`
+- `thread/create`
+- `thread/get`
+- `run/start`
+- `run/stream`
+- `run/cancel`
+
+`session/create`、`capabilities/get` 和 `message/send` 仍然保留，但它们现在是兼容投影层。
 
 这条主路径对应三件事：
 
 - 智能体目录由后端提供。
-- 会话在创建时绑定智能体。
-- 模型路由、工具列表和请求选项在每次消息请求里单独给出。
+- thread 在创建时绑定智能体。
+- 模型路由、工具列表和请求选项在每次 run 请求里单独给出。
 
 因此，这一层的关键责任包括：
 
@@ -130,8 +134,8 @@ backend/app/
 
 当前主线里，`bridge.py` 不再承担整条聊天执行主语义。它现在更适合作为：
 
-- 会话能力查询入口。
-- 流式 [`message/send`](../system/chat-runtime-contract.md) 的最薄转发入口。
+- 兼容会话能力查询入口。
+- 兼容 [`message/send`](../system/chat-runtime-contract.md) 的最薄转发入口。
 
 如果文档仍然把 `RuntimeBridge.send_message()` 写成当前主线核心，那就已经落后于实现现实了。
 
@@ -139,7 +143,7 @@ backend/app/
 
 `info`、`agent/connect` 和 `agent/run` 已从当前 runtime surface 退役。它们不再出现在 supported methods 中，也不再承担兼容职责；旧调用当前只会收到 `method_not_implemented`。
 
-当前权威主路径只剩 session-first 四方法，其中 [`message/send`](../system/chat-runtime-contract.md) 已切到流式事件响应。
+当前权威主路径已经是 `agents/list + thread/create + thread/get + run/start + run/stream + run/cancel`；`session/create`、`capabilities/get` 与 [`message/send`](../system/chat-runtime-contract.md) 只是兼容壳。
 
 ## `blackboard/` 是成熟度最高的领域能力模块
 

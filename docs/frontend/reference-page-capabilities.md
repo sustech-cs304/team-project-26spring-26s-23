@@ -34,9 +34,12 @@ sidebar_position: 5
 
 1. 根装配层确认当前有可用 `runtimeUrl`。
 2. 助手工作区拉取后端智能体目录。
-3. 用户选择智能体并创建会话。
-4. 前端读取会话能力面。
-5. 聊天面板在 `message/send` 里显式发送本次模型和工具选择。
+3. 用户选择智能体并创建 `thread`。
+4. 前端读取当前 `thread` 的能力面。
+5. 聊天面板通过 `run/start` 发起本轮 run，并显式发送本次模型路由、Thinking 和工具选择。
+6. 前端通过 `run/stream` 消费事件流；需要时再走 `run/cancel`。
+
+`session/create`、`capabilities/get` 和 `message/send` 继续保留，但它们当前只是兼容壳。
 
 当前仍然保留的边界主要有两条：
 
