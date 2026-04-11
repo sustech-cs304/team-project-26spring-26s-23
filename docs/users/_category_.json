@@ -1,0 +1,11 @@
+{
+  "label": "给使用者",
+  "position": 1,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "给使用者",
+    "description": "面向普通使用者的连续阅读路径。先理解 CanDue 是什么，再完成上手、模型设置、聊天与 Thinking、能力边界判断。",
+    "slug": "/users"
+  }
+}
