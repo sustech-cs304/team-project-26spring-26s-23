@@ -1,0 +1,11 @@
+{
+  "label": "给开发者",
+  "position": 2,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "给开发者",
+    "description": "面向开发者的连续阅读路径。先跑起桌面宿主，再理解架构、聊天运行时、配置与状态，以及前后端代码落点。",
+    "slug": "/developers"
+  }
+}
