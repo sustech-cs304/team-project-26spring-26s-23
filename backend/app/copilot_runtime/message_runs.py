@@ -21,6 +21,7 @@ from .contracts import (
     RuntimeRunStartRequest,
     RuntimeScaffold,
     RuntimeThinkingSelection,
+    RuntimeThinkingValue,
     _build_reasoning_suppression_basis as build_reasoning_suppression_basis,
 )
 from .debug_logging import (
@@ -797,27 +798,40 @@ def _to_runtime_thinking_selection(
 ) -> RuntimeThinkingSelection | None:
     if isinstance(selection, RuntimeThinkingSelection):
         return selection
-    kind = getattr(selection, "kind", None)
+
+    if isinstance(selection, dict):
+        kind = selection.get("kind")
+        budget_tokens = selection.get("budget_tokens", selection.get("budgetTokens"))
+        preset_value = selection.get("value")
+    else:
+        kind = getattr(selection, "kind", None)
+        budget_tokens = getattr(selection, "budget_tokens", getattr(selection, "budgetTokens", None))
+        preset_value = getattr(selection, "value", None)
+
     if kind == "budget":
-        budget_tokens = getattr(selection, "budget_tokens", None)
-        if budget_tokens is None:
+        if not isinstance(budget_tokens, int) or isinstance(budget_tokens, bool) or budget_tokens < 0:
             return None
         return RuntimeThinkingSelection(
             series=series,
-            mode="budget",
-            level=None,
-            budgetTokens=budget_tokens,
+            value=RuntimeThinkingValue(
+                valueType="budget",
+                mode="budget",
+                budgetTokens=budget_tokens,
+            ),
         )
+
     if kind != "preset":
         return None
-    level = getattr(selection, "value", None)
-    if not isinstance(level, str):
+
+    normalized_value = preset_value.strip() if isinstance(preset_value, str) else None
+    if not normalized_value:
         return None
     return RuntimeThinkingSelection(
         series=series,
-        mode="preset",
-        level=cast(Any, level),
-        budgetTokens=None,
+        value=RuntimeThinkingValue(
+            valueType="code",
+            code=normalized_value,
+        ),
     )
 
 

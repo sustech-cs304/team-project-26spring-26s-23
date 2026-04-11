@@ -20,6 +20,7 @@
   color: var(--text-secondary);
   font: inherit;
   line-height: 1;
+  cursor: pointer;
   transition:
     border-color 0.2s ease-out,
     background-color 0.2s ease-out,
@@ -27,17 +28,13 @@
     transform 0.15s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.thinking-pill:not(:disabled) {
-  cursor: pointer;
-}
-
-.thinking-pill:hover:not(:disabled) {
+.thinking-pill:hover:not(.thinking-pill--disabled) {
   border-color: color-mix(in srgb, var(--text-secondary) 40%, var(--border-color));
   color: var(--text-primary);
   background: var(--surface-hover);
 }
 
-.thinking-pill:active:not(:disabled) {
+.thinking-pill:active:not(.thinking-pill--disabled) {
   transform: scale(0.98);
 }
 
@@ -62,7 +59,8 @@
   gap: 0.35rem;
 }
 
-.thinking-pill:disabled {
+.thinking-pill--disabled {
+  cursor: default;
   opacity: 0.9;
 }
 

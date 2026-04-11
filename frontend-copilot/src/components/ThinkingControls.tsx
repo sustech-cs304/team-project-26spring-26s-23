@@ -1,4 +1,4 @@
-import type { ChangeEventHandler } from 'react'
+import { useRef, type ChangeEventHandler, type KeyboardEventHandler } from 'react'
 
 import {
   THINKING_BUDGET_FIXED_ANCHORS,
@@ -40,6 +40,31 @@ interface ThinkingBudgetSliderProps {
   onBudgetTokensChange: (budgetTokens: number) => void
 }
 
+function isNavigableThinkingPillOption(option: ThinkingPillOption, readOnly: boolean) {
+  return !readOnly && option.disabled !== true && typeof option.onSelect === 'function'
+}
+
+function findNextNavigableThinkingPillOptionIndex(
+  options: readonly ThinkingPillOption[],
+  startIndex: number,
+  direction: -1 | 1,
+  readOnly: boolean,
+): number | null {
+  if (options.length < 2) {
+    return null
+  }
+
+  for (let offset = 1; offset < options.length; offset += 1) {
+    const candidateIndex = (startIndex + direction * offset + options.length) % options.length
+    const candidate = options[candidateIndex]
+    if (candidate !== undefined && isNavigableThinkingPillOption(candidate, readOnly)) {
+      return candidateIndex
+    }
+  }
+
+  return null
+}
+
 export function ThinkingPillGroup({
   options,
   ariaLabel,
@@ -47,6 +72,35 @@ export function ThinkingPillGroup({
   compact = false,
   readOnly = false,
 }: ThinkingPillGroupProps) {
+  const optionRefs = useRef<Array<HTMLDivElement | null>>([])
+  const selectedFocusableIndex = options.findIndex((option) => option.selected === true && option.disabled !== true)
+  const firstFocusableIndex = options.findIndex((option) => option.disabled !== true)
+  const activeIndex = selectedFocusableIndex >= 0
+    ? selectedFocusableIndex
+    : (firstFocusableIndex >= 0 ? firstFocusableIndex : 0)
+
+  const handleOptionKeyDown = (index: number): KeyboardEventHandler<HTMLDivElement> => (event) => {
+    let direction: -1 | 1 | null = null
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      direction = -1
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      direction = 1
+    }
+
+    if (direction === null || readOnly) {
+      return
+    }
+
+    const nextIndex = findNextNavigableThinkingPillOptionIndex(options, index, direction, readOnly)
+    if (nextIndex === null) {
+      return
+    }
+
+    event.preventDefault()
+    optionRefs.current[nextIndex]?.focus()
+    options[nextIndex]?.onSelect?.()
+  }
+
   return (
     <div
       className={[
@@ -55,32 +109,100 @@ export function ThinkingPillGroup({
         readOnly ? 'thinking-pill-group--read-only' : '',
         className ?? '',
       ].filter((value) => value !== '').join(' ')}
-      role="group"
+      role="radiogroup"
       aria-label={ariaLabel}
     >
-      {options.map((option) => {
-        const clickable = !readOnly && typeof option.onSelect === 'function'
+      {options.map((option, index) => {
+        const interactive = isNavigableThinkingPillOption(option, readOnly)
+        const ariaDisabled = readOnly || option.disabled === true || typeof option.onSelect !== 'function'
+        const className = [
+          'thinking-pill',
+          option.selected ? 'thinking-pill--selected' : '',
+          option.muted ? 'thinking-pill--muted' : '',
+          compact ? 'thinking-pill--compact' : '',
+          ariaDisabled ? 'thinking-pill--disabled' : '',
+        ].filter((value) => value !== '').join(' ')
+
+        if (option.selected === true && ariaDisabled) {
+          return (
+            <div
+              key={option.key}
+              ref={(element) => {
+                optionRefs.current[index] = element
+              }}
+              role="radio"
+              aria-checked="true"
+              aria-disabled="true"
+              tabIndex={index === activeIndex ? 0 : -1}
+              className={className}
+              data-testid={option.testId}
+              title={option.title}
+              onKeyDown={handleOptionKeyDown(index)}
+            >
+              <span className="thinking-pill__label">{option.labelZh}</span>
+            </div>
+          )
+        }
+
+        if (option.selected === true) {
+          return (
+            <div
+              key={option.key}
+              ref={(element) => {
+                optionRefs.current[index] = element
+              }}
+              role="radio"
+              aria-checked="true"
+              tabIndex={index === activeIndex ? 0 : -1}
+              className={className}
+              data-testid={option.testId}
+              title={option.title}
+              onClick={interactive ? option.onSelect : undefined}
+              onKeyDown={handleOptionKeyDown(index)}
+            >
+              <span className="thinking-pill__label">{option.labelZh}</span>
+            </div>
+          )
+        }
+
+        if (ariaDisabled) {
+          return (
+            <div
+              key={option.key}
+              ref={(element) => {
+                optionRefs.current[index] = element
+              }}
+              role="radio"
+              aria-checked="false"
+              aria-disabled="true"
+              tabIndex={index === activeIndex ? 0 : -1}
+              className={className}
+              data-testid={option.testId}
+              title={option.title}
+              onKeyDown={handleOptionKeyDown(index)}
+            >
+              <span className="thinking-pill__label">{option.labelZh}</span>
+            </div>
+          )
+        }
 
         return (
-          <button
+          <div
             key={option.key}
-            type="button"
-            className={[
-              'thinking-pill',
-              option.selected ? 'thinking-pill--selected' : '',
-              option.muted ? 'thinking-pill--muted' : '',
-              compact ? 'thinking-pill--compact' : '',
-            ].filter((value) => value !== '').join(' ')}
-            {...(clickable
-              ? { 'aria-pressed': option.selected === true }
-              : { 'aria-current': option.selected ? 'true' : undefined })}
-            disabled={option.disabled || !clickable}
+            ref={(element) => {
+              optionRefs.current[index] = element
+            }}
+            role="radio"
+            aria-checked="false"
+            tabIndex={index === activeIndex ? 0 : -1}
+            className={className}
             data-testid={option.testId}
             title={option.title}
             onClick={option.onSelect}
+            onKeyDown={handleOptionKeyDown(index)}
           >
             <span className="thinking-pill__label">{option.labelZh}</span>
-          </button>
+          </div>
         )
       })}
     </div>

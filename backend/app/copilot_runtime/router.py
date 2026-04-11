@@ -207,6 +207,7 @@ async def _handle_run_start_request(
 ) -> JSONResponse:
     try:
         run_start_request = parser.extract_run_start_request(payload)
+        http_request.state.copilot_runtime_debug_mode_enabled = run_start_request.policy.debugModeEnabled
         _set_runtime_request_context(
             http_request,
             runtime_method=RUN_START_METHOD,
@@ -527,9 +528,10 @@ def _set_runtime_request_context(
 
 def _log_run_start_stage(request: Request, event_name: str, *, exc: Exception | None = None) -> None:
     exception_summary = summarize_exception(exc) if exc is not None else None
+    request_debug_enabled = getattr(request.state, "copilot_runtime_debug_mode_enabled", None)
     log_runtime_chain_debug(
         event_name,
-        enabled=True,
+        enabled=request_debug_enabled,
         requestId=_ensure_runtime_request_id(request),
         httpMethod=request.method,
         path=request.url.path,

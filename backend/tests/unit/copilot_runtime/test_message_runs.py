@@ -880,6 +880,57 @@ def test_stream_events_uses_runtime_debug_env_when_request_debug_omitted(
 
 
 
+def test_to_runtime_thinking_selection_maps_budget_kind_to_structured_budget_value() -> None:
+    module = __import__("app.copilot_runtime.message_runs", fromlist=["_to_runtime_thinking_selection"])
+
+    result = module._to_runtime_thinking_selection(
+        selection=type("BudgetSelection", (), {"kind": "budget", "budget_tokens": 4096})(),
+        series="gemini-2.5-budget-v1",
+    )
+
+    assert result == RuntimeThinkingSelection(
+        series="gemini-2.5-budget-v1",
+        value=RuntimeThinkingValue(
+            valueType="budget",
+            mode="budget",
+            budgetTokens=4096,
+        ),
+    )
+
+
+
+def test_to_runtime_thinking_selection_maps_preset_kind_to_structured_code_value() -> None:
+    module = __import__("app.copilot_runtime.message_runs", fromlist=["_to_runtime_thinking_selection"])
+
+    result = module._to_runtime_thinking_selection(
+        selection=type("PresetSelection", (), {"kind": "preset", "value": "medium"})(),
+        series="openai-4-level-minimal-v1",
+    )
+
+    assert result == RuntimeThinkingSelection(
+        series="openai-4-level-minimal-v1",
+        value=RuntimeThinkingValue(
+            valueType="code",
+            code="medium",
+        ),
+    )
+
+
+
+def test_to_runtime_thinking_selection_returns_none_for_invalid_canonical_payloads() -> None:
+    module = __import__("app.copilot_runtime.message_runs", fromlist=["_to_runtime_thinking_selection"])
+
+    assert module._to_runtime_thinking_selection(
+        selection=type("BudgetSelection", (), {"kind": "budget", "budget_tokens": True})(),
+        series="gemini-2.5-budget-v1",
+    ) is None
+    assert module._to_runtime_thinking_selection(
+        selection=type("PresetSelection", (), {"kind": "preset", "value": 1})(),
+        series="openai-4-level-minimal-v1",
+    ) is None
+
+
+
 def test_stream_events_applies_verified_openai_series_settings_for_gpt5_route() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="session-1")

@@ -88,6 +88,35 @@ describe('CopilotComposer thinking controls', () => {
       rendered.unmount()
     }
   })
+
+  it('exposes radiogroup semantics and supports arrow-key selection inside the same thinking group', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      await clickElement(rendered.getByTestId('chat-thinking-trigger'))
+
+      const group = rendered.container.querySelector('[role="radiogroup"][aria-label="推理可选项"]')
+      const low = rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement
+      const medium = rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement
+      const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+
+      expect(group).not.toBeNull()
+      expect(low.getAttribute('role')).toBe('radio')
+      expect(low.getAttribute('aria-checked')).toBe('true')
+      expect(medium.getAttribute('aria-checked')).toBe('false')
+
+      await pressKey(low, 'ArrowRight')
+
+      expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
+      expect(thinkingTrigger.getAttribute('aria-label')).toContain('中')
+
+      await clickElement(thinkingTrigger)
+      expect((rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')
+      expect((rendered.getByTestId('chat-thinking-option-low') as HTMLDivElement).getAttribute('aria-checked')).toBe('false')
+    } finally {
+      rendered.unmount()
+    }
+  })
 })
 
 function ComposerHarness() {
@@ -288,5 +317,12 @@ function renderWithRoot(element: ReactElement) {
 async function clickElement(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function pressKey(element: HTMLElement, key: string) {
+  await act(async () => {
+    element.focus()
+    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key }))
   })
 }

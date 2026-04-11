@@ -1,5 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
-
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { ConfigCenterPublicSnapshot } from '../electron/config-center/public-snapshot'
@@ -106,6 +104,7 @@ function rememberConfigState(state: CopilotBootstrapState) {
   initialConfigStatePromise = Promise.resolve(state)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export async function refreshCopilotBootstrapStateFromPublicSnapshot(input: {
   snapshot: ConfigCenterPublicSnapshot
   applyState: (state: CopilotBootstrapState) => void

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app.copilot_runtime import (
     RuntimeBridge,
@@ -379,6 +380,7 @@ def test_root_post_run_start_provider_specific_thinking_selection_round_trips_wi
                 json=_build_run_start_request(
                     thread_id="thread-1",
                     model="unknown-model",
+                    debug_mode_enabled=True,
                     thinking_selection=thinking_selection,
                     thinking_capability_override=thinking_capability_override,
                 ),
@@ -485,7 +487,11 @@ def test_root_post_run_start_serialization_failure_returns_structured_error_and_
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.post(
             "/",
-            json=_build_run_start_request(thread_id="thread-1", model="gpt-4.1"),
+            json=_build_run_start_request(
+                thread_id="thread-1",
+                model="gpt-4.1",
+                debug_mode_enabled=True,
+            ),
         )
 
     payload = response.json()
@@ -509,6 +515,74 @@ def test_root_post_run_start_serialization_failure_returns_structured_error_and_
     assert serialize_logs[0]["runtimeMethod"] == "run/start"
     assert serialize_logs[0]["exceptionType"] == "RuntimeError"
     assert serialize_logs[0]["exception"]["message"] == "forced run/start serialization failure"
+
+
+def test_log_run_start_stage_skips_chain_logs_when_request_debug_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    request = _build_http_request(debug_mode_enabled=False)
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        router_module._log_run_start_stage(request, "run_start.request_received")
+
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert not any('"event":"run_start.request_received"' in message for message in chain_logs)
+
+
+
+def test_log_run_start_stage_emits_chain_logs_when_request_debug_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.delenv("COPILOT_RUNTIME_CHAIN_DEBUG", raising=False)
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    request = _build_http_request(debug_mode_enabled=True)
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        router_module._log_run_start_stage(request, "run_start.request_received")
+
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert any(
+        '"event":"run_start.request_received"' in message
+        and '"phase":"create_run_record"' in message
+        and '"threadId":"thread-1"' in message
+        for message in chain_logs
+    )
+
+
+
+def test_log_run_start_stage_uses_service_debug_default_when_request_debug_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    request = _build_http_request(debug_mode_enabled=None)
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        router_module._log_run_start_stage(request, "run_start.request_received")
+
+    chain_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "copilot-runtime-chain" in record.getMessage()
+    ]
+
+    assert any('"event":"run_start.request_received"' in message for message in chain_logs)
+
 
 
 def test_root_post_run_stream_executes_started_run_and_persists_thread_history() -> None:
@@ -1201,6 +1275,37 @@ def _build_thinking_capability_get_request(
             },
         },
     }
+
+
+
+def _build_http_request(*, debug_mode_enabled: bool | None) -> Request:
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+    )
+    router_module = __import__("app.copilot_runtime.router", fromlist=["_set_runtime_request_context"])
+    if debug_mode_enabled is not None:
+        request.state.copilot_runtime_debug_mode_enabled = debug_mode_enabled
+    router_module._set_runtime_request_context(
+        request,
+        runtime_method="run/start",
+        thread_id="thread-1",
+        agent_id="default",
+        run_id="run-1",
+        phase="create_run_record",
+    )
+    return request
 
 
 
