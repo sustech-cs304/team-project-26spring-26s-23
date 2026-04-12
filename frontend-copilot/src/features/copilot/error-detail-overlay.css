@@ -210,6 +210,40 @@
   overflow-wrap: anywhere;
 }
 
+.error-detail-overlay__json-viewer {
+  padding: 0.72rem 0.78rem;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  overflow-x: auto;
+}
+
+.error-detail-overlay__json-viewer .json-view {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  --json-property: var(--accent-text, #2563eb);
+  --json-index: var(--text-muted);
+  --json-number: var(--accent-text, #2563eb);
+  --json-string: var(--text-primary);
+  --json-boolean: var(--danger-text);
+  --json-null: var(--danger-text);
+}
+
+.error-detail-overlay__json-viewer .jv-button {
+  padding: 0;
+}
+
+.error-detail-overlay__json-fallback {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.77rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .error-detail-overlay__empty-state {
   margin: -0.1rem 0 0;
   padding-top: 0.15rem;

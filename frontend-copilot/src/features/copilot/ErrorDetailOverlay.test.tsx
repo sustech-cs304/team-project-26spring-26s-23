@@ -7,7 +7,9 @@ import { clickElement } from './copilot-chat-test-interactions'
 import { ErrorDetailOverlay } from './ErrorDetailOverlay'
 import { buildErrorDetailOverlayViewModel, createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 
-function createViewModel() {
+function createViewModel(details: Record<string, unknown> = {
+  toolId: 'tool.weather-current',
+}) {
   return buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
     source: 'streaming',
     title: '发送失败',
@@ -16,9 +18,7 @@ function createViewModel() {
     code: 'tool_execution_failed',
     stage: 'streaming',
     requestedMethod: 'run/stream',
-    details: {
-      toolId: 'tool.weather-current',
-    },
+    details,
     resolvedModelId: 'openai/gpt-4.1',
     resolvedToolIds: ['tool.weather-current'],
     requestOptions: {
@@ -90,6 +90,31 @@ describe('ErrorDetailOverlay', () => {
     expect(summaryCopyText).toContain('[摘要]')
     expect(groupCopyText).toContain('[摘要]')
     expect(groupCopyText).not.toContain('[原始详情]')
+
+    rendered.unmount()
+  })
+
+  it('renders structured json for raw details while keeping non-json text blocks plain', async () => {
+    const rendered = renderWithRoot(
+      <ErrorDetailOverlay
+        viewModel={createViewModel({
+          toolId: 'tool.weather-current',
+          retryable: false,
+          nested: {
+            attempt: 1,
+            reason: 'network',
+          },
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const rawDetailsJson = rendered.getByTestId('error-detail-overlay-raw-details-json')
+    expect(rawDetailsJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
+    expect(rawDetailsJson.textContent).toContain('toolId')
+    expect(rawDetailsJson.textContent).toContain('tool.weather-current')
+    expect(rendered.queryByTestId('error-detail-overlay-raw-details-text')).toBeNull()
+    expect(rendered.getByTestId('error-detail-overlay-group-raw-details').textContent).toContain('Tool failed: boom')
 
     rendered.unmount()
   })
