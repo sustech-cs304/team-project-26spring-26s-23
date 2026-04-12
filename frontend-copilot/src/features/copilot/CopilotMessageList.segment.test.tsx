@@ -7,11 +7,15 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { CopilotMessageList } from './CopilotMessageList'
 import {
+  createCopilotTransientErrorState,
+} from './copilot-chat-helpers'
+import {
   createRuntimeModelRoute,
   createRuntimeReasoningSuppressionBasis,
   createRuntimeThinkingCapability,
   createRuntimeThinkingSelection,
 } from './chat-contract.test-support'
+import { createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 import { createIdleCopilotRunState } from './run-segment-reducer'
 import { createCopilotModelCatalog } from './model-picker'
 import {
@@ -293,6 +297,35 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('发送失败')
     expect(html).toContain('工具执行失败，请重试。')
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
+  })
+
+  it('renders a detail button for transient failed cards without leaking raw diagnostics into the card body', () => {
+    const html = renderToStaticMarkup(
+      <CopilotMessageList
+        conversation={[createUserMessageListItem('请检查请求选项')]}
+        models={createTestModelCatalog().models}
+        transientError={createCopilotTransientErrorState({
+          message: '请求选项格式无效，请检查 JSON。',
+          errorDetail: createCopilotErrorDetailSource({
+            source: 'preflight',
+            title: '发送失败',
+            summaryMessage: '请求选项格式无效，请检查 JSON。',
+            rawMessage: 'Unexpected token } in JSON at position 4',
+            code: 'request_options_invalid',
+            stage: 'preflight',
+            requestedMethod: 'run/start',
+            details: {
+              requestOptionsText: '{ trace: true }',
+            },
+          }),
+        })}
+      />,
+    )
+
+    expect(html).toContain('chat-message-error-detail-button-1')
+    expect(html).toContain('请求选项格式无效，请检查 JSON。')
+    expect(html).not.toContain('Unexpected token } in JSON at position 4')
+    expect(html).not.toContain('requestOptionsText')
   })
 
   it('does not render removed thinking metadata detail rows in diagnostic mode', () => {

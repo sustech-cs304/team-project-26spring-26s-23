@@ -1,9 +1,12 @@
-import type {
-  Dispatch,
-  FormEvent,
-  MouseEvent as ReactMouseEvent,
-  RefObject,
-  SetStateAction,
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+  type SetStateAction,
 } from 'react'
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
@@ -11,7 +14,17 @@ import type { AssistantAgentDirectoryState } from '../../workbench/assistant/ass
 import { CopilotComposer } from './CopilotComposer'
 import { CopilotMessageList } from './CopilotMessageList'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
-import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
+import { ErrorDetailOverlay } from './ErrorDetailOverlay'
+import {
+  buildErrorDetailOverlayViewModel,
+  type CopilotErrorDetailSource,
+  type ErrorDetailOverlayViewModel,
+} from './error-detail-overlay-view-model'
+import {
+  createCopilotTransientErrorState,
+  type CopilotChatComposerDraft,
+  type CopilotTransientErrorState,
+} from './copilot-chat-helpers'
 import type {
   CopilotAssistantPlaceholderState,
   CopilotMessageListItem,
@@ -30,7 +43,7 @@ export interface CopilotPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
-  sendError: string | null
+  sendError: CopilotTransientErrorState | null
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
@@ -49,9 +62,40 @@ export interface CopilotPanelShellProps {
 
 type ConnectableCopilotPanelShellProps = Omit<CopilotPanelShellProps, 'state'> & {
   state: CopilotConnectableState
+  onOpenErrorDetail: (errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void
 }
 
 export function CopilotPanelShell(props: CopilotPanelShellProps) {
+  const [selectedErrorDetail, setSelectedErrorDetail] = useState<ErrorDetailOverlayViewModel | null>(null)
+  const errorDetailTriggerRef = useRef<HTMLButtonElement | null>(null)
+
+  useEffect(() => {
+    if (!isCopilotConnectableState(props.state) || props.sessionShell === null) {
+      setSelectedErrorDetail(null)
+      errorDetailTriggerRef.current = null
+    }
+  }, [props.sessionShell, props.state])
+
+  const handleOpenErrorDetail = (
+    errorDetail: CopilotErrorDetailSource,
+    trigger: HTMLButtonElement | null,
+  ) => {
+    errorDetailTriggerRef.current = trigger
+    setSelectedErrorDetail(buildErrorDetailOverlayViewModel(errorDetail))
+  }
+
+  const handleCloseErrorDetail = () => {
+    setSelectedErrorDetail(null)
+    const trigger = errorDetailTriggerRef.current
+    errorDetailTriggerRef.current = null
+
+    if (trigger !== null) {
+      requestAnimationFrame(() => {
+        trigger.focus()
+      })
+    }
+  }
+
   if (!isCopilotConnectableState(props.state)) {
     return (
       <CopilotRuntimeStateShell
@@ -62,10 +106,19 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
     )
   }
 
-  return renderSessionShell({
-    ...props,
-    state: props.state,
-  })
+  return (
+    <>
+      {renderSessionShell({
+        ...props,
+        state: props.state,
+        onOpenErrorDetail: handleOpenErrorDetail,
+      })}
+      <ErrorDetailOverlay
+        viewModel={selectedErrorDetail}
+        onClose={handleCloseErrorDetail}
+      />
+    </>
+  )
 }
 
 function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
@@ -125,7 +178,8 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           conversation={props.conversation}
           assistantPlaceholder={props.assistantPlaceholder}
           models={props.modelGroups.flatMap((group) => group.models)}
-          transientError={props.sendError ?? props.sessionError}
+          transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
+          onOpenErrorDetail={props.onOpenErrorDetail}
           emptyState={hasAvailableModels
             ? null
             : {
@@ -151,4 +205,14 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
       </section>
     </section>
   )
+}
+
+function createTransientSessionError(sessionError: string | null): CopilotTransientErrorState | null {
+  const trimmedSessionError = sessionError?.trim() ?? ''
+
+  return trimmedSessionError === ''
+    ? null
+    : createCopilotTransientErrorState({
+        message: trimmedSessionError,
+      })
 }

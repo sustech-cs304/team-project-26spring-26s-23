@@ -62,6 +62,7 @@ export interface ProviderProfileDetailsDomain {
 
 export interface ProviderModelEditorMountDomain {
   modelEditorState: ModelEditorState | null
+  activeProvider: ProviderProfile | null
   modelEditorError: string | null
   onCloseModelEditor: () => void
   onModelEditorSave: () => void
@@ -114,6 +115,7 @@ export function resolveProviderProfileDetailsShellDomain(
           },
     modelEditor: {
       modelEditorState: provider.modelEditorState,
+      activeProvider: provider.activeProvider,
       modelEditorError: provider.modelEditorError,
       onCloseModelEditor: provider.onCloseModelEditor,
       onModelEditorSave: provider.onModelEditorSave,

@@ -1087,7 +1087,13 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(rendered.container.textContent).toContain('请使用不存在的工具')
     expect(rendered.container.textContent).toContain('发送失败')
-    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+    expect(rendered.container.textContent).toContain('当前所选工具暂不可用，请调整后重试。')
+
+    await clickElement(rendered.getByTestId('chat-message-error-detail-button-1'))
+
+    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('当前所选工具暂不可用，请调整后重试。')
+    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('tool_not_found')
+    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('run/start')
 
     rendered.unmount()
   })
@@ -1159,6 +1165,13 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(sendMessage).toHaveBeenCalledTimes(0)
     expect(scrollRegion.textContent).toContain('当前模型暂不可用于聊天。')
     expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
+
+    await clickElement(rendered.getByTestId('chat-message-error-detail-button-0'))
+
+    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('当前模型暂不可用于聊天。')
+    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('selected_model_unavailable')
+    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('工具 / 模型上下文')
+    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('模型gpt-5.4')
 
     rendered.unmount()
   })
