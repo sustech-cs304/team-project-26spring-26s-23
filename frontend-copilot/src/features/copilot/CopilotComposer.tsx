@@ -96,7 +96,8 @@ export function CopilotComposer({
     () => resolveThinkingValueLabel(currentThinkingValue),
     [currentThinkingValue],
   )
-  const thinkingTriggerLabel = currentThinkingLabel === null ? '思考' : currentThinkingLabel
+  const thinkingTriggerPlaceholder = '思考'
+  const thinkingTriggerLabel = currentThinkingLabel === null ? thinkingTriggerPlaceholder : currentThinkingLabel
   const unavailableThinkingReason = useMemo(
     () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
     [thinkingCapability],
@@ -209,6 +210,7 @@ export function CopilotComposer({
           <button
             type="button"
             className={[
+              'copilot-model-picker__trigger',
               'copilot-chat__thinking-trigger',
               controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
               thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
@@ -223,11 +225,16 @@ export function CopilotComposer({
                 setThinkingPanelOpen(false)
                 return
               }
-
+ 
               setThinkingPanelOpen((current) => !current)
             }}
           >
-            <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
+            <span className="copilot-chat__thinking-trigger-main">
+              <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
+              <span className="copilot-chat__thinking-trigger-label" data-testid="chat-thinking-trigger-label">
+                {thinkingTriggerLabel}
+              </span>
+            </span>
           </button>
           {canRenderThinkingControl && thinkingCapability !== null && thinkingPanelOpen && (
             <section

@@ -47,12 +47,26 @@ afterEach(() => {
 })
 
 describe('CopilotComposer thinking controls', () => {
+  it('renders the thinking trigger as a labeled toolbar control', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+      expect(thinkingTrigger.className).toContain('copilot-model-picker__trigger')
+      expect(rendered.getByTestId('chat-thinking-trigger-label').textContent).toBe('低')
+      expect(thinkingTrigger.getAttribute('aria-label')).toContain('低')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
   it('uses the latest selected model route inside the thinking updater during batched interactions', async () => {
     const rendered = renderWithRoot(<ComposerHarness />)
 
     try {
       const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
       expect(thinkingTrigger.getAttribute('aria-label')).toContain('低')
+      expect(rendered.getByTestId('chat-thinking-trigger-label').textContent).toBe('低')
 
       await clickElement(thinkingTrigger)
 
@@ -63,12 +77,15 @@ describe('CopilotComposer thinking controls', () => {
 
       expect(rendered.getByTestId('composer-selected-model').textContent).toBe('model-b')
       expect(thinkingTrigger.getAttribute('aria-label')).toContain('中')
+      expect(rendered.getByTestId('chat-thinking-trigger-label').textContent).toBe('中')
 
       await clickElement(rendered.getByTestId('mock-model-select-model-a'))
       expect(thinkingTrigger.getAttribute('aria-label')).toContain('低')
+      expect(rendered.getByTestId('chat-thinking-trigger-label').textContent).toBe('低')
 
       await clickElement(rendered.getByTestId('mock-model-select-model-b'))
       expect(thinkingTrigger.getAttribute('aria-label')).toContain('中')
+      expect(rendered.getByTestId('chat-thinking-trigger-label').textContent).toBe('中')
     } finally {
       rendered.unmount()
     }
@@ -109,6 +126,7 @@ describe('CopilotComposer thinking controls', () => {
 
       expect(rendered.container.querySelector('[data-testid="chat-thinking-panel"]')).toBeNull()
       expect(thinkingTrigger.getAttribute('aria-label')).toContain('中')
+      expect(rendered.getByTestId('chat-thinking-trigger-label').textContent).toBe('中')
 
       await clickElement(thinkingTrigger)
       expect((rendered.getByTestId('chat-thinking-option-medium') as HTMLDivElement).getAttribute('aria-checked')).toBe('true')

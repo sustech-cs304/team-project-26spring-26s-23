@@ -81,37 +81,19 @@
   display: inline-flex;
   align-items: center;
   min-height: 38px;
+  min-width: 0;
 }
 
 .copilot-chat__thinking-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  -webkit-appearance: none;
-  appearance: none;
-  border: none;
-  border-radius: 0;
-  background: var(--surface-muted);
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 0.72rem;
+  gap: 0.55rem;
   color: var(--text-secondary);
-  cursor: pointer;
-  box-shadow: none;
-  transition:
-    background-color 0.16s ease,
-    color 0.16s ease,
-    transform 0.16s ease;
 }
 
 .copilot-chat__thinking-trigger:hover:not(:disabled) {
-  background: var(--interactive-hover-bg);
-  transform: translateY(-1px);
-}
-
-.copilot-chat__thinking-trigger:focus-visible {
-  outline: 2px solid var(--focus-border);
-  outline-offset: 2px;
+  color: var(--text-primary);
 }
 
 .copilot-chat__thinking-trigger:disabled,
@@ -126,14 +108,33 @@
 }
 
 .copilot-chat__thinking-trigger--active {
-  color: color-mix(in srgb, var(--accent-text, #2563eb) 72%, var(--text-secondary));
+  color: color-mix(in srgb, var(--accent-text, #2563eb) 72%, var(--text-primary));
   background: color-mix(in srgb, var(--accent-soft, #dbeafe) 36%, var(--surface-muted));
 }
 
+.copilot-chat__thinking-trigger-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .copilot-chat__thinking-trigger-icon {
-  width: 1.18rem;
-  height: 1.18rem;
-  stroke-width: 2.2;
+  width: 1.08rem;
+  height: 1.08rem;
+  flex: 0 0 auto;
+  stroke-width: 2.1;
+}
+
+.copilot-chat__thinking-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .copilot-chat__thinking-panel {
@@ -236,7 +237,8 @@
 }
 
 .copilot-chat__composer-toolbar .copilot-model-picker__trigger,
-.copilot-chat__composer-toolbar .copilot-tool-picker__trigger {
+.copilot-chat__composer-toolbar .copilot-tool-picker__trigger,
+.copilot-chat__composer-toolbar .copilot-chat__thinking-trigger {
   min-height: 38px;
   padding: 0.5rem 0.7rem;
   gap: 0.55rem;
