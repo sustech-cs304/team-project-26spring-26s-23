@@ -1,13 +1,13 @@
 ---
-title: 已实现、占位与下一步
-description: 作为参考/边界页，区分当前前端中已落地、半接通与仍属占位的部分。
+title: 已实现、占位与下一步（旧资料）
+description: 旧的 frontend 分册边界页。保留前端历史边界说明，当前能力状态请先看新的共享事实层。
 sidebar_position: 7
-sidebar_label: 路线图与占位
+sidebar_label: 旧资料：边界说明
 ---
 
-# 已实现、占位与下一步
+# 已实现、占位与下一步（旧资料）
 
-这页属于 frontend 分册的参考/边界层。当前实现事实应以前面的[前端现在怎样连接后端](./backend-connection-contract.md)、[前端当前 UI 状态](./ui-current-state.md)和[当前生效字段参考](./reference-current-fields.md)为准。这里集中说明的是边界：哪些内容已经能稳定写成当前实现，哪些内容仍然只是半接通，哪些内容还只是结构占位。
+这页属于旧的 `frontend` 分册。当前实现事实请优先以[给开发者](../developers/getting-started.md)、[前端实现](../developers/frontend.md)、[能力边界 / 状态总表](../reference/capabilities.md)和[运行时接口 / 事件参考](../reference/runtime-events.md)为准。这里保留的是历史边界说明：哪些内容已经能稳定写成当前实现，哪些内容仍然只是半接通，哪些内容还只是结构占位。
 
 ## 当前可以稳定写成已实现的部分
 
@@ -26,15 +26,18 @@ sidebar_label: 路线图与占位
 
 这意味着设置页已经不是单纯的本地临时交互。很多字段能够保存并在重新打开应用后恢复。
 
-### 3. 聊天主路径已经是 session-first
+### 3. 聊天主路径已经是 `thread/run`
 
 当前前端已经不是围绕旧全局 agent 入口组织聊天。更准确的路径是：
 
 1. 先确认有可用 `runtimeUrl`。
 2. 拉取后端智能体目录。
-3. 选择智能体并创建会话。
-4. 读取当前会话的能力面。
-5. 在 `message/send` 中显式带上本次模型和工具选择。
+3. 选择智能体并创建 `thread`。
+4. 读取当前 `thread` 的能力面。
+5. 在 `run/start` 中显式带上本次模型路由、Thinking 和工具选择。
+6. 通过 `run/stream` 消费事件流；需要时再走 `run/cancel`。
+
+`session/create`、`capabilities/get` 和 `message/send` 仍然保留，但它们当前是兼容壳。
 
 ### 4. 聊天发送区已经有真实请求语义
 

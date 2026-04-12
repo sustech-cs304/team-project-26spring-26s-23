@@ -1,13 +1,13 @@
 ---
-title: 聊天运行时 HTTP 契约
-description: 说明 desktop runtime 当前控制面端点，以及 thread/run 主链与兼容聊天契约。
+title: 聊天运行时 HTTP 契约（旧资料）
+description: 旧的 system 分册契约页。保留 HTTP 方法与兼容壳说明，当前正式主链请先看新的开发者路径和共享事实层。
 sidebar_position: 3
-sidebar_label: 聊天运行时契约
+sidebar_label: 旧资料：运行时契约
 ---
 
-# 聊天运行时 HTTP 契约
+# 聊天运行时 HTTP 契约（旧资料）
 
-这篇文档只描述当前已经落地的 HTTP 契约：有哪些端点，thread/run 主链怎样工作，兼容入口怎样映射，以及哪些旧方法已经退役。
+这页属于旧的 `system` 分册。它保留 HTTP 契约补充说明，但不再作为当前主阅读入口。第一次进入当前站点时，请先看 [聊天运行时](../developers/chat-runtime.md) 和 [运行时接口 / 事件参考](../reference/runtime-events.md)。
 
 Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-lifecycle.md)。配置、会话、宿主状态和页面状态分别由谁持有，见 [会话与状态模型](./session-and-state-model.md)。
 
@@ -61,7 +61,7 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 
 ```json
 {
-  "method": "message/send",
+  "method": "run/start",
   "body": {
     "...": "..."
   }
@@ -72,7 +72,8 @@ Electron 怎样托管这个 runtime，见 [运行时生命周期](./runtime-life
 
 - `method` 必须是非空字符串。
 - `body` 应当是对象。
-- 新代码应继续使用显式 `body`，当前主路径不再依赖顶层旧兼容写法。
+- 新代码应继续使用显式 `body`，并优先走 `thread/run` 主链。
+- `message/send` 仍然保留，但它现在是兼容壳，不应再写成推荐主入口。
 
 ## 当前真实主链
 

@@ -1,21 +1,21 @@
 ---
-title: 未来后端 API 讨论草案
-description: 作为参考/边界页，整理 frontend 视角下未来可能需要讨论的后端接口主题。
+title: 未来后端 API 讨论草案（旧资料）
+description: 旧的 frontend 分册草案页。只保留未来接口主题备忘，当前事实请先看新的开发者路径和共享事实层。
 sidebar_position: 8
-sidebar_label: 未来后端 API 草案
+sidebar_label: 旧资料：未来草案
 ---
 
-# 未来后端 API 讨论草案
+# 未来后端 API 讨论草案（旧资料）
 
-这页属于 frontend 分册的参考/边界层，只用于讨论未来可能需要补齐的接口主题。当前真实实现，请以前面的[前端现在怎样连接后端](./backend-connection-contract.md)、[前端当前 UI 状态](./ui-current-state.md)和[聊天运行时契约](../system/chat-runtime-contract.md)为准。
+这页属于旧的 `frontend` 分册，只用于讨论未来可能需要补齐的接口主题。当前真实实现，请优先以[给开发者](../developers/getting-started.md)、[聊天运行时](../developers/chat-runtime.md)、[运行时接口 / 事件参考](../reference/runtime-events.md)和[前端实现](../developers/frontend.md)为准。
 
 ## 当前已经是事实的部分
 
 下面这些内容已经是当前实现，不属于草案范围：
 
 - 前端已经能通过 hosted runtime 或开发态 override 判断可用连接地址。
-- 当前聊天主路径已经围绕 `agents/list`、`session/create`、`capabilities/get` 和 `message/send` 组织。
-- 聊天发送区已经在请求里显式携带本次模型和工具选择。
+- 当前聊天主路径已经围绕 `agents/list`、`thread/create`、`thread/get`、`run/start`、`run/stream` 和 `run/cancel` 组织；`session/create`、`capabilities/get` 和 `message/send` 只是兼容壳。
+- 聊天发送区已经在请求里显式携带本次模型路由、Thinking 和工具选择。
 - settings workspace 已经可以保存 provider profiles、默认模型路由和大量设置字段。
 
 因此，这页不应该重写当前主路径，也不提供现成的联调依据。
