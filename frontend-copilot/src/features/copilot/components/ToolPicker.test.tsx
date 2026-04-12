@@ -26,7 +26,9 @@ describe('ToolPicker', () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
 
     const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
-    expect(trigger.textContent).toContain('当前已选择 1 项工具')
+    expect(trigger.textContent).toContain('启用 1 项工具')
+    expect(trigger.getAttribute('aria-label')).toBe('工具：启用 1 项工具')
+    expect(trigger.title).toBe('工具：启用 1 项工具')
 
     await clickElement(trigger)
 
@@ -42,13 +44,18 @@ describe('ToolPicker', () => {
 
     await clickElement(rendered.getByTestId('chat-tool-picker-invert'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('')
+    expect(trigger.textContent).toContain('未启用工具')
+    expect(trigger.getAttribute('aria-label')).toBe('工具：未启用工具')
+    expect(trigger.title).toBe('工具：未启用工具')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert')
 
     await clickElement(rendered.getByTestId('chat-tool-option-tool.remote-search'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert|tool.remote-search')
-    expect(trigger.textContent).toContain('当前已选择 2 项工具')
+    expect(trigger.textContent).toContain('启用 2 项工具')
+    expect(trigger.getAttribute('aria-label')).toBe('工具：启用 2 项工具')
+    expect(trigger.title).toBe('工具：启用 2 项工具')
 
     rendered.unmount()
   })

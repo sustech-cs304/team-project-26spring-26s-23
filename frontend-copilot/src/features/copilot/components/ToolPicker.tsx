@@ -34,6 +34,10 @@ export function ToolPicker({
   const groupedTools = useMemo(() => groupCopilotTools(filteredTools), [filteredTools])
   const selectedToolSet = useMemo(() => new Set(selectedToolIds), [selectedToolIds])
   const selectedToolSummary = useMemo(() => buildSelectedToolSummary(tools, selectedToolIds), [selectedToolIds, tools])
+  const selectedToolTriggerLabel = useMemo(
+    () => buildToolPickerTriggerLabel(selectedToolSummary),
+    [selectedToolSummary],
+  )
 
   useEffect(() => {
     if (!isOpen) {
@@ -71,6 +75,8 @@ export function ToolPicker({
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={panelId}
+        aria-label={selectedToolTriggerLabel}
+        title={selectedToolTriggerLabel}
         disabled={disabled}
         onClick={() => {
           setIsOpen((current) => !current)
@@ -197,7 +203,11 @@ export function ToolPicker({
 
 function buildSelectedToolSummary(tools: RuntimeToolDirectoryEntry[], selectedToolIds: string[]): string {
   const selectedCount = tools.filter((tool) => selectedToolIds.includes(tool.toolId)).length
-  return `当前已选择 ${selectedCount} 项工具`
+  return selectedCount === 0 ? '未启用工具' : `启用 ${selectedCount} 项工具`
+}
+
+function buildToolPickerTriggerLabel(summary: string): string {
+  return `工具：${summary}`
 }
 
 function buildToolTagClassName(value: string, role: 'kind' | 'availability'): string {
