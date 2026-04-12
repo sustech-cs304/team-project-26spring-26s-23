@@ -44,32 +44,40 @@ jobs:
 
   business-domain-pytest:
     name: Business domain pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/.python-version
+
+      - name: Install backend dependencies
+        run: uv sync --project backend --extra dev --extra test --frozen
+
       - name: Run Blackboard pyright
-        run: >-
-          uv run --project backend pyright -p pyrightconfig.json
-          backend/app/blackboard
-          backend/tests/unit/api/test_blackboard_api_layer.py
-          backend/tests/unit/api/test_blackboard_remaining_api.py
-          backend/tests/unit/api/test_course_catalog_search.py
-          backend/tests/unit/api/test_sidebar_parser.py
-          backend/tests/unit/data/test_calendar_ics.py
-          backend/tests/unit/data/test_database_sync.py
-          backend/tests/unit/provider/test_blackboard_provider.py
-          backend/tests/unit/shared/test_blackboard_shared.py
-          backend/tests/unit/shared/test_blackboard_url_ids.py
+        run: |
+          uv run --project backend pyright -p pyrightconfig.json \
+            backend/app/blackboard
 
       - name: Run Blackboard pytest
-        run: >-
-          uv run --project backend pytest -c backend/pyproject.toml
-          backend/tests/unit/api/test_blackboard_api_layer.py
-          backend/tests/unit/api/test_blackboard_remaining_api.py
-          backend/tests/unit/api/test_course_catalog_search.py
-          backend/tests/unit/api/test_sidebar_parser.py
-          backend/tests/unit/data/test_calendar_ics.py
-          backend/tests/unit/data/test_database_sync.py
-          backend/tests/unit/provider/test_blackboard_provider.py
-          backend/tests/unit/shared/test_blackboard_shared.py
-          backend/tests/unit/shared/test_blackboard_url_ids.py
+        run: |
+          uv run --project backend pytest -c backend/pyproject.toml \
+            backend/tests/unit/api/test_blackboard_api_layer.py \
+            backend/tests/unit/api/test_blackboard_remaining_api.py \
+            backend/tests/unit/api/test_course_catalog_search.py \
+            backend/tests/unit/api/test_sidebar_parser.py \
+            backend/tests/unit/data/test_calendar_ics.py \
+            backend/tests/unit/data/test_database_sync.py \
+            backend/tests/unit/provider/test_blackboard_provider.py \
+            backend/tests/unit/shared/test_blackboard_shared.py \
+            backend/tests/unit/shared/test_blackboard_url_ids.py
 
   tis-static:
     name: TIS static checks
