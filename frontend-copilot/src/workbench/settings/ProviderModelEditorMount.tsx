@@ -9,6 +9,7 @@ export function ProviderModelEditorMount({ modelEditor }: ProviderModelEditorMou
   return (
     <ProviderModelEditorDialog
       modelEditorState={modelEditor.modelEditorState}
+      providerProfile={modelEditor.activeProvider}
       modelEditorError={modelEditor.modelEditorError}
       onClose={modelEditor.onCloseModelEditor}
       onSave={modelEditor.onModelEditorSave}
