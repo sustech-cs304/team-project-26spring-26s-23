@@ -600,8 +600,64 @@ class RuntimeMessageRunOrchestrator:
             run_id=resolved_run_id,
             thread_id=request.thread_id,
         )
+        citations: list[dict[str, Any]] = []
+        get_last_search = getattr(stream, "get_last_campus_info_search", None)
+        last_search_obj = get_last_search() if callable(get_last_search) else None
+        if isinstance(last_search_obj, dict) and last_search_obj.get("kind") == "campus_info.search_result":
+            hits_obj = last_search_obj.get("hits")
+            if isinstance(hits_obj, list):
+                hits_list = cast(list[object], hits_obj)
+                for hit_obj in hits_list:
+                    if not isinstance(hit_obj, dict):
+                        continue
+                    hit = cast(dict[str, object], hit_obj)
+                    source_id_obj = hit.get("sourceId")
+                    title_obj = hit.get("title")
+                    url_obj = hit.get("url")
+                    pages_obj = hit.get("pages")
+                    section_path_obj = hit.get("sectionPath")
+                    snippet_obj = hit.get("snippet")
+                    chunk_start_obj = hit.get("chunkIndexStart")
+                    chunk_end_obj = hit.get("chunkIndexEnd")
+
+                    if not isinstance(source_id_obj, str) or not source_id_obj:
+                        continue
+                    if not isinstance(title_obj, str):
+                        title_obj = ""
+                    if not isinstance(url_obj, str):
+                        url_obj = ""
+                    pages: list[int] = []
+                    if isinstance(pages_obj, list):
+                        pages_list = cast(list[object], pages_obj)
+                        if all(isinstance(p, int) for p in pages_list):
+                            pages = cast(list[int], pages_list)
+                    section_path: list[str] | None = None
+                    if isinstance(section_path_obj, list):
+                        sp_list = cast(list[object], section_path_obj)
+                        if all(isinstance(s, str) for s in sp_list):
+                            section_path = cast(list[str], sp_list)
+                    snippet = snippet_obj if isinstance(snippet_obj, str) else ""
+                    chunk_index_start = chunk_start_obj if isinstance(chunk_start_obj, int) else 0
+                    chunk_index_end = chunk_end_obj if isinstance(chunk_end_obj, int) else chunk_index_start
+
+                    citations.append(
+                        {
+                            "sourceId": source_id_obj,
+                            "title": title_obj,
+                            "url": url_obj,
+                            "pages": pages,
+                            "sectionPath": section_path,
+                            "snippet": snippet,
+                            "chunkIndexStart": chunk_index_start,
+                            "chunkIndexEnd": chunk_index_end,
+                        }
+                    )
         projected_events = projector.project(
-            execution_events.build_run_completed(assistant_text=assistant_text)
+            execution_events.build_run_completed(
+                assistant_text=assistant_text,
+                answer=assistant_text,
+                citations=citations,
+            )
         )
         log_runtime_chain_debug(
             "orchestrator.terminal",

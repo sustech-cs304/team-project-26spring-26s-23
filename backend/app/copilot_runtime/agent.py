@@ -56,6 +56,8 @@ from .provider_adapter_registry import (
     build_default_provider_adapter_registry,
 )
 from .tool_registry import (
+    CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+    CAMPUS_INFO_SEARCH_TOOL_ID,
     DEFAULT_WEATHER_LOCATION,
     ToolRegistry,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
@@ -169,6 +171,7 @@ class RuntimeToolLifecycleEvent:
     input_summary: str | None = None
     result_summary: str | None = None
     error_summary: str | None = None
+    data: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -184,6 +187,8 @@ class RuntimeToolLifecycleEvent:
             payload["resultSummary"] = self.result_summary
         if self.error_summary is not None:
             payload["errorSummary"] = self.error_summary
+        if self.data is not None:
+            payload["data"] = dict(self.data)
         return payload
 
 
@@ -209,6 +214,7 @@ class _PydanticAIAgentRunDeps:
     emit_tool_event: ToolLifecycleSink
     run_id: str | None = None
     debug_enabled: bool = False
+    last_campus_info_search: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -262,6 +268,9 @@ class _PydanticAIEventStream:
         self._tool_lifecycle_emitted_ids: set[str] = set()
         self._function_tool_call_ids: set[str] = set()
         self._function_tool_result_ids: set[str] = set()
+
+    def get_last_campus_info_search(self) -> dict[str, Any] | None:
+        return self._deps.last_campus_info_search
 
     async def __aenter__(self) -> _PydanticAIEventStream:
         if self._run_task is None:
@@ -1024,6 +1033,7 @@ class PydanticAIAgentExecutor:
             defer_model_check=True,
         )
         self._register_weather_tool()
+        self._register_campus_info_search_tool()
 
     @property
     def model_configured(self) -> bool:
@@ -1214,6 +1224,40 @@ class PydanticAIAgentExecutor:
                 arguments=arguments,
             )
 
+    def _register_campus_info_search_tool(self) -> None:
+        try:
+            tool = self._tool_registry.resolve_tool(CAMPUS_INFO_SEARCH_TOOL_ID)
+        except LookupError:
+            return
+
+        @self._agent.tool(
+            name="campus_info_search",
+            description=tool.descriptor.description or CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+            retries=0,
+        )
+        async def campus_info_search(
+            ctx: RunContext[_PydanticAIAgentRunDeps],
+            query: str,
+            top_k: int | None = None,
+            max_per_doc: int | None = None,
+            context_chars: int | None = None,
+            include_content: bool | None = None,
+        ) -> dict[str, Any]:
+            arguments: dict[str, Any] = {"query": query}
+            if top_k is not None:
+                arguments["topK"] = top_k
+            if max_per_doc is not None:
+                arguments["maxPerDoc"] = max_per_doc
+            if context_chars is not None:
+                arguments["contextChars"] = context_chars
+            if include_content is not None:
+                arguments["includeContent"] = include_content
+            return await self._execute_bound_tool(
+                ctx,
+                tool_id=CAMPUS_INFO_SEARCH_TOOL_ID,
+                arguments=arguments,
+            )
+
     async def _execute_bound_tool(
         self,
         ctx: RunContext[_PydanticAIAgentRunDeps],
@@ -1336,6 +1380,11 @@ class PydanticAIAgentExecutor:
             display_name=tool.descriptor.display_name or tool_id,
             result_summary=result_summary,
         )
+        data: dict[str, Any] | None = None
+        if tool_id == CAMPUS_INFO_SEARCH_TOOL_ID and isinstance(result, dict):
+            data = dict(result)
+            if isinstance(data.get("kind"), str) and data.get("kind") == "campus_info.search_result":
+                ctx.deps.last_campus_info_search = dict(data)
         self._emit_tool_event(
             ctx,
             RuntimeToolLifecycleEvent(
@@ -1346,6 +1395,7 @@ class PydanticAIAgentExecutor:
                 summary=completed_summary,
                 input_summary=input_summary,
                 result_summary=result_summary,
+                data=data,
             ),
         )
         return result

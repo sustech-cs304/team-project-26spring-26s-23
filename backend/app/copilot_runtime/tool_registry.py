@@ -10,6 +10,8 @@ from typing import Any
 
 from app.tools.file_convert import convert_file_to_str
 
+from .campus_info_search_tool import execute_campus_info_search_tool
+
 DEFAULT_TOOLSET_NAME = "default"
 DEFAULT_TOOLSET_LABEL = "Default"
 DEFAULT_TOOLSET_DESCRIPTION = (
@@ -25,6 +27,11 @@ WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
     "Return a placeholder current-weather result for a requested location."
+)
+CAMPUS_INFO_SEARCH_TOOL_ID = "tool.campus-info.search"
+CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME = "Campus Info Search"
+CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION = (
+    "Search indexed campus official documents and return cited snippets."
 )
 DEFAULT_WEATHER_LOCATION = "Shenzhen"
 _WEATHER_SAMPLE_RESULTS: tuple[dict[str, Any], ...] = (
@@ -325,6 +332,16 @@ def build_default_tool_registry() -> ToolRegistry:
                         availability=DEFAULT_TOOL_AVAILABILITY,
                     ),
                     execute=_execute_default_weather_tool,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=CAMPUS_INFO_SEARCH_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
+                        description=CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                    ),
+                    execute=execute_campus_info_search_tool,
                 ),
             ),
         )

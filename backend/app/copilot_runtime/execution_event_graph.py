@@ -173,10 +173,19 @@ class RuntimeExecutionEventFactory:
             },
         )
 
-    def build_run_completed(self, *, assistant_text: str) -> RuntimeExecutionEvent:
+    def build_run_completed(
+        self,
+        *,
+        assistant_text: str,
+        answer: str | None = None,
+        citations: list[dict[str, Any]] | None = None,
+    ) -> RuntimeExecutionEvent:
+        payload: dict[str, Any] = {"assistantText": assistant_text}
+        payload["answer"] = assistant_text if answer is None else answer
+        payload["citations"] = list(citations or [])
         return self.build(
             RUN_COMPLETED_EVENT_TYPE,
-            payload={"assistantText": assistant_text},
+            payload=payload,
         )
 
     def build_run_failed(

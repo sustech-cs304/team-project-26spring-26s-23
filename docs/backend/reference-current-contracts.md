@@ -190,6 +190,8 @@ sidebar_position: 6
 | --- | --- |
 | `assistantMessageId` | assistant 占位消息 ID |
 | `assistantText` | 本轮最终 assistant 文本 |
+| `answer` | 可选；最终回答正文
+| `citations` | 可选；引用列表（见 campus_info 输出契约页） |
 | `resolvedModelId` | 本轮实际采用的模型 ID |
 | `resolvedModelRoute` | 本轮解析确认后的公开路由回显 |
 | `resolvedToolIds` | 本轮实际启用的工具 ID |
@@ -231,6 +233,7 @@ sidebar_position: 6
 | `inputSummary` | 可选的输入摘要 |
 | `resultSummary` | 可选的结果摘要 |
 | `errorSummary` | 可选的错误摘要 |
+| `data` | 可选的结构化结果载荷（仅对少数工具稳定；见下方业务契约页） |
 
 #### 当前语义重点
 
@@ -240,6 +243,10 @@ sidebar_position: 6
 - 当前 session store 仍然是内存态，runtime 重启后会话不会自动恢复。
 - 增量阶段只累积草稿，成功完成才归档 assistant 文本。
 - 当 raw collector 观察到 tool-call 参数完备却没有真实工具执行时，会先发诊断，再以失败终态收口。
+
+#### 业务级输出契约（新增）
+
+- 校园官方文档检索（campus_info）的结构化输出：见 [campus-info-output-contract.md](./campus-info-output-contract.md)。
 
 ## 已退役的旧外层方法
 
