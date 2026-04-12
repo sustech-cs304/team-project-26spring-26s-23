@@ -16,7 +16,7 @@ export interface ProviderAuthFieldState {
   visible: boolean
   required: boolean
   label: string
-  description: string
+  description?: string
   placeholder: string
 }
 
@@ -204,7 +204,6 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
       visible: true,
       required: profile.hasApiKey,
       label: 'API 密钥',
-      description: '如需访问该服务，请填写 API 密钥。',
       placeholder: profile.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥',
     }
   }
@@ -226,8 +225,6 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
     visible: true,
     required,
     label: required ? 'API 密钥' : 'API 密钥（可选）',
-    description: catalogEntry.authSchema.helpText
-      ?? (required ? '请填写 API 密钥。' : '可按需填写 API 密钥。'),
     placeholder: required
       ? (profile.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥')
       : (profile.hasApiKey ? '已配置，可输入新密钥以替换' : '可按需填写'),
@@ -273,13 +270,12 @@ export function resolveProviderBaseUrlFieldState(profile: ProviderProfile): Prov
 
 export function resolveProviderModelEditingAvailability(profile: ProviderProfile): {
   canEditModels: boolean
-  description: string
+  description?: string
 } {
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
     return {
       canEditModels: true,
-      description: '可按需管理模型列表。',
     }
   }
 
@@ -292,7 +288,6 @@ export function resolveProviderModelEditingAvailability(profile: ProviderProfile
 
   return {
     canEditModels: true,
-    description: '可按需管理模型列表。',
   }
 }
 

@@ -134,7 +134,7 @@ describe('SettingsWorkspace provider interactions', () => {
     rendered.unmount()
   })
 
-  it('shows catalog-driven provider metadata and optional auth guidance for ollama', async () => {
+  it('removes redundant provider guidance copy while keeping ollama controls editable', async () => {
     installSettingsWorkspaceBridge({
       loadStateResult: {
         ok: true,
@@ -176,10 +176,59 @@ describe('SettingsWorkspace provider interactions', () => {
 
     await flushAsyncEffects()
 
-    expect(rendered.container.textContent).toContain('支持：流式、工具、视觉、推理')
+    expect(rendered.container.textContent).toContain('模型服务')
+    expect(rendered.container.textContent).toContain('显示名称')
+    expect(rendered.container.textContent).toContain('服务类型')
     expect(rendered.container.textContent).toContain('API 密钥（可选）')
-    expect(rendered.container.textContent).toContain('本地 Ollama 默认无需 API Key')
+    expect(rendered.container.textContent).toContain('模型列表管理')
+    expect(rendered.container.textContent).not.toContain('在这里管理可用的模型服务。')
+    expect(rendered.container.textContent).not.toContain('支持：流式、工具、视觉、推理')
+    expect(rendered.container.textContent).not.toContain('可自定义显示名称，方便区分不同服务。')
+    expect(rendered.container.textContent).not.toContain('请选择要使用的服务类型。')
+    expect(rendered.container.textContent).not.toContain('本地 Ollama 默认无需 API Key')
+    expect(rendered.container.textContent).not.toContain('可按需管理模型列表。')
     expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1')
+
+    rendered.unmount()
+  })
+
+  it('hides retained provider extension notices from the detail form', async () => {
+    installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createPersistedWorkspaceState({
+          providerProfiles: [createProviderProfile({
+            id: 'provider-with-extensions',
+            profileId: 'provider-with-extensions',
+            providerId: 'openai',
+            protocol: 'openai',
+            name: 'Extended Provider',
+            displayName: 'Extended Provider',
+            endpoint: 'https://api.openai.com/v1',
+            baseUrl: 'https://api.openai.com/v1',
+            organization: 'org-1',
+            region: 'apac',
+            notes: 'retained note',
+            extensions: {
+              retainedMeta: 'value',
+            },
+          })],
+        }),
+      },
+      loadStatusesResult: createPersistedSecretStatesResult('persisted-secret', 'provider-with-extensions'),
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('Extended Provider')
+    expect(rendered.queryByTestId('provider-extension-banner')).toBeNull()
+    expect(rendered.container.textContent).not.toContain('附加信息')
+    expect(rendered.container.textContent).not.toContain('当前服务包含附加信息，保存时会一并保留。')
 
     rendered.unmount()
   })
@@ -224,7 +273,7 @@ describe('SettingsWorkspace provider interactions', () => {
 
     expect(rendered.getByTestId('settings-provider-status-legacy-provider').textContent).toContain('当前服务不可用')
     expect(rendered.getByTestId('provider-status-banner').textContent).toContain('请重新选择服务类型或检查配置。')
-    expect(rendered.container.textContent).toContain('在这里管理可用的模型服务。')
+    expect(rendered.container.textContent).not.toContain('在这里管理可用的模型服务。')
 
     rendered.unmount()
   })
