@@ -1,19 +1,15 @@
 /** @vitest-environment jsdom */
 
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { SettingsWorkspace } from './SettingsWorkspace'
-import { createBootstrapController } from './SettingsWorkspace.test-support'
+import { createSettingsWorkspaceStructureProps } from './test-support/sections/SettingsWorkspaceSectionsTestSupport'
 
 describe('SettingsWorkspace structure', () => {
   it('keeps the settings shell intact while removing the top banner chrome', () => {
     const html = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps()} />,
     )
 
     expect(html).toContain('全局设置目录')
@@ -26,12 +22,7 @@ describe('SettingsWorkspace structure', () => {
 
   it('removes assistant behavior and spell-check from the general section', () => {
     const html = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="general"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'general' })} />,
     )
 
     expect(html).toContain('常规设置')
@@ -43,12 +34,7 @@ describe('SettingsWorkspace structure', () => {
 
   it('keeps only default model routing in the default model section', () => {
     const html = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="default-model"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'default-model' })} />,
     )
 
     expect(html).toContain('默认模型')
@@ -61,10 +47,10 @@ describe('SettingsWorkspace structure', () => {
   it('keeps only theme controls in the display section', () => {
     const html = renderToStaticMarkup(
       <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="dark"
-        onThemeModeChange={vi.fn()}
-        initialSection="display"
+        {...createSettingsWorkspaceStructureProps({
+          themeMode: 'dark',
+          initialSection: 'display',
+        })}
       />,
     )
 
@@ -78,12 +64,7 @@ describe('SettingsWorkspace structure', () => {
 
   it('shows the empty provider state while exposing catalog-driven creation options', () => {
     const html = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="model-service"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'model-service' })} />,
     )
 
     expect(html).toContain('模型服务')
@@ -96,12 +77,7 @@ describe('SettingsWorkspace structure', () => {
 
   it('keeps the development runtime override card wired into the api section', () => {
     const html = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="api"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'api' })} />,
     )
 
     expect(html).toContain('API 服务器')
@@ -113,20 +89,10 @@ describe('SettingsWorkspace structure', () => {
 
   it('keeps sustech and external source pages minimally visible', () => {
     const sustechHtml = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="sustech-info"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'sustech-info' })} />,
     )
     const externalSourceHtml = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="external-source"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'external-source' })} />,
     )
 
     expect(sustechHtml).toContain('基本信息')
@@ -138,20 +104,10 @@ describe('SettingsWorkspace structure', () => {
 
   it('removes safe search and mcp sandbox toggles from their sections', () => {
     const searchHtml = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="search"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'search' })} />,
     )
     const mcpHtml = renderToStaticMarkup(
-      <SettingsWorkspace
-        bootstrap={createBootstrapController()}
-        themeMode="light"
-        onThemeModeChange={vi.fn()}
-        initialSection="mcp"
-      />,
+      <SettingsWorkspace {...createSettingsWorkspaceStructureProps({ initialSection: 'mcp' })} />,
     )
 
     expect(searchHtml).not.toContain('启用安全搜索')
