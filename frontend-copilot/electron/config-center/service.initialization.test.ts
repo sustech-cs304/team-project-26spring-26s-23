@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import {
   createDefaultUnifiedConfigDomainDocument,
   createDefaultUnifiedConfigSnapshot,
@@ -12,7 +13,7 @@ import {
   readStoredDomainDocument,
   withConfigCenterFixture,
   writeRawDomainDocuments,
-} from './service.test-support'
+} from './test-support/ConfigCenterTestSupport'
 
 describe('createUnifiedConfigCenter initialization', () => {
   it('initializes versioned domain documents with defaults when storage is empty', async () => {

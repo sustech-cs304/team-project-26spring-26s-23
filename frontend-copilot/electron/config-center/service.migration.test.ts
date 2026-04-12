@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { createDefaultUnifiedConfigDomainDocument } from './defaults'
 import { createUnifiedConfigDomainDocument, UNIFIED_CONFIG_DOMAIN_KEYS } from './domain-schema'
 import {
@@ -6,7 +7,7 @@ import {
   withConfigCenterFixture,
   writeLegacyCopilotSettings,
   writeRawDomainDocuments,
-} from './service.test-support'
+} from './test-support/ConfigCenterTestSupport'
 
 describe('createUnifiedConfigCenter legacy migration', () => {
   it('migrates runtimeUrl and agentName from legacy CopilotSettings once', async () => {

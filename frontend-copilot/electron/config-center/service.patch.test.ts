@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { createDefaultUnifiedConfigSnapshot } from './defaults'
 import {
   createUnifiedConfigDomainDocument,
@@ -12,7 +13,7 @@ import {
   readStoredDomainDocument,
   withConfigCenterFixture,
   writeRawDomainDocuments,
-} from './service.test-support'
+} from './test-support/ConfigCenterTestSupport'
 
 function createExpectedPublicSnapshot(debugModeEnabled = false): ConfigCenterPublicSnapshot {
   return {
