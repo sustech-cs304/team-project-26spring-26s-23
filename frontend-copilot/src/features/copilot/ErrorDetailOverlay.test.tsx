@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { renderWithRoot } from './CopilotChatPanel.test-support'
 import { clickElement } from './copilot-chat-test-interactions'
@@ -26,6 +27,10 @@ function createViewModel() {
     },
   }))
 }
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('ErrorDetailOverlay', () => {
   it('renders grouped content and the restrained empty state contract', () => {
@@ -90,6 +95,88 @@ describe('ErrorDetailOverlay', () => {
     expect(summaryCopyText).toContain('[摘要]')
     expect(groupCopyText).toContain('[摘要]')
     expect(groupCopyText).not.toContain('[原始详情]')
+
+    rendered.unmount()
+  })
+
+  it('traps focus within the dialog when tabbing forward and backward', async () => {
+    const rendered = renderWithRoot(
+      <ErrorDetailOverlay
+        viewModel={createViewModel()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const copyAllButton = rendered.getByTestId('error-detail-overlay-copy-all') as HTMLButtonElement
+    const lastGroupCopyButton = rendered.getByTestId('error-detail-overlay-group-copy-raw-details') as HTMLButtonElement
+
+    await act(async () => {
+      lastGroupCopyButton.focus()
+      lastGroupCopyButton.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'Tab',
+      }))
+    })
+
+    expect(document.activeElement).toBe(copyAllButton)
+
+    await act(async () => {
+      copyAllButton.focus()
+      copyAllButton.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'Tab',
+        shiftKey: true,
+      }))
+    })
+
+    expect(document.activeElement).toBe(lastGroupCopyButton)
+
+    rendered.unmount()
+  })
+
+  it('clears stale summary copy reset timers before scheduling a new one', async () => {
+    vi.useFakeTimers()
+
+    const writeText = vi.fn<(text: string) => Promise<void>>(async (_text) => undefined)
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <ErrorDetailOverlay
+        viewModel={createViewModel()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const copyAllButton = rendered.getByTestId('error-detail-overlay-copy-all') as HTMLButtonElement
+
+    await clickElement(copyAllButton)
+    expect(copyAllButton.textContent).toBe('已复制')
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+
+    await clickElement(copyAllButton)
+    expect(copyAllButton.textContent).toBe('已复制')
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500)
+    })
+
+    expect(copyAllButton.textContent).toBe('已复制')
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+
+    expect(copyAllButton.textContent).toBe('复制全部')
 
     rendered.unmount()
   })

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import {
   copyErrorDetailOverlayGroup,
@@ -6,12 +6,52 @@ import {
 } from './error-detail-overlay-copy'
 import type {
   ErrorDetailOverlayContentItem,
+  ErrorDetailOverlayGroup,
   ErrorDetailOverlayViewModel,
 } from './error-detail-overlay-view-model'
 
 const copyFeedbackResetMs = 2000
 
 type CopyStatus = 'idle' | 'success' | 'error'
+
+const focusableElementSelector = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function isFocusableElementVisible(element: HTMLElement) {
+  let current: HTMLElement | null = element
+
+  while (current) {
+    const style = window.getComputedStyle(current)
+
+    if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') {
+      return false
+    }
+
+    current = current.parentElement
+  }
+
+  return true
+}
+
+function getFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableElementSelector)).filter((element) => {
+    if (element.tabIndex < 0 || element.hasAttribute('disabled') || element.getAttribute('aria-hidden') === 'true') {
+      return false
+    }
+
+    if (element instanceof HTMLInputElement && element.type === 'hidden') {
+      return false
+    }
+
+    return isFocusableElementVisible(element)
+  })
+}
 
 export interface ErrorDetailOverlayProps {
   viewModel: ErrorDetailOverlayViewModel | null
@@ -24,21 +64,84 @@ export function ErrorDetailOverlay({
 }: ErrorDetailOverlayProps) {
   const titleId = useId()
   const descriptionId = useId()
+  const dialogRef = useRef<HTMLElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null)
+  const summaryCopyResetTimerRef = useRef<number | null>(null)
+  const groupCopyResetTimerRefs = useRef<Record<string, number>>({})
   const [summaryCopyStatus, setSummaryCopyStatus] = useState<CopyStatus>('idle')
   const [groupCopyStatus, setGroupCopyStatus] = useState<Record<string, CopyStatus>>({})
 
+  const clearSummaryCopyResetTimer = useCallback(() => {
+    if (summaryCopyResetTimerRef.current !== null) {
+      window.clearTimeout(summaryCopyResetTimerRef.current)
+      summaryCopyResetTimerRef.current = null
+    }
+  }, [])
+
+  const clearGroupCopyResetTimer = useCallback((groupKey: string) => {
+    const timerId = groupCopyResetTimerRefs.current[groupKey]
+
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId)
+      delete groupCopyResetTimerRefs.current[groupKey]
+    }
+  }, [])
+
+  const clearAllCopyResetTimers = useCallback(() => {
+    clearSummaryCopyResetTimer()
+    Object.keys(groupCopyResetTimerRefs.current).forEach((groupKey) => {
+      clearGroupCopyResetTimer(groupKey)
+    })
+  }, [clearGroupCopyResetTimer, clearSummaryCopyResetTimer])
+
   useEffect(() => {
+    clearAllCopyResetTimers()
     setSummaryCopyStatus('idle')
     setGroupCopyStatus({})
-  }, [viewModel])
+  }, [clearAllCopyResetTimers, viewModel])
+
+  useEffect(() => {
+    return () => {
+      clearAllCopyResetTimers()
+    }
+  }, [clearAllCopyResetTimers])
 
   useEffect(() => {
     if (viewModel === null) {
+      const previousFocusedElement = previouslyFocusedElementRef.current
+      previouslyFocusedElementRef.current = null
+
+      if (previousFocusedElement?.isConnected) {
+        previousFocusedElement.focus()
+      }
+
       return
     }
 
-    closeButtonRef.current?.focus()
+    previouslyFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+    const focusTimer = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current
+
+      if (!dialog) {
+        return
+      }
+
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+      if (activeElement && dialog.contains(activeElement) && activeElement !== dialog) {
+        return
+      }
+
+      const focusTarget = closeButtonRef.current ?? getFocusableElements(dialog)[0] ?? dialog
+      focusTarget.focus()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(focusTimer)
+    }
   }, [viewModel])
 
   useEffect(() => {
@@ -71,6 +174,71 @@ export function ErrorDetailOverlay({
       ? '复制失败'
       : '复制全部'
 
+  const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Tab') {
+      return
+    }
+
+    const dialog = dialogRef.current
+
+    if (!dialog) {
+      return
+    }
+
+    const focusableElements = getFocusableElements(dialog)
+
+    if (focusableElements.length === 0) {
+      event.preventDefault()
+      dialog.focus()
+      return
+    }
+
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const activeIndex = activeElement ? focusableElements.indexOf(activeElement) : -1
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    if (event.shiftKey) {
+      if (activeIndex <= 0) {
+        event.preventDefault()
+        lastElement.focus()
+      }
+
+      return
+    }
+
+    if (activeIndex === -1 || activeIndex === focusableElements.length - 1) {
+      event.preventDefault()
+      firstElement.focus()
+    }
+  }
+
+  const handleSummaryCopy = async () => {
+    const copied = await copyErrorDetailOverlaySummary(viewModel)
+    clearSummaryCopyResetTimer()
+    setSummaryCopyStatus(copied ? 'success' : 'error')
+    summaryCopyResetTimerRef.current = window.setTimeout(() => {
+      setSummaryCopyStatus('idle')
+      summaryCopyResetTimerRef.current = null
+    }, copyFeedbackResetMs)
+  }
+
+  const handleGroupCopy = async (group: ErrorDetailOverlayGroup) => {
+    const copied = await copyErrorDetailOverlayGroup(group)
+    clearGroupCopyResetTimer(group.key)
+    setGroupCopyStatus((current) => ({
+      ...current,
+      [group.key]: copied ? 'success' : 'error',
+    }))
+    groupCopyResetTimerRefs.current[group.key] = window.setTimeout(() => {
+      setGroupCopyStatus((current) => ({
+        ...current,
+        [group.key]: 'idle',
+      }))
+      delete groupCopyResetTimerRefs.current[group.key]
+    }, copyFeedbackResetMs)
+  }
+
   return (
     <div
       className="error-detail-overlay"
@@ -80,15 +248,18 @@ export function ErrorDetailOverlay({
       }}
     >
       <section
+        ref={dialogRef}
         className="error-detail-overlay__dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         data-testid="error-detail-overlay-dialog"
+        tabIndex={-1}
         onClick={(event) => {
           event.stopPropagation()
         }}
+        onKeyDown={handleDialogKeyDown}
       >
         <header className="error-detail-overlay__header">
           <div className="error-detail-overlay__header-copy">
@@ -101,13 +272,7 @@ export function ErrorDetailOverlay({
               type="button"
               className="secondary-button secondary-button--subtle error-detail-overlay__copy-all"
               data-testid="error-detail-overlay-copy-all"
-              onClick={async () => {
-                const copied = await copyErrorDetailOverlaySummary(viewModel)
-                setSummaryCopyStatus(copied ? 'success' : 'error')
-                window.setTimeout(() => {
-                  setSummaryCopyStatus('idle')
-                }, copyFeedbackResetMs)
-              }}
+              onClick={handleSummaryCopy}
             >
               {summaryCopyLabel}
             </button>
@@ -151,17 +316,7 @@ export function ErrorDetailOverlay({
                     className="ghost-button error-detail-overlay__group-action"
                     data-testid={`error-detail-overlay-group-copy-${group.key}`}
                     onClick={async () => {
-                      const copied = await copyErrorDetailOverlayGroup(group)
-                      setGroupCopyStatus((current) => ({
-                        ...current,
-                        [group.key]: copied ? 'success' : 'error',
-                      }))
-                      window.setTimeout(() => {
-                        setGroupCopyStatus((current) => ({
-                          ...current,
-                          [group.key]: 'idle',
-                        }))
-                      }, copyFeedbackResetMs)
+                      await handleGroupCopy(group)
                     }}
                   >
                     {copyLabel}
