@@ -1,0 +1,326 @@
+/** @vitest-environment jsdom */
+
+import { act } from 'react'
+import { describe, expect, it, vi } from 'vitest'
+
+import {
+  clickElement,
+  createPersistedWorkspaceState,
+  createProviderProfile,
+  flushAsyncEffects,
+  installSettingsWorkspaceBridge,
+  renderSettingsWorkspace,
+  setFormControlValue,
+} from './SettingsWorkspace.test-support'
+
+describe('SettingsWorkspace persistence', () => {
+  it('loads persisted provider metadata and saves normal provider edits without serializing secrets', async () => {
+    vi.useFakeTimers()
+
+    const persistedState = createPersistedWorkspaceState()
+    const { loadState, saveState } = installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: persistedState,
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    expect(loadState).toHaveBeenCalledOnce()
+
+    const providerNameInput = rendered.getByTestId('provider-display-name-input') as HTMLInputElement
+    expect(providerNameInput.value).toBe('Persisted Router')
+
+    await setFormControlValue(providerNameInput, 'Renamed Router')
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+    })
+
+    expect(saveState).toHaveBeenCalled()
+    const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
+    expect(lastSaveCall?.providerProfiles[0]?.displayName).toBe('Renamed Router')
+    expect(lastSaveCall?.providerProfiles[0]).not.toHaveProperty('hasApiKey')
+
+    rendered.unmount()
+  })
+
+  it('keeps ambiguous legacy model strings readable after hydration and saves stable route refs after reselection', async () => {
+    vi.useFakeTimers()
+
+    const alphaProvider = createProviderProfile({
+      id: 'alpha-profile',
+      profileId: 'alpha-profile',
+      providerId: 'openai',
+      protocol: 'openai',
+      name: 'Alpha Provider',
+      displayName: 'Alpha Provider',
+      primaryModelId: 'shared-model',
+      fastModel: 'alpha-fast',
+      fallbackModel: 'alpha-fast',
+      availableModels: [
+        {
+          ...createProviderProfile({ id: 'alpha-profile' }).availableModels[0]!,
+          id: 'alpha-model-1',
+          modelId: 'shared-model',
+          displayName: 'Shared Model A',
+        },
+      ],
+    })
+    const betaProvider = createProviderProfile({
+      id: 'beta-profile',
+      profileId: 'beta-profile',
+      providerId: 'gemini',
+      protocol: 'gemini',
+      name: 'Beta Provider',
+      displayName: 'Beta Provider',
+      primaryModelId: 'shared-model',
+      fastModel: 'shared-model',
+      fallbackModel: 'shared-model',
+      availableModels: [
+        {
+          ...createProviderProfile({ id: 'beta-profile' }).availableModels[0]!,
+          id: 'beta-model-1',
+          modelId: 'shared-model',
+          displayName: 'Shared Model B',
+        },
+      ],
+    })
+    const { saveState } = installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createPersistedWorkspaceState({
+          providerProfiles: [alphaProvider, betaProvider],
+          defaultModelRouting: {
+            primaryAssistantModel: 'shared-model',
+            fastAssistantModel: 'shared-model',
+            primaryAssistantModelRoute: null,
+            fastAssistantModelRoute: null,
+          },
+        }),
+      },
+      loadStatusesResult: {
+        ok: true,
+        states: {},
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'default-model',
+    })
+
+    await flushAsyncEffects()
+
+    expect(rendered.container.textContent).toContain('当前选择不可用')
+
+    await clickElement(rendered.getByTestId('primary-default-model-trigger'))
+    await selectOpenSelectOption(rendered.container, 'Alpha Provider · Shared Model A')
+    await clickElement(rendered.getByTestId('fast-default-model-trigger'))
+    await selectOpenSelectOption(rendered.container, 'Beta Provider · Shared Model B')
+
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+    })
+
+    const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
+    expect(lastSaveCall?.defaultModelRouting).toEqual({
+      primaryAssistantModel: {
+        routeKind: 'provider-model',
+        profileId: 'alpha-profile',
+        modelId: 'shared-model',
+      },
+      fastAssistantModel: {
+        routeKind: 'provider-model',
+        profileId: 'beta-profile',
+        modelId: 'shared-model',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('loads sustech form values and persists non-secret edits', async () => {
+    vi.useFakeTimers()
+
+    const { saveState } = installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createPersistedWorkspaceState({
+          sustech: {
+            studentId: '12210001',
+            email: '12210001@sustech.edu.cn',
+            blackboardDownloadLimitMb: '128',
+          },
+        }),
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'sustech-info',
+    })
+
+    await flushAsyncEffects()
+
+    const studentIdInput = rendered.getByPlaceholder('输入学号') as HTMLInputElement
+    expect(studentIdInput.value).toBe('12210001')
+    expect(rendered.container.textContent).toContain('CAS 密码')
+
+    await setFormControlValue(studentIdInput, '12219999')
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+    })
+
+    const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
+    expect(lastSaveCall?.sustech.studentId).toBe('12219999')
+    expect(lastSaveCall?.sustech.email).toBe('12210001@sustech.edu.cn')
+
+    rendered.unmount()
+  })
+
+  it('loads the wakeup share link and persists external source edits', async () => {
+    vi.useFakeTimers()
+
+    const { saveState } = installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createPersistedWorkspaceState({
+          externalSource: {
+            wakeupShareLink: 'https://wakeup.example.com/share/old',
+          },
+        }),
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'external-source',
+    })
+
+    await flushAsyncEffects()
+
+    const wakeupInput = rendered.getByTestId('wakeup-share-link-input') as HTMLInputElement
+    expect(wakeupInput.value).toBe('https://wakeup.example.com/share/old')
+    expect(rendered.container.textContent).toContain('WakeUP 课程群同步')
+
+    await setFormControlValue(wakeupInput, 'https://wakeup.example.com/share/new')
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+    })
+
+    const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
+    expect(lastSaveCall?.externalSource.wakeupShareLink).toBe('https://wakeup.example.com/share/new')
+
+    rendered.unmount()
+  })
+
+  it('reads debug mode from config center and persists toggle updates through the public patch bridge', async () => {
+    installSettingsWorkspaceBridge()
+
+    const loadPublicSnapshot = vi.fn(async () => ({
+      ok: true as const,
+      snapshot: {
+        version: 1,
+        domains: {
+          frontendPreferences: {
+            theme: 'light' as const,
+            animationsEnabled: true,
+          },
+          assistantBehavior: {
+            agentName: null,
+            debugModeEnabled: false,
+          },
+          hostConfig: {
+            runtimeUrl: null,
+          },
+          backendExposed: {
+            model: null,
+          },
+        },
+      },
+    }))
+    const applyPublicPatch = vi.fn(async () => ({
+      ok: true as const,
+      snapshot: {
+        version: 1,
+        domains: {
+          frontendPreferences: {
+            theme: 'light' as const,
+            animationsEnabled: true,
+          },
+          assistantBehavior: {
+            agentName: null,
+            debugModeEnabled: true,
+          },
+          hostConfig: {
+            runtimeUrl: null,
+          },
+          backendExposed: {
+            model: null,
+          },
+        },
+      },
+    }))
+    const subscribe = vi.fn(() => (() => undefined))
+
+    Object.assign(window, {
+      configCenterPublicSnapshot: {
+        load: loadPublicSnapshot,
+      },
+      configCenterPublicPatch: {
+        apply: applyPublicPatch,
+      },
+      configCenterPublicSnapshotSubscription: {
+        subscribe,
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'general',
+    })
+
+    await flushAsyncEffects()
+
+    const debugToggleLabel = rendered.getByText('启用调试模式')
+    const debugToggle = debugToggleLabel.closest('button')
+    if (!(debugToggle instanceof HTMLButtonElement)) {
+      throw new Error('Expected debug mode toggle button.')
+    }
+
+    expect(loadPublicSnapshot).toHaveBeenCalledOnce()
+    expect(debugToggle.getAttribute('aria-checked')).toBe('false')
+
+    await clickElement(debugToggle)
+    await flushAsyncEffects()
+
+    expect(applyPublicPatch).toHaveBeenCalledOnce()
+    expect(applyPublicPatch).toHaveBeenCalledWith({
+      domains: {
+        assistantBehavior: {
+          debugModeEnabled: true,
+        },
+      },
+    })
+    expect(debugToggle.getAttribute('aria-checked')).toBe('true')
+
+    rendered.unmount()
+  })
+})
+
+async function selectOpenSelectOption(container: HTMLElement, text: string) {
+  const option = Array.from(container.querySelectorAll<HTMLElement>('.select-dropdown--open .select-option')).find((element) => {
+    return element.textContent?.includes(text)
+  })
+
+  if (option === undefined) {
+    throw new Error(`Missing open select option containing text=${text}`)
+  }
+
+  await clickElement(option)
+}

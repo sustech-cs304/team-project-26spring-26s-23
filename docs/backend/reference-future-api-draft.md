@@ -1,320 +1,159 @@
+---
+title: 未来 API 草案参考
+description: 记录 backend 未来若继续服务化，可能扩展出的资源方向与待决问题。
+sidebar_position: 8
+---
+
 # 未来 API 草案参考
 
-> 这是一份**未来草案**，不是当前已经实现或已经承诺的接口规范。
->
-> 这份附录服务于 [前后端连接现状说明](./frontend-connection.md)。它只回答一件事：**如果未来需要把当前后端能力整理成正式服务接口，最自然的资源方向可能是什么。**
+这页只保留未来草案，不记录当前事实。当前已经落地的实现，请回看[后端暴露契约与前端接入点](./frontend-connection.md)和[当前契约参考](./reference-current-contracts.md)。
 
-## 1. 使用这份草案前先确认边界
+## 使用方式先说清楚
 
-当前仓库里的现实情况是：
+下面所有内容都只能按“未来可能的服务化方向”理解，不能当成：
 
-- 已有 Blackboard CLI、工具层、provider use case、数据同步链路；
-- TIS 已有若干 provider use case；
-- 但还没有确认到可直接启动的 HTTP 服务入口。
-
-因此，下面所有内容都只能按“未来可能的整理方向”理解，不能当成：
-
-- 当前已开放接口；
-- 已冻结字段；
-- 已承诺 URL 设计；
+- 当前已开放接口。
+- 已冻结字段。
+- 已承诺 URL 设计。
 - 已确定鉴权和错误码方案。
 
-## 2. 草案设计原则
+如果一项内容还只存在于这页，它在 backend 分册里就仍然只是草案。
 
-如果未来要从当前代码形态走向正式 API，比较合理的原则应是：
+## 草案的出发点
 
-1. 先沿用现在已经真实存在的能力边界；
-2. 优先把当前 CLI 输出和工具返回字典收束成资源接口；
-3. 不把内部 DTO 和日志明细原样暴露给前端；
-4. Blackboard 与 TIS 分开建模，不假装它们成熟度完全一致；
-5. 先覆盖最明确的已实现能力，再考虑扩展。
+当前后端已经有几类可以继续收束的能力基础：
 
-## 3. Blackboard 方向的草案资源
+- Blackboard 的 CLI、工具层和同步能力。
+- TIS 的 provider 用例和结构化结果对象。
+- 现有 runtime 已经形成的会话、能力面和消息执行语义。
 
-### 3.1 课程目录搜索
+未来如果真的继续服务化，这些现有能力更可能被整理成资源接口，而不是推倒重做一套完全无关的新边界。
 
-#### 对应当前事实
+## Blackboard 方向的草案资源
 
-- 已有课程目录搜索 CLI；
-- 已有工具层字典返回；
-- 已有结构化结果对象。
+### 课程目录搜索
 
-#### 草案资源方向
+当前最容易继续服务化的一类能力，是 Blackboard 课程目录搜索。它已经同时具备 CLI、工具层返回和结构化结果对象。
+
+可能的资源方向示意如下：
 
 ```text
 GET /api/blackboard/course-catalog/search
 ```
 
-#### 草案查询参数
+草案层面可以先保留这些查询参数方向：
 
-| 参数 | 含义 | 来源依据 |
-| --- | --- | --- |
-| `keyword` | 搜索关键词 | 当前 CLI 必填参数 |
-| `field` | 搜索字段 | 当前 CLI / 工具层已支持 |
-| `operator` | 搜索操作符 | 当前 CLI / 工具层已支持 |
-| `limit` | 限制返回条数 | 当前 CLI / 工具层已支持 |
+- `keyword`
+- `field`
+- `operator`
+- `limit`
 
-#### 草案响应方向
+### 日历刷新与事件读取
 
-```json
-{
-  "keyword": "数据库",
-  "field": "CourseName",
-  "operator": "Contains",
-  "limit": 20,
-  "total": 3,
-  "results": [
-    {
-      "course_id": "...",
-      "course_identifier": "CS305",
-      "course_name": "数据库系统",
-      "instructor": "...",
-      "description": "..."
-    }
-  ]
-}
-```
-
-#### 草案说明
-
-这里之所以优先从搜索做起，是因为这条能力当前已经同时具备 CLI、工具返回和结果结构，最容易收束成稳定接口。
-
-### 3.2 日历 ICS 刷新与事件视图
-
-#### 对应当前事实
-
-- 已有 ICS CLI；
-- 已有工具层字典返回；
-- 已有本地数据库同步。
-
-#### 草案资源方向 A：触发刷新
+Blackboard 日历方向的能力已经有同步入口，但若要真正服务化，通常需要拆成两类资源：
 
 ```text
 POST /api/blackboard/calendar/refresh
-```
-
-#### 草案请求方向
-
-```json
-{
-  "feed_url": "https://example.com/calendar.ics",
-  "reset_schema": false
-}
-```
-
-#### 草案响应方向
-
-```json
-{
-  "feed_url": "https://example.com/calendar.ics",
-  "db_path": "data/sustech.db",
-  "stats": {
-    "parsed": 12,
-    "inserted": 5,
-    "updated": 3,
-    "deleted": 1
-  },
-  "active_event_count": 10,
-  "all_event_count": 12,
-  "active_events": []
-}
-```
-
-#### 草案资源方向 B：读取事件
-
-```text
 GET /api/blackboard/calendar/events
 ```
 
-#### 草案说明
+前者更像触发同步动作，后者才更接近日历视图真正会消费的数据接口。
 
-当前代码最明确的是“刷新并同步”。未来如果真要给前端接日历视图，通常还需要补一个“读取已同步事件”的资源层。这部分当前代码事实还不足以写成现状接口，所以这里只保留方向。
+### Snapshot 同步任务
 
-### 3.3 Blackboard snapshot 同步
-
-#### 对应当前事实
-
-- 已有完整 snapshot 抓取与同步 use case；
-- 已有工具层字典返回；
-- 已有同步统计、完整性检查和第二次同步校验。
-
-#### 草案资源方向
+Blackboard snapshot 同步能力已经很完整，但如果以后要放进正式 API，更自然的形态可能会偏向任务接口：
 
 ```text
 POST /api/blackboard/snapshots/sync
 ```
 
-#### 草案请求方向
+如果走到这一步，还会继续遇到一些必须补齐的问题，例如同步是否异步、是否需要任务状态，以及是否保留历史记录。
 
-```json
-{
-  "resource_course_limit": 3,
-  "verify_second_sync": true,
-  "reset_schema": false
-}
-```
+## TIS 方向的草案资源
 
-#### 草案响应方向
+TIS 当前能力基础比 Blackboard 更分散，因此草案更适合保持克制。
 
-```json
-{
-  "db_path": "data/sustech.db",
-  "resource_course_limit": 3,
-  "scraped_counts": {
-    "courses": 10,
-    "assignments": 50,
-    "resources": 20,
-    "grades": 45,
-    "announcements": 8
-  },
-  "first_sync_stats": {},
-  "second_sync_stats": {},
-  "table_counts": {},
-  "expected_active_counts": {},
-  "integrity_ok": true,
-  "second_sync_has_no_new_records": true,
-  "second_sync_has_no_deleted_records": true
-}
-```
-
-#### 草案说明
-
-这类能力更像“后台同步任务”而不是普通列表接口。未来若服务化，可能还需要再引入任务状态、异步执行或审计记录机制。当前文档不把这些扩展写死，只保留方向。
-
-## 4. TIS 方向的草案资源
-
-TIS 当前的事实基础弱于 Blackboard CLI 面，因此这里更应保持克制。
-
-### 4.1 个人成绩
-
-#### 对应当前事实
-
-- 已有 provider use case；
-- 已有结构化结果；
-- 可选持久化。
-
-#### 草案资源方向
+### 个人成绩
 
 ```text
 GET /api/tis/personal-grades
 ```
 
-#### 草案响应方向
-
-```json
-{
-  "success": true,
-  "resolved_role_code": "01",
-  "source_url": "...",
-  "grade_records": []
-}
-```
-
-### 4.2 学分绩
-
-#### 草案资源方向
+### 学分绩
 
 ```text
 GET /api/tis/credit-gpa
 ```
 
-#### 草案响应方向
-
-```json
-{
-  "success": true,
-  "resolved_role_code": "01",
-  "summary": {
-    "average_credit_gpa": 3.8,
-    "rank": "..."
-  },
-  "term_records": [],
-  "year_records": []
-}
-```
-
-### 4.3 已选课程
-
-#### 草案资源方向
+### 已选课程
 
 ```text
 GET /api/tis/selected-courses
 ```
 
-#### 草案查询参数
+如果未来真的对接页面，这类资源还可能继续引入这些查询参数：
 
-| 参数 | 含义 |
-| --- | --- |
-| `semester` | 指定学期；不传时可回退到当前学期 |
-| `page_num` | 页码 |
-| `page_size` | 每页数量 |
+- `semester`
+- `page_num`
+- `page_size`
 
-#### 草案响应方向
+### 诊断类接口
 
-```json
-{
-  "success": true,
-  "resolved_role_code": "01",
-  "semester_source": "default-current-term",
-  "courses": [],
-  "summary": {
-    "total_credits": 18
-  }
-}
-```
-
-### 4.4 TIS 诊断
-
-#### 草案资源方向
+TIS 也可能继续整理出链路诊断相关接口，例如：
 
 ```text
 POST /api/tis/diagnostics/link-check
 ```
 
-#### 草案说明
+不过这类接口更可能偏向内部诊断和运维用途，不一定适合直接变成普通页面依赖的公开接口。
 
-这类接口更适合内部诊断或运维工具使用，不一定应该直接暴露给普通前端页面。保留这个草案，是因为它在当前 provider 能力里已经有比较清楚的阶段性输出。
+## runtime 外围能力的草案方向
 
-## 5. 未来如果真的做 HTTP API，还需要补什么
+既然当前聊天主契约已经成立，未来如果继续补接口，更自然的方向通常不是重写聊天根端点，而是补齐外围管理能力。
 
-这些内容当前都**没有在代码中形成正式实现**，所以这里只作为提醒：
+### 会话列表与历史回放
 
-- 统一鉴权方式；
-- 错误码和失败响应格式；
-- 是否同步执行还是异步任务；
-- 字段版本管理；
-- 哪些日志/调试信息允许暴露给前端；
-- 本地 SQLite 与正式服务部署之间的关系。
+如果以后要做会话恢复和历史重建，可能会出现这类资源：
 
-如果这些基础问题没先补齐，就算把 URL 写出来，也还谈不上真正可依赖的 API。
+```text
+GET /api/runtime/sessions
+GET /api/runtime/sessions/{sessionId}/messages
+```
 
-## 6. 当前文档中应该如何引用这份草案
+### 会话管理动作
 
-正确引用方式应类似：
+继续往前走时，也可能出现这些动作接口：
 
-- “未来若服务化，可优先考虑这些资源方向。”
-- “以下字段仅为草案参考，不代表当前接口承诺。”
-- “当前真实契约仍以 CLI JSON 和工具返回字典为主。”
+- 删除会话。
+- 重命名会话。
+- 归档会话。
+- 标记固定会话。
 
-不正确的引用方式则包括：
+这些内容今天都还不属于已实现事实。
 
-- “后端当前提供以下 API”；
-- “前端可直接按以下接口联调”；
-- “以下为正式接口规范”。
+## 真正服务化之前仍要补齐的问题
 
-## 7. 快速结论
+如果未来真的从草案走向正式 API，至少还要先补清这些问题：
 
-### 已实现
+- 统一鉴权方式是什么。
+- 错误码和失败响应怎样稳定下来。
+- 同步动作是同步执行还是异步任务。
+- 哪些字段需要版本管理。
+- 哪些日志、诊断信息允许暴露给前端。
+- 本地 SQLite、桌面 runtime 与未来正式服务部署之间如何分层。
 
-- Blackboard CLI 与工具输出；
-- Blackboard snapshot 同步能力；
-- TIS 若干 provider use case。
+这些问题在今天都还没有形成统一答案，所以这页只保留方向，不给出过度肯定的承诺。
 
-### 可作为未来接口设计输入
+## 这页在其他文档里应该怎样被引用
 
-- Blackboard 搜索、ICS、snapshot 输出结构；
-- TIS 个人成绩、学分绩、已选课程、诊断结果结构。
+更合适的引用方式通常是：
 
-### 未来草案
+- “如果未来继续服务化，可以优先从这些资源方向整理。”
+- “下面这些 URL 和字段只代表草案，不代表当前接口承诺。”
+- “当前真实契约仍以后端当前 runtime 和参考页为准。”
 
-- `/api/blackboard/...` 与 `/api/tis/...` 形式的正式 HTTP 服务接口。
+## 快速结论
+
+- Blackboard 与 TIS 都已经具备未来服务化的材料基础。
+- runtime 外围管理能力也存在继续扩展的空间。
+- 但只要这些内容还停留在这页，它们就仍然只是草案。

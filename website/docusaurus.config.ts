@@ -1,0 +1,148 @@
+import {themes as prismThemes} from 'prism-react-renderer';
+import type {Config} from '@docusaurus/types';
+import type * as Preset from '@docusaurus/preset-classic';
+
+// This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+
+const config: Config = {
+  title: '赶渡 CanDue',
+  tagline: 'SUSTech 学生课程管理与智能助手项目文档',
+  favicon: 'img/candue_icon.png',
+
+  future: {
+    v4: true, 
+  },
+
+  url: 'https://sustech-cs304.github.io',
+  baseUrl: '/team-project-26spring-26s-23/',
+
+  organizationName: 'sustech-cs304',
+  projectName: 'team-project-26spring-26s-23',
+
+  onBrokenLinks: 'throw',
+
+  i18n: {
+    defaultLocale: 'zh-Hans',
+    locales: ['zh-Hans'],
+  },
+
+  presets: [
+    [
+      'classic',
+      {
+        docs: {
+          path: '../docs',
+          routeBasePath: '/',
+          sidebarPath: './sidebars.ts',
+          exclude: ['plans/**', 'analysis/**', 'meetings/**', 'proposal-26s-23.md'],
+        },
+        blog: false,
+        theme: {
+          customCss: './src/css/custom.css',
+        },
+      } satisfies Preset.Options,
+    ],
+  ],
+
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        hashed: true,
+        indexDocs: true,
+        indexBlog: false,
+        indexPages: false,
+        docsRouteBasePath: '/',
+        docsDir: '../docs',
+        language: ['en', 'zh'],
+        removeDefaultStopWordFilter: ['en'],
+      },
+    ],
+  ],
+
+  themeConfig: {
+    colorMode: {
+      respectPrefersColorScheme: true,
+    },
+    navbar: {
+      title: '赶渡 CanDue',
+      logo: {
+        alt: 'CanDue Logo',
+        src: 'img/candue_icon.png',
+      },
+      items: [
+        {
+          to: '/',
+          label: '首页',
+          position: 'left',
+        },
+        {
+          to: '/users',
+          label: '给使用者',
+          position: 'left',
+        },
+        {
+          to: '/developers',
+          label: '给开发者',
+          position: 'left',
+        },
+        {
+          to: '/reference',
+          label: '共享事实',
+          position: 'left',
+        },
+        {
+          type: 'search',
+          position: 'right',
+        },
+        {
+          href: 'https://github.com/sustech-cs304/team-project-26spring-26s-23',
+          label: 'GitHub',
+          position: 'right',
+        },
+      ],
+    },
+    footer: {
+      style: 'dark',
+      links: [
+        {
+          title: '文档',
+          items: [
+            {
+              label: '首页',
+              to: '/',
+            },
+            {
+              label: '给使用者',
+              to: '/users',
+            },
+            {
+              label: '给开发者',
+              to: '/developers',
+            },
+            {
+              label: '共享事实',
+              to: '/reference',
+            },
+          ],
+        },
+        {
+          title: '社区',
+          items: [
+            {
+              label: 'GitHub',
+              href: 'https://github.com/sustech-cs304/team-project-26spring-26s-23',
+            },
+          ],
+        },
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} SUSTech CS304 Team 26s-23. Built with Docusaurus.`,
+    },
+    prism: {
+      theme: prismThemes.github,
+      darkTheme: prismThemes.dracula,
+    },
+  } satisfies Preset.ThemeConfig,
+};
+
+export default config;

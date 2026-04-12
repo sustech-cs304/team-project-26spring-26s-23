@@ -1,0 +1,364 @@
+.copilot-model-picker {
+  position: relative;
+}
+
+.copilot-model-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.72rem 0.88rem;
+  border: none;
+  border-radius: 0;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  box-shadow: none;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.copilot-model-picker__trigger-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.copilot-model-picker__trigger:hover:not(:disabled) {
+  background: var(--interactive-hover-bg);
+  transform: translateY(-1px);
+}
+
+.copilot-model-picker__trigger:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+
+.copilot-model-picker__trigger:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.copilot-model-picker__trigger-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot-model-picker__trigger--invalid .copilot-model-picker__trigger-value {
+  opacity: 0.56;
+}
+
+.copilot-model-picker__badge {
+  flex: 0 0 auto;
+  padding: 0.12rem 0.42rem;
+  border: 1px solid var(--warning-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--warning-soft, var(--surface-subtle));
+  color: var(--warning-text, var(--text-secondary));
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.copilot-model-picker__trigger-caret {
+  color: var(--text-muted);
+}
+
+.copilot-model-picker__panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.7rem);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.58rem;
+  width: min(26rem, 56vw);
+  max-width: calc(100vw - 3rem);
+  max-height: min(30rem, 68vh);
+  padding: 0.72rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--panel-solid-bg);
+  box-shadow: var(--shadow-md);
+  animation: copilot-model-picker-panel-enter 0.16s ease;
+}
+
+.copilot-model-picker__search-shell {
+  display: flex;
+}
+
+.copilot-model-picker__search {
+  width: 100%;
+  min-height: 38px;
+  padding: 0.48rem 0.68rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.copilot-model-picker__search:focus {
+  outline: 2px solid var(--focus-border);
+  border-color: var(--accent);
+}
+
+.copilot-model-picker__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.copilot-model-picker__tag {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  padding: 0.18rem 0.52rem;
+  font: inherit;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    border-color 0.14s ease,
+    transform 0.14s ease;
+}
+
+.copilot-model-picker__tag:hover {
+  transform: translateY(-1px);
+}
+
+.copilot-model-picker__tag--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.copilot-model-picker__tag--all.copilot-model-picker__tag--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.copilot-model-picker__tag--vision,
+.copilot-model-picker__option-tag--vision {
+  border-color: var(--cap-vision-border);
+  background: var(--cap-vision-bg);
+  color: var(--cap-vision-text);
+}
+
+.copilot-model-picker__tag--search,
+.copilot-model-picker__option-tag--search {
+  border-color: var(--cap-search-border);
+  background: var(--cap-search-bg);
+  color: var(--cap-search-text);
+}
+
+.copilot-model-picker__tag--reasoning,
+.copilot-model-picker__option-tag--reasoning {
+  border-color: var(--cap-reasoning-border);
+  background: var(--cap-reasoning-bg);
+  color: var(--cap-reasoning-text);
+}
+
+.copilot-model-picker__tag--tools,
+.copilot-model-picker__option-tag--tools {
+  border-color: var(--cap-tools-border);
+  background: var(--cap-tools-bg);
+  color: var(--cap-tools-text);
+}
+
+.copilot-model-picker__tag--free,
+.copilot-model-picker__option-tag--free {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.copilot-model-picker__tag--neutral,
+.copilot-model-picker__option-tag--neutral {
+  border-color: var(--border-color);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.copilot-model-picker__tag--vision.copilot-model-picker__tag--active,
+.copilot-model-picker__tag--search.copilot-model-picker__tag--active,
+.copilot-model-picker__tag--reasoning.copilot-model-picker__tag--active,
+.copilot-model-picker__tag--tools.copilot-model-picker__tag--active,
+.copilot-model-picker__tag--free.copilot-model-picker__tag--active,
+.copilot-model-picker__tag--neutral.copilot-model-picker__tag--active {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.copilot-model-picker__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.68rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.copilot-model-picker__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.copilot-model-picker__group-title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.copilot-model-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.copilot-model-picker__group-empty {
+  margin: 0;
+  padding: 0.38rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.copilot-model-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 0.52rem;
+  width: 100%;
+  padding: 0.38rem 0.5rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.14s ease;
+}
+
+.copilot-model-picker__option:hover {
+  background: var(--accent-soft);
+  transform: translateX(2px);
+}
+
+.copilot-model-picker__option--selected {
+  background: var(--accent-soft);
+}
+
+.copilot-model-picker__option-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.04rem;
+  min-width: 0;
+}
+
+.copilot-model-picker__option-name {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.18;
+}
+
+.copilot-model-picker__option-meta {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.1;
+  word-break: break-all;
+}
+
+.copilot-model-picker__option-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.copilot-model-picker__option-tag {
+  padding: 0.1rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    border-color 0.14s ease;
+}
+
+.copilot-model-picker__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  background: var(--model-icon-accent, #60a5fa);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.copilot-model-picker__empty {
+  margin: 0;
+  padding: 0.4rem 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+@keyframes copilot-model-picker-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .copilot-model-picker__panel {
+    width: min(100%, 24rem);
+    max-width: none;
+  }
+
+  .copilot-model-picker__option {
+    align-items: flex-start;
+  }
+
+  .copilot-model-picker__option-tags {
+    justify-content: flex-start;
+  }
+}

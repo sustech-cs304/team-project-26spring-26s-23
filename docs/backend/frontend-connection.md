@@ -1,112 +1,190 @@
-# 前后端连接现状说明
+---
+title: 后端暴露契约与前端接入点（旧资料）
+description: 旧的 backend 分册连接面说明。保留后端视角的补充细节，当前正式主链请先看新的开发者路径与共享事实层。
+sidebar_position: 4
+sidebar_label: 旧资料：连接面
+---
 
-> 这是一份**现状说明**，不是现成接口规范，也不是已经承诺的 HTTP API 文档。
+# 后端暴露契约与前端接入点（旧资料）
 
-这篇文档是写给需要和前端对齐预期的人看的。它重点不是描述“应该怎样设计一个理想后端”，而是先说明：**按照当前代码事实，前端今天能从后端侧观察到什么，哪些东西只是内部可调用能力，哪些要等未来服务化后才能成为真正接口。**
+这页属于旧的 `backend` 分册。它只适合补“后端视角下的连接面细节”，不再作为当前主阅读入口。第一次进入当前站点时，请先看 [给开发者](../developers/getting-started.md)、[聊天运行时](../developers/chat-runtime.md)、[运行时接口 / 事件参考](../reference/runtime-events.md) 和 [Provider 与模型路由说明](../reference/providers-and-routing.md)。
 
-## 先说结论
+## 先分清两层接入点
 
-当前 `backend/` 还不能直接写成“前端已经可以对接的 Web API 服务”。更准确的说法是：
+从 backend 视角看，前端今天接到后端并不是一条单层链路，而是两层接入点叠在一起。
 
-- Blackboard 方向已经有较清楚的 CLI 和工具层输出；
-- TIS 方向主要还是 provider 可调用层；
-- 当前对外最容易观察到的契约，是 JSON 报告和工具返回字典；
-- 如果未来要和前端稳定连接，仍然需要再做一层明确的服务化封装。
+### 第一层是 Electron 主进程提供的宿主接入点
 
-## 当前前端真正能对齐的，不是 HTTP 路由，而是输出形态
+前端 renderer 并不会直接管理 Python 子进程、`userData` 路径或 provider secrets。当前这些事情都由 Electron 主进程承担：
 
-如果只看代码现状，当前最接近“外部可观察契约”的东西主要有两类。
+- 它准备 hosted runtime 路径。
+- 它持有统一配置中心和 settings workspace。
+- 它持有 provider profiles 与 provider secrets 真源。
+- 它创建宿主私有 provider route bridge。
+- 它启动、停止和重试 Python runtime。
+- 它把 hosted runtime 快照整理后暴露给 renderer。
 
-### 1. CLI 生成的 JSON 报告
+因此，前端真正先接触到的，是宿主层提供的 runtime 快照、公开配置接口和 settings workspace 接口，而不是 Python 进程内部对象。
 
-Blackboard 当前两个 CLI 都支持输出 JSON 报告：
+### 第二层是 Python runtime 暴露的 loopback HTTP 契约
 
-- 课程目录搜索；
-- 日历 ICS 同步。
+一旦主进程把 Python runtime 拉起，后端真正对前端可见的 HTTP 连接面就是同一个 loopback 服务：
 
-这些 JSON 的价值在于：
+- 一组控制面端点。
+- 一个统一的聊天根端点 `POST /`。
 
-- 它们已经是实际运行后会落盘的结果；
-- 前端、产品或联调人员可以拿它们观察字段形状；
-- 它们比“代码内部 DTO 长什么样”更接近真实可观察输出。
+当前前端的后端联调重点，主要落在这第二层。
 
-但要注意，它们仍然是 **CLI 报告**，不是已经承诺长期稳定的线上接口响应。
+## Electron 主进程在 backend 视角下的角色
 
-### 2. 工具层返回的字典
+### 它是配置 owner
 
-Blackboard 当前工具层函数会把结果整理成字典。这些字典已经有测试校验返回形状，因此是另一类很重要的现实契约。
+统一配置中心和 settings workspace 现在都由主进程持有。Python runtime 不会直接读取 `config-center/*.json`、`settings-workspace-state.json` 或 `settings-workspace-secrets.json`。
 
-它们适合被理解为：
+### 它是 runtime launcher
 
-- 当前后端能力对邻接调用方暴露出的结构化输出；
-- 可以作为未来服务化封装时的字段参考；
-- 但还不是对前端正式发布的 HTTP 响应协议。
+主进程负责准备路径、构造启动参数、拉起 Python 子进程，并在失败时保留宿主管理下的状态和失败摘要。
 
-## 当前不应该写成“前端接口”的内容
+### 它是路由解析真源的入口
 
-### 1. `api/` 目录
+主进程当前还承担一层更关键的职责：它持有 provider profile 元数据与 secrets 真源，并通过宿主私有 provider route bridge 在运行期按请求解析：
 
-当前 `app/blackboard/api/` 和 `app/teaching_information_system/api/` 主要是在访问上游系统、抓取页面、解析 HTML/JSON。
+- 当前 `providerProfileId` 对应的 provider profile 是否存在。
+- 请求中的路由快照是否仍与本地配置一致。
+- 当前 provider profile 是否具备可用 API key。
 
-这层代码是“后端向外抓数据”，不是“后端向前端提供接口”。所以文档里不能把它们直接写成前端 HTTP API 层。
+这件事解释了当前后端为什么已经不再需要 startup `model` 参数，却仍然能在每次 `run/start` 执行前解析真实 provider 连接信息；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 只是映射到同一条 `thread/run` 语义。
 
-### 2. provider use case
+## 当前 Python 后端真正暴露了什么
 
-Blackboard 和 TIS 的 provider use case 已经能做不少事，但它们本质上还是 Python 内部调用能力。它们当前没有统一的请求入口、响应封装、错误码规范、鉴权方案和版本约束，因此不能直接当成前端接口文档来写。
+## 控制面端点
 
-### 3. `services/` 目录
+当前 loopback HTTP 服务已经稳定暴露下面这些控制面端点：
 
-当前 `app/services/` 并没有显示出已经承担前后端编排入口的现实证据，因此也不该被写成“前端连接层已经存在”。
+- `GET /health`
+- `GET /ready`
+- `GET /version`
+- `GET /build-info`
+- `GET /diagnostics`
+- `GET /diagnostics/runtime-info`
 
-## 如果今天必须和前端讨论边界，应该怎么说
+这组端点主要回答三类问题：
 
-一种比较稳妥的说法是：
+- 本地 runtime 是否已经启动。
+- 当前是否 ready，以及最近一次失败发生了什么。
+- 当前运行目录、配置摘要和聊天能力摘要是什么。
 
-- **已实现**：后端已经有 Blackboard CLI、Blackboard 工具层输出、Blackboard/TIS provider 能力，以及本地持久化链路。
-- **代码里可调用但不是正式入口**：Blackboard 工具层和 TIS provider use case 可作为未来接口封装参考，但现在还不是前端直接依赖的服务端接口。
-- **未来草案**：若后续需要正式联调，应把这些能力整理成明确的资源接口，再补统一错误处理、鉴权和契约约束。
+## 当前聊天主契约
 
-这种说法既不会把当前系统说小，也不会误写成“接口已经齐了”。
+当前真正聊天主链已经收口为 `thread/run` 六方法：
 
-## 当前前端最适合参考哪些内容
+1. `agents/list`
+2. `thread/create`
+3. `thread/get`
+4. `run/start`
+5. `run/stream`
+6. `run/cancel`
 
-如果前端团队现在只是为了提前理解数据方向，而不是马上对线上接口开发，可以优先参考：
+`session/create`、`capabilities/get` 和 [`message/send`](../system/chat-runtime-contract.md) 仍然保留，但现在是兼容壳。
 
-1. Blackboard CLI 输出的 JSON 报告；
-2. Blackboard 工具层返回字典的字段形状；
-3. provider use case 的结果对象结构；
-4. 本地数据库中最终沉淀的数据种类。
+这条主链共同描述了一条更清楚的后端连接主线：
 
-这四类信息可以帮助前端先理解“后端现在能产出哪些数据”，但仍然要保留一个前提：**这些内容还没有统一收口成正式 HTTP 契约。**
+- 后端目录先告诉前端当前有哪些智能体。
+- 前端创建 thread 时，把当前 thread 绑定到某个智能体。
+- 前端再读取这个 thread 的能力面。
+- 每次发起 run 时，前端显式带上本次模型路由、Thinking、工具列表与请求选项。
 
-## 当前更像“能力映射”，不是“接口清单”
+## 当前前端怎样走这条主路径
 
-如果一定要把现在的状态和未来接口设计联系起来，最合适的理解方式是：
+从 backend 视角看，前端当前主路径更适合概括成下面六步：
 
-- 课程目录搜索能力，未来可能整理成课程搜索资源；
-- ICS 刷新与事件列表，未来可能整理成日历同步或日历事件资源；
-- Blackboard snapshot，同步后更像后台任务或数据刷新能力；
-- TIS 个人成绩、学分绩、已选课程，未来可能整理成用户学习信息相关资源。
+1. 它先确认 hosted runtime 已经可用，并拿到可访问的 runtime URL。
+2. 它调用 `agents/list` 读取后端智能体目录。
+3. 它调用 `thread/create` 创建 thread，并绑定当前智能体。
+4. 它调用 `thread/get` 读取当前 thread 视图和能力面。
+5. 它调用 `run/start` 发起本轮 run，并显式带上模型路由、Thinking 和工具选择。
+6. 它调用 `run/stream` 消费事件流；需要中断时再调用 `run/cancel`。
 
-但这里的“可能”非常重要。当前文档只能写“映射方向”，不能写“现有接口地址和协议”。
+这里最关键的变化有两点：
 
-## 当前联调阶段的现实建议
+- 当前后端已经把“智能体绑定”和“每次请求的模型路由”拆成了两层语义。
+- 当前正式主链已经是 `thread/run`；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 只是映射到同一条事件流语义。
 
-如果项目现在就要做前后端协作，比较现实的做法通常是：
+## 当前 `message/send` 在后端视角下是什么
 
-1. 先把前端需要的数据视图整理出来；
-2. 对照当前 CLI JSON 和工具层返回字典，看已有字段能否覆盖；
-3. 把缺口记录成未来服务化需求；
-4. 在真正开始联调前，再收束为正式 API 草案。
+当前 [`message/send`](../system/chat-runtime-contract.md) 的后端主线，可以概括成下面几步：
 
-这样做的好处是，不会把今天还处在内部能力层的代码，过早包装成已经对外承诺的接口。
+1. 协议解析层读取 `sessionId`、消息体和 `policy.modelRoute`。
+2. run 编排层先发出 `run_started`。
+3. Python runtime 通过宿主私桥按 `providerProfileId` 解析 provider profile 与 API key。
+4. 宿主使用路由快照校验 `provider`、`endpointType`、`baseUrl` 与 `modelId`。
+5. 执行器在模型调用工具时发出真实 `tool_event`，并在同一条事件流里回传 `started`、`completed` 或 `failed`。
+6. 执行器打开真实上游模型流，后端持续发出 `text_delta`。
+7. 正常完成时，后端归档最终 assistant 文本，并发出 `run_completed`。
+8. 失败或取消时，后端发出 `run_failed` 或 `run_cancelled`，不会归档 assistant 成功消息。
 
-## 这篇文档和草案文档的关系
+这说明当前后端对前端真正暴露的，已经是一条 run 语义明确的流式聊天链路。
 
-这篇文档讲的是**现状说明**：今天真正能观察到什么、不能把什么当成前端接口。
+## 当前前端真正需要对齐的对象
 
-如果你需要看“未来若要整理成接口，大概应该长什么样”，继续看 [未来 API 草案参考](./reference-future-api-draft.md)。那一份文档必须始终按**草案**理解，不能当成当前契约。
+因此，今天前后端真正需要对齐的对象已经是：
 
-## 一句话总结
+- 智能体目录。
+- 会话绑定。
+- 能力面版本和工具目录。
+- 请求级 `modelRoute` 与 `enabledTools`。
+- 流式事件集合、`tool_event` 生命周期阶段与终态规则。
+- 成功归档与失败不归档的会话规则。
 
-当前前后端之间最真实的连接点，不是现成 HTTP API，而是 **Blackboard CLI 的 JSON 报告、工具层返回字典，以及 provider 层已经整理出来的结构化结果**。这些内容足够支撑讨论和原型设计，但还不足以被写成正式服务接口规范。
+## 已退役的旧外层方法
+
+下面这些旧方法已经退出当前 runtime surface：
+
+- `info`
+- `agent/connect`
+- `agent/run`
+
+它们不再出现在 supported methods 中，也不再承担兼容或诊断职责。旧调用当前只会收到 `method_not_implemented`；当前正式前端主路径已经完全围绕 `agents/list -> thread/create -> thread/get -> run/start -> run/stream -> run/cancel` 组织。
+
+## 前端今天还没有直接连到哪些后端能力
+
+### Blackboard 与 TIS 还不是正式前端业务 API
+
+Blackboard 和 TIS 当前已经有真实能力，但这些能力主要以 CLI、工具层、provider 用例和结构化结果对象的形式存在。
+
+这意味着：
+
+- 后端确实已经有可用的领域能力。
+- 前端今天还不能把它们当成稳定的业务 HTTP API 去依赖。
+- backend 分册里不适合把这两组模块写成已经完整对外开放的服务层。
+
+### settings workspace 也不是 Python runtime 的直接接口层
+
+设置页今天能保存很多字段，但它们不会被 Python runtime 直接读取。当前真实链路仍然是：
+
+- 主进程持久化 settings workspace 状态与 secrets。
+- 主进程创建宿主私桥。
+- Python runtime 在执行前通过私桥解析本轮 provider 路由与认证信息。
+
+## 当前连接面更适合怎样理解
+
+如果只用一句话概括当前后端对前端的连接面，可以这样理解：
+
+- 宿主层负责持有配置、托管 runtime 和守住 provider 与 secrets 真源。
+- Python 后端负责提供本地控制面和 `thread/run` 聊天主链；`session/create`、`capabilities/get` 和 `message/send` 继续作为兼容壳保留。
+- Blackboard 与 TIS 仍然主要停留在领域能力层和未来服务化输入层。
+
+## 这页想帮助你先建立什么判断
+
+- 当前前端已经有真实后端连接面，不再是只参考 CLI 输出的状态。
+- 当前真正稳定的连接面，是控制面端点和 `thread/run` 流式聊天主路径。
+- Electron 主进程是这条链路里的配置 owner、runtime launcher 与宿主私桥 owner。
+- provider secrets 不会进入消息请求体，也不会出现在流式事件里。
+- Blackboard 与 TIS 还没有整体进入正式前端业务 API 层。
+
+## 相关文档
+
+- [后端运行与配置](./run-and-config.md)
+- [当前契约参考](./reference-current-contracts.md)
+- [聊天运行时契约](../system/chat-runtime-contract.md)
+- [运行时生命周期](../system/runtime-lifecycle.md)

@@ -1,279 +1,665 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
 
-from app.copilot_runtime.agent_registry import build_default_agent_registry
-from app.copilot_runtime.bridge import (
-    AgentExecutionError,
-    AgentNotFoundError,
-    InvalidSessionHistoryError,
-    RuntimeBridge,
+from app.copilot_runtime.agent_registry import AgentRegistry, build_default_agent_registry
+from app.copilot_runtime.bridge import AgentNotFoundError, RuntimeBridge, SessionNotFoundError
+from app.copilot_runtime.contracts import (
+    RuntimeMessageExecutionPolicy,
+    RuntimeMessagePayload,
+    RuntimeRunStartRequest,
+    RuntimeThinkingSelection,
+    RuntimeThinkingValue,
+    build_runtime_scaffold,
 )
-from app.copilot_runtime.contracts import RuntimeRunRequest
-from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
+from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteRef
+from app.copilot_runtime.run_events import (
+    RUN_CANCELLED_EVENT_TYPE,
+    RUN_COMPLETED_EVENT_TYPE,
+    RUN_METADATA_EVENT_TYPE,
+    RUN_STARTED_EVENT_TYPE,
+    TEXT_DELTA_EVENT_TYPE,
+    RuntimeRunEvent,
+    RuntimeRunEventFactory,
+)
+from app.copilot_runtime.session_store import (
+    InMemorySessionStore,
+    RuntimeStoredModelRoute,
+    RuntimeStoredRunInput,
+    RuntimeStoredRunPolicy,
+    RuntimeStoredThinkingSelection,
+)
+from app.copilot_runtime.tool_registry import build_default_tool_registry
 
 
-class RecordingAgentExecutor:
-    def __init__(self, *, reply: str = "Bridge reply", error: Exception | None = None) -> None:
-        self._reply = reply
-        self._error = error
-        self.calls: list[dict[str, object]] = []
+class _StubMessageRunOrchestrator:
+    def __init__(self, *, events: list[RuntimeRunEvent]) -> None:
+        self._events = list(events)
+        self.received_requests: list[RuntimeRunStartRequest] = []
+        self.received_run_ids: list[str | None] = []
+        self.received_disconnect_callbacks: list[Callable[[], Awaitable[bool]] | None] = []
 
-    async def run(
+    async def stream_events(
         self,
         *,
-        agent_name: str,
-        user_prompt: str,
-        message_history: Sequence[ModelMessage],
-    ) -> str:
-        self.calls.append(
-            {
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-            }
+        request: RuntimeRunStartRequest,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
+        run_id: str | None = None,
+    ):
+        self.received_requests.append(request)
+        self.received_run_ids.append(run_id)
+        self.received_disconnect_callbacks.append(is_client_disconnected)
+        for event in self._events:
+            yield event
+
+
+class _CancelAwareMessageRunOrchestrator:
+    def __init__(self, *, session_id: str, run_id: str, request_cancel) -> None:
+        self._events = RuntimeRunEventFactory(session_id=session_id, run_id=run_id)
+        self._request_cancel = request_cancel
+
+    async def stream_events(
+        self,
+        *,
+        request: RuntimeRunStartRequest,
+        is_client_disconnected=None,
+        run_id: str | None = None,
+    ):
+        assistant_message_id = f"{self._events.run_id}:assistant"
+        yield self._events.build(
+            RUN_STARTED_EVENT_TYPE,
+            payload={"assistantMessageId": assistant_message_id},
         )
-        if self._error is not None:
-            raise self._error
-        return self._reply
+        yield self._events.build(
+            TEXT_DELTA_EVENT_TYPE,
+            payload={"assistantMessageId": assistant_message_id, "delta": "partial"},
+        )
+        self._request_cancel()
+        if is_client_disconnected is not None and await is_client_disconnected():
+            yield self._events.build(
+                RUN_CANCELLED_EVENT_TYPE,
+                payload={"assistantMessageId": assistant_message_id, "reason": "cancelled"},
+            )
+            return
+        yield self._events.build(
+            RUN_COMPLETED_EVENT_TYPE,
+            payload={
+                "assistantMessageId": assistant_message_id,
+                "assistantText": "late completion",
+                "resolvedToolIds": [],
+                "requestOptions": {},
+            },
+        )
 
 
-class RecordingExecutorFactory:
-    def __init__(self, executor: RecordingAgentExecutor) -> None:
-        self._executor = executor
-        self.call_count = 0
-
-    def __call__(self) -> RecordingAgentExecutor:
-        self.call_count += 1
-        return self._executor
-
-
-def test_run_resolves_default_agent_through_registry_and_factory() -> None:
+def test_stream_run_delegates_to_orchestrator_and_preserves_request() -> None:
     store = InMemorySessionStore()
-    store.append_turn(
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    request = _build_run_start_request(thread_id="thread-1")
+    seed_bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = seed_bridge.start_run(request=request)
+    expected_events = [
+        RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id).build(
+            RUN_STARTED_EVENT_TYPE,
+            payload={"assistantMessageId": f"{run.run_id}:assistant"},
+        )
+    ]
+    orchestrator = _StubMessageRunOrchestrator(events=expected_events)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
+    )
+
+    disconnected = False
+
+    async def is_client_disconnected() -> bool:
+        return disconnected
+
+    events = asyncio.run(
+        _collect_events(
+            bridge.stream_run(
+                run_id=run.run_id,
+                is_client_disconnected=is_client_disconnected,
+            )
+        )
+    )
+
+    assert events == expected_events
+    assert orchestrator.received_requests == [request]
+    assert orchestrator.received_run_ids == [run.run_id]
+
+    checker = orchestrator.received_disconnect_callbacks[0]
+    assert checker is not None
+    assert checker is not is_client_disconnected
+    assert asyncio.run(checker()) is False
+
+    disconnected = True
+    assert asyncio.run(checker()) is True
+
+    disconnected = False
+    assert asyncio.run(checker()) is False
+
+
+def test_start_run_stores_provider_specific_thinking_selection_value_payload_and_rehydrates_request() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    thinking_selection = RuntimeThinkingSelection(
+        series="qwen-thinking-switch-v1",
+        value=RuntimeThinkingValue(valueType="code", code="true", labelZh="开启"),
+    )
+
+    run = bridge.start_run(
+        request=_build_run_start_request(
+            thread_id="thread-1",
+            model_route=RuntimeModelRoute(
+                provider_profile_id="provider-1",
+                route_ref=RuntimeModelRouteRef(
+                    route_kind="provider-model",
+                    profile_id="provider-1",
+                    model_id="unknown-model",
+                ),
+            ),
+            thinking_selection=thinking_selection,
+            thinking_capability_override={
+                "supported": True,
+                "series": "qwen-thinking-switch-v1",
+                "template": {
+                    "editorType": "discrete",
+                    "allowedValues": [
+                        {"valueType": "code", "code": "false", "labelZh": "关闭"},
+                        {"valueType": "code", "code": "true", "labelZh": "开启"},
+                    ],
+                    "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
+                },
+                "source": "settings-page",
+            },
+        )
+    )
+
+    stored_selection = run.request.policy.thinking_selection
+    assert stored_selection is not None
+    assert stored_selection.value_payload == thinking_selection.value.to_dict()
+
+    run_start_request, legacy_fallback_used, rehydrate_error = bridge._to_run_start_request(run)
+
+    assert legacy_fallback_used is False
+    assert rehydrate_error is None
+    assert run_start_request.policy.resolve_thinking_selection() == thinking_selection
+
+
+
+def test_to_message_send_request_rehydrates_legacy_thinking_selection_from_legacy_fields() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = store.create_run(
         thread_id="thread-1",
-        agent_name="default",
-        user_text="hello",
-        assistant_text="hi there",
-        metadata={"last_run_id": "run-1"},
+        run_id="run-legacy",
+        request=RuntimeStoredRunInput(
+            message_role="user",
+            message_content="Hello",
+            policy=RuntimeStoredRunPolicy(
+                model_route=RuntimeStoredModelRoute(
+                    provider_profile_id="provider-1",
+                    route_ref=RuntimeModelRouteRef(
+                        route_kind="provider-model",
+                        profile_id="provider-1",
+                        model_id="gpt-4.1",
+                    ),
+                ),
+                thinking_selection=RuntimeStoredThinkingSelection(
+                    series="compat-discrete-selection-v1",
+                    mode="preset",
+                    level="medium",
+                ),
+            ),
+            agent_id="default",
+        ),
     )
-    executor = RecordingAgentExecutor(reply="Bridge success")
-    executor_factory = RecordingExecutorFactory(executor)
+
+    run_start_request, legacy_fallback_used, rehydrate_error = bridge._to_run_start_request(run)
+    selection = run_start_request.policy.resolve_thinking_selection()
+
+    assert selection is not None
+    assert selection.series == "compat-discrete-selection-v1"
+    assert selection.to_legacy_level_intent() == "medium"
+    assert legacy_fallback_used is True
+    assert rehydrate_error is None
+
+
+
+def test_to_message_send_request_preserves_empty_thinking_selection_path() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
     bridge = RuntimeBridge(
         session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+        agent_registry=registry,
+        scaffold=scaffold,
     )
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
 
-    result = asyncio.run(
-        bridge.run(
-            request=_build_run_request(
-                thread_id="thread-1",
-                run_id="run-2",
-                user_message_text="what next?",
-            )
-        )
-    )
+    run_start_request, legacy_fallback_used, rehydrate_error = bridge._to_run_start_request(run)
 
-    assert executor_factory.call_count == 1
-    assert result.assistant_text == "Bridge success"
-    assert result.newly_created is False
-    assert result.session.metadata == {"last_run_id": "run-2"}
-    assert _message_pairs(store, "thread-1") == [
-        ("user", "hello"),
-        ("assistant", "hi there"),
-        ("user", "what next?"),
-        ("assistant", "Bridge success"),
-    ]
-
-    assert len(executor.calls) == 1
-    call = executor.calls[0]
-    assert call["agent_name"] == "default"
-    assert call["user_prompt"] == "what next?"
-
-    history = call["message_history"]
-    assert isinstance(history, list)
-    assert len(history) == 2
-    assert isinstance(history[0], ModelRequest)
-    assert history[0].parts[0].content == "hello"
-    assert isinstance(history[1], ModelResponse)
-    assert isinstance(history[1].parts[0], TextPart)
-    assert history[1].parts[0].content == "hi there"
+    assert run_start_request.policy.resolve_thinking_selection() is None
+    assert legacy_fallback_used is False
+    assert rehydrate_error is None
 
 
-def test_run_creates_new_session_after_successful_first_turn() -> None:
+
+def test_resolve_initial_run_metadata_fail_soft_logs_rehydrate_skip(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     store = InMemorySessionStore()
-    executor = RecordingAgentExecutor(reply="First reply")
-    executor_factory = RecordingExecutorFactory(executor)
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
     bridge = RuntimeBridge(
         session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+        agent_registry=registry,
     )
+    run = store.create_run(
+        thread_id="thread-1",
+        run_id="run-invalid",
+        request=RuntimeStoredRunInput(
+            message_role="user",
+            message_content="Hello",
+            policy=RuntimeStoredRunPolicy(
+                model_route=RuntimeStoredModelRoute(
+                    provider_profile_id="provider-1",
+                    route_ref=RuntimeModelRouteRef(
+                        route_kind="provider-model",
+                        profile_id="provider-1",
+                        model_id="gpt-4.1",
+                    ),
+                ),
+                thinking_selection=RuntimeStoredThinkingSelection(
+                    series="qwen-thinking-switch-v1",
+                    value_payload={"valueType": "code"},
+                ),
+            ),
+            agent_id="default",
+        ),
+    )
+    captured_logs: list[tuple[str, dict[str, object]]] = []
+    bridge_module = __import__("app.copilot_runtime.bridge", fromlist=["log_runtime_chain_debug"])
 
-    result = asyncio.run(
-        bridge.run(
-            request=_build_run_request(
-                thread_id="thread-new",
-                run_id="run-1",
-                user_message_text="hello there",
+    def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
+        captured_logs.append((event_name, payload))
+
+    monkeypatch.setattr(bridge_module, "log_runtime_chain_debug", _capture_log)
+
+    with caplog.at_level("WARNING", logger="uvicorn.error"):
+        metadata = asyncio.run(
+            bridge._resolve_initial_run_metadata(
+                run=run,
+                runtime_method="run/start",
+                request_id="req-1",
             )
         )
+
+    warning_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "thinking selection rehydrate skipped" in record.getMessage()
+    ]
+    skip_logs = [payload for name, payload in captured_logs if name == "thinking.run_metadata_rehydrate_skipped"]
+
+    assert metadata["requestedThinkingSelection"] is None
+    assert len(warning_logs) == 1
+    assert "request_id=req-1" in warning_logs[0]
+    assert "runtime_method=run/start" in warning_logs[0]
+    assert "thread_id=thread-1" in warning_logs[0]
+    assert "run_id=run-invalid" in warning_logs[0]
+    assert "phase=prime_run_metadata" in warning_logs[0]
+    assert "legacy_fallback_used=False" in warning_logs[0]
+    assert "exception_type=ValueError" in warning_logs[0]
+    assert "exception_summary=Stored provider-specific thinkingSelection payload is invalid." in warning_logs[0]
+    assert len(skip_logs) == 1
+    assert skip_logs[0]["requestId"] == "req-1"
+    assert skip_logs[0]["runtimeMethod"] == "run/start"
+    assert skip_logs[0]["runId"] == "run-invalid"
+    assert skip_logs[0]["threadId"] == "thread-1"
+    assert skip_logs[0]["phase"] == "prime_run_metadata"
+    assert skip_logs[0]["legacyFallbackUsed"] is False
+    assert skip_logs[0]["skippedThinkingSelectionRehydrate"] is True
+    assert skip_logs[0]["error"] == {
+        "type": "ValueError",
+        "message": "Stored provider-specific thinkingSelection payload is invalid.",
+    }
+
+
+
+def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    events_factory = RuntimeRunEventFactory(session_id="thread-1", run_id=run.run_id)
+    thinking_capability_snapshot = {
+        "status": "unknown-without-override",
+        "source": "unknown",
+        "supported": False,
+        "series": "fixed-off-v1",
+        "controlSpec": {
+            "kind": "fixed",
+            "selectionKind": "preset",
+            "presetOptions": [{"kind": "preset", "value": "off"}],
+            "fixedSelection": {"kind": "preset", "value": "off"},
+        },
+        "defaultSelection": {"kind": "preset", "value": "off"},
+        "supportedLevels": [],
+        "defaultLevel": None,
+        "reasonCode": "route_not_verified",
+        "providerHint": "unknown-route",
+        "routeFingerprint": {
+            "providerProfileId": "provider-1",
+            "provider": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://example.com/v1",
+            "modelId": "gpt-4.1",
+        },
+        "provenance": {
+            "routeStatus": "unknown",
+            "override": {
+                "present": False,
+                "applied": False,
+                "source": None,
+                "format": None,
+            },
+        },
+        "visibility": {
+            "reasoning": "visible",
+            "supportsSuppression": True,
+        },
+        "overrideLevels": [],
+    }
+    orchestrator = _StubMessageRunOrchestrator(
+        events=[
+            events_factory.build(
+                RUN_STARTED_EVENT_TYPE,
+                payload={"assistantMessageId": f"{run.run_id}:assistant"},
+            ),
+            events_factory.build(
+                RUN_METADATA_EVENT_TYPE,
+                payload={
+                    "requestedThinkingSelection": {
+                        "series": "compat-discrete-selection-v1",
+                        "mode": "preset",
+                        "level": "medium",
+                        "budgetTokens": None,
+                    },
+                    "appliedThinkingSelection": None,
+                    "requestedThinkingLevel": "medium",
+                    "appliedThinkingLevel": None,
+                    "thinkingCapabilitySnapshot": thinking_capability_snapshot,
+                    "thinkingSeriesDecision": {
+                        "requestedSelection": {"kind": "preset", "value": "medium"},
+                        "appliedSelection": None,
+                        "requestedThinkingLevel": "medium",
+                        "appliedThinkingLevel": None,
+                        "applied": False,
+                        "reasonCode": "requested_level_not_in_capability",
+                        "errorCode": "thinking_not_supported_for_route",
+                        "mappingReasonCode": "selection_not_allowed_by_capability",
+                        "providerMapping": None,
+                        "capabilityStatus": "unknown-without-override",
+                        "capabilitySource": "unknown",
+                        "overridePresent": False,
+                        "overrideApplied": False,
+                    },
+                },
+            ),
+            events_factory.build(
+                TEXT_DELTA_EVENT_TYPE,
+                payload={"assistantMessageId": f"{run.run_id}:assistant", "delta": "Hello back"},
+            ),
+            events_factory.build(
+                RUN_COMPLETED_EVENT_TYPE,
+                payload={
+                    "assistantMessageId": f"{run.run_id}:assistant",
+                    "assistantText": "Hello back",
+                    "resolvedToolIds": [],
+                    "requestOptions": {},
+                },
+            ),
+        ]
+    )
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
     )
 
-    assert executor_factory.call_count == 1
-    assert result.assistant_text == "First reply"
-    assert result.newly_created is True
-    assert result.session.metadata == {"last_run_id": "run-1"}
-    assert _message_pairs(store, "thread-new") == [
-        ("user", "hello there"),
-        ("assistant", "First reply"),
+    events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
+    updated_run = bridge.get_run(run_id=run.run_id)
+
+    assert [event.type for event in events] == [
+        RUN_STARTED_EVENT_TYPE,
+        RUN_METADATA_EVENT_TYPE,
+        TEXT_DELTA_EVENT_TYPE,
+        RUN_COMPLETED_EVENT_TYPE,
+    ]
+    assert updated_run.status == "completed"
+    assert updated_run.assistant_text == "Hello back"
+    assert updated_run.metadata["requestedThinkingSelection"] == {
+        "series": "compat-discrete-selection-v1",
+        "value": {
+            "valueType": "code",
+            "code": "medium",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "medium",
+        },
+    }
+    assert updated_run.metadata["appliedThinkingSelection"] is None
+    assert updated_run.metadata["thinkingCapabilitySnapshot"] == thinking_capability_snapshot
+    assert updated_run.metadata["thinkingSeriesDecision"] == {
+        "requestedSelection": {"kind": "preset", "value": "medium"},
+        "appliedSelection": None,
+        "requestedThinkingLevel": "medium",
+        "appliedThinkingLevel": None,
+        "applied": False,
+        "reasonCode": "requested_level_not_in_capability",
+        "errorCode": "thinking_not_supported_for_route",
+        "mappingReasonCode": "selection_not_allowed_by_capability",
+        "providerMapping": None,
+        "capabilityStatus": "unknown-without-override",
+        "capabilitySource": "unknown",
+        "overridePresent": False,
+        "overrideApplied": False,
+    }
+    run_view = scaffold.build_run_view(run=updated_run)
+    assert run_view.requestedThinkingSelection is not None
+    assert run_view.requestedThinkingSelection.to_dict() == {
+        "series": "compat-discrete-selection-v1",
+        "value": {
+            "valueType": "code",
+            "code": "medium",
+            "mode": None,
+            "budgetTokens": None,
+            "labelZh": "medium",
+        },
+    }
+    assert run_view.appliedThinkingSelection is None
+    assert run_view.requestedThinkingLevel == "medium"
+    assert run_view.appliedThinkingLevel is None
+    assert run_view.thinkingCapabilitySnapshot == thinking_capability_snapshot
+    assert [(event.event_type, event.sequence) for event in store.list_run_events(run.run_id)] == [
+        (RUN_STARTED_EVENT_TYPE, 1),
+        (RUN_METADATA_EVENT_TYPE, 2),
+        (TEXT_DELTA_EVENT_TYPE, 3),
+        (RUN_COMPLETED_EVENT_TYPE, 4),
+    ]
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "Hello"),
+        ("assistant", "Hello back"),
     ]
 
-    assert len(executor.calls) == 1
-    call = executor.calls[0]
-    history = call["message_history"]
-    assert isinstance(history, list)
-    assert history == []
 
-
-def test_run_raises_explicit_error_when_agent_is_not_registered() -> None:
+def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
     store = InMemorySessionStore()
-    bridge = RuntimeBridge(session_store=store, agent_registry=build_default_agent_registry())
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    seed_bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+    run = seed_bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    orchestrator = _CancelAwareMessageRunOrchestrator(
+        session_id="thread-1",
+        run_id=run.run_id,
+        request_cancel=lambda: store.request_run_cancel(run.run_id),
+    )
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        message_run_orchestrator=orchestrator,
+    )
+
+    events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
+    updated_run = bridge.get_run(run_id=run.run_id)
+
+    assert [event.type for event in events] == [
+        RUN_STARTED_EVENT_TYPE,
+        TEXT_DELTA_EVENT_TYPE,
+        RUN_CANCELLED_EVENT_TYPE,
+    ]
+    assert updated_run.status == "cancelled"
+    assert updated_run.cancel_requested is True
+    assert store.list_messages("thread-1") == ()
+
+
+
+def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:
+    store = InMemorySessionStore()
+    thread = store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+
+    capabilities = bridge.get_capabilities(session_id=thread.thread_id)
+
+    assert capabilities.sessionId == thread.thread_id
+    assert capabilities.boundAgent.agentId == "default"
+    assert capabilities.toolSelectionMode == "recommendation-only"
+    assert capabilities.recommendedTools == ("tool.file-convert",)
+    assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
+    assert capabilities.tools[0].toolId == "tool.file-convert"
+    assert capabilities.tools[0].displayName == "File Convert"
+
+
+
+def test_get_capabilities_raises_session_not_found_error_for_unknown_session() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+
+    with pytest.raises(SessionNotFoundError, match="Unknown session 'missing-session'."):
+        bridge.get_capabilities(session_id="missing-session")
+
+
+
+def test_get_capabilities_raises_agent_not_found_for_unknown_bound_agent() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="missing-agent", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
 
     with pytest.raises(AgentNotFoundError, match="Unknown agent 'missing-agent'."):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-1",
-                    run_id="run-1",
-                    user_message_text="should fail",
-                    agent_name="missing-agent",
-                )
-            )
-        )
-
-    assert store.get("thread-1") is None
+        bridge.get_capabilities(session_id="thread-1")
+async def _collect_events(events) -> list[RuntimeRunEvent]:
+    return [event async for event in events]
 
 
-def test_run_does_not_append_failed_turn_to_session_history() -> None:
-    store = InMemorySessionStore()
-    store.append_turn(
-        thread_id="thread-1",
-        agent_name="default",
-        user_text="hello",
-        assistant_text="hi there",
-        metadata={"last_run_id": "run-1"},
-    )
-    session_before_failure = store.get("thread-1")
-    assert session_before_failure is not None
-    previous_updated_at = session_before_failure.updated_at
-    executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
-    executor_factory = RecordingExecutorFactory(executor)
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
+def _build_scaffold(
+    *,
+    agent_registry: AgentRegistry,
+    session_store: InMemorySessionStore,
+):
+    return build_runtime_scaffold(
+        session_store_type=session_store.storage_type,
+        model_configured=True,
+        agent_registry=agent_registry,
+        tool_registry=build_default_tool_registry(),
     )
 
-    with pytest.raises(AgentExecutionError, match="executor boom"):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-1",
-                    run_id="run-2",
-                    user_message_text="should fail",
-                )
-            )
-        )
 
-    assert executor_factory.call_count == 1
-    assert _message_pairs(store, "thread-1") == [
-        ("user", "hello"),
-        ("assistant", "hi there"),
-    ]
-    session_after_failure = store.get("thread-1")
-    assert session_after_failure is session_before_failure
-    assert session_after_failure.metadata == {"last_run_id": "run-1"}
-    assert session_after_failure.updated_at == previous_updated_at
-
-
-def test_run_does_not_create_session_when_executor_fails_before_first_success() -> None:
-    store = InMemorySessionStore()
-    executor = RecordingAgentExecutor(error=AgentExecutionError("executor boom"))
-    executor_factory = RecordingExecutorFactory(executor)
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
-    )
-
-    with pytest.raises(AgentExecutionError, match="executor boom"):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-new",
-                    run_id="run-1",
-                    user_message_text="should fail",
-                )
-            )
-        )
-
-    assert executor_factory.call_count == 1
-    assert store.get("thread-new") is None
-    assert store.list_messages("thread-new") == ()
-
-
-def test_run_raises_explicit_error_when_stored_history_is_corrupted() -> None:
-    store = InMemorySessionStore()
-    session, _ = store.get_or_create(
-        thread_id="thread-1",
-        agent_name="default",
-        metadata={"last_run_id": "run-1"},
-    )
-    session.messages.append(RuntimeTextMessage(role="assistant", content="orphan assistant"))
-    executor_factory = RecordingExecutorFactory(RecordingAgentExecutor())
-    bridge = RuntimeBridge(
-        session_store=store,
-        agent_registry=build_default_agent_registry(executor_factory=executor_factory),
-    )
-
-    with pytest.raises(InvalidSessionHistoryError, match="expected role 'user'"):
-        asyncio.run(
-            bridge.run(
-                request=_build_run_request(
-                    thread_id="thread-1",
-                    run_id="run-2",
-                    user_message_text="should not execute",
-                )
-            )
-        )
-
-    assert executor_factory.call_count == 0
-    assert _message_pairs(store, "thread-1") == [("assistant", "orphan assistant")]
-
-
-def _build_run_request(
+def _build_run_start_request(
     *,
     thread_id: str,
-    run_id: str,
-    user_message_text: str,
-    agent_name: str = "default",
-) -> RuntimeRunRequest:
-    return RuntimeRunRequest(
-        agent_name=agent_name,
+    model_route: RuntimeModelRoute | None = None,
+    thinking_selection: RuntimeThinkingSelection | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
+) -> RuntimeRunStartRequest:
+    return RuntimeRunStartRequest(
         thread_id=thread_id,
-        run_id=run_id,
-        user_message_text=user_message_text,
-        state={},
-        messages=(),
-        actions=(),
-        meta_events=(),
-        node_name=None,
-        forwarded_props={},
-        metadata={},
+        message=RuntimeMessagePayload(role="user", content="Hello"),
+        policy=RuntimeMessageExecutionPolicy(
+            modelRoute=model_route
+            or RuntimeModelRoute(
+                provider_profile_id="provider-1",
+                route_ref=RuntimeModelRouteRef(
+                    route_kind="provider-model",
+                    profile_id="provider-1",
+                    model_id="gpt-4.1",
+                ),
+            ),
+            thinkingSelection=thinking_selection,
+            thinkingCapabilityOverride=thinking_capability_override,
+            enabledTools=(),
+            requestOptions={},
+        ),
+        agent_id="default",
     )
 
 
-def _message_pairs(store: InMemorySessionStore, thread_id: str) -> list[tuple[str, str]]:
-    return [(message.role, message.content) for message in store.list_messages(thread_id)]

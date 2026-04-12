@@ -1,92 +1,123 @@
+---
+title: 当前生效字段参考
+description: 按持久化 owner 和当前生效范围整理 frontend 中真实存在的字段。
+sidebar_position: 3
+---
+
 # 当前生效字段参考
 
-## 文档用途
+这页只回答一个问题：前端里真正会被保存的字段，现在分别归谁管理，以及它们当前影响到哪里。页面布局和交互请看[前端当前 UI 状态](./ui-current-state.md)，页面成熟度请看[页面能力参考](./reference-page-capabilities.md)。
 
-这份附录专门用于回答一个很具体的问题：**现阶段前端里，哪些字段是真的会影响启动和连接判断，哪些只是界面上看起来像配置，但当前其实还没有生效。**
+## 先看两层正式持久化
 
-它适合在以下场景使用：
+当前 frontend 的持久化已经分成两层：
 
-- 联调前确认当前最小字段范围
-- 审查文档时核对“这是不是当前事实”
-- 开发时快速确认字段的存储位置、读取时机和界面接入情况
+1. 公开配置中心负责少量公开字段，并通过公共快照、公共补丁和订阅读取给 renderer。
+2. settings workspace 负责大部分设置状态与 secrets，并通过专用 IPC 接口给设置页和聊天发送区使用。
 
-## 使用边界
+两层数据当前落在同一个配置根目录下，但文档职责不同，字段 owner 也不同。
 
-- 本文只记录当前代码里已经能确认的事实。
-- 本文优先列出“真正生效的字段”，不会把设置页里的展示字段都算进去。
-- 本文不补写后端 HTTP 细节，也不把未来规划字段写成当前实现。
-- 如果你想看运行态而不是字段，请改看 [reference-runtime-states.md](./reference-runtime-states.md)。
+## 第一层：公开配置中心
 
-## 核心表格
+公开配置中心当前更适合承载少量公开字段。前端今天真正依赖的公开字段，可以概括成下面这张表。
 
-### 1. 当前真正生效的字段
-
-| 字段名 | 当前作用 | 存储位置 | 读取时机 | 是否为进入 `ready` 的必填项 | 是否已接到界面 | 当前事实说明 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `runtimeUrl` | 指定前端准备交给 Copilot 外层能力的运行时地址 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动阶段由根层统一读取 settings/runtime，并通过状态注入供子组件消费 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示根层注入结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
-| `agentName` | 指定前端准备使用的智能体名称 | Electron `userData/desktop-runtime/config/copilot-settings.json` | 应用启动阶段由根层统一读取 settings/runtime，并通过状态注入供子组件消费 | 是 | 否，当前设置页没有正式编辑入口；仅在聊天骨架的 `ready` 面板中展示根层注入结果 | 当前会被归一化、参与状态判断，并在 `ready` 时传入 Copilot 外层能力 |
-
-### 2. 当前存储结构里实际存在的字段范围
-
-| 范围 | 当前情况 | 说明 |
-| --- | --- | --- |
-| Electron 持久化配置对象 | 只有 `runtimeUrl`、`agentName` | 当前 [`frontend-copilot/electron/copilot-settings.ts`](../../frontend-copilot/electron/copilot-settings.ts) 中定义的配置结构只有这两个字段 |
-| Renderer 读取后参与状态解析的字段 | 只有 `runtimeUrl`、`agentName` | 当前归一化和缺失判断只围绕这两个字段进行 |
-| 启动时真正传给 Copilot 外层能力的字段 | 只有 `runtimeUrl`、`agentName` | 仅在状态为 `ready` 时使用 |
-
-### 3. 当前“看起来像配置，但不应当算作生效字段”的范围
-
-| 界面分区 / 字段类别 | 当前是否属于真正生效字段 | 当前状态 | 说明 |
+| 字段 | 当前用途 | 当前前端里的可见落点 | 备注 |
 | --- | --- | --- | --- |
-| 模型服务中的服务商、协议、端点、密钥、模型等字段 | 否 | 前端本地交互 | 当前主要由 React state 驱动 |
-| 默认模型中的任务模型路由 | 否 | 前端本地交互 | 当前没有进入 Electron 持久化或启动判断 |
-| 常规设置中的语言、代理、通知 | 否 | 前端本地交互 | 当前没有形成后端连接契约 |
-| 显示设置中的主题、字号、动画 | 否 | 前端本地交互 | 当前只影响展示交互外观，不进入后端连接逻辑 |
-| 数据设置中的数据目录、备份周期等 | 否 | 前端本地交互 | 当前只是界面示例值和切换反馈 |
-| MCP、搜索、记忆、文档处理分区中的表单项 | 否 | 前端本地交互 | 当前未形成统一持久化闭环 |
-| API 服务器中的后端地址、重连策略、健康检查轮询 | 否 | 前端占位 | 当前页面已展示，但仍明确属于未接通状态 |
+| `theme` | 控制桌面主题 | `显示设置` 页和启动主题链路 | 这是最明确的公开显示字段。 |
+| `animationsEnabled` | 控制动画偏好 | 当前前端根节点仍会消费 | 字段仍在，但界面里不再强调它是独立主入口。 |
+| `agentName` | 保留为 assistant 行为偏好与状态摘要 | 主要进入 bootstrap 诊断信息 | 当前不再作为聊天 readiness 的硬条件。 |
+| `runtimeUrl` | 提供开发态运行时覆盖地址 | `API 服务器` 页中的公开配置卡片 | 这是连接判断里最关键的公开字段。 |
+| `model` | 作为宿主投影给后端 runtime 的默认模型字段 | 当前没有单独突出成聊天主路径入口 | 它不等于每次消息真正发送时使用的模型。 |
 
-## 必要说明
+### 这一层当前最容易写错的地方
 
-### 1. 为什么只有两个字段
+- `runtimeUrl` 是开发态 override 字段，不是发布态默认后端地址。
+- `agentName` 仍然存在，但现在主要起到偏好和摘要作用。
+- `model` 仍然保留在公开配置中心，但它和聊天发送区的请求级模型不是一回事。
 
-因为当前 Electron 配置结构、renderer 归一化逻辑、缺失字段判断和启动时的 Copilot 外层能力注入，全部都只围绕 `runtimeUrl` 和 `agentName` 展开。
+## 第二层：settings workspace state
 
-换句话说，不是“文档只挑了两个写”，而是“当前代码真正生效的就只有两个”。
+settings workspace state 负责保存设置工作区里大部分普通字段。它当前至少包含下面这些分组。
 
-### 2. 什么叫“已接到界面”
+| 分组 | 代表字段 | 当前主要被谁消费 |
+| --- | --- | --- |
+| `sustech` | 学号、邮箱、Blackboard 偏好 | `SUSTech 信息` 页 |
+| `providerProfiles` | 服务商元数据、模型列表、默认模型、快速模型、备注等 | `模型服务` 页和聊天模型目录 |
+| `defaultModelRouting` | `primaryAssistantModel`、`fastAssistantModel` | `默认模型` 页和聊天发送区默认模型选择 |
+| `general` | 语言、代理、通知、自动备份 | `常规设置` 页 |
+| `data` | 数据目录、备份周期、启动同步 | `数据设置` 页 |
+| `mcp` | 自动发现、工具权限策略 | `MCP 服务器` 页 |
+| `search` | 搜索引擎、结果数量、压缩方式 | `网络搜索` 页 |
+| `memory` | 记忆策略、自动清理 | `全局记忆` 页 |
+| `api` | 地址草稿、重连策略、健康轮询 | `API 服务器` 页 |
+| `docs` | 导出格式、输出目录、自动文件名 | `文档处理` 页 |
+| `externalSource` | `wakeupShareLink` | `外部源` 页 |
 
-这里的“已接到界面”指的是：用户能在现有设置界面里直接编辑这个字段，并让这个编辑结果进入当前已生效链路。
+### 当前真正进入聊天主路径的 settings workspace 字段
 
-按这个标准，当前答案是：**没有。**
+虽然 settings workspace 里的字段很多，但当前和聊天发送区关系最直接的，主要是下面两组：
 
-虽然聊天骨架在 `ready` 状态下会把 `runtimeUrl` 和 `agentName` 展示出来，但那是“读取结果展示”，不是“设置页正式编辑入口”。
+- `providerProfiles` 提供聊天面板可选模型目录。
+- `defaultModelRouting.primaryAssistantModel` 提供聊天草稿的首选模型 ID。
 
-### 3. 读取时机为什么写成根层统一读取
+这也解释了为什么首次初始化可以是空白状态：`initialProviderProfiles` 当前就是空数组，settings workspace 的默认 provider 与默认模型路由也会随之落成空值。前端不会再自带示例 provider 或默认模型。
 
-因为当前代码里，配置与运行态摘要已经收敛到根装配层统一读取：
+## 第三层：settings workspace secrets
 
-- 应用启动时，[`loadInitialConfigState()`](../../frontend-copilot/src/CopilotAppRoot.tsx:84) 会调用 [`loadCopilotConfigState()`](../../frontend-copilot/src/features/copilot/config.ts:196)，并统一读取 settings 与 runtime
-- [`CopilotAppRoot()`](../../frontend-copilot/src/CopilotAppRoot.tsx:132) 会缓存并注入这份状态，供子组件消费
-- [`CopilotChatPanel()`](../../frontend-copilot/src/features/copilot/CopilotChatPanel.tsx:22) 当前只消费注入状态与重试动作，不再自行重复读取
+敏感值不会进入公开配置中心快照，而是进入 settings workspace 的 secrets 文档。
 
-所以当前字段事实既影响启动阶段的连接判断，也影响聊天骨架最终展示的状态和字段值，但读取入口已经统一到根层。
+当前已经明确存在的 secret 类型有两类：
 
-## 当前已实现 / 未实现说明
+| secret 字段 | 当前用途 | 当前界面落点 |
+| --- | --- | --- |
+| `sustech.casPassword` | 保存校园 CAS 密码 | `SUSTech 信息` 页 |
+| `providerSecrets[providerId].apiKey` | 保存服务商 API 密钥 | `模型服务` 页 |
 
-### 当前已实现
+这层的意义很直接：前端需要记住这些敏感值，但又不能把它们放进公开快照里。
 
-- 已有 Electron 本地配置文件承载 `runtimeUrl` 和 `agentName`
-- 该配置文件当前落在 `userData/desktop-runtime/config/`，并兼容从旧版 `userData/copilot-settings.json` 迁移
-- 已有 preload 桥接供 renderer 读取 / 保存配置
-- 已有字段归一化逻辑
-- 已有缺失字段判断逻辑
-- 已有基于这两个字段进入 `ready` 的判断逻辑
-- 已有在 `ready` 状态下展示字段值的聊天骨架
+## 当前初始化状态怎样理解
 
-### 当前未实现
+当前 frontend 初始化时，不会自动补出示例 provider、默认模型或预选模型目录。这个事实会直接影响两个地方：
 
-- 设置页中针对 `runtimeUrl` 和 `agentName` 的正式编辑入口
-- 超出这两个字段之外的统一持久化配置结构
-- 把模型服务、API 服务器、MCP、搜索、记忆等字段接入当前生效链路
-- 可当作已生效后端契约依赖的更多字段集合
+- 设置工作区第一次打开时，`模型服务` 和 `默认模型` 可能都处于空白状态。
+- 聊天面板第一次进入时，如果 settings workspace 里还没有 providerProfiles 和 defaultModelRouting，就不会自动出现内置默认模型。
+
+这比旧文档里的“先带几个示例 provider 再修改”更接近当前代码现状。
+
+## 当前值得优先区分的两组相似字段
+
+### 公开 `model` 和默认模型路由
+
+这两组名称容易相似，但作用不同：
+
+- 公开配置中心里的 `model` 面向宿主投影给后端 runtime。
+- settings workspace 里的 `defaultModelRouting` 面向前端工作区中的默认模型选择。
+
+真正发送消息时，前端会在 `run/start` 里显式带上本次 `modelRoute`；兼容入口 `message/send` 只是映射到同一语义。因此文档里需要把这三层语义分开。
+
+### 公开 `runtimeUrl` 和 API 页中的工作区字段
+
+`API 服务器` 页当前同时展示两类字段：
+
+- 公开配置中心中的 `runtimeUrl`。
+- settings workspace 中的 `apiBaseUrl`、`apiReconnectMode` 和 `healthPollingEnabled`。
+
+因此这页属于混合页。看到同一页里有很多“地址”或“连接”相关输入框时，不能默认把它们都当成当前聊天主路径的真实连接地址。
+
+## 哪些东西不属于这份字段表
+
+下面这些状态对前端很重要，但它们不属于持久化字段：
+
+- 当前窗口里的会话列表。
+- 当前会话能力面返回的工具目录。
+- 聊天发送区这一次勾选的工具集合。
+- 根装配层计算出来的 `empty`、`starting`、`degraded` 等运行态。
+
+这些内容更适合分别去看[前端运行时状态参考](./reference-runtime-states.md)和[前端现在怎样连接后端](./backend-connection-contract.md)。
+
+## 相关文档
+
+- [前端当前 UI 状态](./ui-current-state.md)
+- [页面能力参考](./reference-page-capabilities.md)
+- [前端运行时状态参考](./reference-runtime-states.md)
+- [会话与状态模型](../system/session-and-state-model.md)

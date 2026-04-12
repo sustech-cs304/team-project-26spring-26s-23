@@ -45,8 +45,6 @@ ENV_RUNTIME_SNAPSHOT_FILE = "COPILOT_DESKTOP_RUNTIME_SNAPSHOT_FILE"
 ENV_LAST_FAILURE_FILE = "COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE"
 ENV_APP_MODE = "COPILOT_DESKTOP_RUNTIME_APP_MODE"
 ENV_ENVIRONMENT = "COPILOT_DESKTOP_RUNTIME_ENVIRONMENT"
-ENV_MODEL = "COPILOT_RUNTIME_MODEL"
-ENV_LEGACY_MODEL = "COPILOT_MODEL"
 
 _ALLOWED_LOOPBACK_HOSTS = {DEFAULT_HOST, "localhost", "::1"}
 
@@ -108,7 +106,8 @@ class DesktopRuntimeConfig:
     paths: DesktopRuntimePaths
     app_mode: str
     environment: str
-    model: str | None = None
+    host_model_route_bridge_url: str | None = None
+    host_model_route_bridge_token: str | None = None
     backend_dir: Path = BACKEND_DIR
 
     @property
@@ -175,7 +174,9 @@ class DesktopRuntimeConfig:
             "base_url": self.base_url,
             "app_mode": self.app_mode,
             "environment": self.environment,
-            "model": self.model,
+            "host_model_route_bridge_configured": bool(
+                self.host_model_route_bridge_url and self.host_model_route_bridge_token
+            ),
             "paths": self.paths.sanitized_summary(),
             "local_token_configured": bool(self.local_token),
             "local_token_header": LOCAL_TOKEN_HEADER_NAME,
@@ -222,7 +223,18 @@ def build_runtime_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backend-stderr-log-file", default=None, help="Python 子进程 stderr 日志文件路径")
     parser.add_argument("--runtime-snapshot-file", default=None, help="运行态快照文件路径")
     parser.add_argument("--last-failure-file", default=None, help="最近失败摘要文件路径")
-    parser.add_argument("--model", default=None, help="Copilot 聊天运行时模型名称")
+    parser.add_argument(
+        "--host-model-route-bridge-url",
+        dest="host_model_route_bridge_url",
+        default=None,
+        help="宿主私有 provider 路由解析桥地址，仅供本地 Python runtime 使用",
+    )
+    parser.add_argument(
+        "--host-model-route-bridge-token",
+        dest="host_model_route_bridge_token",
+        default=None,
+        help="宿主私有 provider 路由解析桥访问令牌，仅供本地 Python runtime 使用",
+    )
     parser.add_argument(
         "--local-token",
         default=None,
@@ -245,7 +257,8 @@ def parse_runtime_config(
     host = _resolve_host(args.host, env_map)
     port = _resolve_port(args.port, env_map)
     local_token = _resolve_optional_text_value(args.local_token, env_map, ENV_LOCAL_TOKEN)
-    model = _resolve_optional_text_value(args.model, env_map, ENV_MODEL, ENV_LEGACY_MODEL)
+    host_model_route_bridge_url = _resolve_optional_text_value(args.host_model_route_bridge_url, env_map)
+    host_model_route_bridge_token = _resolve_optional_text_value(args.host_model_route_bridge_token, env_map)
 
     user_data_dir = _resolve_path(
         _resolve_optional_text_value(args.user_data_dir, env_map, ENV_USER_DATA_DIR),
@@ -331,7 +344,8 @@ def parse_runtime_config(
         ),
         app_mode=app_mode,
         environment=environment,
-        model=model,
+        host_model_route_bridge_url=host_model_route_bridge_url,
+        host_model_route_bridge_token=host_model_route_bridge_token,
     )
 
 

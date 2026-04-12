@@ -1,230 +1,331 @@
-# 当前可观察契约参考
+---
+title: 当前契约参考
+description: 查表式整理当前 runtime 控制面、聊天主路径字段、流式事件与错误码。
+sidebar_position: 6
+---
 
-> 这份附录服务于 [前后端连接现状说明](./frontend-connection.md) 和 [边界与路线图](./roadmap-and-boundaries.md)。这里整理的是**当前已经能被外部观察到的输出形态**，包括阶段 1 新增的 desktop runtime 最小 HTTP 契约，但它仍不是完整业务 HTTP API 规范。
+# 当前契约参考
 
-## 1. 先说明这份附录在说什么
+这页服务于 [后端暴露契约与前端接入点](./frontend-connection.md)。正文只汇总当前已经确认的控制面端点、聊天方法、流式事件、兼容方法和错误码，方便联调与排错时快速对照。
 
-当前后端可观察到的“契约”主要包括下面几类输出：
+## 当前控制面端点
 
-1. Desktop runtime 的本地 HTTP 最小契约；
-2. Blackboard CLI 生成的 JSON 报告；
-3. Blackboard 工具层函数返回的字典；
-4. provider use case 返回的结构化结果对象；
-5. 数据同步后的统计结果。
-
-因此，这份附录的关键词仍然是：**可观察输出**。其中新增的 HTTP 部分只覆盖桌面宿主控制面，不代表 Blackboard / TIS 复杂业务 API 已经冻结成正式协议。
-
-## 2. 已实现的当前契约形态
-
-### 2.1 Desktop runtime 本地 HTTP 最小契约
-
-来源：`app.desktop_runtime`。
-
-#### 当前已确认的端点
-
-| 端点 | 含义 | 当前稳定度判断 |
+| 端点 | 当前用途 | 备注 |
 | --- | --- | --- |
-| `GET /health` | 基础健康检查，返回服务名、状态与 `ready` 布尔值 | 较高 |
-| `GET /ready` | readiness 状态，返回 `startup_complete` 与最近错误摘要 | 较高 |
-| `GET /version` | 返回版本、Python 版本、app mode、environment 与入口信息 | 较高 |
-| `GET /build-info` | 当前与 `/version` 返回同形内容 | 中等偏高 |
-| `GET /diagnostics` | 返回运行目录、配置摘要、鉴权摘要与能力摘要 | 中等偏高 |
-| `GET /diagnostics/runtime-info` | 当前与 `/diagnostics` 返回同形内容 | 中等偏高 |
+| `GET /health` | 最小健康检查 | 即使尚未 ready，通常也会返回 200。 |
+| `GET /ready` | 返回启动状态、是否 ready 和最近错误摘要 | 更适合判断 hosted backend 是否完成启动。 |
+| `GET /version` | 返回版本、Python 版本、运行模式与 base URL | 当前与 `GET /build-info` 同形。 |
+| `GET /build-info` | 返回版本与构建摘要 | 当前与 `GET /version` 同形。 |
+| `GET /diagnostics` | 返回运行目录、配置摘要、鉴权摘要与聊天能力摘要 | 如配置了 local token，请求时需要 `X-Local-Token`。 |
+| `GET /diagnostics/runtime-info` | 返回 diagnostics 同形数据 | 当前与 `GET /diagnostics` 同形。 |
 
-#### 当前已确认的边界
+## 聊天根端点外壳
 
-- 只监听 loopback 地址；
-- diagnostics 响应只返回配置摘要，不直接回显敏感 token；
-- 若配置本地 token，只有 diagnostics 端点需要 `X-Local-Token`；
-- 当前只提供桌面宿主控制面契约，不暴露 Blackboard / TIS 复杂业务 API。
+当前聊天相关方法统一走：
 
-### 2.2 Blackboard 课程目录搜索 CLI JSON 报告
+- `POST /`
 
-来源：课程目录搜索 CLI 在开启 `--save-json` 时写入 `backend/data/reports/`。
+当前推荐请求外壳是：
 
-#### 当前已确认的顶层字段
+```json
+{
+  "method": "message/send",
+  "body": {
+    "...": "..."
+  }
+}
+```
 
-| 字段 | 类型方向 | 含义 | 稳定度判断 |
-| --- | --- | --- | --- |
-| `run_at` | 字符串 | 运行时间 | 较高 |
-| `keyword` | 字符串 | 搜索关键词 | 较高 |
-| `field` | 字符串 | 搜索字段 | 较高 |
-| `operator` | 字符串 | 搜索操作符 | 较高 |
-| `limit` | 数字或空 | 搜索限制条数 | 较高 |
-| `total` | 数字 | 返回结果总数 | 较高 |
-| `results` | 数组 | 搜索结果列表 | 较高 |
+当前推荐继续使用显式 `body` 外壳；当前主路径不再依赖把字段直接放在顶层的旧兼容写法。
 
-#### 结果数组的理解方式
+## 当前正式主路径方法
 
-`results` 来自 DTO 的 `to_dict()`，因此字段整体已经结构化，但具体子字段仍更适合作为“当前实现输出”理解，而不是长期冻结协议。
+当前真实主链是 `thread/create`、`thread/get`、`run/start`、`run/stream`、`run/cancel`，并与 `agents/list` 一起构成运行时主入口。`session/create`、`capabilities/get`、`message/send` 作为兼容壳保留。
 
-更稳妥的说法是：
+### `agents/list`
 
-- 结果对象已经有较清楚的形状；
-- 适合当前联调、调试、人工审查参考；
-- 若未来对前端正式开放，仍应再做契约收敛。
+#### 当前用途
 
-### 2.3 Blackboard ICS 同步 CLI JSON 报告
+这条方法用于读取 runtime 暴露的智能体目录。
 
-来源：ICS CLI 在开启 `--save-json` 时写入 `backend/data/reports/`。
-
-#### 当前已确认的顶层字段
-
-| 字段 | 类型方向 | 含义 | 稳定度判断 |
-| --- | --- | --- | --- |
-| `run_at` | 字符串 | 运行时间 | 较高 |
-| `feed_url` | 字符串 | 实际使用的 ICS 地址 | 较高 |
-| `stats` | 对象 | 同步统计信息 | 较高 |
-| `events` | 数组 | 当前事件快照 | 中等偏高 |
-
-#### `stats` 的当前已知方向
-
-从 use case 与工具层测试可确认，统计信息至少会围绕下面这些量展开：
-
-- `parsed`
-- `inserted`
-- `updated`
-- `deleted`
-- 时间类字段（会被序列化为 ISO 字符串）
-
-其中“有多少条被解析、插入、更新、删除”属于当前比较值得依赖的统计维度。
-
-### 2.4 Blackboard 工具层返回字典
-
-来源：`agent_tools.py`。
-
-这部分已经有单元测试验证返回形状，因此是当前最有代表性的“代码外可观察契约”之一。
-
-#### a. 课程目录搜索工具返回
-
-当前顶层字段可确认包括：
+#### 当前值得依赖的响应字段
 
 | 字段 | 含义 |
 | --- | --- |
-| `keyword` | 搜索关键词 |
-| `field` | 搜索字段 |
-| `operator` | 搜索操作符 |
-| `limit` | 条数限制 |
-| `total` | 结果总数 |
-| `results` | 搜索结果数组 |
-| `logs` | 运行日志数组 |
-| `log_summary` | 日志汇总 |
+| `ok` | 请求是否成功 |
+| `directoryVersion` | 当前智能体目录版本 |
+| `defaultAgentId` | 默认推荐智能体 |
+| `agents[]` | 智能体目录数组 |
 
-#### b. ICS 刷新工具返回
-
-当前顶层字段可确认包括：
+#### `agents[]` 中当前较稳定的字段
 
 | 字段 | 含义 |
 | --- | --- |
-| `feed_url` | 实际使用的订阅地址 |
-| `db_path` | 数据库路径，已转为字符串 |
-| `stats` | 同步统计 |
-| `active_event_count` | 当前活跃事件数 |
-| `all_event_count` | 全部事件数 |
-| `active_events` | 活跃事件列表 |
-| `logs` | 日志数组 |
-| `log_summary` | 日志汇总 |
+| `agentId` | 智能体唯一标识 |
+| `status` | 当前状态 |
+| `recommendedTools` | 推荐工具集合 |
+| `defaultModelPreference` | 默认模型偏好提示 |
+| `displayName` | 展示名称 |
+| `description` | 描述文本 |
+| `iconKey` | 图标提示键 |
 
-#### c. Blackboard snapshot 同步工具返回
+### `session/create`
 
-当前顶层字段可确认包括：
+#### 当前用途
+
+这条方法属于兼容壳，用于创建会话视图，并在创建时把底层 thread 绑定到某个智能体。
+
+#### 当前请求字段
+
+| 字段 | 当前要求 |
+| --- | --- |
+| `agentId` | 必须是非空字符串，并且必须存在于当前智能体目录。 |
+
+#### 当前值得依赖的响应字段
 
 | 字段 | 含义 |
 | --- | --- |
-| `db_path` | 数据库路径 |
-| `resource_course_limit` | 资源抓取课程数限制 |
-| `scraped_counts` | 实时抓取数量汇总 |
-| `first_sync_stats` | 首次同步统计 |
-| `second_sync_stats` | 第二次同步统计 |
-| `table_counts` | 数据表计数 |
-| `expected_active_counts` | 预期活跃记录数 |
-| `integrity_ok` | 完整性检查是否通过 |
-| `second_sync_has_no_new_records` | 第二次同步是否没有新增 |
-| `second_sync_has_no_deleted_records` | 第二次同步是否没有删除 |
-| `logs` | 日志数组 |
-| `log_summary` | 日志汇总 |
+| `ok` | 请求是否成功 |
+| `sessionId` | 后端生成的会话标识 |
+| `boundAgent` | 当前会话绑定的智能体视图 |
+| `createdAt` | 创建时间 |
+| `updatedAt` | 最近更新时间 |
+| `recommendedTools` | 推荐工具集合 |
+| `defaultModelPreference` | 默认模型偏好提示 |
+| `capabilities.tools.selectionMode` | 轻量工具选择模式提示 |
 
-这一组字段很重要，因为它已经把“抓取、同步、校验”的结果以结构化字典方式暴露出来了。
+### `capabilities/get`
 
-## 3. 代码里可调用但不是正式入口的契约形态
+#### 当前用途
 
-### 3.1 provider use case 返回对象
+这条方法属于兼容壳，用于读取某个会话视图当前的能力面投影。底层数据来自同一条 thread 记录。
 
-Blackboard 和 TIS 的 provider use case 普遍会返回命名明确的结果对象，而不是散乱元组或裸字典。例如：
+#### 当前请求字段
 
-- 课程目录搜索结果对象；
-- ICS 同步结果对象；
-- Blackboard snapshot 报告对象；
-- TIS 个人成绩、学分绩、已选课程结果对象。
+| 字段 | 当前要求 |
+| --- | --- |
+| `sessionId` | 必须是已存在会话的非空字符串。 |
 
-这说明项目内部已经在朝“结构化返回”靠拢。
+#### 当前值得依赖的响应字段
 
-但当前对外文档仍应保持克制：
+| 字段 | 含义 |
+| --- | --- |
+| `ok` | 请求是否成功 |
+| `sessionId` | 当前会话 ID |
+| `boundAgent` | 当前绑定智能体 |
+| `capabilitiesVersion` | 能力面版本标识 |
+| `tools[]` | 当前会话可见工具目录 |
+| `recommendedTools` | 推荐工具集合 |
+| `toolSelectionMode` | 工具选择模式 |
+| `defaultModelPreference` | 默认模型偏好提示 |
 
-- 这些对象适合当作内部能力与未来接口设计参考；
-- 还不应被写成对前端承诺的正式协议。
+#### `tools[]` 中当前较稳定的字段
 
-### 3.2 日志与摘要
+| 字段 | 含义 |
+| --- | --- |
+| `toolId` | 工具唯一标识 |
+| `kind` | 工具类型 |
+| `availability` | 当前可用状态 |
+| `displayName` | 展示名称 |
+| `description` | 描述文本 |
 
-Blackboard 工具层返回中显式暴露了：
+### `message/send`
 
-- `logs`
-- `log_summary`
+#### 当前用途
 
-这表示日志本身也已经是当前输出的一部分，而不只是终端噪声。对于调试和联调来说，这很有价值；但如果未来要服务化，是否继续直接暴露这些日志字段，还需要重新设计。
+这条方法属于兼容壳，用于向某个会话视图发送一条消息，并以流式事件返回本轮 run 的执行过程。底层会映射到 `run/start + run/stream`。
 
-## 4. 当前哪些字段更适合视为较稳定参考
+#### 当前请求字段
 
-在当前阶段，下面这些内容更适合当作“相对稳定的契约方向”：
+| 字段 | 当前要求 |
+| --- | --- |
+| `sessionId` | 必须是已存在会话的非空字符串。 |
+| `agent` | 可选；如果提供，会用于校验与会话绑定智能体是否一致。 |
+| `message.role` | 当前必须是 `user`。 |
+| `message.content` | 必须是非空文本。 |
+| `policy.modelRoute.providerProfileId` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.provider` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.endpointType` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.baseUrl` | 必须是非空字符串。 |
+| `policy.modelRoute.snapshot.modelId` | 必须是非空字符串。 |
+| `policy.enabledTools` | 可选；如果提供，必须是字符串数组。 |
+| `policy.requestOptions` | 可选；如果提供，必须是对象。 |
 
-- 搜索类输出中的 `keyword`、`field`、`operator`、`limit`、`total`；
-- 同步类输出中的 `feed_url`、`db_path`、`stats`；
-- snapshot 输出中的 `scraped_counts`、`first_sync_stats`、`second_sync_stats`、`table_counts`、`expected_active_counts`、`integrity_ok`；
-- 通用的 `logs` 与 `log_summary` 顶层存在性。
+#### 当前事件流外壳
 
-这些字段共同特点是：
+一旦流成功建立，每个事件都带有统一外壳：
 
-- 已经直接出现在 CLI 报告或工具返回中；
-- 在测试里也有一定程度的形状约束；
-- 语义比较清楚，不依赖实现细枝末节才能理解。
+| 字段 | 含义 |
+| --- | --- |
+| `type` | 事件类型 |
+| `runId` | 当前 run 标识 |
+| `sessionId` | 当前会话 ID |
+| `sequence` | 严格递增的事件序号 |
+| `payload` | 当前事件载荷 |
 
-## 5. 当前哪些内容更适合视为实现细节
+#### 当前事件集合
 
-下面这些内容虽然现在能看到，但更适合保留为“当前实现输出”，不宜过早当成长期稳定协议：
+| 事件类型 | 当前语义 |
+| --- | --- |
+| `run_started` | run 已建立，前端可以创建 assistant 占位项。 |
+| `tool_event` | 真实工具生命周期事件；通过 `phase` 区分 `started`、`completed` 与 `failed`。 |
+| `text_delta` | assistant 文本增量片段。 |
+| `run_completed` | 本轮成功完成，并带回最终 assistant 文本与解析后的路由回显。 |
+| `run_failed` | 本轮失败结束，并给出错误码、错误消息与细节。 |
+| `run_cancelled` | 本轮取消结束，并给出取消原因。 |
+| `run_diagnostic` | 非敏感诊断信息，通常出现在失败前。 |
 
-- DTO 内部的全部细枝末节字段；
-- 日志事件里每一个明细键名；
-- 某些统计对象里未来可能扩展的附加字段；
-- 具体错误文案的逐字内容。
+#### 当前终态规则
 
-原因很简单：这些内容在未来服务化时，很可能会被重新组织。
+| 规则 | 当前要求 |
+| --- | --- |
+| 首个事件 | 必须是 `run_started`。 |
+| 终态事件 | 只能是 `run_completed`、`run_failed` 或 `run_cancelled` 之一。 |
+| 终态之后 | 不会继续输出其他事件。 |
+| 诊断事件 | 可以在失败终态前出现。 |
 
-## 6. 当前契约与 HTTP API 的边界
+#### `run_completed` 当前值得依赖的字段
 
-这里再次强调一次，避免误读：
+| 字段 | 含义 |
+| --- | --- |
+| `assistantMessageId` | assistant 占位消息 ID |
+| `assistantText` | 本轮最终 assistant 文本 |
+| `resolvedModelId` | 本轮实际采用的模型 ID |
+| `resolvedModelRoute` | 本轮解析确认后的公开路由回显 |
+| `resolvedToolIds` | 本轮实际启用的工具 ID |
+| `requestOptions` | 本轮回显的请求选项 |
 
-- 当前已经存在一组 **desktop runtime 控制面 HTTP 契约**；
-- 但 Blackboard / TIS 复杂业务能力仍主要表现为 CLI、工具层和结果对象输出；
-- 现在还没有已经承诺给前端长期依赖的完整业务 HTTP API 规范。
+#### `run_failed` 当前值得依赖的字段
 
-如果后续要做前端正式联调，应把这里的内容作为输入，重新整理为服务端 API 契约，而不是直接照搬现有字典、报告文件或阶段 1 的控制面端点。
+| 字段 | 含义 |
+| --- | --- |
+| `code` | 错误码 |
+| `message` | 错误消息 |
+| `details` | 错误细节对象 |
 
-## 7. 快速结论
+#### `run_cancelled` 当前值得依赖的字段
 
-### 已实现
+| 字段 | 含义 |
+| --- | --- |
+| `assistantMessageId` | assistant 占位消息 ID |
+| `reason` | 取消原因 |
 
-- Desktop runtime 本地 HTTP 最小契约；
-- Blackboard CLI JSON 报告；
-- Blackboard 工具层返回字典；
-- provider use case 的结构化结果对象；
-- snapshot 同步统计和完整性输出。
+#### `run_diagnostic` 当前值得依赖的字段
 
-### 代码里可调用但不是正式入口
+| 字段 | 含义 |
+| --- | --- |
+| `code` | 诊断码 |
+| `message` | 诊断消息 |
+| `details` | 非敏感诊断细节 |
+| `stage` | 诊断阶段 |
 
-- TIS provider 结果对象；
-- Blackboard/TIS 更细粒度 DTO 与日志明细；
-- Blackboard / TIS 复杂业务能力的正式 HTTP 暴露面。
+#### `tool_event` 当前值得依赖的字段
 
-### 未来草案
+| 字段 | 含义 |
+| --- | --- |
+| `toolCallId` | 同一次工具调用的稳定标识 |
+| `toolId` | 当前调用的工具 ID |
+| `phase` | 工具生命周期阶段，当前为 `started`、`completed` 或 `failed` |
+| `title` | 面向用户的步骤标题 |
+| `summary` | 面向用户的步骤摘要 |
+| `inputSummary` | 可选的输入摘要 |
+| `resultSummary` | 可选的结果摘要 |
+| `errorSummary` | 可选的错误摘要 |
 
-- 把这些输出进一步收束为真正的业务 HTTP API 响应规范。
+#### 当前语义重点
+
+- 会话绑定的是智能体。
+- 模型语义已经升级为请求级 `modelRoute`，而不是单一字符串 `model`。
+- provider secrets 不进入请求体，也不进入事件流。
+- 当前 session store 仍然是内存态，runtime 重启后会话不会自动恢复。
+- 增量阶段只累积草稿，成功完成才归档 assistant 文本。
+- 当 raw collector 观察到 tool-call 参数完备却没有真实工具执行时，会先发诊断，再以失败终态收口。
+
+## 已退役的旧外层方法
+
+下面这些旧方法已经不再包含在 current supported methods 中，也不再构成当前 runtime surface：
+
+| 方法 | 当前状态 |
+| --- | --- |
+| `info` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
+| `agent/connect` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
+| `agent/run` | 已退役；旧调用当前会收到 `method_not_implemented`。 |
+
+当前正式主链已经是 thread/run；session-first 三方法当前属于兼容壳。
+
+## 当前错误响应外壳
+
+### 流建立前的 JSON 错误
+
+聊天相关错误当前仍然可能返回下面这类 JSON 外壳：
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "error_code",
+    "message": "Human-readable error message",
+    "stage": "phase3-run-bridge",
+    "requestedMethod": "message/send",
+    "supportedMethods": ["..."],
+    "details": {}
+  }
+}
+```
+
+这类错误通常发生在流建立之前，例如请求结构无效、会话不存在，或者 agent 校验失败。
+
+### 流建立后的错误
+
+如果错误发生在 run 已建立之后，当前主线会优先使用流内错误：
+
+1. 需要补充诊断时，先发 `run_diagnostic`。
+2. 再发 `run_failed` 作为终态。
+
+## 当前常见错误码
+
+| 错误码 | 常见触发场景 |
+| --- | --- |
+| `invalid_request` | `method`、`body`、`sessionId`、`message` 或 `policy.modelRoute` 等字段格式不对。 |
+| `session_not_found` | 请求引用的 `sessionId` 不存在。 |
+| `agent_not_found` | 请求中的 `agentId` 不在当前目录中。 |
+| `agent_mismatch` | `message/send` 里的 `agent` 与会话绑定智能体不一致。 |
+| `tool_not_found` | `enabledTools` 中出现后端不认识的工具 ID。 |
+| `tool_not_enabled` | 模型调用了本轮未在 `enabledTools` 中启用的工具。 |
+| `invalid_message_history` | 进程内会话历史损坏，无法继续拼装上下文。 |
+| `model_not_configured` | 当前 runtime 没有可用模型执行器配置。 |
+| `provider_profile_not_found` | 请求中的 `providerProfileId` 在宿主真源中不存在。 |
+| `model_route_snapshot_mismatch` | 请求快照与宿主当前 provider 配置不一致。 |
+| `provider_secret_missing` | 对应 provider profile 缺少 API key。 |
+| `host_model_route_access_denied` | Python runtime 调宿主私桥时访问令牌无效。 |
+| `host_model_route_unavailable` | 宿主私桥不可用或返回了无效响应。 |
+| `agent_execution_failed` | 智能体执行阶段抛错。 |
+| `method_not_implemented` | 调用了当前 scaffold 不支持的方法。 |
+
+## 当前哪些字段更适合依赖
+
+当前阶段更适合作为稳定依赖的，是下面这组字段和概念：
+
+- `directoryVersion`
+- `defaultAgentId`
+- `sessionId`
+- `boundAgent`
+- `capabilitiesVersion`
+- `toolSelectionMode`
+- `policy.modelRoute`
+- `policy.enabledTools`
+- `runId`
+- `sequence`
+- `tool_event.payload.phase`
+- `resolvedModelId`
+- `resolvedModelRoute`
+- `resolvedToolIds`
+
+相比之下，某些响应里较细的提示字段、错误文案逐字内容和日志明细键名，更适合继续按当前实现细节理解。
+
+## 快速结论
+
+- 当前正式聊天主路径已经是 thread/run 六方法，加上 `agents/list`。
+- `session/create`、`capabilities/get`、[`message/send`](../system/chat-runtime-contract.md) 已降级为兼容壳。
+- `info`、`agent/connect` 与 `agent/run` 已退役，不再属于当前 supported methods。
+- 当前错误外壳、流式事件集合与常见错误码已经足够支持联调与排错。

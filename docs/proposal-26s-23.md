@@ -1,3 +1,10 @@
+---
+title: Proposal Team 26s-23
+description: 课程项目 proposal，记录需求分析、非功能需求与技术路线草案。
+sidebar_position: 10
+sidebar_label: Proposal
+---
+
 # Proposal Team 26s-23
 
 ## Part I. Preliminary Requirement Analysis

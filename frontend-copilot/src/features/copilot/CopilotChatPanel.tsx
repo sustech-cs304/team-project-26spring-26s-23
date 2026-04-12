@@ -1,537 +1,621 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type MutableRefObject,
+} from 'react'
 
-import { useCopilotChatInternal, useCopilotContext } from '@copilotkit/react-core'
-import type { Message as CopilotMessage } from '@copilotkit/shared'
-
-import { RecoverableErrorBoundary } from '../../components/RecoverableErrorBoundary'
-import type { CopilotBootstrapState, CopilotConfigState, CopilotDiagnosticsSummary } from './types'
-import { NotConnectedNotice } from './components/NotConnectedNotice'
+import type { AgentType, AssistantSessionShell, ModelRouteRef } from '../../workbench/types'
+import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
+import { loadSettingsWorkspaceState } from '../../workbench/settings/workspace-state'
+import {
+  cancelRuntimeRun,
+  getRuntimeThinkingCapability,
+  RuntimeRequestError,
+  type RuntimeModelRoute,
+  type RuntimeThinkingCapability,
+} from './chat-contract'
+import { CopilotPanelShell } from './CopilotPanelShell'
+import {
+  applyModelSelectionToComposerDraft,
+  buildRuntimeDebugSummary,
+  buildRuntimeThinkingCapabilityFromError,
+  buildSessionDebugSummary,
+  createComposerDraftFromSession,
+  createEmptyComposerDraft,
+  syncComposerDraftThinkingSelection,
+  type CopilotChatComposerDraft,
+  type CopilotTransientErrorState,
+} from './copilot-chat-helpers'
+import {
+  buildCopilotMessageListItems,
+  resolveCopilotAssistantPlaceholderState,
+  type CopilotMessageListItem,
+} from './run-segment-view-model'
+import {
+  createCopilotModelCatalog,
+  getCopilotModelById,
+  resolveCopilotPreferredModelId,
+  type CopilotModelOption,
+} from './model-picker'
+import {
+  createIdleCopilotRunState,
+  dispatchCopilotMessage,
+  getCopilotSendDisabledReason,
+  orchestrateCopilotSend,
+} from './copilot-send-controller'
+import { isCopilotConnectableState } from './copilot-panel-diagnostics'
+import { useCopilotComposerResize } from './useCopilotComposerResize'
+import type { CopilotBootstrapState, CopilotRunState } from './types'
 import './copilot.css'
-
-const statusLabels: Record<CopilotBootstrapState['status'], string> = {
-  loading: '读取中',
-  empty: '未配置',
-  incomplete: '配置缺失',
-  starting: '启动中',
-  ready: '已连接',
-  failed: '启动失败',
-  degraded: '运行降级',
-  error: '读取失败',
-}
 
 interface CopilotChatPanelProps {
   state: CopilotBootstrapState
   retrying: boolean
   retry: () => void
-  threadId: string
+  selectedAgent: AgentType | null
+  sessionShell: AssistantSessionShell | null
+  directoryState: AssistantAgentDirectoryState
+  sessionStatus: 'idle' | 'creating' | 'error'
+  sessionError: string | null
+  sendMessage?: typeof dispatchCopilotMessage
+  cancelRun?: typeof cancelRuntimeRun
+  getThinkingCapability?: typeof getRuntimeThinkingCapability
+  loadWorkspaceState?: typeof loadSettingsWorkspaceState
 }
 
-export function CopilotChatPanel({ state, retrying, retry, threadId }: CopilotChatPanelProps) {
-  return (
-    <section className="copilot-panel">
-      <header className="copilot-panel__header">
-        <div>
-          <p className="copilot-panel__eyebrow">Copilot Feature</p>
-          <h1 className="copilot-panel__heading">最小聊天面板</h1>
-        </div>
-        <span className={`copilot-panel__status copilot-panel__status--${state.status}`}>
-          {statusLabels[state.status]}
-        </span>
-      </header>
+export function CopilotChatPanel({
+  state,
+  retrying,
+  retry,
+  selectedAgent,
+  sessionShell,
+  directoryState,
+  sessionStatus,
+  sessionError,
+  sendMessage = dispatchCopilotMessage,
+  cancelRun = cancelRuntimeRun,
+  getThinkingCapability = getRuntimeThinkingCapability,
+  loadWorkspaceState = loadSettingsWorkspaceState,
+}: CopilotChatPanelProps) {
+  const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
+  const [conversation, setConversation] = useState<CopilotMessageListItem[]>([])
+  const [runState, setRunState] = useState<CopilotRunState>(createIdleCopilotRunState)
+  const [thinkingCapability, setThinkingCapability] = useState<RuntimeThinkingCapability | null>(null)
+  const [sendError, setSendError] = useState<CopilotTransientErrorState | null>(null)
+  const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
+  const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
+  const [workspacePrimaryModelRoute, setWorkspacePrimaryModelRoute] = useState<ModelRouteRef | null>(null)
+  const [workspaceStateLoaded, setWorkspaceStateLoaded] = useState(false)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
+  const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
+  const activeAbortControllerRef = useRef<AbortController | null>(null)
 
-      {renderCopilotPanelContent(state, {
-        retrying,
-        onRetry: retry,
-        threadId,
-      })}
-    </section>
+  const sessionIdentity = sessionShell === null
+    ? null
+    : `${sessionShell.sessionId}:${sessionShell.capabilities.capabilitiesVersion}`
+
+  const runtimeDebugSummary = useMemo(() => {
+    if (!isCopilotConnectableState(state)) {
+      return null
+    }
+
+    return buildRuntimeDebugSummary({
+      state,
+      directoryState,
+      selectedAgent,
+    })
+  }, [directoryState, selectedAgent, state])
+
+  const sessionDebugSummary = useMemo(
+    () => (sessionShell === null ? null : buildSessionDebugSummary(sessionShell)),
+    [sessionShell],
   )
-}
 
-function renderCopilotPanelContent(
-  state: CopilotBootstrapState,
-  actions: {
-    retrying: boolean
-    onRetry: () => void
-    threadId: string
-  },
-) {
-  switch (state.status) {
-    case 'loading':
-      return (
-        <section className="copilot-panel__card" aria-live="polite">
-          <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">正在等待根层完成运行态装配</h2>
-          <p className="copilot-panel__description">
-            聊天面板不再自行读取配置或运行时；当前仅消费来自根装配层的统一状态与动作。
-          </p>
-        </section>
-      )
-
-    case 'error':
-      return (
-        <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
-          <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">读取运行态失败</h2>
-          <p className="copilot-panel__description">
-            当前无法从 Electron 预加载桥接读取运行态摘要。该状态与“后端未启动”不同，需优先检查 preload 与 IPC 链路。
-          </p>
-          <pre className="copilot-panel__error">{state.error}</pre>
-        </section>
-      )
-
-    case 'empty':
-      return (
-        <NotConnectedNotice
-          title="尚未获得可用运行时"
-          description="当前既没有可用的宿主运行时地址，也没有开发态覆盖地址。开发态下可继续使用手填 runtime URL 作为外接联调覆盖；正式宿主管理链路则会在后端 ready 后自动提供地址。"
-          missingFields={state.missingFields}
-          details={buildSharedDetails(state)}
-        />
-      )
-
-    case 'incomplete':
-      return (
-        <NotConnectedNotice
-          title="连接信息仍不完整"
-          description="宿主运行态与本地设置已由根层统一读取，但当前缺少继续接入 CopilotKit 所需的最小字段。若宿主尚未提供 runtime URL，正式模式需要等待 hosted backend ready；开发态则可显式填写 override。"
-          missingFields={state.missingFields}
-          details={buildSharedDetails(state)}
-        />
-      )
-
-    case 'starting':
-      return (
-        <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
-          <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">宿主正在启动本地后端</h2>
-          <p className="copilot-panel__description">
-            当前由 Electron 主进程托管 hosted backend；Renderer 不再自行猜测地址，而是等待宿主进入 ready 后提供有效 runtime URL。
-          </p>
-          <dl className="copilot-panel__details-grid">
-            {buildSharedDetails(state).map((detail) => (
-              <div key={`${detail.label}:${detail.value}`}>
-                <dt>{detail.label}</dt>
-                <dd>{detail.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )
-
-    case 'failed':
-      return (
-        <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
-          <p className="copilot-panel__eyebrow">Copilot</p>
-          <h2 className="copilot-panel__title">宿主启动后端失败</h2>
-          <p className="copilot-panel__description">
-            当前未拿到可用的 hosted backend 运行地址。界面仅展示最小失败摘要，不暴露 token、spawn 参数或底层文件访问能力。
-          </p>
-          <dl className="copilot-panel__details-grid">
-            {buildSharedDetails(state).map((detail) => (
-              <div key={`${detail.label}:${detail.value}`}>
-                <dt>{detail.label}</dt>
-                <dd>{detail.value}</dd>
-              </div>
-            ))}
-          </dl>
-          {state.diagnostics.failure && (
-            <pre className="copilot-panel__error">{formatFailureSummary(state.diagnostics)}</pre>
-          )}
-          <div className="copilot-panel__actions">
-            <button
-              type="button"
-              className="copilot-panel__button"
-              onClick={actions.onRetry}
-              disabled={actions.retrying || !canRetry(state)}
-            >
-              {actions.retrying ? '正在重试…' : '重试启动宿主后端'}
-            </button>
-          </div>
-        </section>
-      )
-
-    case 'degraded':
-      return (
-        <>
-          <section className="copilot-panel__card copilot-panel__card--warning" aria-live="polite">
-            <p className="copilot-panel__eyebrow">Copilot</p>
-            <h2 className="copilot-panel__title">宿主运行态已降级</h2>
-            <p className="copilot-panel__description">
-              Hosted backend 曾成功提供运行地址，但当前记录到异常退出或降级。若保留的 runtime URL 仍可连接，CopilotKit 仍会继续使用；同时请关注宿主诊断摘要。
-            </p>
-            <dl className="copilot-panel__details-grid">
-              {buildSharedDetails(state).map((detail) => (
-                <div key={`${detail.label}:${detail.value}`}>
-                  <dt>{detail.label}</dt>
-                  <dd>{detail.value}</dd>
-                </div>
-              ))}
-            </dl>
-            {state.diagnostics.failure && (
-              <pre className="copilot-panel__error">{formatFailureSummary(state.diagnostics)}</pre>
-            )}
-          </section>
-          <ConnectedChatMount threadId={actions.threadId} />
-        </>
-      )
-
-    case 'ready':
-      return (
-        <>
-          <section className="copilot-panel__card copilot-panel__card--ready" aria-live="polite">
-            <p className="copilot-panel__eyebrow">Copilot</p>
-            <h2 className="copilot-panel__title">Copilot 连接入口已就绪</h2>
-            <p className="copilot-panel__description">
-              当前连接优先使用宿主管理的 hosted backend；仅当宿主未提供可用地址且处于开发态时，才会回落到显式 dev override。CopilotKit 注入路径保持不变，当前工作区会把所选会话 ID 作为 threadId 继续传入聊天区。
-            </p>
-            <dl className="copilot-panel__details-grid">
-              <div>
-                <dt>当前 Runtime URL</dt>
-                <dd>{state.runtimeUrl}</dd>
-              </div>
-              <div>
-                <dt>Runtime 来源</dt>
-                <dd>{formatRuntimeSource(state.runtimeSource)}</dd>
-              </div>
-              <div>
-                <dt>Agent 名称</dt>
-                <dd>{state.agentName}</dd>
-              </div>
-              <div>
-                <dt>Agent 来源</dt>
-                <dd>{formatAgentNameSource(state.agentNameSource)}</dd>
-              </div>
-              <div>
-                <dt>存储状态</dt>
-                <dd>{state.storageState}</dd>
-              </div>
-              <div>
-                <dt>运行模式</dt>
-                <dd>{formatModeSummary(state.diagnostics)}</dd>
-              </div>
-            </dl>
-          </section>
-          <ConnectedChatMount threadId={actions.threadId} />
-        </>
-      )
-  }
-}
-
-function ConnectedChatMount({ threadId }: { threadId: string }) {
-  return (
-    <RecoverableErrorBoundary
-      resetKeys={[threadId]}
-      fallback={({ error, reset }) => (
-        <section className="copilot-chat" aria-label="聊天区域异常">
-          <div className="copilot-chat__stream">
-            <article className="copilot-chat__message copilot-chat__message--error" role="alert">
-              <p className="copilot-chat__message-label">聊天运行时错误</p>
-              <p className="copilot-chat__message-text">{formatThrownError(error)}</p>
-              <button type="button" className="copilot-panel__button" onClick={reset}>
-                重新挂载聊天区域
-              </button>
-            </article>
-          </div>
-        </section>
-      )}
-    >
-      <ConnectedChatSurface threadId={threadId} />
-    </RecoverableErrorBoundary>
+  const modelCatalog = useMemo(
+    () => createCopilotModelCatalog(workspaceProviderProfiles),
+    [workspaceProviderProfiles],
   )
-}
-
-function ConnectedChatSurface({ threadId }: { threadId: string }) {
-  const {
-    bannerError,
-    setBannerError,
-    setThreadId: setCopilotThreadId,
-    threadId: currentThreadId,
-  } = useCopilotContext()
-  const { messages, sendMessage, isLoading, isAvailable, reset } = useCopilotChatInternal()
-  const [draft, setDraft] = useState('')
-  const resetRef = useRef(reset)
-  const setBannerErrorRef = useRef(setBannerError)
-  const setCopilotThreadIdRef = useRef(setCopilotThreadId)
-  const lastAppliedThreadIdRef = useRef<string | null>(null)
+  const preferredWorkspaceModelId = useMemo(
+    () => workspacePrimaryModelRoute === null
+      ? ''
+      : resolveCopilotPreferredModelId({
+          preferredModelId: workspacePrimaryModel,
+          preferredModelRouteRef: workspacePrimaryModelRoute,
+          models: modelCatalog.models,
+        }),
+    [
+      modelCatalog.models,
+      workspacePrimaryModel,
+      workspacePrimaryModelRoute,
+    ],
+  )
+  const preferredWorkspaceModel = useMemo(
+    () => getCopilotModelById(preferredWorkspaceModelId, modelCatalog.models),
+    [modelCatalog.models, preferredWorkspaceModelId],
+  )
+  const hasConfiguredModels = modelCatalog.models.length > 0
+  const hasAvailableModels = modelCatalog.models.some((model) => model.available)
+  const selectedModelRouteFromDraft = useMemo(
+    () => resolveSelectedComposerModelRoute(composerDraft, modelCatalog.models),
+    [composerDraft, modelCatalog.models],
+  )
+  const effectiveThinkingCapability = useMemo(
+    () => resolveDisplayedThinkingCapability({
+      queriedCapability: thinkingCapability,
+      runState,
+      selectedModelRoute: selectedModelRouteFromDraft,
+    }),
+    [runState, selectedModelRouteFromDraft, thinkingCapability],
+  )
+  const effectiveComposerDraft = useMemo(
+    () => resolveComposerDraftModelSelection(composerDraft, modelCatalog.models, effectiveThinkingCapability),
+    [composerDraft, effectiveThinkingCapability, modelCatalog.models],
+  )
+  const selectedModelOption = useMemo(
+    () => getCopilotModelById(effectiveComposerDraft.selectedModelId, modelCatalog.models),
+    [effectiveComposerDraft.selectedModelId, modelCatalog.models],
+  )
+  const projectedConversation = useMemo(
+    () => buildCopilotMessageListItems({
+      history: conversation,
+      runState,
+    }),
+    [conversation, runState],
+  )
+  const assistantPlaceholder = useMemo(
+    () => resolveCopilotAssistantPlaceholderState(runState),
+    [runState],
+  )
+  const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
+  const canCancelSend = activeAbortControllerRef.current !== null && sendStatus === 'sending'
 
   useEffect(() => {
-    resetRef.current = reset
-  }, [reset])
+    activeAbortControllerRef.current?.abort()
+    activeAbortControllerRef.current = null
 
-  useEffect(() => {
-    setBannerErrorRef.current = setBannerError
-  }, [setBannerError])
-
-  useEffect(() => {
-    setCopilotThreadIdRef.current = setCopilotThreadId
-  }, [setCopilotThreadId])
-
-  useEffect(() => {
-    if (lastAppliedThreadIdRef.current === threadId) {
+    if (sessionShell === null) {
+      setComposerDraft(createEmptyComposerDraft())
+      setRunState(createIdleCopilotRunState())
+      setThinkingCapability(null)
+      setSendError(null)
       return
     }
 
-    lastAppliedThreadIdRef.current = threadId
-    setDraft('')
-    setBannerErrorRef.current(null)
-    resetRef.current()
-    setCopilotThreadIdRef.current(threadId)
-  }, [threadId])
+    setComposerDraft(createComposerDraftFromSession(sessionShell))
+    setRunState(createIdleCopilotRunState())
+    setThinkingCapability(null)
+    setSendError(null)
+  }, [sessionIdentity, sessionShell])
 
-  const visibleMessages = useMemo(
-    () => messages.filter((message) => message.role === 'user' || message.role === 'assistant'),
-    [messages],
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      const result = await loadWorkspaceState()
+
+      if (cancelled) {
+        return
+      }
+
+      if (result.ok) {
+        setWorkspaceProviderProfiles(result.state.providerProfiles)
+        setWorkspacePrimaryModel(result.state.defaultModelRouting.primaryAssistantModel)
+        setWorkspacePrimaryModelRoute(result.state.defaultModelRouting.primaryAssistantModelRoute ?? null)
+        setWorkspaceStateLoaded(true)
+        return
+      }
+
+      setWorkspaceProviderProfiles([])
+      setWorkspacePrimaryModel('')
+      setWorkspacePrimaryModelRoute(null)
+      setWorkspaceStateLoaded(true)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [loadWorkspaceState])
+
+  useEffect(() => {
+    return () => {
+      activeAbortControllerRef.current?.abort()
+      activeAbortControllerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!workspaceStateLoaded) {
+      return
+    }
+
+    setComposerDraft((current) => {
+      if (!hasConfiguredModels) {
+        return current.selectedModelId === ''
+          && current.selectedModelRoute === null
+          && current.thinkingSelection === null
+          ? current
+          : {
+              ...current,
+              selectedModelId: '',
+              selectedModelRoute: null,
+              thinkingSelection: null,
+            }
+      }
+
+      const shouldPreferWorkspaceModel = current.selectedModelRoute === null && preferredWorkspaceModel !== null
+      const selectedModel = getCopilotModelById(current.selectedModelId, modelCatalog.models)
+      if (selectedModel !== null) {
+        if (
+          shouldPreferWorkspaceModel
+          && current.selectedModelId !== preferredWorkspaceModel.selectionValue
+        ) {
+          return preferredWorkspaceModel.available
+            ? applyModelSelectionToComposerDraft(current, {
+                modelId: preferredWorkspaceModel.selectionValue,
+                modelRoute: preferredWorkspaceModel.route,
+              })
+            : {
+                ...current,
+                selectedModelId: preferredWorkspaceModel.selectionValue,
+                selectedModelRoute: null,
+                thinkingSelection: null,
+              }
+        }
+
+        if (!selectedModel.available) {
+          return current.selectedModelId === selectedModel.selectionValue
+            && current.selectedModelRoute === null
+            && current.thinkingSelection === null
+            ? current
+            : {
+                ...current,
+                selectedModelId: selectedModel.selectionValue,
+                selectedModelRoute: null,
+                thinkingSelection: null,
+              }
+        }
+
+        if (
+          current.selectedModelId === selectedModel.selectionValue
+          && isSameModelRoute(current.selectedModelRoute, selectedModel.route)
+        ) {
+          return current
+        }
+
+        return applyModelSelectionToComposerDraft(current, {
+          modelId: selectedModel.selectionValue,
+          modelRoute: selectedModel.route,
+        })
+      }
+
+      if (preferredWorkspaceModel !== null) {
+        return preferredWorkspaceModel.available
+          ? applyModelSelectionToComposerDraft(current, {
+              modelId: preferredWorkspaceModel.selectionValue,
+              modelRoute: preferredWorkspaceModel.route,
+            })
+          : {
+              ...current,
+              selectedModelId: preferredWorkspaceModel.selectionValue,
+              selectedModelRoute: null,
+              thinkingSelection: null,
+            }
+      }
+
+      if (current.selectedModelId.trim() !== '') {
+        return current.selectedModelRoute === null && current.thinkingSelection === null
+          ? current
+          : {
+              ...current,
+              selectedModelRoute: null,
+              thinkingSelection: null,
+            }
+      }
+
+      return current
+    })
+  }, [
+    hasConfiguredModels,
+    modelCatalog.models,
+    preferredWorkspaceModel,
+    workspacePrimaryModelRoute,
+    workspaceStateLoaded,
+  ])
+
+  useEffect(() => {
+    activeAbortControllerRef.current?.abort()
+    activeAbortControllerRef.current = null
+    setConversation([])
+    setRunState(createIdleCopilotRunState())
+    setThinkingCapability(null)
+    setSendError(null)
+  }, [sessionShell?.sessionId])
+
+  useEffect(() => {
+    const selectedModelRoute = selectedModelRouteFromDraft
+
+    if (!workspaceStateLoaded || !isCopilotConnectableState(state) || sessionShell === null || selectedModelRoute === null) {
+      setThinkingCapability(null)
+      return
+    }
+
+    let cancelled = false
+    const thinkingCapabilityOverride = selectedModelOption?.thinkingCapabilityOverride ?? null
+    setThinkingCapability(null)
+
+    void (async () => {
+      try {
+        const response = await getThinkingCapability({
+          runtimeUrl: state.runtimeUrl,
+          sessionId: sessionShell.sessionId,
+          modelRoute: selectedModelRoute,
+          thinkingCapabilityOverride,
+        })
+
+        if (!cancelled) {
+          setThinkingCapability(response.capability)
+        }
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+
+        console.debug('[copilot-chat-shell] thinking-capability-query-failed', {
+          sessionId: sessionShell.sessionId,
+          modelId: effectiveComposerDraft.selectedModelId,
+          route: selectedModelRoute,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        setThinkingCapability(
+          error instanceof RuntimeRequestError
+            ? buildRuntimeThinkingCapabilityFromError({
+                error,
+                modelRoute: selectedModelRoute,
+              })
+            : null,
+        )
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    effectiveComposerDraft.selectedModelId,
+    getThinkingCapability,
+    selectedModelOption?.thinkingCapabilityOverride,
+    sessionShell,
+    state,
+    selectedModelRouteFromDraft,
+    workspaceStateLoaded,
+  ])
+
+  useEffect(() => {
+    if (runtimeDebugSummary !== null) {
+      console.debug('[copilot-chat-shell] runtime-summary', runtimeDebugSummary)
+    }
+  }, [runtimeDebugSummary])
+
+  useEffect(() => {
+    if (sessionDebugSummary !== null) {
+      console.debug('[copilot-chat-shell] session-summary', sessionDebugSummary)
+    }
+  }, [sessionDebugSummary])
+
+  const sendDisabledReason = useMemo(
+    () => getCopilotSendDisabledReason({
+      state,
+      sessionShell,
+      runState,
+      composerDraft: effectiveComposerDraft,
+      hasConfiguredModels,
+      hasAvailableModels,
+      selectedModelOption,
+    }),
+    [
+      effectiveComposerDraft,
+      hasAvailableModels,
+      hasConfiguredModels,
+      runState,
+      selectedModelOption,
+      sessionShell,
+      state,
+    ],
   )
 
-  const activeThreadId = currentThreadId || threadId
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    const content = draft.trim()
-    if (content.length === 0 || isLoading || !isAvailable) {
+    const abortController = new AbortController()
+    activeAbortControllerRef.current = abortController
+
+    try {
+      await orchestrateCopilotSend({
+        state,
+        sessionShell,
+        composerDraft: effectiveComposerDraft,
+        runState,
+        hasConfiguredModels,
+        hasAvailableModels,
+        selectedModelOption,
+        composerInputRef,
+        sendMessage,
+        debugModeEnabled: isCopilotConnectableState(state) ? state.bootstrapFields.debugModeEnabled : false,
+        setRunState,
+        setSendError,
+        setComposerDraft,
+        setConversation,
+        signal: abortController.signal,
+        thinkingCapabilityOverride: (selectedModelOption?.thinkingCapabilityOverride ?? null) as Record<string, unknown> | null,
+      })
+    } finally {
+      clearAbortController(activeAbortControllerRef, abortController)
+    }
+  }
+
+  const handleCancelCurrentRun = () => {
+    const abortController = activeAbortControllerRef.current
+    if (abortController === null) {
       return
     }
 
-    setBannerError(null)
-    setDraft('')
-    await sendMessage(createUserTextMessage(content))
+    if (isCopilotConnectableState(state) && runState.runId !== null) {
+      void cancelRun({
+        runtimeUrl: state.runtimeUrl,
+        runId: runState.runId,
+      }).catch(() => undefined).finally(() => {
+        abortController.abort()
+      })
+      return
+    }
+
+    abortController.abort()
   }
 
   return (
-    <section className="copilot-chat" aria-label="Copilot 聊天区">
-      <div className="copilot-chat__meta">
-        <span className="copilot-chat__meta-item">
-          <span className="copilot-chat__meta-label">当前 threadId</span>
-          <code className="copilot-chat__meta-value">{activeThreadId}</code>
-        </span>
-        <span
-          className={`copilot-chat__availability copilot-chat__availability--${isAvailable ? 'available' : 'pending'}`}
-        >
-          {isLoading ? '回复生成中' : isAvailable ? '聊天已连接' : '聊天连接中'}
-        </span>
-      </div>
-
-      <div className="copilot-chat__stream" data-testid="copilot-chat-stream">
-        {visibleMessages.length === 0 && !isLoading && bannerError === null && (
-          <div className="copilot-chat__empty">
-            <p className="copilot-chat__empty-title">最小聊天已挂载</p>
-            <p className="copilot-chat__empty-text">
-              当前会话已把工作台所选话题 ID 绑定为 threadId。发送第一条消息后，后端将以同一 thread_id 继续维护上下文。
-            </p>
-          </div>
-        )}
-
-        {visibleMessages.map((message, index) => {
-          const isUser = message.role === 'user'
-          const text = extractMessageText(message)
-
-          return (
-            <article
-              key={message.id ?? `${message.role}:${index}`}
-              className={`copilot-chat__message copilot-chat__message--${isUser ? 'user' : 'assistant'}`}
-            >
-              <p className="copilot-chat__message-label">{isUser ? 'You' : 'Assistant'}</p>
-              <p className="copilot-chat__message-text">{text}</p>
-            </article>
-          )
-        })}
-
-        {isLoading && (
-          <article className="copilot-chat__message copilot-chat__message--assistant copilot-chat__message--pending">
-            <p className="copilot-chat__message-label">Assistant</p>
-            <p className="copilot-chat__message-text">正在生成回复…</p>
-          </article>
-        )}
-
-        {bannerError !== null && (
-          <article className="copilot-chat__message copilot-chat__message--error" role="alert">
-            <p className="copilot-chat__message-label">运行时错误</p>
-            <p className="copilot-chat__message-text">{bannerError.message}</p>
-          </article>
-        )}
-      </div>
-
-      <form className="copilot-chat__composer" onSubmit={handleSubmit}>
-        <label className="copilot-chat__composer-label" htmlFor="copilot-chat-input">
-          发送消息
-        </label>
-        <textarea
-          id="copilot-chat-input"
-          className="copilot-chat__composer-input"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={isAvailable ? '输入要发送给 Copilot 的内容…' : '聊天运行时连接中，暂不可发送消息'}
-          rows={3}
-          disabled={isLoading || !isAvailable}
-        />
-        <div className="copilot-chat__composer-actions">
-          <span className="copilot-chat__composer-hint">
-            {bannerError !== null ? '错误已以内联红色消息显示；修复后可继续在当前线程重试。' : '当前仅支持最小纯文本聊天 MVP。'}
-          </span>
-          <button
-            type="submit"
-            className="copilot-panel__button"
-            disabled={isLoading || !isAvailable || draft.trim().length === 0}
-          >
-            {isLoading ? '回复生成中…' : '发送消息'}
-          </button>
-        </div>
-      </form>
+    <section className="copilot-panel" data-testid="copilot-chat-panel">
+      <CopilotPanelShell
+        state={state}
+        retrying={retrying}
+        onRetry={retry}
+        selectedAgent={selectedAgent}
+        sessionShell={sessionShell}
+        directoryState={directoryState}
+        sessionStatus={sessionStatus}
+        sessionError={sessionError}
+        sendError={sendError}
+        modelGroups={modelCatalog.groups}
+        thinkingCapability={effectiveThinkingCapability}
+        composerDraft={effectiveComposerDraft}
+        onComposerDraftChange={setComposerDraft}
+        onSend={handleSend}
+        onCancelCurrentRun={handleCancelCurrentRun}
+        sendStatus={sendStatus}
+        canCancelSend={canCancelSend}
+        sendDisabledReason={sendDisabledReason}
+        conversation={projectedConversation}
+        assistantPlaceholder={assistantPlaceholder}
+        composerInputRef={composerInputRef}
+        composerHeight={composerHeight}
+        onComposerResizeStart={onComposerResizeStart}
+      />
     </section>
   )
 }
 
-function createUserTextMessage(content: string): CopilotMessage {
-  return {
-    id: createClientMessageId(),
-    role: 'user',
-    content,
-  } as CopilotMessage
+function isSameModelRoute(left: RuntimeModelRoute | null, right: RuntimeModelRoute): boolean {
+  if (left === null) {
+    return false
+  }
+
+  return isSameModelRouteRef(left.routeRef ?? null, right.routeRef ?? null)
+    && (left.catalogRevision?.trim() ?? '') === (right.catalogRevision?.trim() ?? '')
 }
 
-function createClientMessageId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-
-  return `copilot-msg-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function extractMessageText(message: CopilotMessage): string {
-  const content = (message as { content?: unknown }).content
-
-  if (typeof content === 'string') {
-    return content
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === 'string') {
-          return part
+function resolveComposerDraftModelSelection(
+  draft: CopilotChatComposerDraft,
+  models: CopilotModelOption[],
+  thinkingCapability: RuntimeThinkingCapability | null,
+): CopilotChatComposerDraft {
+  if (draft.selectedModelId.trim() === '') {
+    return draft.selectedModelRoute === null && draft.thinkingSelection === null
+      ? draft
+      : {
+          ...draft,
+          selectedModelRoute: null,
+          thinkingSelection: null,
         }
-
-        if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') {
-          return part.text
-        }
-
-        return ''
-      })
-      .filter((part) => part.length > 0)
-      .join('\n')
   }
 
-  if (content && typeof content === 'object') {
-    if ('text' in content && typeof content.text === 'string') {
-      return content.text
+  const matchedModel = getCopilotModelById(draft.selectedModelId, models)
+  if (matchedModel === null) {
+    return draft.selectedModelRoute === null && draft.thinkingSelection === null
+      ? draft
+      : {
+          ...draft,
+          selectedModelRoute: null,
+          thinkingSelection: null,
+        }
+  }
+
+  if (!matchedModel.available) {
+    return draft.selectedModelId === matchedModel.selectionValue
+      && draft.selectedModelRoute === null
+      && draft.thinkingSelection === null
+      ? draft
+      : {
+          ...draft,
+          selectedModelId: matchedModel.selectionValue,
+          selectedModelRoute: null,
+          thinkingSelection: null,
+        }
+  }
+
+  if (
+    draft.selectedModelId === matchedModel.selectionValue
+    && isSameModelRoute(draft.selectedModelRoute, matchedModel.route)
+  ) {
+    if (thinkingCapability === null) {
+      return draft
     }
 
-    if ('content' in content && typeof content.content === 'string') {
-      return content.content
-    }
-  }
-
-  return '[暂不支持的消息内容]'
-}
-
-function buildSharedDetails(state: Exclude<CopilotConfigState, { status: 'error' }>): Array<{ label: string, value: string }> {
-  const details = [
-    {
-      label: '宿主状态',
-      value: state.diagnostics.hostedStatus,
-    },
-    {
-      label: '运行模式',
-      value: formatModeSummary(state.diagnostics),
-    },
-    {
-      label: 'Runtime 来源',
-      value: formatRuntimeSource(state.runtimeSource),
-    },
-    {
-      label: 'Agent 来源',
-      value: formatAgentNameSource(state.agentNameSource),
-    },
-  ]
-
-  if (state.runtimeUrl !== null) {
-    details.push({
-      label: '当前 Runtime URL',
-      value: state.runtimeUrl,
+    return syncComposerDraftThinkingSelection(draft, {
+      modelRoute: matchedModel.route,
+      thinkingCapability,
     })
   }
 
-  if (state.diagnostics.failure !== null) {
-    details.push({
-      label: '失败摘要',
-      value: `${state.diagnostics.failure.code} / ${state.diagnostics.failure.phase}`,
-    })
-  }
-
-  return details
+  return applyModelSelectionToComposerDraft(draft, {
+    modelId: matchedModel.selectionValue,
+    modelRoute: matchedModel.route,
+  })
 }
 
-function formatFailureSummary(diagnostics: CopilotDiagnosticsSummary): string {
-  const failure = diagnostics.failure
-
-  if (failure === null) {
-    return 'No hosted failure summary.'
+function resolveSelectedComposerModelRoute(
+  draft: CopilotChatComposerDraft,
+  models: CopilotModelOption[],
+): RuntimeModelRoute | null {
+  if (draft.selectedModelId.trim() === '') {
+    return null
   }
 
-  const lines = [
-    `状态：${diagnostics.hostedStatus}`,
-    `模式：${formatModeSummary(diagnostics)}`,
-    `失败代码：${failure.code}`,
-    `阶段：${failure.phase}`,
-    `消息：${failure.message}`,
-  ]
+  const matchedModel = getCopilotModelById(draft.selectedModelId, models)
 
-  if (failure.exitCode !== null) {
-    lines.push(`退出码：${failure.exitCode}`)
+  return matchedModel?.route ?? draft.selectedModelRoute
+}
+
+function resolveDisplayedThinkingCapability(input: {
+  queriedCapability: RuntimeThinkingCapability | null
+  runState: CopilotRunState
+  selectedModelRoute: RuntimeModelRoute | null
+}): RuntimeThinkingCapability | null {
+  if (
+    input.selectedModelRoute !== null
+    && input.runState.thinkingCapabilitySnapshot !== null
+    && isSameModelRoute(input.runState.activeModelRoute, input.selectedModelRoute)
+  ) {
+    return input.runState.thinkingCapabilitySnapshot
   }
 
-  if (failure.signal !== null) {
-    lines.push(`信号：${failure.signal}`)
+  return input.queriedCapability
+}
+
+function isSameModelRouteRef(left: ModelRouteRef | null, right: ModelRouteRef | null): boolean {
+  return left !== null
+    && right !== null
+    && left.routeKind === right.routeKind
+    && left.profileId === right.profileId
+    && left.modelId === right.modelId
+}
+
+function clearAbortController(
+  ref: MutableRefObject<AbortController | null>,
+  controller: AbortController,
+) {
+  if (ref.current === controller) {
+    ref.current = null
   }
-
-  lines.push(`可重试：${failure.retryable ? '是' : '否'}`)
-  lines.push(`记录时间：${failure.timestamp}`)
-
-  return lines.join('\n')
-}
-
-function canRetry(state: CopilotConfigState): boolean {
-  return state.status === 'failed'
-    && state.diagnostics.failure !== null
-    && state.diagnostics.failure.retryable
-}
-
-function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string {
-  switch (source) {
-    case 'hosted':
-      return '宿主管理'
-    case 'dev-override':
-      return '开发态 override'
-    case 'none':
-      return '暂无有效来源'
-  }
-}
-
-function formatAgentNameSource(source: 'settings' | 'missing'): string {
-  switch (source) {
-    case 'settings':
-      return '本地设置'
-    case 'missing':
-      return '未提供'
-  }
-}
-
-function formatModeSummary(diagnostics: CopilotDiagnosticsSummary): string {
-  return `${diagnostics.mode}（${diagnostics.modeSource === 'resolved' ? '已解析' : '预期'}）`
-}
-
-function formatThrownError(error: Error): string {
-  return error.message || String(error)
 }
