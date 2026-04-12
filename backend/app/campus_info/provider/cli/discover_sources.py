@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import TypeAlias
+from typing import Protocol, TypeAlias, cast
 
 from dotenv import load_dotenv
 
@@ -23,8 +23,8 @@ JsonObject: TypeAlias = dict[str, "JsonValue"]
 JsonValue: TypeAlias = JsonPrimitive | JsonArray | JsonObject
 
 
-class Args(argparse.Namespace):
-    save_json: bool = False
+class Args(Protocol):
+    save_json: bool
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -51,7 +51,7 @@ def _save_json_report(backend_dir: Path, payload: JsonObject) -> Path:
 
 def main() -> int:
     parser = _build_parser()
-    args = parser.parse_args(namespace=Args())
+    args = cast(Args, cast(object, parser.parse_args()))
 
     _ = load_dotenv(BACKEND_DIR / ".env")
 

@@ -5,10 +5,11 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
 
 from app.campus_info.chunker import chunk_extracted_document
 from app.campus_info.extractor import extract_pdf_document
+from app.campus_info.sectionizer import sectionize_document
 from app.campus_info.storage import load_cache_index
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -19,11 +20,14 @@ JsonArray: TypeAlias = list["JsonValue"]
 JsonObject: TypeAlias = dict[str, "JsonValue"]
 JsonValue: TypeAlias = JsonPrimitive | JsonArray | JsonObject
 
-class Args(argparse.Namespace):
-    cache_dir: Path = Path("data/campus_docs")
-    out_dir: Path | None = None
-    max_docs: int = 0
-    force: bool = False
+class Args(Protocol):
+    cache_dir: Path
+    out_dir: Path | None
+    max_docs: int
+    force: bool
+    chunk_size: int
+    overlap: int
+    write_sections: bool
 
 
 def main() -> int:
@@ -37,14 +41,21 @@ def main() -> int:
     )
     _ = parser.add_argument("--max-docs", type=int, default=0, help="最多处理多少个文档，<=0 表示不限制")
     _ = parser.add_argument("--force", action="store_true", help="忽略已有产物，强制重新生成")
-    args = parser.parse_args(namespace=Args())
+    _ = parser.add_argument("--chunk-size", type=int, default=100, help="chunk 最大字符数")
+    _ = parser.add_argument("--overlap", type=int, default=20, help="chunk 重叠字符数")
+    _ = parser.add_argument("--no-sections", dest="write_sections", action="store_false", help="不输出章节树 JSON")
+    parser.set_defaults(write_sections=True)
+    args = cast(Args, cast(object, parser.parse_args()))
 
     cache_dir = args.cache_dir
     processed_dir = cache_dir / "processed"
     out_dir = args.out_dir if args.out_dir is not None else (processed_dir / "chunks")
+    sections_dir = processed_dir / "sections"
     manifest_path = processed_dir / "chunks_manifest.json"
     processed_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.write_sections:
+        sections_dir.mkdir(parents=True, exist_ok=True)
     index_path = cache_dir / "index.json"
     if not index_path.exists():
         logger.error(f"Index not found at {index_path}. Run sync_docs first.")
@@ -103,7 +114,22 @@ def main() -> int:
 
         logger.info(f"  -> Extracted {len(extracted_doc.pages)} pages.")
 
-        chunks = chunk_extracted_document(extracted_doc, max_chunk_size=1000, overlap=200)
+        sections_path: Path | None = None
+        if args.write_sections:
+            section_root = sectionize_document(extracted_doc)
+            section_payload: JsonObject = {
+                "source_id": entry.source_id,
+                "title": entry.title,
+                "url": entry.url,
+                "page_count": len(extracted_doc.pages),
+                "sections": cast(JsonObject, section_root.to_dict()),
+            }
+            sections_path = sections_dir / f"{entry.source_id}.json"
+            _ = sections_path.write_text(
+                json.dumps(section_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+
+        chunks = chunk_extracted_document(extracted_doc, max_chunk_size=args.chunk_size, overlap=args.overlap)
         logger.info(f"  -> Generated {len(chunks)} chunks.")
 
         lines: list[str] = []
@@ -127,6 +153,14 @@ def main() -> int:
             chunk_path = out_path.relative_to(cache_dir).as_posix()
         except Exception:
             chunk_path = out_path.as_posix()
+        sections_path_str: str | None
+        if sections_path is None:
+            sections_path_str = None
+        else:
+            try:
+                sections_path_str = sections_path.relative_to(cache_dir).as_posix()
+            except Exception:
+                sections_path_str = sections_path.as_posix()
 
         raw_manifest[cache_key] = {
             "source_id": entry.source_id,
@@ -138,6 +172,7 @@ def main() -> int:
             "updated_at": entry.updated_at,
             "generated_at": now_iso,
             "chunk_path": chunk_path,
+            "sections_path": sections_path_str,
         }
 
         if chunks:

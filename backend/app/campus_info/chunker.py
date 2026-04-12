@@ -19,7 +19,7 @@ class DocumentChunk:
 
 
 def chunk_extracted_document(
-    doc: ExtractedDocument, max_chunk_size: int = 1000, overlap: int = 200
+    doc: ExtractedDocument, max_chunk_size: int = 100, overlap: int = 20
 ) -> list[DocumentChunk]:
     """
     Naively chunks an extracted document by character count,
@@ -29,54 +29,73 @@ def chunk_extracted_document(
         return []
 
     chunks: list[DocumentChunk] = []
-    
-    current_chunk_text = ""
-    current_chunk_pages: set[int] = set()
     chunk_index = 0
+    segments: list[tuple[int, str]] = []
+    head = 0
+    buffered_len = 0
 
     for page in doc.pages:
         page_text = page.text
         if not page_text:
             continue
-            
-        # If adding this page exceeds max_chunk_size, we might need to split within the page
-        # For simplicity in this naive implementation, we just accumulate and split when it gets too large
-        current_chunk_text += page_text + "\n"
-        current_chunk_pages.add(page.page_number)
+        seg_text = page_text + "\n"
+        segments.append((page.page_number, seg_text))
+        buffered_len += len(seg_text)
 
-        while len(current_chunk_text) >= max_chunk_size:
-            # We have enough text to form a chunk
-            chunk_content = current_chunk_text[:max_chunk_size]
+        while buffered_len >= max_chunk_size:
+            remaining = max_chunk_size
+            used_pages: set[int] = set()
+            parts: list[str] = []
+            i = head
+            while remaining > 0 and i < len(segments):
+                pn, txt = segments[i]
+                if len(txt) <= remaining:
+                    parts.append(txt)
+                    used_pages.add(pn)
+                    remaining -= len(txt)
+                    i += 1
+                else:
+                    parts.append(txt[:remaining])
+                    used_pages.add(pn)
+                    remaining = 0
             chunks.append(
                 DocumentChunk(
                     source_id=doc.source_id,
                     title=doc.title,
                     url=doc.url,
                     chunk_index=chunk_index,
-                    content=chunk_content.strip(),
-                    page_numbers=sorted(list(current_chunk_pages)),
+                    content="".join(parts).strip(),
+                    page_numbers=sorted(used_pages),
                 )
             )
             chunk_index += 1
-            
-            # Slide the window
-            advance_step = max_chunk_size - overlap
-            current_chunk_text = current_chunk_text[advance_step:]
-            # Note: The pages tracking here becomes imprecise after a split because
-            # we don't know exactly which part of the text belongs to which page in the remaining buffer.
-            # A more robust implementation would map character offsets to pages.
-            # But for a v1, this is acceptable.
 
-    # Process any remaining text
-    if current_chunk_text.strip():
+            advance_step = max_chunk_size - overlap
+            to_drop = advance_step
+            while to_drop > 0 and head < len(segments):
+                pn0, txt0 = segments[head]
+                if len(txt0) <= to_drop:
+                    to_drop -= len(txt0)
+                    buffered_len -= len(txt0)
+                    head += 1
+                else:
+                    segments[head] = (pn0, txt0[to_drop:])
+                    buffered_len -= to_drop
+                    to_drop = 0
+
+    if head < len(segments):
+        remaining_text = "".join(txt for _, txt in segments[head:]).strip()
+    else:
+        remaining_text = ""
+    if remaining_text:
         chunks.append(
             DocumentChunk(
                 source_id=doc.source_id,
                 title=doc.title,
                 url=doc.url,
                 chunk_index=chunk_index,
-                content=current_chunk_text.strip(),
-                page_numbers=sorted(list(current_chunk_pages)),
+                content=remaining_text,
+                page_numbers=sorted({pn for pn, _ in segments[head:]}),
             )
         )
 

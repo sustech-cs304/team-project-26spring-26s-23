@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import TypeAlias
+from typing import Protocol, TypeAlias, cast
 
 from dotenv import load_dotenv
 
@@ -24,11 +24,11 @@ JsonObject: TypeAlias = dict[str, "JsonValue"]
 JsonValue: TypeAlias = JsonPrimitive | JsonArray | JsonObject
 
 
-class Args(argparse.Namespace):
-    save_json: bool = False
-    timeout_s: int = 30
-    force: bool = False
-    max_docs: int = 0
+class Args(Protocol):
+    save_json: bool
+    timeout_s: int
+    force: bool
+    max_docs: int
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -64,7 +64,7 @@ def _discover_all_docs(seeds: list[OfficialDocSeed]) -> list[DiscoveredOfficialD
 
 def main() -> int:
     parser = _build_parser()
-    args = parser.parse_args(namespace=Args())
+    args = cast(Args, cast(object, parser.parse_args()))
 
     _ = load_dotenv(BACKEND_DIR / ".env")
 
@@ -119,4 +119,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
