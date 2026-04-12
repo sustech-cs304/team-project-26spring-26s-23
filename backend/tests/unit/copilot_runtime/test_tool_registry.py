@@ -13,6 +13,9 @@ from app.copilot_runtime import (
     build_default_tool_registry,
 )
 from app.copilot_runtime.tool_registry import (
+    CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+    CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
+    CAMPUS_INFO_SEARCH_TOOL_ID,
     DEFAULT_WEATHER_LOCATION,
     FILE_CONVERT_TOOL_DESCRIPTION,
     FILE_CONVERT_TOOL_DISPLAY_NAME,
@@ -53,7 +56,7 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "default": {
             "name": "default",
             "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
-            "toolCount": 2,
+            "toolCount": 3,
         }
     }
     assert registry.build_tool_catalog() == (
@@ -71,8 +74,19 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
             "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
         },
+        {
+            "toolId": CAMPUS_INFO_SEARCH_TOOL_ID,
+            "kind": "builtin",
+            "availability": "available",
+            "displayName": CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
+            "description": CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+        },
     )
-    assert registry.list_tool_ids() == (FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID)
+    assert registry.list_tool_ids() == (
+        FILE_CONVERT_TOOL_ID,
+        WEATHER_CURRENT_TOOL_ID,
+        CAMPUS_INFO_SEARCH_TOOL_ID,
+    )
     assert registry.build_diagnostics_summary() == {
         "available_toolsets": ["default"],
         "default_toolset": "default",
@@ -83,7 +97,7 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
                 "label": "Default",
                 "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
                 "default": True,
-                "toolCount": 2,
+                "toolCount": 3,
                 "tools": [
                     {
                         "toolId": FILE_CONVERT_TOOL_ID,
@@ -98,6 +112,13 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
                         "availability": "available",
                         "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
                         "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
+                    },
+                    {
+                        "toolId": CAMPUS_INFO_SEARCH_TOOL_ID,
+                        "kind": "builtin",
+                        "availability": "available",
+                        "displayName": CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
+                        "description": CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
                     },
                 ],
             }
