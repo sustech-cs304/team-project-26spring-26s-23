@@ -69,29 +69,57 @@ export function ToolPicker({
 
   return (
     <div className="copilot-tool-picker" ref={pickerRef}>
-      <button
-        type="button"
-        className="copilot-model-picker__trigger copilot-tool-picker__trigger"
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        aria-label={selectedToolTriggerLabel}
-        title={selectedToolTriggerLabel}
-        disabled={disabled}
-        onClick={() => {
-          setIsOpen((current) => !current)
-        }}
-        data-testid="chat-tool-picker-trigger"
-      >
-        <span className="copilot-tool-picker__trigger-copy">
-          <span className="copilot-model-picker__trigger-label copilot-tool-picker__summary">{selectedToolSummary}</span>
-        </span>
-        <span className="copilot-tool-picker__trigger-side">
-          <span className="copilot-model-picker__trigger-caret" aria-hidden="true">
-            {isOpen ? '▴' : '▾'}
-          </span>
-        </span>
-      </button>
+      {isOpen
+        ? (
+            <button
+              type="button"
+              className="copilot-model-picker__trigger copilot-tool-picker__trigger"
+              aria-haspopup="dialog"
+              aria-expanded="true"
+              aria-controls={panelId}
+              aria-label={selectedToolTriggerLabel}
+              title={selectedToolTriggerLabel}
+              disabled={disabled}
+              onClick={() => {
+                setIsOpen((current) => !current)
+              }}
+              data-testid="chat-tool-picker-trigger"
+            >
+              <span className="copilot-tool-picker__trigger-copy">
+                <span className="copilot-model-picker__trigger-label copilot-tool-picker__summary">{selectedToolSummary}</span>
+              </span>
+              <span className="copilot-tool-picker__trigger-side">
+                <span className="copilot-model-picker__trigger-caret" aria-hidden="true">
+                  ▴
+                </span>
+              </span>
+            </button>
+          )
+        : (
+            <button
+              type="button"
+              className="copilot-model-picker__trigger copilot-tool-picker__trigger"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls={panelId}
+              aria-label={selectedToolTriggerLabel}
+              title={selectedToolTriggerLabel}
+              disabled={disabled}
+              onClick={() => {
+                setIsOpen((current) => !current)
+              }}
+              data-testid="chat-tool-picker-trigger"
+            >
+              <span className="copilot-tool-picker__trigger-copy">
+                <span className="copilot-model-picker__trigger-label copilot-tool-picker__summary">{selectedToolSummary}</span>
+              </span>
+              <span className="copilot-tool-picker__trigger-side">
+                <span className="copilot-model-picker__trigger-caret" aria-hidden="true">
+                  ▾
+                </span>
+              </span>
+            </button>
+          )}
 
       {isOpen && (
         <section
@@ -159,37 +187,69 @@ export function ToolPicker({
                       {group.tools.map((tool) => {
                         const isSelected = selectedToolSet.has(tool.toolId)
 
-                        return (
-                          <button
-                            key={tool.toolId}
-                            type="button"
-                            className={`copilot-model-picker__option copilot-tool-picker__option${isSelected ? ' copilot-model-picker__option--selected copilot-tool-picker__option--selected' : ''}`}
-                            aria-pressed={isSelected}
-                            onClick={() => {
-                              onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
-                            }}
-                            data-testid={`chat-tool-option-${tool.toolId}`}
-                          >
-                            <span className="copilot-tool-picker__option-check" aria-hidden="true">
-                              {isSelected ? '✓' : '+'}
-                            </span>
-                            <span className="copilot-model-picker__option-body">
-                              <span className="copilot-model-picker__option-name">{tool.displayName ?? tool.toolId}</span>
-                              <span className="copilot-model-picker__option-meta">{tool.toolId}</span>
-                              {tool.description && (
-                                <span className="copilot-tool-picker__option-description">{tool.description}</span>
-                              )}
-                            </span>
-                            <span className="copilot-model-picker__option-tags" aria-hidden="true">
-                              <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.kind, 'kind')}`}>
-                                {tool.kind}
-                              </span>
-                              <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.availability, 'availability')}`}>
-                                {formatToolAvailability(tool.availability)}
-                              </span>
-                            </span>
-                          </button>
-                        )
+                        return isSelected
+                          ? (
+                              <button
+                                key={tool.toolId}
+                                type="button"
+                                className="copilot-model-picker__option copilot-tool-picker__option copilot-model-picker__option--selected copilot-tool-picker__option--selected"
+                                aria-pressed="true"
+                                onClick={() => {
+                                  onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
+                                }}
+                                data-testid={`chat-tool-option-${tool.toolId}`}
+                              >
+                                <span className="copilot-tool-picker__option-check" aria-hidden="true">
+                                  ✓
+                                </span>
+                                <span className="copilot-model-picker__option-body">
+                                  <span className="copilot-model-picker__option-name">{tool.displayName ?? tool.toolId}</span>
+                                  <span className="copilot-model-picker__option-meta">{tool.toolId}</span>
+                                  {tool.description && (
+                                    <span className="copilot-tool-picker__option-description">{tool.description}</span>
+                                  )}
+                                </span>
+                                <span className="copilot-model-picker__option-tags" aria-hidden="true">
+                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.kind, 'kind')}`}>
+                                    {tool.kind}
+                                  </span>
+                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.availability, 'availability')}`}>
+                                    {formatToolAvailability(tool.availability)}
+                                  </span>
+                                </span>
+                              </button>
+                            )
+                          : (
+                              <button
+                                key={tool.toolId}
+                                type="button"
+                                className="copilot-model-picker__option copilot-tool-picker__option"
+                                aria-pressed="false"
+                                onClick={() => {
+                                  onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
+                                }}
+                                data-testid={`chat-tool-option-${tool.toolId}`}
+                              >
+                                <span className="copilot-tool-picker__option-check" aria-hidden="true">
+                                  +
+                                </span>
+                                <span className="copilot-model-picker__option-body">
+                                  <span className="copilot-model-picker__option-name">{tool.displayName ?? tool.toolId}</span>
+                                  <span className="copilot-model-picker__option-meta">{tool.toolId}</span>
+                                  {tool.description && (
+                                    <span className="copilot-tool-picker__option-description">{tool.description}</span>
+                                  )}
+                                </span>
+                                <span className="copilot-model-picker__option-tags" aria-hidden="true">
+                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.kind, 'kind')}`}>
+                                    {tool.kind}
+                                  </span>
+                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.availability, 'availability')}`}>
+                                    {formatToolAvailability(tool.availability)}
+                                  </span>
+                                </span>
+                              </button>
+                            )
                       })}
                     </div>
                   </section>

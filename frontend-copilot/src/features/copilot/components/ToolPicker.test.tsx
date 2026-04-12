@@ -29,8 +29,13 @@ describe('ToolPicker', () => {
     expect(trigger.textContent).toContain('启用 1 项工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：启用 1 项工具')
     expect(trigger.title).toBe('工具：启用 1 项工具')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
 
     await clickElement(trigger)
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
     await setFormControlValue(searchInput, '远程')
@@ -41,18 +46,25 @@ describe('ToolPicker', () => {
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert|tool.remote-search')
+    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-invert'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('')
     expect(trigger.textContent).toContain('未启用工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：未启用工具')
     expect(trigger.title).toBe('工具：未启用工具')
+    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+    expect((rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert')
+    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-option-tool.remote-search'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert|tool.remote-search')
+    expect((rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect(trigger.textContent).toContain('启用 2 项工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：启用 2 项工具')
     expect(trigger.title).toBe('工具：启用 2 项工具')

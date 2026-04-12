@@ -52,7 +52,10 @@ describe('CopilotComposer thinking controls', () => {
 
     try {
       const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
+      const composerSurface = rendered.getByTestId('chat-composer-surface') as HTMLDivElement
       expect(thinkingTrigger.className).toContain('copilot-model-picker__trigger')
+      expect(composerSurface.className).toContain('copilot-chat__composer-surface--height-160')
+      expect(composerSurface.getAttribute('style')).toBeNull()
       expect(rendered.getByTestId('chat-thinking-trigger-label').textContent).toBe('低')
       expect(thinkingTrigger.getAttribute('aria-label')).toContain('低')
     } finally {

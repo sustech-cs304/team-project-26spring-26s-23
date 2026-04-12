@@ -29,6 +29,7 @@ import type { AssistantSessionShell } from '../../workbench/types'
 import {
   applyModelSelectionToComposerDraft,
   applyThinkingSelectionToComposerDraft,
+  clampComposerHeight,
   describeThinkingCapabilityUnavailableReason,
   resolveThinkingSelectionForCapability,
   type CopilotChatComposerDraft,
@@ -291,9 +292,8 @@ export function CopilotComposer({
       />
 
       <div
-        className="copilot-chat__composer-surface"
+        className={`copilot-chat__composer-surface ${buildComposerSurfaceHeightClassName(composerHeight)}`}
         data-testid="chat-composer-surface"
-        style={{ height: `${composerHeight}px` }}
       >
         <div className="copilot-panel__field-group copilot-chat__composer-field">
           <textarea
@@ -334,6 +334,10 @@ export function CopilotComposer({
 
     </form>
   )
+}
+
+function buildComposerSurfaceHeightClassName(composerHeight: number): string {
+  return `copilot-chat__composer-surface--height-${clampComposerHeight(composerHeight)}`
 }
 
 function renderThinkingControlBody(input: {
