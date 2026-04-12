@@ -130,10 +130,7 @@ export function buildProviderTypeSelectionPatch(
 
   const previousCatalogEntry = resolveProviderCatalogEntry(profile)
   const currentBaseUrl = normalizeProviderBaseUrlValue(profile)
-  const previousDefaultBaseUrl = previousCatalogEntry?.baseUrlPolicy.defaultBaseUrl?.trim() ?? ''
-  const nextBaseUrl = currentBaseUrl !== '' && currentBaseUrl !== previousDefaultBaseUrl
-    ? currentBaseUrl
-    : ''
+  const nextBaseUrl = currentBaseUrl === '' ? '' : currentBaseUrl
   const nextName = shouldRefreshProviderName(profile, previousCatalogEntry)
     ? nextCatalogEntry.displayName
     : profile.name
