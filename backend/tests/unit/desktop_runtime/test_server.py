@@ -207,8 +207,8 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
     assert toolset_summary["name"] == "default"
     assert toolset_summary["label"] == "Default"
     assert toolset_summary["default"] is True
-    assert toolset_summary["toolCount"] == 2
-    assert len(toolset_summary["tools"]) == 2
+    assert toolset_summary["toolCount"] == 3
+    assert len(toolset_summary["tools"]) == 3
     assert toolset_summary["tools"][0] == {
         "toolId": FILE_CONVERT_TOOL_ID,
         "kind": "builtin",
@@ -222,6 +222,13 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         "availability": "available",
         "displayName": "Current Weather",
         "description": "Return a placeholder current-weather result for a requested location.",
+    }
+    assert toolset_summary["tools"][2] == {
+        "toolId": "tool.campus-info.search",
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Campus Info Search",
+        "description": "Search indexed campus official documents and return cited snippets.",
     }
 
 
