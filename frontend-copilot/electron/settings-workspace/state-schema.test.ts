@@ -172,4 +172,41 @@ describe('settings workspace state schema migration', () => {
     })
     expect(values.providerProfiles[0]?.compatibility.reason).toContain('legacy / unsupported')
   })
+
+  it('keeps blank provider base urls blank during normalization and editable-state projection', () => {
+    const values = normalizeSettingsWorkspaceStateValues({
+      providerProfiles: [
+        {
+          id: 'blank-openai',
+          name: 'Blank OpenAI',
+          protocol: 'openai',
+          endpoint: '',
+          baseUrl: '',
+          fastModel: '',
+          fallbackModel: '',
+          organization: '',
+          region: 'Global',
+          notes: '',
+          availableModels: [
+            { modelId: 'gpt-4.1' },
+          ],
+        },
+      ],
+    })
+
+    expect(values.providerProfiles[0]).toMatchObject({
+      profileId: 'blank-openai',
+      providerId: 'openai',
+      baseUrl: '',
+    })
+
+    const editableState = projectSettingsWorkspaceEditableState(values, {})
+    expect(editableState.providerProfiles[0]).toMatchObject({
+      id: 'blank-openai',
+      profileId: 'blank-openai',
+      providerId: 'openai',
+      endpoint: '',
+      baseUrl: '',
+    })
+  })
 })

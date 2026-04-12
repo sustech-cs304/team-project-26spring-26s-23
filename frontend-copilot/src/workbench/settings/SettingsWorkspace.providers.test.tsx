@@ -43,7 +43,7 @@ describe('SettingsWorkspace provider interactions', () => {
     rendered.unmount()
   })
 
-  it('adds a provider from the empty state using catalog-backed defaults and activates its detail form', async () => {
+  it('adds a provider from the empty state without injecting a default base URL and shows the empty preview state', async () => {
     installSettingsWorkspaceBridge({
       loadStateResult: {
         ok: true,
@@ -82,9 +82,13 @@ describe('SettingsWorkspace provider interactions', () => {
       addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
     }
 
+    const baseUrlInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
     expect(addedProviderCard?.textContent).toContain('OpenAI')
     expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('OpenAI')
-    expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('https://api.openai.com/v1')
+    expect(baseUrlInput.value).toBe('')
+    expect(baseUrlInput.placeholder).toBe('https://api.openai.com/v1')
+    expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
+    expect(rendered.getByTestId('provider-base-url-feedback').textContent).toBe('未填写服务地址')
 
     rendered.unmount()
   })
@@ -187,6 +191,7 @@ describe('SettingsWorkspace provider interactions', () => {
     expect(rendered.container.textContent).not.toContain('请选择要使用的服务类型。')
     expect(rendered.container.textContent).not.toContain('本地 Ollama 默认无需 API Key')
     expect(rendered.container.textContent).not.toContain('可按需管理模型列表。')
+    expect(rendered.container.textContent).toContain('链接预览：http://127.0.0.1:11434/v1/chat/completions')
     expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1')
 
     rendered.unmount()
@@ -316,7 +321,7 @@ describe('SettingsWorkspace provider interactions', () => {
     rendered.unmount()
   })
 
-  it('keeps the API 地址 field editable and renders it with the full-width form-field layout', async () => {
+  it('keeps the API 地址 field editable and renders openai-compatible request previews without hiding duplicated paths', async () => {
     installSettingsWorkspaceBridge({
       loadStateResult: {
         ok: true,
@@ -334,13 +339,105 @@ describe('SettingsWorkspace provider interactions', () => {
 
     expect(rendered.container.textContent).not.toContain('默认模型 ID')
     expect(rendered.container.querySelector('input[placeholder="例如 openai/gpt-4.1"]')).toBeNull()
+    expect(rendered.container.textContent).toContain('链接预览：https://persisted.example.com/v1/chat/completions')
 
     const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
     expect(apiAddressInput.placeholder).toBe('https://api.openai.com/v1')
-    await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2')
+    await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2/chat/completions')
 
-    expect(apiAddressInput.value).toBe('https://editable.example.com/v2')
+    expect(apiAddressInput.value).toBe('https://editable.example.com/v2/chat/completions')
+    expect(rendered.container.textContent).toContain('链接预览：https://editable.example.com/v2/chat/completions/chat/completions')
     expect(apiAddressInput.closest('.form-field')?.className).toContain('form-field--full')
+
+    rendered.unmount()
+  })
+
+  it('treats provider base url as required and skips auto-save when the field is blank', async () => {
+    vi.useFakeTimers()
+
+    const { saveState } = installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createSingleProviderWorkspaceState(),
+      },
+      loadStatusesResult: createPersistedSecretStatesResult(),
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+    await setFormControlValue(apiAddressInput, '')
+
+    expect(apiAddressInput.value).toBe('')
+    expect(rendered.getByTestId('provider-base-url-feedback').textContent).toBe('未填写服务地址')
+    expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
+
+    await act(async () => {
+      vi.advanceTimersByTime(250)
+    })
+
+    expect(saveState).not.toHaveBeenCalled()
+
+    rendered.unmount()
+  })
+
+  it('renders gemini-native request previews with the selected default model id', async () => {
+    const geminiProvider = createProviderProfile({
+      id: 'provider-gemini',
+      profileId: 'provider-gemini',
+      providerId: 'gemini',
+      protocol: 'gemini',
+      name: 'Gemini Mirror',
+      displayName: 'Gemini Mirror',
+      endpoint: 'https://api.ikuncode.cc/v1beta',
+      baseUrl: 'https://api.ikuncode.cc/v1beta',
+      hasApiKey: false,
+      primaryModelId: 'gemini-3.1-pro-preview',
+      fastModel: 'gemini-3.1-pro-preview',
+      fallbackModel: 'gemini-3.1-pro-preview',
+    })
+
+    installSettingsWorkspaceBridge({
+      loadStateResult: {
+        ok: true,
+        source: 'stored',
+        state: createPersistedWorkspaceState({
+          providerProfiles: [geminiProvider],
+          defaultModelRouting: {
+            primaryAssistantModel: 'gemini-3.1-pro-preview',
+            primaryAssistantModelRoute: {
+              routeKind: 'provider-model',
+              profileId: 'provider-gemini',
+              modelId: 'gemini-3.1-pro-preview',
+            },
+          },
+        }),
+      },
+      loadStatusesResult: {
+        ok: true,
+        states: {
+          'provider-gemini': {
+            hasApiKey: false,
+            apiKey: '',
+          },
+        },
+      },
+    })
+
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    expect(rendered.container.textContent).toContain(
+      '链接预览：https://api.ikuncode.cc/v1beta/models/gemini-3.1-pro-preview:generateContent',
+    )
 
     rendered.unmount()
   })

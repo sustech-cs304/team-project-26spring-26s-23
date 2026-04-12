@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 
 import type { ProviderProfile } from '../types'
 import { createInitialSettingsWorkspaceFormState, type SettingsWorkspaceFormState } from './settings-workspace-form-state'
+import { resolveProviderBaseUrlValidationMessage } from './settings-workspace-provider-helpers'
 import { loadSettingsWorkspaceHydration } from './settings-workspace-hydration'
 import {
   parseSerializedModelRouteRef,
@@ -80,6 +81,9 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
   }, [initialHydrationActiveProviderId])
 
   const workspaceStateInput = useMemo(() => createSettingsWorkspaceStateSaveInput(formState), [formState])
+  const hasInvalidProviderProfiles = useMemo(() => {
+    return formState.providerProfiles.some((profile) => resolveProviderBaseUrlValidationMessage(profile) !== null)
+  }, [formState.providerProfiles])
 
   useEffect(() => {
     if (!workspaceHydrated) {
@@ -91,6 +95,10 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
       return
     }
 
+    if (hasInvalidProviderProfiles) {
+      return
+    }
+
     const timeoutId = window.setTimeout(() => {
       void saveSettingsWorkspaceState(workspaceStateInput)
     }, 200)
@@ -98,7 +106,7 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [workspaceHydrated, workspaceStateInput])
+  }, [hasInvalidProviderProfiles, workspaceHydrated, workspaceStateInput])
 
   return {
     formState,

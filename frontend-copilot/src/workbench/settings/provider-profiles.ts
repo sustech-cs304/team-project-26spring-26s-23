@@ -141,7 +141,6 @@ export function createCustomProvider(index: number, providerTypeId?: string): Pr
   const catalogEntry = getProviderCatalogEntry(providerTypeId ?? '') ?? getDefaultProviderCatalogEntry()
   const providerId = `${catalogEntry.providerId}-${index}`
   const providerName = index > 1 ? `${catalogEntry.displayName} ${index}` : catalogEntry.displayName
-  const defaultBaseUrl = catalogEntry.baseUrlPolicy.defaultBaseUrl ?? ''
 
   return {
     id: providerId,
@@ -150,8 +149,8 @@ export function createCustomProvider(index: number, providerTypeId?: string): Pr
     name: providerName,
     displayName: providerName,
     protocol: catalogEntry.providerId,
-    endpoint: defaultBaseUrl,
-    baseUrl: defaultBaseUrl,
+    endpoint: '',
+    baseUrl: '',
     hasApiKey: false,
     fastModel: '',
     fallbackModel: '',
@@ -166,7 +165,6 @@ export function createCustomProvider(index: number, providerTypeId?: string): Pr
 
 export function createPlaceholderProviderProfile(): ProviderProfile {
   const catalogEntry = getDefaultProviderCatalogEntry()
-  const defaultBaseUrl = catalogEntry.baseUrlPolicy.defaultBaseUrl ?? ''
 
   return {
     id: '',
@@ -175,8 +173,8 @@ export function createPlaceholderProviderProfile(): ProviderProfile {
     name: '',
     displayName: '',
     protocol: catalogEntry.providerId,
-    endpoint: defaultBaseUrl,
-    baseUrl: defaultBaseUrl,
+    endpoint: '',
+    baseUrl: '',
     hasApiKey: false,
     fastModel: '',
     fallbackModel: '',

@@ -6,6 +6,7 @@ export interface ProviderProfilesSectionDomain {
   activeProviderId: string
   activeProvider: ProviderProfile | null
   activeProviderDetail: ProviderProfile
+  activeProviderPreviewModelId: string | null
   providerQuery: string
   activeProviderApiKeyDraft: string
   apiKeyVisible: boolean
@@ -47,6 +48,7 @@ export interface ProviderProfileListDomain {
 
 export interface ProviderProfileDetailsDomain {
   activeProviderDetail: ProviderProfile
+  activeProviderPreviewModelId: string | null
   activeProviderApiKeyDraft: string
   apiKeyVisible: boolean
   apiKeyFeedback: string | null
@@ -100,6 +102,7 @@ export function resolveProviderProfileDetailsShellDomain(
         ? null
         : {
             activeProviderDetail: provider.activeProviderDetail,
+            activeProviderPreviewModelId: provider.activeProviderPreviewModelId,
             activeProviderApiKeyDraft: provider.activeProviderApiKeyDraft,
             apiKeyVisible: provider.apiKeyVisible,
             apiKeyFeedback: provider.apiKeyFeedback,

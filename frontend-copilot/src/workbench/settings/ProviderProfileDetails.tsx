@@ -7,6 +7,7 @@ import {
   createProviderTypeSelectOptions,
   resolveProviderAuthFieldState,
   resolveProviderBaseUrlFieldState,
+  resolveProviderBaseUrlValidationMessage,
   resolveProviderModelEditingAvailability,
   resolveProviderStatusNotice,
 } from './settings-workspace-provider-helpers'
@@ -18,6 +19,7 @@ interface ProviderProfileDetailsProps {
 export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) {
   const {
     activeProviderDetail,
+    activeProviderPreviewModelId,
     activeProviderApiKeyDraft,
     apiKeyVisible,
     apiKeyFeedback,
@@ -34,7 +36,10 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
   const providerTypeOptions = createProviderTypeSelectOptions(activeProviderDetail)
   const providerStatusNotice = resolveProviderStatusNotice(activeProviderDetail)
   const providerAuthFieldState = resolveProviderAuthFieldState(activeProviderDetail)
-  const providerBaseUrlFieldState = resolveProviderBaseUrlFieldState(activeProviderDetail)
+  const providerBaseUrlFieldState = resolveProviderBaseUrlFieldState(activeProviderDetail, {
+    previewModelId: activeProviderPreviewModelId,
+  })
+  const providerBaseUrlValidationMessage = resolveProviderBaseUrlValidationMessage(activeProviderDetail)
   const providerModelEditingAvailability = resolveProviderModelEditingAvailability(activeProviderDetail)
   const providerTypeValue = (activeProviderDetail.providerId ?? activeProviderDetail.protocol).trim()
   const baseUrlValue = activeProviderDetail.baseUrl ?? activeProviderDetail.endpoint
@@ -77,13 +82,16 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
             <TextField
               label="服务地址"
               description={providerBaseUrlFieldState.description}
+              feedback={providerBaseUrlValidationMessage ?? undefined}
               value={baseUrlValue}
               onChange={(value) => onUpdateActiveProvider({ baseUrl: value, endpoint: value })}
               placeholder={providerBaseUrlFieldState.placeholder}
               type="url"
               containerClassName="form-field--full"
               disabled={!providerBaseUrlFieldState.editable}
+              invalid={providerBaseUrlValidationMessage !== null}
               inputTestId="provider-base-url-input"
+              feedbackTestId="provider-base-url-feedback"
             />
             <ProviderSecretPanel
               providerId={activeProviderDetail.id}

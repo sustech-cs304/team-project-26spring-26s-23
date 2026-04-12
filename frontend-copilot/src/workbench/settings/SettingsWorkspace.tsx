@@ -161,6 +161,27 @@ export function SettingsWorkspace({
     [formState.providerProfiles, primaryAssistantModelSelectionValue, fastAssistantModelSelectionValue],
   )
 
+  const activeProviderPreviewModelId = useMemo(() => {
+    if (activeProvider === null) {
+      return null
+    }
+
+    const primaryRoute = formState.primaryAssistantModelRoute
+    if (primaryRoute !== null && primaryRoute.profileId === activeProvider.id) {
+      return primaryRoute.modelId
+    }
+
+    const normalizedPrimaryModelId = formState.primaryAssistantModel.trim()
+    if (
+      normalizedPrimaryModelId !== ''
+      && activeProvider.availableModels.some((model) => model.modelId === normalizedPrimaryModelId)
+    ) {
+      return normalizedPrimaryModelId
+    }
+
+    return null
+  }, [activeProvider, formState.primaryAssistantModel, formState.primaryAssistantModelRoute])
+
   const derivedSustechEmail = useMemo(() => {
     const normalizedStudentId = formState.studentId.trim()
 
@@ -223,6 +244,7 @@ export function SettingsWorkspace({
     activeProviderId,
     activeProvider,
     activeProviderDetail,
+    activeProviderPreviewModelId,
     providerQuery,
     activeProviderApiKeyDraft,
     apiKeyVisible,
