@@ -473,7 +473,10 @@ def test_root_post_run_start_serialization_failure_returns_structured_error_and_
     app, _scaffold, store = _build_app()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     captured_logs: list[tuple[str, dict[str, object]]] = []
-    router_module = __import__("app.copilot_runtime.router", fromlist=["log_runtime_chain_debug"])
+    router_module = __import__(
+        "app.copilot_runtime.transport.response_mappers",
+        fromlist=["log_runtime_chain_debug"],
+    )
 
     def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
         captured_logs.append((event_name, payload))

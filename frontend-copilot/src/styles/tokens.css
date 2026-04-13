@@ -25,6 +25,7 @@
   --warning-soft: #fef3c7;
   --warning-border: #fcd34d;
   --warning-text: #92400e;
+  --warning-strong: #b45309;
   --danger-soft: #fee2e2;
   --danger-border: #fca5a5;
   --danger-text: #b91c1c;
@@ -123,6 +124,7 @@
   --warning-soft: #392f24;
   --warning-border: #5d4c37;
   --warning-text: #d7c19b;
+  --warning-strong: #e7b26a;
   --danger-soft: #3a2a2b;
   --danger-border: #6a4344;
   --danger-text: #d7a9a7;

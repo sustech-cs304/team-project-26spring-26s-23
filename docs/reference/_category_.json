@@ -1,0 +1,11 @@
+{
+  "label": "共享事实层",
+  "position": 3,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "共享事实层",
+    "description": "跨使用者和开发者共用的事实页。这里统一解释术语、模型路由、thinking、能力边界和运行时接口。",
+    "slug": "/reference"
+  }
+}

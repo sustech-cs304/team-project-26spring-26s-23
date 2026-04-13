@@ -12,12 +12,12 @@ vi.mock('./features/copilot/config', async () => {
   }
 })
 
-import { refreshCopilotBootstrapStateFromPublicSnapshot } from './CopilotAppRoot'
-import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from './features/copilot/types'
+import { createReadyBootstrapState } from './bootstrap/bootstrap-test-support'
+import { refreshCopilotBootstrapStateFromPublicSnapshot } from './bootstrap/bootstrap-state'
 
 describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
   it('applies the latest bootstrap state resolved from a public snapshot without requiring a global agentName', async () => {
-    const nextState = createReadyState({
+    const nextState = createReadyBootstrapState({
       runtimeUrl: 'http://localhost:4400',
       agentName: null,
       agentNameSource: 'missing',
@@ -92,54 +92,3 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
     })
   })
 })
-
-function createDiagnosticsSummary(
-  overrides: Partial<CopilotDiagnosticsSummary> = {},
-): CopilotDiagnosticsSummary {
-  return {
-    hostedStatus: 'ready',
-    failure: null,
-    mode: 'development',
-    modeSource: 'resolved',
-    runtimeSource: 'hosted',
-    ...overrides,
-  }
-}
-
-function createBaseResolvedState(
-  overrides: Partial<Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'>> = {},
-): Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'> {
-  return {
-    bootstrapFields: {
-      runtimeUrl: 'http://127.0.0.1:8765',
-      agentName: null,
-      debugModeEnabled: false,
-    },
-    storageState: 'stored',
-    runtime: {
-      status: 'ready',
-      expectedMode: 'development',
-      resolvedMode: 'development',
-      runtimeUrl: 'http://127.0.0.1:8765',
-      isPackaged: false,
-      failure: null,
-    },
-    runtimeUrl: 'http://127.0.0.1:8765',
-    runtimeSource: 'hosted',
-    agentName: null,
-    agentNameSource: 'missing',
-    diagnostics: createDiagnosticsSummary(),
-    devOverrideAllowed: true,
-    devOverrideConfigured: false,
-    ...overrides,
-  }
-}
-
-function createReadyState(
-  overrides: Partial<Omit<Extract<CopilotBootstrapState, { status: 'ready' }>, 'status'>> = {},
-): CopilotBootstrapState {
-  return {
-    status: 'ready',
-    ...createBaseResolvedState(overrides),
-  }
-}

@@ -1,16 +1,22 @@
 ---
-title: 系统架构总览
-description: 从系统级视角说明 Electron 宿主、双层配置持久化、宿主私桥与流式聊天主线当前怎样协作。
+title: 旧系统架构资料
+description: 旧的 system 分册架构总览。保留跨前后端的实现细节，当前主阅读路径请先看新的开发者路径和共享事实层。
 sidebar_position: 1
+sidebar_label: 旧资料总览
 ---
 
-# 系统架构总览
+# 旧系统架构资料
 
-这篇文档负责收口跨前后端都必须一致的系统事实：桌面宿主由谁持有，配置怎样落盘，聊天主路径怎样接到 Python runtime，以及当前真实流式主线怎样贯穿宿主、前端和后端。具体启动顺序见 [运行时生命周期](./runtime-lifecycle.md)，HTTP 契约见 [聊天运行时契约](./chat-runtime-contract.md)，状态分层见 [会话与状态模型](./session-and-state-model.md)。
+- 这页给谁看：已经读过新开发者路径，还需要补系统级实现细节的人。
+- 这页解决什么问题：保留旧的 `system` 分册说明，但不再把它当成当前首页主入口。
+- 当前覆盖到哪：保留宿主、配置、运行时和兼容壳的实现细节；当前正式主阅读路径已经迁到 [给开发者](../developers/getting-started.md)、[系统架构](../developers/architecture.md) 和 [共享事实层](../reference/runtime-events.md)。
+- 当前状态：旧资料页已可用；当前主阅读路径已迁移。
+
+先说结论：如果你现在是第一次进入站点，不要先从这页开始。当前更适合先看 [给开发者](../developers/getting-started.md)、[系统架构](../developers/architecture.md)、[Provider 与模型路由说明](../reference/providers-and-routing.md) 和 [运行时接口 / 事件参考](../reference/runtime-events.md)。这页只在你需要补历史实现细节时再回来看。
 
 ## 当前系统的一句话
 
-当前应用是一个名为 `CanDue` 的 Electron 桌面宿主。Electron 主进程负责窗口、`userData` 目录下的双层配置持久化、provider 状态与 secrets 真源，以及 Python hosted backend 生命周期；renderer 负责工作台界面与 run 级状态机；Python desktop runtime 通过本地 loopback HTTP 提供控制面和 thread/run 聊天主入口；`session/create`、`capabilities/get`、[`message/send`](./chat-runtime-contract.md) 作为兼容壳继续保留。
+当前应用是一个名为 `CanDue` 的 Electron 桌面宿主。Electron 主进程负责窗口、`userData` 目录下的双层配置持久化、provider 状态与 secrets 真源，以及 Python hosted backend 生命周期；renderer 负责工作台界面与 run 级状态机；Python desktop runtime 通过本地 loopback HTTP 提供控制面和 `thread/run` 聊天主入口；`session/create`、`capabilities/get` 与 [`message/send`](./chat-runtime-contract.md) 作为兼容壳继续保留。
 
 文中出现 `frontend-copilot/` 时，它只是仓库里的前端目录名，用来定位代码；产品名、窗口标题和 `userData` 命名都以 `CanDue` 为准。
 
@@ -244,8 +250,9 @@ Python Desktop Runtime
 
 ## 相关文档
 
-- [运行时生命周期](./runtime-lifecycle.md)
-- [聊天运行时契约](./chat-runtime-contract.md)
-- [会话与状态模型](./session-and-state-model.md)
-- [前端分册入口](../frontend/README.md)
-- [后端分册入口](../backend/README.md)
+- [给开发者](../developers/getting-started.md)
+- [系统架构](../developers/architecture.md)
+- [聊天运行时](../developers/chat-runtime.md)
+- [配置与状态模型](../developers/config-and-state.md)
+- [Provider 与模型路由说明](../reference/providers-and-routing.md)
+- [运行时接口 / 事件参考](../reference/runtime-events.md)
