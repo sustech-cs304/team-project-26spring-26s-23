@@ -223,27 +223,30 @@ interface JsonViewComponentProps {
 
 type JsonViewComponent = ComponentType<JsonViewComponentProps>
 
+let cachedJsonViewComponent: JsonViewComponent | null = null
+let jsonViewComponentPromise: Promise<JsonViewComponent> | null = null
+
 function ErrorDetailOverlayTextBlock({ item }: {
   item: Extract<ErrorDetailOverlayContentItem, { kind: 'text' }>
 }) {
   const structuredValue = item.structuredValue ?? null
   const shouldRenderStructuredJson = item.presentation === 'json' && structuredValue !== null
-  const [jsonViewComponent, setJsonViewComponent] = useState<JsonViewComponent | null>(null)
+  const [jsonViewComponent, setJsonViewComponent] = useState<JsonViewComponent | null>(() => cachedJsonViewComponent)
 
   useEffect(() => {
-    if (!shouldRenderStructuredJson || typeof document === 'undefined') {
+    if (!shouldRenderStructuredJson || typeof document === 'undefined' || jsonViewComponent !== null) {
       return
     }
 
     let active = true
 
-    void import('react18-json-view')
-      .then((module) => {
+    void loadJsonViewComponent()
+      .then((component) => {
         if (!active) {
           return
         }
 
-        setJsonViewComponent(() => resolveJsonViewComponent(module))
+        setJsonViewComponent(() => component)
       })
       .catch(() => {
         if (!active) {
@@ -256,7 +259,7 @@ function ErrorDetailOverlayTextBlock({ item }: {
     return () => {
       active = false
     }
-  }, [shouldRenderStructuredJson])
+  }, [jsonViewComponent, shouldRenderStructuredJson])
 
   return (
     <div className="error-detail-overlay__text-block">
@@ -317,6 +320,29 @@ function ErrorDetailOverlayStructuredJson({
           )}
     </div>
   )
+}
+
+function loadJsonViewComponent(): Promise<JsonViewComponent> {
+  if (cachedJsonViewComponent !== null) {
+    return Promise.resolve(cachedJsonViewComponent)
+  }
+
+  if (jsonViewComponentPromise !== null) {
+    return jsonViewComponentPromise
+  }
+
+  jsonViewComponentPromise = import('react18-json-view')
+    .then((module) => {
+      const component = resolveJsonViewComponent(module)
+      cachedJsonViewComponent = component
+      return component
+    })
+    .catch((error: unknown) => {
+      jsonViewComponentPromise = null
+      throw error
+    })
+
+  return jsonViewComponentPromise
 }
 
 function resolveJsonViewComponent(module: unknown): JsonViewComponent {

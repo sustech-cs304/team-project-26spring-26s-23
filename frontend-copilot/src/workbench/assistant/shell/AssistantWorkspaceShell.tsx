@@ -16,12 +16,6 @@ import {
 } from '../assistant-workspace-controller'
 import { useAssistantWorkspaceState } from '../useAssistantWorkspaceState'
 
-console.info('[startup]', JSON.stringify({
-  scope: 'AssistantWorkspace',
-  stage: 'module-evaluated',
-  t: Math.round(performance.now()),
-}))
-
 export interface AssistantWorkspaceShellProps {
   bootstrap: CopilotBootstrapController
   listAgents?: typeof listRuntimeAgents
