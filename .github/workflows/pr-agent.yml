@@ -1,0 +1,27 @@
+name: PR Agent Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+
+jobs:
+  pr_agent_job:
+    if: ${{ github.event_name == 'pull_request' || (github.event.issue.pull_request && startsWith(github.event.comment.body, '/')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    
+    steps:
+      - name: PR Agent
+        uses: Codium-ai/pr-agent@main
+        env:
+          OPENAI.KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI.API_BASE: "https://api.ikuncode.cc/v1"
+          CONFIG.MODEL: "gpt-5.4"
+          CONFIG.FALLBACK_MODELS: '["gpt-5.3-codex"]'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pr_reviewer.extra_instructions: "*请用中文回复所有评论*，提供具体的代码改进建议"
