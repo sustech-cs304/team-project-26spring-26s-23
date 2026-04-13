@@ -52,5 +52,17 @@ export function createMainProcessServices(
     async getCopilotHistoryRunReplay(runId) {
       return await accessors.getCopilotHistoryService().getRunReplay(runId)
     },
+    async deleteCopilotHistoryThread(threadId) {
+      return await accessors.getCopilotHistoryService().deleteThread(threadId)
+    },
+    async purgeCopilotHistoryThread(threadId) {
+      return await accessors.getCopilotHistoryService().purgeThread(threadId)
+    },
+    async backupCopilotHistoryDatabase(request) {
+      return await accessors.getCopilotHistoryService().backupDatabase(request)
+    },
+    async restoreCopilotHistoryDatabase(request) {
+      return await accessors.getCopilotHistoryService().restoreDatabase(request)
+    },
   }
 }

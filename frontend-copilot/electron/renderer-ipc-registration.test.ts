@@ -4,9 +4,13 @@ import { BOOTSTRAP_WINDOW_READY_CHANNEL } from './bootstrap-window'
 import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL } from './config-center/public-patch'
 import { CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL } from './config-center/public-snapshot'
 import {
+  COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+  COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+  COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
+  COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
@@ -34,6 +38,10 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+      COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+      COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
+      COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+      COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
@@ -52,6 +60,10 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+      COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+      COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
+      COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+      COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
@@ -64,6 +76,10 @@ describe('registerRendererIpcHandlers', () => {
     const listThreadsHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_LIST_THREADS_CHANNEL)
     const getThreadDetailHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL)
     const getRunReplayHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL)
+    const deleteThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DELETE_THREAD_CHANNEL)
+    const purgeThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_PURGE_THREAD_CHANNEL)
+    const backupDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL)
+    const restoreDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL)
     const loadRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)
     const retryRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)
     const notifyBootstrapWindowReadyHandler = getRegisteredHandler(registeredHandlers, BOOTSTRAP_WINDOW_READY_CHANNEL)
@@ -88,6 +104,18 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(getRunReplayHandler(undefined, 'run-1')).resolves.toEqual(
       await handlers.getCopilotHistoryRunReplay('run-1'),
+    )
+    await expect(deleteThreadHandler(undefined, 'thread-1')).resolves.toEqual(
+      await handlers.deleteCopilotHistoryThread('thread-1'),
+    )
+    await expect(purgeThreadHandler(undefined, 'thread-1')).resolves.toEqual(
+      await handlers.purgeCopilotHistoryThread('thread-1'),
+    )
+    await expect(backupDatabaseHandler(undefined, { targetPath: 'backups/history.db' })).resolves.toEqual(
+      await handlers.backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' }),
+    )
+    await expect(restoreDatabaseHandler(undefined, { sourcePath: 'backups/history.db' })).resolves.toEqual(
+      await handlers.restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' }),
     )
     await expect(loadRuntimeHandler()).resolves.toEqual(await handlers.loadCopilotRuntime())
     await expect(retryRuntimeHandler()).resolves.toEqual(await handlers.retryCopilotRuntime())

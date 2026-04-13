@@ -1,7 +1,13 @@
 import type {
+  CopilotHistoryBackupDatabaseRequest,
+  CopilotHistoryDatabaseBackupResult,
+  CopilotHistoryDatabaseRestoreResult,
   CopilotHistoryListThreadsResult,
+  CopilotHistoryRestoreDatabaseRequest,
   CopilotHistoryRunReplayResult,
+  CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadPurgeResult,
 } from './copilot-history'
 import type { HostedBackendService } from './runtime/hosted-backend-service'
 
@@ -16,6 +22,10 @@ export interface ElectronCopilotHistoryService {
   listThreads: () => Promise<CopilotHistoryListThreadsResult>
   getThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
+  deleteThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
+  purgeThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
+  backupDatabase: (request?: CopilotHistoryBackupDatabaseRequest) => Promise<CopilotHistoryDatabaseBackupResult>
+  restoreDatabase: (request: CopilotHistoryRestoreDatabaseRequest) => Promise<CopilotHistoryDatabaseRestoreResult>
 }
 
 export function createElectronCopilotHistoryService(
@@ -43,12 +53,48 @@ export function createElectronCopilotHistoryService(
         failureLabel: `Failed to load persisted chat run replay for "${runId}"`,
       })
     },
+    async deleteThread(threadId) {
+      return await requestHistory<CopilotHistoryThreadDeleteResult>({
+        options,
+        path: `/history/threads/${encodeURIComponent(threadId)}`,
+        method: 'DELETE',
+        failureLabel: `Failed to delete persisted chat thread "${threadId}"`,
+      })
+    },
+    async purgeThread(threadId) {
+      return await requestHistory<CopilotHistoryThreadPurgeResult>({
+        options,
+        path: `/history/threads/${encodeURIComponent(threadId)}/purge`,
+        method: 'DELETE',
+        failureLabel: `Failed to purge persisted chat thread "${threadId}"`,
+      })
+    },
+    async backupDatabase(request) {
+      return await requestHistory<CopilotHistoryDatabaseBackupResult>({
+        options,
+        path: '/history/database/backup',
+        method: 'POST',
+        body: request,
+        failureLabel: 'Failed to back up persisted chat database',
+      })
+    },
+    async restoreDatabase(request) {
+      return await requestHistory<CopilotHistoryDatabaseRestoreResult>({
+        options,
+        path: '/history/database/restore',
+        method: 'POST',
+        body: request,
+        failureLabel: `Failed to restore persisted chat database from "${request.sourcePath}"`,
+      })
+    },
   }
 }
 
 async function requestHistory<TResult extends { ok: boolean } | { ok: false; error: string }>(input: {
   options: CreateElectronCopilotHistoryServiceOptions
   path: string
+  method?: 'GET' | 'POST' | 'DELETE'
+  body?: unknown
   failureLabel: string
 }): Promise<TResult> {
   try {
@@ -66,10 +112,16 @@ async function requestHistory<TResult extends { ok: boolean } | { ok: false; err
     if (token !== null) {
       headers.set(LOCAL_RUNTIME_TOKEN_HEADER, token)
     }
+    const method = input.method ?? 'GET'
+    const body = input.body === undefined ? undefined : JSON.stringify(input.body)
+    if (body !== undefined) {
+      headers.set('Content-Type', 'application/json')
+    }
 
     const response = await fetch(runtimeUrl, {
-      method: 'GET',
+      method,
       headers,
+      body,
     })
     const responseText = await response.text()
     const payload = parseJsonResponse(responseText)

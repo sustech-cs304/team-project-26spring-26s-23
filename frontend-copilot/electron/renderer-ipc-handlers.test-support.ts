@@ -3,9 +3,13 @@ import { vi } from 'vitest'
 import type { ConfigCenterPublicPatchResult } from './config-center/public-patch'
 import type { ConfigCenterPublicSnapshotLoadResult } from './config-center/public-snapshot'
 import type {
+  CopilotHistoryDatabaseBackupResult,
+  CopilotHistoryDatabaseRestoreResult,
   CopilotHistoryListThreadsResult,
   CopilotHistoryRunReplayResult,
+  CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadPurgeResult,
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type { RendererIpcHandlers } from './renderer-ipc-registration'
@@ -146,6 +150,33 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       diagnosticBlocks: [],
       terminalState: null,
       availabilityInterpretation: null,
+    })),
+    deleteCopilotHistoryThread: vi.fn(async (): Promise<CopilotHistoryThreadDeleteResult> => ({
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      deletedAt: '2026-04-13T14:06:00Z',
+    })),
+    purgeCopilotHistoryThread: vi.fn(async (): Promise<CopilotHistoryThreadPurgeResult> => ({
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      purgedAt: '2026-04-13T14:07:00Z',
+      deletedAt: '2026-04-13T14:06:00Z',
+    })),
+    backupCopilotHistoryDatabase: vi.fn(async (): Promise<CopilotHistoryDatabaseBackupResult> => ({
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      backupPath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      createdAt: '2026-04-13T14:08:00Z',
+    })),
+    restoreCopilotHistoryDatabase: vi.fn(async (): Promise<CopilotHistoryDatabaseRestoreResult> => ({
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      sourcePath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      restoredAt: '2026-04-13T14:09:00Z',
     })),
     loadCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,

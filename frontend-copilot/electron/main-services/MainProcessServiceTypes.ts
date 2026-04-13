@@ -7,9 +7,15 @@ import type {
   ConfigCenterPublicSnapshotLoadResult,
 } from '../config-center/public-snapshot'
 import type {
+  CopilotHistoryBackupDatabaseRequest,
+  CopilotHistoryDatabaseBackupResult,
+  CopilotHistoryDatabaseRestoreResult,
   CopilotHistoryListThreadsResult,
+  CopilotHistoryRestoreDatabaseRequest,
   CopilotHistoryRunReplayResult,
+  CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadPurgeResult,
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type {
@@ -71,4 +77,12 @@ export interface MainProcessServices {
   listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
   getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
+  deleteCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
+  purgeCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
+  backupCopilotHistoryDatabase: (
+    request?: CopilotHistoryBackupDatabaseRequest,
+  ) => Promise<CopilotHistoryDatabaseBackupResult>
+  restoreCopilotHistoryDatabase: (
+    request: CopilotHistoryRestoreDatabaseRequest,
+  ) => Promise<CopilotHistoryDatabaseRestoreResult>
 }

@@ -184,6 +184,33 @@ describe('createMainProcessServices', () => {
         status: 'not_evaluated',
       },
     } as const
+    const deleteThreadResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      deletedAt: '2026-04-13T14:06:00Z',
+    } as const
+    const purgeThreadResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      purgedAt: '2026-04-13T14:07:00Z',
+      deletedAt: '2026-04-13T14:06:00Z',
+    } as const
+    const backupDatabaseResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      backupPath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      createdAt: '2026-04-13T14:08:00Z',
+    } as const
+    const restoreDatabaseResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      sourcePath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      restoredAt: '2026-04-13T14:09:00Z',
+    } as const
 
     const resolveProviderRouteRequest = {
       routeRef: {
@@ -222,6 +249,10 @@ describe('createMainProcessServices', () => {
       listThreads: vi.fn(async () => listThreadsResult),
       getThreadDetail: vi.fn(async (_threadId: string) => threadDetailResult),
       getRunReplay: vi.fn(async (_runId: string) => runReplayResult),
+      deleteThread: vi.fn(async (_threadId: string) => deleteThreadResult),
+      purgeThread: vi.fn(async (_threadId: string) => purgeThreadResult),
+      backupDatabase: vi.fn(async (_request?: { targetPath?: string | null }) => backupDatabaseResult),
+      restoreDatabase: vi.fn(async (_request: { sourcePath: string }) => restoreDatabaseResult),
     }
 
     hoisted.unifiedConfigService.loadPublicSnapshot.mockResolvedValue(loadPublicSnapshotResult)
@@ -285,6 +316,14 @@ describe('createMainProcessServices', () => {
     await expect(services.listCopilotHistoryThreads()).resolves.toEqual(listThreadsResult)
     await expect(services.getCopilotHistoryThreadDetail('thread-1')).resolves.toEqual(threadDetailResult)
     await expect(services.getCopilotHistoryRunReplay('run-1')).resolves.toEqual(runReplayResult)
+    await expect(services.deleteCopilotHistoryThread('thread-1')).resolves.toEqual(deleteThreadResult)
+    await expect(services.purgeCopilotHistoryThread('thread-1')).resolves.toEqual(purgeThreadResult)
+    await expect(services.backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual(
+      backupDatabaseResult,
+    )
+    await expect(services.restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' })).resolves.toEqual(
+      restoreDatabaseResult,
+    )
 
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
@@ -310,6 +349,10 @@ describe('createMainProcessServices', () => {
     expect(copilotHistoryService.listThreads).toHaveBeenCalledOnce()
     expect(copilotHistoryService.getThreadDetail).toHaveBeenCalledWith('thread-1')
     expect(copilotHistoryService.getRunReplay).toHaveBeenCalledWith('run-1')
+    expect(copilotHistoryService.deleteThread).toHaveBeenCalledWith('thread-1')
+    expect(copilotHistoryService.purgeThread).toHaveBeenCalledWith('thread-1')
+    expect(copilotHistoryService.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })
+    expect(copilotHistoryService.restoreDatabase).toHaveBeenCalledWith({ sourcePath: 'backups/history.db' })
 
     const unifiedConfigOptions = hoisted.createElectronUnifiedConfigService.mock.calls[0]?.[0]
     const settingsWorkspaceOptions = hoisted.createElectronSettingsWorkspaceService.mock.calls[0]?.[0]

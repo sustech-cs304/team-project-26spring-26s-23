@@ -2,15 +2,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   CopilotHistoryApi,
+  CopilotHistoryDatabaseBackupResult,
+  CopilotHistoryDatabaseRestoreResult,
   CopilotHistoryListThreadsResult,
   CopilotHistoryRunReplayResult,
+  CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadPurgeResult,
 } from '../../../electron/copilot-history'
 import {
+  backupCopilotHistoryDatabase,
+  deleteCopilotHistoryThread,
   getCopilotHistoryRunReplay,
   getCopilotHistoryThreadDetail,
   HISTORY_API_UNAVAILABLE_ERROR,
   listCopilotHistoryThreads,
+  purgeCopilotHistoryThread,
+  restoreCopilotHistoryDatabase,
 } from './history'
 
 afterEach(() => {
@@ -30,6 +38,22 @@ describe('copilot history bridge', () => {
       error: HISTORY_API_UNAVAILABLE_ERROR,
     })
     await expect(getCopilotHistoryRunReplay('run-1')).resolves.toEqual({
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    })
+    await expect(deleteCopilotHistoryThread('thread-1')).resolves.toEqual({
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    })
+    await expect(purgeCopilotHistoryThread('thread-1')).resolves.toEqual({
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    })
+    await expect(backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual({
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    })
+    await expect(restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' })).resolves.toEqual({
       ok: false,
       error: HISTORY_API_UNAVAILABLE_ERROR,
     })
@@ -89,10 +113,41 @@ describe('copilot history bridge', () => {
       terminalState: null,
       availabilityInterpretation: null,
     }
+    const deleteResult: CopilotHistoryThreadDeleteResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      deletedAt: '2026-04-13T15:06:00Z',
+    }
+    const purgeResult: CopilotHistoryThreadPurgeResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      purgedAt: '2026-04-13T15:07:00Z',
+      deletedAt: '2026-04-13T15:06:00Z',
+    }
+    const backupResult: CopilotHistoryDatabaseBackupResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      backupPath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      createdAt: '2026-04-13T15:08:00Z',
+    }
+    const restoreResult: CopilotHistoryDatabaseRestoreResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      sourcePath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      restoredAt: '2026-04-13T15:09:00Z',
+    }
     const api: CopilotHistoryApi = {
       listThreads: vi.fn().mockResolvedValue(listResult),
       getThreadDetail: vi.fn().mockResolvedValue(detailResult),
       getRunReplay: vi.fn().mockResolvedValue(replayResult),
+      deleteThread: vi.fn().mockResolvedValue(deleteResult),
+      purgeThread: vi.fn().mockResolvedValue(purgeResult),
+      backupDatabase: vi.fn().mockResolvedValue(backupResult),
+      restoreDatabase: vi.fn().mockResolvedValue(restoreResult),
     }
 
     vi.stubGlobal('window', {
@@ -102,8 +157,16 @@ describe('copilot history bridge', () => {
     await expect(listCopilotHistoryThreads()).resolves.toEqual(listResult)
     await expect(getCopilotHistoryThreadDetail('thread-1')).resolves.toEqual(detailResult)
     await expect(getCopilotHistoryRunReplay('run-1')).resolves.toEqual(replayResult)
+    await expect(deleteCopilotHistoryThread('thread-1')).resolves.toEqual(deleteResult)
+    await expect(purgeCopilotHistoryThread('thread-1')).resolves.toEqual(purgeResult)
+    await expect(backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual(backupResult)
+    await expect(restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' })).resolves.toEqual(restoreResult)
     expect(api.listThreads).toHaveBeenCalledOnce()
     expect(api.getThreadDetail).toHaveBeenCalledWith('thread-1')
     expect(api.getRunReplay).toHaveBeenCalledWith('run-1')
+    expect(api.deleteThread).toHaveBeenCalledWith('thread-1')
+    expect(api.purgeThread).toHaveBeenCalledWith('thread-1')
+    expect(api.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })
+    expect(api.restoreDatabase).toHaveBeenCalledWith({ sourcePath: 'backups/history.db' })
   })
 })

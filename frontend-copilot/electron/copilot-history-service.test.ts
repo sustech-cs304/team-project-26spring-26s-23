@@ -109,6 +109,99 @@ describe('createElectronCopilotHistoryService', () => {
     })
   })
 
+  it('issues delete and database mutation requests with the expected methods and payloads', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => {
+        if (url.endsWith('/history/threads/thread-1')) {
+          return JSON.stringify({
+            ok: true,
+            version: 'chat-history-v1',
+            threadId: 'thread-1',
+            deletedAt: '2026-04-13T14:06:00Z',
+          })
+        }
+        if (url.endsWith('/history/threads/thread-1/purge')) {
+          return JSON.stringify({
+            ok: true,
+            version: 'chat-history-v1',
+            threadId: 'thread-1',
+            purgedAt: '2026-04-13T14:07:00Z',
+            deletedAt: '2026-04-13T14:06:00Z',
+          })
+        }
+        if (url.endsWith('/history/database/backup')) {
+          return JSON.stringify({
+            ok: true,
+            version: 'chat-history-v1',
+            databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+            backupPath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+            createdAt: '2026-04-13T14:08:00Z',
+          })
+        }
+        return JSON.stringify({
+          ok: true,
+          version: 'chat-history-v1',
+          databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+          sourcePath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+          restoredAt: '2026-04-13T14:09:00Z',
+        })
+      },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = createHostedBackendServiceStub({
+      runtimeBaseUrl: 'http://127.0.0.1:8765',
+    })
+    const service = createElectronCopilotHistoryService({
+      ensureHostedBackendService: async () => hostedBackendService,
+      getLocalToken: () => 'history-token',
+    })
+
+    await expect(service.deleteThread('thread-1')).resolves.toEqual({
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      deletedAt: '2026-04-13T14:06:00Z',
+    })
+    await expect(service.purgeThread('thread-1')).resolves.toEqual({
+      ok: true,
+      version: 'chat-history-v1',
+      threadId: 'thread-1',
+      purgedAt: '2026-04-13T14:07:00Z',
+      deletedAt: '2026-04-13T14:06:00Z',
+    })
+    await expect(service.backupDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual({
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      backupPath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      createdAt: '2026-04-13T14:08:00Z',
+    })
+    await expect(service.restoreDatabase({ sourcePath: 'backups/history.db' })).resolves.toEqual({
+      ok: true,
+      version: 'chat-history-v1',
+      databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
+      sourcePath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
+      restoredAt: '2026-04-13T14:09:00Z',
+    })
+
+    expect(hostedBackendService.start).toHaveBeenCalledTimes(4)
+    expect(fetchMock.mock.calls).toHaveLength(4)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1')
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe('DELETE')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1/purge')
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe('DELETE')
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('http://127.0.0.1:8765/history/database/backup')
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBe('POST')
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).body).toBe('{"targetPath":"backups/history.db"}')
+    expect(fetchMock.mock.calls[3]?.[0]).toBe('http://127.0.0.1:8765/history/database/restore')
+    expect((fetchMock.mock.calls[3]?.[1] as RequestInit).method).toBe('POST')
+    expect((fetchMock.mock.calls[3]?.[1] as RequestInit).body).toBe('{"sourcePath":"backups/history.db"}')
+  })
+
   it('returns a structured failure when the hosted backend runtime URL is unavailable', async () => {
     const service = createElectronCopilotHistoryService({
       ensureHostedBackendService: async () => createHostedBackendServiceStub({
