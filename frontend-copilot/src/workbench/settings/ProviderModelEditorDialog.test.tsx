@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { getThinkingBudgetProgressFromTokens } from '../thinking-display'
+import type { ProviderProfile } from '../types'
 import { renderWithRoot, clickElement, setFormControlValue } from './SettingsWorkspace.test-support'
 import { ProviderModelEditorDialog } from './ProviderModelEditorDialog'
 import type { ModelEditorState } from './provider-profiles'
@@ -21,6 +22,27 @@ function createModelEditorState(overrides: Partial<ModelEditorState> = {}): Mode
     outputPrice: '3.00',
     advancedOpen: false,
     isNew: false,
+    ...overrides,
+  }
+}
+
+function createProviderProfile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
+  return {
+    id: 'openai-1',
+    profileId: 'openai-1',
+    providerId: 'openai',
+    name: 'OpenAI',
+    displayName: 'OpenAI',
+    protocol: 'openai',
+    endpoint: 'https://api.openai.com/v1',
+    baseUrl: 'https://api.openai.com/v1',
+    hasApiKey: false,
+    fastModel: '',
+    fallbackModel: '',
+    organization: '',
+    region: '',
+    notes: '',
+    availableModels: [],
     ...overrides,
   }
 }
@@ -288,6 +310,58 @@ describe('ProviderModelEditorDialog', () => {
         },
       },
     })
+
+    rendered.unmount()
+  })
+
+  it('shows a compatibility warning for a clearly mismatched provider and thinking series', () => {
+    const rendered = renderWithRoot(
+      <ProviderModelEditorDialog
+        modelEditorState={createModelEditorState({
+          thinkingCapability: {
+            supported: true,
+            series: 'anthropic-adaptive-max-v1',
+            source: 'settings-page',
+          },
+        })}
+        providerProfile={createProviderProfile({ providerId: 'openai', protocol: 'openai' })}
+        modelEditorError={null}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onStateChange={vi.fn()}
+        onToggleCapability={vi.fn()}
+        onClearError={vi.fn()}
+      />,
+    )
+
+    expect(rendered.getByTestId('settings-thinking-compatibility-warning').textContent).toContain(
+      '⚠ 当前模型可能不支持此类思考模式',
+    )
+
+    rendered.unmount()
+  })
+
+  it('does not show a compatibility warning for a matching provider and thinking series', () => {
+    const rendered = renderWithRoot(
+      <ProviderModelEditorDialog
+        modelEditorState={createModelEditorState({
+          thinkingCapability: {
+            supported: true,
+            series: 'openai-6-level-superset-v1',
+            source: 'settings-page',
+          },
+        })}
+        providerProfile={createProviderProfile({ providerId: 'openai', protocol: 'openai' })}
+        modelEditorError={null}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onStateChange={vi.fn()}
+        onToggleCapability={vi.fn()}
+        onClearError={vi.fn()}
+      />,
+    )
+
+    expect(rendered.queryByTestId('settings-thinking-compatibility-warning')).toBeNull()
 
     rendered.unmount()
   })

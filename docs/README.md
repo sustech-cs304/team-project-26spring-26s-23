@@ -1,108 +1,110 @@
 ---
-title: 项目文档
-description: 文档入口，说明系统层权威范围、前后端分册边界与建议阅读顺序。
+title: 文档首页
+description: 站点新的双入口首页，先分流给使用者和开发者，再把高变化事实收口到共享事实层。
 sidebar_position: 1
 sidebar_label: 文档首页
 slug: /
 ---
 
-# 项目文档
+# 赶渡 CanDue 文档
 
-这套文档按“系统层权威源 + 端内分册”的方式组织。
+- 这页给谁看：第一次进入站点的人，包括普通使用者和开发者。
+- 这页解决什么问题：告诉你该从哪条阅读路径开始，不需要先钻进旧分册。
+- 当前覆盖到哪：双入口首页和共享事实层已经落地；使用者路径与开发者路径的细分专题已经可读。
+- 当前状态：站点骨架已可用；使用者路径已可用；开发者路径已可用；共享事实层已可用。
 
-## 先看文档边界
+这套站点现在按三层组织：
 
-- `docs/system/` 负责收口跨前后端都必须一致的系统事实。后续前端分册和后端分册都应当以这里为准。
-- `docs/frontend/` 从 renderer、Electron 暴露面、页面状态和设置工作区的前端视角展开，不单独改写系统层已经确定的事实。
-- `docs/backend/` 从 desktop runtime、copilot runtime 和业务模块的后端视角展开，也不单独改写系统层已经确定的事实。
-- `docs/plans/` 只用于计划、排期和方案讨论，不作为当前实现的权威说明。
-- `docs/meetings/` 主要用于历史追溯，不替代正式手册。
+1. 给使用者。
+2. 给开发者。
+3. 共享事实层。
 
-## 建议阅读顺序
+先按你的目标选入口。需要跨页面复用、又容易过时的事实，统一放到共享事实层，不再分散写在很多地方。
 
-### 第一次接手项目
+## 先选你的入口
 
-建议先按下面的顺序阅读：
+### 给使用者
 
-1. [系统架构总览](./system/architecture-overview.md)
-2. [运行时生命周期](./system/runtime-lifecycle.md)
-3. [聊天运行时契约](./system/chat-runtime-contract.md)
-4. [会话与状态模型](./system/session-and-state-model.md)
-5. [前端分册入口](./frontend/README.md)
-6. [后端分册入口](./backend/README.md)
+如果你更关心“这东西现在能做什么、怎么配模型、thinking 是什么、现在有哪些边界”，请先读[给使用者入口](./users/overview.md)。
 
-这个顺序的作用很直接：先把跨端共识读清，再进入各自分册，后面阅读 [`docs/frontend/`](./frontend/) 或 [`docs/backend/`](./backend/) 时就不会反复碰到概念冲突。
+这条路径会优先帮助你判断：
 
-### 只想快速定位某类问题
+- 这个项目现在适不适合你。
+- 该先看哪些说明。
+- 需要配置模型时去哪里看。
+- 想了解能力边界时去哪里看。
 
-| 你要确认的问题 | 优先阅读 |
-| --- | --- |
-| 现在系统由哪些层组成，各层谁负责什么 | [系统架构总览](./system/architecture-overview.md) |
-| 应用怎样启动窗口、拉起 runtime、暴露启动态 | [运行时生命周期](./system/runtime-lifecycle.md) |
-| 聊天 HTTP 端点、请求体、响应体和错误码是什么 | [聊天运行时契约](./system/chat-runtime-contract.md) |
-| 配置、设置、会话、消息历史分别放在哪里 | [会话与状态模型](./system/session-and-state-model.md) |
-| renderer 当前页面、配置桥接和运行态细节 | [前端分册入口](./frontend/README.md) |
-| Python runtime、模块边界和运行配置细节 | [后端分册入口](./backend/README.md) |
+### 给开发者
 
-## 当前系统层已经收口的事实
+如果你更关心“当前主链是什么、模型路由怎么解析、thinking 元数据怎么流动、代码该从哪里读”，请先读[给开发者入口](./developers/getting-started.md)。
 
-系统层文档当前已经统一收口了这些全局事实，后续分册应当直接引用，不再各自重写一遍：
+这条路径会优先帮助你判断：
 
-- 当前配置系统已经是“统一配置中心 + settings workspace”双层持久化结构。
-- 当前聊天主路径已经是 session-first，会话先绑定智能体，每次消息再携带模型与工具策略。
-- Electron 产品命名与 `userData` 路径已经统一收口到 `CanDue`。
-- 首次启动时不会再预置默认 provider 或默认模型，系统会从更空白的初始状态进入设置与聊天链路。
+- 当前可靠主链是不是 `thread/run`。
+- provider catalog、provider profile、model route 各自是什么。
+- thinking 现在的请求和返回口径是什么。
+- 旧资料该怎样作为补充材料来使用。
 
-这些事实的具体展开，分别见 [`docs/system/`](./system/) 下四篇系统文档。
+### 共享事实层
 
-## 三组文档怎样闭环
+如果你已经知道自己要找的是某个具体事实，而不是一整条阅读路线，请直接进入共享事实层：
 
-这套站点当前按一条固定关系阅读：
+- [术语表](./reference/glossary.md)
+- [Provider 与模型路由说明](./reference/providers-and-routing.md)
+- [Thinking 能力说明](./reference/thinking.md)
+- [能力边界 / 状态总表](./reference/capabilities.md)
+- [运行时接口 / 事件参考](./reference/runtime-events.md)
 
-- `docs/system/` 先定义跨前后端都要一致的事实，例如产品命名、宿主路径来源、session-first 契约和状态 owner。
-- `docs/frontend/` 再从 renderer、preload 和设置工作区出发，补齐前端这边真正可见的页面、字段和状态。
-- `docs/backend/` 最后从 desktop runtime、模块布局和对外契约出发，补齐 Python 侧实现、运行语境和兼容边界。
+## 共享事实层现在负责什么
 
-frontend 和 backend 两个分册都按同一套三层结构组织：
+共享事实层不是教程区。它负责把高变化主题收口成一份权威说明。
 
-- 入口层负责给出阅读顺序。
-- 当前事实层负责解释当前代码已经落地的实现。
-- 参考与边界层负责查字段、状态、兼容方法和未来草案。
+| 页面 | 这页解决什么问题 | 当前状态 |
+| --- | --- | --- |
+| [术语表](./reference/glossary.md) | 统一解释 thread、run、provider profile、model route、settings workspace 等关键名词。 | 已可用 |
+| [Provider 与模型路由说明](./reference/providers-and-routing.md) | 解释 provider catalog、provider profile、默认模型路由、请求级模型路由和宿主解析边界。 | 已可用 |
+| [Thinking 能力说明](./reference/thinking.md) | 解释 thinking 怎样请求、怎样查询能力、怎样出现在运行时元数据里。 | 已可用 |
+| [能力边界 / 状态总表](./reference/capabilities.md) | 用统一口径列出哪些能力已可用，哪些只是部分接通，哪些还在规划中。 | 已可用 |
+| [运行时接口 / 事件参考](./reference/runtime-events.md) | 解释当前控制面端点、运行时方法、SSE 事件和兼容壳的关系。 | 已可用 |
 
-如果某个问题同时跨到两端，先回到 [`docs/system/`](./system/) 校验口径，再进入分册细节。这样阅读时更容易避免把端内说明写成系统事实，也更容易把兼容说明和当前主路径区分开。
+## 当前推荐阅读顺序
 
-## 分册该怎么用
+### 如果你是普通使用者
 
-### 前端分册
+1. 先读[给使用者入口](./users/overview.md)。
+2. 需要配置模型时，读[Provider 与模型路由说明](./reference/providers-and-routing.md)。
+3. 需要理解 thinking 时，读[Thinking 能力说明](./reference/thinking.md)。
+4. 需要判断现阶段能做什么、不能做什么时，读[能力边界 / 状态总表](./reference/capabilities.md)。
 
-当前前端分册更适合回答下面这些问题：
+### 如果你是开发者
 
-- renderer 当前有哪些工作区与页面能力。
-- preload 和 IPC 暴露面怎样被前端消费。
-- 设置工作区当前有哪些可编辑字段和运行态表现。
-- 哪些界面已经稳定，哪些仍然只是占位或未来草案。
+1. 先读[给开发者入口](./developers/getting-started.md)。
+2. 需要对齐运行时方法和事件时，读[运行时接口 / 事件参考](./reference/runtime-events.md)。
+3. 需要对齐模型解析链路时，读[Provider 与模型路由说明](./reference/providers-and-routing.md)。
+4. 需要对齐 thinking 请求和元数据时，读[Thinking 能力说明](./reference/thinking.md)。
+5. 需要先把现阶段边界看清楚时，读[能力边界 / 状态总表](./reference/capabilities.md)。
 
-入口位于 [前端分册入口](./frontend/README.md)。
+## 当前事实基线怎么判断
 
-### 后端分册
+这次翻修不再把旧文档默认当成现状。当前判断顺序是：
 
-当前后端分册更适合回答下面这些问题：
+1. 代码。
+2. 测试。
+3. 近期设计和实施计划。
+4. 旧文档。
 
-- desktop runtime 与 copilot runtime 怎样组织。
-- 当前服务怎样启动、怎样接收宿主投影的运行配置。
-- 当前可观察契约和兼容边界分别是什么。
-- Blackboard、TIS 等后端领域能力处在什么阶段。
+这意味着首页主路径已经不再按 `system / frontend / backend` 分册组织。当前可靠主链也不再按旧的 `session/create`、`message/send` 口径理解，而是以 `thread/run` 为主。
 
-入口位于 [后端分册入口](./backend/README.md)。
+## 旧资料现在怎么用
 
-## 正式文档的使用原则
+旧目录没有删除，但它们不再是首页主路径：
 
-- 需要判断当前实现事实时，优先看系统层文档和分册正文，不把计划稿当成实现说明。
-- 需要判断跨端概念时，优先回到 [`docs/system/`](./system/) 校验，不在前端分册和后端分册之间来回比对口径。
-- 需要判断未来方向时，明确区分“当前已实现”“兼容保留”“未来草案”三种状态。
+- [系统专题](./system/architecture-overview.md)
+- [前端分册](./frontend/README.md)
+- [后端分册](./backend/README.md)
 
-## 继续阅读
+现在更合适的用法是：
 
-- [系统架构总览](./system/architecture-overview.md)
-- [前端分册入口](./frontend/README.md)
-- [后端分册入口](./backend/README.md)
+- 先从新首页进入合适路径。
+- 先看共享事实层把术语和边界对齐。
+- 只有在需要更细的历史材料或实现细节时，再进入旧目录继续阅读。

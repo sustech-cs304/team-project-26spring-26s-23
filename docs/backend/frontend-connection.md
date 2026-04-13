@@ -1,13 +1,13 @@
 ---
-title: 后端暴露契约与前端接入点
-description: 说明前端当前怎样接到 Python runtime，以及后端真正暴露了哪些连接面。
+title: 后端暴露契约与前端接入点（旧资料）
+description: 旧的 backend 分册连接面说明。保留后端视角的补充细节，当前正式主链请先看新的开发者路径与共享事实层。
 sidebar_position: 4
-sidebar_label: 后端暴露契约与前端接入点
+sidebar_label: 旧资料：连接面
 ---
 
-# 后端暴露契约与前端接入点
+# 后端暴露契约与前端接入点（旧资料）
 
-这页只讲前端今天怎样接到后端，以及后端当前真正暴露了哪些连接面。方法字段的细表见 [当前契约参考](./reference-current-contracts.md)，路径和配置来源见 [后端运行与配置](./run-and-config.md)。
+这页属于旧的 `backend` 分册。它只适合补“后端视角下的连接面细节”，不再作为当前主阅读入口。第一次进入当前站点时，请先看 [给开发者](../developers/getting-started.md)、[聊天运行时](../developers/chat-runtime.md)、[运行时接口 / 事件参考](../reference/runtime-events.md) 和 [Provider 与模型路由说明](../reference/providers-and-routing.md)。
 
 ## 先分清两层接入点
 
@@ -53,7 +53,7 @@ sidebar_label: 后端暴露契约与前端接入点
 - 请求中的路由快照是否仍与本地配置一致。
 - 当前 provider profile 是否具备可用 API key。
 
-这件事解释了当前后端为什么已经不再需要 startup `model` 参数，却仍然能在每次 [`message/send`](../system/chat-runtime-contract.md) 执行时拿到真实 provider 连接信息。
+这件事解释了当前后端为什么已经不再需要 startup `model` 参数，却仍然能在每次 `run/start` 执行前解析真实 provider 连接信息；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 只是映射到同一条 `thread/run` 语义。
 
 ## 当前 Python 后端真正暴露了什么
 
@@ -76,33 +76,39 @@ sidebar_label: 后端暴露契约与前端接入点
 
 ## 当前聊天主契约
 
-当前正式聊天主契约已经收口为 session-first 四方法：
+当前真正聊天主链已经收口为 `thread/run` 六方法：
 
 1. `agents/list`
-2. `session/create`
-3. `capabilities/get`
-4. [`message/send`](../system/chat-runtime-contract.md)
+2. `thread/create`
+3. `thread/get`
+4. `run/start`
+5. `run/stream`
+6. `run/cancel`
 
-这四个方法共同描述了一条更清楚的后端连接主线：
+`session/create`、`capabilities/get` 和 [`message/send`](../system/chat-runtime-contract.md) 仍然保留，但现在是兼容壳。
+
+这条主链共同描述了一条更清楚的后端连接主线：
 
 - 后端目录先告诉前端当前有哪些智能体。
-- 前端创建会话时，把当前会话绑定到某个智能体。
-- 前端再读取这个会话的能力面。
-- 每次发送消息时，前端显式带上本次模型路由、工具列表与请求选项。
+- 前端创建 thread 时，把当前 thread 绑定到某个智能体。
+- 前端再读取这个 thread 的能力面。
+- 每次发起 run 时，前端显式带上本次模型路由、Thinking、工具列表与请求选项。
 
 ## 当前前端怎样走这条主路径
 
-从 backend 视角看，前端当前主路径可以概括成下面四步：
+从 backend 视角看，前端当前主路径更适合概括成下面六步：
 
 1. 它先确认 hosted runtime 已经可用，并拿到可访问的 runtime URL。
 2. 它调用 `agents/list` 读取后端智能体目录。
-3. 它调用 `session/create` 创建会话，并拿到 `sessionId` 和 `boundAgent`。
-4. 它调用 `capabilities/get` 与流式 [`message/send`](../system/chat-runtime-contract.md) 完成会话内交互。
+3. 它调用 `thread/create` 创建 thread，并绑定当前智能体。
+4. 它调用 `thread/get` 读取当前 thread 视图和能力面。
+5. 它调用 `run/start` 发起本轮 run，并显式带上模型路由、Thinking 和工具选择。
+6. 它调用 `run/stream` 消费事件流；需要中断时再调用 `run/cancel`。
 
 这里最关键的变化有两点：
 
 - 当前后端已经把“智能体绑定”和“每次请求的模型路由”拆成了两层语义。
-- 当前 [`message/send`](../system/chat-runtime-contract.md) 已经是 POST + SSE 事件流主合同，而不是整包 JSON 响应主路径。
+- 当前正式主链已经是 `thread/run`；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 只是映射到同一条事件流语义。
 
 ## 当前 `message/send` 在后端视角下是什么
 
@@ -138,7 +144,7 @@ sidebar_label: 后端暴露契约与前端接入点
 - `agent/connect`
 - `agent/run`
 
-它们不再出现在 supported methods 中，也不再承担兼容或诊断职责。旧调用当前只会收到 `method_not_implemented`；当前正式前端主路径已经完全围绕 session-first 四方法组织。
+它们不再出现在 supported methods 中，也不再承担兼容或诊断职责。旧调用当前只会收到 `method_not_implemented`；当前正式前端主路径已经完全围绕 `agents/list -> thread/create -> thread/get -> run/start -> run/stream -> run/cancel` 组织。
 
 ## 前端今天还没有直接连到哪些后端能力
 
@@ -165,13 +171,13 @@ Blackboard 和 TIS 当前已经有真实能力，但这些能力主要以 CLI、
 如果只用一句话概括当前后端对前端的连接面，可以这样理解：
 
 - 宿主层负责持有配置、托管 runtime 和守住 provider 与 secrets 真源。
-- Python 后端负责提供本地控制面和 session-first 流式聊天主契约。
+- Python 后端负责提供本地控制面和 `thread/run` 聊天主链；`session/create`、`capabilities/get` 和 `message/send` 继续作为兼容壳保留。
 - Blackboard 与 TIS 仍然主要停留在领域能力层和未来服务化输入层。
 
 ## 这页想帮助你先建立什么判断
 
 - 当前前端已经有真实后端连接面，不再是只参考 CLI 输出的状态。
-- 当前真正稳定的连接面，是控制面端点和 session-first 流式聊天主路径。
+- 当前真正稳定的连接面，是控制面端点和 `thread/run` 流式聊天主路径。
 - Electron 主进程是这条链路里的配置 owner、runtime launcher 与宿主私桥 owner。
 - provider secrets 不会进入消息请求体，也不会出现在流式事件里。
 - Blackboard 与 TIS 还没有整体进入正式前端业务 API 层。

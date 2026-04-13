@@ -1,11 +1,11 @@
 {
-  "label": "系统专题",
-  "position": 1,
-  "collapsed": false,
+  "label": "旧系统资料",
+  "position": 80,
+  "collapsed": true,
   "link": {
     "type": "generated-index",
-    "title": "系统专题",
-    "description": "跨前后端的系统级专题，帮助从整体视角理解运行时、契约与状态模型。",
+    "title": "旧系统资料",
+    "description": "旧的 system 分册。这里只保留跨前后端的历史实现说明与补充细节。当前主阅读路径请先看“给开发者”和“共享事实层”。",
     "slug": "/system"
   }
 }

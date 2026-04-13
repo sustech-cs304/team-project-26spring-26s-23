@@ -34,7 +34,7 @@ const config: Config = {
           path: '../docs',
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
-          exclude: ['plans/**'],
+          exclude: ['plans/**', 'analysis/**', 'meetings/**', 'proposal-26s-23.md'],
         },
         blog: false,
         theme: {
@@ -72,10 +72,24 @@ const config: Config = {
       },
       items: [
         {
-          type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
+          to: '/',
+          label: '首页',
           position: 'left',
-          label: '文档',
+        },
+        {
+          to: '/users',
+          label: '给使用者',
+          position: 'left',
+        },
+        {
+          to: '/developers',
+          label: '给开发者',
+          position: 'left',
+        },
+        {
+          to: '/reference',
+          label: '共享事实',
+          position: 'left',
         },
         {
           type: 'search',
@@ -95,8 +109,20 @@ const config: Config = {
           title: '文档',
           items: [
             {
-              label: '开始阅读',
+              label: '首页',
               to: '/',
+            },
+            {
+              label: '给使用者',
+              to: '/users',
+            },
+            {
+              label: '给开发者',
+              to: '/developers',
+            },
+            {
+              label: '共享事实',
+              to: '/reference',
             },
           ],
         },

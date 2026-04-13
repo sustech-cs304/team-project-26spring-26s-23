@@ -14,6 +14,7 @@ import {
 } from '../thinking-display'
 import type {
   ModelCapability,
+  ProviderProfile,
   ThinkingSeriesBudgetValue,
   ThinkingSeriesCodeValue,
   ThinkingSeriesValue,
@@ -32,9 +33,11 @@ import {
 } from '../thinking-capabilities'
 import { currencyOptions, modelCapabilityOptions } from './config'
 import type { ModelEditorState } from './provider-profiles'
+import { resolveThinkingCompatibilityWarning } from './thinking-compatibility-warning'
 
 interface ProviderModelEditorDialogProps {
   modelEditorState: ModelEditorState | null
+  providerProfile?: ProviderProfile | null
   modelEditorError: string | null
   onClose: () => void
   onSave: () => void
@@ -100,6 +103,7 @@ function normalizeBudgetDeclaration(declaration: ModelEditorState['thinkingCapab
 
 export function ProviderModelEditorDialog({
   modelEditorState,
+  providerProfile = null,
   modelEditorError,
   onClose,
   onSave,
@@ -178,6 +182,10 @@ export function ProviderModelEditorDialog({
   const budgetDefaultTokens = budgetDefaultValue?.mode === 'budget' && typeof budgetDefaultValue.budgetTokens === 'number'
     ? budgetDefaultValue.budgetTokens
     : THINKING_BUDGET_DEFAULT_SELECTION_TOKENS
+  const thinkingCompatibilityWarning = resolveThinkingCompatibilityWarning({
+    providerProfile,
+    thinkingCapability: modelEditorState.thinkingCapability,
+  })
 
   const updateThinkingCapability = (nextThinkingCapability: ModelEditorState['thinkingCapability']) => {
     onClearError()
@@ -460,6 +468,15 @@ export function ProviderModelEditorDialog({
                       }}
                     />
                   </div>
+                ) : null}
+
+                {thinkingCompatibilityWarning.shouldWarn ? (
+                  <p
+                    className="model-editor-thinking-panel__warning"
+                    data-testid="settings-thinking-compatibility-warning"
+                  >
+                    {thinkingCompatibilityWarning.message}
+                  </p>
                 ) : null}
               </div>
             ) : null}
