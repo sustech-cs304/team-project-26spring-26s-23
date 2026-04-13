@@ -129,10 +129,8 @@ export function buildProviderTypeSelectionPatch(
   }
 
   const previousCatalogEntry = resolveProviderCatalogEntry(profile)
-  const currentBaseUrl = (profile.baseUrl?.trim() || profile.endpoint.trim())
-  const previousDefaultBaseUrl = previousCatalogEntry?.baseUrlPolicy.defaultBaseUrl?.trim() ?? ''
-  const nextDefaultBaseUrl = nextCatalogEntry.baseUrlPolicy.defaultBaseUrl?.trim() ?? ''
-  const shouldResetBaseUrl = currentBaseUrl === '' || currentBaseUrl === previousDefaultBaseUrl
+  const currentBaseUrl = normalizeProviderBaseUrlValue(profile)
+  const nextBaseUrl = currentBaseUrl === '' ? '' : currentBaseUrl
   const nextName = shouldRefreshProviderName(profile, previousCatalogEntry)
     ? nextCatalogEntry.displayName
     : profile.name
@@ -140,8 +138,8 @@ export function buildProviderTypeSelectionPatch(
   return {
     providerId: nextCatalogEntry.providerId,
     protocol: nextCatalogEntry.providerId,
-    baseUrl: shouldResetBaseUrl ? nextDefaultBaseUrl : currentBaseUrl,
-    endpoint: shouldResetBaseUrl ? nextDefaultBaseUrl : currentBaseUrl,
+    baseUrl: nextBaseUrl,
+    endpoint: nextBaseUrl,
     name: nextName,
     displayName: nextName,
     compatibility: buildCatalogBackedProviderCompatibility(nextCatalogEntry),
@@ -231,41 +229,60 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
   }
 }
 
-export function resolveProviderBaseUrlFieldState(profile: ProviderProfile): ProviderBaseUrlFieldState {
+export function resolveProviderBaseUrlFieldState(
+  profile: ProviderProfile,
+  options: {
+    previewModelId?: string | null
+  } = {},
+): ProviderBaseUrlFieldState {
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
     return {
       editable: true,
-      description: '可按需填写服务地址。',
-      placeholder: profile.baseUrl?.trim() || profile.endpoint,
+      description: buildProviderBaseUrlPreviewDescription(profile, options.previewModelId),
+      placeholder: profile.baseUrl?.trim() || profile.endpoint || 'https://api.example.com/v1',
     }
   }
 
   const defaultBaseUrl = catalogEntry.baseUrlPolicy.defaultBaseUrl ?? ''
+  const editable = catalogEntry.baseUrlPolicy.mode !== 'fixed'
 
-  switch (catalogEntry.baseUrlPolicy.mode) {
-    case 'required':
-      return {
-        editable: true,
-        description: '请填写服务地址。',
-        placeholder: defaultBaseUrl || 'https://api.example.com/v1',
-      }
-    case 'fixed':
-      return {
-        editable: false,
-        description: '该服务地址不可修改。',
-        placeholder: defaultBaseUrl,
-      }
-    case 'optional':
-    default:
-      return {
-        editable: true,
-        description: defaultBaseUrl
-          ? `留空时将使用默认地址：${defaultBaseUrl}`
-          : '可按需填写服务地址。',
-        placeholder: defaultBaseUrl || 'https://api.example.com/v1',
-      }
+  return {
+    editable,
+    description: buildProviderBaseUrlPreviewDescription(profile, options.previewModelId),
+    placeholder: defaultBaseUrl || 'https://api.example.com/v1',
   }
+}
+
+export function resolveProviderBaseUrlValidationMessage(profile: ProviderProfile): string | null {
+  const catalogEntry = resolveProviderCatalogEntry(profile)
+  if (catalogEntry?.baseUrlPolicy.mode === 'fixed') {
+    return null
+  }
+
+  return normalizeProviderBaseUrlValue(profile) === '' ? '未填写服务地址' : null
+}
+
+export function resolveProviderBaseUrlPreviewText(
+  profile: ProviderProfile,
+  previewModelId?: string | null,
+): string {
+  const normalizedBaseUrl = normalizeProviderBaseUrlValue(profile)
+  if (normalizedBaseUrl === '') {
+    return '未填写服务地址'
+  }
+
+  const catalogEntry = resolveProviderCatalogEntry(profile)
+  if (catalogEntry === null) {
+    return '无法预览完整请求路径'
+  }
+
+  const previewSuffix = resolveProviderPreviewSuffix(catalogEntry.endpointType, profile, previewModelId)
+  if (previewSuffix === null) {
+    return '无法预览完整请求路径'
+  }
+
+  return joinBaseUrlAndSuffix(normalizedBaseUrl, previewSuffix)
 }
 
 export function resolveProviderModelEditingAvailability(profile: ProviderProfile): {
@@ -294,6 +311,67 @@ export function resolveProviderModelEditingAvailability(profile: ProviderProfile
 function resolveProviderIdentity(profile: ProviderProfile): string {
   return (profile.providerId ?? profile.protocol).trim().toLowerCase()
 }
+
+function buildProviderBaseUrlPreviewDescription(
+  profile: ProviderProfile,
+  previewModelId?: string | null,
+): string {
+  return `链接预览：${resolveProviderBaseUrlPreviewText(profile, previewModelId)}`
+}
+
+function resolveProviderPreviewSuffix(
+  endpointType: string,
+  profile: ProviderProfile,
+  previewModelId?: string | null,
+): string | null {
+  switch (endpointType.trim().toLowerCase()) {
+    case 'openai-compatible':
+      return '/chat/completions'
+    case 'anthropic-native':
+      return '/v1/messages'
+    case 'gemini-native':
+      return `/models/${resolveProviderPreviewModelId(profile, previewModelId)}:generateContent`
+    case 'xai-native':
+      return '/v1/chat/completions'
+    case 'ollama-native':
+      return '/chat/completions'
+    default:
+      return null
+  }
+}
+
+function resolveProviderPreviewModelId(
+  profile: ProviderProfile,
+  previewModelId?: string | null,
+): string {
+  const normalizedPreviewModelId = previewModelId?.trim() ?? ''
+  if (normalizedPreviewModelId !== '') {
+    return normalizedPreviewModelId
+  }
+
+  const fallbackModelId = profile.availableModels[0]?.modelId?.trim() ?? ''
+  return fallbackModelId === '' ? '<model-id>' : fallbackModelId
+}
+
+function normalizeProviderBaseUrlValue(profile: ProviderProfile): string {
+  return profile.baseUrl?.trim() || profile.endpoint.trim()
+}
+
+function joinBaseUrlAndSuffix(baseUrl: string, suffix: string): string {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '')
+  const normalizedSuffix = suffix.trim().replace(/^\/+/, '')
+
+  if (normalizedBaseUrl === '') {
+    return normalizedSuffix === '' ? '' : `/${normalizedSuffix}`
+  }
+
+  if (normalizedSuffix === '') {
+    return normalizedBaseUrl
+  }
+
+  return `${normalizedBaseUrl}/${normalizedSuffix}`
+}
+
 
 function shouldRefreshProviderName(
   profile: ProviderProfile,
