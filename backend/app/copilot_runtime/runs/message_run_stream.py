@@ -19,18 +19,22 @@ from ..model_routes import ResolvedRuntimeModelRoute
 class RuntimeAgentExecutionEventStream(Protocol):
     resolved_model_id: str
 
-    async def __aenter__(self) -> "RuntimeAgentExecutionEventStream": ...
+    async def __aenter__(self) -> "RuntimeAgentExecutionEventStream":
+        raise NotImplementedError
 
     async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         tb: TracebackType | None,
-    ) -> bool | None: ...
+    ) -> bool | None:
+        raise NotImplementedError
 
-    def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]: ...
+    def iter_events(self) -> AsyncIterator[RuntimeExecutionEvent]:
+        raise NotImplementedError
 
-    async def get_output(self) -> str: ...
+    async def get_output(self) -> str:
+        raise NotImplementedError
 
 
 class RuntimeStreamingAgentExecutor(Protocol):
@@ -46,7 +50,8 @@ class RuntimeStreamingAgentExecutor(Protocol):
         debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
         model_settings: Mapping[str, Any] | None = None,
-    ) -> RuntimeAgentExecutionEventStream: ...
+    ) -> RuntimeAgentExecutionEventStream:
+        raise NotImplementedError
 
 
 def open_execution_stream(

@@ -504,7 +504,7 @@ def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
     assert "agent_id=default" in run_start_logs[0]
     assert "phase=create_run_record" in run_start_logs[0]
     assert "exception_type=RuntimeError" in run_start_logs[0]
-    assert "exception_summary=forced run/start failure" in run_start_logs[0]
+    assert "exception_message=forced run/start failure" in run_start_logs[0]
     assert all(
         "desktop-runtime unexpected exception" not in record.getMessage()
         for record in caplog.records
@@ -553,7 +553,7 @@ def test_runtime_failure_envelope_logs_request_context_fields(
     assert "run_id=run-log" in unexpected_logs[0]
     assert "phase=build_run_start_response" in unexpected_logs[0]
     assert "exception_type=RuntimeError" in unexpected_logs[0]
-    assert "exception_summary=forced middleware failure" in unexpected_logs[0]
+    assert "exception_message=forced middleware failure" in unexpected_logs[0]
 
 
 

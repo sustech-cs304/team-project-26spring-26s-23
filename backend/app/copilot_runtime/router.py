@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from .shared.errors import error_response as _error_response
 from .transport.http_handlers import (
     _handle_capabilities_get_request,
     _handle_run_cancel_request,

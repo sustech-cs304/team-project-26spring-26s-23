@@ -44,7 +44,7 @@ def handle_unexpected_run_start_exception(
     exception_type = str(exception_summary.get("type") or type(exc).__name__)
     exception_message = str(exception_summary.get("message") or str(exc))
     _RUNTIME_ERROR_LOGGER.error(
-        "run/start unexpected exception request_id=%s http_method=%s path=%s origin=%s runtime_method=%s thread_id=%s agent_id=%s run_id=%s phase=%s status=%s exception_type=%s exception_summary=%s",
+        "run/start unexpected exception request_id=%s http_method=%s path=%s origin=%s runtime_method=%s thread_id=%s agent_id=%s run_id=%s phase=%s status=%s exception_type=%s exception_message=%s",
         request_id,
         request.method,
         request.url.path,
