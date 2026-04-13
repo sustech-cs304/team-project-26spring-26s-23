@@ -20,6 +20,7 @@ from .health import DESKTOP_RUNTIME_SERVICE_NAME
 from .lifecycle import RuntimeLifecycleManager
 from .middlewares import DesktopNullOriginMiddleware, DesktopRuntimeFailureEnvelopeMiddleware
 from .routes.diagnostics import build_diagnostics_router
+from .routes.history import build_history_router
 
 _DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
 
@@ -53,6 +54,10 @@ def create_app(
     runtime_scaffold = runtime_dependencies.scaffold
     runtime_agent_registry = runtime_dependencies.agent_registry
     runtime_tool_registry = runtime_dependencies.tool_registry
+    history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
+    runtime_history_query_service = (
+        history_query_service_factory() if callable(history_query_service_factory) else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -66,6 +71,7 @@ def create_app(
         app.state.copilot_runtime_tool_registry = runtime_tool_registry
         app.state.copilot_runtime_agent_executor = runtime_agent_executor
         app.state.copilot_runtime_bridge = runtime_bridge
+        app.state.copilot_runtime_history_query_service = runtime_history_query_service
         lifecycle_manager.startup()
         try:
             yield
@@ -99,6 +105,7 @@ def create_app(
 
     app.include_router(build_router(runtime_scaffold, runtime_bridge))
     app.include_router(build_diagnostics_router())
+    app.include_router(build_history_router())
     return app
 
 

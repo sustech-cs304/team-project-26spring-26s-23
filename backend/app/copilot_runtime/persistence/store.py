@@ -16,6 +16,7 @@ from .db import (
     upgrade_database,
 )
 from .projections import ProjectionService
+from .queries import PersistedChatQueryService
 from .repositories import run_lifecycle_transaction
 
 from ..runtime_session_store import RuntimeSessionStore
@@ -278,6 +279,12 @@ class SQLiteSessionStore(RuntimeSessionStore):
         for run in self.list_runs(thread.thread_id):
             projected_messages.extend(run.projected_messages())
         return tuple(projected_messages)
+
+    def create_projection_service(self) -> ProjectionService:
+        return ProjectionService(self._session_factory)
+
+    def create_history_query_service(self) -> PersistedChatQueryService:
+        return PersistedChatQueryService(self._session_factory)
 
     def dispose(self) -> None:
         self.engine.dispose()

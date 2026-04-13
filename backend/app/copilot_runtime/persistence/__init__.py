@@ -17,6 +17,16 @@ from .db import (
     session_scope,
     upgrade_database,
 )
+from .query_dtos import (
+    HISTORY_QUERY_DTO_VERSION,
+    PersistedRunEventDTO,
+    PersistedRunReplayResponse,
+    PersistedRunSummaryDTO,
+    PersistedThreadDetailResponse,
+    PersistedThreadListResponse,
+    PersistedThreadSummaryDTO,
+)
+from .queries import PersistedChatQueryService
 from .redaction import DEFAULT_REDACTION_VERSION, REDACTED_VALUE, RedactionResult, redact_payload
 from .store import SQLiteSessionStore
 
@@ -28,6 +38,14 @@ __all__ = [
     "ENV_CHAT_DATABASE_PATH",
     "ENV_DESKTOP_DATABASE_DIR",
     "REDACTED_VALUE",
+    "HISTORY_QUERY_DTO_VERSION",
+    "PersistedChatQueryService",
+    "PersistedRunEventDTO",
+    "PersistedRunReplayResponse",
+    "PersistedRunSummaryDTO",
+    "PersistedThreadDetailResponse",
+    "PersistedThreadListResponse",
+    "PersistedThreadSummaryDTO",
     "RedactionResult",
     "SQLiteSessionStore",
     "build_sqlite_database_url",
