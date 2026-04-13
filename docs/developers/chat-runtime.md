@@ -7,11 +7,11 @@ sidebar_position: 3
 # 聊天运行时
 
 - 这页给谁看：准备修改聊天主链、运行时协议、流式事件处理或消息渲染的开发者。
-- 这页解决什么问题：把当前 `thread/run` 主链、兼容壳、事件流和关键代码落点收成一页。
-- 当前覆盖到哪：覆盖当前聊天主链和其前后端对应关系；完整方法与事件表继续收口到共享事实页。
-- 当前状态：`thread/run` 主链已可用；兼容壳仍可使用但只属于部分接通层。
+- 这页解决什么问题：把当前 `thread/run` 主链、持久化历史查询链路、事件流和关键代码落点收成一页。
+- 当前覆盖到哪：覆盖当前聊天主链、历史恢复 / 回放路径及其前后端对应关系；完整方法与事件表继续收口到共享事实页。
+- 当前状态：`thread/run` 主链、SQLite 历史持久化与基础 replay 已可用；兼容壳仍可使用但只属于部分接通层。
 
-先说结论：当前聊天主线已经明确是 **`agents/list → thread/create → thread/get → run/start → run/stream → run/cancel`**。`session/create`、`capabilities/get`、`message/send` 还在，但现在应该把它们理解成兼容投影，而不是继续围绕它们设计新主语义。
+先说结论：当前聊天主线已经明确是 **`agents/list → thread/create → thread/get → run/start → run/stream → run/cancel`**，而历史恢复侧链则围绕 **`/history/threads → /history/threads/{threadId} → /history/runs/{runId}/replay`** 展开。`session/create`、`capabilities/get`、`message/send` 还在，但现在应该把它们理解成兼容投影，而不是继续围绕它们设计新主语义。
 
 ## 先记住主链顺序
 
@@ -92,6 +92,21 @@ Provider、route、Thinking 的完整事实请分别看：
 
 这就是为什么当前聊天问题常常要同时看前端合同和后端事件编码，而不能只盯一个请求函数。
 
+## 持久化历史现在怎么落地
+
+当前聊天历史已经不是“只活在 Python 进程内存里”的状态，而是分成两层：
+
+- durable truth：SQLite 中的 `threads`、`runs` 与 `run_events`
+- rebuildable cache：`thread_projection` 与 `run_projection`
+
+对开发者最重要的判断是：
+
+- thread / run / event 真相不会在 drift 解释阶段被回写成“当前配置”
+- projection 只是列表、时间线和 replay 便利层，必要时可以从 truth 重建
+- renderer 启动时先恢复轻量 thread shell，再按需读取 thread detail 和 run replay
+- drift 提示会把“历史快照事实”和“当前可用性判断”分开展示；若依赖缺失，继续对话必须显式 rebind
+- delete / purge / backup / restore 不直接让 renderer 触碰 SQLite 文件，而是通过 desktop runtime 的历史端点受控执行
+
 ## 工具步骤现在怎么走
 
 当前工具相关语义也已经进入主链：
@@ -113,6 +128,9 @@ Provider、route、Thinking 的完整事实请分别看：
 | 后端方法分发 | `backend/app/copilot_runtime/router.py` |
 | run 编排 | `backend/app/copilot_runtime/message_runs.py` |
 | 事件编码 | `backend/app/copilot_runtime/run_events.py` |
+| 持久化存储与 query | `backend/app/copilot_runtime/persistence/store.py`、`queries.py` |
+| projection 构建 | `backend/app/copilot_runtime/persistence/projections.py` |
+| desktop history 路由 | `backend/app/desktop_runtime/routes/history.py` |
 | 兼容投影 | `backend/app/copilot_runtime/legacy_event_projection.py` |
 
 ## 当前排查聊天问题时的顺序
