@@ -15,6 +15,7 @@ from .db import (
     resolve_chat_database_path,
     upgrade_database,
 )
+from .projections import ProjectionService
 from .repositories import run_lifecycle_transaction
 
 from ..runtime_session_store import RuntimeSessionStore
@@ -84,6 +85,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 updated_at=now,
             )
             thread_model = repositories.threads.create_from_runtime_record(thread)
+            ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
             return repositories.threads.to_runtime_record(thread_model)
 
     def get_or_create_thread(
@@ -102,6 +104,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 self._assert_bound_agent(runtime_thread, requested_agent_id=resolved_agent_id)
                 runtime_thread.touch(metadata=metadata)
                 repositories.threads.apply_runtime_record(existing, runtime_thread)
+                ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
                 return repositories.threads.to_runtime_record(existing), False
 
             now = datetime.now(UTC)
@@ -113,6 +116,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 updated_at=now,
             )
             thread_model = repositories.threads.create_from_runtime_record(created_thread)
+            ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
             return repositories.threads.to_runtime_record(thread_model), True
 
     def get_run(self, run_id: str) -> RuntimeRunRecord | None:
@@ -172,6 +176,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
             run_model = repositories.runs.create_from_runtime_record(runtime_run)
             thread_model = repositories.threads.require(resolved_thread_id)
             repositories.threads.touch_for_run(thread_model, runtime_run)
+            ProjectionService.refresh_run_in_transaction(repositories, resolved_run_id)
             return repositories.runs.to_runtime_record(run_model)
 
     def get_latest_run_for_thread(self, thread_id: str) -> RuntimeRunRecord | None:
@@ -207,6 +212,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
             repositories.runs.apply_runtime_record(run_model, runtime_run)
             thread_model = repositories.threads.require(runtime_run.thread_id)
             repositories.threads.touch_for_run(thread_model, runtime_run)
+            ProjectionService.refresh_run_in_transaction(repositories, run_id)
             return runtime_run
 
     def mark_run_streaming(
@@ -261,6 +267,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
             repositories.runs.apply_runtime_record(run_model, runtime_run)
             thread_model = repositories.threads.require(runtime_run.thread_id)
             repositories.threads.touch_for_run(thread_model, runtime_run)
+            ProjectionService.refresh_run_in_transaction(repositories, run_id)
             return runtime_run, changed
 
     def list_messages(self, thread_id: str) -> tuple[RuntimeTextMessage, ...]:
@@ -283,6 +290,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
             repositories.runs.apply_runtime_record(run_model, runtime_run)
             thread_model = repositories.threads.require(runtime_run.thread_id)
             repositories.threads.touch_for_run(thread_model, runtime_run)
+            ProjectionService.refresh_run_in_transaction(repositories, run_id)
             return runtime_run
 
     def _assert_bound_agent(
