@@ -15,6 +15,7 @@ from .security import (
     apply_cors_headers,
     is_cors_preflight_request,
     is_desktop_null_origin,
+    is_loopback_client_request,
     is_packaged_electron_request,
 )
 
@@ -30,7 +31,7 @@ class DesktopNullOriginMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         is_preflight_request = is_cors_preflight_request(request)
-        if not is_packaged_electron_request(request):
+        if not is_packaged_electron_request(request) or not is_loopback_client_request(request):
             return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Disallowed CORS origin")
 
         if is_preflight_request:

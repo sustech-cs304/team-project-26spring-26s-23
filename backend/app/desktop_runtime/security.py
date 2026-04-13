@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ipaddress import ip_address
+
 from fastapi import HTTPException, Request, Response, status
 
 from .config import LOCAL_TOKEN_HEADER_NAME, DesktopRuntimeConfig
@@ -42,6 +44,23 @@ def is_packaged_electron_request(request: Request) -> bool:
     return _ELECTRON_USER_AGENT_MARKER in user_agent.lower()
 
 
+def is_loopback_client_request(request: Request) -> bool:
+    client = request.client
+    if client is None:
+        return False
+
+    host = client.host.strip().lower()
+    if host == "localhost":
+        return True
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def apply_cors_headers(
     response: Response,
     *,
@@ -72,17 +91,27 @@ def _append_vary_header(response: Response, value: str) -> None:
         response.headers["Vary"] = value
         return
 
-    vary_values = {item.strip() for item in current_value.split(",") if item.strip()}
-    if value in vary_values:
+    vary_values: list[str] = []
+    seen_values: set[str] = set()
+    for item in current_value.split(","):
+        normalized_item = item.strip()
+        if not normalized_item or normalized_item in seen_values:
+            continue
+        seen_values.add(normalized_item)
+        vary_values.append(normalized_item)
+
+    if value in seen_values:
         return
 
-    response.headers["Vary"] = ", ".join([*vary_values, value])
+    vary_values.append(value)
+    response.headers["Vary"] = ", ".join(vary_values)
 
 
 __all__ = [
     "apply_cors_headers",
     "is_cors_preflight_request",
     "is_desktop_null_origin",
+    "is_loopback_client_request",
     "is_packaged_electron_request",
     "require_local_token",
 ]

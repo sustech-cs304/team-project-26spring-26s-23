@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
@@ -45,6 +45,7 @@ from app.desktop_runtime.config import (
     DesktopRuntimeConfig,
     DesktopRuntimePaths,
 )
+from app.desktop_runtime.security import apply_cors_headers
 from app.desktop_runtime.server import BACKEND_DIR, create_app
 
 
@@ -367,7 +368,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
 def test_cors_preflight_allows_loopback_origins(tmp_path: Path, origin: str) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("203.0.113.10", 50000)) as client:
         response = client.options("/", headers=_build_cors_preflight_headers(origin))
 
     assert response.status_code == 200
@@ -376,28 +377,49 @@ def test_cors_preflight_allows_loopback_origins(tmp_path: Path, origin: str) -> 
 
 
 
+def test_apply_cors_headers_preserves_existing_vary_header_order() -> None:
+    response = Response()
+    response.headers["Vary"] = "Accept-Encoding, Origin, Accept-Encoding"
+
+    apply_cors_headers(
+        response,
+        origin="http://localhost:5173",
+        requested_headers="content-type",
+        is_preflight_request=True,
+    )
+
+    assert response.headers["vary"] == (
+        "Accept-Encoding, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    )
+
+
+
 def test_cors_preflight_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.options(
             "/",
             headers=_build_cors_preflight_headers(
                 "null",
                 user_agent=_ELECTRON_TEST_USER_AGENT,
+                requested_headers="content-type, x-local-token",
             ),
         )
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "null"
     assert "POST" in response.headers["access-control-allow-methods"]
+    assert response.headers["access-control-allow-headers"] == "content-type, x-local-token"
+    assert response.headers["access-control-max-age"] == "600"
+    assert response.headers["vary"] == "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
 
 
 
 def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.post(
             "/",
             json={"method": "agents/list"},
@@ -409,6 +431,23 @@ def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "null"
+
+
+
+def test_cors_preflight_rejects_packaged_electron_null_origin_from_non_loopback_client(tmp_path: Path) -> None:
+    app = _create_test_app(tmp_path)
+
+    with TestClient(app, client=("203.0.113.10", 50000)) as client:
+        response = client.options(
+            "/",
+            headers=_build_cors_preflight_headers(
+                "null",
+                user_agent=_ELECTRON_TEST_USER_AGENT,
+            ),
+        )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
 
 
 
@@ -560,7 +599,7 @@ def test_runtime_failure_envelope_logs_request_context_fields(
 def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.options(
             "/",
             headers=_build_cors_preflight_headers(
@@ -577,7 +616,7 @@ def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None
 def test_cors_simple_request_rejects_non_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.get(
             "/health",
             headers={
@@ -751,13 +790,20 @@ def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
 
 
 
-def _build_cors_preflight_headers(origin: str, *, user_agent: str | None = None) -> dict[str, str]:
+def _build_cors_preflight_headers(
+    origin: str,
+    *,
+    user_agent: str | None = None,
+    requested_headers: str | None = None,
+) -> dict[str, str]:
     headers = {
         "Origin": origin,
         "Access-Control-Request-Method": "POST",
     }
     if user_agent is not None:
         headers["User-Agent"] = user_agent
+    if requested_headers is not None:
+        headers["Access-Control-Request-Headers"] = requested_headers
     return headers
 
 
