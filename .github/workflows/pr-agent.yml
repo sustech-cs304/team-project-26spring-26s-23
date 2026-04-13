@@ -2,7 +2,7 @@ name: PR Agent Review
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
     types: [created]
 
@@ -24,3 +24,4 @@ jobs:
           CONFIG.MODEL: "gpt-5.4"
           CONFIG.FALLBACK_MODELS: '["gpt-5.3-codex"]'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pr_reviewer.extra_instructions: "*请用中文回复所有评论*，提供具体的代码改进建议"
