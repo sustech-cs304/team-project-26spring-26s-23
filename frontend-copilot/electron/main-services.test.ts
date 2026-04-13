@@ -119,6 +119,71 @@ describe('createMainProcessServices', () => {
         password: '',
       },
     } as const
+    const listThreadsResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      threads: [
+        {
+          threadId: 'thread-1',
+          boundAgentId: 'default',
+          title: '历史线程',
+          titleSource: 'deterministic',
+          summary: '已持久化回复',
+          summarySource: 'deterministic',
+          createdAt: '2026-04-13T14:00:00Z',
+          updatedAt: '2026-04-13T14:05:00Z',
+          lastActivityAt: '2026-04-13T14:05:00Z',
+          lastRunId: 'run-1',
+          lastRunStatus: 'completed',
+          lastUserMessagePreview: '你好',
+          lastAssistantMessagePreview: '已持久化回复',
+          driftSummary: { status: 'not_evaluated' },
+        },
+      ],
+    } as const
+    const threadDetailResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      thread: listThreadsResult.threads[0],
+      timelineItems: [{ kind: 'assistant_message', text: '已持久化回复' }],
+      runSummaries: [
+        {
+          runId: 'run-1',
+          threadId: 'thread-1',
+          status: 'completed',
+          createdAt: '2026-04-13T14:00:00Z',
+          updatedAt: '2026-04-13T14:05:00Z',
+          startedAt: '2026-04-13T14:00:01Z',
+          terminalAt: '2026-04-13T14:05:00Z',
+          resolvedModelId: 'gpt-4.1',
+          requestedMessageText: '你好',
+          assistantText: '已持久化回复',
+        },
+      ],
+      latestConfigurationSnapshot: {
+        runId: 'run-1',
+      },
+      availabilityDrift: {
+        status: 'not_evaluated',
+      },
+    } as const
+    const runReplayResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      run: threadDetailResult.runSummaries[0],
+      historicalSnapshot: {
+        resolvedModelId: 'gpt-4.1',
+      },
+      orderedEvents: [],
+      toolCallBlocks: [],
+      diagnosticBlocks: [],
+      terminalState: {
+        status: 'completed',
+      },
+      availabilityInterpretation: {
+        status: 'not_evaluated',
+      },
+    } as const
 
     const resolveProviderRouteRequest = {
       routeRef: {
@@ -153,6 +218,12 @@ describe('createMainProcessServices', () => {
       },
     } as const
 
+    const copilotHistoryService = {
+      listThreads: vi.fn(async () => listThreadsResult),
+      getThreadDetail: vi.fn(async (_threadId: string) => threadDetailResult),
+      getRunReplay: vi.fn(async (_runId: string) => runReplayResult),
+    }
+
     hoisted.unifiedConfigService.loadPublicSnapshot.mockResolvedValue(loadPublicSnapshotResult)
     hoisted.unifiedConfigService.applyPublicPatch.mockResolvedValue(applyPublicPatchResult)
     hoisted.settingsWorkspaceService.loadState.mockResolvedValue(loadStateResult)
@@ -171,14 +242,17 @@ describe('createMainProcessServices', () => {
     const prepareRuntimePaths = vi.fn(async () => ({ runtimeRootDir: 'runtime-root' } as never))
     const appendMainRuntimeLog = vi.fn()
     const publishConfigCenterPublicSnapshotUpdate = vi.fn()
+    const createCopilotHistoryService = vi.fn(() => copilotHistoryService)
     const services = createMainProcessServices({
       prepareRuntimePaths,
       appendMainRuntimeLog,
       publishConfigCenterPublicSnapshotUpdate,
+      createCopilotHistoryService,
     })
 
     expect(hoisted.createElectronUnifiedConfigService).not.toHaveBeenCalled()
     expect(hoisted.createElectronSettingsWorkspaceService).not.toHaveBeenCalled()
+    expect(createCopilotHistoryService).not.toHaveBeenCalled()
 
     const patch = {
       domains: {
@@ -208,9 +282,13 @@ describe('createMainProcessServices', () => {
     await expect(services.resolveSettingsWorkspaceProviderRoute(resolveProviderRouteRequest)).resolves.toEqual(
       resolveProviderRouteResult,
     )
+    await expect(services.listCopilotHistoryThreads()).resolves.toEqual(listThreadsResult)
+    await expect(services.getCopilotHistoryThreadDetail('thread-1')).resolves.toEqual(threadDetailResult)
+    await expect(services.getCopilotHistoryRunReplay('run-1')).resolves.toEqual(runReplayResult)
 
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
+    expect(createCopilotHistoryService).toHaveBeenCalledTimes(1)
     expect(hoisted.unifiedConfigService.loadPublicSnapshot).toHaveBeenCalledOnce()
     expect(hoisted.unifiedConfigService.applyPublicPatch).toHaveBeenCalledWith(patch)
     expect(hoisted.settingsWorkspaceService.loadState).toHaveBeenCalledOnce()
@@ -229,6 +307,9 @@ describe('createMainProcessServices', () => {
     })
     expect(hoisted.settingsWorkspaceService.clearSustechCasSecret).toHaveBeenCalledOnce()
     expect(hoisted.settingsWorkspaceService.resolveProviderRoute).toHaveBeenCalledWith(resolveProviderRouteRequest)
+    expect(copilotHistoryService.listThreads).toHaveBeenCalledOnce()
+    expect(copilotHistoryService.getThreadDetail).toHaveBeenCalledWith('thread-1')
+    expect(copilotHistoryService.getRunReplay).toHaveBeenCalledWith('run-1')
 
     const unifiedConfigOptions = hoisted.createElectronUnifiedConfigService.mock.calls[0]?.[0]
     const settingsWorkspaceOptions = hoisted.createElectronSettingsWorkspaceService.mock.calls[0]?.[0]

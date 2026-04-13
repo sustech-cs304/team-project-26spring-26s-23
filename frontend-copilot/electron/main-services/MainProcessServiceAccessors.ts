@@ -2,6 +2,7 @@ import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from '../config-center/main-process'
+import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import {
   createElectronSettingsWorkspaceService,
   type ElectronSettingsWorkspaceService,
@@ -11,6 +12,7 @@ import type { CreateMainProcessServicesOptions } from './MainProcessServiceTypes
 export interface MainProcessServiceAccessors {
   getUnifiedConfigService: () => ElectronUnifiedConfigService
   getSettingsWorkspaceService: () => ElectronSettingsWorkspaceService
+  getCopilotHistoryService: () => ElectronCopilotHistoryService
 }
 
 export function createMainProcessServiceAccessors(
@@ -18,6 +20,7 @@ export function createMainProcessServiceAccessors(
 ): MainProcessServiceAccessors {
   let unifiedConfigService: ElectronUnifiedConfigService | null = null
   let settingsWorkspaceService: ElectronSettingsWorkspaceService | null = null
+  let copilotHistoryService: ElectronCopilotHistoryService | null = null
 
   return {
     getUnifiedConfigService(): ElectronUnifiedConfigService {
@@ -42,6 +45,10 @@ export function createMainProcessServiceAccessors(
       })
 
       return settingsWorkspaceService
+    },
+    getCopilotHistoryService(): ElectronCopilotHistoryService {
+      copilotHistoryService ??= options.createCopilotHistoryService()
+      return copilotHistoryService
     },
   }
 }

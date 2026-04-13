@@ -9,6 +9,14 @@ import {
   type ConfigCenterPublicSnapshotLoadResult,
 } from '../config-center/public-snapshot'
 import {
+  COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+  COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+  COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+  type CopilotHistoryListThreadsResult,
+  type CopilotHistoryRunReplayResult,
+  type CopilotHistoryThreadDetailResult,
+} from '../copilot-history'
+import {
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL,
@@ -50,6 +58,9 @@ const RENDERER_IPC_CHANNELS = [
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+  COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+  COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   BOOTSTRAP_WINDOW_READY_CHANNEL,
@@ -133,6 +144,24 @@ export function registerRendererIpcHandlers(
     SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
     async (): Promise<SettingsWorkspaceSustechCasSecretMutationResult> => {
       return await handlers.clearSettingsWorkspaceSustechCasSecret()
+    },
+  )
+
+  ipcMain.handle(COPILOT_HISTORY_LIST_THREADS_CHANNEL, async (): Promise<CopilotHistoryListThreadsResult> => {
+    return await handlers.listCopilotHistoryThreads()
+  })
+
+  ipcMain.handle(
+    COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+    async (_event, threadId: string): Promise<CopilotHistoryThreadDetailResult> => {
+      return await handlers.getCopilotHistoryThreadDetail(threadId)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+    async (_event, runId: string): Promise<CopilotHistoryRunReplayResult> => {
+      return await handlers.getCopilotHistoryRunReplay(runId)
     },
   )
 

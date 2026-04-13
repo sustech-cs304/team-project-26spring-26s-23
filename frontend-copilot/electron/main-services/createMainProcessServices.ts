@@ -43,5 +43,14 @@ export function createMainProcessServices(
     async resolveSettingsWorkspaceProviderRoute(request) {
       return await accessors.getSettingsWorkspaceService().resolveProviderRoute(request)
     },
+    async listCopilotHistoryThreads() {
+      return await accessors.getCopilotHistoryService().listThreads()
+    },
+    async getCopilotHistoryThreadDetail(threadId) {
+      return await accessors.getCopilotHistoryService().getThreadDetail(threadId)
+    },
+    async getCopilotHistoryRunReplay(runId) {
+      return await accessors.getCopilotHistoryService().getRunReplay(runId)
+    },
   }
 }

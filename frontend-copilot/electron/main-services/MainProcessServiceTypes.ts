@@ -7,6 +7,12 @@ import type {
   ConfigCenterPublicSnapshotLoadResult,
 } from '../config-center/public-snapshot'
 import type {
+  CopilotHistoryListThreadsResult,
+  CopilotHistoryRunReplayResult,
+  CopilotHistoryThreadDetailResult,
+} from '../copilot-history'
+import type { ElectronCopilotHistoryService } from '../copilot-history-service'
+import type {
   SettingsWorkspaceClearProfileApiKeyRequest,
   SettingsWorkspaceProfileSecretMutationResult,
   SettingsWorkspaceSaveProfileApiKeyRequest,
@@ -18,7 +24,10 @@ import type {
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
 } from '../settings-workspace/ipc'
-import type { SettingsWorkspaceProviderRouteResolveRequest, SettingsWorkspaceProviderRouteResolveResult } from '../settings-workspace/provider-route-resolver'
+import type {
+  SettingsWorkspaceProviderRouteResolveRequest,
+  SettingsWorkspaceProviderRouteResolveResult,
+} from '../settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 
@@ -34,6 +43,7 @@ export interface CreateMainProcessServicesOptions {
   publishConfigCenterPublicSnapshotUpdate: (
     snapshot: ConfigCenterPublicSnapshot,
   ) => void | Promise<void>
+  createCopilotHistoryService: () => ElectronCopilotHistoryService
 }
 
 export interface MainProcessServices {
@@ -58,4 +68,7 @@ export interface MainProcessServices {
   resolveSettingsWorkspaceProviderRoute: (
     request: SettingsWorkspaceProviderRouteResolveRequest,
   ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
+  listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
+  getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
+  getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
 }

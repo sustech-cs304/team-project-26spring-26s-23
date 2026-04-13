@@ -4,6 +4,11 @@ import type {
 } from '../config-center/public-patch'
 import type { ConfigCenterPublicSnapshotLoadResult } from '../config-center/public-snapshot'
 import type {
+  CopilotHistoryListThreadsResult,
+  CopilotHistoryRunReplayResult,
+  CopilotHistoryThreadDetailResult,
+} from '../copilot-history'
+import type {
   SettingsWorkspaceClearProfileApiKeyRequest,
   SettingsWorkspaceProfileSecretMutationResult,
   SettingsWorkspaceSaveProfileApiKeyRequest,
@@ -37,6 +42,9 @@ export interface RendererIpcHandlers {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
+  getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
+  getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyBootstrapWindowReady: () => Promise<void>

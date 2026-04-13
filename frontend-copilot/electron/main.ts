@@ -10,6 +10,7 @@ import type {
   CopilotRuntimeLoadResult,
   CopilotRuntimeSnapshot,
 } from './copilot-runtime'
+import { createElectronCopilotHistoryService } from './copilot-history-service'
 import { showWindowWhenBootstrapScreenIsReady } from './bootstrap-window-controller'
 import { registerMainProcessIpcHandlers } from './main-ipc'
 import { createMainRuntimeLogger, formatUnknownError } from './main-runtime-log'
@@ -68,6 +69,14 @@ const mainProcessServices = createMainProcessServices({
     return mainRuntimeLogger.appendMainRuntimeLog(level, message, context)
   },
   publishConfigCenterPublicSnapshotUpdate,
+  createCopilotHistoryService() {
+    return createElectronCopilotHistoryService({
+      ensureHostedBackendService,
+      getLocalToken() {
+        return hostedBackendService?.getLocalToken() ?? null
+      },
+    })
+  },
 })
 
 function createWindow(): void {
