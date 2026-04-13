@@ -60,7 +60,6 @@ export function ProviderProfileList({
       <div className="settings-card__header settings-card__header--spaced">
         <div>
           <h3 className="settings-card__title">模型服务</h3>
-          <p className="settings-card__subtitle">在这里管理可用的模型服务。</p>
         </div>
       </div>
 

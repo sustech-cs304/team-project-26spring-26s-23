@@ -11,8 +11,8 @@ import {
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
-import { CopilotComposer } from './CopilotComposer'
-import { CopilotMessageList } from './CopilotMessageList'
+import { CopilotComposerShell } from './composer/CopilotComposerShell'
+import { CopilotMessagesShell } from './messages/CopilotMessagesShell'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
 import { ErrorDetailOverlay } from './ErrorDetailOverlay'
 import {
@@ -174,7 +174,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
-        <CopilotMessageList
+        <CopilotMessagesShell
           conversation={props.conversation}
           assistantPlaceholder={props.assistantPlaceholder}
           models={props.modelGroups.flatMap((group) => group.models)}
@@ -187,7 +187,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
                 description: '请先前往设置页添加模型服务商和模型。',
               }}
         />
-        <CopilotComposer
+        <CopilotComposerShell
           capabilities={props.sessionShell.capabilities}
           modelGroups={props.modelGroups}
           thinkingCapability={props.thinkingCapability}

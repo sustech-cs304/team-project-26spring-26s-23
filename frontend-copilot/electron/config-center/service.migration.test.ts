@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { createDefaultUnifiedConfigDomainDocument } from './defaults'
+
+import { createConfigCenterBootstrapService } from './bootstrap/ConfigCenterBootstrapService'
+import {
+  createDefaultUnifiedConfigDomainDocument,
+  createDefaultUnifiedConfigSnapshot,
+} from './defaults'
 import { createUnifiedConfigDomainDocument, UNIFIED_CONFIG_DOMAIN_KEYS } from './domain-schema'
+import type { ConfigCenterStore } from './persistence/ConfigCenterStore'
 import {
   readStoredDomainDocument,
   withConfigCenterFixture,
   writeLegacyCopilotSettings,
   writeRawDomainDocuments,
-} from './service.test-support'
+} from './test-support/ConfigCenterTestSupport'
 
 describe('createUnifiedConfigCenter legacy migration', () => {
   it('migrates runtimeUrl and agentName from legacy CopilotSettings once', async () => {
@@ -57,6 +63,55 @@ describe('createUnifiedConfigCenter legacy migration', () => {
       expect(
         reloaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,
       ).toBe('planner')
+    })
+  })
+
+  it('uses the injected store readFile implementation for legacy migration', async () => {
+    await withConfigCenterFixture(async (fixture) => {
+      const storedSnapshots: ReturnType<typeof createDefaultUnifiedConfigSnapshot>[] = []
+      const store: ConfigCenterStore = {
+        async loadStoredSnapshot() {
+          return {
+            snapshot: createDefaultUnifiedConfigSnapshot(),
+            allMissing: true,
+            dirty: false,
+          }
+        },
+        async writeSnapshot(snapshot) {
+          storedSnapshots.push(snapshot)
+        },
+        async readFile(filePath, encoding) {
+          expect(encoding).toBe('utf8')
+          if (filePath === fixture.hostedPaths.copilotSettingsFile) {
+            return JSON.stringify({
+              runtimeUrl: '  http://memory.example  ',
+              agentName: '  memory-agent  ',
+            })
+          }
+
+          const error = Object.assign(new Error(`ENOENT: no such file or directory, open '${filePath}'`), {
+            code: 'ENOENT',
+          }) as NodeJS.ErrnoException
+          throw error
+        },
+      }
+
+      const bootstrapService = createConfigCenterBootstrapService({
+        paths: fixture.configCenterPaths,
+        store,
+      })
+      const migrated = await bootstrapService.loadSnapshot()
+
+      expect(migrated.source).toBe('migrated-legacy')
+      expect(migrated.migratedFrom).toBe(fixture.hostedPaths.copilotSettingsFile)
+      expect(migrated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG].values.runtimeUrl).toBe(
+        'http://memory.example',
+      )
+      expect(
+        migrated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,
+      ).toBe('memory-agent')
+      expect(storedSnapshots).toHaveLength(1)
+      expect(storedSnapshots[0]).toEqual(migrated.snapshot)
     })
   })
 

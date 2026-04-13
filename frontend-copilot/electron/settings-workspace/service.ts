@@ -1,25 +1,25 @@
 import type { SettingsWorkspacePaths } from './paths'
-import {
-  resolveSettingsWorkspaceProviderRoute,
-  type SettingsWorkspaceProviderRouteResolveRequest,
-  type SettingsWorkspaceProviderRouteResolveResult,
+import type {
+  SettingsWorkspaceProviderRouteResolveRequest,
+  SettingsWorkspaceProviderRouteResolveResult,
 } from './provider-route-resolver'
-import {
-  type SettingsWorkspaceProviderSecretState,
-  type SettingsWorkspaceProviderSecretStateById,
-  type SettingsWorkspaceSustechCasSecretState,
+import type {
+  SettingsWorkspaceProviderSecretState,
+  SettingsWorkspaceProviderSecretStateById,
+  SettingsWorkspaceSustechCasSecretState,
 } from './secret-schema'
-import {
-  createSettingsWorkspaceDocumentIO,
-  type SettingsWorkspaceFileSystem,
-} from './settings-workspace-document-io'
-import { createSettingsWorkspaceSecretStorage } from './settings-workspace-secret-storage'
-import { createSettingsWorkspaceStateStorage } from './settings-workspace-state-storage'
+import type { SettingsWorkspaceFileSystem } from './settings-workspace-document-io'
 import type {
   SettingsWorkspaceEditableState,
   SettingsWorkspaceStateSaveInput,
   SettingsWorkspaceStateSource,
 } from './state-schema'
+import { createSettingsWorkspaceBootstrapService } from './bootstrap/SettingsWorkspaceBootstrapService'
+import { createSettingsWorkspacePatchService } from './patching/SettingsWorkspacePatchService'
+import {
+  createSettingsWorkspaceStore,
+  type SettingsWorkspaceStoreFileSystem,
+} from './persistence/SettingsWorkspaceStore'
 
 export interface SettingsWorkspaceStorage {
   loadState: () => Promise<{
@@ -60,33 +60,26 @@ export interface CreateSettingsWorkspaceStorageOptions {
 export function createSettingsWorkspaceStorage(
   options: CreateSettingsWorkspaceStorageOptions,
 ): SettingsWorkspaceStorage {
-  const documentIO = createSettingsWorkspaceDocumentIO(options)
-  const stateStorage = createSettingsWorkspaceStateStorage(documentIO)
-  const secretStorage = createSettingsWorkspaceSecretStorage(documentIO)
-
-  const resolveProviderRoute = async (
-    request: SettingsWorkspaceProviderRouteResolveRequest,
-  ): Promise<SettingsWorkspaceProviderRouteResolveResult> => {
-    const { state } = await stateStorage.loadState()
-    const secretProfileId = request.routeRef?.profileId?.trim() ?? ''
-    const { states } = await secretStorage.loadSecretStates(secretProfileId === '' ? [] : [secretProfileId])
-
-    return resolveSettingsWorkspaceProviderRoute({
-      state,
-      secretStates: states,
-      request,
-    })
-  }
+  const store = createSettingsWorkspaceStore({
+    paths: options.paths,
+    fileSystem: options.fileSystem,
+  })
+  const bootstrapService = createSettingsWorkspaceBootstrapService({ store })
+  const patchService = createSettingsWorkspacePatchService({ store })
 
   return {
-    loadState: stateStorage.loadState,
-    saveState: stateStorage.saveState,
-    loadSecretStates: secretStorage.loadSecretStates,
-    loadSustechCasSecret: secretStorage.loadSustechCasSecret,
-    saveProfileSecret: secretStorage.saveProfileSecret,
-    clearProfileSecret: secretStorage.clearProfileSecret,
-    saveSustechCasSecret: secretStorage.saveSustechCasSecret,
-    clearSustechCasSecret: secretStorage.clearSustechCasSecret,
-    resolveProviderRoute,
+    loadState: bootstrapService.loadState,
+    saveState: patchService.saveState,
+    loadSecretStates: bootstrapService.loadSecretStates,
+    loadSustechCasSecret: bootstrapService.loadSustechCasSecret,
+    saveProfileSecret: patchService.saveProfileSecret,
+    clearProfileSecret: patchService.clearProfileSecret,
+    saveSustechCasSecret: patchService.saveSustechCasSecret,
+    clearSustechCasSecret: patchService.clearSustechCasSecret,
+    resolveProviderRoute: bootstrapService.resolveProviderRoute,
   }
+}
+
+export type {
+  SettingsWorkspaceStoreFileSystem as SettingsWorkspaceFileSystem,
 }

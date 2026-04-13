@@ -7,7 +7,6 @@ import {
   createProviderTypeSelectOptions,
   resolveProviderAuthFieldState,
   resolveProviderBaseUrlFieldState,
-  resolveProviderCapabilitySummary,
   resolveProviderModelEditingAvailability,
   resolveProviderStatusNotice,
 } from './settings-workspace-provider-helpers'
@@ -37,7 +36,6 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
   const providerAuthFieldState = resolveProviderAuthFieldState(activeProviderDetail)
   const providerBaseUrlFieldState = resolveProviderBaseUrlFieldState(activeProviderDetail)
   const providerModelEditingAvailability = resolveProviderModelEditingAvailability(activeProviderDetail)
-  const extensionNotice = resolveProviderExtensionNotice(activeProviderDetail)
   const providerTypeValue = (activeProviderDetail.providerId ?? activeProviderDetail.protocol).trim()
   const baseUrlValue = activeProviderDetail.baseUrl ?? activeProviderDetail.endpoint
 
@@ -47,7 +45,6 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
         <div className="settings-card__header">
           <div>
             <h3 className="settings-card__title">服务信息</h3>
-            <p className="settings-card__subtitle">{resolveProviderCapabilitySummary(activeProviderDetail)}</p>
           </div>
         </div>
 
@@ -62,17 +59,9 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
             </div>
           ) : null}
 
-          {extensionNotice ? (
-            <div className="provider-status-banner provider-status-banner--info" data-testid="provider-extension-banner">
-              <strong>附加信息</strong>
-              <span>{extensionNotice}</span>
-            </div>
-          ) : null}
-
           <div className="form-grid form-grid--two">
             <TextField
               label="显示名称"
-              description="可自定义显示名称，方便区分不同服务。"
               value={activeProviderDetail.name}
               onChange={(value) => onUpdateActiveProvider({ name: value, displayName: value })}
               placeholder="输入服务商名称"
@@ -80,7 +69,6 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
             />
             <SelectField
               label="服务类型"
-              description="请选择要使用的服务类型。"
               value={providerTypeValue}
               options={providerTypeOptions}
               onChange={(value) => onUpdateActiveProvider(buildProviderTypeSelectionPatch(activeProviderDetail, value))}
@@ -128,15 +116,3 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
   )
 }
 
-function resolveProviderExtensionNotice(detail: ProviderProfileDetailsDomain['activeProviderDetail']): string | null {
-  const extensionEntries = Object.entries(detail.extensions ?? {})
-  const legacyFieldValues = [detail.organization, detail.region, detail.notes]
-    .map((value) => value.trim())
-    .filter((value) => value !== '')
-
-  if (extensionEntries.length === 0 && legacyFieldValues.length === 0) {
-    return null
-  }
-
-  return '当前服务包含附加信息，保存时会一并保留。'
-}

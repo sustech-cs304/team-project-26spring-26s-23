@@ -1263,7 +1263,10 @@ def test_stream_events_logs_thinking_diagnostics_when_debug_enabled(monkeypatch:
         model_route_resolver=_ResolvedRouteResolver(),
     )
     captured_logs: list[tuple[str, dict[str, object]]] = []
-    module = __import__("app.copilot_runtime.message_runs", fromlist=["log_runtime_chain_debug"])
+    module = __import__(
+        "app.copilot_runtime.runs.message_run_services",
+        fromlist=["log_runtime_chain_debug"],
+    )
 
     def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
         captured_logs.append((event_name, payload))
@@ -1379,7 +1382,10 @@ def test_stream_events_logs_reasoning_suppression_when_hidden_reasoning_delta_ar
         model_route_resolver=_ResolvedRouteResolver(),
     )
     captured_logs: list[tuple[str, dict[str, object]]] = []
-    module = __import__("app.copilot_runtime.message_runs", fromlist=["log_runtime_chain_debug"])
+    module = __import__(
+        "app.copilot_runtime.runs.message_run_services",
+        fromlist=["log_runtime_chain_debug"],
+    )
 
     def _capture_log(event_name: str, *, enabled: bool | None = None, **payload: object) -> None:
         captured_logs.append((event_name, payload))
@@ -1811,14 +1817,13 @@ async def _collect_events_from_request(request: RuntimeRunStartRequest):
         ),
         model_route_resolver=_ResolvedRouteResolver(),
     )
-
-    original_next_run_id = __import__("app.copilot_runtime.message_runs", fromlist=["_next_run_id"])._next_run_id
-    module = __import__("app.copilot_runtime.message_runs", fromlist=["_next_run_id"])
-    module._next_run_id = lambda: "run-fixed"
-    try:
-        return [event async for event in orchestrator.stream_events(request=request)]
-    finally:
-        module._next_run_id = original_next_run_id
+    return [
+        event
+        async for event in orchestrator.stream_events(
+            request=request,
+            run_id="run-fixed",
+        )
+    ]
 
 
 

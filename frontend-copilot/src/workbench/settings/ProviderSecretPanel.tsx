@@ -4,7 +4,7 @@ interface ProviderSecretPanelProps {
   providerId: string
   visible: boolean
   label: string
-  description: string
+  description?: string
   hasApiKey: boolean
   apiKeyDraft: string
   apiKeyVisible: boolean
@@ -39,7 +39,7 @@ export function ProviderSecretPanel({
     <label className="form-field form-field--full" htmlFor="provider-api-key-input">
       <span className="form-field__meta">
         <span className="form-field__label">{label}</span>
-        <span className="form-field__description">{description}</span>
+        {description ? <span className="form-field__description">{description}</span> : null}
       </span>
       <span className="text-input-shell">
         <input

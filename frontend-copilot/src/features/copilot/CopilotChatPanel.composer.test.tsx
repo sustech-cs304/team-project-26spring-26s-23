@@ -573,13 +573,16 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(scrollRegion.dataset.scrollbarVisibility).toBe('hidden')
     expect(scrollRegion.className).toContain('copilot-chat__stream--scrollbarless')
     expect(sendButton.parentElement).toBe(composerSurface)
-    expect(composerSurface.style.height).toBe('160px')
+    expect(composerSurface.className).toContain('copilot-chat__composer-surface--height-160')
+    expect(composerSurface.getAttribute('style')).toBeNull()
 
     await dragComposerResizeHandle(resizeHandle, 420, 340)
-    expect(composerSurface.style.height).toBe('240px')
+    expect(composerSurface.className).toContain('copilot-chat__composer-surface--height-240')
+    expect(composerSurface.getAttribute('style')).toBeNull()
 
     await dragComposerResizeHandle(resizeHandle, 340, 900)
-    expect(composerSurface.style.height).toBe('120px')
+    expect(composerSurface.className).toContain('copilot-chat__composer-surface--height-120')
+    expect(composerSurface.getAttribute('style')).toBeNull()
 
     rendered.unmount()
   })

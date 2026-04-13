@@ -6,7 +6,7 @@ import { modelCapabilityOptions } from './config'
 interface ProviderModelListPanelProps {
   availableModels: ProviderModelProfile[]
   canEditModels: boolean
-  description: string
+  description?: string
   onOpenCreateModelEditor: () => void
   onOpenModelEditor: (index: number) => void
   onRemoveModel: (index: number) => void
@@ -25,7 +25,7 @@ export function ProviderModelListPanel({
       <div className="settings-card__header settings-card__header--spaced">
         <div>
           <h3 className="settings-card__title">模型列表管理</h3>
-          <p className="settings-card__subtitle">{description}</p>
+          {description ? <p className="settings-card__subtitle">{description}</p> : null}
         </div>
         <span className="inline-badge">{availableModels.length} 个模型</span>
       </div>
