@@ -19,6 +19,7 @@ export const SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES = {
   PROVIDER_RUNTIME_CATALOG_ONLY: 'provider_runtime_catalog_only',
   PROVIDER_RUNTIME_LEGACY_UNSUPPORTED: 'provider_runtime_legacy_unsupported',
   PROVIDER_MODEL_NOT_FOUND: 'provider_model_not_found',
+  PROVIDER_BASE_URL_MISSING: 'provider_base_url_missing',
   PROVIDER_SECRET_MISSING: 'provider_secret_missing',
   CATALOG_REVISION_MISMATCH: 'provider_catalog_revision_mismatch',
 } as const
@@ -236,8 +237,23 @@ export function resolveSettingsWorkspaceProviderRoute(
     }
   }
 
-  const normalizedBaseUrl = resolveExpectedBaseUrl(providerProfile, providerCatalogEntry)
+  const normalizedBaseUrl = resolveExpectedBaseUrl(providerProfile)
   const normalizedRouteRef = buildRouteRef(providerProfileId, normalizedModelId)
+
+  if (normalizedBaseUrl === '') {
+    return {
+      ok: false,
+      error: {
+        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_BASE_URL_MISSING,
+        message: `Provider profile '${providerProfileId}' is missing a base URL.`,
+        details: {
+          providerProfileId,
+          providerId: providerCatalogEntry.providerId,
+          routeRef: normalizedRouteRef,
+        },
+      },
+    }
+  }
 
   const authKind = providerCatalogEntry.authSchema.defaultKind
   const apiKey = normalizeNonEmptyString(input.secretStates[providerProfileId]?.apiKey, '')
@@ -321,16 +337,8 @@ function resolveProviderIdFromProfile(profile: ProviderProfile): string {
   return normalizeProviderCatalogIdentifier(profile.providerId ?? profile.protocol)
 }
 
-function resolveExpectedBaseUrl(
-  profile: ProviderProfile,
-  providerCatalogEntry: NonNullable<ReturnType<typeof getProviderCatalogEntry>>,
-): string {
-  return normalizeBaseUrl(
-    profile.baseUrl
-      ?? profile.endpoint
-      ?? providerCatalogEntry.baseUrlPolicy.defaultBaseUrl
-      ?? '',
-  )
+function resolveExpectedBaseUrl(profile: ProviderProfile): string {
+  return normalizeBaseUrl(profile.baseUrl ?? profile.endpoint ?? '')
 }
 
 function resolveEndpointFamily(endpointType: string): string {
