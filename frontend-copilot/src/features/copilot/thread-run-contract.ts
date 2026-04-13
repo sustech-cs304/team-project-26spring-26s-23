@@ -341,7 +341,12 @@ export type RuntimeRunDiagnosticEvent = RuntimeRunEventBase<'run_diagnostic', {
   stage: string
 }>
 
-export type RuntimeToolEventPhase = 'started' | 'completed' | 'failed'
+export type RuntimeToolEventPhase = 'started' | 'waiting_approval' | 'completed' | 'failed' | 'cancelled'
+
+export interface RuntimeToolEventSecurity {
+  riskLevel: 'safe' | 'moderate' | 'high'
+  approvalMethod?: 'accept_reject' | 'password'
+}
 
 export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
   toolCallId: string
@@ -352,6 +357,7 @@ export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
   inputSummary?: string
   resultSummary?: string
   errorSummary?: string
+  security?: RuntimeToolEventSecurity
 }>
 
 export type RuntimeRunEvent =

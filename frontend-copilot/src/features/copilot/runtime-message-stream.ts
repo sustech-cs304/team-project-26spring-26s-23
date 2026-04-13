@@ -232,6 +232,8 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
       const inputSummary = requireOptionalString(payload.inputSummary, 'runtime event payload.inputSummary')
       const resultSummary = requireOptionalString(payload.resultSummary, 'runtime event payload.resultSummary')
       const errorSummary = requireOptionalString(payload.errorSummary, 'runtime event payload.errorSummary')
+      const security = payload.security as RuntimeToolEvent['payload']['security']
+
       if (inputSummary !== undefined) {
         toolEventPayload.inputSummary = inputSummary
       }
@@ -240,6 +242,9 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
       }
       if (errorSummary !== undefined) {
         toolEventPayload.errorSummary = errorSummary
+      }
+      if (security !== undefined) {
+        toolEventPayload.security = security
       }
       return {
         type: 'tool_event',
@@ -967,8 +972,10 @@ function requireRuntimeToolEventPhase(value: unknown): RuntimeToolEventPhase {
   const phase = requireNonEmptyString(value, 'runtime event payload.phase')
   switch (phase) {
     case 'started':
+    case 'waiting_approval':
     case 'completed':
     case 'failed':
+    case 'cancelled':
       return phase
     default:
       throw new Error(`Unsupported runtime tool event phase: ${phase}`)
