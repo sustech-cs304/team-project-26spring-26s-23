@@ -1,0 +1,23 @@
+[config]
+model = "gpt-5.4"
+fallback_models = ["gpt-5.4"]
+
+[openai]
+key = ""
+api_base = "https://api.ikuncode.cc/v1"
+
+[pr_reviewer]
+require_score_label = true
+require_tests_review = true
+require_security_review = true
+require_focused_review = true
+num_code_suggestions = 5
+
+extra_instructions = "请用中文回复所有评论，提供具体的代码改进建议"
+
+[pr_description]
+publish_labels = true
+generate_ai_title = true
+
+[pr_code_suggestions]
+summarize = true
