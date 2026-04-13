@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import sqlite3
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from .db import (
+    DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS,
     create_session_factory,
     create_sqlite_engine,
     initialize_database,
@@ -16,6 +19,12 @@ from .db import (
     upgrade_database,
 )
 from .projections import ProjectionService
+from .query_dtos import (
+    PersistedDatabaseBackupResponse,
+    PersistedDatabaseRestoreResponse,
+    PersistedThreadDeleteResponse,
+    PersistedThreadPurgeResponse,
+)
 from .queries import PersistedChatQueryService
 from .repositories import run_lifecycle_transaction
 
@@ -280,11 +289,84 @@ class SQLiteSessionStore(RuntimeSessionStore):
             projected_messages.extend(run.projected_messages())
         return tuple(projected_messages)
 
+    def delete_thread(self, thread_id: str) -> PersistedThreadDeleteResponse:
+        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        with run_lifecycle_transaction(self._session_factory) as repositories:
+            thread_model = repositories.threads.require(resolved_thread_id)
+            deleted_at = thread_model.deleted_at or datetime.now(UTC)
+            if thread_model.deleted_at is None:
+                repositories.threads.soft_delete(resolved_thread_id, deleted_at=deleted_at)
+            return PersistedThreadDeleteResponse(
+                ok=True,
+                threadId=resolved_thread_id,
+                deletedAt=deleted_at,
+            )
+
+    def purge_thread(self, thread_id: str) -> PersistedThreadPurgeResponse:
+        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        purged_at = datetime.now(UTC)
+        with run_lifecycle_transaction(self._session_factory) as repositories:
+            thread_model = repositories.threads.require(resolved_thread_id)
+            deleted_at = thread_model.deleted_at
+            repositories.threads.hard_delete(resolved_thread_id)
+            return PersistedThreadPurgeResponse(
+                ok=True,
+                threadId=resolved_thread_id,
+                purgedAt=purged_at,
+                deletedAt=deleted_at,
+            )
+
+    def backup_database(
+        self,
+        *,
+        target_path: str | Path | None = None,
+    ) -> PersistedDatabaseBackupResponse:
+        created_at = datetime.now(UTC)
+        resolved_backup_path = _resolve_database_operation_path(
+            self.db_path,
+            target_path,
+            default_file_name=_build_default_backup_file_name(self.db_path, created_at),
+        )
+        _ensure_distinct_database_path(self.db_path, resolved_backup_path, operation_name="backup")
+        resolved_backup_path.parent.mkdir(parents=True, exist_ok=True)
+        with _open_sqlite_connection(self.db_path) as source_connection:
+            with _open_sqlite_connection(resolved_backup_path) as destination_connection:
+                source_connection.backup(destination_connection)
+        return PersistedDatabaseBackupResponse(
+            ok=True,
+            databasePath=str(self.db_path),
+            backupPath=str(resolved_backup_path),
+            createdAt=created_at,
+        )
+
+    def restore_database(
+        self,
+        *,
+        source_path: str | Path,
+    ) -> PersistedDatabaseRestoreResponse:
+        resolved_source_path = _resolve_database_operation_path(self.db_path, source_path)
+        if not resolved_source_path.is_file():
+            raise ValueError(f"Restore source '{resolved_source_path}' does not exist.")
+        _ensure_distinct_database_path(self.db_path, resolved_source_path, operation_name="restore")
+        restored_at = datetime.now(UTC)
+        self.engine.dispose()
+        _remove_sqlite_sidecar_files(self.db_path)
+        with _open_sqlite_connection(resolved_source_path) as source_connection:
+            with _open_sqlite_connection(self.db_path) as destination_connection:
+                source_connection.backup(destination_connection)
+        initialize_database(self.engine)
+        return PersistedDatabaseRestoreResponse(
+            ok=True,
+            databasePath=str(self.db_path),
+            sourcePath=str(resolved_source_path),
+            restoredAt=restored_at,
+        )
+
     def create_projection_service(self) -> ProjectionService:
         return ProjectionService(self._session_factory)
 
     def create_history_query_service(self) -> PersistedChatQueryService:
-        return PersistedChatQueryService(self._session_factory)
+        return PersistedChatQueryService(self._session_factory, session_store=self)
 
     def dispose(self) -> None:
         self.engine.dispose()
@@ -319,6 +401,56 @@ def _require_non_empty_string(value: str | None, *, field_name: str) -> str:
     if value is None or value.strip() == "":
         raise ValueError(f"Session store field '{field_name}' must be a non-empty string.")
     return value.strip()
+
+
+
+def _build_default_backup_file_name(db_path: Path, created_at: datetime) -> str:
+    suffix = db_path.suffix or ".db"
+    timestamp = created_at.strftime("%Y%m%dT%H%M%SZ")
+    return f"{db_path.stem}.backup.{timestamp}{suffix}"
+
+
+
+def _resolve_database_operation_path(
+    db_path: Path,
+    path_value: str | Path | None,
+    *,
+    default_file_name: str | None = None,
+) -> Path:
+    if path_value is None:
+        if default_file_name is None:
+            raise ValueError("A database operation path is required.")
+        candidate = db_path.parent / default_file_name
+    else:
+        candidate = Path(path_value)
+        if not candidate.is_absolute():
+            candidate = db_path.parent / candidate
+    return candidate.resolve()
+
+
+
+def _ensure_distinct_database_path(db_path: Path, candidate_path: Path, *, operation_name: str) -> None:
+    if candidate_path == db_path:
+        raise ValueError(f"Cannot {operation_name} the live database file in place.")
+
+
+
+def _remove_sqlite_sidecar_files(db_path: Path) -> None:
+    for suffix in ("-wal", "-shm"):
+        sidecar_path = db_path.with_name(f"{db_path.name}{suffix}")
+        if sidecar_path.exists():
+            sidecar_path.unlink()
+
+
+
+@contextmanager
+def _open_sqlite_connection(path: Path) -> Iterator[sqlite3.Connection]:
+    connection = sqlite3.connect(path, timeout=DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS)
+    try:
+        connection.execute(f"PRAGMA busy_timeout={int(DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS * 1000)};")
+        yield connection
+    finally:
+        connection.close()
 
 
 __all__ = ["SQLiteSessionStore"]

@@ -85,6 +85,20 @@ class ThreadRepository:
         model.updated_at = _coerce_datetime(thread.updated_at)
         return model
 
+    def soft_delete(self, thread_id: str, *, deleted_at: datetime) -> ThreadModel:
+        model = self.require(thread_id)
+        resolved_deleted_at = _coerce_datetime(deleted_at)
+        model.deleted_at = resolved_deleted_at
+        model.updated_at = resolved_deleted_at
+        self._session.flush()
+        return model
+
+    def hard_delete(self, thread_id: str) -> ThreadModel:
+        model = self.require(thread_id)
+        self._session.delete(model)
+        self._session.flush()
+        return model
+
     def touch_for_run(self, model: ThreadModel, run: RuntimeRunRecord) -> ThreadModel:
         metadata = dict(model.metadata_json or {})
         metadata["last_run_id"] = run.run_id

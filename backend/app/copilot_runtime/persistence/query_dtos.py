@@ -87,12 +87,51 @@ class PersistedRunReplayResponse(RuntimeContract):
     version: str = HISTORY_QUERY_DTO_VERSION
 
 
+@dataclass(frozen=True, slots=True)
+class PersistedThreadDeleteResponse(RuntimeContract):
+    ok: bool
+    threadId: str
+    deletedAt: datetime
+    version: str = HISTORY_QUERY_DTO_VERSION
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedThreadPurgeResponse(RuntimeContract):
+    ok: bool
+    threadId: str
+    purgedAt: datetime
+    deletedAt: datetime | None = None
+    version: str = HISTORY_QUERY_DTO_VERSION
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedDatabaseBackupResponse(RuntimeContract):
+    ok: bool
+    databasePath: str
+    backupPath: str
+    createdAt: datetime
+    version: str = HISTORY_QUERY_DTO_VERSION
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedDatabaseRestoreResponse(RuntimeContract):
+    ok: bool
+    databasePath: str
+    sourcePath: str
+    restoredAt: datetime
+    version: str = HISTORY_QUERY_DTO_VERSION
+
+
 __all__ = [
     "HISTORY_QUERY_DTO_VERSION",
+    "PersistedDatabaseBackupResponse",
+    "PersistedDatabaseRestoreResponse",
     "PersistedRunEventDTO",
     "PersistedRunReplayResponse",
     "PersistedRunSummaryDTO",
+    "PersistedThreadDeleteResponse",
     "PersistedThreadDetailResponse",
     "PersistedThreadListResponse",
+    "PersistedThreadPurgeResponse",
     "PersistedThreadSummaryDTO",
 ]

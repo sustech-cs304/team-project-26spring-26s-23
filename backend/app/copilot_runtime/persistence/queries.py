@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -11,19 +11,32 @@ from sqlalchemy.orm import Session, sessionmaker
 from .models.chat import RunEventModel, RunModel, RunProjectionModel, ThreadModel, ThreadProjectionModel
 from .projections import ProjectionService
 from .query_dtos import (
+    PersistedDatabaseBackupResponse,
+    PersistedDatabaseRestoreResponse,
     PersistedRunEventDTO,
     PersistedRunReplayResponse,
     PersistedRunSummaryDTO,
+    PersistedThreadDeleteResponse,
     PersistedThreadDetailResponse,
     PersistedThreadListResponse,
+    PersistedThreadPurgeResponse,
     PersistedThreadSummaryDTO,
 )
 from .repositories import PersistenceRepositories, run_lifecycle_transaction
 
+if TYPE_CHECKING:
+    from .store import SQLiteSessionStore
+
 
 class PersistedChatQueryService:
-    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        *,
+        session_store: "SQLiteSessionStore | None" = None,
+    ) -> None:
         self._session_factory = session_factory
+        self._session_store = session_store
 
     def list_threads(self) -> PersistedThreadListResponse:
         with run_lifecycle_transaction(self._session_factory) as repositories:
@@ -90,6 +103,27 @@ class PersistedChatQueryService:
                 ),
                 availabilityInterpretation=_build_run_availability_interpretation(run_model),
             )
+
+    def delete_thread(self, thread_id: str) -> PersistedThreadDeleteResponse:
+        return self._require_session_store().delete_thread(thread_id)
+
+    def purge_thread(self, thread_id: str) -> PersistedThreadPurgeResponse:
+        return self._require_session_store().purge_thread(thread_id)
+
+    def backup_database(
+        self,
+        *,
+        target_path: str | None = None,
+    ) -> PersistedDatabaseBackupResponse:
+        return self._require_session_store().backup_database(target_path=target_path)
+
+    def restore_database(self, *, source_path: str) -> PersistedDatabaseRestoreResponse:
+        return self._require_session_store().restore_database(source_path=source_path)
+
+    def _require_session_store(self) -> "SQLiteSessionStore":
+        if self._session_store is None:
+            raise RuntimeError("Persistent history mutations require the SQLite chat session store.")
+        return self._session_store
 
 
 

@@ -105,6 +105,75 @@ def test_history_routes_expose_persisted_threads_details_and_run_replay(tmp_path
 
 
 
+def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path, local_token="history-token"))
+
+    with TestClient(app) as client:
+        store = app.state.copilot_runtime_session_store
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="Can you recover this thread?"),
+        )
+        store.mark_run_streaming("run-1")
+        store.mark_run_completed("run-1", assistant_text="Recovered reply")
+
+        headers = {LOCAL_TOKEN_HEADER_NAME: "history-token"}
+        backup_response = client.post(
+            "/history/database/backup",
+            headers=headers,
+            json={"targetPath": "backups/copilot-chat-backup.db"},
+        )
+        delete_response = client.request("DELETE", "/history/threads/thread-1", headers=headers)
+        hidden_threads_response = client.get("/history/threads", headers=headers)
+        deleted_detail_response = client.get("/history/threads/thread-1", headers=headers)
+        purge_response = client.request("DELETE", "/history/threads/thread-1/purge", headers=headers)
+        purged_detail_response = client.get("/history/threads/thread-1", headers=headers)
+        restore_response = client.post(
+            "/history/database/restore",
+            headers=headers,
+            json={"sourcePath": backup_response.json()["backupPath"]},
+        )
+        restored_threads_response = client.get("/history/threads", headers=headers)
+        invalid_restore_response = client.post(
+            "/history/database/restore",
+            headers=headers,
+            json={},
+        )
+
+    assert backup_response.status_code == 200
+    assert delete_response.status_code == 200
+    assert hidden_threads_response.status_code == 200
+    assert deleted_detail_response.status_code == 200
+    assert purge_response.status_code == 200
+    assert purged_detail_response.status_code == 404
+    assert restore_response.status_code == 200
+    assert restored_threads_response.status_code == 200
+    assert invalid_restore_response.status_code == 400
+
+    backup_payload = backup_response.json()
+    delete_payload = delete_response.json()
+    hidden_threads_payload = hidden_threads_response.json()
+    deleted_detail_payload = deleted_detail_response.json()
+    purge_payload = purge_response.json()
+    restore_payload = restore_response.json()
+    restored_threads_payload = restored_threads_response.json()
+    invalid_restore_payload = invalid_restore_response.json()
+
+    assert Path(backup_payload["backupPath"]).is_file()
+    assert backup_payload["databasePath"].endswith("copilot-chat.db")
+    assert delete_payload["threadId"] == "thread-1"
+    assert hidden_threads_payload["threads"] == []
+    assert deleted_detail_payload["thread"]["threadId"] == "thread-1"
+    assert purge_payload["threadId"] == "thread-1"
+    assert purge_payload["deletedAt"] is not None
+    assert restore_payload["sourcePath"] == backup_payload["backupPath"]
+    assert [thread["threadId"] for thread in restored_threads_payload["threads"]] == ["thread-1"]
+    assert invalid_restore_payload["detail"]["code"] == "restore_source_path_required"
+
+
+
 def test_history_routes_require_local_token_and_handle_missing_records(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path, local_token="history-token"))
 

@@ -87,6 +87,49 @@ def test_sqlite_session_store_persists_history_and_allocates_event_sequences(tmp
 
 
 
+def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="restore this thread"),
+        )
+        store.mark_run_streaming("run-1")
+        store.mark_run_completed("run-1", assistant_text="restored reply")
+
+        backup_result = store.backup_database()
+        history_service = store.create_history_query_service()
+        delete_result = store.delete_thread("thread-1")
+        hidden_threads = history_service.list_threads()
+        deleted_detail = history_service.get_thread_detail("thread-1")
+        purge_result = store.purge_thread("thread-1")
+        purged_thread = store.get_thread("thread-1")
+        purged_run = store.get_run("run-1")
+        restore_result = store.restore_database(source_path=backup_result.backupPath)
+        restored_threads = history_service.list_threads()
+        restored_run = store.get_run("run-1")
+
+        assert delete_result.threadId == "thread-1"
+        assert [thread.threadId for thread in hidden_threads.threads] == []
+        assert deleted_detail.thread.threadId == "thread-1"
+        assert purge_result.threadId == "thread-1"
+        assert purge_result.deletedAt is not None
+        assert purged_thread is None
+        assert purged_run is None
+        assert Path(backup_result.backupPath).is_file()
+        assert restore_result.sourcePath == backup_result.backupPath
+        assert [thread.threadId for thread in restored_threads.threads] == ["thread-1"]
+        assert restored_run is not None
+        assert restored_run.status == "completed"
+        assert restored_run.assistant_text == "restored reply"
+    finally:
+        store.dispose()
+
+
+
 def _build_stored_run_input(*, user_text: str) -> RuntimeStoredRunInput:
     return RuntimeStoredRunInput(
         message_role="user",

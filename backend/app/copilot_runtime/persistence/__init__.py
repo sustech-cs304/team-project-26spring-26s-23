@@ -19,11 +19,15 @@ from .db import (
 )
 from .query_dtos import (
     HISTORY_QUERY_DTO_VERSION,
+    PersistedDatabaseBackupResponse,
+    PersistedDatabaseRestoreResponse,
     PersistedRunEventDTO,
     PersistedRunReplayResponse,
     PersistedRunSummaryDTO,
+    PersistedThreadDeleteResponse,
     PersistedThreadDetailResponse,
     PersistedThreadListResponse,
+    PersistedThreadPurgeResponse,
     PersistedThreadSummaryDTO,
 )
 from .queries import PersistedChatQueryService
@@ -40,11 +44,15 @@ __all__ = [
     "REDACTED_VALUE",
     "HISTORY_QUERY_DTO_VERSION",
     "PersistedChatQueryService",
+    "PersistedDatabaseBackupResponse",
+    "PersistedDatabaseRestoreResponse",
     "PersistedRunEventDTO",
     "PersistedRunReplayResponse",
     "PersistedRunSummaryDTO",
+    "PersistedThreadDeleteResponse",
     "PersistedThreadDetailResponse",
     "PersistedThreadListResponse",
+    "PersistedThreadPurgeResponse",
     "PersistedThreadSummaryDTO",
     "RedactionResult",
     "SQLiteSessionStore",
