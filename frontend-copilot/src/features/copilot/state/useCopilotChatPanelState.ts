@@ -16,6 +16,7 @@ import type {
   ModelRouteRef,
 } from '../../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../../workbench/assistant/assistant-workspace-controller'
+import type { AssistantSessionHistoryState } from '../../../workbench/assistant/assistant-history-state'
 import { loadSettingsWorkspaceState } from '../../../workbench/settings/workspace-state'
 import {
   cancelRuntimeRun,
@@ -33,6 +34,11 @@ import {
   type CopilotChatComposerDraft,
   type CopilotTransientErrorState,
 } from '../copilot-chat-helpers'
+import {
+  evaluatePersistedHistoryDrift,
+  type PersistedHistoryDriftSummary,
+} from '../persisted-history-drift'
+import { buildPersistedConversationFromHistory } from '../persisted-history-view-model'
 import {
   buildCopilotMessageListItems,
   resolveCopilotAssistantPlaceholderState,
@@ -71,6 +77,7 @@ export interface CopilotChatPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  sessionHistory?: AssistantSessionHistoryState | null
   sendMessage?: typeof dispatchCopilotMessage
   cancelRun?: typeof cancelRuntimeRun
   getThinkingCapability?: typeof getRuntimeThinkingCapability
@@ -88,6 +95,9 @@ export interface CopilotChatPanelState {
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
+  historyDrift: PersistedHistoryDriftSummary | null
+  historyRebindAcknowledged: boolean
+  onAcknowledgeHistoryRebind: () => void
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
@@ -100,6 +110,7 @@ export function useCopilotChatPanelState({
   selectedAgent,
   sessionShell,
   directoryState,
+  sessionHistory = null,
   sendMessage = dispatchCopilotMessage,
   cancelRun = cancelRuntimeRun,
   getThinkingCapability = getRuntimeThinkingCapability,
@@ -117,6 +128,7 @@ export function useCopilotChatPanelState({
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
   const activeAbortControllerRef = useRef<AbortController | null>(null)
+  const [historyRebindAcknowledged, setHistoryRebindAcknowledged] = useState(false)
 
   const sessionIdentity = sessionShell === null
     ? null
@@ -183,12 +195,19 @@ export function useCopilotChatPanelState({
     () => getCopilotModelById(effectiveComposerDraft.selectedModelId, modelCatalog.models),
     [effectiveComposerDraft.selectedModelId, modelCatalog.models],
   )
+  const persistedConversation = useMemo(
+    () => buildPersistedConversationFromHistory(sessionHistory),
+    [sessionHistory],
+  )
   const projectedConversation = useMemo(
-    () => buildCopilotMessageListItems({
-      history: conversation,
-      runState,
-    }),
-    [conversation, runState],
+    () => [
+      ...persistedConversation,
+      ...buildCopilotMessageListItems({
+        history: conversation,
+        runState,
+      }),
+    ],
+    [conversation, persistedConversation, runState],
   )
   const assistantPlaceholder = useMemo(
     () => resolveCopilotAssistantPlaceholderState(runState),
@@ -196,6 +215,29 @@ export function useCopilotChatPanelState({
   )
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
   const canCancelSend = activeAbortControllerRef.current !== null && sendStatus === 'sending'
+  const historyDrift = useMemo(
+    () => !workspaceStateLoaded
+      ? null
+      : evaluatePersistedHistoryDrift({
+          history: sessionHistory,
+          sessionShell,
+          providerProfiles: workspaceProviderProfiles,
+          models: modelCatalog.models,
+        }),
+    [modelCatalog.models, sessionHistory, sessionShell, workspaceProviderProfiles, workspaceStateLoaded],
+  )
+  const historyDriftResetKey = useMemo(
+    () => [
+      sessionShell?.sessionId ?? '',
+      sessionHistory?.selectedRunId ?? '',
+      historyDrift?.historicalModelId ?? '',
+      historyDrift?.historicalToolIds.join('|') ?? '',
+      historyDrift?.historicalThinkingSummary ?? '',
+      historyDrift?.warnings.map((warning) => warning.code).join('|') ?? '',
+      historyDrift?.requiresExplicitRebind === true ? '1' : '0',
+    ].join('::'),
+    [historyDrift, sessionHistory?.selectedRunId, sessionShell?.sessionId],
+  )
 
   useEffect(() => {
     activeAbortControllerRef.current?.abort()
@@ -214,6 +256,10 @@ export function useCopilotChatPanelState({
     setThinkingCapability(null)
     setSendError(null)
   }, [sessionIdentity, sessionShell])
+
+  useEffect(() => {
+    setHistoryRebindAcknowledged(false)
+  }, [historyDriftResetKey])
 
   useEffect(() => {
     let cancelled = false
@@ -430,7 +476,7 @@ export function useCopilotChatPanelState({
     }
   }, [sessionDebugSummary])
 
-  const sendDisabledReason = useMemo(
+  const baseSendDisabledReason = useMemo(
     () => getCopilotSendDisabledReason({
       state,
       sessionShell,
@@ -450,9 +496,24 @@ export function useCopilotChatPanelState({
       state,
     ],
   )
+  const sendDisabledReason = useMemo(() => {
+    if (baseSendDisabledReason !== null) {
+      return baseSendDisabledReason
+    }
+
+    if (historyDrift?.requiresExplicitRebind === true && !historyRebindAcknowledged) {
+      return '历史线程依赖已变化，请先显式重新绑定当前配置后再继续。'
+    }
+
+    return null
+  }, [baseSendDisabledReason, historyDrift, historyRebindAcknowledged])
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (historyDrift?.requiresExplicitRebind === true && !historyRebindAcknowledged) {
+      return
+    }
 
     const abortController = new AbortController()
     activeAbortControllerRef.current = abortController
@@ -511,6 +572,11 @@ export function useCopilotChatPanelState({
     sendStatus,
     canCancelSend,
     sendDisabledReason,
+    historyDrift,
+    historyRebindAcknowledged,
+    onAcknowledgeHistoryRebind: () => {
+      setHistoryRebindAcknowledged(true)
+    },
     conversation: projectedConversation,
     assistantPlaceholder,
     composerInputRef,

@@ -5,6 +5,11 @@ import {
   getRuntimeCapabilities,
   listRuntimeAgents,
 } from '../../../features/copilot/chat-contract'
+import {
+  getCopilotHistoryRunReplay,
+  getCopilotHistoryThreadDetail,
+  listCopilotHistoryThreads,
+} from '../../../features/copilot/history'
 import { CopilotChatPanel } from '../../../features/copilot/CopilotChatPanel'
 import type { CopilotBootstrapController } from '../../../features/copilot/types'
 import type { AssistantSessionShell } from '../../types'
@@ -21,6 +26,9 @@ export interface AssistantWorkspaceShellProps {
   listAgents?: typeof listRuntimeAgents
   createSession?: typeof createRuntimeThread
   getCapabilities?: typeof getRuntimeCapabilities
+  listHistoryThreads?: typeof listCopilotHistoryThreads
+  getHistoryThreadDetail?: typeof getCopilotHistoryThreadDetail
+  getHistoryRunReplay?: typeof getCopilotHistoryRunReplay
   initialDirectoryState?: AssistantAgentDirectoryState
   initialSessionShell?: AssistantSessionShell | null
 }
@@ -30,6 +38,9 @@ export function AssistantWorkspaceShell({
   listAgents: listAgentsImpl = listRuntimeAgents,
   createSession: createSessionImpl = createRuntimeThread,
   getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
+  listHistoryThreads: listHistoryThreadsImpl = listCopilotHistoryThreads,
+  getHistoryThreadDetail: getHistoryThreadDetailImpl = getCopilotHistoryThreadDetail,
+  getHistoryRunReplay: getHistoryRunReplayImpl = getCopilotHistoryRunReplay,
   initialDirectoryState = emptyAssistantAgentDirectoryState,
   initialSessionShell = null,
 }: AssistantWorkspaceShellProps) {
@@ -37,6 +48,7 @@ export function AssistantWorkspaceShell({
     directoryState,
     selectedAgent,
     sessionShell,
+    activeSessionHistory,
     sessionListState,
     sessionStatus,
     sessionError,
@@ -71,6 +83,9 @@ export function AssistantWorkspaceShell({
     listAgents: listAgentsImpl,
     createSession: createSessionImpl,
     getCapabilities: getCapabilitiesImpl,
+    listHistoryThreads: listHistoryThreadsImpl,
+    getHistoryThreadDetail: getHistoryThreadDetailImpl,
+    getHistoryRunReplay: getHistoryRunReplayImpl,
     initialDirectoryState,
     initialSessionShell,
   })
@@ -128,6 +143,7 @@ export function AssistantWorkspaceShell({
             directoryState={directoryState}
             sessionStatus={sessionStatus}
             sessionError={sessionError}
+            sessionHistory={activeSessionHistory}
           />
         </div>
       </main>

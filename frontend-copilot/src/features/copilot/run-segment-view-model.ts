@@ -47,6 +47,9 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
   reasoningTraceState?: CopilotRunState['reasoningTraceState']
   reasoningSuppressionBasis?: CopilotRunState['reasoningSuppressionBasis']
+  availabilityInterpretation?: Record<string, unknown> | null
+  availabilityDrift?: Record<string, unknown> | null
+  historicalSnapshot?: Record<string, unknown> | null
 }
 
 export interface CopilotReasoningMessageItem extends CopilotRunSegmentViewItemBase {
@@ -96,6 +99,9 @@ export interface CopilotTerminalMessageItem extends CopilotRunSegmentViewItemBas
   thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
   reasoningTraceState?: CopilotRunState['reasoningTraceState']
   reasoningSuppressionBasis?: CopilotRunState['reasoningSuppressionBasis']
+  availabilityInterpretation?: Record<string, unknown> | null
+  availabilityDrift?: Record<string, unknown> | null
+  historicalSnapshot?: Record<string, unknown> | null
 }
 
 export type CopilotRunSegmentViewItem =

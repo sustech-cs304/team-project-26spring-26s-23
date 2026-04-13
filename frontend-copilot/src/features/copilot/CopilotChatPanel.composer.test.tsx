@@ -29,6 +29,7 @@ import {
   setFormControlValue,
   submitForm,
 } from './CopilotChatPanel.test-support'
+import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
 declare global {
@@ -1179,6 +1180,75 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('requires explicit rebinding before continuing a drifted persisted thread', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const sessionHistory = createHistoryStateWithProviderDrift()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={sessionHistory}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    await setFormControlValue(messageInput, '继续这个历史线程')
+
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('当前配置与历史线程存在差异')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史模型')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('legacy-model')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史工具')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('tool.file-convert')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史思考')
+    expect(rendered.getByTestId('chat-history-drift-warning-list').textContent).toContain('历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。')
+    expect(sendButton.disabled).toBe(true)
+    expect(sendButton.title).toBe('历史线程依赖已变化，请先显式重新绑定当前配置后再继续。')
+
+    await submitForm(composer)
+    expect(sendMessage).toHaveBeenCalledTimes(0)
+
+    await clickElement(rendered.getByTestId('chat-history-rebind-button'))
+
+    expect(sendButton.disabled).toBe(false)
+    expect(sendButton.title).toBe('发送消息')
+
+    await submitForm(composer)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'openrouter',
+          modelId: 'openai/gpt-4.1',
+        },
+      },
+      message: {
+        content: '继续这个历史线程',
+      },
+    })
+
+    rendered.unmount()
+  })
+
   it('allows a subsequent successful send after a legacy-provider validation failure and clears the stale error message', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
@@ -1670,6 +1740,105 @@ function createPersistedWorkspaceStateLoader() {
     source: 'stored' as const,
     state: createPersistedWorkspaceState(),
   }))
+}
+
+function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
+  return {
+    summary: {
+      threadId: 'session-1',
+      boundAgentId: 'general',
+      title: '历史线程',
+      titleSource: 'deterministic',
+      summary: '历史摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      lastActivityAt: '2026-04-13T15:05:00Z',
+      lastRunId: 'run-history-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '历史摘要',
+      driftSummary: {
+        status: 'provider_removed',
+      },
+    },
+    detailStatus: 'ready',
+    detailError: null,
+    timelineItems: [
+      {
+        kind: 'assistant_message',
+        runId: 'run-history-1',
+        sequenceStart: 1,
+        sequenceEnd: 1,
+        text: '历史摘要',
+      },
+    ],
+    runSummaries: [
+      {
+        runId: 'run-history-1',
+        threadId: 'session-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'legacy-model',
+        requestedMessageText: '你好',
+        assistantText: '历史摘要',
+      },
+    ],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: {
+      status: 'provider_removed',
+    },
+    selectedRunId: 'run-history-1',
+    replayStatus: 'ready',
+    replayError: null,
+    replay: {
+      ok: true,
+      version: 'chat-history-v1',
+      run: {
+        runId: 'run-history-1',
+        threadId: 'session-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'legacy-model',
+        requestedMessageText: '你好',
+        assistantText: '历史摘要',
+      },
+      historicalSnapshot: {
+        resolvedModelId: 'legacy-model',
+        resolvedModelRoute: {
+          routeRef: {
+            routeKind: 'provider-model',
+            profileId: 'provider-legacy',
+            modelId: 'legacy-model',
+          },
+        },
+        resolvedToolIds: ['tool.file-convert'],
+        appliedThinkingSelection: {
+          series: 'unified-4-level-v1',
+          mode: 'preset',
+          level: 'medium',
+          value: {
+            valueType: 'code',
+            code: 'medium',
+            labelZh: '中',
+          },
+        },
+      },
+      orderedEvents: [],
+      toolCallBlocks: [],
+      diagnosticBlocks: [],
+      terminalState: null,
+      availabilityInterpretation: {
+        status: 'historical_provider_removed',
+      },
+    },
+  }
 }
 
 function createAbortableSendMessageSpy() {

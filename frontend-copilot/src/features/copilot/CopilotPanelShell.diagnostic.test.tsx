@@ -150,6 +150,9 @@ function renderShell(debugModeEnabled: boolean): string {
       sendStatus="idle"
       canCancelSend={false}
       sendDisabledReason={null}
+      historyDrift={null}
+      historyRebindAcknowledged={false}
+      onAcknowledgeHistoryRebind={vi.fn()}
       conversation={conversation}
       assistantPlaceholder={{
         shouldRender: false,
@@ -239,6 +242,9 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       sendStatus="idle"
       canCancelSend={false}
       sendDisabledReason={null}
+      historyDrift={null}
+      historyRebindAcknowledged={false}
+      onAcknowledgeHistoryRebind={vi.fn()}
       conversation={conversation}
       assistantPlaceholder={{
         shouldRender: false,

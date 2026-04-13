@@ -5,6 +5,7 @@ import type {
   ConfigCenterPublicSnapshotApi,
   ConfigCenterPublicSnapshotSubscriptionApi,
 } from './config-center/public-snapshot'
+import type { CopilotHistoryApi } from './copilot-history'
 import type { BootstrapWindowApi } from './bootstrap-window'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 import type { SettingsWorkspaceSecretsApi, SettingsWorkspaceStateApi } from './settings-workspace/ipc'
@@ -34,6 +35,7 @@ declare global {
   // Used in Renderer process, expose in `preload.ts`
   interface Window {
     copilotRuntime: CopilotRuntimeApi
+    copilotHistory: CopilotHistoryApi
     configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
     configCenterPublicSnapshotSubscription: ConfigCenterPublicSnapshotSubscriptionApi
     configCenterPublicPatch: ConfigCenterPublicPatchApi

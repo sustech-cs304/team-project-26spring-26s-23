@@ -29,6 +29,7 @@ import type {
   CopilotAssistantPlaceholderState,
   CopilotMessageListItem,
 } from './run-segment-view-model'
+import type { PersistedHistoryDriftSummary } from './persisted-history-drift'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
 import type { RuntimeThinkingCapability } from './thread-run-contract'
@@ -53,6 +54,9 @@ export interface CopilotPanelShellProps {
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
+  historyDrift: PersistedHistoryDriftSummary | null
+  historyRebindAcknowledged: boolean
+  onAcknowledgeHistoryRebind: () => void
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
@@ -174,6 +178,11 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
+        {props.historyDrift !== null && renderHistoryDriftNotice({
+          historyDrift: props.historyDrift,
+          acknowledged: props.historyRebindAcknowledged,
+          onAcknowledge: props.onAcknowledgeHistoryRebind,
+        })}
         <CopilotMessagesShell
           conversation={props.conversation}
           assistantPlaceholder={props.assistantPlaceholder}
@@ -203,6 +212,75 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           onResizeStart={props.onComposerResizeStart}
         />
       </section>
+    </section>
+  )
+}
+
+function renderHistoryDriftNotice(input: {
+  historyDrift: PersistedHistoryDriftSummary
+  acknowledged: boolean
+  onAcknowledge: () => void
+}) {
+  const historicalFacts = [
+    input.historyDrift.historicalModelId === null
+      ? null
+      : { label: '历史模型', value: input.historyDrift.historicalModelId },
+    input.historyDrift.historicalToolIds.length === 0
+      ? null
+      : { label: '历史工具', value: input.historyDrift.historicalToolIds.join('、') },
+    input.historyDrift.historicalThinkingSummary === null
+      ? null
+      : { label: '历史思考', value: input.historyDrift.historicalThinkingSummary },
+  ].filter((value): value is { label: string; value: string } => value !== null)
+  const title = input.historyDrift.warnings.length > 0
+    ? '当前配置与历史线程存在差异'
+    : '历史运行快照'
+
+  return (
+    <section
+      className="copilot-panel__card copilot-panel__card--notice"
+      aria-live="polite"
+      data-testid="chat-history-drift-notice"
+    >
+      <p className="copilot-panel__eyebrow">历史快照</p>
+      <h2 className="copilot-panel__title">{title}</h2>
+      <p className="copilot-panel__description">以下值来自历史快照，不会被当前配置改写。</p>
+      {historicalFacts.length > 0 && (
+        <div className="copilot-chat__message-detail-list">
+          {historicalFacts.map((fact) => (
+            <p key={fact.label} className="copilot-chat__message-detail copilot-chat__message-detail--meta">
+              <span className="copilot-chat__message-detail-label">{fact.label}</span>
+              <span>{fact.value}</span>
+            </p>
+          ))}
+        </div>
+      )}
+      {input.historyDrift.warnings.length > 0 && (
+        <>
+          <p className="copilot-panel__description">当前可用性提示</p>
+          <ul data-testid="chat-history-drift-warning-list">
+            {input.historyDrift.warnings.map((warning) => (
+              <li key={warning.code}>{warning.message}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {input.historyDrift.requiresExplicitRebind && (
+        <>
+          <p className="copilot-panel__description">
+            继续对话前需显式确认按当前选择的模型、工具与思考配置重新绑定。
+          </p>
+          <button
+            type="button"
+            className="copilot-model-picker__trigger"
+            data-testid="chat-history-rebind-button"
+            disabled={input.acknowledged}
+            onClick={input.onAcknowledge}
+          >
+            {input.acknowledged ? '已确认按当前配置继续' : '按当前配置重新绑定'}
+          </button>
+        </>
+      )}
     </section>
   )
 }
