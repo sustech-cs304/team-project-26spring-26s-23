@@ -1,5 +1,3 @@
-import { readFile as fsReadFile } from 'node:fs/promises'
-
 import { extractLegacyCopilotSettingsMigrationPatch } from '../copilot-settings-bridge'
 import { createDefaultUnifiedConfigSnapshot } from '../defaults'
 import type { UnifiedConfigFieldPatch } from '../field-registry'
@@ -36,7 +34,7 @@ export function createConfigCenterBootstrapService(
     paths: options.paths,
     fileSystem: options.fileSystem,
   })
-  const readFile: ConfigCenterStoreFileSystem['readFile'] = options.fileSystem?.readFile ?? fsReadFile
+  const readFile: ConfigCenterStoreFileSystem['readFile'] = store.readFile
 
   return {
     async loadSnapshot(): Promise<UnifiedConfigLoadResult> {

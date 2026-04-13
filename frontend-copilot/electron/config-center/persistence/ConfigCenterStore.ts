@@ -33,6 +33,7 @@ export interface ConfigCenterStoredSnapshotLoadResult {
 export interface ConfigCenterStore {
   loadStoredSnapshot: () => Promise<ConfigCenterStoredSnapshotLoadResult>
   writeSnapshot: (snapshot: UnifiedConfigSnapshot) => Promise<void>
+  readFile: ConfigCenterStoreFileSystem['readFile']
 }
 
 const defaultFileSystem: ConfigCenterStoreFileSystem = {
@@ -52,6 +53,7 @@ export function createConfigCenterStore(options: CreateConfigCenterStoreOptions)
   return {
     loadStoredSnapshot: () => loadStoredSnapshot(options.paths, fileSystem),
     writeSnapshot: (snapshot) => writeSnapshot(options.paths, snapshot, fileSystem),
+    readFile: fileSystem.readFile,
   }
 }
 
