@@ -11,8 +11,8 @@ require_score_label = true
 require_tests_review = true
 require_security_review = true
 require_focused_review = true
-num_code_suggestions = 5
-
+num_code_suggestions = 6
+suggestions_score_threshold = 7
 extra_instructions = "*请用中文回复所有评论*，提供具体的代码改进建议"
 
 [pr_description]
@@ -21,3 +21,6 @@ generate_ai_title = true
 
 [pr_code_suggestions]
 summarize = true
+num_code_suggestions = 6
+suggestions_score_threshold = 7
+extra_instructions = "*请用中文回复所有评论*，提供具体的代码改进建议"

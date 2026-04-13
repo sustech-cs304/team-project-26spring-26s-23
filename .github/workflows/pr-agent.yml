@@ -21,7 +21,9 @@ jobs:
         env:
           OPENAI.KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI.API_BASE: "https://api.ikuncode.cc/v1"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CONFIG.MODEL: "gpt-5.4"
           CONFIG.FALLBACK_MODELS: '["gpt-5.3-codex"]'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pr_reviewer.extra_instructions: "*请用中文回复所有评论*，提供具体的代码改进建议"
+          CONFIG.MAX_MODEL_TOKENS: "128000"
