@@ -1,0 +1,44 @@
+"""Persistence primitives for Copilot runtime chat history."""
+
+from .base import Base
+from .db import (
+    DEFAULT_CHAT_DATABASE_FILE_NAME,
+    DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS,
+    ENV_CHAT_DATABASE_PATH,
+    ENV_DESKTOP_DATABASE_DIR,
+    build_sqlite_database_url,
+    create_alembic_config,
+    create_session_factory,
+    create_sqlite_engine,
+    get_default_alembic_ini_path,
+    get_target_metadata,
+    initialize_database,
+    resolve_chat_database_path,
+    session_scope,
+    upgrade_database,
+)
+from .redaction import DEFAULT_REDACTION_VERSION, REDACTED_VALUE, RedactionResult, redact_payload
+from .store import SQLiteSessionStore
+
+__all__ = [
+    "Base",
+    "DEFAULT_CHAT_DATABASE_FILE_NAME",
+    "DEFAULT_REDACTION_VERSION",
+    "DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS",
+    "ENV_CHAT_DATABASE_PATH",
+    "ENV_DESKTOP_DATABASE_DIR",
+    "REDACTED_VALUE",
+    "RedactionResult",
+    "SQLiteSessionStore",
+    "build_sqlite_database_url",
+    "create_alembic_config",
+    "create_session_factory",
+    "create_sqlite_engine",
+    "get_default_alembic_ini_path",
+    "get_target_metadata",
+    "initialize_database",
+    "redact_payload",
+    "resolve_chat_database_path",
+    "session_scope",
+    "upgrade_database",
+]

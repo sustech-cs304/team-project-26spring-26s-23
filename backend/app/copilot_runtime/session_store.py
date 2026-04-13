@@ -390,7 +390,8 @@ class InMemorySessionStore:
         sequence: int | None = None,
     ) -> RuntimeRunRecord:
         run = self._require_run(run_id)
-        run.append_event(event_type=event_type, payload=payload, sequence=sequence)
+        allocated_sequence = len(run.event_log) + 1
+        run.append_event(event_type=event_type, payload=payload, sequence=allocated_sequence)
         self._touch_thread_for_run(run)
         return run
 
@@ -436,6 +437,17 @@ class InMemorySessionStore:
     ) -> RuntimeRunRecord:
         run = self._require_run(run_id)
         run.mark_cancelled(metadata=metadata)
+        self._touch_thread_for_run(run)
+        return run
+
+    def touch_run(
+        self,
+        run_id: str,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> RuntimeRunRecord:
+        run = self._require_run(run_id)
+        run.touch(metadata=metadata)
         self._touch_thread_for_run(run)
         return run
 

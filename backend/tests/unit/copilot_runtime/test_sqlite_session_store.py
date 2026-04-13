@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from app.copilot_runtime.model_routes import RuntimeModelRouteRef
+from app.copilot_runtime.persistence import DEFAULT_CHAT_DATABASE_FILE_NAME, SQLiteSessionStore
+from app.copilot_runtime.session_store import (
+    RuntimeStoredModelRoute,
+    RuntimeStoredRunInput,
+    RuntimeStoredRunPolicy,
+)
+from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
+
+
+
+def test_sqlite_session_store_uses_runtime_database_dir(tmp_path: Path) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    store = SQLiteSessionStore(runtime_config=runtime_config)
+    try:
+        assert store.storage_type == "sqlite"
+        assert store.db_path.parent == runtime_config.database_dir
+        assert store.db_path.name == DEFAULT_CHAT_DATABASE_FILE_NAME
+    finally:
+        store.dispose()
+
+
+
+def test_sqlite_session_store_persists_history_and_allocates_event_sequences(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+
+    first_store = SQLiteSessionStore(db_path=db_path)
+    try:
+        first_store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        first_store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="hello sqlite"),
+        )
+        first_store.record_run_event(
+            "run-1",
+            event_type="run_started",
+            payload={"assistantMessageId": "run-1:assistant"},
+            sequence=99,
+        )
+        first_store.record_run_event(
+            "run-1",
+            event_type="text_delta",
+            payload={"delta": "hello back", "accessToken": "super-secret"},
+            sequence=1,
+        )
+        first_store.mark_run_streaming("run-1", metadata={"assistant_message_id": "run-1:assistant"})
+        first_store.mark_run_completed("run-1", assistant_text="hello back")
+
+        events = first_store.list_run_events("run-1")
+        messages = first_store.list_messages("thread-1")
+
+        assert [(event.event_type, event.sequence) for event in events] == [
+            ("run_started", 1),
+            ("text_delta", 2),
+        ]
+        assert events[1].payload["accessToken"] == "[redacted]"
+        assert [(message.role, message.content) for message in messages] == [
+            ("user", "hello sqlite"),
+            ("assistant", "hello back"),
+        ]
+    finally:
+        first_store.dispose()
+
+    second_store = SQLiteSessionStore(db_path=db_path)
+    try:
+        restored_run = second_store.get_run("run-1")
+        restored_messages = second_store.list_messages("thread-1")
+
+        assert restored_run is not None
+        assert restored_run.status == "completed"
+        assert restored_run.assistant_text == "hello back"
+        assert [(event.event_type, event.sequence) for event in restored_run.event_log] == [
+            ("run_started", 1),
+            ("text_delta", 2),
+        ]
+        assert [(message.role, message.content) for message in restored_messages] == [
+            ("user", "hello sqlite"),
+            ("assistant", "hello back"),
+        ]
+    finally:
+        second_store.dispose()
+
+
+
+def _build_stored_run_input(*, user_text: str) -> RuntimeStoredRunInput:
+    return RuntimeStoredRunInput(
+        message_role="user",
+        message_content=user_text,
+        policy=RuntimeStoredRunPolicy(
+            model_route=RuntimeStoredModelRoute(
+                provider_profile_id="provider-1",
+                route_ref=RuntimeModelRouteRef(
+                    route_kind="provider-model",
+                    profile_id="provider-1",
+                    model_id="gpt-4.1",
+                ),
+            ),
+            enabled_tools=(),
+            request_options={},
+        ),
+        agent_id="default",
+    )
+
+
+
+def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
+    user_data_dir = tmp_path / "user-data"
+    runtime_root_dir = user_data_dir / "desktop-runtime"
+    return DesktopRuntimeConfig(
+        host="127.0.0.1",
+        port=8765,
+        local_token=None,
+        paths=DesktopRuntimePaths(
+            user_data_dir=user_data_dir,
+            runtime_root_dir=runtime_root_dir,
+            config_dir=runtime_root_dir / "config",
+            logs_dir=runtime_root_dir / "logs",
+            database_dir=runtime_root_dir / "database",
+            state_dir=runtime_root_dir / "state",
+            copilot_settings_file=runtime_root_dir / "config" / "copilot-settings.json",
+            host_log_file=runtime_root_dir / "logs" / "electron-host.log",
+            backend_stdout_log_file=runtime_root_dir / "logs" / "backend.stdout.log",
+            backend_stderr_log_file=runtime_root_dir / "logs" / "backend.stderr.log",
+            runtime_snapshot_file=runtime_root_dir / "state" / "runtime-snapshot.json",
+            last_failure_file=runtime_root_dir / "state" / "last-failure.json",
+        ),
+        app_mode="desktop",
+        environment="test",
+    )
