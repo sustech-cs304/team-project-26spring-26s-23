@@ -24,6 +24,8 @@ _RUNTIME_ERROR_LOGGER = logging.getLogger("uvicorn.error")
 class DesktopNullOriginMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         origin = request.headers.get("origin")
+        if origin is None:
+            return await call_next(request)
         if not is_desktop_null_origin(origin):
             return await call_next(request)
 
