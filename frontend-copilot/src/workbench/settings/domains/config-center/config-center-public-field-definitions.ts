@@ -11,18 +11,28 @@ export interface ConfigCenterPublicTextFieldDefinition {
   createPatch: (value: string | null) => ConfigCenterPublicPatch
 }
 
-export const hostConfigRuntimeUrlField: ConfigCenterPublicTextFieldDefinition = {
-  fieldId: 'hostConfig-runtimeUrl',
+export function createHostConfigRuntimeUrlField(input: {
+  cardTitle: string
+  label: string
+}): ConfigCenterPublicTextFieldDefinition {
+  return {
+    fieldId: 'hostConfig-runtimeUrl',
+    cardTitle: input.cardTitle,
+    label: input.label,
+    placeholder: 'http://127.0.0.1:8765',
+    inputType: 'url',
+    readFromSnapshot: (snapshot) => snapshot.domains.hostConfig.runtimeUrl,
+    createPatch: (value) => ({
+      domains: {
+        hostConfig: {
+          runtimeUrl: value,
+        },
+      },
+    }),
+  }
+}
+
+export const hostConfigRuntimeUrlField: ConfigCenterPublicTextFieldDefinition = createHostConfigRuntimeUrlField({
   cardTitle: '宿主配置（开发态）',
   label: '开发态运行时覆盖地址',
-  placeholder: 'http://127.0.0.1:8765',
-  inputType: 'url',
-  readFromSnapshot: (snapshot) => snapshot.domains.hostConfig.runtimeUrl,
-  createPatch: (value) => ({
-    domains: {
-      hostConfig: {
-        runtimeUrl: value,
-      },
-    },
-  }),
-}
+})

@@ -9,6 +9,7 @@ import {
   type SetStateAction,
 } from 'react'
 
+import { getCopilotChatCopy } from '../../workbench/locale'
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
 import { CopilotComposerShell } from './composer/CopilotComposerShell'
@@ -35,6 +36,7 @@ import type { RuntimeThinkingCapability } from './thread-run-contract'
 import type { CopilotBootstrapState, CopilotConnectableState } from './types'
 
 export interface CopilotPanelShellProps {
+  language?: string
   state: CopilotBootstrapState
   retrying: boolean
   onRetry: () => void
@@ -123,14 +125,15 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
 
 function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   const hasAvailableModels = props.modelGroups.some((group) => group.models.length > 0)
+  const copy = getCopilotChatCopy(props.language ?? 'zh-CN')
 
   if (props.directoryState.status === 'loading' || props.directoryState.status === 'idle') {
     return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
-        <p className="copilot-panel__eyebrow">Copilot</p>
-        <h2 className="copilot-panel__title">正在加载助手列表</h2>
+        <p className="copilot-panel__eyebrow">{copy.panel.eyebrow}</p>
+        <h2 className="copilot-panel__title">{copy.panel.loadingAgentsTitle}</h2>
         <p className="copilot-panel__description">
-          请稍候，加载完成后即可开始聊天。
+          {copy.panel.loadingAgentsDescription}
         </p>
       </section>
     )
@@ -139,10 +142,10 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   if (props.directoryState.status === 'error') {
     return (
       <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
-        <p className="copilot-panel__eyebrow">Copilot</p>
-        <h2 className="copilot-panel__title">加载助手列表失败</h2>
+        <p className="copilot-panel__eyebrow">{copy.panel.eyebrow}</p>
+        <h2 className="copilot-panel__title">{copy.panel.loadAgentsFailedTitle}</h2>
         <p className="copilot-panel__description">
-          当前无法获取可用助手，请稍后重试。
+          {copy.panel.loadAgentsFailedDescription}
         </p>
       </section>
     )
@@ -151,10 +154,10 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   if (props.selectedAgent === null) {
     return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
-        <p className="copilot-panel__eyebrow">Copilot</p>
-        <h2 className="copilot-panel__title">暂无可用助手</h2>
+        <p className="copilot-panel__eyebrow">{copy.panel.eyebrow}</p>
+        <h2 className="copilot-panel__title">{copy.panel.noAgentsTitle}</h2>
         <p className="copilot-panel__description">
-          请检查连接状态，或稍后再试。
+          {copy.panel.noAgentsDescription}
         </p>
       </section>
     )
@@ -163,9 +166,9 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   if (props.sessionShell === null) {
     return (
       <section className="copilot-panel__inline-placeholder" aria-live="polite" data-testid="chat-session-placeholder">
-        <p className="copilot-panel__inline-placeholder-text">可在左侧选择助手并新建会话</p>
+        <p className="copilot-panel__inline-placeholder-text">{copy.panel.sessionPlaceholder}</p>
         {props.sessionError !== null && (
-          <p className="copilot-panel__error">当前无法创建会话，请重试。</p>
+          <p className="copilot-panel__error">{copy.panel.sessionCreateError}</p>
         )}
       </section>
     )
@@ -175,6 +178,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
         <CopilotMessagesShell
+          language={props.language}
           conversation={props.conversation}
           assistantPlaceholder={props.assistantPlaceholder}
           models={props.modelGroups.flatMap((group) => group.models)}
@@ -183,11 +187,12 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           emptyState={hasAvailableModels
             ? null
             : {
-                title: '尚未配置模型',
-                description: '请先前往设置页添加模型服务商和模型。',
+                title: copy.panel.noModelTitle,
+                description: copy.panel.noModelDescription,
               }}
         />
         <CopilotComposerShell
+          language={props.language}
           capabilities={props.sessionShell.capabilities}
           modelGroups={props.modelGroups}
           thinkingCapability={props.thinkingCapability}

@@ -1,14 +1,16 @@
 import type { ReactNode } from 'react'
 
+import { getAssistantSessionCopy, type WorkbenchLanguage } from '../locale'
 import {
-  assistantSessionCopyActions,
-  assistantSessionExportActions,
-  assistantSessionPrimaryActions,
+  getAssistantSessionCopyActions,
+  getAssistantSessionExportActions,
+  getAssistantSessionPrimaryActions,
   type AssistantSessionContextMenuState,
   type AssistantSessionContextSubmenu,
 } from './assistant-session-list-helpers'
 
 interface AssistantSessionContextMenuProps {
+  language?: WorkbenchLanguage
   sessionContextMenu: AssistantSessionContextMenuState | null
   deleteConfirmationSessionId: string | null
   onDismissContextMenu: () => void
@@ -20,6 +22,7 @@ interface AssistantSessionContextMenuProps {
 }
 
 export function AssistantSessionContextMenu({
+  language = 'zh-CN',
   sessionContextMenu,
   deleteConfirmationSessionId,
   onDismissContextMenu,
@@ -33,6 +36,10 @@ export function AssistantSessionContextMenu({
     return null
   }
 
+  const copy = getAssistantSessionCopy(language)
+  const assistantSessionPrimaryActions = getAssistantSessionPrimaryActions(language)
+  const assistantSessionCopyActions = getAssistantSessionCopyActions(language)
+  const assistantSessionExportActions = getAssistantSessionExportActions(language)
   const deleteConfirmationActive = deleteConfirmationSessionId === sessionContextMenu.sessionId
 
   return (
@@ -40,7 +47,7 @@ export function AssistantSessionContextMenu({
       className="session-context-menu"
       data-testid="assistant-session-context-menu"
       role="menu"
-      aria-label={`${sessionContextMenu.sessionLabel} 会话菜单`}
+      aria-label={copy.contextMenu.menuAriaLabel(sessionContextMenu.sessionLabel)}
       style={{ left: `${sessionContextMenu.x}px`, top: `${sessionContextMenu.y}px` }}
     >
       <p className="session-context-menu__title">{sessionContextMenu.sessionLabel}</p>
@@ -66,7 +73,7 @@ export function AssistantSessionContextMenu({
                   role="menuitem"
                   onClick={() => onConfirmDelete(sessionContextMenu.sessionId)}
                 >
-                  确认删除会话
+                  {copy.contextMenu.confirmDeleteSession}
                 </button>
                 <button
                   type="button"
@@ -75,7 +82,7 @@ export function AssistantSessionContextMenu({
                   role="menuitem"
                   onClick={onCancelDelete}
                 >
-                  取消删除
+                  {copy.contextMenu.cancelDelete}
                 </button>
               </>
             )
@@ -105,8 +112,8 @@ export function AssistantSessionContextMenu({
           active={sessionContextMenu.activeSubmenu === 'copy'}
           panelTestId="assistant-session-context-submenu-panel-copy"
           triggerTestId="assistant-session-context-submenu-copy"
-          label="复制会话"
-          ariaLabel="复制会话子菜单"
+          label={copy.contextMenu.copySession}
+          ariaLabel={copy.contextMenu.copySession}
           onActiveChange={(active) => onSelectSubmenu(active ? 'copy' : null)}
         >
           {assistantSessionCopyActions.map((action) => (
@@ -127,8 +134,8 @@ export function AssistantSessionContextMenu({
           active={sessionContextMenu.activeSubmenu === 'export'}
           panelTestId="assistant-session-context-submenu-panel-export"
           triggerTestId="assistant-session-context-submenu-export"
-          label="导出会话"
-          ariaLabel="导出会话子菜单"
+          label={copy.contextMenu.exportSession}
+          ariaLabel={copy.contextMenu.exportSession}
           onActiveChange={(active) => onSelectSubmenu(active ? 'export' : null)}
         >
           {assistantSessionExportActions.map((action) => (

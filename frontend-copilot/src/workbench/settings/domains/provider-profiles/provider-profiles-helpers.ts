@@ -3,8 +3,88 @@ import {
   getProviderCatalogEntry,
   type ProviderCatalogEntry,
 } from '../../../../provider-catalog'
+import { normalizeWorkbenchLanguage, type WorkbenchLanguage } from '../../../locale'
 import type { ProviderProfile, SelectOption } from '../../../types'
 import { createPlaceholderProviderProfile } from './provider-profiles'
+
+const providerHelperCopy: Record<WorkbenchLanguage, {
+  unknownProvider: string
+  currentProviderUnavailable: string
+  currentProviderUnavailableHint: string
+  supportedPrefix: string
+  noCapabilities: string
+  apiKeyLabel: string
+  optionalApiKeyLabel: string
+  noApiKeyRequired: string
+  configuredPlaceholder: string
+  emptyPlaceholder: string
+  serviceUrlPlaceholder: string
+  missingBaseUrl: string
+  previewUnavailable: string
+  previewPrefix: string
+  modelListReadonly: string
+  legacyUnsupportedReason: string
+}> = {
+  'zh-CN': {
+    unknownProvider: '未知服务',
+    currentProviderUnavailable: '当前服务不可用',
+    currentProviderUnavailableHint: '请重新选择服务类型或检查配置。',
+    supportedPrefix: '支持：',
+    noCapabilities: '可用功能信息暂未提供。',
+    apiKeyLabel: 'API 密钥',
+    optionalApiKeyLabel: 'API 密钥（可选）',
+    noApiKeyRequired: '当前服务无需填写 API 密钥。',
+    configuredPlaceholder: '已配置，输入新密钥以替换',
+    emptyPlaceholder: '输入访问密钥',
+    serviceUrlPlaceholder: 'https://api.example.com/v1',
+    missingBaseUrl: '未填写服务地址',
+    previewUnavailable: '无法预览完整请求路径',
+    previewPrefix: '链接预览：',
+    modelListReadonly: '当前模型列表暂不可编辑。',
+    legacyUnsupportedReason: '当前服务暂不可用。',
+  },
+  'en-US': {
+    unknownProvider: 'Unknown provider',
+    currentProviderUnavailable: 'Current provider unavailable',
+    currentProviderUnavailableHint: 'Please select another provider type or review the configuration.',
+    supportedPrefix: 'Supported: ',
+    noCapabilities: 'Capability details are not available yet.',
+    apiKeyLabel: 'API Key',
+    optionalApiKeyLabel: 'API Key (Optional)',
+    noApiKeyRequired: 'This provider does not require an API key.',
+    configuredPlaceholder: 'Configured. Enter a new key to replace it',
+    emptyPlaceholder: 'Enter API key',
+    serviceUrlPlaceholder: 'https://api.example.com/v1',
+    missingBaseUrl: 'Service URL not configured',
+    previewUnavailable: 'Unable to preview the full request path',
+    previewPrefix: 'Preview: ',
+    modelListReadonly: 'The current model list is read-only.',
+    legacyUnsupportedReason: 'This provider is currently unavailable.',
+  },
+}
+
+const providerCapabilityLabels: Record<WorkbenchLanguage, {
+  streaming: string
+  tools: string
+  vision: string
+  reasoning: string
+  search: string
+}> = {
+  'zh-CN': {
+    streaming: '流式',
+    tools: '工具',
+    vision: '视觉',
+    reasoning: '推理',
+    search: '联网',
+  },
+  'en-US': {
+    streaming: 'Streaming',
+    tools: 'Tools',
+    vision: 'Vision',
+    reasoning: 'Reasoning',
+    search: 'Search',
+  },
+}
 
 export interface ProviderStatusNotice {
   tone: 'info' | 'warning'
@@ -85,17 +165,19 @@ export function resolveProviderCatalogEntry(profile: ProviderProfile | null): Pr
   return getProviderCatalogEntry(resolveProviderIdentity(profile))
 }
 
-export function resolveProviderTypeLabel(profile: ProviderProfile): string {
+export function resolveProviderTypeLabel(profile: ProviderProfile, language = 'zh-CN'): string {
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry !== null) {
     return catalogEntry.displayName
   }
 
   const providerIdentity = resolveProviderIdentity(profile)
-  return providerIdentity === '' ? '未知服务' : providerIdentity
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
+  return providerIdentity === '' ? copy.unknownProvider : providerIdentity
 }
 
-export function createProviderTypeSelectOptions(activeProvider: ProviderProfile | null): SelectOption[] {
+export function createProviderTypeSelectOptions(activeProvider: ProviderProfile | null, language = 'zh-CN'): SelectOption[] {
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
   const options = createProviderSelectOptions().map((option) => ({
     value: option.value,
     label: option.label,
@@ -109,8 +191,8 @@ export function createProviderTypeSelectOptions(activeProvider: ProviderProfile 
   return [
     {
       value: currentProviderIdentity,
-      label: '当前服务不可用',
-      hint: '请重新选择服务类型。',
+      label: copy.currentProviderUnavailable,
+      hint: copy.currentProviderUnavailableHint,
     },
     ...options,
   ]
@@ -146,13 +228,14 @@ export function buildProviderTypeSelectionPatch(
   }
 }
 
-export function resolveProviderStatusNotice(profile: ProviderProfile): ProviderStatusNotice | null {
+export function resolveProviderStatusNotice(profile: ProviderProfile, language = 'zh-CN'): ProviderStatusNotice | null {
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
   const compatibility = profile.compatibility
   if (compatibility?.status === 'legacy' || compatibility?.status === 'unsupported') {
     return {
       tone: 'warning',
-      title: '当前服务不可用',
-      description: '请重新选择服务类型或检查配置。',
+      title: copy.currentProviderUnavailable,
+      description: copy.currentProviderUnavailableHint,
     }
   }
 
@@ -160,49 +243,53 @@ export function resolveProviderStatusNotice(profile: ProviderProfile): ProviderS
   if (catalogEntry === null) {
     return {
       tone: 'warning',
-      title: '当前服务不可用',
-      description: '请重新选择服务类型或检查配置。',
+      title: copy.currentProviderUnavailable,
+      description: copy.currentProviderUnavailableHint,
     }
   }
 
   if (catalogEntry.runtimeStatus !== 'enabled') {
     return {
       tone: 'info',
-      title: '当前服务不可用',
-      description: '请重新选择服务类型或检查配置。',
+      title: copy.currentProviderUnavailable,
+      description: copy.currentProviderUnavailableHint,
     }
   }
 
   return null
 }
 
-export function resolveProviderCapabilitySummary(profile: ProviderProfile): string {
+export function resolveProviderCapabilitySummary(profile: ProviderProfile, language = 'zh-CN'): string {
+  const locale = normalizeWorkbenchLanguage(language)
+  const copy = providerHelperCopy[locale]
+  const capabilityCopy = providerCapabilityLabels[locale]
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
-    return '请完成服务配置后再使用。'
+    return copy.currentProviderUnavailableHint
   }
 
   const capabilityLabels = [
-    catalogEntry.capabilityHints.streaming ? '流式' : null,
-    catalogEntry.capabilityHints.tools ? '工具' : null,
-    catalogEntry.capabilityHints.vision ? '视觉' : null,
-    catalogEntry.capabilityHints.reasoning ? '推理' : null,
-    catalogEntry.capabilityHints.search ? '联网' : null,
+    catalogEntry.capabilityHints.streaming ? capabilityCopy.streaming : null,
+    catalogEntry.capabilityHints.tools ? capabilityCopy.tools : null,
+    catalogEntry.capabilityHints.vision ? capabilityCopy.vision : null,
+    catalogEntry.capabilityHints.reasoning ? capabilityCopy.reasoning : null,
+    catalogEntry.capabilityHints.search ? capabilityCopy.search : null,
   ].filter((value): value is string => value !== null)
 
   return capabilityLabels.length > 0
-    ? `支持：${capabilityLabels.join('、')}`
-    : '可用功能信息暂未提供。'
+    ? `${copy.supportedPrefix}${capabilityLabels.join(locale === 'en-US' ? ', ' : '、')}`
+    : copy.noCapabilities
 }
 
-export function resolveProviderAuthFieldState(profile: ProviderProfile): ProviderAuthFieldState {
+export function resolveProviderAuthFieldState(profile: ProviderProfile, language = 'zh-CN'): ProviderAuthFieldState {
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
     return {
       visible: true,
       required: profile.hasApiKey,
-      label: 'API 密钥',
-      placeholder: profile.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥',
+      label: copy.apiKeyLabel,
+      placeholder: profile.hasApiKey ? copy.configuredPlaceholder : copy.emptyPlaceholder,
     }
   }
 
@@ -213,8 +300,8 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
     return {
       visible: false,
       required: false,
-      label: 'API 密钥',
-      description: catalogEntry.authSchema.helpText ?? '当前服务无需填写 API 密钥。',
+      label: copy.apiKeyLabel,
+      description: catalogEntry.authSchema.helpText ?? copy.noApiKeyRequired,
       placeholder: '',
     }
   }
@@ -222,10 +309,8 @@ export function resolveProviderAuthFieldState(profile: ProviderProfile): Provide
   return {
     visible: true,
     required,
-    label: required ? 'API 密钥' : 'API 密钥（可选）',
-    placeholder: required
-      ? (profile.hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥')
-      : (profile.hasApiKey ? '已配置，可输入新密钥以替换' : '可按需填写'),
+    label: required ? copy.apiKeyLabel : copy.optionalApiKeyLabel,
+    placeholder: profile.hasApiKey ? copy.configuredPlaceholder : copy.emptyPlaceholder,
   }
 }
 
@@ -233,14 +318,16 @@ export function resolveProviderBaseUrlFieldState(
   profile: ProviderProfile,
   options: {
     previewModelId?: string | null
+    language?: string
   } = {},
 ): ProviderBaseUrlFieldState {
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(options.language)]
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
     return {
       editable: true,
-      description: buildProviderBaseUrlPreviewDescription(profile, options.previewModelId),
-      placeholder: profile.baseUrl?.trim() || profile.endpoint || 'https://api.example.com/v1',
+      description: buildProviderBaseUrlPreviewDescription(profile, options.previewModelId, options.language),
+      placeholder: profile.baseUrl?.trim() || profile.endpoint || copy.serviceUrlPlaceholder,
     }
   }
 
@@ -249,46 +336,50 @@ export function resolveProviderBaseUrlFieldState(
 
   return {
     editable,
-    description: buildProviderBaseUrlPreviewDescription(profile, options.previewModelId),
-    placeholder: defaultBaseUrl || 'https://api.example.com/v1',
+    description: buildProviderBaseUrlPreviewDescription(profile, options.previewModelId, options.language),
+    placeholder: defaultBaseUrl || copy.serviceUrlPlaceholder,
   }
 }
 
-export function resolveProviderBaseUrlValidationMessage(profile: ProviderProfile): string | null {
+export function resolveProviderBaseUrlValidationMessage(profile: ProviderProfile, language = 'zh-CN'): string | null {
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry?.baseUrlPolicy.mode === 'fixed') {
     return null
   }
 
-  return normalizeProviderBaseUrlValue(profile) === '' ? '未填写服务地址' : null
+  return normalizeProviderBaseUrlValue(profile) === '' ? copy.missingBaseUrl : null
 }
 
 export function resolveProviderBaseUrlPreviewText(
   profile: ProviderProfile,
   previewModelId?: string | null,
+  language = 'zh-CN',
 ): string {
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
   const normalizedBaseUrl = normalizeProviderBaseUrlValue(profile)
   if (normalizedBaseUrl === '') {
-    return '未填写服务地址'
+    return copy.missingBaseUrl
   }
 
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
-    return '无法预览完整请求路径'
+    return copy.previewUnavailable
   }
 
   const previewSuffix = resolveProviderPreviewSuffix(catalogEntry.endpointType, profile, previewModelId)
   if (previewSuffix === null) {
-    return '无法预览完整请求路径'
+    return copy.previewUnavailable
   }
 
   return joinBaseUrlAndSuffix(normalizedBaseUrl, previewSuffix)
 }
 
-export function resolveProviderModelEditingAvailability(profile: ProviderProfile): {
+export function resolveProviderModelEditingAvailability(profile: ProviderProfile, language = 'zh-CN'): {
   canEditModels: boolean
   description?: string
 } {
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
   const catalogEntry = resolveProviderCatalogEntry(profile)
   if (catalogEntry === null) {
     return {
@@ -299,7 +390,7 @@ export function resolveProviderModelEditingAvailability(profile: ProviderProfile
   if (catalogEntry.modelConfigPolicy.mode === 'read-only' || !catalogEntry.modelConfigPolicy.allowCustomModels) {
     return {
       canEditModels: false,
-      description: '当前模型列表暂不可编辑。',
+      description: copy.modelListReadonly,
     }
   }
 
@@ -315,8 +406,10 @@ function resolveProviderIdentity(profile: ProviderProfile): string {
 function buildProviderBaseUrlPreviewDescription(
   profile: ProviderProfile,
   previewModelId?: string | null,
+  language = 'zh-CN',
 ): string {
-  return `链接预览：${resolveProviderBaseUrlPreviewText(profile, previewModelId)}`
+  const copy = providerHelperCopy[normalizeWorkbenchLanguage(language)]
+  return `${copy.previewPrefix}${resolveProviderBaseUrlPreviewText(profile, previewModelId, language)}`
 }
 
 function resolveProviderPreviewSuffix(
@@ -395,7 +488,7 @@ function buildCatalogBackedProviderCompatibility(
   if (catalogEntry.runtimeStatus === 'legacy-unsupported') {
     return {
       status: 'legacy',
-      reason: '当前服务暂不可用。',
+      reason: providerHelperCopy['zh-CN'].legacyUnsupportedReason,
     }
   }
 

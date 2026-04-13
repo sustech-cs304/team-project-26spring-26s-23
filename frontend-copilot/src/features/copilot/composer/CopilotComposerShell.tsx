@@ -25,6 +25,7 @@ import {
   isThinkingValueActive,
   resolveThinkingValueLabel,
 } from '../../../workbench/thinking-display'
+import { getCopilotChatCopy } from '../../../workbench/locale'
 import type { AssistantSessionShell } from '../../../workbench/types'
 import {
   applyModelSelectionToComposerDraft,
@@ -44,6 +45,7 @@ import { ModelPicker } from '../components/ModelPicker'
 import { ToolPicker } from '../components/ToolPicker'
 
 export interface CopilotComposerShellProps {
+  language?: string
   capabilities: AssistantSessionShell['capabilities']
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
@@ -60,6 +62,7 @@ export interface CopilotComposerShellProps {
 }
 
 export function CopilotComposerShell({
+  language = 'zh-CN',
   capabilities,
   modelGroups,
   thinkingCapability,
@@ -74,6 +77,7 @@ export function CopilotComposerShell({
   composerHeight,
   onResizeStart,
 }: CopilotComposerShellProps) {
+  const copy = getCopilotChatCopy(language)
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
   const isSending = sendStatus === 'sending'
   const controlsDisabled = isSending
@@ -97,7 +101,7 @@ export function CopilotComposerShell({
     () => resolveThinkingValueLabel(currentThinkingValue),
     [currentThinkingValue],
   )
-  const thinkingTriggerPlaceholder = '思考'
+  const thinkingTriggerPlaceholder = copy.composer.thinkingPlaceholder
   const thinkingTriggerLabel = currentThinkingLabel === null ? thinkingTriggerPlaceholder : currentThinkingLabel
   const unavailableThinkingReason = useMemo(
     () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
@@ -105,7 +109,7 @@ export function CopilotComposerShell({
   )
   const thinkingTriggerTitle = canRenderThinkingControl
     ? thinkingTriggerLabel
-    : unavailableThinkingReason ?? '思考'
+    : unavailableThinkingReason ?? copy.composer.thinkingPlaceholder
   const thinkingTriggerActive = effectiveThinkingSelection === null
     ? false
     : isThinkingSelectionActive(effectiveThinkingSelection)
@@ -193,6 +197,7 @@ export function CopilotComposerShell({
     <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={onSubmit}>
       <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
         <ModelPicker
+          language={language}
           selectedModelId={draft.selectedModelId}
           groups={modelGroups}
           disabled={!hasAvailableModels || controlsDisabled}
@@ -242,7 +247,7 @@ export function CopilotComposerShell({
               id={thinkingPanelId}
               className="copilot-model-picker__panel copilot-chat__thinking-panel"
               role="dialog"
-              aria-label="推理设置"
+              aria-label={copy.composer.thinkingSettingsAriaLabel}
               data-testid="chat-thinking-panel"
             >
               <div className="copilot-chat__thinking-panel-header">
@@ -251,9 +256,9 @@ export function CopilotComposerShell({
                     {buildThinkingSeriesLabel(thinkingCapability)}
                   </span>
                   <span className="copilot-chat__thinking-panel-current-shell">
-                    <span className="copilot-chat__thinking-panel-current-label">当前值</span>
+                    <span className="copilot-chat__thinking-panel-current-label">{copy.composer.currentValueLabel}</span>
                     <span className="copilot-chat__thinking-panel-current-value" data-testid="chat-thinking-current-value">
-                      {currentThinkingLabel ?? '未设置'}
+                      {currentThinkingLabel ?? copy.composer.unsetValue}
                     </span>
                   </span>
                 </div>
@@ -269,6 +274,7 @@ export function CopilotComposerShell({
           )}
         </div>
         <ToolPicker
+          language={language}
           tools={capabilities.allAvailableTools}
           selectedToolIds={draft.enabledTools}
           recommendedToolIds={capabilities.recommendedToolsForAgent}
@@ -287,7 +293,7 @@ export function CopilotComposerShell({
         data-testid="chat-composer-resize-handle"
         role="separator"
         aria-orientation="horizontal"
-        aria-label="拖动以调整输入区高度"
+        aria-label={copy.composer.resizeHandleAriaLabel}
         onMouseDown={onResizeStart}
       />
 
@@ -300,7 +306,7 @@ export function CopilotComposerShell({
             ref={composerInputRef}
             className="copilot-chat__composer-input"
             name="messageText"
-            aria-label="消息内容"
+            aria-label={copy.composer.messageInputAriaLabel}
             value={draft.messageText}
             onChange={(event) => {
               const nextValue = event.currentTarget.value
@@ -310,7 +316,7 @@ export function CopilotComposerShell({
               }))
             }}
             onKeyDown={handleMessageInputKeyDown}
-            placeholder="按 Enter 发送，按 Ctrl + Enter 换行"
+            placeholder={copy.composer.messageInputPlaceholder}
           />
         </div>
 
@@ -322,8 +328,8 @@ export function CopilotComposerShell({
           ].filter((className) => className !== '').join(' ')}
           data-testid="chat-composer-send-button"
           disabled={isSending ? !canCancel : sendDisabledReason !== null}
-          title={isSending ? '取消当前响应' : sendDisabledReason ?? '发送消息'}
-          aria-label={isSending ? '取消当前响应' : sendDisabledReason ?? '发送消息'}
+          title={isSending ? copy.composer.cancelCurrentResponse : sendDisabledReason ?? copy.composer.sendMessage}
+          aria-label={isSending ? copy.composer.cancelCurrentResponse : sendDisabledReason ?? copy.composer.sendMessage}
           onClick={isSending ? onCancel : undefined}
         >
           {isSending

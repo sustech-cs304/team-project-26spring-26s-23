@@ -1,12 +1,13 @@
-import { hubWorkspaceContent } from '../config'
+import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
 
 interface HubWorkspaceProps {
   view: HubWorkspaceView
+  language?: WorkbenchLanguage
 }
 
-export function HubWorkspace({ view }: HubWorkspaceProps) {
-  const content = hubWorkspaceContent[view]
+export function HubWorkspace({ view, language = 'zh-CN' }: HubWorkspaceProps) {
+  const content = getHubWorkspaceContent(language, view)
 
   return (
     <section className="workspace-stage hub-workspace" aria-label={`${content.title}工作区`}>

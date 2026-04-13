@@ -1,9 +1,10 @@
 import { Pencil, Trash2 } from 'lucide-react'
 
+import { getModelCapabilityOptions, getProviderModelListCopy } from '../locale'
 import type { ModelCapability, ProviderModelProfile } from '../types'
-import { modelCapabilityOptions } from './config'
 
 interface ProviderModelListPanelProps {
+  language: string
   availableModels: ProviderModelProfile[]
   canEditModels: boolean
   description?: string
@@ -13,6 +14,7 @@ interface ProviderModelListPanelProps {
 }
 
 export function ProviderModelListPanel({
+  language,
   availableModels,
   canEditModels,
   description,
@@ -20,22 +22,25 @@ export function ProviderModelListPanel({
   onOpenModelEditor,
   onRemoveModel,
 }: ProviderModelListPanelProps) {
+  const copy = getProviderModelListCopy(language)
+  const capabilityOptions = getModelCapabilityOptions(language)
+
   return (
     <section className="settings-card settings-card--form">
       <div className="settings-card__header settings-card__header--spaced">
         <div>
-          <h3 className="settings-card__title">模型列表管理</h3>
+          <h3 className="settings-card__title">{copy.title}</h3>
           {description ? <p className="settings-card__subtitle">{description}</p> : null}
         </div>
-        <span className="inline-badge">{availableModels.length} 个模型</span>
+        <span className="inline-badge">{availableModels.length}{copy.countSuffix}</span>
       </div>
 
       <div className="settings-stack">
         <div className="model-list-shell">
           {availableModels.length > 0 ? (
             availableModels.map((model: ProviderModelProfile, index: number) => {
-              const modelDisplayName = model.displayName || '未命名模型'
-              const modelIdentifier = model.modelId || '未填写模型 ID'
+              const modelDisplayName = model.displayName || copy.unnamedModel
+              const modelIdentifier = model.modelId || copy.missingModelId
 
               return (
                 <article key={model.id} className="model-list-row">
@@ -46,10 +51,10 @@ export function ProviderModelListPanel({
                     <span className="model-list-row__id" title={modelIdentifier}>
                       {modelIdentifier}
                     </span>
-                    <div className="model-capability-list model-capability-list--compact" aria-label="支持特性">
+                    <div className="model-capability-list model-capability-list--compact" aria-label={copy.capabilityAriaLabel}>
                       {model.capabilities.length > 0 ? (
                         model.capabilities.map((capability: ModelCapability) => {
-                          const option = modelCapabilityOptions.find((item) => item.value === capability)
+                          const option = capabilityOptions.find((item) => item.value === capability)
 
                           return (
                             <span
@@ -61,7 +66,7 @@ export function ProviderModelListPanel({
                           )
                         })
                       ) : (
-                        <span className="model-capability-chip model-capability-chip--empty">未标记特性</span>
+                        <span className="model-capability-chip model-capability-chip--empty">{copy.emptyCapabilities}</span>
                       )}
                     </div>
                   </div>
@@ -70,8 +75,8 @@ export function ProviderModelListPanel({
                     <button
                       type="button"
                       className="icon-button"
-                      title={`编辑 ${modelDisplayName}`}
-                      aria-label={`编辑模型 ${modelDisplayName}`}
+                      title={copy.editModelTitle(modelDisplayName)}
+                      aria-label={copy.editModelAriaLabel(modelDisplayName)}
                       disabled={!canEditModels}
                       onClick={() => onOpenModelEditor(index)}
                     >
@@ -80,8 +85,8 @@ export function ProviderModelListPanel({
                     <button
                       type="button"
                       className="icon-button icon-button--danger"
-                      title={`删除 ${modelDisplayName}`}
-                      aria-label={`删除模型 ${modelDisplayName}`}
+                      title={copy.deleteModelTitle(modelDisplayName)}
+                      aria-label={copy.deleteModelAriaLabel(modelDisplayName)}
                       disabled={!canEditModels}
                       onClick={() => onRemoveModel(index)}
                     >
@@ -93,7 +98,7 @@ export function ProviderModelListPanel({
             })
           ) : (
             <div className="model-list-empty">
-              {canEditModels ? '当前服务还没有可用模型。点击下方按钮添加第一个模型。' : '当前模型列表暂不可编辑。'}
+              {canEditModels ? copy.emptyEditable : copy.emptyReadonly}
             </div>
           )}
         </div>
@@ -104,7 +109,7 @@ export function ProviderModelListPanel({
           disabled={!canEditModels}
           onClick={onOpenCreateModelEditor}
         >
-          添加模型
+          {copy.addModelButton}
         </button>
       </div>
     </section>

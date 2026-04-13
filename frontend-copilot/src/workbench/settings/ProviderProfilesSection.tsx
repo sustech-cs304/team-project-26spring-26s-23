@@ -8,16 +8,17 @@ import {
 
 interface ProviderProfilesSectionProps {
   provider: ProviderProfilesSectionDomain
+  language: string
 }
 
-export function ProviderProfilesSection({ provider }: ProviderProfilesSectionProps) {
+export function ProviderProfilesSection({ provider, language }: ProviderProfilesSectionProps) {
   const listDomain = resolveProviderProfileListDomain(provider)
   const detailShellDomain = resolveProviderProfileDetailsShellDomain(provider)
 
   return (
     <div className="settings-page settings-page--split">
-      <ProviderProfileList {...listDomain} />
-      <ProviderProfileDetailsShell detailShell={detailShellDomain} />
+      <ProviderProfileList {...listDomain} language={language} />
+      <ProviderProfileDetailsShell detailShell={detailShellDomain} language={language} />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 
+import { getCopilotChatCopy } from '../../../workbench/locale'
 import { ModelPickerIcon } from '../components/ModelPicker'
 import type { CopilotTransientErrorState } from '../copilot-chat-helpers'
 import type { CopilotErrorDetailSource } from '../error-detail-overlay-view-model'
@@ -53,6 +54,7 @@ interface JsonViewComponentProps {
 type JsonViewComponent = ComponentType<JsonViewComponentProps>
 
 export interface CopilotMessagesShellProps {
+  language?: string
   conversation: CopilotMessageListItem[]
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
@@ -71,6 +73,7 @@ interface RenderedAssistantPlaceholderState {
 }
 
 export function CopilotMessagesShell({
+  language = 'zh-CN',
   conversation,
   assistantPlaceholder = null,
   models = [],
@@ -78,6 +81,7 @@ export function CopilotMessagesShell({
   onOpenErrorDetail = null,
   emptyState = null,
 }: CopilotMessagesShellProps) {
+  const copy = getCopilotChatCopy(language)
   const visibleConversation = useMemo(
     () => buildVisibleConversation({
       conversation,
@@ -159,7 +163,7 @@ export function CopilotMessagesShell({
               className="copilot-chat__empty"
               data-testid={emptyState === null ? 'chat-empty-state' : 'chat-no-model-empty-state'}
             >
-              <p className="copilot-chat__empty-title">{emptyState?.title ?? '当前尚未发送消息'}</p>
+              <p className="copilot-chat__empty-title">{emptyState?.title ?? copy.messages.emptyStateTitle}</p>
               {emptyState !== null && (
                 <p className="copilot-chat__empty-description">{emptyState.description}</p>
               )}
@@ -183,11 +187,11 @@ export function CopilotMessagesShell({
                     )
                   : turn.kind === 'reasoning'
                     ? (
-                        <ReasoningMessageCard turn={turn} index={index} />
+                        <ReasoningMessageCard turn={turn} index={index} language={language} />
                       )
                     : (
                         <>
-                          {turn.kind !== 'user' && renderMessageHeader(turn, index, models, onOpenErrorDetail)}
+                          {turn.kind !== 'user' && renderMessageHeader(turn, index, models, onOpenErrorDetail, language)}
                           {renderMessageBody(turn)}
                           {detailRows.length > 0 && (
                             <div className="copilot-chat__message-detail-list">
@@ -260,7 +264,9 @@ function renderMessageHeader(
   index: number,
   models: CopilotModelOption[],
   onOpenErrorDetail: ((errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void) | null,
+  language: string,
 ) {
+  const copy = getCopilotChatCopy(language)
   const errorDetail = resolveMessageErrorDetailSource(turn)
 
   if (turn.kind !== 'assistant') {
@@ -272,9 +278,9 @@ function renderMessageHeader(
             <button
               type="button"
               className="icon-button copilot-chat__message-detail-trigger"
-              aria-label="查看错误详情"
+              aria-label={copy.messages.errorDetailButton}
               aria-haspopup="dialog"
-              title="查看错误详情"
+              title={copy.messages.errorDetailButton}
               data-testid={`chat-message-error-detail-button-${index}`}
               disabled={onOpenErrorDetail === null}
               onClick={(event) => {
@@ -289,7 +295,7 @@ function renderMessageHeader(
     )
   }
 
-  const assistantHeader = resolveAssistantMessageHeader(turn, models)
+  const assistantHeader = resolveAssistantMessageHeader(turn, models, language)
 
   return (
     <div className="copilot-chat__message-header">
@@ -298,7 +304,7 @@ function renderMessageHeader(
         data-testid={`chat-message-assistant-label-${index}`}
       >
         <span className="copilot-chat__message-model-icon" data-testid={`chat-message-assistant-icon-${index}`}>
-          <ModelPickerIcon icon={assistantHeader.icon} title={assistantHeader.name} />
+          <ModelPickerIcon icon={assistantHeader.icon} title={assistantHeader.name} language={language} />
         </span>
         <span className="copilot-chat__message-model-name">{assistantHeader.name}</span>
       </p>
@@ -319,6 +325,7 @@ function resolveMessageErrorDetailSource(
 function resolveAssistantMessageHeader(
   turn: CopilotAssistantMessageItem,
   models: CopilotModelOption[],
+  language: string,
 ): {
   name: string
   icon: CopilotModelOption['icon']
@@ -356,7 +363,7 @@ function resolveAssistantMessageHeader(
   }
 
   return {
-    name: '助手响应',
+    name: getCopilotChatCopy(language).messages.assistantResponse,
     icon: createEmptyCopilotModel().icon,
   }
 }
@@ -419,10 +426,13 @@ function buildDetailRows(): Array<{
 function ReasoningMessageCard({
   turn,
   index,
+  language,
 }: {
   turn: CopilotReasoningMessageItem
   index: number
+  language: string
 }) {
+  const copy = getCopilotChatCopy(language)
   const [expanded, setExpanded] = useState(turn.isCollapsedByDefault !== true)
   const [observedNow, setObservedNow] = useState(() => turn.observedFinishedAt ?? Date.now())
   const panelId = `chat-message-reasoning-panel-${turn.id}`
@@ -468,7 +478,7 @@ function ReasoningMessageCard({
               </span>
               {turn.status === 'streaming' && (
                 <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
-                  生成中
+                  {copy.messages.reasoningGenerating}
                 </span>
               )}
             </button>
@@ -491,7 +501,7 @@ function ReasoningMessageCard({
               </span>
               {turn.status === 'streaming' && (
                 <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
-                  生成中
+                  {copy.messages.reasoningGenerating}
                 </span>
               )}
             </button>

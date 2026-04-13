@@ -1,8 +1,14 @@
+import {
+  getCompressionOptions,
+  getResultCountOptions,
+  getSearchSettingsCopy,
+} from '../locale'
 import { SelectField } from '../components/FormFields'
 
-import { compressionOptions, resultCountOptions, searchEngineOptions } from './config'
+import { searchEngineOptions } from './config'
 
 interface SearchSettingsSectionProps {
+  language: string
   searchEngine: string
   searchResultCount: string
   compressionMode: string
@@ -12,6 +18,7 @@ interface SearchSettingsSectionProps {
 }
 
 export function SearchSettingsSection({
+  language,
   searchEngine,
   searchResultCount,
   compressionMode,
@@ -19,30 +26,33 @@ export function SearchSettingsSection({
   onSearchResultCountChange,
   onCompressionModeChange,
 }: SearchSettingsSectionProps) {
+  const copy = getSearchSettingsCopy(language)
+  const resultCountOptions = getResultCountOptions(language)
+  const compressionOptions = getCompressionOptions(language)
   return (
     <div className="settings-page settings-page--split settings-page--balanced">
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">搜索服务商</h3>
+            <h3 className="settings-card__title">{copy.providerTitle}</h3>
           </div>
         </div>
 
         <div className="settings-stack">
-          <SelectField label="默认搜索引擎" value={searchEngine} options={searchEngineOptions} onChange={onSearchEngineChange} />
-          <SelectField label="结果数量" value={searchResultCount} options={resultCountOptions} onChange={onSearchResultCountChange} />
+          <SelectField label={copy.defaultEngineLabel} value={searchEngine} options={searchEngineOptions} onChange={onSearchEngineChange} />
+          <SelectField label={copy.resultCountLabel} value={searchResultCount} options={resultCountOptions} onChange={onSearchResultCountChange} />
         </div>
       </section>
 
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">网络搜索配置</h3>
+            <h3 className="settings-card__title">{copy.configTitle}</h3>
           </div>
         </div>
 
         <div className="settings-stack">
-          <SelectField label="压缩方式" value={compressionMode} options={compressionOptions} onChange={onCompressionModeChange} />
+          <SelectField label={copy.compressionLabel} value={compressionMode} options={compressionOptions} onChange={onCompressionModeChange} />
         </div>
       </section>
     </div>

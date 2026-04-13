@@ -3,11 +3,13 @@ import type { ProviderModelEditorMountDomain } from './ProviderProfilesSectionDo
 
 interface ProviderModelEditorMountProps {
   modelEditor: ProviderModelEditorMountDomain
+  language: string
 }
 
-export function ProviderModelEditorMount({ modelEditor }: ProviderModelEditorMountProps) {
+export function ProviderModelEditorMount({ modelEditor, language }: ProviderModelEditorMountProps) {
   return (
     <ProviderModelEditorDialog
+      language={language}
       modelEditorState={modelEditor.modelEditorState}
       providerProfile={modelEditor.activeProvider}
       modelEditorError={modelEditor.modelEditorError}

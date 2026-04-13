@@ -63,6 +63,7 @@ import {
 } from './CopilotChatPanelViewModel'
 
 export interface CopilotChatPanelShellProps {
+  language?: string
   state: CopilotBootstrapState
   retrying: boolean
   retry: () => void

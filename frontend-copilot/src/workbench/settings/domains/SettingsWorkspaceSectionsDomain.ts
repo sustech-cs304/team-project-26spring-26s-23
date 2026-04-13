@@ -55,12 +55,14 @@ interface UseSettingsWorkspaceSectionsDomainArgs {
   bootstrap: CopilotBootstrapController
   themeMode: ThemeMode
   onThemeModeChange: (value: ThemeMode) => void
+  onLanguageChange?: (value: string) => void
 }
 
 export function useSettingsWorkspaceSectionsDomain({
   bootstrap,
   themeMode,
   onThemeModeChange,
+  onLanguageChange,
 }: UseSettingsWorkspaceSectionsDomainArgs): SettingsWorkspaceSectionsDomain {
   const [sustechEmailFocused, setSustechEmailFocused] = useState(false)
   const { debugModeEnabled, handleDebugModeEnabledChange } = useConfigCenterDebugModeState()
@@ -103,6 +105,7 @@ export function useSettingsWorkspaceSectionsDomain({
   } = workspaceState
 
   const providerController = useSettingsWorkspaceProviderController({
+    language: formState.language,
     providerProfiles: formState.providerProfiles,
     activeProviderId,
     hydratedProviderSecretValues: providerSecretValues,
@@ -273,7 +276,10 @@ export function useSettingsWorkspaceSectionsDomain({
         assistantNotificationsEnabled: formState.assistantNotificationsEnabled,
         backupEnabled: formState.backupEnabled,
         debugModeEnabled,
-        onLanguageChange: setLanguage,
+        onLanguageChange: (value) => {
+          setLanguage(value)
+          onLanguageChange?.(value)
+        },
         onProxyModeChange: setProxyMode,
         onAssistantNotificationsEnabledChange: setAssistantNotificationsEnabled,
         onBackupEnabledChange: setBackupEnabled,
@@ -281,10 +287,12 @@ export function useSettingsWorkspaceSectionsDomain({
       }),
       ...createMiscSettingsSectionDomains({
         display: {
+          language: formState.language,
           themeMode,
           onThemeModeChange,
         },
         data: {
+          language: formState.language,
           dataPath: formState.dataPath,
           backupCycle: formState.backupCycle,
           backupEnabled: formState.backupEnabled,
@@ -295,6 +303,7 @@ export function useSettingsWorkspaceSectionsDomain({
           onLaunchSyncEnabledChange: setLaunchSyncEnabled,
         },
         api: {
+          language: formState.language,
           bootstrap,
           apiBaseUrl: formState.apiBaseUrl,
           apiReconnectMode: formState.apiReconnectMode,
@@ -304,6 +313,7 @@ export function useSettingsWorkspaceSectionsDomain({
           onHealthPollingEnabledChange: setHealthPollingEnabled,
         },
         docs: {
+          language: formState.language,
           docsFormat: formState.docsFormat,
           outputDirectory: formState.outputDirectory,
           autoFileNameEnabled: formState.autoFileNameEnabled,
@@ -313,12 +323,14 @@ export function useSettingsWorkspaceSectionsDomain({
         },
       }),
       ...createMcpSettingsSectionDomains({
+        language: formState.language,
         toolPermissionMode: formState.toolPermissionMode,
         mcpAutoDiscoveryEnabled: formState.mcpAutoDiscoveryEnabled,
         onToolPermissionModeChange: setToolPermissionMode,
         onMcpAutoDiscoveryEnabledChange: setMcpAutoDiscoveryEnabled,
       }),
       ...createSearchSettingsSectionDomains({
+        language: formState.language,
         searchEngine: formState.searchEngine,
         searchResultCount: formState.searchResultCount,
         compressionMode: formState.compressionMode,
@@ -327,6 +339,7 @@ export function useSettingsWorkspaceSectionsDomain({
         onCompressionModeChange: setCompressionMode,
       }),
       ...createMemorySettingsSectionDomains({
+        language: formState.language,
         memoryStrategy: formState.memoryStrategy,
         memoryCleanupEnabled: formState.memoryCleanupEnabled,
         onMemoryStrategyChange: setMemoryStrategy,

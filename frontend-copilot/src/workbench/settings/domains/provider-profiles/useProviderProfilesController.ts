@@ -11,6 +11,7 @@ import { useSettingsWorkspaceProviderModelEditor } from './useProviderModelEdito
 import { useSettingsWorkspaceProviderSecrets } from './useProviderSecretsState'
 
 interface UseSettingsWorkspaceProviderControllerArgs {
+  language: string
   providerProfiles: ProviderProfile[]
   activeProviderId: string
   hydratedProviderSecretValues: Record<string, string>
@@ -50,6 +51,7 @@ interface UseSettingsWorkspaceProviderControllerResult {
 }
 
 export function useSettingsWorkspaceProviderController({
+  language,
   providerProfiles,
   activeProviderId,
   hydratedProviderSecretValues,
@@ -73,6 +75,7 @@ export function useSettingsWorkspaceProviderController({
     syncCopiedProviderApiKey,
     removeProviderSecret,
   } = useSettingsWorkspaceProviderSecrets({
+    language,
     activeProviderId,
     activeProvider,
     hydratedProviderSecretValues,
