@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..copilot_runtime import PydanticAIAgentExecutor, build_default_runtime_dependencies, build_router
 from ..copilot_runtime.model_routes import RuntimeModelRouteResolver
-from ..copilot_runtime.session_store import InMemorySessionStore
+from ..copilot_runtime.runtime_session_store import RuntimeSessionStore
 from .config import BACKEND_DIR, DesktopRuntimeConfig, get_backend_version, parse_runtime_config
 from .host_model_route_bridge import HostModelRouteBridgeClient
 from .health import DESKTOP_RUNTIME_SERVICE_NAME
@@ -27,7 +27,7 @@ _DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\
 def create_app(
     config: DesktopRuntimeConfig | None = None,
     *,
-    session_store: InMemorySessionStore | None = None,
+    session_store: RuntimeSessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
     model_route_resolver: RuntimeModelRouteResolver | None = None,
 ) -> FastAPI:
@@ -73,6 +73,9 @@ def create_app(
             try:
                 await host_model_route_bridge_client.aclose()
             finally:
+                dispose = getattr(runtime_session_store, "dispose", None)
+                if callable(dispose):
+                    dispose()
                 lifecycle_manager.shutdown()
 
     app = FastAPI(

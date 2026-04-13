@@ -342,7 +342,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["capabilities"]["available_agents"] == ["default"]
     assert diagnostics_payload["capabilities"]["default_agent"] == "default"
     assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
-    assert diagnostics_payload["capabilities"]["session_store_type"] == "in-memory"
+    assert diagnostics_payload["capabilities"]["session_store_type"] == "sqlite"
     assert diagnostics_payload["capabilities"]["current_stage_supports_agents_list"] is True
     assert diagnostics_payload["capabilities"]["current_stage_supports_thread_create"] is True
     assert diagnostics_payload["capabilities"]["current_stage_supports_thread_get"] is True

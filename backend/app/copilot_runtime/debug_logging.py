@@ -509,7 +509,7 @@ def log_runtime_chain_debug(event_name: str, *, enabled: bool | None = None, **p
     logger = logging.getLogger(_RUNTIME_CHAIN_DEBUG_LOGGER_NAME)
     if logger.level == logging.NOTSET:
         logger.setLevel(logging.INFO)
-    if not logger.hasHandlers():
+    if len(logger.handlers) == 0:
         logger = logging.getLogger("uvicorn.error")
         if logger.level == logging.NOTSET:
             logger.setLevel(logging.INFO)

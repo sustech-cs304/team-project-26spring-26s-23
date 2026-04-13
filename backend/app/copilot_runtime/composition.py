@@ -15,6 +15,8 @@ from .model_routes import (
     RuntimeModelRoute,
     RuntimeModelRouteResolver,
 )
+from .persistence import SQLiteSessionStore
+from .runtime_session_store import RuntimeSessionStore
 from .session_store import InMemorySessionStore
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
@@ -26,7 +28,7 @@ if TYPE_CHECKING:
 class RuntimeDependencies:
     """Assembled dependency package for the current Copilot runtime host."""
 
-    session_store: InMemorySessionStore
+    session_store: RuntimeSessionStore
     agent_registry: AgentRegistry
     tool_registry: ToolRegistry
     agent_executor: PydanticAIAgentExecutor
@@ -45,13 +47,17 @@ class _UnavailableRuntimeModelRouteResolver(RuntimeModelRouteResolver):
 def build_default_runtime_dependencies(
     *,
     runtime_config: DesktopRuntimeConfig | None = None,
-    session_store: InMemorySessionStore | None = None,
+    session_store: RuntimeSessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
     model_route_resolver: RuntimeModelRouteResolver | None = None,
 ) -> RuntimeDependencies:
     """Create the default runtime object graph without adding protocol logic."""
 
-    resolved_session_store = session_store or InMemorySessionStore()
+    resolved_session_store = session_store or (
+        SQLiteSessionStore(runtime_config=runtime_config)
+        if runtime_config is not None
+        else InMemorySessionStore()
+    )
     resolved_agent_executor = agent_executor or PydanticAIAgentExecutor()
     resolved_model_route_resolver = model_route_resolver or _UnavailableRuntimeModelRouteResolver()
     tool_registry = build_default_tool_registry()
