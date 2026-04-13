@@ -174,6 +174,31 @@ def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) 
 
 
 
+def test_history_routes_reject_in_place_backup_and_restore_requests(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path, local_token="history-token"))
+
+    with TestClient(app) as client:
+        headers = {LOCAL_TOKEN_HEADER_NAME: "history-token"}
+        backup_response = client.post(
+            "/history/database/backup",
+            headers=headers,
+            json={"targetPath": "copilot-chat.db"},
+        )
+        restore_response = client.post(
+            "/history/database/restore",
+            headers=headers,
+            json={"sourcePath": "copilot-chat.db"},
+        )
+
+    assert backup_response.status_code == 400
+    assert restore_response.status_code == 400
+    assert backup_response.json()["detail"]["code"] == "invalid_backup_request"
+    assert "Cannot backup the live database file in place." in backup_response.json()["detail"]["message"]
+    assert restore_response.json()["detail"]["code"] == "invalid_restore_request"
+    assert "Cannot restore the live database file in place." in restore_response.json()["detail"]["message"]
+
+
+
 def test_history_routes_require_local_token_and_handle_missing_records(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path, local_token="history-token"))
 

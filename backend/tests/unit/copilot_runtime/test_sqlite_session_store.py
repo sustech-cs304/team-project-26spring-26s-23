@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app.copilot_runtime.model_routes import RuntimeModelRouteRef
 from app.copilot_runtime.persistence import DEFAULT_CHAT_DATABASE_FILE_NAME, SQLiteSessionStore
 from app.copilot_runtime.session_store import (
@@ -127,6 +129,43 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
         assert restored_run.assistant_text == "restored reply"
     finally:
         store.dispose()
+
+
+
+def test_sqlite_session_store_logs_backup_and_restore_failures_with_actionable_context(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        with caplog.at_level("ERROR", logger="uvicorn.error"):
+            with pytest.raises(ValueError, match="live database file in place"):
+                store.backup_database(target_path=str(db_path))
+            with pytest.raises(ValueError, match="live database file in place"):
+                store.restore_database(source_path=str(db_path))
+    finally:
+        store.dispose()
+
+    persistence_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "chat persistence" in record.getMessage()
+    ]
+
+    assert len(persistence_logs) == 2
+    assert "chat persistence backup failed" in persistence_logs[0]
+    assert f"db_path={db_path}" in persistence_logs[0]
+    assert f"requested_target_path={db_path}" in persistence_logs[0]
+    assert f"resolved_target_path={db_path}" in persistence_logs[0]
+    assert "exception_type=ValueError" in persistence_logs[0]
+    assert "exception_message=Cannot backup the live database file in place." in persistence_logs[0]
+    assert "chat persistence restore failed" in persistence_logs[1]
+    assert f"db_path={db_path}" in persistence_logs[1]
+    assert f"requested_source_path={db_path}" in persistence_logs[1]
+    assert f"resolved_source_path={db_path}" in persistence_logs[1]
+    assert "exception_type=ValueError" in persistence_logs[1]
+    assert "exception_message=Cannot restore the live database file in place." in persistence_logs[1]
 
 
 

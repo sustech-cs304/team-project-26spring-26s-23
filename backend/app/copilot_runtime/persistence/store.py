@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -40,6 +41,9 @@ from ..session_store import (
 
 if TYPE_CHECKING:
     from app.desktop_runtime.config import DesktopRuntimeConfig
+
+
+_PERSISTENCE_LOGGER = logging.getLogger("uvicorn.error")
 
 
 class SQLiteSessionStore(RuntimeSessionStore):
@@ -321,46 +325,72 @@ class SQLiteSessionStore(RuntimeSessionStore):
         *,
         target_path: str | Path | None = None,
     ) -> PersistedDatabaseBackupResponse:
-        created_at = datetime.now(UTC)
-        resolved_backup_path = _resolve_database_operation_path(
-            self.db_path,
-            target_path,
-            default_file_name=_build_default_backup_file_name(self.db_path, created_at),
-        )
-        _ensure_distinct_database_path(self.db_path, resolved_backup_path, operation_name="backup")
-        resolved_backup_path.parent.mkdir(parents=True, exist_ok=True)
-        with _open_sqlite_connection(self.db_path) as source_connection:
-            with _open_sqlite_connection(resolved_backup_path) as destination_connection:
-                source_connection.backup(destination_connection)
-        return PersistedDatabaseBackupResponse(
-            ok=True,
-            databasePath=str(self.db_path),
-            backupPath=str(resolved_backup_path),
-            createdAt=created_at,
-        )
+        requested_target_path = None if target_path is None else str(target_path)
+        resolved_backup_path: Path | None = None
+        try:
+            created_at = datetime.now(UTC)
+            resolved_backup_path = _resolve_database_operation_path(
+                self.db_path,
+                target_path,
+                default_file_name=_build_default_backup_file_name(self.db_path, created_at),
+            )
+            _ensure_distinct_database_path(self.db_path, resolved_backup_path, operation_name="backup")
+            resolved_backup_path.parent.mkdir(parents=True, exist_ok=True)
+            with _open_sqlite_connection(self.db_path) as source_connection:
+                with _open_sqlite_connection(resolved_backup_path) as destination_connection:
+                    source_connection.backup(destination_connection)
+            return PersistedDatabaseBackupResponse(
+                ok=True,
+                databasePath=str(self.db_path),
+                backupPath=str(resolved_backup_path),
+                createdAt=created_at,
+            )
+        except Exception as exc:
+            _PERSISTENCE_LOGGER.error(
+                "chat persistence backup failed db_path=%s requested_target_path=%s resolved_target_path=%s exception_type=%s exception_message=%s",
+                self.db_path,
+                requested_target_path,
+                resolved_backup_path,
+                type(exc).__name__,
+                str(exc),
+            )
+            raise
 
     def restore_database(
         self,
         *,
         source_path: str | Path,
     ) -> PersistedDatabaseRestoreResponse:
-        resolved_source_path = _resolve_database_operation_path(self.db_path, source_path)
-        if not resolved_source_path.is_file():
-            raise ValueError(f"Restore source '{resolved_source_path}' does not exist.")
-        _ensure_distinct_database_path(self.db_path, resolved_source_path, operation_name="restore")
-        restored_at = datetime.now(UTC)
-        self.engine.dispose()
-        _remove_sqlite_sidecar_files(self.db_path)
-        with _open_sqlite_connection(resolved_source_path) as source_connection:
-            with _open_sqlite_connection(self.db_path) as destination_connection:
-                source_connection.backup(destination_connection)
-        initialize_database(self.engine)
-        return PersistedDatabaseRestoreResponse(
-            ok=True,
-            databasePath=str(self.db_path),
-            sourcePath=str(resolved_source_path),
-            restoredAt=restored_at,
-        )
+        requested_source_path = str(source_path)
+        resolved_source_path: Path | None = None
+        try:
+            resolved_source_path = _resolve_database_operation_path(self.db_path, source_path)
+            if not resolved_source_path.is_file():
+                raise ValueError(f"Restore source '{resolved_source_path}' does not exist.")
+            _ensure_distinct_database_path(self.db_path, resolved_source_path, operation_name="restore")
+            restored_at = datetime.now(UTC)
+            self.engine.dispose()
+            _remove_sqlite_sidecar_files(self.db_path)
+            with _open_sqlite_connection(resolved_source_path) as source_connection:
+                with _open_sqlite_connection(self.db_path) as destination_connection:
+                    source_connection.backup(destination_connection)
+            initialize_database(self.engine)
+            return PersistedDatabaseRestoreResponse(
+                ok=True,
+                databasePath=str(self.db_path),
+                sourcePath=str(resolved_source_path),
+                restoredAt=restored_at,
+            )
+        except Exception as exc:
+            _PERSISTENCE_LOGGER.error(
+                "chat persistence restore failed db_path=%s requested_source_path=%s resolved_source_path=%s exception_type=%s exception_message=%s",
+                self.db_path,
+                requested_source_path,
+                resolved_source_path,
+                type(exc).__name__,
+                str(exc),
+            )
+            raise
 
     def create_projection_service(self) -> ProjectionService:
         return ProjectionService(self._session_factory)
