@@ -25,6 +25,8 @@ export interface AssistantSessionHistoryState {
   runSummaries: CopilotHistoryRunSummary[]
   latestConfigurationSnapshot: Record<string, unknown> | null
   availabilityDrift: Record<string, unknown> | null
+  capabilitiesStatus?: AssistantSessionHistoryLoadStatus
+  capabilitiesError?: string | null
   selectedRunId: string | null
   replayStatus: AssistantSessionHistoryLoadStatus
   replayError: string | null
@@ -124,6 +126,8 @@ export function createAssistantSessionHistoryState(
     runSummaries: [],
     latestConfigurationSnapshot: null,
     availabilityDrift: null,
+    capabilitiesStatus: isPersistedThread ? 'idle' : 'ready',
+    capabilitiesError: null,
     selectedRunId: resolveAssistantSessionSelectedRunId({
       persistedSelectedRunId: selectedRunId,
       fallbackRunId: summary.lastRunId,
@@ -183,6 +187,47 @@ export function retryAssistantSessionHistoryReplay(
     replayStatus: 'idle',
     replayError: null,
     replay: getAssistantSessionHistoryReplayForRun(state, state.selectedRunId) ?? state.replay,
+  }
+}
+
+export function retryAssistantSessionCapabilitiesHydration(
+  state: AssistantSessionHistoryState,
+): AssistantSessionHistoryState {
+  return {
+    ...state,
+    capabilitiesStatus: 'idle',
+    capabilitiesError: null,
+  }
+}
+
+export function setAssistantSessionCapabilitiesHydrationLoading(
+  state: AssistantSessionHistoryState,
+): AssistantSessionHistoryState {
+  return {
+    ...state,
+    capabilitiesStatus: 'loading',
+    capabilitiesError: null,
+  }
+}
+
+export function setAssistantSessionCapabilitiesHydrationReady(
+  state: AssistantSessionHistoryState,
+): AssistantSessionHistoryState {
+  return {
+    ...state,
+    capabilitiesStatus: 'ready',
+    capabilitiesError: null,
+  }
+}
+
+export function setAssistantSessionCapabilitiesHydrationError(
+  state: AssistantSessionHistoryState,
+  error: string,
+): AssistantSessionHistoryState {
+  return {
+    ...state,
+    capabilitiesStatus: 'error',
+    capabilitiesError: error,
   }
 }
 
@@ -403,6 +448,13 @@ function resolveAssistantSessionSelectedRunId(input: {
   }
 
   return null
+}
+
+export function hasAssistantSessionHistoryReplayForRun(
+  state: AssistantSessionHistoryState,
+  runId: string | null,
+): boolean {
+  return getAssistantSessionHistoryReplayForRun(state, runId) !== null
 }
 
 function getAssistantSessionHistoryReplayForRun(

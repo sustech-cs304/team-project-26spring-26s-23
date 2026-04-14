@@ -39,9 +39,13 @@ import {
   applyAssistantSessionHistoryReplay,
   createAssistantSessionHistoryState,
   createAssistantSessionHistoryStateFromSessionShell,
+  retryAssistantSessionCapabilitiesHydration,
   retryAssistantSessionHistoryDetail,
   retryAssistantSessionHistoryReplay,
   selectAssistantSessionHistoryRun,
+  setAssistantSessionCapabilitiesHydrationError,
+  setAssistantSessionCapabilitiesHydrationLoading,
+  setAssistantSessionCapabilitiesHydrationReady,
   setAssistantSessionHistoryDetailError,
   setAssistantSessionHistoryDetailLoading,
   setAssistantSessionHistoryReplayError,
@@ -133,6 +137,7 @@ export function useAssistantWorkspaceState({
   const persistedShellStateRef = useRef(loadShellStateImpl())
   const [sessionHistoryById, setSessionHistoryById] = useState<Record<string, AssistantSessionHistoryState>>({})
   const historyListRequestVersionRef = useRef(0)
+  const historyCapabilitiesRequestVersionRef = useRef<Record<string, number>>({})
   const historyDetailRequestVersionRef = useRef<Record<string, number>>({})
   const historyReplayRequestVersionRef = useRef<Record<string, number>>({})
   const historyRestoreRetryTimerRef = useRef<number | null>(null)
@@ -176,6 +181,13 @@ export function useAssistantWorkspaceState({
     getCapabilities: getCapabilitiesImpl,
     initialSessionShell,
   })
+  const sessionListStateRef = useRef(sessionListState)
+  const historyRestoreRetryAttemptRef = useRef(0)
+  const liveSessionSelectionVersionRef = useRef(0)
+
+  useEffect(() => {
+    sessionListStateRef.current = sessionListState
+  }, [sessionListState])
 
   const retrySessionHistoryLoad = useCallback((sessionId: string) => {
     setSessionHistoryById((current) => {
@@ -188,7 +200,9 @@ export function useAssistantWorkspaceState({
         ? retryAssistantSessionHistoryDetail(historyState)
         : historyState.replayStatus === 'error'
           ? retryAssistantSessionHistoryReplay(historyState)
-          : historyState
+          : historyState.capabilitiesStatus === 'error'
+            ? retryAssistantSessionCapabilitiesHydration(historyState)
+            : historyState
 
       return nextHistoryState === historyState
         ? current
@@ -199,10 +213,18 @@ export function useAssistantWorkspaceState({
     })
   }, [])
 
+  const markUserLiveSessionSelection = useCallback(() => {
+    liveSessionSelectionVersionRef.current += 1
+  }, [])
+
   const activateSessionWithHistoryRetry = useCallback((sessionEntry: AssistantSessionShell) => {
+    if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
+      markUserLiveSessionSelection()
+    }
+
     retrySessionHistoryLoad(sessionEntry.sessionId)
     activateSession(sessionEntry)
-  }, [activateSession, retrySessionHistoryLoad])
+  }, [activateSession, markUserLiveSessionSelection, retrySessionHistoryLoad])
 
   const {
     renderedSessions,
@@ -327,8 +349,9 @@ export function useAssistantWorkspaceState({
 
   const handleCreateSession = useCallback(async () => {
     dismissManagedSessionContextMenu()
+    markUserLiveSessionSelection()
     await createSessionForSelectedAgent()
-  }, [createSessionForSelectedAgent, dismissManagedSessionContextMenu])
+  }, [createSessionForSelectedAgent, dismissManagedSessionContextMenu, markUserLiveSessionSelection])
 
   const clearHistoryRestoreRetry = useCallback(() => {
     if (historyRestoreRetryTimerRef.current === null) {
@@ -339,11 +362,17 @@ export function useAssistantWorkspaceState({
     historyRestoreRetryTimerRef.current = null
   }, [])
 
+  const resetHistoryRestoreRetryBackoff = useCallback(() => {
+    historyRestoreRetryAttemptRef.current = 0
+  }, [])
+
   const scheduleHistoryRestoreRetry = useCallback(() => {
     if (historyRestoreRetryTimerRef.current !== null) {
       return
     }
 
+    const retryDelayMs = Math.min(1_000 * 2 ** historyRestoreRetryAttemptRef.current, 15_000)
+    historyRestoreRetryAttemptRef.current += 1
     historyRestoreRetryTimerRef.current = window.setTimeout(() => {
       historyRestoreRetryTimerRef.current = null
       if (!isMountedRef.current) {
@@ -351,8 +380,8 @@ export function useAssistantWorkspaceState({
       }
 
       setHistoryRestoreRetryKey((current) => current + 1)
-    }, 0)
-  }, [])
+    }, retryDelayMs)
+  }, [isMountedRef])
 
 
   useEffect(() => {
@@ -392,6 +421,7 @@ export function useAssistantWorkspaceState({
 
     const requestVersion = historyListRequestVersionRef.current + 1
     historyListRequestVersionRef.current = requestVersion
+    const liveSessionSelectionVersionAtRequest = liveSessionSelectionVersionRef.current
     let cancelled = false
 
     void (async () => {
@@ -411,23 +441,49 @@ export function useAssistantWorkspaceState({
           return
         }
 
-        const restoredSessions = historyResult.threads.map((summary) => createAssistantSessionShellFromHistorySummary({
-          summary,
-          agents: directoryState.agents,
-        }))
+        const currentSessionsById = new Map(
+          sessionListStateRef.current.sessions.map((sessionEntry) => [sessionEntry.sessionId, sessionEntry] as const),
+        )
+        const restoredSessions = historyResult.threads.map((summary) => {
+          const restoredSession = createAssistantSessionShellFromHistorySummary({
+            summary,
+            agents: directoryState.agents,
+          })
+          const currentSession = currentSessionsById.get(summary.threadId)
+
+          return currentSession !== undefined && currentSession.capabilities.capabilitiesVersion !== 'history-shell'
+            ? {
+                ...restoredSession,
+                capabilities: currentSession.capabilities,
+              }
+            : restoredSession
+        })
+        const restoredSessionsById = new Map(
+          restoredSessions.map((sessionEntry) => [sessionEntry.sessionId, sessionEntry] as const),
+        )
         const preferredActiveSessionId = persistedShellState.selectedThreadId !== null
           && restoredSessions.some((sessionEntry) => sessionEntry.sessionId === persistedShellState.selectedThreadId)
           ? persistedShellState.selectedThreadId
           : restoredSessions[0]?.sessionId ?? null
 
+        const shouldProtectUserLiveSelection = liveSessionSelectionVersionRef.current !== liveSessionSelectionVersionAtRequest
+
         setSessionListState((current) => {
           const restoredSessionIds = new Set(restoredSessions.map((sessionEntry) => sessionEntry.sessionId))
           const liveOnlySessions = current.sessions.filter((sessionEntry) => !restoredSessionIds.has(sessionEntry.sessionId))
           const mergedSessions = [...restoredSessions, ...liveOnlySessions]
-          const nextActiveSessionId = preferredActiveSessionId
-            ?? (current.activeSessionId !== null && mergedSessions.some((sessionEntry) => sessionEntry.sessionId === current.activeSessionId)
-              ? current.activeSessionId
-              : mergedSessions[0]?.sessionId ?? null)
+          const preserveCurrentActiveLiveSession = shouldProtectUserLiveSelection
+            && current.activeSessionId !== null
+            && current.sessions.some((sessionEntry) => (
+              sessionEntry.sessionId === current.activeSessionId
+              && sessionEntry.capabilities.capabilitiesVersion !== 'history-shell'
+            ))
+          const nextActiveSessionId = preserveCurrentActiveLiveSession
+            ? current.activeSessionId
+            : preferredActiveSessionId
+              ?? (current.activeSessionId !== null && mergedSessions.some((sessionEntry) => sessionEntry.sessionId === current.activeSessionId)
+                ? current.activeSessionId
+                : mergedSessions[0]?.sessionId ?? null)
 
           return {
             sessions: mergedSessions,
@@ -439,9 +495,21 @@ export function useAssistantWorkspaceState({
           for (const summary of historyResult.threads) {
             const selectedRunId = persistedShellState.selectedRunIdByThreadId[summary.threadId] ?? null
             const currentHistoryState = current[summary.threadId]
-            nextState[summary.threadId] = currentHistoryState === undefined
+            const syncedHistoryState = currentHistoryState === undefined
               ? createAssistantSessionHistoryState(summary, selectedRunId)
               : syncAssistantSessionHistorySummary(currentHistoryState, summary, selectedRunId)
+            const restoredSession = restoredSessionsById.get(summary.threadId)
+            const shouldRestartCapabilitiesHydration = currentHistoryState !== undefined
+              && currentHistoryState.isPersistedThread !== true
+              && restoredSession?.capabilities.capabilitiesVersion === 'history-shell'
+
+            nextState[summary.threadId] = shouldRestartCapabilitiesHydration
+              ? {
+                  ...syncedHistoryState,
+                  capabilitiesStatus: 'idle',
+                  capabilitiesError: null,
+                }
+              : syncedHistoryState
           }
 
           for (const [sessionId, historyState] of Object.entries(current)) {
@@ -453,7 +521,7 @@ export function useAssistantWorkspaceState({
           return nextState
         })
 
-        if (preferredActiveSessionId !== null) {
+        if (!shouldProtectUserLiveSelection && preferredActiveSessionId !== null) {
           const activeSession = restoredSessions.find((sessionEntry) => sessionEntry.sessionId === preferredActiveSessionId) ?? null
           if (activeSession !== null) {
             setSelectedAgentId(activeSession.boundAgent.id)
@@ -461,6 +529,7 @@ export function useAssistantWorkspaceState({
         }
 
         clearHistoryRestoreRetry()
+        resetHistoryRestoreRetryBackoff()
         setHistoryRestoreError(null)
         restoredRuntimeUrlRef.current = restoreKey
       } catch (error) {
@@ -484,6 +553,8 @@ export function useAssistantWorkspaceState({
     historyRestoreRetryKey,
     isMountedRef,
     listHistoryThreadsImpl,
+    liveSessionSelectionVersionRef,
+    resetHistoryRestoreRetryBackoff,
     scheduleHistoryRestoreRetry,
     setSelectedAgentId,
     setSessionListState,
@@ -499,30 +570,73 @@ export function useAssistantWorkspaceState({
       return
     }
 
-    let cancelled = false
+    const sessionId = sessionShell.sessionId
+    const historyState = sessionHistoryById[sessionId]
+    if (
+      historyState === undefined
+      || historyState.isPersistedThread !== true
+      || historyState.capabilitiesStatus !== 'idle'
+    ) {
+      return
+    }
+
+    const requestVersion = (historyCapabilitiesRequestVersionRef.current[sessionId] ?? 0) + 1
+    historyCapabilitiesRequestVersionRef.current[sessionId] = requestVersion
+
+    setSessionHistoryById((current) => ({
+      ...current,
+      [sessionId]: setAssistantSessionCapabilitiesHydrationLoading(current[sessionId] ?? historyState),
+    }))
 
     void getCapabilitiesImpl({
       runtimeUrl: bootstrap.state.runtimeUrl,
-      sessionId: sessionShell.sessionId,
+      sessionId,
     })
       .then((response) => {
-        if (cancelled) {
+        if (
+          !isMountedRef.current
+          || historyCapabilitiesRequestVersionRef.current[sessionId] !== requestVersion
+        ) {
           return
         }
 
         setSessionListState((current) => ({
           ...current,
-          sessions: current.sessions.map((sessionEntry) => sessionEntry.sessionId === sessionShell.sessionId
+          sessions: current.sessions.map((sessionEntry) => sessionEntry.sessionId === sessionId
             ? applyAssistantSessionCapabilities(sessionEntry, response)
             : sessionEntry),
         }))
+        setSessionHistoryById((current) => ({
+          ...current,
+          [sessionId]: setAssistantSessionCapabilitiesHydrationReady(current[sessionId] ?? historyState),
+        }))
       })
-      .catch(() => undefined)
+      .catch((error) => {
+        if (
+          !isMountedRef.current
+          || historyCapabilitiesRequestVersionRef.current[sessionId] !== requestVersion
+        ) {
+          return
+        }
 
-    return () => {
-      cancelled = true
-    }
-  }, [bootstrap.state, getCapabilitiesImpl, sessionShell, setSessionListState])
+        setSessionHistoryById((current) => ({
+          ...current,
+          [sessionId]: setAssistantSessionCapabilitiesHydrationError(
+            current[sessionId] ?? historyState,
+            formatAssistantWorkspaceError(error),
+          ),
+        }))
+      })
+  }, [
+    bootstrap.state,
+    getCapabilitiesImpl,
+    historyCapabilitiesRequestVersionRef,
+    isMountedRef,
+    sessionHistoryById,
+    sessionShell,
+    setSessionHistoryById,
+    setSessionListState,
+  ])
 
   useEffect(() => {
     if (sessionShell === null) {
