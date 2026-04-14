@@ -4,22 +4,25 @@ from __future__ import annotations
 
 from urllib.parse import urljoin
 
-from app.teaching_information_system.api import (
-    DEFAULT_TIS_SERVICE_CONFIG,
-    TISClient,
-    TISSelectedCoursesQueryResult,
-    TISServiceConfig,
+from app.teaching_information_system.api.client import TISClient
+from app.teaching_information_system.api.constants import (
     _DEFAULT_TIS_ENTRY_PATH,
     _DEFAULT_TIS_SELECTED_COURSES_API_PATH,
     _DEFAULT_TIS_SELECTED_COURSES_CURRENT_TERM_PATH,
     _DEFAULT_TIS_SELECTED_COURSES_PAGE_PATH,
+)
+from app.teaching_information_system.api.dto import (
+    DEFAULT_TIS_SERVICE_CONFIG,
+    TISSelectedCoursesQueryResult,
+    TISServiceConfig,
+)
+from app.teaching_information_system.api.fetch_helpers import _is_authenticated_tis_response, _safe_parse_json_response
+from app.teaching_information_system.api.grades import _build_tis_probe_result
+from app.teaching_information_system.api.homepage import analyze_homepage_html
+from app.teaching_information_system.api.selected_courses import (
     _build_selected_courses_base_payload,
-    _build_tis_probe_result,
     _extract_selected_courses_current_semester,
-    _is_authenticated_tis_response,
     _parse_selected_course_semester_argument,
-    _safe_parse_json_response,
-    analyze_homepage_html,
     build_selected_course_summary,
     extract_selected_course_records_from_json,
 )

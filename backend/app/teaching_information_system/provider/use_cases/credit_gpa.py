@@ -4,22 +4,25 @@ from __future__ import annotations
 
 from urllib.parse import urljoin
 
-from app.teaching_information_system.api import (
-    DEFAULT_TIS_SERVICE_CONFIG,
-    TISClient,
-    TISCreditGPAQueryResult,
-    TISServiceConfig,
+from app.teaching_information_system.api.client import TISClient
+from app.teaching_information_system.api.constants import (
     _DEFAULT_TIS_CREDIT_GPA_API_PATH,
     _DEFAULT_TIS_CREDIT_GPA_PAGE_PATH,
     _DEFAULT_TIS_ENTRY_PATH,
-    _is_authenticated_tis_response,
-    _safe_parse_json_response,
-    _build_tis_probe_result,
-    analyze_homepage_html,
+)
+from app.teaching_information_system.api.credit_gpa import (
     extract_credit_gpa_summary_from_json,
     extract_credit_gpa_term_records_from_json,
     extract_credit_gpa_year_records_from_json,
 )
+from app.teaching_information_system.api.dto import (
+    DEFAULT_TIS_SERVICE_CONFIG,
+    TISCreditGPAQueryResult,
+    TISServiceConfig,
+)
+from app.teaching_information_system.api.fetch_helpers import _is_authenticated_tis_response, _safe_parse_json_response
+from app.teaching_information_system.api.grades import _build_tis_probe_result
+from app.teaching_information_system.api.homepage import analyze_homepage_html
 from app.teaching_information_system.data import TISDatabaseManager
 from app.teaching_information_system.provider.results import TISPersistenceSummary, attach_persistence_summary, resource_group_result
 from app.teaching_information_system.shared import _clean_text, create_tis_log_session

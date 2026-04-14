@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from app.teaching_information_system.api import (
-    DEFAULT_TIS_SERVICE_CONFIG,
-    TISClient,
-    TISGradeQueryResult,
-    TISServiceConfig,
-    analyze_homepage_html,
-    probe_grade_candidates,
-)
+from app.teaching_information_system.api.client import TISClient
+from app.teaching_information_system.api.dto import DEFAULT_TIS_SERVICE_CONFIG, TISGradeQueryResult, TISServiceConfig
+from app.teaching_information_system.api.grades import probe_grade_candidates
+from app.teaching_information_system.api.homepage import analyze_homepage_html
 from app.teaching_information_system.data import TISDatabaseManager
 from app.teaching_information_system.provider.results import TISPersistenceSummary, attach_persistence_summary, resource_result
 from app.teaching_information_system.shared import _clean_text, create_tis_log_session

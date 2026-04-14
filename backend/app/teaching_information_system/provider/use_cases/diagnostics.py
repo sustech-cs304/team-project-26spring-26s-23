@@ -7,14 +7,10 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from app.teaching_information_system.api import (
-    DEFAULT_TIS_SERVICE_CONFIG,
-    TISClient,
-    TISServiceConfig,
-    analyze_homepage_html,
-    build_grade_candidate_urls,
-    probe_grade_candidates,
-)
+from app.teaching_information_system.api.client import TISClient
+from app.teaching_information_system.api.dto import DEFAULT_TIS_SERVICE_CONFIG, TISServiceConfig
+from app.teaching_information_system.api.grades import build_grade_candidate_urls, probe_grade_candidates
+from app.teaching_information_system.api.homepage import analyze_homepage_html
 from app.teaching_information_system.shared import _clean_text, create_tis_log_session
 
 
