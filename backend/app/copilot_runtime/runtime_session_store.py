@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any, Protocol
 
 from .session_store import (
+    RuntimeRunEventRecord,
     RuntimeRunRecord,
     RuntimeStoredRunInput,
     RuntimeTextMessage,
@@ -39,7 +40,7 @@ class RuntimeSessionStore(Protocol):
 
     def list_runs(self, thread_id: str) -> tuple[RuntimeRunRecord, ...]: ...
 
-    def list_run_events(self, run_id: str): ...
+    def list_run_events(self, run_id: str) -> tuple[RuntimeRunEventRecord, ...]: ...
 
     def create_run(
         self,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import anyio
 
@@ -141,7 +141,11 @@ class PersistedHistoryDriftEvaluator:
 
 def _deserialize_runtime_model_route(payload: Any) -> RuntimeModelRoute | None:
     record = payload if isinstance(payload, Mapping) else None
-    route_ref_record = record.get("routeRef") if isinstance(record.get("routeRef"), Mapping) else None
+    if record is None:
+        return None
+
+    route_ref_payload = record.get("routeRef")
+    route_ref_record = route_ref_payload if isinstance(route_ref_payload, Mapping) else None
     if route_ref_record is None:
         return None
 
@@ -174,10 +178,13 @@ def _resolve_runtime_model_route(
     model_route_resolver: RuntimeModelRouteResolver,
     model_route: RuntimeModelRoute,
 ) -> ResolvedRuntimeModelRoute:
-    try:
-        return anyio.from_thread.run(model_route_resolver.resolve, model_route)
-    except RuntimeError:
-        return asyncio.run(model_route_resolver.resolve(model_route))
+    run_from_thread = getattr(anyio.from_thread, "run", None)
+    if callable(run_from_thread):
+        try:
+            return cast(ResolvedRuntimeModelRoute, run_from_thread(model_route_resolver.resolve, model_route))
+        except RuntimeError:
+            pass
+    return asyncio.run(model_route_resolver.resolve(model_route))
 
 
 
@@ -311,7 +318,8 @@ def _format_historical_thinking_summary(value: Any) -> str | None:
     if record is None:
         return None
 
-    value_record = record.get("value") if isinstance(record.get("value"), Mapping) else None
+    value_payload = record.get("value")
+    value_record = value_payload if isinstance(value_payload, Mapping) else None
     series = _normalize_optional_string(record.get("series"))
     mode = _normalize_optional_string(record.get("mode"))
     level = _normalize_optional_string(record.get("level"))

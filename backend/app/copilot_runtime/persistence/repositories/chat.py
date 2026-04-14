@@ -7,15 +7,17 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.copilot_runtime.model_routes import RuntimeModelRouteRef
 from app.copilot_runtime.session_store import (
+    RuntimeMessageRole,
     RuntimeRunEventRecord,
     RuntimeRunRecord,
+    RuntimeRunStatus,
     RuntimeStoredModelRoute,
     RuntimeStoredRunInput,
     RuntimeStoredRunPolicy,
@@ -175,7 +177,7 @@ class RunRepository:
             run_id=model.id,
             thread_id=model.thread_id,
             request=RuntimeStoredRunInput(
-                message_role=model.request_message_role,
+                message_role=_coerce_runtime_message_role(model.request_message_role),
                 message_content=model.request_message_text,
                 policy=RuntimeStoredRunPolicy(
                     model_route=_deserialize_model_route(model.selected_model_route_json),
@@ -188,7 +190,7 @@ class RunRepository:
                 ),
                 agent_id=model.agent_id,
             ),
-            status=model.status,
+            status=_coerce_runtime_run_status(model.status),
             metadata=_copy_mapping(model.metadata_json),
             cancel_requested=model.cancel_requested,
             assistant_text=model.assistant_text,
@@ -572,15 +574,38 @@ def _normalize_optional_string(value: object | None) -> str | None:
 
 
 
+def _coerce_runtime_message_role(value: object | None) -> RuntimeMessageRole:
+    normalized = _normalize_optional_string(value)
+    if normalized in {"user", "assistant"}:
+        return cast(RuntimeMessageRole, normalized)
+    raise ValueError(f"Stored request_message_role is invalid: {value!r}")
+
+
+
+def _coerce_runtime_run_status(value: object | None) -> RuntimeRunStatus:
+    normalized = _normalize_optional_string(value)
+    if normalized in {"pending", "streaming", "cancellation_requested", "completed", "failed", "cancelled"}:
+        return cast(RuntimeRunStatus, normalized)
+    raise ValueError(f"Stored run status is invalid: {value!r}")
+
+
+
 def _normalize_optional_int(value: object | None) -> int | None:
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized == "":
+            return None
+        try:
+            return int(normalized)
+        except ValueError:
+            return None
+    return None
 
 
 
