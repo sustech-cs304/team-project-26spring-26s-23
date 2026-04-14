@@ -44,6 +44,8 @@ from .execution_event_graph import (
     TOOL_COMPLETED_EVENT_TYPE,
     TOOL_FAILED_EVENT_TYPE,
     TOOL_STARTED_EVENT_TYPE,
+    TOOL_WAITING_APPROVAL_EVENT_TYPE,
+    TOOL_CANCELLED_EVENT_TYPE,
     RuntimeExecutionEvent,
     RuntimeExecutionEventBuffer,
     RuntimeExecutionEventFactory,
@@ -71,7 +73,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
     "Provide concise, accurate, text-only answers. "
     "Do not claim to have used tools when no tools are available."
 )
-ToolLifecyclePhase = Literal["started", "completed", "failed"]
+ToolLifecyclePhase = Literal["started", "completed", "failed", "waiting_approval", "cancelled"]
 _EVENT_STREAM_DONE = object()
 AgentStreamEvent = (
     PartStartEvent
@@ -169,6 +171,8 @@ class RuntimeToolLifecycleEvent:
     input_summary: str | None = None
     result_summary: str | None = None
     error_summary: str | None = None
+    security_level: str | None = None
+    security_approval_method: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -184,6 +188,11 @@ class RuntimeToolLifecycleEvent:
             payload["resultSummary"] = self.result_summary
         if self.error_summary is not None:
             payload["errorSummary"] = self.error_summary
+        if self.security_level is not None:
+            payload["security"] = {
+                "riskLevel": self.security_level,
+                "approvalMethod": self.security_approval_method or "button_click"
+            }
         return payload
 
 
@@ -197,6 +206,10 @@ def tool_lifecycle_event_to_execution_event(
         event_type: RuntimeExecutionEventType = TOOL_STARTED_EVENT_TYPE
     elif tool_event.phase == "completed":
         event_type = TOOL_COMPLETED_EVENT_TYPE
+    elif tool_event.phase == "waiting_approval":
+        event_type = TOOL_WAITING_APPROVAL_EVENT_TYPE
+    elif tool_event.phase == "cancelled":
+        event_type = TOOL_CANCELLED_EVENT_TYPE
     else:
         event_type = TOOL_FAILED_EVENT_TYPE
     return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
@@ -1293,6 +1306,30 @@ class PydanticAIAgentExecutor:
             raise ToolInvocationError(
                 code="tool_not_enabled",
                 message=error_message,
+                tool_id=tool_id,
+                tool_call_id=tool_call_id,
+            )
+
+        # INTERCEPTOR: Check Security Level
+        security_config = tool.descriptor.security
+        if security_config.risk_level in ["medium", "high"]:
+            self._emit_tool_event(
+                ctx,
+                RuntimeToolLifecycleEvent(
+                    tool_call_id=tool_call_id,
+                    tool_id=tool_id,
+                    phase="waiting_approval",
+                    title=f"等待授权: {tool.descriptor.display_name or tool_id}",
+                    summary="此操作被评估为高危，需要用户手动批准验证。",
+                    input_summary=input_summary,
+                    security_level=security_config.risk_level.value,
+                    security_approval_method=security_config.approval_method
+                ),
+            )
+            # Stop the execution manually for now, simulate waiting/cancellation.
+            raise ToolInvocationError(
+                code="tool_suspended_for_approval",
+                message="Tool execution suspended, waiting for human in the loop approval.",
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
             )
