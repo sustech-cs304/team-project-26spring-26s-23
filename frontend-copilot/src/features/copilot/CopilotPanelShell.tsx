@@ -31,6 +31,7 @@ import type {
   CopilotMessageListItem,
 } from './run-segment-view-model'
 import type { PersistedHistoryDriftSummary } from './persisted-history-drift'
+import type { PersistedConversationSource } from './persisted-history-view-model'
 import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
 import type { RuntimeThinkingCapability } from './thread-run-contract'
@@ -62,6 +63,7 @@ export interface CopilotPanelShellProps {
   historyDrift: PersistedHistoryDriftSummary | null
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
+  persistedSelectedRunConversationSource?: PersistedConversationSource
   hasTransientConversation?: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
@@ -192,10 +194,22 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
     ? 'none'
     : persistedHistoryViewState
   const shouldRenderMessageSurface = effectivePersistedHistoryViewState === 'none' || effectivePersistedHistoryViewState === 'ready'
+  const persistedConversationSource = props.persistedSelectedRunConversationSource ?? 'none'
 
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
+        {props.historyRestoreError !== null && props.historyRestoreError !== undefined && renderHistoryRestoreNotice()}
+        {renderPersistedHistoryCapabilitiesNotice({
+          sessionShell: props.sessionShell,
+          sessionHistory: props.sessionHistory,
+          onRetrySessionHistory: props.onRetrySessionHistory,
+        })}
+        {renderPersistedHistoryReplayNotice({
+          sessionHistory: props.sessionHistory,
+          selectedRunConversationSource: persistedConversationSource,
+          onRetrySessionHistory: props.onRetrySessionHistory,
+        })}
         {shouldRenderMessageSurface && props.historyDrift !== null && renderHistoryDriftNotice({
           historyDrift: props.historyDrift,
           acknowledged: props.historyRebindAcknowledged,
@@ -304,6 +318,111 @@ function renderPersistedHistoryLoading() {
           </div>
         </div>
       </div>
+    </section>
+  )
+}
+
+function renderHistoryRestoreNotice() {
+  return (
+    <section
+      className="copilot-panel__card copilot-panel__card--notice"
+      aria-live="polite"
+      data-testid="chat-history-restore-error"
+    >
+      <p className="copilot-panel__eyebrow">历史恢复</p>
+      <p className="copilot-panel__description">历史话题恢复失败，稍后自动重试。</p>
+    </section>
+  )
+}
+
+function renderPersistedHistoryCapabilitiesNotice(input: {
+  sessionShell: AssistantSessionShell
+  sessionHistory: AssistantSessionHistoryState | null | undefined
+  onRetrySessionHistory?: () => void
+}) {
+  if (input.sessionShell.capabilities.capabilitiesVersion !== 'history-shell') {
+    return null
+  }
+
+  const capabilitiesStatus = input.sessionHistory?.capabilitiesStatus ?? 'ready'
+  if (capabilitiesStatus === 'ready') {
+    return null
+  }
+
+  if (capabilitiesStatus === 'error') {
+    return (
+      <section
+        className="copilot-panel__card copilot-panel__card--error"
+        aria-live="polite"
+        data-testid="chat-history-capabilities-error"
+      >
+        <p className="copilot-panel__eyebrow">历史能力</p>
+        <p className="copilot-panel__description">历史线程能力恢复失败，请重试后再继续发送。</p>
+        <button
+          type="button"
+          className="copilot-panel__history-retry"
+          data-testid="chat-history-capabilities-retry-button"
+          disabled={input.onRetrySessionHistory === undefined}
+          onClick={() => {
+            input.onRetrySessionHistory?.()
+          }}
+        >
+          重试恢复历史能力
+        </button>
+      </section>
+    )
+  }
+
+  return (
+    <section
+      className="copilot-panel__card copilot-panel__card--notice"
+      aria-live="polite"
+      data-testid="chat-history-capabilities-loading"
+    >
+      <p className="copilot-panel__eyebrow">历史能力</p>
+      <p className="copilot-panel__description">正在恢复历史线程能力，恢复完成前会暂时禁用发送。</p>
+    </section>
+  )
+}
+
+function renderPersistedHistoryReplayNotice(input: {
+  sessionHistory: AssistantSessionHistoryState | null | undefined
+  selectedRunConversationSource: PersistedConversationSource
+  onRetrySessionHistory?: () => void
+}) {
+  if (
+    input.sessionHistory === null
+    || input.sessionHistory === undefined
+    || input.sessionHistory.isPersistedThread !== true
+    || input.sessionHistory.selectedRunId === null
+    || input.sessionHistory.replayStatus !== 'error'
+  ) {
+    return null
+  }
+
+  const description = input.selectedRunConversationSource === 'timeline'
+    ? '当前运行回放失败，当前展示的是时间线快照。'
+    : '当前运行回放失败，请重试恢复该运行的历史回放。'
+
+  return (
+    <section
+      className="copilot-panel__card copilot-panel__card--notice"
+      aria-live="polite"
+      data-testid="chat-history-replay-error"
+    >
+      <p className="copilot-panel__eyebrow">历史运行</p>
+      <p className="copilot-panel__description">{description}</p>
+      <button
+        type="button"
+        className="copilot-panel__history-retry"
+        data-testid="chat-history-replay-retry-button"
+        disabled={input.onRetrySessionHistory === undefined}
+        onClick={() => {
+          input.onRetrySessionHistory?.()
+        }}
+      >
+        重试恢复当前运行
+      </button>
     </section>
   )
 }

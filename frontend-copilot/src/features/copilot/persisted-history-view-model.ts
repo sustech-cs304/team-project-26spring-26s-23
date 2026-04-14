@@ -35,11 +35,21 @@ interface PersistedRunContext {
   availabilityDrift: Record<string, unknown> | null
 }
 
+export type PersistedConversationSource = 'none' | 'timeline' | 'replay'
+
+export interface PersistedConversationBuildResult {
+  conversation: CopilotMessageListItem[]
+  selectedRunConversationSource: PersistedConversationSource
+}
+
 export function buildPersistedConversationFromHistory(
   history: AssistantSessionHistoryState | null,
-): CopilotMessageListItem[] {
+): PersistedConversationBuildResult {
   if (history === null || (!history.hasLoadedDetail && history.detailStatus !== 'ready')) {
-    return []
+    return {
+      conversation: [],
+      selectedRunConversationSource: 'none',
+    }
   }
 
   const selectedRunId = normalizeOptionalString(history.selectedRunId)
@@ -51,13 +61,22 @@ export function buildPersistedConversationFromHistory(
   })
 
   if (selectedRunId === null) {
-    return timelineConversation
+    return {
+      conversation: timelineConversation,
+      selectedRunConversationSource: timelineConversation.length === 0 ? 'none' : 'timeline',
+    }
   }
 
   const replayConversation = buildPersistedConversationFromReplay(history, selectedRunId)
   return replayConversation.some((item) => item.kind !== 'user')
-    ? replayConversation
-    : timelineConversation
+    ? {
+        conversation: replayConversation,
+        selectedRunConversationSource: 'replay',
+      }
+    : {
+        conversation: timelineConversation,
+        selectedRunConversationSource: timelineConversation.length === 0 ? 'none' : 'timeline',
+      }
 }
 
 function buildPersistedConversationFromTimeline(input: {

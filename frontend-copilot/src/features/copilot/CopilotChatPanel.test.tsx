@@ -267,6 +267,88 @@ describe('CopilotChatPanel', () => {
     rendered.unmount()
   })
 
+  it('shows selected-run replay failure feedback while keeping timeline fallback visible and retryable', async () => {
+    const retrySessionHistory = vi.fn()
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-1',
+              sequenceStart: 1,
+              text: '回放失败时仍保留时间线快照',
+            },
+          ],
+          selectedRunId: 'run-1',
+          replayStatus: 'error',
+          replayError: 'replay unavailable',
+          replay: null,
+        })}
+        retrySessionHistory={retrySessionHistory}
+      />,
+    )
+
+    expect(rendered.getByTestId('chat-history-replay-error').textContent).toContain('当前运行回放失败')
+    expect(rendered.container.textContent).toContain('回放失败时仍保留时间线快照')
+
+    await clickElement(rendered.getByTestId('chat-history-replay-retry-button'))
+
+    expect(retrySessionHistory).toHaveBeenCalledOnce()
+
+    rendered.unmount()
+  })
+
+  it('shows persisted capability hydration failures as a visible retryable notice and disables send', async () => {
+    const retrySessionHistory = vi.fn()
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          capabilitiesStatus: 'error',
+          capabilitiesError: 'capabilities unavailable',
+        })}
+        retrySessionHistory={retrySessionHistory}
+      />,
+    )
+
+    expect(rendered.getByTestId('chat-history-capabilities-error').textContent).toContain('历史线程能力恢复失败，请重试后再继续发送。')
+    expect((rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement).disabled).toBe(true)
+
+    await clickElement(rendered.getByTestId('chat-history-capabilities-retry-button'))
+
+    expect(retrySessionHistory).toHaveBeenCalledOnce()
+
+    rendered.unmount()
+  })
+
   it('keeps the non-connected branch intact for empty state', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
@@ -337,6 +419,8 @@ function createPersistedHistoryState(
     runSummaries: [],
     latestConfigurationSnapshot: null,
     availabilityDrift: null,
+    capabilitiesStatus: 'ready',
+    capabilitiesError: null,
     selectedRunId: 'run-1',
     replayStatus: 'idle',
     replayError: null,

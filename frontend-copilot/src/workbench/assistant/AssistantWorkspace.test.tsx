@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { AssistantWorkspace } from './AssistantWorkspace'
@@ -37,6 +37,11 @@ const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
 vi.mock('../../features/copilot/CopilotChatPanel', () => ({
   CopilotChatPanel: (props: Record<string, unknown>) => mockCopilotChatPanel(props),
 }))
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('AssistantWorkspace render + interactions', () => {
   it('renders backend directory agents and passes capability-backed session shell state into CopilotChatPanel', () => {
@@ -319,71 +324,126 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
-  it('retries persisted list restore after the first failure and eventually hydrates the thread', async () => {
+  it('protects a user-created live session from being overwritten by a late restore result', async () => {
     mockCopilotChatPanel.mockClear()
 
     const directoryResponse = createDirectoryResponse()
     const directoryState = createAssistantAgentDirectoryState(directoryResponse)
     const historyFixture = createPersistedHistoryFixture()
-    let signalSecondRestoreStarted: (() => void) | null = null
-    const secondRestoreStarted = new Promise<void>((resolve) => {
-      signalSecondRestoreStarted = resolve
+    let releaseRestore: (() => void) | null = null
+    const restoreRelease = new Promise<void>((resolve) => {
+      releaseRestore = resolve
     })
-    let releaseSecondRestore: (() => void) | null = null
-    const secondRestoreRelease = new Promise<void>((resolve) => {
-      releaseSecondRestore = resolve
+    const listHistoryThreads = vi.fn().mockImplementation(async () => {
+      await restoreRelease
+      return {
+        ok: true as const,
+        version: 'chat-history-v1',
+        threads: [historyFixture.summary],
+      }
     })
-    const listHistoryThreads = vi.fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        error: 'history list unavailable',
-      })
-      .mockImplementationOnce(async () => {
-        signalSecondRestoreStarted?.()
-        await secondRestoreRelease
-        return {
-          ok: true as const,
-          version: 'chat-history-v1',
-          threads: [historyFixture.summary],
-        }
-      })
+    const createSession = vi.fn().mockResolvedValue(createSessionResponse({
+      threadId: 'thread-live-race',
+      createdAt: '2026-04-14T09:00:00Z',
+      updatedAt: '2026-04-14T09:00:00Z',
+    }))
+    const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse({
+      sessionId: 'thread-live-race',
+      capabilitiesVersion: 'cap-live-race',
+    }))
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
     const getHistoryThreadDetail = vi.fn().mockResolvedValue(historyFixture.detail)
     const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
 
     const rendered = renderWithRoot(
       <AssistantWorkspace
         bootstrap={createBootstrapController()}
+        listAgents={listAgents}
         listHistoryThreads={listHistoryThreads}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
         getHistoryThreadDetail={getHistoryThreadDetail}
         getHistoryRunReplay={getHistoryRunReplay}
         initialDirectoryState={directoryState}
       />,
     )
 
-    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length >= 2)
-    await act(async () => {
-      await secondRestoreStarted
-    })
-    expect(getLastMockCopilotChatPanelProps().historyRestoreError).toBe('history list unavailable')
+    await flushAssistantWorkspaceMicrotasks()
+    expect(listHistoryThreads.mock.calls.length).toBeGreaterThanOrEqual(1)
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live-race'
+    ))
 
     await act(async () => {
-      releaseSecondRestore?.()
+      releaseRestore?.()
+      await Promise.resolve()
       await Promise.resolve()
     })
-    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length === 1)
-    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length === 1)
 
-    expect(listHistoryThreads).toHaveBeenCalledTimes(2)
-    expect(getHistoryThreadDetail).toHaveBeenCalledWith(historyFixture.summary.threadId)
-    expect(getHistoryRunReplay).toHaveBeenCalledWith(historyFixture.replay.run.runId)
-    expect(getLastMockCopilotChatPanelProps()).toMatchObject({
-      historyRestoreError: null,
-      sessionHistory: expect.objectContaining({
-        detailStatus: 'ready',
-        replayStatus: 'ready',
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live-race'
+    ))
+    await waitForAssistantWorkspaceCondition(() => rendered.queryByTestId('assistant-session-card-thread-1') !== null)
+
+    rendered.unmount()
+  })
+
+  it('retries persisted list restore with backoff and keeps the error visible even when a live session exists', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const selectedAgent = directoryState.agents[0]
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent directory.')
+    }
+
+    const initialSessionShell = createAssistantSessionShell({
+      response: createSessionResponse({
+        threadId: 'thread-live-visible',
+        createdAt: '2026-04-14T10:00:00Z',
+        updatedAt: '2026-04-14T10:00:00Z',
+      }),
+      selectedAgent,
+      capabilities: createCapabilitiesResponse({
+        sessionId: 'thread-live-visible',
+        capabilitiesVersion: 'cap-live-visible',
       }),
     })
+    const failureMessage = 'history list unavailable'
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: false as const,
+      error: failureMessage,
+    })
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const scheduledRetries: Array<{ handler: TimerHandler; delay: number }> = []
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation(((handler: TimerHandler, delay?: number) => {
+      scheduledRetries.push({
+        handler,
+        delay: typeof delay === 'number' ? delay : 0,
+      })
+      return scheduledRetries.length as unknown as number
+    }) as typeof window.setTimeout)
 
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        initialDirectoryState={directoryState}
+        initialSessionShell={initialSessionShell}
+      />,
+    )
+
+    await flushAssistantWorkspaceMicrotasks()
+    expect(getLastMockCopilotChatPanelProps().sessionShell?.sessionId).toBe('thread-live-visible')
+    expect(getLastMockCopilotChatPanelProps().historyRestoreError).toBe(failureMessage)
+    expect(listHistoryThreads.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(scheduledRetries.length).toBeGreaterThanOrEqual(1)
+    expect(scheduledRetries.some((scheduledRetry) => scheduledRetry.delay === 1_000)).toBe(true)
+
+    setTimeoutSpy.mockRestore()
     rendered.unmount()
   })
 
@@ -411,25 +471,31 @@ describe('AssistantWorkspace render + interactions', () => {
       })
       .mockResolvedValueOnce(historyFixture.replay)
 
+    const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse({
+      sessionId: historyFixture.summary.threadId,
+      capabilitiesVersion: 'cap-thread-1',
+    }))
+
     const rendered = renderWithRoot(
       <AssistantWorkspace
         bootstrap={createBootstrapController()}
         listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
         getHistoryThreadDetail={getHistoryThreadDetail}
         getHistoryRunReplay={getHistoryRunReplay}
         initialDirectoryState={directoryState}
       />,
     )
 
-    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length === 1)
+    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 1)
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'error'
     ))
 
     await clickElement(rendered.getByTestId('assistant-session-card-thread-1'))
 
-    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length === 2)
-    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length === 1)
+    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 2)
+    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length >= 1)
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
       && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'error'
@@ -437,7 +503,7 @@ describe('AssistantWorkspace render + interactions', () => {
 
     await clickElement(rendered.getByTestId('assistant-session-card-thread-1'))
 
-    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length === 2)
+    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length >= 2)
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
       && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
@@ -445,6 +511,51 @@ describe('AssistantWorkspace render + interactions', () => {
 
     expect(getHistoryThreadDetail).toHaveBeenCalledTimes(2)
     expect(getHistoryRunReplay).toHaveBeenCalledTimes(2)
+
+    rendered.unmount()
+  })
+
+  it('retries restored thread capability hydration after a failure and eventually hydrates the shell', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true,
+      version: 'chat-history-v1',
+      threads: [historyFixture.summary],
+    })
+    const getCapabilities = vi.fn()
+      .mockRejectedValueOnce(new Error('capabilities unavailable'))
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: historyFixture.summary.threadId,
+        capabilitiesVersion: 'cap-thread-1-hydrated',
+      }))
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(historyFixture.detail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => getCapabilities.mock.calls.length >= 1)
+
+    await clickElement(rendered.getByTestId('assistant-session-card-thread-1'))
+
+    await waitForAssistantWorkspaceCondition(() => getCapabilities.mock.calls.length >= 2)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === historyFixture.summary.threadId
+    ))
 
     rendered.unmount()
   })
@@ -814,6 +925,7 @@ function getLastMockCopilotChatPanelProps(): {
     isPersistedThread?: boolean
     detailStatus?: string
     replayStatus?: string
+    capabilitiesStatus?: string
     selectedRunId?: string | null
   }
   selectSessionHistoryRun?: (runId: string | null) => void
@@ -833,6 +945,7 @@ function getLastMockCopilotChatPanelProps(): {
       isPersistedThread?: boolean
       detailStatus?: string
       replayStatus?: string
+      capabilitiesStatus?: string
       selectedRunId?: string | null
     }
     selectSessionHistoryRun?: (runId: string | null) => void
@@ -845,6 +958,14 @@ async function flushAssistantWorkspaceEffects() {
     await new Promise<void>((resolve) => {
       setTimeout(() => resolve(), 0)
     })
+    await Promise.resolve()
+  })
+}
+
+async function flushAssistantWorkspaceMicrotasks() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
     await Promise.resolve()
   })
 }

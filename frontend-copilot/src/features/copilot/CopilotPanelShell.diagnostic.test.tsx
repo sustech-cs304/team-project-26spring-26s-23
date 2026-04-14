@@ -4,6 +4,7 @@ import { createRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { CopilotPanelShell } from './CopilotPanelShell'
 import { createEmptyComposerDraft } from './copilot-chat-helpers'
 import { createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
@@ -34,37 +35,10 @@ describe('CopilotPanelShell diagnostic visibility', () => {
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
-        sessionHistory={{
-          summary: {
-            threadId: 'thread-1',
-            boundAgentId: 'general',
-            title: '历史线程',
-            titleSource: 'deterministic',
-            summary: '历史摘要',
-            summarySource: 'deterministic',
-            createdAt: '2026-04-13T15:00:00Z',
-            updatedAt: '2026-04-13T15:05:00Z',
-            lastActivityAt: '2026-04-13T15:05:00Z',
-            lastRunId: 'run-1',
-            lastRunStatus: 'completed',
-            lastUserMessagePreview: '你好',
-            lastAssistantMessagePreview: '历史摘要',
-            driftSummary: {
-              status: 'not_evaluated',
-            },
-          },
-          isPersistedThread: true,
+        sessionHistory={createPersistedSessionHistoryState({
           detailStatus: 'error',
           detailError: 'detail unavailable',
-          timelineItems: [],
-          runSummaries: [],
-          latestConfigurationSnapshot: null,
-          availabilityDrift: null,
-          selectedRunId: 'run-1',
-          replayStatus: 'idle',
-          replayError: null,
-          replay: null,
-        }}
+        })}
         onRetrySessionHistory={onRetrySessionHistory}
         sendError={null}
         modelGroups={[]}
@@ -115,37 +89,9 @@ describe('CopilotPanelShell diagnostic visibility', () => {
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
-        sessionHistory={{
-          summary: {
-            threadId: 'thread-1',
-            boundAgentId: 'general',
-            title: '历史线程',
-            titleSource: 'deterministic',
-            summary: '历史摘要',
-            summarySource: 'deterministic',
-            createdAt: '2026-04-13T15:00:00Z',
-            updatedAt: '2026-04-13T15:05:00Z',
-            lastActivityAt: '2026-04-13T15:05:00Z',
-            lastRunId: 'run-1',
-            lastRunStatus: 'completed',
-            lastUserMessagePreview: '你好',
-            lastAssistantMessagePreview: '历史摘要',
-            driftSummary: {
-              status: 'not_evaluated',
-            },
-          },
-          isPersistedThread: true,
+        sessionHistory={createPersistedSessionHistoryState({
           detailStatus: 'loading',
-          detailError: null,
-          timelineItems: [],
-          runSummaries: [],
-          latestConfigurationSnapshot: null,
-          availabilityDrift: null,
-          selectedRunId: 'run-1',
-          replayStatus: 'idle',
-          replayError: null,
-          replay: null,
-        }}
+        })}
         sendError={null}
         modelGroups={[]}
         thinkingCapability={null}
@@ -190,37 +136,9 @@ describe('CopilotPanelShell diagnostic visibility', () => {
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
-        sessionHistory={{
-          summary: {
-            threadId: 'thread-1',
-            boundAgentId: 'general',
-            title: '历史线程',
-            titleSource: 'deterministic',
-            summary: '历史摘要',
-            summarySource: 'deterministic',
-            createdAt: '2026-04-13T15:00:00Z',
-            updatedAt: '2026-04-13T15:05:00Z',
-            lastActivityAt: '2026-04-13T15:05:00Z',
-            lastRunId: 'run-1',
-            lastRunStatus: 'completed',
-            lastUserMessagePreview: '你好',
-            lastAssistantMessagePreview: '历史摘要',
-            driftSummary: {
-              status: 'not_evaluated',
-            },
-          },
-          isPersistedThread: true,
+        sessionHistory={createPersistedSessionHistoryState({
           detailStatus: 'loading',
-          detailError: null,
-          timelineItems: [],
-          runSummaries: [],
-          latestConfigurationSnapshot: null,
-          availabilityDrift: null,
-          selectedRunId: 'run-1',
-          replayStatus: 'idle',
-          replayError: null,
-          replay: null,
-        }}
+        })}
         sendError={null}
         modelGroups={[]}
         thinkingCapability={null}
@@ -332,6 +250,141 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     await clickElement(rendered.getByTestId('error-detail-overlay-close'))
 
     expect(rendered.queryByTestId('error-detail-overlay')).toBeNull()
+
+    rendered.unmount()
+  })
+  it('shows replay failure feedback for the selected run and keeps retry available', async () => {
+    const onRetrySessionHistory = vi.fn()
+    const rendered = renderWithRoot(
+      <CopilotPanelShell
+        state={createReadyState()}
+        retrying={false}
+        onRetry={vi.fn()}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedSessionHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-1',
+              sequenceStart: 1,
+              text: '时间线兜底内容',
+            },
+          ],
+          selectedRunId: 'run-1',
+          replayStatus: 'error',
+          replayError: 'replay unavailable',
+        })}
+        onRetrySessionHistory={onRetrySessionHistory}
+        sendError={null}
+        modelGroups={[]}
+        thinkingCapability={null}
+        composerDraft={createEmptyComposerDraft()}
+        onComposerDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancelCurrentRun={vi.fn()}
+        sendStatus="idle"
+        canCancelSend={false}
+        sendDisabledReason={null}
+        persistedSelectedRunConversationSource="timeline"
+        historyDrift={null}
+        historyRebindAcknowledged={false}
+        onAcknowledgeHistoryRebind={vi.fn()}
+        conversation={[
+          {
+            id: 'assistant:history-fallback',
+            kind: 'assistant',
+            title: '历史回答',
+            content: '时间线兜底内容',
+            status: 'completed',
+            runId: 'run-1',
+            sequence: 1,
+            resolvedModelId: null,
+            resolvedModelRoute: null,
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        ]}
+        assistantPlaceholder={{
+          shouldRender: false,
+          dismissReason: 'inactive',
+        }}
+        composerInputRef={createRef<HTMLTextAreaElement>()}
+        composerHeight={160}
+        onComposerResizeStart={vi.fn()}
+      />,
+    )
+
+    expect(rendered.getByTestId('chat-history-replay-error').textContent).toContain('当前运行回放失败，当前展示的是时间线快照。')
+
+    await clickElement(rendered.getByTestId('chat-history-replay-retry-button'))
+
+    expect(onRetrySessionHistory).toHaveBeenCalledOnce()
+
+    rendered.unmount()
+  })
+
+  it('shows capability hydration failure for restored threads and exposes retry', async () => {
+    const onRetrySessionHistory = vi.fn()
+    const rendered = renderWithRoot(
+      <CopilotPanelShell
+        state={createReadyState()}
+        retrying={false}
+        onRetry={vi.fn()}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedSessionHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          capabilitiesStatus: 'error',
+          capabilitiesError: 'capabilities unavailable',
+        })}
+        onRetrySessionHistory={onRetrySessionHistory}
+        sendError={null}
+        modelGroups={[]}
+        thinkingCapability={null}
+        composerDraft={createEmptyComposerDraft()}
+        onComposerDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancelCurrentRun={vi.fn()}
+        sendStatus="idle"
+        canCancelSend={false}
+        sendDisabledReason="历史线程能力恢复失败，请重试后再发送。"
+        historyDrift={null}
+        historyRebindAcknowledged={false}
+        onAcknowledgeHistoryRebind={vi.fn()}
+        conversation={[]}
+        assistantPlaceholder={{
+          shouldRender: false,
+          dismissReason: 'inactive',
+        }}
+        composerInputRef={createRef<HTMLTextAreaElement>()}
+        composerHeight={160}
+        onComposerResizeStart={vi.fn()}
+      />,
+    )
+
+    expect(rendered.getByTestId('chat-history-capabilities-error').textContent).toContain('历史线程能力恢复失败，请重试后再继续发送。')
+
+    await clickElement(rendered.getByTestId('chat-history-capabilities-retry-button'))
+
+    expect(onRetrySessionHistory).toHaveBeenCalledOnce()
 
     rendered.unmount()
   })
@@ -536,4 +589,45 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       onComposerResizeStart={vi.fn()}
     />,
   )
+}
+
+function createPersistedSessionHistoryState(
+  overrides: Partial<AssistantSessionHistoryState> = {},
+): AssistantSessionHistoryState {
+  return {
+    summary: {
+      threadId: 'thread-1',
+      boundAgentId: 'general',
+      title: '历史线程',
+      titleSource: 'deterministic',
+      summary: '历史摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      lastActivityAt: '2026-04-13T15:05:00Z',
+      lastRunId: 'run-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '历史摘要',
+      driftSummary: {
+        status: 'not_evaluated',
+      },
+    },
+    isPersistedThread: true,
+    hasLoadedDetail: false,
+    detailStatus: 'idle',
+    detailError: null,
+    timelineItems: [],
+    runSummaries: [],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: null,
+    capabilitiesStatus: 'ready',
+    capabilitiesError: null,
+    selectedRunId: 'run-1',
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+    replayByRunId: {},
+    ...overrides,
+  }
 }

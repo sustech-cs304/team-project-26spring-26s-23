@@ -38,7 +38,10 @@ import {
   resolvePersistedHistoryDrift,
   type PersistedHistoryDriftSummary,
 } from '../persisted-history-drift'
-import { buildPersistedConversationFromHistory } from '../persisted-history-view-model'
+import {
+  buildPersistedConversationFromHistory,
+  type PersistedConversationSource,
+} from '../persisted-history-view-model'
 import {
   buildCopilotMessageListItems,
   resolveCopilotAssistantPlaceholderState,
@@ -102,6 +105,7 @@ export interface CopilotChatPanelState {
   historyDrift: PersistedHistoryDriftSummary | null
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
+  persistedSelectedRunConversationSource: PersistedConversationSource
   hasTransientConversation: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
@@ -204,10 +208,12 @@ export function useCopilotChatPanelState({
     () => getCopilotModelById(effectiveComposerDraft.selectedModelId, modelCatalog.models),
     [effectiveComposerDraft.selectedModelId, modelCatalog.models],
   )
-  const persistedConversation = useMemo(
+  const persistedConversationBuildResult = useMemo(
     () => buildPersistedConversationFromHistory(sessionHistory),
     [sessionHistory],
   )
+  const persistedConversation = persistedConversationBuildResult.conversation
+  const persistedSelectedRunConversationSource = persistedConversationBuildResult.selectedRunConversationSource
   const hasRenderablePersistedSelectedConversation = useMemo(
     () => persistedConversation.length > 0,
     [persistedConversation],
@@ -596,12 +602,25 @@ export function useCopilotChatPanelState({
       return baseSendDisabledReason
     }
 
+    if (
+      sessionHistory?.isPersistedThread === true
+      && sessionShell?.capabilities.capabilitiesVersion === 'history-shell'
+    ) {
+      if (sessionHistory.capabilitiesStatus === 'loading' || sessionHistory.capabilitiesStatus === 'idle') {
+        return '正在恢复历史线程能力，请稍候。'
+      }
+
+      if (sessionHistory.capabilitiesStatus === 'error') {
+        return '历史线程能力恢复失败，请重试后再发送。'
+      }
+    }
+
     if (historyDrift?.requiresExplicitRebind === true && !historyRebindAcknowledged) {
       return '历史线程依赖已变化，请先显式重新绑定当前配置后再继续。'
     }
 
     return null
-  }, [baseSendDisabledReason, historyDrift, historyRebindAcknowledged])
+  }, [baseSendDisabledReason, historyDrift, historyRebindAcknowledged, sessionHistory, sessionShell])
 
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -669,6 +688,7 @@ export function useCopilotChatPanelState({
     sendDisabledReason,
     historyDrift,
     historyRebindAcknowledged,
+    persistedSelectedRunConversationSource,
     onAcknowledgeHistoryRebind: () => {
       setHistoryRebindAcknowledged(true)
     },
