@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.blackboard.api.dto import (
+from app.integrations.sustech.blackboard.api.dto import (
     AnnouncementDTO,
     AssignmentAttachmentDTO,
     AssignmentDTO,
@@ -14,21 +14,21 @@ from app.blackboard.api.dto import (
     GradeDTO,
     ResourceDTO,
 )
-from app.blackboard.provider.results import (
+from app.integrations.sustech.blackboard.provider.results import (
     BlackboardSnapshotFetchResult,
     BlackboardSnapshotSyncReport,
     BlackboardSyncPayloads,
     CalendarICSSyncResult,
     CourseCatalogSearchResult,
 )
-from app.blackboard.provider.tools import agent_tools
-from app.blackboard.shared import BlackboardLogEvent
-from app.blackboard.provider.use_cases import course_catalog as course_catalog_use_case
-from app.blackboard.provider.use_cases import snapshot_sync as snapshot_sync_use_case
-from app.blackboard.provider.use_cases.calendar_ics import (
+from app.integrations.sustech.blackboard.provider.tools import agent_tools
+from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
+from app.integrations.sustech.blackboard.provider.use_cases import course_catalog as course_catalog_use_case
+from app.integrations.sustech.blackboard.provider.use_cases import snapshot_sync as snapshot_sync_use_case
+from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
     refresh_calendar_ics_subscription_from_text,
 )
-from app.blackboard.provider.use_cases.snapshot_sync import (
+from app.integrations.sustech.blackboard.provider.use_cases.snapshot_sync import (
     build_blackboard_sync_payloads,
     calculate_expected_active_counts,
     compare_active_counts,

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.teaching_information_system.api.dto import (
+from app.integrations.sustech.teaching_information_system.api.dto import (
     TISCreditGPASummary,
     TISCreditGPATermRecord,
     TISCreditGPAYearRecord,
     TISGradeRecord,
     TISSelectedCourseRecord,
 )
-from app.teaching_information_system.data import (
+from app.integrations.sustech.teaching_information_system.data import (
     TISCreditGPASummaryModel,
     TISCreditGPATermModel,
     TISCreditGPAYearModel,

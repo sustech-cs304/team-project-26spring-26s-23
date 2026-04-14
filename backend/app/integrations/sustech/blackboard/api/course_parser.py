@@ -149,7 +149,7 @@ class BlackboardCourseParser:
         return False
 
     def parse_courses_html(self, html: str) -> list[CourseDTO]:
-        """解析课程列表 HTML，输出 [`CourseDTO`](backend/app/blackboard/api/dto.py)。"""
+        """解析课程列表 HTML，输出 [`CourseDTO`](backend/app/integrations/sustech/blackboard/api/dto.py)。"""
         soup = BeautifulSoup(html, "html.parser")
         courses: list[CourseDTO] = []
         seen_ids: set[str] = set()

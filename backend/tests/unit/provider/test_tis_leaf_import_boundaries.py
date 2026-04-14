@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import inspect
 
-from app.teaching_information_system.api import client as api_client
-from app.teaching_information_system.api import constants as api_constants
-from app.teaching_information_system.api import credit_gpa as api_credit_gpa
-from app.teaching_information_system.api import dto as api_dto
-from app.teaching_information_system.api import fetch_helpers as api_fetch_helpers
-from app.teaching_information_system.api import grades as api_grades
-from app.teaching_information_system.api import homepage as api_homepage
-from app.teaching_information_system.api import selected_courses as api_selected_courses
-from app.teaching_information_system.facade import get_tis_tool_contracts
-from app.teaching_information_system.provider.use_cases import credit_gpa as credit_gpa_use_case
-from app.teaching_information_system.provider.use_cases import diagnostics as diagnostics_use_case
-from app.teaching_information_system.provider.use_cases import personal_grades as personal_grades_use_case
-from app.teaching_information_system.provider.use_cases import selected_courses as selected_courses_use_case
+from app.integrations.sustech.teaching_information_system.api import client as api_client
+from app.integrations.sustech.teaching_information_system.api import constants as api_constants
+from app.integrations.sustech.teaching_information_system.api import credit_gpa as api_credit_gpa
+from app.integrations.sustech.teaching_information_system.api import dto as api_dto
+from app.integrations.sustech.teaching_information_system.api import fetch_helpers as api_fetch_helpers
+from app.integrations.sustech.teaching_information_system.api import grades as api_grades
+from app.integrations.sustech.teaching_information_system.api import homepage as api_homepage
+from app.integrations.sustech.teaching_information_system.api import selected_courses as api_selected_courses
+from app.integrations.sustech.teaching_information_system.facade import get_tis_tool_contracts
+from app.integrations.sustech.teaching_information_system.provider.use_cases import credit_gpa as credit_gpa_use_case
+from app.integrations.sustech.teaching_information_system.provider.use_cases import diagnostics as diagnostics_use_case
+from app.integrations.sustech.teaching_information_system.provider.use_cases import personal_grades as personal_grades_use_case
+from app.integrations.sustech.teaching_information_system.provider.use_cases import selected_courses as selected_courses_use_case
 from app.tooling import assess_default_contract_mcp_readiness
 from app.tooling.runtime_adapter.copilot_runtime import build_default_contract_runtime_bindings
 
@@ -33,7 +33,7 @@ _TIS_USE_CASE_MODULES = (
 
 
 def test_tis_provider_use_cases_avoid_api_aggregate_imports() -> None:
-    forbidden = "from app.teaching_information_system.api import"
+    forbidden = "from app.integrations.sustech.teaching_information_system.api import"
 
     for module in _TIS_USE_CASE_MODULES:
         assert forbidden not in inspect.getsource(module), module.__name__

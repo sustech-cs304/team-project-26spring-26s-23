@@ -11,7 +11,7 @@ from app.integrations.sustech.blackboard.shared import extract_blackboard_token_
 
 
 class BlackboardCalendarICSParser:
-    """解析 Blackboard ICS 文本并产出 [`CalendarEventDTO`](backend/app/blackboard/api/dto.py:119)。"""
+    """解析 Blackboard ICS 文本并产出 [`CalendarEventDTO`](backend/app/integrations/sustech/blackboard/api/dto.py:119)。"""
 
     @staticmethod
     def unfold_lines(ics_text: str) -> list[str]:

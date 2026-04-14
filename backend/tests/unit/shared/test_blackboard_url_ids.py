@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.blackboard.shared import extract_blackboard_ids_from_url
+from app.integrations.sustech.blackboard.shared import extract_blackboard_ids_from_url
 
 
 def test_url_id_extraction() -> None:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.blackboard.api import (
+from app.integrations.sustech.blackboard.api import (
     BlackboardAPIContext,
     BlackboardAnnouncementAPI,
     BlackboardAssignmentAPI,

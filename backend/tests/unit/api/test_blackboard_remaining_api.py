@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 
-from app.blackboard.api import (
+from app.integrations.sustech.blackboard.api import (
     BlackboardAPIContext,
     BlackboardAnnouncementAPI,
     BlackboardAssignmentAPI,

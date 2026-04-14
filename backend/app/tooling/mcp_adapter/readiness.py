@@ -348,8 +348,8 @@ def assess_mcp_tool_readiness(
 def assess_default_contract_mcp_readiness() -> tuple[MCPToolReadinessReport, ...]:
     """Assess MCP readiness for the currently approved Blackboard and TIS facade tools."""
 
-    from app.blackboard import get_blackboard_tool_contracts
-    from app.teaching_information_system import get_tis_tool_contracts
+    from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+    from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
     contracts = (
         *get_blackboard_tool_contracts(),

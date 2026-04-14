@@ -94,7 +94,7 @@ def parse_loose_datetime(value: str | None) -> datetime | None:
 
 
 def parse_loose_datetime_or_min(value: str | None) -> datetime:
-    """解析失败时返回 [`datetime.min`](backend/app/blackboard/shared/datetime.py:1)。"""
+    """解析失败时返回 [`datetime.min`](backend/app/integrations/sustech/blackboard/shared/datetime.py:1)。"""
     return parse_loose_datetime(value) or datetime.min
 
 

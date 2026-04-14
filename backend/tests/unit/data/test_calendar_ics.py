@@ -4,9 +4,9 @@ import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.blackboard.api import BlackboardCalendarICSParser
-from app.blackboard.data import CalendarEvent, DatabaseManager
-from app.blackboard.provider.use_cases.calendar_ics import (
+from app.integrations.sustech.blackboard.api import BlackboardCalendarICSParser
+from app.integrations.sustech.blackboard.data import CalendarEvent, DatabaseManager
+from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
     refresh_calendar_ics_subscription_from_text,
 )
 

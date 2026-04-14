@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 
-from app.blackboard.api import BlackboardCourseCatalogAPI, parse_course_catalog_table
+from app.integrations.sustech.blackboard.api import BlackboardCourseCatalogAPI, parse_course_catalog_table
 
 
 def _assert_equal(actual: object, expected: object, message: str) -> None:

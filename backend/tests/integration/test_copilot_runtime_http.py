@@ -10,21 +10,21 @@ from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 from pydantic_ai.models.test import TestModel
 
-import app.blackboard.facade.tools as blackboard_facade_tools
-import app.teaching_information_system.facade.tools as tis_facade_tools
-from app.blackboard.api.dto import (
+import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+import app.integrations.sustech.teaching_information_system.facade.tools as tis_facade_tools
+from app.integrations.sustech.blackboard.api.dto import (
     AnnouncementDTO,
     AssignmentDTO,
     CourseDTO,
     GradeDTO,
     ResourceDTO,
 )
-from app.blackboard.provider.results import (
+from app.integrations.sustech.blackboard.provider.results import (
     BlackboardSnapshotFetchResult,
     BlackboardSnapshotSyncReport,
     BlackboardSyncPayloads,
 )
-from app.blackboard.shared import BlackboardLogEvent
+from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
 from app.copilot_runtime.agent import RuntimeToolLifecycleEvent
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
@@ -55,7 +55,7 @@ from app.desktop_runtime.capability_bridge_client import (
     DesktopCapabilityBridgeClient,
 )
 from app.desktop_runtime.server import create_app
-from app.teaching_information_system.api.dto import (
+from app.integrations.sustech.teaching_information_system.api.dto import (
     TISCreditGPAQueryResult,
     TISCreditGPASummary,
     TISCreditGPATermRecord,
@@ -63,7 +63,7 @@ from app.teaching_information_system.api.dto import (
     TISHomepageProfile,
     TISProbeResult,
 )
-from app.teaching_information_system.shared import TISLogEvent
+from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
 
 
 class _ImmediateEventStream:

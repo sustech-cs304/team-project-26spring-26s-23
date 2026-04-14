@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import app.blackboard as blackboard
-import app.blackboard.provider.tools as legacy_tools_package
-from app.blackboard.facade import get_blackboard_tool_contracts
-from app.blackboard.provider.tools import agent_tools as legacy_agent_tools
+import app.integrations.sustech.blackboard as blackboard
+import app.integrations.sustech.blackboard.provider.tools as legacy_tools_package
+from app.integrations.sustech.blackboard.facade import get_blackboard_tool_contracts
+from app.integrations.sustech.blackboard.provider.tools import agent_tools as legacy_agent_tools
 from app.tooling import assess_default_contract_mcp_readiness
 from app.tooling.runtime_adapter.copilot_runtime import build_default_contract_runtime_bindings
 

@@ -5,11 +5,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-import app.blackboard.facade.tools as blackboard_facade_tools
+import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
 from pydantic_ai.models.test import TestModel
 
-from app.blackboard.api.dto import CourseCatalogResultDTO
-from app.blackboard.provider.results import CourseCatalogSearchResult
+from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
+from app.integrations.sustech.blackboard.provider.results import CourseCatalogSearchResult
 from app.copilot_runtime import PydanticAIAgentExecutor
 from app.copilot_runtime.composition import build_default_runtime_dependencies
 from app.desktop_runtime.capability_bridge_host_capabilities import (

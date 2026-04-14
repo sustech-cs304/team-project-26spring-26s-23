@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import app.teaching_information_system as tis
-from app.teaching_information_system.api import (
+import app.integrations.sustech.teaching_information_system as tis
+from app.integrations.sustech.teaching_information_system.api import (
     DEFAULT_TIS_SERVICE_CONFIG,
     TISCreditGPAQueryResult,
     TISGradeQueryResult,
     TISSelectedCoursesQueryResult,
     TISServiceConfig,
 )
-from app.teaching_information_system.facade import get_tis_tool_contracts
-from app.teaching_information_system.provider import (
+from app.integrations.sustech.teaching_information_system.facade import get_tis_tool_contracts
+from app.integrations.sustech.teaching_information_system.provider import (
     fetch_credit_gpa_with_credentials,
     fetch_personal_grades_with_credentials,
     fetch_selected_courses_with_credentials,

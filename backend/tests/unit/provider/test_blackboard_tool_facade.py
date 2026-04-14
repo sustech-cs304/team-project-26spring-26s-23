@@ -8,9 +8,9 @@ from typing import Any
 
 import httpx
 
-import app.blackboard.facade.tools as facade_tools
-from app.blackboard import get_blackboard_tool_contracts
-from app.blackboard.api.dto import (
+import app.integrations.sustech.blackboard.facade.tools as facade_tools
+from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+from app.integrations.sustech.blackboard.api.dto import (
     AnnouncementDTO,
     AssignmentDTO,
     CalendarEventDTO,
@@ -19,19 +19,19 @@ from app.blackboard.api.dto import (
     GradeDTO,
     ResourceDTO,
 )
-from app.blackboard.facade.tools import (
+from app.integrations.sustech.blackboard.facade.tools import (
     BlackboardCalendarRefreshTool,
     BlackboardCourseCatalogSearchTool,
     BlackboardSnapshotSyncTool,
 )
-from app.blackboard.provider.results import (
+from app.integrations.sustech.blackboard.provider.results import (
     BlackboardSnapshotFetchResult,
     BlackboardSnapshotSyncReport,
     BlackboardSyncPayloads,
     CalendarICSSyncResult,
     CourseCatalogSearchResult,
 )
-from app.blackboard.shared import BlackboardLogEvent
+from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
 from app.tooling import HostArtifact, HostEvent, ToolHostCapabilities, ToolInvocationContext
 
 

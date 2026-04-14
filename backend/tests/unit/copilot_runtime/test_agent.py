@@ -15,9 +15,9 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.test import TestModel
 
-import app.blackboard.facade.tools as blackboard_facade_tools
-from app.blackboard.api.dto import CourseCatalogResultDTO
-from app.blackboard.provider.results import CourseCatalogSearchResult
+import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
+from app.integrations.sustech.blackboard.provider.results import CourseCatalogSearchResult
 from app.copilot_runtime.agent import (
     AgentExecutionError,
     ModelNotConfiguredError,

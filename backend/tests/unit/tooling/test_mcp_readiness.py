@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
+
+import pytest
+
 from app.tooling import (
     MCP_HOST_CAPABILITY_BRIDGE_NOTES,
     MCP_SUPPORTED_INPUT_SCHEMA_FORMATS,
@@ -210,3 +215,24 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
         "idempotentHint": False,
         "destructiveHint": True,
     }
+
+
+
+def test_canonical_sustech_integration_roots_are_importable() -> None:
+    blackboard = importlib.import_module("app.integrations.sustech.blackboard")
+    tis = importlib.import_module("app.integrations.sustech.teaching_information_system")
+
+    assert callable(blackboard.get_blackboard_tool_contracts)
+    assert callable(tis.get_tis_tool_contracts)
+
+
+
+def test_legacy_sustech_root_packages_are_not_valid_import_targets() -> None:
+    assert importlib.util.find_spec("app.blackboard") is None
+    assert importlib.util.find_spec("app.teaching_information_system") is None
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.blackboard")
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.teaching_information_system")

@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import app.teaching_information_system.facade.tools as facade_tools
-from app.teaching_information_system import get_tis_tool_contracts
-from app.teaching_information_system.api.dto import (
+import app.integrations.sustech.teaching_information_system.facade.tools as facade_tools
+from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+from app.integrations.sustech.teaching_information_system.api.dto import (
     TISCreditGPAQueryResult,
     TISCreditGPASummary,
     TISCreditGPATermRecord,
@@ -22,13 +22,13 @@ from app.teaching_information_system.api.dto import (
     TISSelectedCourseSummary,
     TISSelectedCoursesQueryResult,
 )
-from app.teaching_information_system.data import TISDatabaseManager
-from app.teaching_information_system.facade.tools import (
+from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
+from app.integrations.sustech.teaching_information_system.facade.tools import (
     TISCreditGPAFetchTool,
     TISPersonalGradesFetchTool,
     TISSelectedCoursesFetchTool,
 )
-from app.teaching_information_system.shared import TISLogEvent
+from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
 from app.tooling import HostArtifact, HostEvent, ToolHostCapabilities, ToolInvocationContext
 
 

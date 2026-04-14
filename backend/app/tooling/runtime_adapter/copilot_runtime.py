@@ -207,8 +207,8 @@ def build_default_contract_runtime_bindings(
 ) -> tuple[RuntimeExecutableToolBinding, ...]:
     """Build runtime bindings for the currently approved Blackboard and TIS facade tools."""
 
-    from app.blackboard import get_blackboard_tool_contracts
-    from app.teaching_information_system import get_tis_tool_contracts
+    from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+    from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
     contracts = (
         *get_blackboard_tool_contracts(),
