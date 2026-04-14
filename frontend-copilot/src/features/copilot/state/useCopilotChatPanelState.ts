@@ -208,6 +208,10 @@ export function useCopilotChatPanelState({
     () => buildPersistedConversationFromHistory(sessionHistory),
     [sessionHistory],
   )
+  const hasRenderablePersistedSelectedConversation = useMemo(
+    () => persistedConversation.length > 0,
+    [persistedConversation],
+  )
   const shouldRenderTransientConversation = useMemo(() => {
     if (sessionHistory === null || sessionHistory.detailStatus !== 'ready') {
       return conversation.length > 0 || runState.phase !== 'idle'
@@ -231,8 +235,12 @@ export function useCopilotChatPanelState({
       return true
     }
 
-    return sessionHistory.selectedRunId === runId && sessionHistory.replayStatus !== 'ready'
-  }, [conversation.length, runState.phase, runState.runId, sessionHistory])
+    if (sessionHistory.selectedRunId !== runId) {
+      return false
+    }
+
+    return !hasRenderablePersistedSelectedConversation
+  }, [conversation.length, hasRenderablePersistedSelectedConversation, runState.phase, runState.runId, sessionHistory])
   const hasTransientConversation = useMemo(
     () => shouldRenderTransientConversation && (conversation.length > 0 || runState.phase !== 'idle'),
     [conversation.length, runState.phase, shouldRenderTransientConversation],
@@ -318,14 +326,18 @@ export function useCopilotChatPanelState({
       return
     }
 
-    if (!sessionHistory.runSummaries.some((runSummary) => runSummary.runId === pendingRunId)) {
+    if (
+      sessionHistory.selectedRunId !== pendingRunId
+      || !sessionHistory.runSummaries.some((runSummary) => runSummary.runId === pendingRunId)
+      || !hasRenderablePersistedSelectedConversation
+    ) {
       return
     }
 
     pendingHistorySyncRunIdRef.current = null
     setConversation([])
     setRunState((current) => current.runId === pendingRunId ? createIdleCopilotRunState() : current)
-  }, [sessionHistory])
+  }, [hasRenderablePersistedSelectedConversation, sessionHistory])
 
   useEffect(() => {
     if (selectSessionHistoryRun === undefined || sessionHistory === null || sessionHistory.selectedRunId === null) {

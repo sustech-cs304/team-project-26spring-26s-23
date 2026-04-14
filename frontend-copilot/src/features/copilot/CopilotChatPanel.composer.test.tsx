@@ -796,6 +796,88 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('keeps transient conversation visible after history detail refresh if the selected persisted run is still empty', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const sessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '你好')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('你好')
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('这是助手回显')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'session-1',
+              status: 'completed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '这是助手回显',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollRegion = rendered.getByTestId('chat-message-scroll-region')
+    expect(scrollRegion.textContent).toContain('你好')
+    expect(scrollRegion.textContent).toContain('这是助手回显')
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.queryByTestId('chat-empty-state')).toBeNull()
+
+    rendered.unmount()
+  })
+
   it('removes the assistant placeholder when a tool card arrives before assistant text', async () => {
     const toolEventControl = createDeferredSignal()
     const sendMessage = createToolFirstPendingSendMessageSpy(toolEventControl)
@@ -1820,6 +1902,45 @@ function createLoadingPersistedHistoryState(): AssistantSessionHistoryState {
     replayError: null,
     replay: null,
     replayByRunId: {},
+  }
+}
+
+function createLiveReadyButEmptyPersistedHistoryState(
+  overrides: Partial<AssistantSessionHistoryState> = {},
+): AssistantSessionHistoryState {
+  return {
+    summary: {
+      threadId: 'session-1',
+      boundAgentId: 'general',
+      title: '新建会话',
+      titleSource: 'deterministic',
+      summary: '最新摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-14T08:00:00Z',
+      updatedAt: '2026-04-14T08:00:03Z',
+      lastActivityAt: '2026-04-14T08:00:03Z',
+      lastRunId: 'run-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '这是助手回显',
+      driftSummary: {
+        status: 'not_evaluated',
+      },
+    },
+    isPersistedThread: true,
+    hasLoadedDetail: true,
+    detailStatus: 'ready',
+    detailError: null,
+    timelineItems: [],
+    runSummaries: [],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: null,
+    selectedRunId: 'run-1',
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+    replayByRunId: {},
+    ...overrides,
   }
 }
 
