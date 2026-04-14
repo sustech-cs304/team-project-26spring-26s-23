@@ -14,6 +14,24 @@ export interface CreateDesktopCapabilitySecretServiceOptions extends CreateDeskt
   getSettingsWorkspaceService?: () => ElectronSettingsWorkspaceService
 }
 
+type AllowedSecretLookup =
+  | {
+      kind: 'username'
+      normalizedSecretName: string
+      source: 'settings-workspace-state.sustech'
+    }
+  | {
+      kind: 'password'
+      normalizedSecretName: string
+      source: 'settings-workspace-secrets.sustech'
+    }
+  | {
+      kind: 'provider-api-key'
+      normalizedSecretName: string
+      source: 'settings-workspace-secrets.provider'
+      profileId: string
+    }
+
 const PROVIDER_API_KEY_SECRET_NAME_PATTERN = /^provider\.(.+)\.apiKey$/
 const USERNAME_SECRET_NAMES = new Set([
   'bb.username',
@@ -46,15 +64,30 @@ export function createDesktopCapabilitySecretService(
   return {
     async handle(request) {
       switch (request.operation) {
-        case 'get_secret': {
-          return {
-            value: await resolveSecretValue(getSettingsWorkspaceService(), String(request.payload.secretName ?? '')),
-          }
-        }
+        case 'get_secret':
         case 'has_secret': {
-          return {
-            present: await resolveSecretValue(getSettingsWorkspaceService(), String(request.payload.secretName ?? '')) !== null,
-          }
+          const secretLookup = resolveAllowedSecretLookup(request.payload.secretName)
+          const value = secretLookup === null
+            ? null
+            : await resolveSecretValue(getSettingsWorkspaceService(), secretLookup)
+
+          await options.appendLog?.('info', '[capability-bridge] Secret lookup completed.', {
+            capability: request.capability,
+            operation: request.operation,
+            toolId: request.toolId,
+            runId: request.runId,
+            toolCallId: request.toolCallId,
+            secretName: secretLookup?.normalizedSecretName ?? normalizeOptionalString(request.payload.secretName) ?? '',
+            source: secretLookup?.source ?? 'not_whitelisted',
+            present: value !== null,
+            ...(secretLookup?.kind === 'provider-api-key'
+              ? { profileId: secretLookup.profileId }
+              : {}),
+          })
+
+          return request.operation === 'get_secret'
+            ? { value }
+            : { present: value !== null }
         }
         default:
           throw new DesktopCapabilityBridgeError(
@@ -72,69 +105,96 @@ export function createDesktopCapabilitySecretService(
   }
 }
 
-async function resolveSecretValue(
-  settingsWorkspaceService: ElectronSettingsWorkspaceService,
-  secretName: string,
-): Promise<string | null> {
-  const normalizedSecretName = secretName.trim()
-  if (normalizedSecretName === '') {
+function resolveAllowedSecretLookup(secretNameValue: unknown): AllowedSecretLookup | null {
+  const normalizedSecretName = normalizeOptionalString(secretNameValue)
+  if (normalizedSecretName === null) {
     return null
   }
 
   if (USERNAME_SECRET_NAMES.has(normalizedSecretName)) {
-    const stateResult = await settingsWorkspaceService.loadState()
-    if (!stateResult.ok) {
-      throw new DesktopCapabilityBridgeError('internal_error', stateResult.error, {
-        details: {
-          secretName: normalizedSecretName,
-          source: 'settings-workspace-state',
-        },
-      })
+    return {
+      kind: 'username',
+      normalizedSecretName,
+      source: 'settings-workspace-state.sustech',
     }
-
-    return normalizeOptionalString(stateResult.state.sustech.studentId)
-      ?? normalizeOptionalString(stateResult.state.sustech.email)
-      ?? null
   }
 
   if (PASSWORD_SECRET_NAMES.has(normalizedSecretName)) {
-    const secretResult = await settingsWorkspaceService.loadSustechCasSecret()
-    if (!secretResult.ok) {
-      throw new DesktopCapabilityBridgeError('internal_error', secretResult.error, {
-        details: {
-          secretName: normalizedSecretName,
-          source: 'settings-workspace-secrets.sustech',
-        },
-      })
+    return {
+      kind: 'password',
+      normalizedSecretName,
+      source: 'settings-workspace-secrets.sustech',
     }
-
-    return normalizeOptionalString(secretResult.state.password)
   }
 
   const providerMatch = PROVIDER_API_KEY_SECRET_NAME_PATTERN.exec(normalizedSecretName)
-  if (providerMatch !== null) {
-    const profileId = providerMatch[1]?.trim() ?? ''
-    if (profileId === '') {
-      return null
-    }
-
-    const secretStatesResult = await settingsWorkspaceService.loadSecretStates({
-      profileIds: [profileId],
-    })
-    if (!secretStatesResult.ok) {
-      throw new DesktopCapabilityBridgeError('internal_error', secretStatesResult.error, {
-        details: {
-          secretName: normalizedSecretName,
-          source: 'settings-workspace-secrets.provider',
-          profileId,
-        },
-      })
-    }
-
-    return normalizeOptionalString(secretStatesResult.states[profileId]?.apiKey)
+  if (providerMatch === null) {
+    return null
   }
 
-  return null
+  const profileId = providerMatch[1]?.trim() ?? ''
+  if (profileId === '') {
+    return null
+  }
+
+  return {
+    kind: 'provider-api-key',
+    normalizedSecretName,
+    source: 'settings-workspace-secrets.provider',
+    profileId,
+  }
+}
+
+async function resolveSecretValue(
+  settingsWorkspaceService: ElectronSettingsWorkspaceService,
+  secretLookup: AllowedSecretLookup,
+): Promise<string | null> {
+  switch (secretLookup.kind) {
+    case 'username': {
+      const stateResult = await settingsWorkspaceService.loadState()
+      if (!stateResult.ok) {
+        throw new DesktopCapabilityBridgeError('internal_error', stateResult.error, {
+          details: {
+            secretName: secretLookup.normalizedSecretName,
+            source: secretLookup.source,
+          },
+        })
+      }
+
+      return normalizeOptionalString(stateResult.state.sustech.studentId)
+        ?? normalizeOptionalString(stateResult.state.sustech.email)
+        ?? null
+    }
+    case 'password': {
+      const secretResult = await settingsWorkspaceService.loadSustechCasSecret()
+      if (!secretResult.ok) {
+        throw new DesktopCapabilityBridgeError('internal_error', secretResult.error, {
+          details: {
+            secretName: secretLookup.normalizedSecretName,
+            source: secretLookup.source,
+          },
+        })
+      }
+
+      return normalizeOptionalString(secretResult.state.password)
+    }
+    case 'provider-api-key': {
+      const secretStatesResult = await settingsWorkspaceService.loadSecretStates({
+        profileIds: [secretLookup.profileId],
+      })
+      if (!secretStatesResult.ok) {
+        throw new DesktopCapabilityBridgeError('internal_error', secretStatesResult.error, {
+          details: {
+            secretName: secretLookup.normalizedSecretName,
+            source: secretLookup.source,
+            profileId: secretLookup.profileId,
+          },
+        })
+      }
+
+      return normalizeOptionalString(secretStatesResult.states[secretLookup.profileId]?.apiKey)
+    }
+  }
 }
 
 function normalizeOptionalString(value: unknown): string | null {

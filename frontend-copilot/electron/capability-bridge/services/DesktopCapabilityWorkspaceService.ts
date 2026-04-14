@@ -20,7 +20,9 @@ export function createDesktopCapabilityWorkspaceService(
           return { path: targetPath }
         }
         case 'ensure_directory': {
-          const targetPath = await resolveWorkspacePath(options, request.payload.relativePath)
+          const targetPath = await resolveWorkspacePath(options, request.payload.relativePath, {
+            requireRelativePath: true,
+          })
           await mkdir(targetPath, { recursive: true })
           return { path: targetPath }
         }
@@ -43,16 +45,82 @@ export function createDesktopCapabilityWorkspaceService(
 async function resolveWorkspacePath(
   options: CreateDesktopCapabilityBridgeServiceOptions,
   relativePathValue: unknown,
+  resolveOptions: {
+    requireRelativePath?: boolean
+  } = {},
 ): Promise<string> {
   const hostedPaths = await options.prepareRuntimePaths()
   const bridgePaths = createDesktopCapabilityBridgePaths(hostedPaths)
   const workspaceRootDir = path.resolve(bridgePaths.workspaceRootDir)
-  const relativePath = normalizeOptionalRelativePath(relativePathValue)
+  const relativePath = normalizeWorkspaceRelativePath(relativePathValue, resolveOptions)
   const resolvedPath = relativePath === null
     ? workspaceRootDir
     : path.resolve(workspaceRootDir, relativePath)
 
-  if (!isPathInsideRoot(workspaceRootDir, resolvedPath)) {
+  assertPathInsideApprovedRoot(workspaceRootDir, resolvedPath, relativePath)
+
+  return resolvedPath
+}
+
+function normalizeWorkspaceRelativePath(
+  value: unknown,
+  options: {
+    requireRelativePath?: boolean
+  },
+): string | null {
+  if (value === undefined) {
+    if (options.requireRelativePath) {
+      throw new DesktopCapabilityBridgeError(
+        'invalid_request',
+        'relativePath must be a non-empty relative path.',
+      )
+    }
+
+    return null
+  }
+
+  if (typeof value !== 'string') {
+    throw new DesktopCapabilityBridgeError('invalid_request', 'relativePath must be a string when provided.')
+  }
+
+  const normalized = value.trim()
+  if (normalized === '') {
+    if (options.requireRelativePath) {
+      throw new DesktopCapabilityBridgeError(
+        'invalid_request',
+        'relativePath must be a non-empty relative path.',
+      )
+    }
+
+    return null
+  }
+
+  if (path.isAbsolute(normalized)) {
+    throw new DesktopCapabilityBridgeError(
+      'invalid_request',
+      'relativePath must be a relative path when provided.',
+      {
+        details: {
+          relativePath: normalized,
+        },
+      },
+    )
+  }
+
+  return normalized
+}
+
+function assertPathInsideApprovedRoot(
+  workspaceRootDir: string,
+  resolvedPath: string,
+  relativePath: string | null,
+): void {
+  const relativeToRoot = path.relative(workspaceRootDir, resolvedPath)
+  if (relativeToRoot === '') {
+    return
+  }
+
+  if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
     throw new DesktopCapabilityBridgeError(
       'permission_denied',
       'Workspace path must resolve inside the desktop capability workspace root.',
@@ -60,32 +128,9 @@ async function resolveWorkspacePath(
         details: {
           workspaceRootDir,
           resolvedPath,
-          relativePath,
+          relativePath: relativePath ?? '',
         },
       },
     )
   }
-
-  return resolvedPath
-}
-
-function normalizeOptionalRelativePath(value: unknown): string | null {
-  if (value === undefined) {
-    return null
-  }
-  if (typeof value !== 'string') {
-    throw new DesktopCapabilityBridgeError('invalid_request', 'relativePath must be a string when provided.')
-  }
-
-  const normalized = value.trim()
-  return normalized === '' ? null : normalized
-}
-
-function isPathInsideRoot(rootDir: string, candidatePath: string): boolean {
-  if (candidatePath === rootDir) {
-    return true
-  }
-
-  const rootWithSeparator = rootDir.endsWith(path.sep) ? rootDir : `${rootDir}${path.sep}`
-  return candidatePath.startsWith(rootWithSeparator)
 }

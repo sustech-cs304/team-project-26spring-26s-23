@@ -94,6 +94,20 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         value: 'openrouter-secret',
       },
     })
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'secret-2',
+      capability: 'secret',
+      operation: 'has_secret',
+      payload: {
+        secretName: 'custom.secret',
+      },
+    }))).resolves.toEqual({
+      requestId: 'secret-2',
+      ok: true,
+      result: {
+        present: false,
+      },
+    })
 
     const expectedWorkspaceDir = path.resolve(fixture.hostedPaths.runtimeRootDir, 'workspace', 'cache')
     await expect(service.handleRequest(buildRequest({
@@ -200,8 +214,40 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       eventType: 'log',
       message: 'bridge event',
     }))
+    expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledWith({
       profileIds: ['openrouter'],
+    })
+  })
+
+  it('returns structured failures when workspace paths escape the approved root', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-workspace-denied')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+
+    const resolvedPath = path.resolve(fixture.hostedPaths.runtimeRootDir, '../outside')
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'workspace-denied-1',
+      capability: 'workspace',
+      operation: 'resolve_path',
+      payload: {
+        relativePath: '../outside',
+      },
+    }))).resolves.toEqual({
+      requestId: 'workspace-denied-1',
+      ok: false,
+      errorCode: 'permission_denied',
+      errorMessage: 'Workspace path must resolve inside the desktop capability workspace root.',
+      errorRetryable: false,
+      details: {
+        workspaceRootDir: path.resolve(fixture.hostedPaths.runtimeRootDir),
+        resolvedPath,
+        relativePath: '../outside',
+      },
     })
   })
 
