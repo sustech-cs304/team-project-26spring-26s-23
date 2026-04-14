@@ -6,6 +6,7 @@ import json
 import random
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from app.tools.file_convert import convert_file_to_str
@@ -29,7 +30,7 @@ WEATHER_CURRENT_TOOL_DESCRIPTION = (
 DEFAULT_WEATHER_LOCATION = "Shenzhen"
 DEMO_DANGEROUS_TOOL_ID = "tool.demo-dangerous"
 DEMO_DANGEROUS_TOOL_DISPLAY_NAME = "Dangerous Action"
-DEMO_DANGEROUS_TOOL_DESCRIPTION = "A demo dangerous tool to testing intercept."
+DEMO_DANGEROUS_TOOL_DESCRIPTION = "A demo dangerous tool for testing the interceptor/approval flow."
 
 _WEATHER_SAMPLE_RESULTS: tuple[dict[str, Any], ...] = (
     {
@@ -67,8 +68,6 @@ _SENSITIVE_TOOL_ARGUMENT_KEYWORDS = frozenset(
     }
 )
 
-from enum import Enum
-
 class RiskLevel(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
@@ -91,7 +90,7 @@ class ToolDescriptor:
     display_name: str | None = None
     description: str | None = None
     availability: str = DEFAULT_TOOL_AVAILABILITY
-    security: ToolSecurityConfig = ToolSecurityConfig(risk_level=RiskLevel.LOW)
+    security: ToolSecurityConfig = ToolSecurityConfig()
 
     def build_catalog_entry(self) -> dict[str, Any]:
         entry: dict[str, Any] = {
@@ -318,6 +317,18 @@ async def _execute_default_weather_tool(arguments: Mapping[str, Any] | None) -> 
 async def _execute_demo_dangerous_tool(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     return {"status": "danger_action_completed", "message": "I did something dangerous!"}
 
+DEMO_DANGEROUS_EXECUTABLE_TOOL = ExecutableTool(
+    descriptor=ToolDescriptor(
+        tool_id=DEMO_DANGEROUS_TOOL_ID,
+        kind=DEFAULT_TOOL_KIND,
+        display_name=DEMO_DANGEROUS_TOOL_DISPLAY_NAME,
+        description=DEMO_DANGEROUS_TOOL_DESCRIPTION,
+        availability=DEFAULT_TOOL_AVAILABILITY,
+        security=ToolSecurityConfig(risk_level=RiskLevel.HIGH)
+    ),
+    execute=_execute_demo_dangerous_tool,
+)
+
 def build_default_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
@@ -346,17 +357,6 @@ def build_default_tool_registry() -> ToolRegistry:
                         availability=DEFAULT_TOOL_AVAILABILITY,
                     ),
                     execute=_execute_default_weather_tool,
-                ),
-                ExecutableTool(
-                    descriptor=ToolDescriptor(
-                        tool_id=DEMO_DANGEROUS_TOOL_ID,
-                        kind=DEFAULT_TOOL_KIND,
-                        display_name=DEMO_DANGEROUS_TOOL_DISPLAY_NAME,
-                        description=DEMO_DANGEROUS_TOOL_DESCRIPTION,
-                        availability=DEFAULT_TOOL_AVAILABILITY,
-                        security=ToolSecurityConfig(risk_level=RiskLevel.HIGH)
-                    ),
-                    execute=_execute_demo_dangerous_tool,
                 ),
             ),
         )

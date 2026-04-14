@@ -146,6 +146,21 @@ class ToolInvocationError(AgentExecutionError):
         super().__init__(message)
 
 
+class ToolApprovalSuspensionError(Exception):
+    """Raised when a runtime tool call is suspended pending human approval."""
+
+    def __init__(
+        self,
+        *,
+        message: str,
+        tool_id: str,
+        tool_call_id: str | None = None,
+    ) -> None:
+        self.tool_id = tool_id
+        self.tool_call_id = tool_call_id
+        super().__init__(message)
+
+
 class ProviderAdapterExecutionError(AgentExecutionError):
     """Raised when provider adapter registry cannot build a runtime execution model."""
 
@@ -388,6 +403,8 @@ class _PydanticAIEventStream:
         except asyncio.CancelledError as exc:
             self._run_exception = exc
             raise
+        except ToolApprovalSuspensionError:
+            self._cached_output = "Operation suspended pending user approval."
         except Exception as exc:
             self._run_exception = exc
         finally:
@@ -1312,23 +1329,24 @@ class PydanticAIAgentExecutor:
 
         # INTERCEPTOR: Check Security Level
         security_config = tool.descriptor.security
-        if security_config.risk_level in ["medium", "high"]:
+        risk_level_value = getattr(security_config.risk_level, "value", security_config.risk_level)
+        if risk_level_value in ["medium", "high"]:
+            risk_level_label = {"medium": "中危", "high": "高危"}.get(risk_level_value, "需授权")
             self._emit_tool_event(
                 ctx,
                 RuntimeToolLifecycleEvent(
                     tool_call_id=tool_call_id,
                     tool_id=tool_id,
                     phase="waiting_approval",
-                    title=f"等待授权: {tool.descriptor.display_name or tool_id}",
-                    summary="此操作被评估为高危，需要用户手动批准验证。",
+                    title=f"等待授权 ({risk_level_label}): {tool.descriptor.display_name or tool_id}",
+                    summary=f"此操作被评估为{risk_level_label}，需要用户手动批准验证。",
                     input_summary=input_summary,
-                    security_level=security_config.risk_level.value,
+                    security_level=risk_level_value,
                     security_approval_method=security_config.approval_method
                 ),
             )
-            # Stop the execution manually for now, simulate waiting/cancellation.
-            raise ToolInvocationError(
-                code="tool_suspended_for_approval",
+            # Stop the execution manually providing a non-failure control signal.
+            raise ToolApprovalSuspensionError(
                 message="Tool execution suspended, waiting for human in the loop approval.",
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
@@ -1336,7 +1354,7 @@ class PydanticAIAgentExecutor:
 
         try:
             result = await tool.execute(normalized_arguments)
-        except ToolInvocationError:
+        except (ToolInvocationError, ToolApprovalSuspensionError):
             raise
         except Exception as exc:
             error_message = f"Tool '{tool_id}' failed: {exc}"
