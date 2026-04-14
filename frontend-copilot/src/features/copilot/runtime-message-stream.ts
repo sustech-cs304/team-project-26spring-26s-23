@@ -22,6 +22,7 @@ import type {
   RuntimeThinkingVisibility,
   RuntimeToolEvent,
   RuntimeToolEventPhase,
+  RuntimeToolEventSecurity,
 } from './thread-run-contract'
 
 const TERMINAL_RUNTIME_RUN_EVENT_TYPES = new Set<RuntimeRunEvent['type']>([
@@ -232,7 +233,6 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
       const inputSummary = requireOptionalString(payload.inputSummary, 'runtime event payload.inputSummary')
       const resultSummary = requireOptionalString(payload.resultSummary, 'runtime event payload.resultSummary')
       const errorSummary = requireOptionalString(payload.errorSummary, 'runtime event payload.errorSummary')
-      const security = payload.security as RuntimeToolEvent['payload']['security']
 
       if (inputSummary !== undefined) {
         toolEventPayload.inputSummary = inputSummary
@@ -243,9 +243,27 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
       if (errorSummary !== undefined) {
         toolEventPayload.errorSummary = errorSummary
       }
-      if (security !== undefined) {
-        toolEventPayload.security = security
+
+      if (payload.security !== undefined && payload.security !== null) {
+        if (typeof payload.security !== 'object' || Array.isArray(payload.security)) {
+          throw new Error('runtime event payload.security must be an object')
+        }
+        const securityObj = payload.security as Record<string, unknown>
+        const riskLevel = securityObj.riskLevel
+        if (riskLevel !== 'safe' && riskLevel !== 'moderate' && riskLevel !== 'high') {
+          throw new Error(`Invalid security riskLevel: ${riskLevel}`)
+        }
+        const approvalMethod = securityObj.approvalMethod
+        if (approvalMethod !== undefined && approvalMethod !== 'accept_reject' && approvalMethod !== 'password') {
+          throw new Error(`Invalid security approvalMethod: ${approvalMethod}`)
+        }
+        const securityPayload: RuntimeToolEventSecurity = { riskLevel }
+        if (approvalMethod) {
+          securityPayload.approvalMethod = approvalMethod
+        }
+        toolEventPayload.security = securityPayload
       }
+
       return {
         type: 'tool_event',
         runId,

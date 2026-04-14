@@ -50,14 +50,15 @@ export interface RuntimeToolEventPayload {
 ```
 
 ### 3.2 对应的后端数据类（Python 视角）
-在 `backend/app/copilot_runtime/contracts.py` 中对应的 `RuntimeToolLifecycleEvent` 将扩展 `phase` 枚举：
+在当前实现中，对应的 `RuntimeToolLifecycleEvent` 与 `ToolLifecyclePhase` 实际定义在 `backend/app/copilot_runtime/agent.py`，下面示意其扩展后的 `phase` 枚举：
 ```python
-class RuntimeToolLifecycleEvent(RuntimeContract):
+class RuntimeToolLifecycleEvent:
     tool_call_id: str
     tool_id: str
-    phase: Literal["started", "waiting_approval", "completed", "failed", "cancelled"]
+    phase: ToolLifecyclePhase # 包括 "started", "waiting_approval", "completed", "failed", "cancelled"
     title: str
     summary: str
+    input_summary: str | None = None
     # ... 其他可选字段
 ```
 

@@ -801,11 +801,14 @@ function mapToolPhaseToSegmentStatus(
 ): CopilotToolSegment['status'] {
   switch (phase) {
     case 'started':
+    case 'waiting_approval':
       return 'streaming'
     case 'completed':
       return 'completed'
     case 'failed':
       return 'failed'
+    case 'cancelled':
+      return 'cancelled'
   }
 }
 
