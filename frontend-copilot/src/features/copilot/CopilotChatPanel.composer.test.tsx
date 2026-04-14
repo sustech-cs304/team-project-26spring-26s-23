@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act } from 'react'
-import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
 import {
@@ -42,6 +42,10 @@ beforeAll(() => {
 
 afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
+})
+
+afterEach(() => {
+  restoreNotificationApi()
 })
 
 describe('CopilotChatPanel composer interactions', () => {
@@ -706,6 +710,151 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(renderedIcon?.getAttribute('aria-label')).toBe('GPT 4.1 图标')
     expect(rendered.container.textContent).not.toContain('已完成')
     expect(rendered.container.querySelectorAll('.copilot-chat__message--assistant.copilot-chat__message--completed')).toHaveLength(1)
+
+    rendered.unmount()
+  })
+
+  it('shows a system notification after the assistant completes when notifications are enabled', async () => {
+    const notification = installMockNotification('granted')
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请完成后通知我')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(() => notification.records.length === 1, 'assistant success notification emitted')
+
+    expect(notification.records[0]).toEqual({
+      title: '助手消息已完成',
+      options: {
+        body: '这是助手回显',
+        tag: 'run-1:completed',
+      },
+    })
+    expect(notification.requestPermission).not.toHaveBeenCalled()
+
+    rendered.unmount()
+  })
+
+  it('does not show a system notification when assistant notifications are disabled', async () => {
+    const notification = installMockNotification('granted')
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: false,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '通知保持关闭')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(notification.records).toHaveLength(0)
+    expect(notification.requestPermission).not.toHaveBeenCalled()
+
+    rendered.unmount()
+  })
+
+  it('shows a failure system notification after the assistant run fails when notifications are enabled', async () => {
+    const notification = installMockNotification('granted')
+    const sendMessage = createToolFailureSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '失败后通知我')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(() => notification.records.length === 1, 'assistant failure notification emitted')
+
+    expect(notification.records[0]).toEqual({
+      title: '助手执行失败',
+      options: {
+        body: 'Tool failed: boom',
+        tag: 'run-tool-failed:failed',
+      },
+    })
+    expect(notification.requestPermission).not.toHaveBeenCalled()
 
     rendered.unmount()
   })
@@ -1738,6 +1887,64 @@ function createAbortableSendMessageSpy() {
         delta: '第二段',
       },
     }
+  })
+}
+
+const originalNotification = globalThis.Notification
+
+interface MockNotificationRecord {
+  title: string
+  options?: NotificationOptions
+}
+
+interface MockNotificationController {
+  records: MockNotificationRecord[]
+  requestPermission: ReturnType<typeof vi.fn>
+}
+
+function installMockNotification(permission: NotificationPermission): MockNotificationController {
+  const records: MockNotificationRecord[] = []
+  const requestPermission = vi.fn(async () => permission)
+
+  class MockNotification {
+    static permission: NotificationPermission = permission
+    static requestPermission = requestPermission
+
+    constructor(title: string, options?: NotificationOptions) {
+      records.push({ title, options })
+    }
+
+    close() {
+      return undefined
+    }
+  }
+
+  Object.defineProperty(globalThis, 'Notification', {
+    configurable: true,
+    writable: true,
+    value: MockNotification,
+  })
+
+  return {
+    records,
+    requestPermission,
+  }
+}
+
+function restoreNotificationApi() {
+  if (originalNotification === undefined) {
+    Object.defineProperty(globalThis, 'Notification', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    })
+    return
+  }
+
+  Object.defineProperty(globalThis, 'Notification', {
+    configurable: true,
+    writable: true,
+    value: originalNotification,
   })
 }
 
