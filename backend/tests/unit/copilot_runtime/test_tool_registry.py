@@ -28,9 +28,11 @@ CONTRACT_TOOL_IDS = (
     "blackboard.course_catalog.search",
     "blackboard.calendar.refresh",
     "blackboard.snapshot.sync",
+    "blackboard.sql.query",
     "tis.personal_grades.fetch",
     "tis.credit_gpa.fetch",
     "tis.selected_courses.fetch",
+    "tis.sql.query",
 )
 
 

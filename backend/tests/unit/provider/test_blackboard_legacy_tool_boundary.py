@@ -25,6 +25,7 @@ _EXPECTED_BLACKBOARD_TOOL_IDS = {
     "blackboard.course_catalog.search",
     "blackboard.calendar.refresh",
     "blackboard.snapshot.sync",
+    "blackboard.sql.query",
 }
 
 

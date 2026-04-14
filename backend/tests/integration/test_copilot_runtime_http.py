@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -727,6 +728,174 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
 
 
 
+def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_workspace_and_artifact(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace-root"
+    db_path = _create_sqlite_db(
+        workspace_root / "backend/data/blackboard-query.db",
+        script="""
+        CREATE TABLE announcements (id INTEGER PRIMARY KEY, title TEXT);
+        INSERT INTO announcements (id, title) VALUES
+            (1, 'Welcome'),
+            (2, 'Exam'),
+            (3, 'Reminder');
+        """,
+    )
+    captured_bridge_payloads: list[dict[str, Any]] = []
+    captured_headers: list[str | None] = []
+
+    app = _create_app(
+        host_capability_bridge_client=_create_recording_bridge_client(
+            captured_payloads=captured_bridge_payloads,
+            captured_headers=captured_headers,
+            secret_values={},
+            workspace_root=workspace_root,
+        )
+    )
+
+    with TestClient(app) as client:
+        _configure_contract_tool_test_model(
+            app,
+            tool_id="blackboard.sql.query",
+            tool_arguments={
+                "sql": "SELECT id, title FROM announcements ORDER BY id",
+                "dbRelativePath": "backend/data/blackboard-query.db",
+                "resultLimit": 1,
+                "persistArtifact": True,
+            },
+            output_text="Blackboard SQL bridge answer",
+        )
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                model_id="gpt-4.1",
+                user_text="Query Blackboard SQLite data through the chat runtime.",
+                enabled_tools=["blackboard.sql.query"],
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+    tool_call_id = _assert_contract_tool_run_events(
+        events,
+        tool_id="blackboard.sql.query",
+        assistant_text="Blackboard SQL bridge answer",
+    )
+    tool_events = [event for event in events if event["type"] == "tool_event"]
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert response.status_code == 200
+    assert '"rowCount": 3' in str(tool_events[1]["payload"]["resultSummary"])
+    assert captured_headers == ["bridge-token-123"] * len(captured_headers)
+    assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
+        ("event", "emit_event"),
+        ("workspace", "resolve_path"),
+        ("artifact", "save_text"),
+        ("event", "emit_event"),
+    ]
+    assert all(item["toolId"] == "blackboard.sql.query" for item in captured_bridge_payloads)
+    assert all(item["runId"] == run_id for item in captured_bridge_payloads)
+    assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
+    assert captured_bridge_payloads[0]["payload"]["eventType"] == "blackboard.sql.query.started"
+    assert captured_bridge_payloads[-1]["payload"]["eventType"] == "blackboard.sql.query.completed"
+    artifact_request = next(
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("artifact", "save_text")
+    )
+    assert artifact_request["payload"]["metadata"] == {
+        "toolId": "blackboard.sql.query",
+        "invocationId": tool_call_id,
+        "rowCount": 3,
+    }
+    artifact_payload = json.loads(artifact_request["payload"]["text"])
+    assert artifact_payload["database"]["path"] == db_path.as_posix()
+    assert artifact_payload["rows"][2] == {"id": 3, "title": "Reminder"}
+
+
+
+def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_workspace(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace-root"
+    db_path = _create_sqlite_db(
+        workspace_root / "backend/data/tis-query.db",
+        script="""
+        CREATE TABLE grades (id INTEGER PRIMARY KEY, score INTEGER);
+        INSERT INTO grades (id, score) VALUES (1, 95), (2, 88);
+        """,
+    )
+    captured_bridge_payloads: list[dict[str, Any]] = []
+    captured_headers: list[str | None] = []
+
+    app = _create_app(
+        host_capability_bridge_client=_create_recording_bridge_client(
+            captured_payloads=captured_bridge_payloads,
+            captured_headers=captured_headers,
+            secret_values={},
+            workspace_root=workspace_root,
+        )
+    )
+
+    with TestClient(app) as client:
+        _configure_contract_tool_test_model(
+            app,
+            tool_id="tis.sql.query",
+            tool_arguments={
+                "sql": "UPDATE grades SET score = 96 WHERE id = 1",
+                "dbRelativePath": "backend/data/tis-query.db",
+            },
+            output_text="TIS SQL bridge answer",
+        )
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                model_id="gpt-4.1",
+                user_text="Update TIS SQLite data through the chat runtime.",
+                enabled_tools=["tis.sql.query"],
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+    tool_call_id = _assert_contract_tool_run_events(
+        events,
+        tool_id="tis.sql.query",
+        assistant_text="TIS SQL bridge answer",
+    )
+    tool_events = [event for event in events if event["type"] == "tool_event"]
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert response.status_code == 200
+    assert '"affectedRowCount": 1' in str(tool_events[1]["payload"]["resultSummary"])
+    assert captured_headers == ["bridge-token-123"] * len(captured_headers)
+    assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
+        ("event", "emit_event"),
+        ("workspace", "resolve_path"),
+        ("event", "emit_event"),
+    ]
+    assert all(item["toolId"] == "tis.sql.query" for item in captured_bridge_payloads)
+    assert all(item["runId"] == run_id for item in captured_bridge_payloads)
+    assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
+    assert captured_bridge_payloads[0]["payload"]["eventType"] == "tis.sql.query.started"
+    assert captured_bridge_payloads[-1]["payload"]["eventType"] == "tis.sql.query.completed"
+    with sqlite3.connect(str(db_path)) as connection:
+        updated_score = connection.execute("SELECT score FROM grades WHERE id = 1").fetchone()
+    assert updated_score == (96,)
+
+
+
 def test_post_root_run_stream_corrupted_thread_history_returns_failed_event() -> None:
     app = _create_app(CapturingStreamingExecutor(outputs=["unused reply"]))
 
@@ -943,6 +1112,14 @@ def _build_tis_credit_gpa_result() -> TISCreditGPAQueryResult:
 
 
 
+def _create_sqlite_db(path: Path, *, script: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(path)) as connection:
+        connection.executescript(script)
+    return path
+
+
+
 def _configure_contract_tool_test_model(
     app,
     *,
@@ -988,7 +1165,10 @@ def _create_recording_bridge_client(
     captured_payloads: list[dict[str, Any]],
     captured_headers: list[str | None],
     secret_values: dict[str, str],
+    workspace_root: Path | None = None,
 ) -> DesktopCapabilityBridgeClient:
+    resolved_workspace_root = Path("workspace-root") if workspace_root is None else workspace_root
+
     def handler(request: httpx.Request) -> httpx.Response:
         captured_headers.append(request.headers.get(HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME))
         payload = json.loads(request.content.decode("utf-8"))
@@ -1008,8 +1188,12 @@ def _create_recording_bridge_client(
             return success({"value": secret_values.get(str(payload["payload"]["secretName"]))})
         if (capability, operation) == ("workspace", "resolve_path"):
             relative_path = payload["payload"].get("relativePath")
-            resolved_path = "workspace-root" if relative_path is None else f"workspace-root/{relative_path}"
-            return success({"path": resolved_path})
+            resolved_path = (
+                resolved_workspace_root
+                if relative_path is None
+                else resolved_workspace_root / str(relative_path)
+            )
+            return success({"path": resolved_path.as_posix()})
         if (capability, operation) == ("state", "put_value"):
             return success({})
         if (capability, operation) == ("artifact", "save_text"):

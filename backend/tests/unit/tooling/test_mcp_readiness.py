@@ -167,15 +167,17 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     reports = assess_default_contract_mcp_readiness()
 
     assert MCP_SUPPORTED_INPUT_SCHEMA_FORMATS == ("json-schema",)
-    assert len(reports) == 6
+    assert len(reports) == 8
     by_tool_id = {report.tool_id: report for report in reports}
     assert set(by_tool_id) == {
         "blackboard.course_catalog.search",
         "blackboard.calendar.refresh",
         "blackboard.snapshot.sync",
+        "blackboard.sql.query",
         "tis.personal_grades.fetch",
         "tis.credit_gpa.fetch",
         "tis.selected_courses.fetch",
+        "tis.sql.query",
     }
 
     course_catalog_report = by_tool_id["blackboard.course_catalog.search"]
@@ -209,10 +211,47 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
         "Host capability 'event_sink' is not directly satisfiable in bare MCP mode.",
     )
 
+    blackboard_sql_report = by_tool_id["blackboard.sql.query"]
+    assert blackboard_sql_report.ready_for_exposure is True
+    assert blackboard_sql_report.requires_capability_bridge is True
+    assert [
+        readiness.capability for readiness in blackboard_sql_report.capability_readiness
+    ] == [
+        "workspace_resolver",
+        "artifact_store",
+        "event_sink",
+    ]
+    assert blackboard_sql_report.descriptor.to_dict()["annotations"] == {
+        "title": "Blackboard SQL Query",
+        "idempotentHint": False,
+        "destructiveHint": True,
+    }
+    assert blackboard_sql_report.warnings == (
+        "Host capability 'workspace_resolver' is not directly satisfiable in bare MCP mode.",
+        "Host capability 'artifact_store' is not directly satisfiable in bare MCP mode.",
+        "Host capability 'event_sink' is not directly satisfiable in bare MCP mode.",
+    )
+
     selected_courses_report = by_tool_id["tis.selected_courses.fetch"]
     assert selected_courses_report.ready_for_exposure is True
     assert selected_courses_report.descriptor.to_dict()["annotations"] == {
         "title": "TIS Selected Courses Fetch",
+        "idempotentHint": False,
+        "destructiveHint": True,
+    }
+
+    tis_sql_report = by_tool_id["tis.sql.query"]
+    assert tis_sql_report.ready_for_exposure is True
+    assert tis_sql_report.requires_capability_bridge is True
+    assert [
+        readiness.capability for readiness in tis_sql_report.capability_readiness
+    ] == [
+        "workspace_resolver",
+        "artifact_store",
+        "event_sink",
+    ]
+    assert tis_sql_report.descriptor.to_dict()["annotations"] == {
+        "title": "TIS SQL Query",
         "idempotentHint": False,
         "destructiveHint": True,
     }

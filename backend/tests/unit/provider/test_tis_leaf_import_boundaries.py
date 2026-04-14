@@ -22,6 +22,7 @@ _EXPECTED_TIS_TOOL_IDS = {
     "tis.personal_grades.fetch",
     "tis.credit_gpa.fetch",
     "tis.selected_courses.fetch",
+    "tis.sql.query",
 }
 
 _TIS_USE_CASE_MODULES = (
