@@ -91,6 +91,12 @@ def test_history_routes_expose_persisted_threads_details_and_run_replay(tmp_path
     assert threads_payload["threads"][0]["summary"] == "Persistent reply"
     assert threads_payload["threads"][0]["lastRunStatus"] == "completed"
 
+    assert threads_payload["threads"][0]["driftSummary"]["status"] == "no_drift"
+    assert threads_payload["threads"][0]["driftSummary"]["historicalModelId"] == "gpt-4.1"
+    assert threads_payload["threads"][0]["driftSummary"]["historicalToolIds"] == ["tool.weather-current"]
+    assert threads_payload["threads"][0]["driftSummary"]["warnings"] == []
+    assert threads_payload["threads"][0]["driftSummary"]["requiresExplicitRebind"] is False
+
     assert detail_payload["ok"] is True
     assert detail_payload["thread"]["threadId"] == "thread-1"
     assert [item["kind"] for item in detail_payload["timelineItems"]] == [
@@ -143,14 +149,26 @@ def test_history_routes_surface_backend_drift_conclusions_in_thread_detail_and_r
         store.mark_run_completed("run-legacy", assistant_text="Legacy reply")
 
         headers = {LOCAL_TOKEN_HEADER_NAME: "history-token"}
+        threads_response = client.get("/history/threads", headers=headers)
         detail_response = client.get("/history/threads/thread-legacy", headers=headers)
         replay_response = client.get("/history/runs/run-legacy/replay", headers=headers)
 
+    assert threads_response.status_code == 200
     assert detail_response.status_code == 200
     assert replay_response.status_code == 200
 
+    threads_payload = threads_response.json()
     detail_payload = detail_response.json()
     replay_payload = replay_response.json()
+
+    assert threads_payload["threads"][0]["driftSummary"]["status"] == "multiple_issues"
+    assert threads_payload["threads"][0]["driftSummary"]["historicalModelId"] == "gpt-4.1"
+    assert threads_payload["threads"][0]["driftSummary"]["historicalToolIds"] == ["tool.legacy-removed"]
+    assert [warning["code"] for warning in threads_payload["threads"][0]["driftSummary"]["warnings"]] == [
+        "historical_provider_removed",
+        "historical_tool_unregistered",
+    ]
+    assert threads_payload["threads"][0]["driftSummary"]["requiresExplicitRebind"] is True
 
     assert detail_payload["availabilityDrift"]["status"] == "multiple_issues"
     assert detail_payload["availabilityDrift"]["historicalModelId"] == "gpt-4.1"

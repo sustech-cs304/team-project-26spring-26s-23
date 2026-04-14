@@ -104,6 +104,9 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
 
         backup_result = store.backup_database()
         history_service = store.create_history_query_service()
+        initial_threads = history_service.list_threads()
+        initial_detail = history_service.get_thread_detail("thread-1")
+        initial_replay = history_service.get_run_replay("run-1")
         delete_result = store.delete_thread("thread-1")
         hidden_threads = history_service.list_threads()
         deleted_detail = history_service.get_thread_detail("thread-1")
@@ -112,8 +115,19 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
         purged_run = store.get_run("run-1")
         restore_result = store.restore_database(source_path=backup_result.backupPath)
         restored_threads = history_service.list_threads()
+        restored_detail = history_service.get_thread_detail("thread-1")
+        restored_replay = history_service.get_run_replay("run-1")
         restored_run = store.get_run("run-1")
 
+        assert initial_threads.threads[0].driftSummary is not None
+        assert initial_threads.threads[0].driftSummary["status"] == "not_evaluated"
+        assert initial_threads.threads[0].driftSummary["historicalModelId"] == "gpt-4.1"
+        assert initial_detail.availabilityDrift is not None
+        assert initial_detail.availabilityDrift["status"] == "not_evaluated"
+        assert initial_detail.availabilityDrift["historicalModelId"] == "gpt-4.1"
+        assert initial_replay.availabilityInterpretation is not None
+        assert initial_replay.availabilityInterpretation["status"] == "not_evaluated"
+        assert initial_replay.availabilityInterpretation["historicalModelId"] == "gpt-4.1"
         assert delete_result.threadId == "thread-1"
         assert [thread.threadId for thread in hidden_threads.threads] == []
         assert deleted_detail.thread.threadId == "thread-1"
@@ -124,6 +138,10 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
         assert Path(backup_result.backupPath).is_file()
         assert restore_result.sourcePath == backup_result.backupPath
         assert [thread.threadId for thread in restored_threads.threads] == ["thread-1"]
+        assert restored_detail.availabilityDrift is not None
+        assert restored_detail.availabilityDrift["status"] == "not_evaluated"
+        assert restored_replay.availabilityInterpretation is not None
+        assert restored_replay.availabilityInterpretation["status"] == "not_evaluated"
         assert restored_run is not None
         assert restored_run.status == "completed"
         assert restored_run.assistant_text == "restored reply"

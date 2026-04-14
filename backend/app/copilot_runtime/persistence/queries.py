@@ -63,7 +63,11 @@ class PersistedChatQueryService:
                 ).scalars()
             )
             thread_summaries = [
-                _build_thread_summary(repositories, thread_model)
+                _build_thread_summary(
+                    repositories,
+                    thread_model,
+                    drift_evaluator=self._drift_evaluator,
+                )
                 for thread_model in thread_models
             ]
             thread_summaries.sort(key=_thread_sort_key, reverse=True)
@@ -72,7 +76,11 @@ class PersistedChatQueryService:
     def get_thread_detail(self, thread_id: str) -> PersistedThreadDetailResponse:
         with run_lifecycle_transaction(self._session_factory) as repositories:
             thread_model = repositories.threads.require(thread_id)
-            thread_summary = _build_thread_summary(repositories, thread_model)
+            thread_summary = _build_thread_summary(
+                repositories,
+                thread_model,
+                drift_evaluator=self._drift_evaluator,
+            )
             thread_projection = _ensure_thread_projection(repositories, thread_model.id)
             run_models = repositories.runs.list_for_thread(thread_id)
             timeline_items: list[dict[str, Any]] = []
@@ -154,8 +162,22 @@ class PersistedChatQueryService:
 def _build_thread_summary(
     repositories: PersistenceRepositories,
     thread_model: ThreadModel,
+    *,
+    drift_evaluator: PersistedHistoryDriftEvaluator | None = None,
 ) -> PersistedThreadSummaryDTO:
     thread_projection = _ensure_thread_projection(repositories, thread_model.id)
+    latest_run = None
+    availability_drift = None
+    if drift_evaluator is not None:
+        if thread_model.last_run_id is not None:
+            latest_run = repositories.runs.get(thread_model.last_run_id)
+        if latest_run is None:
+            latest_run = repositories.runs.latest_for_thread(thread_model.id)
+        if latest_run is not None:
+            availability_drift = drift_evaluator.evaluate(
+                run=latest_run,
+                bound_agent_id=thread_model.bound_agent_id,
+            )
     return PersistedThreadSummaryDTO(
         threadId=thread_model.id,
         boundAgentId=thread_model.bound_agent_id,
@@ -170,7 +192,7 @@ def _build_thread_summary(
         lastRunStatus=None if thread_projection is None else thread_projection.last_run_status,
         lastUserMessagePreview=thread_model.last_user_message_preview,
         lastAssistantMessagePreview=thread_model.last_assistant_message_preview,
-        driftSummary=_copy_mapping(None if thread_projection is None else thread_projection.drift_summary_json),
+        driftSummary=_copy_mapping(availability_drift),
     )
 
 
