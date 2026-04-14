@@ -9,7 +9,7 @@ afterEach(() => {
 
 describe('createElectronCopilotHistoryService', () => {
   it('loads thread history through the hosted backend runtime with the local token header', async () => {
-    const fetchMock = vi.fn(async () => ({
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       status: 200,
       statusText: 'OK',
@@ -76,11 +76,12 @@ describe('createElectronCopilotHistoryService', () => {
     })
     expect(hostedBackendService.start).toHaveBeenCalledOnce()
 
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('http://127.0.0.1:8765/history/threads')
-    expect(init.method).toBe('GET')
-    expect(init.headers).toBeInstanceOf(Headers)
-    expect((init.headers as Headers).get('X-Local-Token')).toBe('history-token')
+    const firstCall = fetchMock.mock.calls[0]
+    const init = firstCall?.[1] as RequestInit | undefined
+    expect(firstCall?.[0]).toBe('http://127.0.0.1:8765/history/threads')
+    expect(init?.method).toBe('GET')
+    expect(init?.headers).toBeInstanceOf(Headers)
+    expect((init?.headers as Headers).get('X-Local-Token')).toBe('history-token')
   })
 
   it('surfaces backend detail messages for failing history detail requests', async () => {
@@ -110,7 +111,7 @@ describe('createElectronCopilotHistoryService', () => {
   })
 
   it('issues delete and database mutation requests with the expected methods and payloads', async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => ({
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => ({
       ok: true,
       status: 200,
       statusText: 'OK',

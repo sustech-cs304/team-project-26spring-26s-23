@@ -216,15 +216,8 @@ export function useCopilotChatPanelState({
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
   const canCancelSend = activeAbortControllerRef.current !== null && sendStatus === 'sending'
   const historyDrift = useMemo(
-    () => !workspaceStateLoaded
-      ? null
-      : resolvePersistedHistoryDrift({
-          history: sessionHistory,
-          sessionShell,
-          providerProfiles: workspaceProviderProfiles,
-          models: modelCatalog.models,
-        }),
-    [modelCatalog.models, sessionHistory, sessionShell, workspaceProviderProfiles, workspaceStateLoaded],
+    () => resolvePersistedHistoryDrift(sessionHistory),
+    [sessionHistory],
   )
   const historyDriftResetKey = useMemo(
     () => [

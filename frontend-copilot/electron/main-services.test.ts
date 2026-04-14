@@ -40,6 +40,7 @@ import {
   createSettingsWorkspaceStateFixture,
 } from './renderer-ipc.test-support'
 import { createMainProcessServices } from './main-services'
+import type { ElectronCopilotHistoryService } from './copilot-history-service'
 import { normalizeSettingsWorkspaceStateValues } from './settings-workspace/state-schema'
 
 describe('createMainProcessServices', () => {
@@ -253,7 +254,7 @@ describe('createMainProcessServices', () => {
       purgeThread: vi.fn(async (_threadId: string) => purgeThreadResult),
       backupDatabase: vi.fn(async (_request?: { targetPath?: string | null }) => backupDatabaseResult),
       restoreDatabase: vi.fn(async (_request: { sourcePath: string }) => restoreDatabaseResult),
-    }
+    } as unknown as ElectronCopilotHistoryService
 
     hoisted.unifiedConfigService.loadPublicSnapshot.mockResolvedValue(loadPublicSnapshotResult)
     hoisted.unifiedConfigService.applyPublicPatch.mockResolvedValue(applyPublicPatchResult)

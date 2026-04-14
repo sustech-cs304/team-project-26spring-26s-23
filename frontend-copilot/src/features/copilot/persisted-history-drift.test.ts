@@ -1,261 +1,153 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
-import { createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
-import { createSessionShell } from './CopilotChatPanel.test-support'
-import { createCopilotModelCatalog } from './model-picker'
 import { evaluatePersistedHistoryDrift, resolvePersistedHistoryDrift } from './persisted-history-drift'
 
 describe('persisted history drift evaluation', () => {
-  it('returns null when history or session shell is unavailable', () => {
-    const providerProfiles = [createProviderProfile()]
-    const models = createCopilotModelCatalog(providerProfiles).models
-    const sessionShell = createSessionShell()
-    const history = createHistoryState()
-
-    expect(evaluatePersistedHistoryDrift({
-      history: null,
-      sessionShell,
-      providerProfiles,
-      models,
-    })).toBeNull()
-    expect(evaluatePersistedHistoryDrift({
-      history,
-      sessionShell: null,
-      providerProfiles,
-      models,
-    })).toBeNull()
+  it('returns null when history or backend drift conclusions are unavailable', () => {
+    expect(evaluatePersistedHistoryDrift(null)).toBeNull()
+    expect(resolvePersistedHistoryDrift(createHistoryState())).toBeNull()
   })
 
-  it('prefers structured backend drift conclusions when replay interpretation is available', () => {
-    const providerProfiles = [createProviderProfile()]
-    const models = createCopilotModelCatalog(providerProfiles).models
-    const sessionShell = createSessionShell({
-      capabilities: {
-        allAvailableTools: [],
-      },
+  it('prefers replay availability interpretation over detail and summary drift payloads', () => {
+    const summaryDrift = createDriftRecord({
+      status: 'historical_tool_unregistered',
+      historicalModelId: 'summary-model',
+      historicalToolIds: ['tool.summary'],
+      warnings: [{
+        code: 'historical_tool_unregistered',
+        message: 'summary warning',
+      }],
     })
-    const history = createHistoryState({
-      availabilityInterpretation: {
-        status: 'historical_provider_removed',
-        historicalModelId: 'server-model',
-        historicalToolIds: ['tool.server-only'],
-        historicalThinkingSummary: '服务端历史思考',
-        warnings: [{
-          code: 'historical_provider_removed',
-          message: '服务端判定：历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。',
-        }],
-        requiresExplicitRebind: true,
-      },
-      historicalSnapshot: {
-        resolvedModelId: 'legacy-model',
-        resolvedModelRoute: {
-          routeRef: {
-            routeKind: 'provider-model',
-            profileId: 'provider-legacy',
-            modelId: 'legacy-model',
-          },
-        },
-        resolvedToolIds: ['tool.file-convert'],
-      },
-    })
-
-    const drift = resolvePersistedHistoryDrift({
-      history,
-      sessionShell,
-      providerProfiles,
-      models,
-    })
-
-    expect(drift).toEqual({
-      historicalModelId: 'server-model',
-      historicalToolIds: ['tool.server-only'],
-      historicalThinkingSummary: '服务端历史思考',
+    const detailDrift = createDriftRecord({
+      status: 'historical_provider_removed',
+      historicalModelId: 'detail-model',
+      historicalToolIds: ['tool.detail'],
       warnings: [{
         code: 'historical_provider_removed',
-        message: '服务端判定：历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。',
+        message: 'detail warning',
+      }],
+    })
+    const replayDrift = createDriftRecord({
+      status: 'historical_valid_currently_missing',
+      historicalModelId: 'replay-model',
+      historicalToolIds: ['tool.replay'],
+      historicalThinkingSummary: '服务端历史思考',
+      warnings: [{
+        code: 'historical_valid_currently_missing',
+        message: 'replay warning',
+      }],
+    })
+
+    const drift = resolvePersistedHistoryDrift(createHistoryState({
+      summaryDrift,
+      availabilityDrift: detailDrift,
+      availabilityInterpretation: replayDrift,
+    }))
+
+    expect(drift).toEqual({
+      historicalModelId: 'replay-model',
+      historicalToolIds: ['tool.replay'],
+      historicalThinkingSummary: '服务端历史思考',
+      warnings: [{
+        code: 'historical_valid_currently_missing',
+        message: 'replay warning',
       }],
       requiresExplicitRebind: true,
     })
   })
 
-  it('surfaces removed providers and missing tools from replay snapshots', () => {
-    const providerProfiles = [createProviderProfile()]
-    const models = createCopilotModelCatalog(providerProfiles).models
-    const sessionShell = createSessionShell({
-      capabilities: {
-        allAvailableTools: [],
-      },
-    })
-    const history = createHistoryState({
-      availabilityDrift: {
-        status: 'provider_removed',
-      },
-      historicalSnapshot: {
-        resolvedModelId: 'legacy-model',
-        resolvedModelRoute: {
-          routeRef: {
-            routeKind: 'provider-model',
-            profileId: 'provider-legacy',
-            modelId: 'legacy-model',
-          },
-        },
-        resolvedToolIds: ['tool.file-convert'],
-        appliedThinkingSelection: {
-          series: 'unified-4-level-v1',
-          mode: 'preset',
-          level: 'medium',
-          value: {
-            valueType: 'code',
-            code: 'medium',
-            labelZh: '中',
-          },
-        },
-      },
+  it('falls back to thread detail drift when replay is unavailable', () => {
+    const detailDrift = createDriftRecord({
+      status: 'multiple_issues',
+      historicalModelId: 'detail-model',
+      historicalToolIds: ['tool.detail'],
+      warnings: [{
+        code: 'historical_provider_removed',
+        message: 'detail provider warning',
+      }, {
+        code: 'historical_tool_unregistered',
+        message: 'detail tool warning',
+      }],
     })
 
-    const drift = evaluatePersistedHistoryDrift({
-      history,
-      sessionShell,
-      providerProfiles,
-      models,
-    })
-
-    expect(drift).not.toBeNull()
-    expect(drift?.historicalModelId).toBe('legacy-model')
-    expect(drift?.historicalToolIds).toEqual(['tool.file-convert'])
-    expect(drift?.historicalThinkingSummary).toContain('中')
-    expect(drift?.warnings.map((warning) => warning.code)).toEqual([
-      'historical_provider_removed',
-      'historical_tool_unregistered',
-    ])
-    expect(drift?.requiresExplicitRebind).toBe(true)
-  })
-
-  it('surfaces unsupported historical thinking on still-available models', () => {
-    const providerProfiles = [createProviderProfile({
-      id: 'provider-openai',
-      name: 'OpenAI Compatible',
-      availableModels: [
-        {
-          id: 'provider-openai:legacy-model',
-          modelId: 'legacy-model',
-          displayName: 'Legacy Model',
-          groupName: 'OpenAI',
-          capabilities: ['reasoning', 'tools'],
-          thinkingCapability: {
-            supported: false,
-            source: 'test-fixture',
-          },
-          supportsStreaming: true,
-          currency: 'usd',
-          inputPrice: '1',
-          outputPrice: '2',
-        },
-      ],
-    })]
-    const models = createCopilotModelCatalog(providerProfiles).models
-    const sessionShell = createSessionShell()
-    const history = createHistoryState({
-      historicalSnapshot: {
-        resolvedModelId: 'legacy-model',
-        resolvedModelRoute: {
-          routeRef: {
-            routeKind: 'provider-model',
-            profileId: 'provider-openai',
-            modelId: 'legacy-model',
-          },
-        },
-        resolvedToolIds: [],
-        appliedThinkingSelection: {
-          series: 'unified-4-level-v1',
-          mode: 'preset',
-          level: 'medium',
-          value: {
-            valueType: 'code',
-            code: 'medium',
-            labelZh: '中',
-          },
-        },
-      },
-    })
-
-    const drift = evaluatePersistedHistoryDrift({
-      history,
-      sessionShell,
-      providerProfiles,
-      models,
-    })
-
-    expect(drift).not.toBeNull()
-    expect(drift?.warnings.map((warning) => warning.code)).toEqual([
-      'historical_thinking_no_longer_supported',
-    ])
-    expect(drift?.warnings[0]?.message).toContain('思考能力当前已不再受支持')
-    expect(drift?.requiresExplicitRebind).toBe(true)
-  })
-
-  it('falls back to latest configuration snapshots when replay data is unavailable', () => {
-    const providerProfiles = [createProviderProfile({
-      id: 'provider-openai',
-      name: 'OpenAI Compatible',
-      availableModels: [
-        {
-          id: 'provider-openai:current-model',
-          modelId: 'current-model',
-          displayName: 'Current Model',
-          groupName: 'OpenAI',
-          capabilities: ['tools'],
-          supportsStreaming: true,
-          currency: 'usd',
-          inputPrice: '1',
-          outputPrice: '2',
-        },
-      ],
-    })]
-    const models = createCopilotModelCatalog(providerProfiles).models
-    const sessionShell = createSessionShell()
-    const history = createHistoryState({
+    const drift = resolvePersistedHistoryDrift(createHistoryState({
+      summaryDrift: createDriftRecord({
+        status: 'historical_tool_unregistered',
+        historicalModelId: 'summary-model',
+      }),
+      availabilityDrift: detailDrift,
       replayStatus: 'idle',
-      historicalSnapshot: null,
-      latestConfigurationSnapshot: {
-        modelSnapshot: {
-          resolvedModelId: 'legacy-model',
-          resolvedModelRoute: {
-            routeRef: {
-              routeKind: 'provider-model',
-              profileId: 'provider-openai',
-              modelId: 'legacy-model',
-            },
+    }))
+
+    expect(drift).toEqual({
+      historicalModelId: 'detail-model',
+      historicalToolIds: ['tool.detail'],
+      historicalThinkingSummary: null,
+      warnings: [{
+        code: 'historical_provider_removed',
+        message: 'detail provider warning',
+      }, {
+        code: 'historical_tool_unregistered',
+        message: 'detail tool warning',
+      }],
+      requiresExplicitRebind: true,
+    })
+  })
+
+  it('falls back to thread summary drift before detail loads', () => {
+    const drift = evaluatePersistedHistoryDrift(createHistoryState({
+      summaryDrift: createDriftRecord({
+        status: 'historical_provider_removed',
+        historicalModelId: 'summary-model',
+        historicalToolIds: ['tool.summary'],
+        historicalThinkingSelection: {
+          series: 'unified-4-level-v1',
+          mode: 'preset',
+          level: 'medium',
+          value: {
+            valueType: 'code',
+            code: 'medium',
+            labelZh: '中',
           },
         },
-        toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
-        },
-      },
-    })
+        warnings: [{
+          code: 'historical_provider_removed',
+          message: 'summary warning',
+        }],
+      }),
+      replayStatus: 'idle',
+    }))
 
-    const drift = evaluatePersistedHistoryDrift({
-      history,
-      sessionShell,
-      providerProfiles,
-      models,
+    expect(drift).toEqual({
+      historicalModelId: 'summary-model',
+      historicalToolIds: ['tool.summary'],
+      historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
+      warnings: [{
+        code: 'historical_provider_removed',
+        message: 'summary warning',
+      }],
+      requiresExplicitRebind: true,
     })
-
-    expect(drift).not.toBeNull()
-    expect(drift?.historicalModelId).toBe('legacy-model')
-    expect(drift?.historicalToolIds).toEqual(['tool.file-convert'])
-    expect(drift?.historicalThinkingSummary).toBeNull()
-    expect(drift?.warnings.map((warning) => warning.code)).toEqual([
-      'historical_valid_currently_missing',
-    ])
-    expect(drift?.requiresExplicitRebind).toBe(true)
   })
 })
 
+function createDriftRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const warnings = Array.isArray(overrides.warnings) ? overrides.warnings : []
+
+  return {
+    status: 'no_drift',
+    historicalModelId: null,
+    historicalToolIds: [],
+    historicalThinkingSummary: null,
+    warnings,
+    requiresExplicitRebind: warnings.length > 0,
+    ...overrides,
+  }
+}
+
 function createHistoryState(input: {
-  historicalSnapshot?: Record<string, unknown> | null
-  latestConfigurationSnapshot?: Record<string, unknown> | null
+  summaryDrift?: Record<string, unknown> | null
   availabilityDrift?: Record<string, unknown> | null
   availabilityInterpretation?: Record<string, unknown> | null
   replayStatus?: AssistantSessionHistoryState['replayStatus']
@@ -289,13 +181,13 @@ function createHistoryState(input: {
       lastRunStatus: 'completed',
       lastUserMessagePreview: '你好',
       lastAssistantMessagePreview: '历史摘要',
-      driftSummary: input.availabilityDrift ?? null,
+      driftSummary: input.summaryDrift ?? null,
     },
     detailStatus: 'ready',
     detailError: null,
     timelineItems: [],
-    runSummaries: [runSummary],
-    latestConfigurationSnapshot: input.latestConfigurationSnapshot ?? null,
+    runSummaries: [{ ...runSummary }],
+    latestConfigurationSnapshot: null,
     availabilityDrift: input.availabilityDrift ?? null,
     selectedRunId: 'run-history-1',
     replayStatus,
@@ -305,17 +197,7 @@ function createHistoryState(input: {
           ok: true,
           version: 'chat-history-v1',
           run: { ...runSummary },
-          historicalSnapshot: input.historicalSnapshot ?? {
-            resolvedModelId: 'legacy-model',
-            resolvedModelRoute: {
-              routeRef: {
-                routeKind: 'provider-model',
-                profileId: 'provider-openai',
-                modelId: 'legacy-model',
-              },
-            },
-            resolvedToolIds: [],
-          },
+          historicalSnapshot: null,
           orderedEvents: [],
           toolCallBlocks: [],
           diagnosticBlocks: [],

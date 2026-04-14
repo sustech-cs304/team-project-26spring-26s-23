@@ -251,7 +251,7 @@ describe('AssistantWorkspace render + interactions', () => {
     expect(getHistoryRunReplay).toHaveBeenCalledWith('run-1')
     expect(rendered.getByTestId('assistant-session-card-thread-1').textContent).toContain('历史线程')
 
-    expect(mockCopilotChatPanel.mock.calls.at(-1)?.[0]).toMatchObject({
+    expect(mockCopilotChatPanel.mock.calls[mockCopilotChatPanel.mock.calls.length - 1]?.[0]).toMatchObject({
       sessionShell: expect.objectContaining({
         sessionId: 'thread-1',
         capabilities: expect.objectContaining({
