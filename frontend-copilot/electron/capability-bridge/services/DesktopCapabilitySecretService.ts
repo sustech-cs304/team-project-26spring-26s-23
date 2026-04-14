@@ -161,8 +161,8 @@ async function resolveSecretValue(
         })
       }
 
-      return normalizeOptionalString(stateResult.state.sustech.studentId)
-        ?? normalizeOptionalString(stateResult.state.sustech.email)
+      return normalizeOptionalString(stateResult.state.sustech.email)
+        ?? normalizeOptionalString(stateResult.state.sustech.studentId)
         ?? null
     }
     case 'password': {

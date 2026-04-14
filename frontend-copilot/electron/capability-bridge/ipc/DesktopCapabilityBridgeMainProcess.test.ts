@@ -84,6 +84,20 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     const bridgePaths = createDesktopCapabilityBridgePaths(fixture.hostedPaths)
 
     await expect(service.handleRequest(buildRequest({
+      requestId: 'secret-username-1',
+      capability: 'secret',
+      operation: 'get_secret',
+      payload: {
+        secretName: 'bb.username',
+      },
+    }))).resolves.toEqual({
+      requestId: 'secret-username-1',
+      ok: true,
+      result: {
+        value: 'student@example.com',
+      },
+    })
+    await expect(service.handleRequest(buildRequest({
       requestId: 'secret-1',
       capability: 'secret',
       operation: 'get_secret',
@@ -278,6 +292,7 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     }), {
       relayToRenderer: false,
     })
+    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledWith({
       profileIds: ['openrouter'],

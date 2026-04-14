@@ -107,6 +107,26 @@ describe('createHostCapabilityBridge integrated runtime regression', () => {
     })
     activeStops.push(bridge.stop)
 
+    const blackboardUsernameSecret = await postBridgeRequest(bridge, {
+      requestId: 'bb-username-secret-1',
+      capability: 'secret',
+      operation: 'get_secret',
+      toolId: 'blackboard.snapshot.sync',
+      runId: 'run-blackboard-1',
+      toolCallId: 'blackboard.snapshot.sync:call-1',
+      payload: {
+        secretName: 'bb.username',
+      },
+    })
+    expect(blackboardUsernameSecret.response.status).toBe(200)
+    expect(blackboardUsernameSecret.payload).toEqual({
+      requestId: 'bb-username-secret-1',
+      ok: true,
+      result: {
+        value: 'student@example.com',
+      },
+    })
+
     const blackboardSecret = await postBridgeRequest(bridge, {
       requestId: 'bb-secret-1',
       capability: 'secret',
@@ -278,6 +298,7 @@ describe('createHostCapabilityBridge integrated runtime regression', () => {
         relayToRenderer: false,
       },
     )
+    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSustechCasSecret).toHaveBeenCalledTimes(1)
   })
 })
