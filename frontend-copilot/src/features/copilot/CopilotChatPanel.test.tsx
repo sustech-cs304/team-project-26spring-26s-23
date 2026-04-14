@@ -173,6 +173,43 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('data-testid="chat-history-retry-button"')
   })
 
+  it('keeps the last restored history visible when a later detail refresh fails', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'error',
+          detailError: 'detail unavailable',
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-1',
+              sequenceStart: 1,
+              text: '保留上一版成功内容',
+            },
+          ],
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('保留上一版成功内容')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+    expect(html).not.toContain('data-testid="chat-history-retry-button"')
+  })
+
   it('shows a concise retry prompt when persisted history detail failed and retries on click', async () => {
     const retrySessionHistory = vi.fn()
     const rendered = renderWithRoot(
@@ -269,6 +306,7 @@ function createPersistedHistoryState(
         status: 'not_evaluated',
       },
     },
+    hasLoadedDetail: false,
     detailStatus: 'idle',
     detailError: null,
     timelineItems: [],
@@ -279,6 +317,7 @@ function createPersistedHistoryState(
     replayStatus: 'idle',
     replayError: null,
     replay: null,
+    replayByRunId: {},
     ...overrides,
   }
 }

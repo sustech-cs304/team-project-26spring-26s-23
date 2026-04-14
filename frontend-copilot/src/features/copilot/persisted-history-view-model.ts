@@ -1,12 +1,15 @@
+import type { CopilotHistoryRunEvent } from '../../../electron/copilot-history'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
+import { applyRuntimeRunEventToCopilotRunState, createIdleCopilotRunState } from './run-segment-reducer'
 import type { CopilotRunFailureSummary } from './run-segment-types'
-import type {
-  CopilotAssistantMessageItem,
-  CopilotDiagnosticMessageItem,
-  CopilotMessageListItem,
-  CopilotReasoningMessageItem,
-  CopilotTerminalMessageItem,
-  CopilotToolMessageItem,
+import {
+  buildCopilotRunSegmentViewModel,
+  type CopilotAssistantMessageItem,
+  type CopilotDiagnosticMessageItem,
+  type CopilotMessageListItem,
+  type CopilotReasoningMessageItem,
+  type CopilotTerminalMessageItem,
+  type CopilotToolMessageItem,
 } from './run-segment-view-model'
 import {
   cloneRuntimeReasoningSuppressionBasis,
@@ -14,6 +17,8 @@ import {
   cloneRuntimeThinkingSelection,
   type RuntimeModelRoute,
   type RuntimeResolvedModelRoute,
+  type RuntimeRunEvent,
+  type RuntimeRunThinkingMetadata,
 } from './thread-run-contract'
 
 interface PersistedRunContext {
@@ -33,13 +38,34 @@ interface PersistedRunContext {
 export function buildPersistedConversationFromHistory(
   history: AssistantSessionHistoryState | null,
 ): CopilotMessageListItem[] {
-  if (history === null || history.detailStatus !== 'ready') {
+  if (history === null || (!history.hasLoadedDetail && history.detailStatus !== 'ready')) {
     return []
   }
 
+  const selectedRunId = normalizeOptionalString(history.selectedRunId)
   const runContexts = buildPersistedRunContextMap(history)
+  const timelineConversation = buildPersistedConversationFromTimeline({
+    history,
+    timelineItems: filterTimelineItemsForSelectedRun(history.timelineItems, selectedRunId),
+    runContexts,
+  })
 
-  return history.timelineItems.flatMap((timelineItem, index) => {
+  if (selectedRunId === null) {
+    return timelineConversation
+  }
+
+  const replayConversation = buildPersistedConversationFromReplay(history, selectedRunId)
+  return replayConversation.some((item) => item.kind !== 'user')
+    ? replayConversation
+    : timelineConversation
+}
+
+function buildPersistedConversationFromTimeline(input: {
+  history: AssistantSessionHistoryState
+  timelineItems: Record<string, unknown>[]
+  runContexts: Map<string, PersistedRunContext>
+}): CopilotMessageListItem[] {
+  return input.timelineItems.flatMap((timelineItem, index) => {
     const normalizedTimelineItem = cloneRecord(timelineItem)
     const kind = readString(normalizedTimelineItem.kind)
 
@@ -47,7 +73,7 @@ export function buildPersistedConversationFromHistory(
       case 'user_message':
         return mapUserMessageItem(normalizedTimelineItem, index)
       case 'assistant_message':
-        return mapAssistantMessageItem(normalizedTimelineItem, index, runContexts)
+        return mapAssistantMessageItem(normalizedTimelineItem, index, input.runContexts)
       case 'reasoning_block':
         return mapReasoningMessageItem(normalizedTimelineItem, index)
       case 'tool_call_block':
@@ -55,11 +81,56 @@ export function buildPersistedConversationFromHistory(
       case 'diagnostic_block':
         return mapDiagnosticMessageItem(normalizedTimelineItem, index)
       case 'terminal_block':
-        return mapTerminalMessageItem(normalizedTimelineItem, index, runContexts)
+        return mapTerminalMessageItem(normalizedTimelineItem, index, input.runContexts)
       default:
         return []
     }
   })
+}
+
+function buildPersistedConversationFromReplay(
+  history: AssistantSessionHistoryState,
+  selectedRunId: string,
+): CopilotMessageListItem[] {
+  if (
+    history.replay === null
+    || history.replay.run.runId !== selectedRunId
+  ) {
+    return []
+  }
+
+  const replay = history.replay
+  const replayState = replay.orderedEvents.reduce((currentState, orderedEvent) => {
+    const runtimeEvent = mapPersistedRunEventToRuntimeRunEvent(replay.run.runId, replay.run.threadId, replay.historicalSnapshot, orderedEvent)
+    return runtimeEvent === null
+      ? currentState
+      : applyRuntimeRunEventToCopilotRunState(currentState, runtimeEvent)
+  }, createIdleCopilotRunState())
+  const historicalRequestMessage = asRecord(asRecord(replay.historicalSnapshot)?.requestMessage)
+  const userMessageText = normalizeOptionalString(replay.run.requestedMessageText)
+    ?? normalizeOptionalString(readString(historicalRequestMessage?.content))
+  const conversation = buildCopilotRunSegmentViewModel(replayState).map((item) => {
+    if (item.kind !== 'assistant' && item.kind !== 'terminal') {
+      return item
+    }
+
+    return {
+      ...item,
+      historicalSnapshot: cloneRecord(replay.historicalSnapshot),
+      availabilityInterpretation: cloneRecord(replay.availabilityInterpretation),
+      availabilityDrift: history.availabilityDrift === null ? null : cloneRecord(history.availabilityDrift),
+    }
+  })
+
+  return userMessageText === null
+    ? conversation
+    : [{
+        id: `history:user:${selectedRunId}`,
+        kind: 'user',
+        title: '',
+        content: userMessageText,
+        status: 'completed',
+      }, ...conversation]
 }
 
 function buildPersistedRunContextMap(
@@ -83,7 +154,7 @@ function buildPersistedRunContextMap(
     })
   }
 
-  if (history.replayStatus !== 'ready' || history.replay === null) {
+  if (history.replay === null) {
     return contextMap
   }
 
@@ -124,6 +195,204 @@ function buildPersistedRunContextMap(
   })
 
   return contextMap
+}
+
+function filterTimelineItemsForSelectedRun(
+  timelineItems: Record<string, unknown>[],
+  selectedRunId: string | null,
+): Record<string, unknown>[] {
+  if (selectedRunId === null) {
+    return timelineItems.map((timelineItem) => ({ ...timelineItem }))
+  }
+
+  return timelineItems
+    .filter((timelineItem) => {
+      const runId = normalizeOptionalString(readString(timelineItem.runId))
+      return runId === null || runId === selectedRunId
+    })
+    .map((timelineItem) => ({ ...timelineItem }))
+}
+
+function mapPersistedRunEventToRuntimeRunEvent(
+  runId: string,
+  threadId: string,
+  historicalSnapshot: Record<string, unknown> | null,
+  event: CopilotHistoryRunEvent,
+): RuntimeRunEvent | null {
+  const payload = cloneRecord(event.payload)
+  const historicalRecord = asRecord(historicalSnapshot)
+  const historicalRequestMessage = asRecord(historicalRecord?.requestMessage)
+  const assistantMessageId = normalizeOptionalString(readString(payload.assistantMessageId)) ?? buildReplayAssistantMessageId(runId)
+
+  switch (event.eventType) {
+    case 'run_started':
+      return {
+        type: 'run_started',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          ...payload,
+          assistantMessageId,
+        },
+      }
+    case 'run_metadata':
+      return {
+        type: 'run_metadata',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: buildRuntimeRunThinkingMetadataPayload(payload),
+      }
+    case 'text_delta': {
+      const delta = normalizeOptionalString(readString(payload.delta))
+      if (delta === null) {
+        return null
+      }
+
+      return {
+        type: 'text_delta',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          assistantMessageId,
+          delta,
+        },
+      }
+    }
+    case 'reasoning_delta': {
+      const delta = normalizeOptionalString(readString(payload.delta))
+      if (delta === null) {
+        return null
+      }
+
+      return {
+        type: 'reasoning_delta',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          delta,
+        },
+      }
+    }
+    case 'tool_event': {
+      const phase = normalizeOptionalString(readString(payload.phase)) ?? normalizeOptionalString(event.phase)
+      if (phase !== 'started' && phase !== 'completed' && phase !== 'failed') {
+        return null
+      }
+
+      const title = normalizeOptionalString(readString(payload.title)) ?? '工具调用'
+      const summary = normalizeOptionalString(readString(payload.summary))
+        ?? normalizeOptionalString(readString(payload.resultSummary))
+        ?? normalizeOptionalString(readString(payload.errorSummary))
+        ?? title
+
+      return {
+        type: 'tool_event',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          toolCallId: normalizeOptionalString(readString(payload.toolCallId)) ?? normalizeOptionalString(event.toolCallId) ?? `history-tool-call-${event.sequence}`,
+          toolId: normalizeOptionalString(readString(payload.toolId)) ?? normalizeOptionalString(event.toolId) ?? 'unknown-tool',
+          phase,
+          title,
+          summary,
+          inputSummary: normalizeOptionalString(readString(payload.inputSummary)) ?? undefined,
+          resultSummary: normalizeOptionalString(readString(payload.resultSummary)) ?? undefined,
+          errorSummary: normalizeOptionalString(readString(payload.errorSummary)) ?? undefined,
+        },
+      }
+    }
+    case 'run_diagnostic':
+      return {
+        type: 'run_diagnostic',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          code: normalizeOptionalString(readString(payload.code)) ?? 'history_diagnostic',
+          message: normalizeOptionalString(readString(payload.message)) ?? '历史运行诊断',
+          details: cloneRecord(payload.details),
+          stage: normalizeOptionalString(readString(payload.stage)) ?? 'history',
+        },
+      }
+    case 'run_completed': {
+      const resolvedModelId = normalizeOptionalString(readString(payload.resolvedModelId))
+        ?? normalizeOptionalString(readString(historicalRecord?.resolvedModelId))
+        ?? 'history-model'
+      const resolvedModelRoute = asRuntimeResolvedRoute(payload.resolvedModelRoute)
+        ?? asRuntimeResolvedRoute(historicalRecord?.resolvedModelRoute)
+        ?? buildFallbackRuntimeResolvedModelRoute(resolvedModelId)
+      const resolvedToolIds = readStringArray(payload.resolvedToolIds)
+      const fallbackToolIds = readStringArray(historicalRecord?.resolvedToolIds)
+
+      return {
+        type: 'run_completed',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          assistantMessageId,
+          assistantText: normalizeOptionalString(readString(payload.assistantText))
+            ?? normalizeOptionalString(readString(payload.delta))
+            ?? normalizeOptionalString(readString(payload.text))
+            ?? normalizeOptionalString(readString(payload.message))
+            ?? normalizeOptionalString(readString(historicalRequestMessage?.content))
+            ?? '',
+          resolvedModelId,
+          resolvedModelRoute,
+          resolvedToolIds: resolvedToolIds.length > 0 ? resolvedToolIds : fallbackToolIds,
+          requestOptions: cloneRecord(payload.requestOptions ?? historicalRecord?.requestOptions),
+        },
+      }
+    }
+    case 'run_failed':
+      return {
+        type: 'run_failed',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          code: normalizeOptionalString(readString(payload.code)) ?? 'history_failed',
+          message: normalizeOptionalString(readString(payload.message)) ?? '当前响应失败，请重试。',
+          details: cloneRecord(payload.details),
+        },
+      }
+    case 'run_cancelled':
+      return {
+        type: 'run_cancelled',
+        runId,
+        sessionId: threadId,
+        sequence: event.sequence,
+        payload: {
+          assistantMessageId,
+          reason: normalizeOptionalString(readString(payload.reason)) ?? 'cancelled',
+        },
+      }
+    default:
+      return null
+  }
+}
+
+function buildRuntimeRunThinkingMetadataPayload(
+  payload: Record<string, unknown>,
+): RuntimeRunThinkingMetadata {
+  return {
+    requestedThinkingSelection: asRecord(payload.requestedThinkingSelection) as RuntimeRunThinkingMetadata['requestedThinkingSelection'],
+    appliedThinkingSelection: asRecord(payload.appliedThinkingSelection) as RuntimeRunThinkingMetadata['appliedThinkingSelection'],
+    thinkingCapabilitySnapshot: asRecord(payload.thinkingCapabilitySnapshot) as RuntimeRunThinkingMetadata['thinkingCapabilitySnapshot'],
+    thinkingSeriesDecision: asRecord(payload.thinkingSeriesDecision) as RuntimeRunThinkingMetadata['thinkingSeriesDecision'],
+    reasoningSuppressionBasis: asRecord(payload.reasoningSuppressionBasis) as RuntimeRunThinkingMetadata['reasoningSuppressionBasis'],
+    requestedThinkingLevel: normalizeThinkingLevel(payload.requestedThinkingLevel),
+    appliedThinkingLevel: normalizeThinkingLevel(payload.appliedThinkingLevel),
+  }
+}
+
+function buildReplayAssistantMessageId(runId: string): string {
+  return `history:${runId}:assistant`
 }
 
 function mapUserMessageItem(
@@ -422,4 +691,93 @@ function asRuntimeRoute(
   }
 
   return { ...value } as RuntimeResolvedModelRoute | RuntimeModelRoute
+}
+
+function asRuntimeResolvedRoute(
+  value: unknown,
+): RuntimeResolvedModelRoute | null {
+  const record = isRecord(value) ? value : null
+  const routeRefRecord = isRecord(record?.routeRef) ? record.routeRef : null
+  const routeKind = readString(routeRefRecord?.routeKind) === 'provider-model' ? 'provider-model' : null
+  const profileId = normalizeOptionalString(readString(routeRefRecord?.profileId))
+  const modelIdFromRouteRef = normalizeOptionalString(readString(routeRefRecord?.modelId))
+  const routeRef: RuntimeResolvedModelRoute['routeRef'] | null = routeKind !== null && profileId !== null && modelIdFromRouteRef !== null
+    ? {
+        routeKind: 'provider-model',
+        profileId,
+        modelId: modelIdFromRouteRef,
+      }
+    : null
+  const providerProfileId = normalizeOptionalString(readString(record?.providerProfileId))
+  const provider = normalizeOptionalString(readString(record?.provider))
+  const providerId = normalizeOptionalString(readString(record?.providerId))
+  const adapterId = normalizeOptionalString(readString(record?.adapterId))
+  const runtimeStatus = normalizeOptionalString(readString(record?.runtimeStatus))
+  const catalogRevision = normalizeOptionalString(readString(record?.catalogRevision))
+  const endpointFamily = normalizeOptionalString(readString(record?.endpointFamily))
+  const endpointType = normalizeOptionalString(readString(record?.endpointType))
+  const baseUrl = readString(record?.baseUrl)
+  const modelId = normalizeOptionalString(readString(record?.modelId))
+  const authKind = normalizeOptionalString(readString(record?.authKind))
+
+  if (
+    routeRef === null
+    || providerProfileId === null
+    || provider === null
+    || providerId === null
+    || adapterId === null
+    || runtimeStatus === null
+    || catalogRevision === null
+    || endpointFamily === null
+    || endpointType === null
+    || baseUrl === null
+    || modelId === null
+    || authKind === null
+  ) {
+    return null
+  }
+
+  return {
+    routeRef,
+    providerProfileId,
+    provider,
+    providerId,
+    adapterId,
+    runtimeStatus,
+    catalogRevision,
+    endpointFamily,
+    endpointType,
+    baseUrl,
+    modelId,
+    authKind,
+  }
+}
+
+function buildFallbackRuntimeResolvedModelRoute(modelId: string): RuntimeResolvedModelRoute {
+  return {
+    routeRef: {
+      routeKind: 'provider-model',
+      profileId: 'history-profile',
+      modelId,
+    },
+    providerProfileId: 'history-profile',
+    provider: 'history-provider',
+    providerId: 'history-provider',
+    adapterId: 'history-adapter',
+    runtimeStatus: 'historical',
+    catalogRevision: 'history',
+    endpointFamily: 'history',
+    endpointType: 'history',
+    baseUrl: '',
+    modelId,
+    authKind: 'unknown',
+  }
+}
+
+function normalizeThinkingLevel(
+  value: unknown,
+): RuntimeRunThinkingMetadata['requestedThinkingLevel'] {
+  return typeof value === 'string' || value === null
+    ? value as RuntimeRunThinkingMetadata['requestedThinkingLevel']
+    : undefined
 }
