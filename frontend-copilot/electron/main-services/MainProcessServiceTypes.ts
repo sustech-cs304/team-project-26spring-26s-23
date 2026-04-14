@@ -31,12 +31,17 @@ import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
+export interface MainProcessServiceLogOptions {
+  relayToRenderer?: boolean
+}
+
 export interface CreateMainProcessServicesOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
   appendMainRuntimeLog: (
     level: MainProcessServiceLogLevel,
     message: string,
     context: Record<string, unknown> | null,
+    options?: MainProcessServiceLogOptions,
   ) => void | Promise<void>
   publishConfigCenterPublicSnapshotUpdate: (
     snapshot: ConfigCenterPublicSnapshot,

@@ -1,11 +1,13 @@
-import { access } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopCapabilityBridgeRequest } from '../protocol'
+import { createDesktopCapabilityBridgePaths } from '../paths'
 import type { ElectronSettingsWorkspaceService } from '../../settings-workspace/main-process'
 import {
   createPreparedPaths,
   destroyWorkspaceTempRoot,
+  readJsonFile,
 } from '../../settings-workspace/test-support/settings-workspace-test-fixtures'
 import { createElectronDesktopCapabilityBridgeService } from './DesktopCapabilityBridgeMainProcess'
 
@@ -68,7 +70,7 @@ function createSettingsWorkspaceServiceStub(): ElectronSettingsWorkspaceService 
 }
 
 describe('createElectronDesktopCapabilityBridgeService', () => {
-  it('routes requests across all five capability families', async () => {
+  it('routes requests across all five capability families and persists artifact/state data under host-controlled storage', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
     activeTempRoots.push(fixture.tempRoot)
 
@@ -79,6 +81,7 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       appendLog,
       getSettingsWorkspaceService: () => settingsWorkspaceService,
     })
+    const bridgePaths = createDesktopCapabilityBridgePaths(fixture.hostedPaths)
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'secret-1',
@@ -142,6 +145,9 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     if (!artifactResponse.ok) {
       throw new Error('Expected artifact save request to succeed.')
     }
+
+    const artifactResult = artifactResponse.result
+    const artifactId = String(artifactResult.artifactId)
     expect(artifactResponse).toMatchObject({
       requestId: 'artifact-1',
       ok: true,
@@ -152,7 +158,48 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         contentType: 'text/plain',
         metadata: {
           source: 'test',
+          __desktopCapabilityArtifact: {
+            storageKind: 'electron-desktop-capability-bridge',
+            byteLength: 11,
+            sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+            storedAt: expect.any(String),
+          },
         },
+      },
+    })
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'artifact-2',
+      capability: 'artifact',
+      operation: 'describe_artifact',
+      payload: {
+        artifactId,
+      },
+    }))).resolves.toEqual({
+      requestId: 'artifact-2',
+      ok: true,
+      result: artifactResult,
+    })
+
+    const artifactIndex = await readJsonFile(bridgePaths.artifactIndexFile) as {
+      artifacts?: Record<string, {
+        fileName?: string
+        metadata?: Record<string, unknown>
+      }>
+    }
+    const artifactRecord = artifactIndex.artifacts?.[artifactId]
+    if (artifactRecord === undefined) {
+      throw new Error(`Expected artifact record '${artifactId}' to be persisted.`)
+    }
+    const artifactFilePath = path.join(bridgePaths.artifactsDir, String(artifactRecord.fileName ?? ''))
+    await access(artifactFilePath)
+    await expect(readFile(artifactFilePath, 'utf8')).resolves.toBe('hello world')
+    expect(artifactRecord.metadata).toMatchObject({
+      source: 'test',
+      __desktopCapabilityArtifact: {
+        storageKind: 'electron-desktop-capability-bridge',
+        byteLength: 11,
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        storedAt: expect.any(String),
       },
     })
 
@@ -190,6 +237,18 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         },
       },
     })
+    await expect(readJsonFile(bridgePaths.stateFile)).resolves.toMatchObject({
+      version: 1,
+      values: {
+        tool: {
+          'blackboard.snapshot.sync': {
+            session: {
+              count: 1,
+            },
+          },
+        },
+      },
+    })
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'event-1',
@@ -213,7 +272,12 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       operation: 'emit_event',
       eventType: 'log',
       message: 'bridge event',
-    }))
+      data: {
+        severity: 'info',
+      },
+    }), {
+      relayToRenderer: false,
+    })
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledWith({
       profileIds: ['openrouter'],
@@ -278,5 +342,89 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         operation: 'resolve_path',
       },
     })
+  })
+
+  it('returns a structured artifact failure for invalid base64 payloads', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-artifact-invalid-base64')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'artifact-invalid-1',
+      capability: 'artifact',
+      operation: 'save_bytes',
+      payload: {
+        name: 'broken.bin',
+        contentBase64: 'not-base64$',
+      },
+    }))).resolves.toEqual({
+      requestId: 'artifact-invalid-1',
+      ok: false,
+      errorCode: 'invalid_request',
+      errorMessage: 'contentBase64 must be valid base64.',
+      errorRetryable: false,
+      details: {},
+    })
+  })
+
+  it('returns a structured state failure for invalid state values', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-state-invalid-value')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'state-invalid-1',
+      capability: 'state',
+      operation: 'put_value',
+      payload: {
+        scope: 'tool',
+        key: 'session',
+        value: ['unexpected-array'],
+      },
+    }))).resolves.toEqual({
+      requestId: 'state-invalid-1',
+      ok: false,
+      errorCode: 'invalid_request',
+      errorMessage: 'State value must be an object.',
+      errorRetryable: false,
+      details: {},
+    })
+  })
+
+  it('returns a structured event failure for invalid event payloads', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-event-invalid-payload')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const appendLog = vi.fn()
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      appendLog,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'event-invalid-1',
+      capability: 'event',
+      operation: 'emit_event',
+      payload: {
+        eventType: '   ',
+      },
+    }))).resolves.toEqual({
+      requestId: 'event-invalid-1',
+      ok: false,
+      errorCode: 'invalid_request',
+      errorMessage: 'eventType must be a non-empty string.',
+      errorRetryable: false,
+      details: {},
+    })
+    expect(appendLog).not.toHaveBeenCalled()
   })
 })

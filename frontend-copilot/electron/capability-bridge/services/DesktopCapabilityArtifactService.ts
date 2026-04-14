@@ -1,10 +1,14 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { DesktopCapabilityBridgeRequest } from '../protocol'
 import { DesktopCapabilityBridgeError } from '../errors'
 import { createDesktopCapabilityBridgePaths } from '../paths'
 import type { CreateDesktopCapabilityBridgeServiceOptions } from '../types'
+
+const DESKTOP_HOSTED_ARTIFACT_METADATA_FIELD = '__desktopCapabilityArtifact'
+const DESKTOP_HOSTED_ARTIFACT_STORAGE_KIND = 'electron-desktop-capability-bridge'
+const BASE64_PAYLOAD_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 interface PersistedArtifactRecord {
   artifactId: string
@@ -56,14 +60,12 @@ async function saveArtifactText(
   options: CreateDesktopCapabilityBridgeServiceOptions,
   request: DesktopCapabilityBridgeRequest,
 ): Promise<Record<string, unknown>> {
-  const name = String(request.payload.name ?? '').trim()
-  const text = typeof request.payload.text === 'string' ? request.payload.text : ''
-  const contentType = typeof request.payload.contentType === 'string' && request.payload.contentType.trim() !== ''
-    ? request.payload.contentType.trim()
-    : 'text/plain'
+  const name = requireNonEmptyString(request.payload.name, 'Artifact name must be a non-empty string.')
+  const text = requireString(request.payload.text, 'Artifact text must be a string.')
+  const contentType = normalizeOptionalString(request.payload.contentType) ?? 'text/plain'
   const metadata = normalizeMetadata(request.payload.metadata)
 
-  return await persistArtifact(options, {
+  return await persistArtifact(options, request, {
     name,
     contentType,
     metadata,
@@ -75,25 +77,16 @@ async function saveArtifactBytes(
   options: CreateDesktopCapabilityBridgeServiceOptions,
   request: DesktopCapabilityBridgeRequest,
 ): Promise<Record<string, unknown>> {
-  const name = String(request.payload.name ?? '').trim()
-  const contentBase64 = String(request.payload.contentBase64 ?? '').trim()
-  const contentType = typeof request.payload.contentType === 'string' && request.payload.contentType.trim() !== ''
-    ? request.payload.contentType.trim()
-    : 'application/octet-stream'
+  const name = requireNonEmptyString(request.payload.name, 'Artifact name must be a non-empty string.')
+  const contentBase64 = requireNonEmptyString(
+    request.payload.contentBase64,
+    'contentBase64 must be a non-empty string.',
+  )
+  const contentType = normalizeOptionalString(request.payload.contentType) ?? 'application/octet-stream'
   const metadata = normalizeMetadata(request.payload.metadata)
+  const buffer = decodeBase64Payload(contentBase64)
 
-  let buffer: Buffer
-  try {
-    buffer = Buffer.from(contentBase64, 'base64')
-  } catch (error) {
-    throw new DesktopCapabilityBridgeError('invalid_request', 'contentBase64 must be valid base64.', {
-      details: {
-        error: error instanceof Error ? error.message : String(error),
-      },
-    })
-  }
-
-  return await persistArtifact(options, {
+  return await persistArtifact(options, request, {
     name,
     contentType,
     metadata,
@@ -103,6 +96,7 @@ async function saveArtifactBytes(
 
 async function persistArtifact(
   options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
   input: {
     name: string
     contentType: string
@@ -110,25 +104,29 @@ async function persistArtifact(
     buffer: Buffer
   },
 ): Promise<Record<string, unknown>> {
-  if (input.name === '') {
-    throw new DesktopCapabilityBridgeError('invalid_request', 'Artifact name must be a non-empty string.')
-  }
-
   const hostedPaths = await options.prepareRuntimePaths()
   const bridgePaths = createDesktopCapabilityBridgePaths(hostedPaths)
+  await mkdir(bridgePaths.artifactsDir, { recursive: true })
+  await mkdir(path.dirname(bridgePaths.artifactIndexFile), { recursive: true })
+
   const index = await readArtifactIndex(bridgePaths.artifactIndexFile)
   const artifactId = `artifact-${randomBytes(12).toString('hex')}`
   const fileName = `${artifactId}-${sanitizeArtifactName(input.name)}`
   const filePath = path.join(bridgePaths.artifactsDir, fileName)
+  const storedAt = new Date().toISOString()
   const descriptor = {
     artifactId,
     uri: `artifact://desktop/${artifactId}`,
     name: input.name,
     contentType: input.contentType,
-    metadata: { ...input.metadata },
+    metadata: buildArtifactMetadata(input.metadata, {
+      storageKind: DESKTOP_HOSTED_ARTIFACT_STORAGE_KIND,
+      byteLength: input.buffer.byteLength,
+      sha256: createHash('sha256').update(input.buffer).digest('hex'),
+      storedAt,
+    }),
   }
 
-  await mkdir(bridgePaths.artifactsDir, { recursive: true })
   await writeFile(filePath, input.buffer)
 
   index.artifacts[artifactId] = {
@@ -137,6 +135,21 @@ async function persistArtifact(
   }
   await writeArtifactIndex(bridgePaths.artifactIndexFile, index)
 
+  await options.appendLog?.('info', '[capability-bridge] Artifact persisted.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    artifactId,
+    name: input.name,
+    contentType: input.contentType,
+    byteLength: input.buffer.byteLength,
+    metadataKeys: Object.keys(input.metadata),
+  }, {
+    relayToRenderer: false,
+  })
+
   return descriptor
 }
 
@@ -144,11 +157,7 @@ async function describeArtifact(
   options: CreateDesktopCapabilityBridgeServiceOptions,
   request: DesktopCapabilityBridgeRequest,
 ): Promise<Record<string, unknown>> {
-  const artifactId = String(request.payload.artifactId ?? '').trim()
-  if (artifactId === '') {
-    throw new DesktopCapabilityBridgeError('invalid_request', 'artifactId must be a non-empty string.')
-  }
-
+  const artifactId = requireNonEmptyString(request.payload.artifactId, 'artifactId must be a non-empty string.')
   const hostedPaths = await options.prepareRuntimePaths()
   const bridgePaths = createDesktopCapabilityBridgePaths(hostedPaths)
   const index = await readArtifactIndex(bridgePaths.artifactIndexFile)
@@ -159,12 +168,23 @@ async function describeArtifact(
     })
   }
 
+  await options.appendLog?.('info', '[capability-bridge] Artifact described.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    artifactId,
+  }, {
+    relayToRenderer: false,
+  })
+
   return {
     artifactId: artifact.artifactId,
     uri: artifact.uri,
     name: artifact.name,
     contentType: artifact.contentType,
-    metadata: { ...artifact.metadata },
+    metadata: cloneRecord(artifact.metadata),
   }
 }
 
@@ -209,7 +229,35 @@ async function readArtifactIndex(filePath: string): Promise<PersistedArtifactInd
 }
 
 async function writeArtifactIndex(filePath: string, index: PersistedArtifactIndex): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true })
   await writeFile(filePath, `${JSON.stringify(index, null, 2)}\n`, 'utf8')
+}
+
+function buildArtifactMetadata(
+  metadata: Record<string, unknown>,
+  hostedMetadata: {
+    storageKind: string
+    byteLength: number
+    sha256: string
+    storedAt: string
+  },
+): Record<string, unknown> {
+  if (metadata[DESKTOP_HOSTED_ARTIFACT_METADATA_FIELD] !== undefined) {
+    throw new DesktopCapabilityBridgeError(
+      'invalid_request',
+      `Artifact metadata must not include reserved field '${DESKTOP_HOSTED_ARTIFACT_METADATA_FIELD}'.`,
+    )
+  }
+
+  return {
+    ...cloneRecord(metadata),
+    [DESKTOP_HOSTED_ARTIFACT_METADATA_FIELD]: {
+      storageKind: hostedMetadata.storageKind,
+      byteLength: hostedMetadata.byteLength,
+      sha256: hostedMetadata.sha256,
+      storedAt: hostedMetadata.storedAt,
+    },
+  }
 }
 
 function normalizeMetadata(value: unknown): Record<string, unknown> {
@@ -217,12 +265,65 @@ function normalizeMetadata(value: unknown): Record<string, unknown> {
     return {}
   }
 
-  return { ...(value as Record<string, unknown>) }
+  return cloneRecord(value as Record<string, unknown>)
+}
+
+function decodeBase64Payload(value: string): Buffer {
+  const normalized = value.replace(/\s+/g, '')
+  const remainder = normalized.length % 4
+  const padded = remainder === 0
+    ? normalized
+    : normalized.padEnd(normalized.length + (4 - remainder), '=')
+
+  if (!BASE64_PAYLOAD_PATTERN.test(padded)) {
+    throw new DesktopCapabilityBridgeError('invalid_request', 'contentBase64 must be valid base64.')
+  }
+
+  const buffer = Buffer.from(padded, 'base64')
+  if (buffer.toString('base64') !== padded) {
+    throw new DesktopCapabilityBridgeError('invalid_request', 'contentBase64 must be valid base64.')
+  }
+
+  return buffer
 }
 
 function sanitizeArtifactName(name: string): string {
   const baseName = path.basename(name.trim()) || 'artifact'
   return baseName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'artifact'
+}
+
+function requireString(value: unknown, message: string): string {
+  if (typeof value !== 'string') {
+    throw new DesktopCapabilityBridgeError('invalid_request', message)
+  }
+
+  return value
+}
+
+function requireNonEmptyString(value: unknown, message: string): string {
+  const normalized = normalizeOptionalString(value)
+  if (normalized === null) {
+    throw new DesktopCapabilityBridgeError('invalid_request', message)
+  }
+
+  return normalized
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const normalized = value.trim()
+  return normalized === '' ? null : normalized
+}
+
+function cloneRecord<TValue extends Record<string, unknown>>(value: TValue): TValue {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value)
+  }
+
+  return JSON.parse(JSON.stringify(value)) as TValue
 }
 
 function isFileNotFoundError(error: unknown): boolean {
