@@ -43,6 +43,8 @@ from app.tooling import (
 
 _STATE_NAMESPACE_CALENDAR_REFRESH = "blackboard.calendar_refresh"
 _STATE_NAMESPACE_SNAPSHOT_SYNC = "blackboard.snapshot_sync"
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
+_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
 
 
 class BlackboardAuthenticationError(RuntimeError):
@@ -318,11 +320,18 @@ class _ResolvedCredentials:
 async def _resolve_credentials(
     arguments: Mapping[str, Any],
     host: ToolHostCapabilities,
+    *,
+    default_username_secret_name: str | None = None,
+    default_password_secret_name: str | None = None,
 ) -> _ResolvedCredentials:
     username = _read_optional_text(arguments, "username")
     password = _read_optional_text(arguments, "password")
     username_secret_name = _read_optional_text(arguments, "usernameSecretName")
     password_secret_name = _read_optional_text(arguments, "passwordSecretName")
+    if username_secret_name is None:
+        username_secret_name = default_username_secret_name
+    if password_secret_name is None:
+        password_secret_name = default_password_secret_name
     used_sources: set[str] = set()
 
     if username is not None:
@@ -967,7 +976,12 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(arguments, host)
+        credentials = await _resolve_credentials(
+            arguments,
+            host,
+            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
+            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
+        )
         db_path = _resolve_db_path(arguments, host)
         reset_schema = _read_bool(arguments, "resetSchema", default=False)
         raw_resource_course_limit = _read_optional_int(arguments, "resourceCourseLimit")

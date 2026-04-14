@@ -604,6 +604,108 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     ]
 
 
+def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_omitted(
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    secret_provider = StubSecretProvider(
+        {
+            "sustech.username": "student@sustech.edu.cn",
+            "sustech.casPassword": "cas-secret",
+        }
+    )
+
+    def _fake_sync(
+        username: str,
+        password: str,
+        *,
+        db_path: Path | None = None,
+        reset_schema: bool = False,
+        resource_course_limit: int = 3,
+        verify_second_sync: bool = True,
+        progress: Any = None,
+        enable_console_logging: bool = False,
+    ) -> BlackboardSnapshotSyncReport:
+        _ = (progress, enable_console_logging)
+        captured.update(
+            {
+                "username": username,
+                "password": password,
+                "db_path": db_path,
+                "reset_schema": reset_schema,
+                "resource_course_limit": resource_course_limit,
+                "verify_second_sync": verify_second_sync,
+            }
+        )
+        return BlackboardSnapshotSyncReport(
+            db_path=Path("workspace-root/backend/data/default.db"),
+            snapshot=BlackboardSnapshotFetchResult(
+                courses=[],
+                assignments_by_course={},
+                resources_by_course={},
+                grades_by_course={},
+                announcements=[],
+                resource_course_limit=resource_course_limit,
+                logs=[_build_log_event("test.snapshot.fetch.default-secrets")],
+            ),
+            payloads=BlackboardSyncPayloads(
+                course_payload=[],
+                assignment_payloads={},
+                resource_payloads={},
+                grade_payloads={},
+                announcements_payload=[],
+            ),
+            first_sync_stats={
+                "courses": {"inserted": 0, "updated": 0, "deleted": 0},
+                "assignments": {"inserted": 0, "updated": 0, "deleted": 0},
+                "resources": {"inserted": 0, "updated": 0, "deleted": 0},
+                "grades": {"inserted": 0, "updated": 0, "deleted": 0},
+                "announcements": {"inserted": 0, "updated": 0, "deleted": 0},
+            },
+            second_sync_stats=None,
+            table_counts={
+                "courses": {"total": 0, "active": 0},
+                "assignments": {"total": 0, "active": 0},
+                "resources": {"total": 0, "active": 0},
+                "grades": {"total": 0, "active": 0},
+                "announcements": {"total": 0, "active": 0},
+            },
+            expected_active_counts={
+                "courses": 0,
+                "assignments": 0,
+                "resources": 0,
+                "grades": 0,
+                "announcements": 0,
+            },
+            integrity_ok=True,
+            logs=[_build_log_event("test.snapshot.sync.default-secrets")],
+        )
+
+    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+
+    result = _invoke_tool(
+        BlackboardSnapshotSyncTool(),
+        arguments={},
+        host=ToolHostCapabilities(secret_provider=secret_provider),
+    )
+
+    assert result.status == "success"
+    assert captured == {
+        "username": "student@sustech.edu.cn",
+        "password": "cas-secret",
+        "db_path": None,
+        "reset_schema": False,
+        "resource_course_limit": 3,
+        "verify_second_sync": True,
+    }
+    assert result.metadata == {
+        "toolId": "blackboard.snapshot.sync",
+        "credentialSource": "host_secrets",
+        "dbPathSource": "default",
+    }
+    assert secret_provider.requests == ["sustech.username", "sustech.casPassword"]
+
+
 def test_blackboard_sql_query_tool_queries_default_database(
     tmp_path: Path,
     monkeypatch: Any,

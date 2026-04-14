@@ -45,6 +45,8 @@ from app.tooling import (
 _STATE_NAMESPACE_PERSONAL_GRADES = "tis.personal_grades.fetch"
 _STATE_NAMESPACE_CREDIT_GPA = "tis.credit_gpa.fetch"
 _STATE_NAMESPACE_SELECTED_COURSES = "tis.selected_courses.fetch"
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
+_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
 
 
 class TISAuthenticationError(RuntimeError):
@@ -322,11 +324,18 @@ class _ResolvedCredentials:
 async def _resolve_credentials(
     arguments: Mapping[str, Any],
     host: ToolHostCapabilities,
+    *,
+    default_username_secret_name: str | None = None,
+    default_password_secret_name: str | None = None,
 ) -> _ResolvedCredentials:
     username = _read_optional_text(arguments, "username")
     password = _read_optional_text(arguments, "password")
     username_secret_name = _read_optional_text(arguments, "usernameSecretName")
     password_secret_name = _read_optional_text(arguments, "passwordSecretName")
+    if username_secret_name is None:
+        username_secret_name = default_username_secret_name
+    if password_secret_name is None:
+        password_secret_name = default_password_secret_name
     used_sources: set[str] = set()
 
     if username is not None:
@@ -1021,7 +1030,12 @@ class TISPersonalGradesFetchTool(_TISFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(arguments, host)
+        credentials = await _resolve_credentials(
+            arguments,
+            host,
+            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
+            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
+        )
         persist = _read_persist_flag(arguments)
         _validate_persistence_arguments(arguments, persist=persist)
         role_code = _read_optional_text(arguments, "roleCode")
@@ -1070,7 +1084,12 @@ class TISCreditGPAFetchTool(_TISFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(arguments, host)
+        credentials = await _resolve_credentials(
+            arguments,
+            host,
+            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
+            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
+        )
         persist = _read_persist_flag(arguments)
         _validate_persistence_arguments(arguments, persist=persist)
         role_code = _read_optional_text(arguments, "roleCode")
@@ -1119,7 +1138,12 @@ class TISSelectedCoursesFetchTool(_TISFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(arguments, host)
+        credentials = await _resolve_credentials(
+            arguments,
+            host,
+            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
+            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
+        )
         persist = _read_persist_flag(arguments)
         _validate_persistence_arguments(arguments, persist=persist)
         semester = _read_optional_text(arguments, "semester")

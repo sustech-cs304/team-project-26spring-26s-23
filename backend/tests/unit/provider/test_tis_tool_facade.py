@@ -491,6 +491,67 @@ def test_credit_gpa_tool_uses_secret_provider_and_workspace_db_when_persisting(
     assert workspace.requests == ["backend/data/tis-credit.db"]
 
 
+def test_credit_gpa_tool_defaults_to_sustech_secret_names_when_secret_names_omitted(
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    secret_provider = StubSecretProvider(
+        {
+            "sustech.username": "20251234",
+            "sustech.casPassword": "cas-secret",
+        }
+    )
+
+    def _fake_fetch(
+        username: str,
+        password: str,
+        *,
+        role_code: str | None = None,
+        homepage_html: str | None = None,
+        config: Any = None,
+        enable_console_logging: bool = False,
+        persist: bool = False,
+        db_manager: TISDatabaseManager | None = None,
+        owner_key: str | None = None,
+    ) -> TISCreditGPAQueryResult:
+        _ = (homepage_html, config, enable_console_logging)
+        captured.update(
+            {
+                "username": username,
+                "password": password,
+                "role_code": role_code,
+                "persist": persist,
+                "owner_key": owner_key,
+                "db_path": None if db_manager is None else db_manager.describe().db_path,
+            }
+        )
+        return _build_credit_gpa_result()
+
+    monkeypatch.setattr(facade_tools, "fetch_credit_gpa_with_credentials", _fake_fetch)
+
+    result = _invoke_tool(
+        TISCreditGPAFetchTool(),
+        arguments={},
+        host=ToolHostCapabilities(secret_provider=secret_provider),
+    )
+
+    assert result.status == "success"
+    assert captured == {
+        "username": "20251234",
+        "password": "cas-secret",
+        "role_code": None,
+        "persist": False,
+        "owner_key": None,
+        "db_path": None,
+    }
+    assert result.metadata == {
+        "toolId": "tis.credit_gpa.fetch",
+        "credentialSource": "host_secrets",
+        "persistenceRequested": False,
+    }
+    assert secret_provider.requests == ["sustech.username", "sustech.casPassword"]
+
+
 def test_credit_gpa_tool_maps_missing_workspace_capability() -> None:
     result = _invoke_tool(
         TISCreditGPAFetchTool(),

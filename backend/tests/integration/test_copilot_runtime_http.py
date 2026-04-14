@@ -511,7 +511,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         host_capability_bridge_client=_create_recording_bridge_client(
             captured_payloads=captured_bridge_payloads,
             captured_headers=captured_headers,
-            secret_values={"bb.username": "alice", "bb.password": "secret"},
+            secret_values={"sustech.username": "alice", "sustech.casPassword": "secret"},
         )
     )
 
@@ -521,8 +521,6 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
             app,
             tool_id="blackboard.snapshot.sync",
             tool_arguments={
-                "usernameSecretName": "bb.username",
-                "passwordSecretName": "bb.password",
                 "dbRelativePath": "backend/data/snapshot.db",
                 "resourceCourseLimit": 2,
                 "verifySecondSync": False,
@@ -579,6 +577,11 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
 
     started_event_request = captured_bridge_payloads[0]
     completed_event_request = captured_bridge_payloads[-1]
+    secret_requests = [
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("secret", "get_secret")
+    ]
     state_request = next(
         item
         for item in captured_bridge_payloads
@@ -592,6 +595,10 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
 
     assert started_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.started"
     assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.completed"
+    assert [request["payload"]["secretName"] for request in secret_requests] == [
+        "sustech.username",
+        "sustech.casPassword",
+    ]
     assert state_request["payload"]["scope"] == "tool"
     assert str(state_request["payload"]["key"]).endswith(":snapshot-latest")
     assert state_request["payload"]["value"]["output"]["dbPath"] == "workspace-root/backend/data/snapshot.db"
@@ -644,7 +651,7 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
         host_capability_bridge_client=_create_recording_bridge_client(
             captured_payloads=captured_bridge_payloads,
             captured_headers=captured_headers,
-            secret_values={"tis.username": "20251234", "tis.password": "cas-secret"},
+            secret_values={"sustech.username": "20251234", "sustech.casPassword": "cas-secret"},
         )
     )
 
@@ -654,8 +661,6 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
             app,
             tool_id="tis.credit_gpa.fetch",
             tool_arguments={
-                "usernameSecretName": "tis.username",
-                "passwordSecretName": "tis.password",
                 "stateKey": "credit-gpa-latest",
                 "artifactName": "credit-gpa.json",
             },
@@ -706,6 +711,11 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
     assert all(item["runId"] == run_id for item in captured_bridge_payloads)
     assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
 
+    secret_requests = [
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("secret", "get_secret")
+    ]
     state_request = next(
         item
         for item in captured_bridge_payloads
@@ -717,6 +727,10 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
         if (item["capability"], item["operation"]) == ("artifact", "save_text")
     )
 
+    assert [request["payload"]["secretName"] for request in secret_requests] == [
+        "sustech.username",
+        "sustech.casPassword",
+    ]
     assert state_request["payload"]["scope"] == "tool"
     assert str(state_request["payload"]["key"]).endswith(":credit-gpa-latest")
     assert state_request["payload"]["value"]["output"]["summary"]["average_credit_gpa"] == 3.82
