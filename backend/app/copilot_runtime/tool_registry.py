@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.tools.file_convert import convert_file_to_str
+from app.tooling.runtime_adapter.copilot_runtime import build_default_contract_runtime_bindings
 
 DEFAULT_TOOLSET_NAME = "default"
 DEFAULT_TOOLSET_LABEL = "Default"
@@ -102,6 +103,8 @@ class ToolDescriptor:
 class ExecutableTool:
     descriptor: ToolDescriptor
     execute: ToolExecutor
+    function_name: str | None = None
+    parameters_json_schema: dict[str, Any] | None = None
 
     @property
     def tool_id(self) -> str:
@@ -297,6 +300,25 @@ async def _execute_default_weather_tool(arguments: Mapping[str, Any] | None) -> 
     return await execute_weather_current_tool(arguments)
 
 
+def _build_contract_runtime_executable_tools() -> tuple[ExecutableTool, ...]:
+    return tuple(
+        ExecutableTool(
+            descriptor=ToolDescriptor(
+                tool_id=binding.tool_id,
+                kind=binding.kind,
+                display_name=binding.display_name,
+                description=binding.description,
+                availability=binding.availability,
+            ),
+            execute=binding.execute,
+            function_name=binding.function_name,
+            parameters_json_schema=binding.parameters_json_schema,
+        )
+        for binding in build_default_contract_runtime_bindings()
+    )
+
+
+
 def build_default_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
@@ -326,6 +348,7 @@ def build_default_tool_registry() -> ToolRegistry:
                     ),
                     execute=_execute_default_weather_tool,
                 ),
+                *_build_contract_runtime_executable_tools(),
             ),
         )
     )

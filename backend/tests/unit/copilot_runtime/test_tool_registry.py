@@ -24,6 +24,15 @@ from app.copilot_runtime.tool_registry import (
     summarize_tool_arguments,
 )
 
+CONTRACT_TOOL_IDS = (
+    "blackboard.course_catalog.search",
+    "blackboard.calendar.refresh",
+    "blackboard.snapshot.sync",
+    "tis.personal_grades.fetch",
+    "tis.credit_gpa.fetch",
+    "tis.selected_courses.fetch",
+)
+
 
 def test_tool_registry_returns_registered_default_toolset() -> None:
     registry = ToolRegistry(
@@ -48,60 +57,78 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
 
 def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
+    expected_tool_ids = (FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID, *CONTRACT_TOOL_IDS)
+    catalog = registry.build_tool_catalog()
+    catalog_by_id = {entry["toolId"]: entry for entry in catalog}
 
     assert registry.build_view() == {
         "default": {
             "name": "default",
             "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
-            "toolCount": 2,
+            "toolCount": len(expected_tool_ids),
         }
     }
-    assert registry.build_tool_catalog() == (
-        {
-            "toolId": FILE_CONVERT_TOOL_ID,
-            "kind": "builtin",
-            "availability": "available",
-            "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
-            "description": FILE_CONVERT_TOOL_DESCRIPTION,
-        },
-        {
-            "toolId": WEATHER_CURRENT_TOOL_ID,
-            "kind": "builtin",
-            "availability": "available",
-            "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
-            "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
-        },
+    assert catalog_by_id[FILE_CONVERT_TOOL_ID] == {
+        "toolId": FILE_CONVERT_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
+        "description": FILE_CONVERT_TOOL_DESCRIPTION,
+    }
+    assert catalog_by_id[WEATHER_CURRENT_TOOL_ID] == {
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+        "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
+    }
+    for tool_id in CONTRACT_TOOL_IDS:
+        assert catalog_by_id[tool_id]["toolId"] == tool_id
+        assert catalog_by_id[tool_id]["kind"] == "contract"
+        assert catalog_by_id[tool_id]["availability"] == "available"
+        assert catalog_by_id[tool_id]["displayName"]
+        assert catalog_by_id[tool_id]["description"]
+
+    assert registry.list_tool_ids() == expected_tool_ids
+
+    diagnostics = registry.build_diagnostics_summary()
+    assert diagnostics["available_toolsets"] == ["default"]
+    assert diagnostics["default_toolset"] == "default"
+    assert diagnostics["tool_directory_version"] == "tools-v1"
+    assert diagnostics["toolset_summaries"][0]["name"] == "default"
+    assert diagnostics["toolset_summaries"][0]["label"] == "Default"
+    assert diagnostics["toolset_summaries"][0]["description"] == (
+        "Builtin Copilot runtime tools exposed as the default toolset directory."
     )
-    assert registry.list_tool_ids() == (FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID)
-    assert registry.build_diagnostics_summary() == {
-        "available_toolsets": ["default"],
-        "default_toolset": "default",
-        "tool_directory_version": "tools-v1",
-        "toolset_summaries": [
-            {
-                "name": "default",
-                "label": "Default",
-                "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
-                "default": True,
-                "toolCount": 2,
-                "tools": [
-                    {
-                        "toolId": FILE_CONVERT_TOOL_ID,
-                        "kind": "builtin",
-                        "availability": "available",
-                        "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
-                        "description": FILE_CONVERT_TOOL_DESCRIPTION,
-                    },
-                    {
-                        "toolId": WEATHER_CURRENT_TOOL_ID,
-                        "kind": "builtin",
-                        "availability": "available",
-                        "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
-                        "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
-                    },
-                ],
-            }
-        ],
+    assert diagnostics["toolset_summaries"][0]["default"] is True
+    assert diagnostics["toolset_summaries"][0]["toolCount"] == len(expected_tool_ids)
+    assert tuple(
+        tool["toolId"] for tool in diagnostics["toolset_summaries"][0]["tools"]
+    ) == expected_tool_ids
+
+
+
+def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() -> None:
+    registry = build_default_tool_registry()
+
+    resolved_tool = registry.resolve_tool("blackboard.course_catalog.search")
+
+    assert resolved_tool.descriptor.kind == "contract"
+    assert resolved_tool.function_name == "blackboard_course_catalog_search"
+    assert resolved_tool.parameters_json_schema == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "keyword": {"type": "string", "minLength": 1},
+            "field": {"type": "string"},
+            "operator": {"type": "string"},
+            "limit": {"type": "integer"},
+            "username": {"type": "string"},
+            "password": {"type": "string"},
+            "usernameSecretName": {"type": "string"},
+            "passwordSecretName": {"type": "string"},
+        },
+        "required": ["keyword"],
     }
 
 

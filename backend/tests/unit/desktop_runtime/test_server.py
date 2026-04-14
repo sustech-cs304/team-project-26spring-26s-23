@@ -208,8 +208,8 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
     assert toolset_summary["name"] == "default"
     assert toolset_summary["label"] == "Default"
     assert toolset_summary["default"] is True
-    assert toolset_summary["toolCount"] == 2
-    assert len(toolset_summary["tools"]) == 2
+    assert toolset_summary["toolCount"] == 8
+    assert len(toolset_summary["tools"]) == 8
     assert toolset_summary["tools"][0] == {
         "toolId": FILE_CONVERT_TOOL_ID,
         "kind": "builtin",
@@ -224,6 +224,15 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         "displayName": "Current Weather",
         "description": "Return a placeholder current-weather result for a requested location.",
     }
+    assert [tool["toolId"] for tool in toolset_summary["tools"][2:]] == [
+        "blackboard.course_catalog.search",
+        "blackboard.calendar.refresh",
+        "blackboard.snapshot.sync",
+        "tis.personal_grades.fetch",
+        "tis.credit_gpa.fetch",
+        "tis.selected_courses.fetch",
+    ]
+    assert all(tool["kind"] == "contract" for tool in toolset_summary["tools"][2:])
 
 
 

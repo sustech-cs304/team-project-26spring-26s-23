@@ -9,7 +9,9 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 
-from pydantic_ai import Agent
+from datetime import UTC, datetime
+
+from pydantic_ai import Agent, Tool
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
     BuiltinToolCallEvent,
@@ -63,6 +65,11 @@ from .tool_registry import (
     build_default_tool_registry,
     summarize_tool_arguments,
     summarize_tool_result,
+)
+from app.tooling.runtime_adapter.copilot_runtime import (
+    RuntimeExecutableToolError,
+    RuntimeToolExecutionContext,
+    runtime_tool_execution_scope,
 )
 
 DEFAULT_AGENT_NAME = "default"
@@ -1021,6 +1028,7 @@ class PydanticAIAgentExecutor:
             output_type=str,
             system_prompt=DEFAULT_AGENT_SYSTEM_PROMPT,
             deps_type=_PydanticAIAgentRunDeps,
+            tools=self._build_contract_agent_tools(),
             defer_model_check=True,
         )
         self._register_weather_tool()
@@ -1190,6 +1198,55 @@ class PydanticAIAgentExecutor:
             normalized.append(tool_id)
         return tuple(normalized)
 
+    def _build_contract_agent_tools(self) -> tuple[Tool[Any], ...]:
+        tools: list[Tool[Any]] = []
+        for tool_id in self._tool_registry.list_tool_ids():
+            executable_tool = self._tool_registry.resolve_tool(tool_id)
+            if executable_tool.function_name is None:
+                continue
+            if executable_tool.parameters_json_schema is None:
+                continue
+            if tool_id == WEATHER_CURRENT_TOOL_ID:
+                continue
+
+            tools.append(
+                self._build_contract_agent_tool(
+                    tool_id=tool_id,
+                    function_name=executable_tool.function_name,
+                    description=executable_tool.descriptor.description,
+                    parameters_json_schema=executable_tool.parameters_json_schema,
+                )
+            )
+        return tuple(tools)
+
+    def _build_contract_agent_tool(
+        self,
+        *,
+        tool_id: str,
+        function_name: str,
+        description: str | None,
+        parameters_json_schema: Mapping[str, Any],
+    ) -> Tool[Any]:
+        async def runtime_contract_tool(
+            ctx: RunContext[_PydanticAIAgentRunDeps],
+            **arguments: Any,
+        ) -> dict[str, Any]:
+            return await self._execute_bound_tool(
+                ctx,
+                tool_id=tool_id,
+                arguments=arguments,
+            )
+
+        tool = Tool.from_schema(
+            runtime_contract_tool,
+            name=function_name,
+            description=description,
+            json_schema=dict(parameters_json_schema),
+            takes_ctx=True,
+        )
+        tool.max_retries = 0
+        return tool
+
     def _register_weather_tool(self) -> None:
         try:
             tool = self._tool_registry.resolve_tool(WEATHER_CURRENT_TOOL_ID)
@@ -1297,8 +1354,51 @@ class PydanticAIAgentExecutor:
                 tool_call_id=tool_call_id,
             )
 
+        execution_context = RuntimeToolExecutionContext(
+            tool_call_id=tool_call_id,
+            run_id=ctx.deps.run_id,
+            actor="agent",
+            requested_at=datetime.now(UTC),
+            trace={
+                "toolCallId": tool_call_id,
+                "toolId": tool_id,
+            },
+            metadata={
+                "displayName": tool.descriptor.display_name or tool_id,
+                "enabledToolIds": sorted(ctx.deps.enabled_tool_ids),
+            },
+        )
         try:
-            result = await tool.execute(normalized_arguments)
+            with runtime_tool_execution_scope(execution_context):
+                result = await tool.execute(normalized_arguments)
+        except RuntimeExecutableToolError as exc:
+            log_runtime_chain_debug(
+                "tool.execute_exception",
+                enabled=ctx.deps.debug_enabled,
+                runId=ctx.deps.run_id,
+                toolCallId=tool_call_id,
+                toolId=tool_id,
+                error=summarize_exception(exc),
+            )
+            self._emit_tool_event(
+                ctx,
+                RuntimeToolLifecycleEvent(
+                    tool_call_id=tool_call_id,
+                    tool_id=tool_id,
+                    phase="failed",
+                    title="工具调用失败",
+                    summary="工具执行失败。",
+                    input_summary=input_summary,
+                    error_summary=exc.message,
+                ),
+            )
+            raise ToolInvocationError(
+                code=exc.code,
+                message=exc.message,
+                tool_id=tool_id,
+                tool_call_id=tool_call_id,
+                details=exc.details,
+            ) from exc
         except ToolInvocationError:
             raise
         except Exception as exc:

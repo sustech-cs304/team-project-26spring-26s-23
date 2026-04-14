@@ -15,6 +15,9 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.test import TestModel
 
+import app.blackboard.facade.tools as blackboard_facade_tools
+from app.blackboard.api.dto import CourseCatalogResultDTO
+from app.blackboard.provider.results import CourseCatalogSearchResult
 from app.copilot_runtime.agent import (
     AgentExecutionError,
     ModelNotConfiguredError,
@@ -23,7 +26,7 @@ from app.copilot_runtime.agent import (
     ToolInvocationError,
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
-from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
+from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 
 
 def test_run_raises_model_not_configured_when_no_model_is_available() -> None:
@@ -416,6 +419,92 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
         },
         "stage": "drive_raw_tool_call",
     }
+
+
+
+def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+    ) -> CourseCatalogSearchResult:
+        captured.update(
+            {
+                "username": username,
+                "password": password,
+                "keyword": keyword,
+                "field": field,
+                "operator": operator,
+                "limit": limit,
+            }
+        )
+        return CourseCatalogSearchResult(
+            keyword=keyword,
+            field=field,
+            operator=operator,
+            limit=limit,
+            results=[
+                CourseCatalogResultDTO(
+                    course_id="_course_1",
+                    course_identifier="CS305",
+                    course_name="数据库系统",
+                    instructor="张老师",
+                )
+            ],
+            logs=[],
+        )
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="blackboard.course_catalog.search:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="blackboard.course_catalog.search",
+            arguments={
+                "username": "alice",
+                "password": "secret",
+                "keyword": "数据库系统",
+            },
+        )
+    )
+
+    assert captured == {
+        "username": "alice",
+        "password": "secret",
+        "keyword": "数据库系统",
+        "field": "CourseName",
+        "operator": "Contains",
+        "limit": None,
+    }
+    assert result["status"] == "success"
+    assert result["output"]["keyword"] == "数据库系统"
+    assert result["output"]["total"] == 1
+    assert result["metadata"]["toolId"] == "blackboard.course_catalog.search"
+    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+    assert all(event.tool_id == "blackboard.course_catalog.search" for event in emitted_tool_events)
+    assert emitted_tool_events[-1].result_summary is not None
 
 
 
