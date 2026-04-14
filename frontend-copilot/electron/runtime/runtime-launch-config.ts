@@ -19,6 +19,8 @@ export interface HostedRuntimeLaunchConfig {
   localToken: string
   hostModelRouteBridgeUrl: string | null
   hostModelRouteBridgeToken: string | null
+  hostCapabilityBridgeUrl: string | null
+  hostCapabilityBridgeToken: string | null
   args: string[]
   baseUrl: string
   readyUrl: string
@@ -41,6 +43,7 @@ export interface SanitizedHostedRuntimeLaunchConfig {
   environment: string
   localTokenConfigured: boolean
   hostModelRouteBridgeConfigured: boolean
+  hostCapabilityBridgeConfigured: boolean
   paths: SanitizedHostedRuntimePaths
 }
 
@@ -52,6 +55,8 @@ export interface HostedRuntimeLaunchConfigOptions {
   localToken?: string
   hostModelRouteBridgeUrl?: string | null
   hostModelRouteBridgeToken?: string | null
+  hostCapabilityBridgeUrl?: string | null
+  hostCapabilityBridgeToken?: string | null
   appMode?: string
   environment?: string
   paths?: HostedRuntimePaths
@@ -80,6 +85,8 @@ export function createHostedRuntimeLaunchConfig(
   const baseUrl = formatRuntimeBaseUrl(host, options.port)
   const hostModelRouteBridgeUrl = options.hostModelRouteBridgeUrl ?? null
   const hostModelRouteBridgeToken = options.hostModelRouteBridgeToken ?? null
+  const hostCapabilityBridgeUrl = options.hostCapabilityBridgeUrl ?? null
+  const hostCapabilityBridgeToken = options.hostCapabilityBridgeToken ?? null
 
   return {
     host,
@@ -87,12 +94,16 @@ export function createHostedRuntimeLaunchConfig(
     localToken,
     hostModelRouteBridgeUrl,
     hostModelRouteBridgeToken,
+    hostCapabilityBridgeUrl,
+    hostCapabilityBridgeToken,
     args: buildDesktopRuntimeArguments({
       host,
       port: options.port,
       localToken,
       hostModelRouteBridgeUrl,
       hostModelRouteBridgeToken,
+      hostCapabilityBridgeUrl,
+      hostCapabilityBridgeToken,
       appMode,
       environment,
       paths,
@@ -123,6 +134,8 @@ export function sanitizeHostedRuntimeLaunchConfig(
     localTokenConfigured: config.localToken.trim() !== '',
     hostModelRouteBridgeConfigured:
       config.hostModelRouteBridgeUrl !== null && (config.hostModelRouteBridgeToken?.trim() ?? '') !== '',
+    hostCapabilityBridgeConfigured:
+      config.hostCapabilityBridgeUrl !== null && (config.hostCapabilityBridgeToken?.trim() ?? '') !== '',
     paths: sanitizeHostedRuntimePaths(config.paths),
   }
 }

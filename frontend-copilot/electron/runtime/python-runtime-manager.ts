@@ -74,6 +74,8 @@ export interface PythonRuntimeManagerOptions extends PythonRuntimeResolverContex
   localToken?: string
   hostModelRouteBridgeUrl?: string | null
   hostModelRouteBridgeToken?: string | null
+  hostCapabilityBridgeUrl?: string | null
+  hostCapabilityBridgeToken?: string | null
   startupTimeoutMs?: number
   shutdownTimeoutMs?: number
   healthcheckIntervalMs?: number
@@ -89,6 +91,8 @@ interface ResolvedPythonRuntimeManagerOptions extends PythonRuntimeResolverConte
   localToken?: string
   hostModelRouteBridgeUrl?: string | null
   hostModelRouteBridgeToken?: string | null
+  hostCapabilityBridgeUrl?: string | null
+  hostCapabilityBridgeToken?: string | null
   startupTimeoutMs: number
   shutdownTimeoutMs: number
   healthcheckIntervalMs: number
@@ -255,6 +259,8 @@ export class PythonRuntimeManager {
       localToken: this.options.localToken,
       hostModelRouteBridgeUrl: this.options.hostModelRouteBridgeUrl,
       hostModelRouteBridgeToken: this.options.hostModelRouteBridgeToken,
+      hostCapabilityBridgeUrl: this.options.hostCapabilityBridgeUrl,
+      hostCapabilityBridgeToken: this.options.hostCapabilityBridgeToken,
       paths: this.runtimePaths,
     })
 
@@ -504,6 +510,7 @@ export class PythonRuntimeManager {
     return collectSensitiveValues(
       this.launchConfig?.localToken,
       this.launchConfig?.hostModelRouteBridgeToken,
+      this.launchConfig?.hostCapabilityBridgeToken,
     )
   }
 

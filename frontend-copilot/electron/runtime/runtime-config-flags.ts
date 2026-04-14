@@ -70,6 +70,8 @@ export const DESKTOP_RUNTIME_ARGUMENT_NAMES = {
   LAST_FAILURE_FILE: '--last-failure-file',
   HOST_MODEL_ROUTE_BRIDGE_URL: '--host-model-route-bridge-url',
   HOST_MODEL_ROUTE_BRIDGE_TOKEN: '--host-model-route-bridge-token',
+  HOST_CAPABILITY_BRIDGE_URL: '--host-capability-bridge-url',
+  HOST_CAPABILITY_BRIDGE_TOKEN: '--host-capability-bridge-token',
   LOCAL_TOKEN: '--local-token',
 } as const
 

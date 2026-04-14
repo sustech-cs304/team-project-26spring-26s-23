@@ -43,5 +43,8 @@ export function createMainProcessServices(
     async resolveSettingsWorkspaceProviderRoute(request) {
       return await accessors.getSettingsWorkspaceService().resolveProviderRoute(request)
     },
+    async handleDesktopCapabilityBridgeRequest(request) {
+      return await accessors.getDesktopCapabilityBridgeService().handleRequest(request)
+    },
   }
 }

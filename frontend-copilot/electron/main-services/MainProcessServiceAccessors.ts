@@ -1,4 +1,8 @@
 import {
+  createElectronDesktopCapabilityBridgeService,
+  type ElectronDesktopCapabilityBridgeService,
+} from '../capability-bridge/main-process'
+import {
   createElectronUnifiedConfigService,
   type ElectronUnifiedConfigService,
 } from '../config-center/main-process'
@@ -11,6 +15,7 @@ import type { CreateMainProcessServicesOptions } from './MainProcessServiceTypes
 export interface MainProcessServiceAccessors {
   getUnifiedConfigService: () => ElectronUnifiedConfigService
   getSettingsWorkspaceService: () => ElectronSettingsWorkspaceService
+  getDesktopCapabilityBridgeService: () => ElectronDesktopCapabilityBridgeService
 }
 
 export function createMainProcessServiceAccessors(
@@ -18,6 +23,18 @@ export function createMainProcessServiceAccessors(
 ): MainProcessServiceAccessors {
   let unifiedConfigService: ElectronUnifiedConfigService | null = null
   let settingsWorkspaceService: ElectronSettingsWorkspaceService | null = null
+  let desktopCapabilityBridgeService: ElectronDesktopCapabilityBridgeService | null = null
+
+  const getSettingsWorkspaceService = (): ElectronSettingsWorkspaceService => {
+    settingsWorkspaceService ??= createElectronSettingsWorkspaceService({
+      prepareRuntimePaths: options.prepareRuntimePaths,
+      appendLog(level, message, context) {
+        return options.appendMainRuntimeLog(level, message, context)
+      },
+    })
+
+    return settingsWorkspaceService
+  }
 
   return {
     getUnifiedConfigService(): ElectronUnifiedConfigService {
@@ -33,15 +50,17 @@ export function createMainProcessServiceAccessors(
 
       return unifiedConfigService
     },
-    getSettingsWorkspaceService(): ElectronSettingsWorkspaceService {
-      settingsWorkspaceService ??= createElectronSettingsWorkspaceService({
+    getSettingsWorkspaceService,
+    getDesktopCapabilityBridgeService(): ElectronDesktopCapabilityBridgeService {
+      desktopCapabilityBridgeService ??= createElectronDesktopCapabilityBridgeService({
         prepareRuntimePaths: options.prepareRuntimePaths,
         appendLog(level, message, context) {
           return options.appendMainRuntimeLog(level, message, context)
         },
+        getSettingsWorkspaceService,
       })
 
-      return settingsWorkspaceService
+      return desktopCapabilityBridgeService
     },
   }
 }

@@ -16,6 +16,7 @@ import { createMainRuntimeLogger, formatUnknownError } from './main-runtime-log'
 import { createMainProcessServices } from './main-services'
 import { createMainWindow } from './main-window'
 import { createHostedBackendService, type HostedBackendService } from './runtime/hosted-backend-service'
+import { createHostCapabilityBridge, type HostCapabilityBridge } from './runtime/host-capability-bridge'
 import { createHostModelRouteBridge, type HostModelRouteBridge } from './runtime/host-model-route-bridge'
 import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-config'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime/runtime-paths'
@@ -53,6 +54,8 @@ let hostedBackendService: HostedBackendService | null = null
 let hostedBackendServicePromise: Promise<HostedBackendService> | null = null
 let hostModelRouteBridge: HostModelRouteBridge | null = null
 let hostModelRouteBridgePromise: Promise<HostModelRouteBridge> | null = null
+let hostCapabilityBridge: HostCapabilityBridge | null = null
+let hostCapabilityBridgePromise: Promise<HostCapabilityBridge> | null = null
 let runtimePaths: HostedRuntimePaths | null = null
 let quitSequenceStarted = false
 let hostedBackendStartupInFlight = false
@@ -164,6 +167,33 @@ async function ensureHostModelRouteBridge(): Promise<HostModelRouteBridge> {
   }
 }
 
+async function ensureHostCapabilityBridge(): Promise<HostCapabilityBridge> {
+  if (hostCapabilityBridge !== null) {
+    return hostCapabilityBridge
+  }
+
+  if (hostCapabilityBridgePromise !== null) {
+    return await hostCapabilityBridgePromise
+  }
+
+  hostCapabilityBridgePromise = (async () => {
+    const bridge = await createHostCapabilityBridge({
+      async handleRequest(request) {
+        return await mainProcessServices.handleDesktopCapabilityBridgeRequest(request)
+      },
+    })
+
+    hostCapabilityBridge = bridge
+    return bridge
+  })()
+
+  try {
+    return await hostCapabilityBridgePromise
+  } finally {
+    hostCapabilityBridgePromise = null
+  }
+}
+
 async function ensureHostedBackendService(): Promise<HostedBackendService> {
   if (hostedBackendService !== null) {
     return hostedBackendService
@@ -177,6 +207,7 @@ async function ensureHostedBackendService(): Promise<HostedBackendService> {
     const paths = getHostedRuntimePaths()
     const runtimeCommandLineOptions = resolveHostedRuntimeCommandLineOptions()
     const routeBridge = await ensureHostModelRouteBridge()
+    const capabilityBridge = await ensureHostCapabilityBridge()
 
     const service = createHostedBackendService({
       appRoot: APP_ROOT,
@@ -190,6 +221,8 @@ async function ensureHostedBackendService(): Promise<HostedBackendService> {
       localToken: runtimeCommandLineOptions.localToken,
       hostModelRouteBridgeUrl: routeBridge.bootstrap.url,
       hostModelRouteBridgeToken: routeBridge.bootstrap.token,
+      hostCapabilityBridgeUrl: capabilityBridge.bootstrap.url,
+      hostCapabilityBridgeToken: capabilityBridge.bootstrap.token,
     })
 
     hostedBackendService = service
@@ -243,8 +276,20 @@ async function stopHostModelRouteBridge(): Promise<void> {
   await activeBridge.stop()
 }
 
+async function stopHostCapabilityBridge(): Promise<void> {
+  if (hostCapabilityBridge === null) {
+    return
+  }
+
+  const activeBridge = hostCapabilityBridge
+  hostCapabilityBridge = null
+  hostCapabilityBridgePromise = null
+  await activeBridge.stop()
+}
+
 async function stopHostedBackend(): Promise<void> {
   if (hostedBackendService === null) {
+    await stopHostCapabilityBridge()
     await stopHostModelRouteBridge()
     return
   }
@@ -261,6 +306,12 @@ async function stopHostedBackend(): Promise<void> {
     logHostedBackendFailure('Hosted backend shutdown completed with a recorded failure.', state.lastFailure)
   } else {
     logHostedBackendState('Hosted backend stopped.', state)
+  }
+
+  try {
+    await stopHostCapabilityBridge()
+  } catch (error) {
+    logHostedBackendFailure('Host capability bridge shutdown threw an unexpected error.', null, error)
   }
 
   try {

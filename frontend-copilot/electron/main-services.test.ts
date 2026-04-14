@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const hoisted = vi.hoisted(() => {
   const createElectronUnifiedConfigService = vi.fn()
   const createElectronSettingsWorkspaceService = vi.fn()
+  const createElectronDesktopCapabilityBridgeService = vi.fn()
   const unifiedConfigService = {
     loadPublicSnapshot: vi.fn(),
     applyPublicPatch: vi.fn(),
@@ -18,12 +19,17 @@ const hoisted = vi.hoisted(() => {
     clearSustechCasSecret: vi.fn(),
     resolveProviderRoute: vi.fn(),
   }
+  const capabilityBridgeService = {
+    handleRequest: vi.fn(),
+  }
 
   return {
     createElectronUnifiedConfigService,
     createElectronSettingsWorkspaceService,
+    createElectronDesktopCapabilityBridgeService,
     unifiedConfigService,
     settingsWorkspaceService,
+    capabilityBridgeService,
   }
 })
 
@@ -33,6 +39,10 @@ vi.mock('./config-center/main-process', () => ({
 
 vi.mock('./settings-workspace/main-process', () => ({
   createElectronSettingsWorkspaceService: hoisted.createElectronSettingsWorkspaceService,
+}))
+
+vi.mock('./capability-bridge/main-process', () => ({
+  createElectronDesktopCapabilityBridgeService: hoisted.createElectronDesktopCapabilityBridgeService,
 }))
 
 import {
@@ -152,6 +162,24 @@ describe('createMainProcessServices', () => {
         apiKey: 'draft-secret',
       },
     } as const
+    const capabilityRequest = {
+      requestId: 'request-1',
+      capability: 'secret' as const,
+      operation: 'get_secret' as const,
+      toolId: 'blackboard.snapshot.sync',
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      payload: {
+        secretName: 'bb.password',
+      },
+    }
+    const capabilityResponse = {
+      requestId: 'request-1',
+      ok: true as const,
+      result: {
+        value: 'resolved-secret',
+      },
+    }
 
     hoisted.unifiedConfigService.loadPublicSnapshot.mockResolvedValue(loadPublicSnapshotResult)
     hoisted.unifiedConfigService.applyPublicPatch.mockResolvedValue(applyPublicPatchResult)
@@ -164,9 +192,11 @@ describe('createMainProcessServices', () => {
     hoisted.settingsWorkspaceService.saveSustechCasSecret.mockResolvedValue(saveSustechCasSecretResult)
     hoisted.settingsWorkspaceService.clearSustechCasSecret.mockResolvedValue(clearSustechCasSecretResult)
     hoisted.settingsWorkspaceService.resolveProviderRoute.mockResolvedValue(resolveProviderRouteResult)
+    hoisted.capabilityBridgeService.handleRequest.mockResolvedValue(capabilityResponse)
 
     hoisted.createElectronUnifiedConfigService.mockReturnValue(hoisted.unifiedConfigService)
     hoisted.createElectronSettingsWorkspaceService.mockReturnValue(hoisted.settingsWorkspaceService)
+    hoisted.createElectronDesktopCapabilityBridgeService.mockReturnValue(hoisted.capabilityBridgeService)
 
     const prepareRuntimePaths = vi.fn(async () => ({ runtimeRootDir: 'runtime-root' } as never))
     const appendMainRuntimeLog = vi.fn()
@@ -179,6 +209,7 @@ describe('createMainProcessServices', () => {
 
     expect(hoisted.createElectronUnifiedConfigService).not.toHaveBeenCalled()
     expect(hoisted.createElectronSettingsWorkspaceService).not.toHaveBeenCalled()
+    expect(hoisted.createElectronDesktopCapabilityBridgeService).not.toHaveBeenCalled()
 
     const patch = {
       domains: {
@@ -208,9 +239,13 @@ describe('createMainProcessServices', () => {
     await expect(services.resolveSettingsWorkspaceProviderRoute(resolveProviderRouteRequest)).resolves.toEqual(
       resolveProviderRouteResult,
     )
+    await expect(services.handleDesktopCapabilityBridgeRequest(capabilityRequest)).resolves.toEqual(
+      capabilityResponse,
+    )
 
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
+    expect(hoisted.createElectronDesktopCapabilityBridgeService).toHaveBeenCalledTimes(1)
     expect(hoisted.unifiedConfigService.loadPublicSnapshot).toHaveBeenCalledOnce()
     expect(hoisted.unifiedConfigService.applyPublicPatch).toHaveBeenCalledWith(patch)
     expect(hoisted.settingsWorkspaceService.loadState).toHaveBeenCalledOnce()
@@ -229,12 +264,15 @@ describe('createMainProcessServices', () => {
     })
     expect(hoisted.settingsWorkspaceService.clearSustechCasSecret).toHaveBeenCalledOnce()
     expect(hoisted.settingsWorkspaceService.resolveProviderRoute).toHaveBeenCalledWith(resolveProviderRouteRequest)
+    expect(hoisted.capabilityBridgeService.handleRequest).toHaveBeenCalledWith(capabilityRequest)
 
     const unifiedConfigOptions = hoisted.createElectronUnifiedConfigService.mock.calls[0]?.[0]
     const settingsWorkspaceOptions = hoisted.createElectronSettingsWorkspaceService.mock.calls[0]?.[0]
+    const capabilityBridgeOptions = hoisted.createElectronDesktopCapabilityBridgeService.mock.calls[0]?.[0]
 
     expect(unifiedConfigOptions?.prepareRuntimePaths).toBe(prepareRuntimePaths)
     expect(settingsWorkspaceOptions?.prepareRuntimePaths).toBe(prepareRuntimePaths)
+    expect(capabilityBridgeOptions?.prepareRuntimePaths).toBe(prepareRuntimePaths)
 
     await unifiedConfigOptions?.appendLog?.('warn', 'config-log', {
       scope: 'config',
@@ -243,12 +281,18 @@ describe('createMainProcessServices', () => {
     await settingsWorkspaceOptions?.appendLog?.('error', 'settings-log', {
       scope: 'settings',
     })
+    await capabilityBridgeOptions?.appendLog?.('info', 'capability-log', {
+      scope: 'capability',
+    })
 
     expect(appendMainRuntimeLog).toHaveBeenNthCalledWith(1, 'warn', 'config-log', {
       scope: 'config',
     })
     expect(appendMainRuntimeLog).toHaveBeenNthCalledWith(2, 'error', 'settings-log', {
       scope: 'settings',
+    })
+    expect(appendMainRuntimeLog).toHaveBeenNthCalledWith(3, 'info', 'capability-log', {
+      scope: 'capability',
     })
     expect(publishConfigCenterPublicSnapshotUpdate).toHaveBeenCalledOnce()
     expect(publishConfigCenterPublicSnapshotUpdate).toHaveBeenCalledWith(loadPublicSnapshotResult.snapshot)
