@@ -1743,6 +1743,18 @@ function createPersistedWorkspaceStateLoader() {
 }
 
 function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
+  const driftPayload = {
+    status: 'historical_provider_removed',
+    historicalModelId: 'legacy-model',
+    historicalToolIds: ['tool.file-convert'],
+    historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
+    warnings: [{
+      code: 'historical_provider_removed',
+      message: '历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。',
+    }],
+    requiresExplicitRebind: true,
+  }
+
   return {
     summary: {
       threadId: 'session-1',
@@ -1758,9 +1770,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
       lastRunStatus: 'completed',
       lastUserMessagePreview: '你好',
       lastAssistantMessagePreview: '历史摘要',
-      driftSummary: {
-        status: 'provider_removed',
-      },
+      driftSummary: driftPayload,
     },
     detailStatus: 'ready',
     detailError: null,
@@ -1788,9 +1798,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
       },
     ],
     latestConfigurationSnapshot: null,
-    availabilityDrift: {
-      status: 'provider_removed',
-    },
+    availabilityDrift: driftPayload,
     selectedRunId: 'run-history-1',
     replayStatus: 'ready',
     replayError: null,
@@ -1834,9 +1842,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
       toolCallBlocks: [],
       diagnosticBlocks: [],
       terminalState: null,
-      availabilityInterpretation: {
-        status: 'historical_provider_removed',
-      },
+      availabilityInterpretation: driftPayload,
     },
   }
 }

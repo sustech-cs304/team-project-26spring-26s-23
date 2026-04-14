@@ -9,6 +9,20 @@ describe('persisted history drift evaluation', () => {
     expect(resolvePersistedHistoryDrift(createHistoryState())).toBeNull()
   })
 
+  it('ignores legacy status-only drift records without backend structured conclusions', () => {
+    expect(resolvePersistedHistoryDrift(createHistoryState({
+      summaryDrift: {
+        status: 'historical_provider_removed',
+      },
+      availabilityDrift: {
+        status: 'historical_provider_removed',
+      },
+      availabilityInterpretation: {
+        status: 'historical_provider_removed',
+      },
+    }))).toBeNull()
+  })
+
   it('prefers replay availability interpretation over detail and summary drift payloads', () => {
     const summaryDrift = createDriftRecord({
       status: 'historical_tool_unregistered',
