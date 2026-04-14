@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
@@ -404,6 +405,122 @@ def _resolve_db_manager(
     return TISDatabaseManager(reset_schema=reset_schema), "default"
 
 
+def _read_sql_query_result_limit(arguments: Mapping[str, Any]) -> int:
+    raw_limit = _read_optional_int(arguments, "resultLimit")
+    if raw_limit is None:
+        return 50
+    if raw_limit <= 0:
+        raise ValueError("resultLimit must be a positive integer.")
+    return raw_limit
+
+
+def _default_tis_sql_query_db_path() -> Path:
+    manager = TISDatabaseManager()
+    try:
+        return Path(manager.db_path)
+    finally:
+        manager.engine.dispose()
+
+
+def _resolve_sql_query_db_path(
+    arguments: Mapping[str, Any],
+    host: ToolHostCapabilities,
+) -> tuple[Path, str, bool]:
+    db_relative_path = _read_optional_text(arguments, "dbRelativePath")
+    if db_relative_path is not None:
+        workspace_resolver = cast(
+            WorkspaceResolver,
+            host.require_capability("workspace_resolver"),
+        )
+        return workspace_resolver.resolve_workspace_path(relative_path=db_relative_path), "workspace", False
+
+    db_path = _read_optional_text(arguments, "dbPath")
+    if db_path is not None:
+        return Path(db_path), "argument", False
+
+    return _default_tis_sql_query_db_path(), "default", True
+
+
+def _sql_statement_type(sql: str) -> str:
+    stripped = sql.lstrip()
+    if stripped == "":
+        return "UNKNOWN"
+    return stripped.split(maxsplit=1)[0].rstrip(";").upper()
+
+
+def _normalize_sql_value(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return _jsonable(value)
+
+
+def _sql_row_to_mapping(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
+    return {
+        column: _normalize_sql_value(value)
+        for column, value in zip(columns, row)
+    }
+
+
+def _execute_sql_query(
+    *,
+    sql: str,
+    db_path: Path,
+    result_limit: int,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    statement_type = _sql_statement_type(sql)
+    with sqlite3.connect(str(db_path)) as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql)
+        has_result_set = cursor.description is not None
+        if has_result_set:
+            columns = [str(description[0]) for description in cursor.description]
+            rows = cursor.fetchall()
+            full_rows = [_sql_row_to_mapping(columns, row) for row in rows]
+            row_count = len(full_rows)
+            rows_preview = full_rows[:result_limit]
+            execution_summary = {
+                "statementType": statement_type,
+                "previewRowCount": len(rows_preview),
+                "rowCount": row_count,
+                "message": f"SQL query returned {row_count} row(s).",
+            }
+            return (
+                {
+                    "hasResultSet": True,
+                    "columns": columns,
+                    "rowsPreview": rows_preview,
+                    "truncated": row_count > result_limit,
+                    "rowCount": row_count,
+                    "executionSummary": execution_summary,
+                },
+                {
+                    "hasResultSet": True,
+                    "columns": columns,
+                    "rows": full_rows,
+                    "rowCount": row_count,
+                    "executionSummary": execution_summary,
+                },
+            )
+
+        connection.commit()
+        affected_row_count = cursor.rowcount if cursor.rowcount >= 0 else None
+        return (
+            {
+                "hasResultSet": False,
+                "columns": [],
+                "rowsPreview": [],
+                "truncated": False,
+                "rowCount": None,
+                "executionSummary": {
+                    "statementType": statement_type,
+                    "affectedRowCount": affected_row_count,
+                    "message": "SQL statement executed without a result set.",
+                },
+            },
+            None,
+        )
+
+
 async def _persist_state_if_requested(
     *,
     namespace: str,
@@ -461,6 +578,38 @@ async def _persist_artifact_if_requested(
             metadata=artifact.metadata,
         ),
     )
+
+
+async def _persist_sql_query_artifact_if_requested(
+    *,
+    persist_artifact: bool,
+    context: ToolInvocationContext,
+    host: ToolHostCapabilities,
+    output: Mapping[str, Any],
+    full_result: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any] | None, tuple[ToolArtifactReference, ...]]:
+    if not persist_artifact or full_result is None or not bool(output.get("truncated")):
+        return None, ()
+
+    artifact_store = cast(ArtifactStore, host.require_capability("artifact_store"))
+    artifact = await artifact_store.save_text(
+        name=f"{context.tool_id.replace('.', '-')}-{context.invocation_id}.json",
+        text=json.dumps(dict(full_result), ensure_ascii=False, indent=2, sort_keys=True),
+        content_type="application/json",
+        metadata={
+            "toolId": context.tool_id,
+            "invocationId": context.invocation_id,
+            "rowCount": full_result.get("rowCount"),
+        },
+    )
+    reference = ToolArtifactReference(
+        artifact_id=artifact.artifact_id,
+        name=artifact.name,
+        content_type=artifact.content_type,
+        uri=artifact.uri,
+        metadata=artifact.metadata,
+    )
+    return reference.to_dict(), (reference,)
 
 
 def _summarize_logs(logs: Sequence[TISLogEvent]) -> dict[str, Any]:
@@ -550,6 +699,72 @@ def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str,
     if result.persistence is not None:
         output["persistence"] = _jsonable(result.persistence)
     return output
+
+
+_SQL_QUERY_METADATA = ToolMetadata(
+    tool_id="tis.sql.query",
+    display_name="TIS SQL Query",
+    description=(
+        "Execute raw SQL directly against the local TIS SQLite database for inspection and retrieval. "
+        "Unless explicitly allowed, avoid DDL, DML, PRAGMA, and ATTACH statements."
+    ),
+    input_schema=_schema(
+        properties={
+            "sql": {"type": "string", "minLength": 1},
+            "dbPath": {"type": "string"},
+            "dbRelativePath": {"type": "string"},
+            "resultLimit": {"type": "integer"},
+            "persistArtifact": {"type": "boolean"},
+        },
+        required=("sql",),
+    ),
+    output_schema=_schema(
+        properties={
+            "sql": {"type": "string"},
+            "database": {"type": "object"},
+            "usedDefaultDatabase": {"type": "boolean"},
+            "hasResultSet": {"type": "boolean"},
+            "columns": {"type": "array"},
+            "rowsPreview": {"type": "array"},
+            "truncated": {"type": "boolean"},
+            "rowCount": {"type": ["integer", "null"]},
+            "executionSummary": {"type": "object"},
+            "artifact": {"type": ["object", "null"]},
+        },
+        required=(
+            "sql",
+            "database",
+            "usedDefaultDatabase",
+            "hasResultSet",
+            "columns",
+            "rowsPreview",
+            "truncated",
+            "rowCount",
+            "executionSummary",
+            "artifact",
+        ),
+    ),
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="workspace_resolver",
+            required=False,
+            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used.",
+        ),
+        HostCapabilityRequirement(
+            capability="artifact_store",
+            required=False,
+            purpose="Persist full SQL query results as host-owned artifacts when inline preview is truncated.",
+        ),
+        HostCapabilityRequirement(
+            capability="event_sink",
+            required=False,
+            purpose="Emit tool lifecycle events to the host.",
+        ),
+    ),
+    tags=("tis", "sql", "query"),
+    annotations={"domain": "teaching_information_system", "facade": "tool-contract"},
+    idempotent=False,
+)
 
 
 _PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
@@ -955,10 +1170,66 @@ class TISSelectedCoursesFetchTool(_TISFacadeToolBase):
         return output, artifacts, metadata
 
 
+class TISSQLQueryTool(_TISFacadeToolBase):
+    _metadata = _SQL_QUERY_METADATA
+
+    async def _invoke_impl(
+        self,
+        *,
+        arguments: dict[str, Any],
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
+        sql = _read_required_text(arguments, "sql")
+        result_limit = _read_sql_query_result_limit(arguments)
+        persist_artifact = _read_bool(arguments, "persistArtifact", default=False)
+        db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(arguments, host)
+        query_output, full_result = await asyncio.to_thread(
+            _execute_sql_query,
+            sql=sql,
+            db_path=db_path,
+            result_limit=result_limit,
+        )
+        output: dict[str, Any] = {
+            "sql": sql,
+            "database": {
+                "path": db_path.as_posix(),
+                "source": db_path_source,
+            },
+            "usedDefaultDatabase": used_default_database,
+            **query_output,
+            "artifact": None,
+        }
+        artifact_payload: dict[str, Any] | None = None
+        if full_result is not None:
+            artifact_payload = {
+                "sql": sql,
+                "database": {
+                    "path": db_path.as_posix(),
+                    "source": db_path_source,
+                },
+                "usedDefaultDatabase": used_default_database,
+                **full_result,
+            }
+        artifact_output, artifacts = await _persist_sql_query_artifact_if_requested(
+            persist_artifact=persist_artifact,
+            context=context,
+            host=host,
+            output=output,
+            full_result=artifact_payload,
+        )
+        output["artifact"] = artifact_output
+        return output, artifacts, {
+            "dbPathSource": db_path_source,
+            "persistArtifactRequested": persist_artifact,
+        }
+
+
 TIS_FACADE_TOOLS: tuple[ToolContract, ...] = (
     TISPersonalGradesFetchTool(),
     TISCreditGPAFetchTool(),
     TISSelectedCoursesFetchTool(),
+    TISSQLQueryTool(),
 )
 
 
@@ -972,6 +1243,7 @@ __all__ = [
     "TISCreditGPAFetchTool",
     "TISSelectedCoursesFetchTool",
     "TISPersonalGradesFetchTool",
+    "TISSQLQueryTool",
     "TIS_FACADE_TOOLS",
     "get_tis_tool_contracts",
 ]

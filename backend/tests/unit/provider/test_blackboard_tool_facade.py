@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from app.integrations.sustech.blackboard.api.dto import (
 from app.integrations.sustech.blackboard.facade.tools import (
     BlackboardCalendarRefreshTool,
     BlackboardCourseCatalogSearchTool,
+    BlackboardSQLQueryTool,
     BlackboardSnapshotSyncTool,
 )
 from app.integrations.sustech.blackboard.provider.results import (
@@ -123,8 +125,20 @@ class _NoopWorkspaceResolver:
         return Path("workspace") if relative_path is None else Path("workspace") / relative_path
 
 
+def _create_sqlite_db(path: Path, *, script: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(path)) as connection:
+        connection.executescript(script)
+    return path
+
+
 def _invoke_tool(
-    tool: BlackboardCourseCatalogSearchTool | BlackboardCalendarRefreshTool | BlackboardSnapshotSyncTool,
+    tool: (
+        BlackboardCourseCatalogSearchTool
+        | BlackboardCalendarRefreshTool
+        | BlackboardSnapshotSyncTool
+        | BlackboardSQLQueryTool
+    ),
     *,
     arguments: dict[str, Any] | None,
     host: ToolHostCapabilities | None = None,
@@ -161,6 +175,7 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
         "blackboard.course_catalog.search",
         "blackboard.calendar.refresh",
         "blackboard.snapshot.sync",
+        "blackboard.sql.query",
     ]
 
     snapshot_tool = BlackboardSnapshotSyncTool()
@@ -587,6 +602,105 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",
     ]
+
+
+def test_blackboard_sql_query_tool_queries_default_database(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    db_path = _create_sqlite_db(
+        tmp_path / "blackboard-default.db",
+        script="""
+        CREATE TABLE courses (id INTEGER PRIMARY KEY, name TEXT);
+        INSERT INTO courses (id, name) VALUES (1, 'CS305'), (2, 'CS307');
+        """,
+    )
+    event_sink = StubEventSink()
+    monkeypatch.setattr(facade_tools, "_default_blackboard_sql_query_db_path", lambda: db_path)
+
+    result = _invoke_tool(
+        BlackboardSQLQueryTool(),
+        arguments={"sql": "SELECT id, name FROM courses ORDER BY id"},
+        host=ToolHostCapabilities(event_sink=event_sink),
+    )
+
+    assert result.status == "success"
+    assert result.output == {
+        "sql": "SELECT id, name FROM courses ORDER BY id",
+        "database": {"path": db_path.as_posix(), "source": "default"},
+        "usedDefaultDatabase": True,
+        "hasResultSet": True,
+        "columns": ["id", "name"],
+        "rowsPreview": [
+            {"id": 1, "name": "CS305"},
+            {"id": 2, "name": "CS307"},
+        ],
+        "truncated": False,
+        "rowCount": 2,
+        "executionSummary": {
+            "statementType": "SELECT",
+            "previewRowCount": 2,
+            "rowCount": 2,
+            "message": "SQL query returned 2 row(s).",
+        },
+        "artifact": None,
+    }
+    assert result.artifacts == ()
+    assert result.metadata == {
+        "toolId": "blackboard.sql.query",
+        "dbPathSource": "default",
+        "persistArtifactRequested": False,
+    }
+    assert [event.event_type for event in event_sink.events] == [
+        "blackboard.sql.query.started",
+        "blackboard.sql.query.completed",
+    ]
+
+
+def test_blackboard_sql_query_tool_uses_explicit_db_path_and_persists_artifact_when_truncated(
+    tmp_path: Path,
+) -> None:
+    db_path = _create_sqlite_db(
+        tmp_path / "blackboard-explicit.db",
+        script="""
+        CREATE TABLE announcements (id INTEGER PRIMARY KEY, title TEXT);
+        INSERT INTO announcements (id, title) VALUES
+            (1, 'Welcome'),
+            (2, 'Exam'),
+            (3, 'Reminder');
+        """,
+    )
+    artifact_store = StubArtifactStore()
+
+    result = _invoke_tool(
+        BlackboardSQLQueryTool(),
+        arguments={
+            "sql": "SELECT id, title FROM announcements ORDER BY id",
+            "dbPath": db_path.as_posix(),
+            "resultLimit": 1,
+            "persistArtifact": True,
+        },
+        host=ToolHostCapabilities(artifact_store=artifact_store),
+    )
+
+    assert result.status == "success"
+    assert result.output is not None
+    assert result.output["database"] == {"path": db_path.as_posix(), "source": "argument"}
+    assert result.output["usedDefaultDatabase"] is False
+    assert result.output["rowsPreview"] == [{"id": 1, "title": "Welcome"}]
+    assert result.output["truncated"] is True
+    assert result.output["artifact"] is not None
+    assert result.output["artifact"]["artifactId"] == "artifact-1"
+    assert result.metadata == {
+        "toolId": "blackboard.sql.query",
+        "dbPathSource": "argument",
+        "persistArtifactRequested": True,
+    }
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].artifact_id == "artifact-1"
+    artifact_payload = json.loads(artifact_store.saved_texts[0]["text"])
+    assert artifact_payload["rowCount"] == 3
+    assert artifact_payload["rows"][2] == {"id": 3, "title": "Reminder"}
 
 
 def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:

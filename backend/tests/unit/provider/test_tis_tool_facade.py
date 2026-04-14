@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from app.integrations.sustech.teaching_information_system.data import TISDatabas
 from app.integrations.sustech.teaching_information_system.facade.tools import (
     TISCreditGPAFetchTool,
     TISPersonalGradesFetchTool,
+    TISSQLQueryTool,
     TISSelectedCoursesFetchTool,
 )
 from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
@@ -115,8 +117,20 @@ class StubEventSink:
         self.events.append(event)
 
 
+def _create_sqlite_db(path: Path, *, script: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(path)) as connection:
+        connection.executescript(script)
+    return path
+
+
 def _invoke_tool(
-    tool: TISPersonalGradesFetchTool | TISCreditGPAFetchTool | TISSelectedCoursesFetchTool,
+    tool: (
+        TISPersonalGradesFetchTool
+        | TISCreditGPAFetchTool
+        | TISSelectedCoursesFetchTool
+        | TISSQLQueryTool
+    ),
     *,
     arguments: dict[str, Any] | None,
     host: ToolHostCapabilities | None = None,
@@ -284,6 +298,7 @@ def test_get_tis_tool_contracts_exposes_stable_tools_and_requirements() -> None:
         "tis.personal_grades.fetch",
         "tis.credit_gpa.fetch",
         "tis.selected_courses.fetch",
+        "tis.sql.query",
     ]
 
     personal_grades_tool = TISPersonalGradesFetchTool()
@@ -577,3 +592,108 @@ def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypa
     assert error_result.error is not None
     assert error_result.error.code == "invalid_input"
     assert error_result.error.message == "pageNum must be a positive integer."
+
+
+def test_tis_sql_query_tool_queries_default_database(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    db_path = _create_sqlite_db(
+        tmp_path / "tis-default.db",
+        script="""
+        CREATE TABLE grades (id INTEGER PRIMARY KEY, course_name TEXT, score INTEGER);
+        INSERT INTO grades (id, course_name, score) VALUES (1, '数据库系统', 95), (2, '机器学习', 98);
+        """,
+    )
+    event_sink = StubEventSink()
+    monkeypatch.setattr(facade_tools, "_default_tis_sql_query_db_path", lambda: db_path)
+
+    result = _invoke_tool(
+        TISSQLQueryTool(),
+        arguments={"sql": "SELECT id, course_name, score FROM grades ORDER BY id"},
+        host=ToolHostCapabilities(event_sink=event_sink),
+    )
+
+    assert result.status == "success"
+    assert result.output == {
+        "sql": "SELECT id, course_name, score FROM grades ORDER BY id",
+        "database": {"path": db_path.as_posix(), "source": "default"},
+        "usedDefaultDatabase": True,
+        "hasResultSet": True,
+        "columns": ["id", "course_name", "score"],
+        "rowsPreview": [
+            {"id": 1, "course_name": "数据库系统", "score": 95},
+            {"id": 2, "course_name": "机器学习", "score": 98},
+        ],
+        "truncated": False,
+        "rowCount": 2,
+        "executionSummary": {
+            "statementType": "SELECT",
+            "previewRowCount": 2,
+            "rowCount": 2,
+            "message": "SQL query returned 2 row(s).",
+        },
+        "artifact": None,
+    }
+    assert result.artifacts == ()
+    assert result.metadata == {
+        "toolId": "tis.sql.query",
+        "dbPathSource": "default",
+        "persistArtifactRequested": False,
+    }
+    assert [event.event_type for event in event_sink.events] == [
+        "tis.sql.query.started",
+        "tis.sql.query.completed",
+    ]
+
+
+def test_tis_sql_query_tool_uses_workspace_override_and_reports_non_result_summary(
+    tmp_path: Path,
+) -> None:
+    workspace = StubWorkspaceResolver(tmp_path / "workspace-root")
+    db_path = _create_sqlite_db(
+        workspace.root / "backend/data/tis-query.db",
+        script="""
+        CREATE TABLE grades (id INTEGER PRIMARY KEY, score INTEGER);
+        INSERT INTO grades (id, score) VALUES (1, 95), (2, 88);
+        """,
+    )
+
+    result = _invoke_tool(
+        TISSQLQueryTool(),
+        arguments={
+            "sql": "UPDATE grades SET score = 96 WHERE id = 1",
+            "dbRelativePath": "backend/data/tis-query.db",
+        },
+        host=ToolHostCapabilities(workspace_resolver=workspace),
+    )
+
+    assert result.status == "success"
+    assert result.output == {
+        "sql": "UPDATE grades SET score = 96 WHERE id = 1",
+        "database": {"path": db_path.as_posix(), "source": "workspace"},
+        "usedDefaultDatabase": False,
+        "hasResultSet": False,
+        "columns": [],
+        "rowsPreview": [],
+        "truncated": False,
+        "rowCount": None,
+        "executionSummary": {
+            "statementType": "UPDATE",
+            "affectedRowCount": 1,
+            "message": "SQL statement executed without a result set.",
+        },
+        "artifact": None,
+    }
+    assert result.artifacts == ()
+    assert result.metadata == {
+        "toolId": "tis.sql.query",
+        "dbPathSource": "workspace",
+        "persistArtifactRequested": False,
+    }
+    assert workspace.requests == ["backend/data/tis-query.db"]
+    with sqlite3.connect(str(db_path)) as connection:
+        updated_score = connection.execute("SELECT score FROM grades WHERE id = 1").fetchone()
+    assert updated_score == (96,)
+
+
