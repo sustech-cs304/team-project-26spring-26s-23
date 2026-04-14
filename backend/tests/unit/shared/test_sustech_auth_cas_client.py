@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.core.auth.cas_client import CASClient as LegacyCASClient
+from app.shared_integrations.sustech_auth import CASClient as SharedPackageCASClient
 from app.shared_integrations.sustech_auth.cas_client import CASClient, CASLogger
+
+BACKEND_ROOT = Path(__file__).resolve().parents[3]
+APP_ROOT = BACKEND_ROOT / "app"
+LEGACY_SHIM_PATH = APP_ROOT / "core" / "auth" / "cas_client.py"
 
 
 class _RecordingLogger:
@@ -70,8 +77,97 @@ def _build_cas_client(fake_http_client: _FakeHTTPClient, logger: CASLogger | Non
     return cas_client
 
 
+def _find_legacy_core_auth_import_sites() -> list[str]:
+    legacy_sites: list[str] = []
+
+    for path in APP_ROOT.rglob("*.py"):
+        if path == LEGACY_SHIM_PATH:
+            continue
+
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom):
+                imported_module = node.module or ""
+                imported_names = {alias.name for alias in node.names}
+                if imported_module.endswith("core.auth.cas_client") and (
+                    imported_names & {"CASClient", "CASLogger"} or "*" in imported_names
+                ):
+                    legacy_sites.append(path.relative_to(BACKEND_ROOT).as_posix())
+                    break
+                if imported_module.endswith("core.auth") and "cas_client" in imported_names:
+                    legacy_sites.append(path.relative_to(BACKEND_ROOT).as_posix())
+                    break
+            elif isinstance(node, ast.Import):
+                if any(alias.name.endswith("core.auth.cas_client") for alias in node.names):
+                    legacy_sites.append(path.relative_to(BACKEND_ROOT).as_posix())
+                    break
+
+    return legacy_sites
+
+
+def _find_shared_auth_package_root_import_sites() -> list[str]:
+    noncanonical_sites: list[str] = []
+
+    for path in APP_ROOT.rglob("*.py"):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom):
+                imported_module = node.module or ""
+                imported_names = {alias.name for alias in node.names}
+                if imported_module.endswith("shared_integrations.sustech_auth") and (
+                    imported_names & {"CASClient", "CASLogger"} or "*" in imported_names
+                ):
+                    noncanonical_sites.append(path.relative_to(BACKEND_ROOT).as_posix())
+                    break
+            elif isinstance(node, ast.Import):
+                if any(alias.name.endswith("shared_integrations.sustech_auth") for alias in node.names):
+                    noncanonical_sites.append(path.relative_to(BACKEND_ROOT).as_posix())
+                    break
+
+    return noncanonical_sites
+
+
+def test_shared_package_re_exports_canonical_cas_client() -> None:
+    assert SharedPackageCASClient is CASClient
+
+
 def test_legacy_core_auth_shim_re_exports_shared_cas_client() -> None:
     assert LegacyCASClient is CASClient
+
+
+
+def test_legacy_core_auth_shim_remains_thin_compat_module() -> None:
+    module = ast.parse(LEGACY_SHIM_PATH.read_text(encoding="utf-8"), filename=str(LEGACY_SHIM_PATH))
+    has_canonical_import = False
+
+    for node in module.body:
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            continue
+        if isinstance(node, ast.ImportFrom):
+            if node.module == "__future__":
+                continue
+            assert node.module == "app.shared_integrations.sustech_auth.cas_client"
+            assert {alias.name for alias in node.names} == {"CASClient", "CASLogger"}
+            has_canonical_import = True
+            continue
+        if isinstance(node, ast.Assign):
+            assert all(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+            continue
+        raise AssertionError(f"Unexpected top-level node in compat shim: {ast.dump(node)}")
+
+    assert has_canonical_import is True
+    assert not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for node in module.body)
+
+
+
+def test_backend_app_code_uses_leaf_shared_auth_canonical_import_path() -> None:
+    assert _find_shared_auth_package_root_import_sites() == []
+
+
+
+def test_backend_app_code_does_not_import_legacy_core_auth_cas_shim() -> None:
+    assert _find_legacy_core_auth_import_sites() == []
+
 
 
 def test_extract_execution_returns_hidden_input_value() -> None:
@@ -80,6 +176,7 @@ def test_extract_execution_returns_hidden_input_value() -> None:
         assert cas_client._extract_execution('<input name="execution" value="e1s1" />') == "e1s1"
     finally:
         cas_client.close()
+
 
 
 def test_login_returns_false_when_execution_token_is_missing() -> None:
@@ -113,6 +210,7 @@ def test_login_returns_false_when_execution_token_is_missing() -> None:
     ]
 
 
+
 def test_login_accepts_generic_service_domain_without_blackboard_specific_assumptions() -> None:
     logger = _RecordingLogger()
     fake_http_client = _FakeHTTPClient(
@@ -139,6 +237,7 @@ def test_login_accepts_generic_service_domain_without_blackboard_specific_assump
     assert logger.events[-1][1] == "✅ CAS 登录成功"
     assert logger.events[-1][2] is not None
     assert logger.events[-1][2]["redirect_url"] == "https://portal.sustech.edu.cn/home"
+
 
 
 def test_login_returns_false_when_final_page_still_contains_login_markers() -> None:
