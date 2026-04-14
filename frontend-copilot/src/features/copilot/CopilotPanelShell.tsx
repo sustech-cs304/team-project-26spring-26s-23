@@ -11,6 +11,7 @@ import {
 
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
+import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { CopilotComposerShell } from './composer/CopilotComposerShell'
 import { CopilotMessagesShell } from './messages/CopilotMessagesShell'
 import { CopilotRuntimeStateShell } from './CopilotRuntimeStateShell'
@@ -44,6 +45,8 @@ export interface CopilotPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  sessionHistory?: AssistantSessionHistoryState | null
+  onRetrySessionHistory?: () => void
   sendError: CopilotTransientErrorState | null
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
@@ -175,27 +178,36 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
     )
   }
 
+  const persistedHistoryViewState = resolvePersistedHistoryViewState(props.sessionHistory)
+  const shouldRenderMessageSurface = persistedHistoryViewState === 'none' || persistedHistoryViewState === 'ready'
+
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
-        {props.historyDrift !== null && renderHistoryDriftNotice({
+        {shouldRenderMessageSurface && props.historyDrift !== null && renderHistoryDriftNotice({
           historyDrift: props.historyDrift,
           acknowledged: props.historyRebindAcknowledged,
           onAcknowledge: props.onAcknowledgeHistoryRebind,
         })}
-        <CopilotMessagesShell
-          conversation={props.conversation}
-          assistantPlaceholder={props.assistantPlaceholder}
-          models={props.modelGroups.flatMap((group) => group.models)}
-          transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
-          onOpenErrorDetail={props.onOpenErrorDetail}
-          emptyState={hasAvailableModels
-            ? null
-            : {
-                title: '尚未配置模型',
-                description: '请先前往设置页添加模型服务商和模型。',
-              }}
-        />
+        {persistedHistoryViewState === 'loading'
+          ? renderPersistedHistoryLoading()
+          : persistedHistoryViewState === 'error'
+            ? renderPersistedHistoryRetryPrompt(props.onRetrySessionHistory)
+            : (
+                <CopilotMessagesShell
+                  conversation={props.conversation}
+                  assistantPlaceholder={props.assistantPlaceholder}
+                  models={props.modelGroups.flatMap((group) => group.models)}
+                  transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
+                  onOpenErrorDetail={props.onOpenErrorDetail}
+                  emptyState={hasAvailableModels
+                    ? null
+                    : {
+                        title: '尚未配置模型',
+                        description: '请先前往设置页添加模型服务商和模型。',
+                      }}
+                />
+              )}
         <CopilotComposerShell
           capabilities={props.sessionShell.capabilities}
           modelGroups={props.modelGroups}
@@ -213,6 +225,52 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
         />
       </section>
     </section>
+  )
+}
+
+type PersistedHistoryViewState = 'none' | 'loading' | 'error' | 'ready'
+
+function resolvePersistedHistoryViewState(
+  sessionHistory: AssistantSessionHistoryState | null | undefined,
+): PersistedHistoryViewState {
+  if (sessionHistory === null || sessionHistory === undefined) {
+    return 'none'
+  }
+
+  if (sessionHistory.detailStatus === 'ready') {
+    return 'ready'
+  }
+
+  return sessionHistory.detailStatus === 'error' ? 'error' : 'loading'
+}
+
+function renderPersistedHistoryLoading() {
+  return (
+    <section
+      className="copilot-panel__history-placeholder"
+      aria-label="正在加载历史消息"
+      data-testid="chat-history-loading-skeleton"
+    >
+      <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--short" />
+      <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
+      <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--medium" />
+    </section>
+  )
+}
+
+function renderPersistedHistoryRetryPrompt(onRetrySessionHistory?: () => void) {
+  return (
+    <button
+      type="button"
+      className="copilot-panel__history-retry"
+      data-testid="chat-history-retry-button"
+      disabled={onRetrySessionHistory === undefined}
+      onClick={() => {
+        onRetrySessionHistory?.()
+      }}
+    >
+      历史消息加载失败，点击重试
+    </button>
   )
 }
 

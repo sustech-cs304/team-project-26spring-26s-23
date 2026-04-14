@@ -78,6 +78,7 @@ export interface CopilotChatPanelShellProps {
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
   sessionHistory?: AssistantSessionHistoryState | null
+  retrySessionHistory?: () => void
   sendMessage?: typeof dispatchCopilotMessage
   cancelRun?: typeof cancelRuntimeRun
   getThinkingCapability?: typeof getRuntimeThinkingCapability

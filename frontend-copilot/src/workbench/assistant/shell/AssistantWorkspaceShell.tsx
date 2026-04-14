@@ -66,6 +66,7 @@ export function AssistantWorkspaceShell({
     sessionDragGhostRef,
     selectAgent,
     handleCreateSession,
+    retryActiveSessionHistoryLoad,
     handleSessionPointerDown,
     handleSessionClick,
     handleSessionContextMenu,
@@ -144,6 +145,7 @@ export function AssistantWorkspaceShell({
             sessionStatus={sessionStatus}
             sessionError={sessionError}
             sessionHistory={activeSessionHistory}
+            retrySessionHistory={retryActiveSessionHistoryLoad}
           />
         </div>
       </main>
