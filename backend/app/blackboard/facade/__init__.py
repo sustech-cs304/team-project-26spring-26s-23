@@ -1,6 +1,6 @@
-"""Blackboard domain package with tool-contract facade exports."""
+"""Blackboard tool-contract facade exports."""
 
-from .facade import (
+from .tools import (
     BLACKBOARD_FACADE_TOOLS,
     BlackboardCalendarRefreshTool,
     BlackboardCourseCatalogSearchTool,

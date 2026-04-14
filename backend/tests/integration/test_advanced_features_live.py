@@ -11,7 +11,7 @@ from app.blackboard.api import (
     BlackboardCourseAPI,
     BlackboardGradeAPI,
 )
-from app.core.auth.cas_client import CASClient
+from app.shared_integrations.sustech_auth.cas_client import CASClient
 from tests.helpers import require_live_credentials
 
 pytestmark = pytest.mark.live

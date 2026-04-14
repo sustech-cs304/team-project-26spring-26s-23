@@ -24,7 +24,7 @@ from app.blackboard.provider.results import (
 from app.blackboard.data import DatabaseManager
 from app.blackboard.shared import create_log_session, split_score_text
 from app.blackboard.shared.logging import BlackboardLogSession, BlackboardLogger
-from app.core.auth.cas_client import CASClient
+from app.shared_integrations.sustech_auth.cas_client import CASClient
 
 BLACKBOARD_LOGIN_SERVICE_URL = "https://bb.sustech.edu.cn/webapps/login/"
 _SYNC_TABLES: tuple[str, ...] = (

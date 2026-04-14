@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from app.core.auth.cas_client import CASClient
+from app.shared_integrations.sustech_auth.cas_client import CASClient
 
 from ..shared import TISLogger, _clean_text
 from .constants import (

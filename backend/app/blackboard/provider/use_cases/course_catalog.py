@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.blackboard.api.course_catalog import BlackboardCourseCatalogAPI
 from app.blackboard.provider.results import CourseCatalogSearchResult
 from app.blackboard.shared import create_log_session
-from app.core.auth.cas_client import CASClient
+from app.shared_integrations.sustech_auth.cas_client import CASClient
 
 BLACKBOARD_LOGIN_SERVICE_URL = "https://bb.sustech.edu.cn/webapps/login/"
 

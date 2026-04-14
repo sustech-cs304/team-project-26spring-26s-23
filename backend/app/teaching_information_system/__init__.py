@@ -49,6 +49,13 @@ from app.teaching_information_system.provider import (
     run_tis_link_diagnostic,
     run_tis_link_diagnostic_from_env,
 )
+from app.teaching_information_system.facade import (
+    TISCreditGPAFetchTool,
+    TISSelectedCoursesFetchTool,
+    TISPersonalGradesFetchTool,
+    TIS_FACADE_TOOLS,
+    get_tis_tool_contracts,
+)
 from app.teaching_information_system.shared import (
     TISLogEvent,
     TISLogger,
@@ -65,6 +72,7 @@ __all__ = [
     "DEFAULT_TIS_SERVICE_CONFIG",
     "TISAPIContext",
     "TISClient",
+    "TISCreditGPAFetchTool",
     "TISCreditGPAQueryResult",
     "TISCreditGPASummary",
     "TISCreditGPATermRecord",
@@ -81,8 +89,11 @@ __all__ = [
     "TISSelectedCourseRecord",
     "TISSelectedCourseSemester",
     "TISSelectedCourseSummary",
+    "TISSelectedCoursesFetchTool",
     "TISSelectedCoursesQueryResult",
     "TISServiceConfig",
+    "TISPersonalGradesFetchTool",
+    "TIS_FACADE_TOOLS",
     "_TERM_CODE_TO_NAME",
     "_build_selected_courses_base_payload",
     "_build_tis_probe_result",
@@ -113,6 +124,7 @@ __all__ = [
     "fetch_credit_gpa_with_credentials",
     "fetch_personal_grades_with_credentials",
     "fetch_selected_courses_with_credentials",
+    "get_tis_tool_contracts",
     "probe_grade_candidates",
     "run_tis_link_diagnostic",
     "run_tis_link_diagnostic_from_env",
