@@ -123,25 +123,81 @@
 .copilot-panel__history-placeholder {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
+  padding: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.copilot-panel__history-top-bar-skeleton {
+  height: 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(90deg, transparent 0%, rgba(148, 163, 184, 0.1) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: copilot-panel__history-skeleton-shimmer 2s ease-in-out infinite;
+  opacity: 0.5;
+  margin-top: -1px; /* overlap with any potential top border for seamless look */
+}
+
+.copilot-panel__history-message-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0 1rem 1rem;
+}
+
+.copilot-panel__history-message-skeleton {
+  display: flex;
+  width: 100%;
+}
+
+.copilot-panel__history-message-skeleton--user {
+  justify-content: flex-end;
+}
+
+.copilot-panel__history-message-skeleton--user .copilot-panel__history-skeleton-bubble {
+  background: var(--surface-muted);
+  border-radius: 12px 12px 2px 12px;
+  padding: 0.85rem 1rem;
+  max-width: 85%;
+  min-width: 60px;
+}
+
+.copilot-panel__history-message-skeleton--user .copilot-panel__history-skeleton-line {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.1) 0%, rgba(148, 163, 184, 0.2) 50%, rgba(148, 163, 184, 0.1) 100%);
+}
+
+.copilot-panel__history-message-skeleton--assistant {
+  justify-content: flex-start;
+}
+
+.copilot-panel__history-message-skeleton--assistant .copilot-panel__history-skeleton-bubble {
+  background: transparent;
+  padding: 0.5rem 0;
+  max-width: 90%;
+}
+
+.copilot-panel__history-skeleton-bubble {
+  display: flex;
+  flex-direction: column;
   gap: 0.6rem;
-  padding: 0.2rem 0.1rem 0.35rem;
 }
 
 .copilot-panel__history-skeleton-line {
   display: block;
   height: 0.78rem;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--surface-muted) 0%, rgba(148, 163, 184, 0.28) 50%, var(--surface-muted) 100%);
+  border-radius: 4px; /* More like text lines, less pill-like */
+  background: linear-gradient(90deg, var(--surface-muted) 0%, rgba(148, 163, 184, 0.15) 50%, var(--surface-muted) 100%);
   background-size: 200% 100%;
-  animation: copilot-panel__history-skeleton-shimmer 1.15s ease-in-out infinite;
+  animation: copilot-panel__history-skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
 .copilot-panel__history-skeleton-line--short {
-  width: 32%;
+  width: 45%;
 }
 
 .copilot-panel__history-skeleton-line--medium {
-  width: 58%;
+  width: 75%;
 }
 
 .copilot-panel__history-skeleton-line--full {

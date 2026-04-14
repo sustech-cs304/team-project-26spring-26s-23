@@ -251,9 +251,39 @@ function renderPersistedHistoryLoading() {
       aria-label="正在加载历史消息"
       data-testid="chat-history-loading-skeleton"
     >
-      <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--short" />
-      <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
-      <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--medium" />
+      <div className="copilot-panel__history-top-bar-skeleton" />
+      <div className="copilot-panel__history-message-list-skeleton">
+        {/* User message skeleton */}
+        <div className="copilot-panel__history-message-skeleton copilot-panel__history-message-skeleton--user">
+          <div className="copilot-panel__history-skeleton-bubble">
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--short" />
+          </div>
+        </div>
+        {/* Assistant message skeleton */}
+        <div className="copilot-panel__history-message-skeleton copilot-panel__history-message-skeleton--assistant">
+          <div className="copilot-panel__history-skeleton-bubble">
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--medium" />
+          </div>
+        </div>
+        {/* User message skeleton */}
+        <div className="copilot-panel__history-message-skeleton copilot-panel__history-message-skeleton--user">
+          <div className="copilot-panel__history-skeleton-bubble">
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--medium" />
+          </div>
+        </div>
+        {/* Assistant message skeleton (long) */}
+        <div className="copilot-panel__history-message-skeleton copilot-panel__history-message-skeleton--assistant">
+          <div className="copilot-panel__history-skeleton-bubble">
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--full" />
+            <span className="copilot-panel__history-skeleton-line copilot-panel__history-skeleton-line--short" />
+          </div>
+        </div>
+      </div>
     </section>
   )
 }
