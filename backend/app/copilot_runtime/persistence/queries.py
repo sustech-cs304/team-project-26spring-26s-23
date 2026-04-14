@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from .drift import PersistedHistoryDriftEvaluator
 from .models.chat import RunEventModel, RunModel, RunProjectionModel, ThreadModel, ThreadProjectionModel
 from .projections import ProjectionService
 from .query_dtos import (
@@ -25,6 +26,10 @@ from .query_dtos import (
 from .repositories import PersistenceRepositories, run_lifecycle_transaction
 
 if TYPE_CHECKING:
+    from ..agent_registry import AgentRegistry
+    from ..model_routes import RuntimeModelRouteResolver
+    from ..provider_adapter_registry import RuntimeProviderAdapterRegistry
+    from ..tool_registry import ToolRegistry
     from .store import SQLiteSessionStore
 
 
@@ -34,9 +39,19 @@ class PersistedChatQueryService:
         session_factory: sessionmaker[Session],
         *,
         session_store: "SQLiteSessionStore | None" = None,
+        agent_registry: "AgentRegistry | None" = None,
+        tool_registry: "ToolRegistry | None" = None,
+        model_route_resolver: "RuntimeModelRouteResolver | None" = None,
+        provider_adapter_registry: "RuntimeProviderAdapterRegistry | None" = None,
     ) -> None:
         self._session_factory = session_factory
         self._session_store = session_store
+        self._drift_evaluator = PersistedHistoryDriftEvaluator(
+            agent_registry=agent_registry,
+            tool_registry=tool_registry,
+            model_route_resolver=model_route_resolver,
+            provider_adapter_registry=provider_adapter_registry,
+        )
 
     def list_threads(self) -> PersistedThreadListResponse:
         with run_lifecycle_transaction(self._session_factory) as repositories:
@@ -68,6 +83,12 @@ class PersistedChatQueryService:
                 if run_projection is not None:
                     timeline_items.extend(_copy_mapping_list(run_projection.timeline_items_json))
             latest_run = run_models[-1] if run_models else None
+            availability_drift = None
+            if latest_run is not None:
+                availability_drift = self._drift_evaluator.evaluate(
+                    run=latest_run,
+                    bound_agent_id=thread_model.bound_agent_id,
+                )
             return PersistedThreadDetailResponse(
                 ok=True,
                 thread=thread_summary,
@@ -77,16 +98,19 @@ class PersistedChatQueryService:
                     latest_run=latest_run,
                     thread_projection=thread_projection,
                 ),
-                availabilityDrift=_copy_mapping(
-                    None if thread_projection is None else thread_projection.drift_summary_json
-                ),
+                availabilityDrift=_copy_mapping(availability_drift),
             )
 
     def get_run_replay(self, run_id: str) -> PersistedRunReplayResponse:
         with run_lifecycle_transaction(self._session_factory) as repositories:
             run_model = repositories.runs.require(run_id)
+            thread_model = repositories.threads.require(run_model.thread_id)
             run_projection = _ensure_run_projection(repositories, run_id)
             event_models = repositories.events.list_for_run(run_id)
+            availability_interpretation = self._drift_evaluator.evaluate(
+                run=run_model,
+                bound_agent_id=thread_model.bound_agent_id,
+            )
             return PersistedRunReplayResponse(
                 ok=True,
                 run=_build_run_summary(run_model),
@@ -101,7 +125,7 @@ class PersistedChatQueryService:
                 terminalState=_copy_mapping(
                     None if run_projection is None else run_projection.terminal_state_json
                 ),
-                availabilityInterpretation=_build_run_availability_interpretation(run_model),
+                availabilityInterpretation=_copy_mapping(availability_interpretation),
             )
 
     def delete_thread(self, thread_id: str) -> PersistedThreadDeleteResponse:
@@ -224,18 +248,6 @@ def _build_run_historical_snapshot(run_model: RunModel) -> dict[str, Any]:
         "resolvedToolIds": list(run_model.resolved_tool_ids_json or []),
         "requestOptions": dict(run_model.request_options_json or {}),
         "debugModeEnabled": run_model.debug_mode_enabled,
-    }
-
-
-
-def _build_run_availability_interpretation(run_model: RunModel) -> dict[str, Any]:
-    return {
-        "status": "not_evaluated",
-        "historicalModelId": run_model.resolved_model_id,
-        "historicalToolIds": list(run_model.resolved_tool_ids_json or run_model.enabled_tools_json or []),
-        "historicalThinkingSelection": _copy_mapping(
-            run_model.applied_thinking_json or run_model.requested_thinking_json
-        ),
     }
 
 

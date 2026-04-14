@@ -4,7 +4,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.copilot_runtime.model_routes import RuntimeModelRouteRef
+from app.copilot_runtime.model_routes import (
+    ProviderProfileNotFoundError,
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRoute,
+    RuntimeModelRouteRef,
+)
 from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeStoredModelRoute, RuntimeStoredRunInput, RuntimeStoredRunPolicy
 from app.desktop_runtime.config import LOCAL_TOKEN_HEADER_NAME, DesktopRuntimeConfig, DesktopRuntimePaths
 from app.desktop_runtime.server import create_app
@@ -12,7 +17,10 @@ from app.desktop_runtime.server import create_app
 
 
 def test_history_routes_expose_persisted_threads_details_and_run_replay(tmp_path: Path) -> None:
-    app = create_app(_build_config(tmp_path, local_token="history-token"))
+    app = create_app(
+        _build_config(tmp_path, local_token="history-token"),
+        model_route_resolver=_StaticTestModelRouteResolver(),
+    )
 
     with TestClient(app) as client:
         store = app.state.copilot_runtime_session_store
@@ -20,7 +28,10 @@ def test_history_routes_expose_persisted_threads_details_and_run_replay(tmp_path
         store.create_run(
             thread_id="thread-1",
             run_id="run-1",
-            request=_build_stored_run_input(user_text="What changed after restart?"),
+            request=_build_stored_run_input(
+                user_text="What changed after restart?",
+                enabled_tools=("tool.weather-current",),
+            ),
         )
         store.record_run_event(
             "run-1",
@@ -90,7 +101,10 @@ def test_history_routes_expose_persisted_threads_details_and_run_replay(tmp_path
     ]
     assert detail_payload["runSummaries"][0]["runId"] == "run-1"
     assert detail_payload["latestConfigurationSnapshot"]["runId"] == "run-1"
-    assert detail_payload["availabilityDrift"]["status"] == "not_evaluated"
+    assert detail_payload["availabilityDrift"]["status"] == "no_drift"
+    assert detail_payload["availabilityDrift"]["historicalModelId"] == "gpt-4.1"
+    assert detail_payload["availabilityDrift"]["historicalToolIds"] == ["tool.weather-current"]
+    assert detail_payload["availabilityDrift"]["warnings"] == []
 
     assert replay_payload["ok"] is True
     assert replay_payload["run"]["runId"] == "run-1"
@@ -101,7 +115,60 @@ def test_history_routes_expose_persisted_threads_details_and_run_replay(tmp_path
     ]
     assert replay_payload["toolCallBlocks"][0]["toolCallId"] == "tool.weather-current:call-1"
     assert replay_payload["terminalState"]["status"] == "completed"
-    assert replay_payload["availabilityInterpretation"]["status"] == "not_evaluated"
+    assert replay_payload["availabilityInterpretation"]["status"] == "no_drift"
+    assert replay_payload["availabilityInterpretation"]["historicalModelId"] == "gpt-4.1"
+    assert replay_payload["availabilityInterpretation"]["historicalToolIds"] == ["tool.weather-current"]
+    assert replay_payload["availabilityInterpretation"]["warnings"] == []
+    assert replay_payload["availabilityInterpretation"]["requiresExplicitRebind"] is False
+
+
+
+def test_history_routes_surface_backend_drift_conclusions_in_thread_detail_and_replay(tmp_path: Path) -> None:
+    app = create_app(
+        _build_config(tmp_path, local_token="history-token"),
+        model_route_resolver=_MissingProviderModelRouteResolver(),
+    )
+
+    with TestClient(app) as client:
+        store = app.state.copilot_runtime_session_store
+        store.create_thread(bound_agent_id="default", thread_id="thread-legacy")
+        store.create_run(
+            thread_id="thread-legacy",
+            run_id="run-legacy",
+            request=_build_stored_run_input(
+                user_text="Continue my legacy thread",
+                enabled_tools=("tool.legacy-removed",),
+            ),
+        )
+        store.mark_run_completed("run-legacy", assistant_text="Legacy reply")
+
+        headers = {LOCAL_TOKEN_HEADER_NAME: "history-token"}
+        detail_response = client.get("/history/threads/thread-legacy", headers=headers)
+        replay_response = client.get("/history/runs/run-legacy/replay", headers=headers)
+
+    assert detail_response.status_code == 200
+    assert replay_response.status_code == 200
+
+    detail_payload = detail_response.json()
+    replay_payload = replay_response.json()
+
+    assert detail_payload["availabilityDrift"]["status"] == "multiple_issues"
+    assert detail_payload["availabilityDrift"]["historicalModelId"] == "gpt-4.1"
+    assert detail_payload["availabilityDrift"]["historicalToolIds"] == ["tool.legacy-removed"]
+    assert [warning["code"] for warning in detail_payload["availabilityDrift"]["warnings"]] == [
+        "historical_provider_removed",
+        "historical_tool_unregistered",
+    ]
+    assert detail_payload["availabilityDrift"]["requiresExplicitRebind"] is True
+
+    assert replay_payload["availabilityInterpretation"]["status"] == "multiple_issues"
+    assert replay_payload["availabilityInterpretation"]["historicalModelId"] == "gpt-4.1"
+    assert replay_payload["availabilityInterpretation"]["historicalToolIds"] == ["tool.legacy-removed"]
+    assert [warning["code"] for warning in replay_payload["availabilityInterpretation"]["warnings"]] == [
+        "historical_provider_removed",
+        "historical_tool_unregistered",
+    ]
+    assert replay_payload["availabilityInterpretation"]["requiresExplicitRebind"] is True
 
 
 
@@ -236,7 +303,11 @@ def test_history_routes_report_service_unavailable_for_non_sqlite_store(tmp_path
 
 
 
-def _build_stored_run_input(*, user_text: str) -> RuntimeStoredRunInput:
+def _build_stored_run_input(
+    *,
+    user_text: str,
+    enabled_tools: tuple[str, ...] = (),
+) -> RuntimeStoredRunInput:
     return RuntimeStoredRunInput(
         message_role="user",
         message_content=user_text,
@@ -249,11 +320,37 @@ def _build_stored_run_input(*, user_text: str) -> RuntimeStoredRunInput:
                     model_id="gpt-4.1",
                 ),
             ),
-            enabled_tools=(),
+            enabled_tools=enabled_tools,
             request_options={},
         ),
         agent_id="default",
     )
+
+
+
+class _StaticTestModelRouteResolver:
+    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+        return ResolvedRuntimeModelRoute(
+            provider_profile_id=model_route.provider_profile_id,
+            route_ref=model_route.route_ref,
+            provider="openai",
+            provider_id="openai",
+            adapter_id="openai",
+            runtime_status="enabled",
+            catalog_revision=model_route.catalog_revision or "2026-04-06-provider-catalog-v1",
+            endpoint_family="openai",
+            endpoint_type="openai-compatible",
+            base_url="https://api.example.com/v1",
+            model_id=model_route.model_id,
+            auth_kind="api-key",
+            api_key="history-test-key",
+        )
+
+
+
+class _MissingProviderModelRouteResolver:
+    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+        raise ProviderProfileNotFoundError(provider_profile_id=model_route.provider_profile_id)
 
 
 

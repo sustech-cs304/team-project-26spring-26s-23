@@ -56,7 +56,12 @@ def create_app(
     runtime_tool_registry = runtime_dependencies.tool_registry
     history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
     runtime_history_query_service = (
-        history_query_service_factory() if callable(history_query_service_factory) else None
+        history_query_service_factory(
+            agent_registry=runtime_agent_registry,
+            tool_registry=runtime_tool_registry,
+            model_route_resolver=model_route_resolver or host_model_route_bridge_client,
+            provider_adapter_registry=runtime_agent_executor.provider_adapter_registry,
+        ) if callable(history_query_service_factory) else None
     )
 
     @asynccontextmanager

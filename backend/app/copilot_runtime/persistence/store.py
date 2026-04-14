@@ -395,8 +395,22 @@ class SQLiteSessionStore(RuntimeSessionStore):
     def create_projection_service(self) -> ProjectionService:
         return ProjectionService(self._session_factory)
 
-    def create_history_query_service(self) -> PersistedChatQueryService:
-        return PersistedChatQueryService(self._session_factory, session_store=self)
+    def create_history_query_service(
+        self,
+        *,
+        agent_registry=None,
+        tool_registry=None,
+        model_route_resolver=None,
+        provider_adapter_registry=None,
+    ) -> PersistedChatQueryService:
+        return PersistedChatQueryService(
+            self._session_factory,
+            session_store=self,
+            agent_registry=agent_registry,
+            tool_registry=tool_registry,
+            model_route_resolver=model_route_resolver,
+            provider_adapter_registry=provider_adapter_registry,
+        )
 
     def dispose(self) -> None:
         self.engine.dispose()
