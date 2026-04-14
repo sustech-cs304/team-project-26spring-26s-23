@@ -27,6 +27,7 @@ import type {
 } from './assistant-session-list-helpers'
 import {
   emptyAssistantAgentDirectoryState,
+  formatAssistantWorkspaceError,
   isCopilotConnectableState,
   type AssistantAgentDirectoryState,
   type AssistantSessionListState,
@@ -83,6 +84,7 @@ interface UseAssistantWorkspaceStateResult {
   sessionListState: AssistantSessionListState
   sessionStatus: AssistantWorkspaceSessionStatus
   sessionError: string | null
+  historyRestoreError: string | null
   createSessionLabel: string
   createSessionButtonDisabled: boolean
   renderedSessions: AssistantSessionShell[]
@@ -136,6 +138,7 @@ export function useAssistantWorkspaceState({
   const historyRestoreRetryTimerRef = useRef<number | null>(null)
   const [historyRestoreRetryKey, setHistoryRestoreRetryKey] = useState(0)
   const isMountedRef = useRef(true)
+  const [historyRestoreError, setHistoryRestoreError] = useState<string | null>(null)
 
   useEffect(() => () => {
     isMountedRef.current = false
@@ -402,6 +405,8 @@ export function useAssistantWorkspaceState({
         }
 
         if (!historyResult.ok) {
+          restoredRuntimeUrlRef.current = null
+          setHistoryRestoreError(historyResult.error)
           scheduleHistoryRestoreRetry()
           return
         }
@@ -456,12 +461,15 @@ export function useAssistantWorkspaceState({
         }
 
         clearHistoryRestoreRetry()
+        setHistoryRestoreError(null)
         restoredRuntimeUrlRef.current = restoreKey
-      } catch {
+      } catch (error) {
         if (cancelled || !isMountedRef.current || historyListRequestVersionRef.current !== requestVersion) {
           return
         }
 
+        restoredRuntimeUrlRef.current = null
+        setHistoryRestoreError(formatAssistantWorkspaceError(error))
         scheduleHistoryRestoreRetry()
       }
     })()
@@ -523,7 +531,11 @@ export function useAssistantWorkspaceState({
 
     const sessionId = sessionShell.sessionId
     const historyState = sessionHistoryById[sessionId]
-    if (historyState === undefined || historyState.detailStatus !== 'idle') {
+    if (
+      historyState === undefined
+      || historyState.isPersistedThread !== true
+      || historyState.detailStatus !== 'idle'
+    ) {
       return
     }
 
@@ -670,6 +682,7 @@ export function useAssistantWorkspaceState({
     sessionListState,
     sessionStatus,
     sessionError,
+    historyRestoreError,
     createSessionLabel,
     createSessionButtonDisabled,
     renderedSessions,

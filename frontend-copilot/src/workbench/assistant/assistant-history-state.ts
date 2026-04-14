@@ -17,6 +17,7 @@ export type AssistantSessionHistoryLoadStatus = 'idle' | 'loading' | 'ready' | '
 
 export interface AssistantSessionHistoryState {
   summary: CopilotHistoryThreadSummary
+  isPersistedThread?: boolean
   hasLoadedDetail?: boolean
   detailStatus: AssistantSessionHistoryLoadStatus
   detailError: string | null
@@ -74,6 +75,7 @@ export function createAssistantSessionHistoryStateFromSessionShell(
   return createAssistantSessionHistoryState(
     createAssistantHistorySummaryFromSessionShell(sessionShell),
     selectedRunId,
+    false,
   )
 }
 
@@ -110,9 +112,11 @@ export function applyAssistantSessionCapabilities(
 export function createAssistantSessionHistoryState(
   summary: CopilotHistoryThreadSummary,
   selectedRunId: string | null,
+  isPersistedThread = true,
 ): AssistantSessionHistoryState {
   return {
     summary: { ...summary },
+    isPersistedThread,
     hasLoadedDetail: false,
     detailStatus: 'idle',
     detailError: null,
@@ -147,6 +151,7 @@ export function syncAssistantSessionHistorySummary(
   return {
     ...state,
     summary: { ...summary },
+    isPersistedThread: true,
     selectedRunId: nextSelectedRunId,
     replayStatus: replayForSelectedRun !== null
       ? 'ready'
@@ -206,6 +211,7 @@ export function applyAssistantSessionHistoryDetail(
   return {
     ...state,
     summary: { ...detail.thread },
+    isPersistedThread: true,
     hasLoadedDetail: true,
     detailStatus: 'ready',
     detailError: null,

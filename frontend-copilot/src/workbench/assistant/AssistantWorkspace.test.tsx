@@ -206,12 +206,14 @@ describe('AssistantWorkspace render + interactions', () => {
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
     ))
 
+    expect(getHistoryThreadDetail).not.toHaveBeenCalled()
+    expect(getHistoryRunReplay).not.toHaveBeenCalled()
     expect(getLastMockCopilotChatPanelProps()).toMatchObject({
       sessionShell: expect.objectContaining({
         sessionId: 'thread-live',
       }),
       sessionHistory: expect.objectContaining({
-        selectedRunId: expect.anything(),
+        isPersistedThread: false,
       }),
     })
 
@@ -261,7 +263,7 @@ describe('AssistantWorkspace render + interactions', () => {
         return firstFixture.replay
       }
 
-      return secondFixture.replaysByRunId[runId]
+      return secondFixture.replaysByRunId[runId as keyof typeof secondFixture.replaysByRunId]
     })
 
     const rendered = renderWithRoot(
@@ -323,15 +325,27 @@ describe('AssistantWorkspace render + interactions', () => {
     const directoryResponse = createDirectoryResponse()
     const directoryState = createAssistantAgentDirectoryState(directoryResponse)
     const historyFixture = createPersistedHistoryFixture()
+    let signalSecondRestoreStarted: (() => void) | null = null
+    const secondRestoreStarted = new Promise<void>((resolve) => {
+      signalSecondRestoreStarted = resolve
+    })
+    let releaseSecondRestore: (() => void) | null = null
+    const secondRestoreRelease = new Promise<void>((resolve) => {
+      releaseSecondRestore = resolve
+    })
     const listHistoryThreads = vi.fn()
       .mockResolvedValueOnce({
         ok: false,
         error: 'history list unavailable',
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        version: 'chat-history-v1',
-        threads: [historyFixture.summary],
+      .mockImplementationOnce(async () => {
+        signalSecondRestoreStarted?.()
+        await secondRestoreRelease
+        return {
+          ok: true as const,
+          version: 'chat-history-v1',
+          threads: [historyFixture.summary],
+        }
       })
     const getHistoryThreadDetail = vi.fn().mockResolvedValue(historyFixture.detail)
     const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
@@ -347,6 +361,15 @@ describe('AssistantWorkspace render + interactions', () => {
     )
 
     await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length >= 2)
+    await act(async () => {
+      await secondRestoreStarted
+    })
+    expect(getLastMockCopilotChatPanelProps().historyRestoreError).toBe('history list unavailable')
+
+    await act(async () => {
+      releaseSecondRestore?.()
+      await Promise.resolve()
+    })
     await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length === 1)
     await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length === 1)
 
@@ -354,6 +377,7 @@ describe('AssistantWorkspace render + interactions', () => {
     expect(getHistoryThreadDetail).toHaveBeenCalledWith(historyFixture.summary.threadId)
     expect(getHistoryRunReplay).toHaveBeenCalledWith(historyFixture.replay.run.runId)
     expect(getLastMockCopilotChatPanelProps()).toMatchObject({
+      historyRestoreError: null,
       sessionHistory: expect.objectContaining({
         detailStatus: 'ready',
         replayStatus: 'ready',
@@ -785,7 +809,9 @@ function getLastMockCopilotChatPanelProps(): {
   sessionShell?: {
     sessionId?: string
   }
+  historyRestoreError?: string | null
   sessionHistory?: {
+    isPersistedThread?: boolean
     detailStatus?: string
     replayStatus?: string
     selectedRunId?: string | null
@@ -802,7 +828,9 @@ function getLastMockCopilotChatPanelProps(): {
     sessionShell?: {
       sessionId?: string
     }
+    historyRestoreError?: string | null
     sessionHistory?: {
+      isPersistedThread?: boolean
       detailStatus?: string
       replayStatus?: string
       selectedRunId?: string | null
