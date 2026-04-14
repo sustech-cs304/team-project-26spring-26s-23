@@ -8,6 +8,7 @@ interface ProviderProfilesViewModelInput {
   activeProviderId: string
   activeProvider: ProviderProfile | null
   activeProviderDetail: ProviderProfile
+  activeProviderPreviewModelId: string | null
   providerQuery: string
   activeProviderApiKeyDraft: string
   apiKeyVisible: boolean
@@ -41,6 +42,7 @@ export function createProviderProfilesSectionDomain(input: ProviderProfilesViewM
     activeProviderId: input.activeProviderId,
     activeProvider: input.activeProvider,
     activeProviderDetail: input.activeProviderDetail,
+    activeProviderPreviewModelId: input.activeProviderPreviewModelId,
     providerQuery: input.providerQuery,
     activeProviderApiKeyDraft: input.activeProviderApiKeyDraft,
     apiKeyVisible: input.apiKeyVisible,

@@ -148,4 +148,62 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
       },
     })
   })
+
+  it('rejects provider routes when the base url is blank instead of falling back to catalog defaults', () => {
+    const providerWithoutBaseUrl = createProviderProfile({
+      id: 'blank-base-url-provider',
+      profileId: 'blank-base-url-provider',
+      providerId: 'openai',
+      protocol: 'openai',
+      endpoint: '',
+      baseUrl: '',
+      fastModel: 'gpt-4.1',
+      fallbackModel: 'gpt-4.1',
+      availableModels: [
+        {
+          ...createProviderProfile({ id: 'blank-base-url-seed' }).availableModels[0]!,
+          id: 'blank-base-url-model-1',
+          modelId: 'gpt-4.1',
+          displayName: 'GPT 4.1',
+          groupName: 'OpenAI',
+        },
+      ],
+    })
+
+    const result = resolveSettingsWorkspaceProviderRoute({
+      state: createPersistedWorkspaceState({
+        providerProfiles: [providerWithoutBaseUrl],
+      }),
+      secretStates: {
+        'blank-base-url-provider': {
+          hasApiKey: true,
+          apiKey: 'blank-base-url-secret',
+        },
+      },
+      request: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'blank-base-url-provider',
+          modelId: 'gpt-4.1',
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'provider_base_url_missing',
+        message: "Provider profile 'blank-base-url-provider' is missing a base URL.",
+        details: {
+          providerProfileId: 'blank-base-url-provider',
+          providerId: 'openai',
+          routeRef: {
+            routeKind: 'provider-model',
+            profileId: 'blank-base-url-provider',
+            modelId: 'gpt-4.1',
+          },
+        },
+      },
+    })
+  })
 })

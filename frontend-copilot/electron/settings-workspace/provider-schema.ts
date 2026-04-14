@@ -138,8 +138,7 @@ function normalizeStoredProviderProfile(
     profileId,
   })
   const displayName = normalizeNonEmptyString(record.displayName, normalizeNonEmptyString(record.name, `Provider ${index + 1}`))
-  const defaultBaseUrl = getProviderCatalogEntry(providerId)?.baseUrlPolicy.defaultBaseUrl ?? ''
-  const baseUrl = normalizeString(record.baseUrl, normalizeString(record.endpoint, defaultBaseUrl))
+  const baseUrl = normalizeString(record.baseUrl, normalizeString(record.endpoint, ''))
   const extensions = normalizeProviderProfileExtensions({
     ...asRecord(record.extensions),
     ...buildLegacyProviderProfileExtensionPatch({
