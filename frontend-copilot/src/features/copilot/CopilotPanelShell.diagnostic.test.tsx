@@ -53,6 +53,7 @@ describe('CopilotPanelShell diagnostic visibility', () => {
               status: 'not_evaluated',
             },
           },
+          isPersistedThread: true,
           detailStatus: 'error',
           detailError: 'detail unavailable',
           timelineItems: [],
@@ -133,6 +134,7 @@ describe('CopilotPanelShell diagnostic visibility', () => {
               status: 'not_evaluated',
             },
           },
+          isPersistedThread: true,
           detailStatus: 'loading',
           detailError: null,
           timelineItems: [],
@@ -172,6 +174,131 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     expect(html).not.toContain('data-testid="chat-message-scroll-region"')
     expect(html).not.toContain('data-testid="chat-history-retry-button"')
   })
+
+  it('prefers transient conversation content over persisted loading gating', () => {
+    const html = renderToStaticMarkup(
+      <CopilotPanelShell
+        state={createReadyState()}
+        retrying={false}
+        onRetry={vi.fn()}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={{
+          summary: {
+            threadId: 'thread-1',
+            boundAgentId: 'general',
+            title: '历史线程',
+            titleSource: 'deterministic',
+            summary: '历史摘要',
+            summarySource: 'deterministic',
+            createdAt: '2026-04-13T15:00:00Z',
+            updatedAt: '2026-04-13T15:05:00Z',
+            lastActivityAt: '2026-04-13T15:05:00Z',
+            lastRunId: 'run-1',
+            lastRunStatus: 'completed',
+            lastUserMessagePreview: '你好',
+            lastAssistantMessagePreview: '历史摘要',
+            driftSummary: {
+              status: 'not_evaluated',
+            },
+          },
+          isPersistedThread: true,
+          detailStatus: 'loading',
+          detailError: null,
+          timelineItems: [],
+          runSummaries: [],
+          latestConfigurationSnapshot: null,
+          availabilityDrift: null,
+          selectedRunId: 'run-1',
+          replayStatus: 'idle',
+          replayError: null,
+          replay: null,
+        }}
+        sendError={null}
+        modelGroups={[]}
+        thinkingCapability={null}
+        composerDraft={createEmptyComposerDraft()}
+        onComposerDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancelCurrentRun={vi.fn()}
+        sendStatus="sending"
+        canCancelSend={false}
+        sendDisabledReason={null}
+        historyDrift={null}
+        historyRebindAcknowledged={false}
+        onAcknowledgeHistoryRebind={vi.fn()}
+        hasTransientConversation
+        conversation={[
+          {
+            id: 'user:transient-1',
+            kind: 'user',
+            title: '',
+            content: '即时消息',
+            status: 'completed',
+          },
+        ]}
+        assistantPlaceholder={{
+          shouldRender: true,
+          dismissReason: null,
+        }}
+        composerInputRef={createRef<HTMLTextAreaElement>()}
+        composerHeight={160}
+        onComposerResizeStart={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('即时消息')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+  })
+
+  it('shows a concise restore diagnostic when history recovery fails before any session is available', () => {
+    const html = renderToStaticMarkup(
+      <CopilotPanelShell
+        state={createReadyState()}
+        retrying={false}
+        onRetry={vi.fn()}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={null}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        historyRestoreError="history list unavailable"
+        sendError={null}
+        modelGroups={[]}
+        thinkingCapability={null}
+        composerDraft={createEmptyComposerDraft()}
+        onComposerDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancelCurrentRun={vi.fn()}
+        sendStatus="idle"
+        canCancelSend={false}
+        sendDisabledReason={null}
+        historyDrift={null}
+        historyRebindAcknowledged={false}
+        onAcknowledgeHistoryRebind={vi.fn()}
+        conversation={[]}
+        assistantPlaceholder={{
+          shouldRender: false,
+          dismissReason: 'inactive',
+        }}
+        composerInputRef={createRef<HTMLTextAreaElement>()}
+        composerHeight={160}
+        onComposerResizeStart={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-history-restore-error"')
+    expect(html).toContain('历史话题恢复失败，稍后自动重试。')
+  })
+
   it('hides runtime diagnostic cards when debug mode is disabled while keeping other content visible', () => {
     const html = renderShell(false)
 

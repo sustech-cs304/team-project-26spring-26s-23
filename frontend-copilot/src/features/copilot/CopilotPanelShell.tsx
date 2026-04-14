@@ -45,6 +45,7 @@ export interface CopilotPanelShellProps {
   directoryState: AssistantAgentDirectoryState
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
+  historyRestoreError?: string | null
   sessionHistory?: AssistantSessionHistoryState | null
   onRetrySessionHistory?: () => void
   onSelectSessionHistoryRun?: (runId: string | null) => void
@@ -61,6 +62,7 @@ export interface CopilotPanelShellProps {
   historyDrift: PersistedHistoryDriftSummary | null
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
+  hasTransientConversation?: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
@@ -172,6 +174,11 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
     return (
       <section className="copilot-panel__inline-placeholder" aria-live="polite" data-testid="chat-session-placeholder">
         <p className="copilot-panel__inline-placeholder-text">可在左侧选择助手并新建会话</p>
+        {props.historyRestoreError !== null && props.historyRestoreError !== undefined && (
+          <p className="copilot-panel__error" data-testid="chat-history-restore-error">
+            历史话题恢复失败，稍后自动重试。
+          </p>
+        )}
         {props.sessionError !== null && (
           <p className="copilot-panel__error">当前无法创建会话，请重试。</p>
         )}
@@ -180,7 +187,11 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   }
 
   const persistedHistoryViewState = resolvePersistedHistoryViewState(props.sessionHistory)
-  const shouldRenderMessageSurface = persistedHistoryViewState === 'none' || persistedHistoryViewState === 'ready'
+  const effectivePersistedHistoryViewState = props.hasTransientConversation === true
+    && persistedHistoryViewState !== 'ready'
+    ? 'none'
+    : persistedHistoryViewState
+  const shouldRenderMessageSurface = effectivePersistedHistoryViewState === 'none' || effectivePersistedHistoryViewState === 'ready'
 
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
@@ -194,9 +205,9 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           sessionHistory: props.sessionHistory,
           onSelectSessionHistoryRun: props.onSelectSessionHistoryRun,
         })}
-        {persistedHistoryViewState === 'loading'
+        {effectivePersistedHistoryViewState === 'loading'
           ? renderPersistedHistoryLoading()
-          : persistedHistoryViewState === 'error'
+          : effectivePersistedHistoryViewState === 'error'
             ? renderPersistedHistoryRetryPrompt(props.onRetrySessionHistory)
             : (
                 <CopilotMessagesShell
@@ -238,7 +249,11 @@ type PersistedHistoryViewState = 'none' | 'loading' | 'error' | 'ready'
 function resolvePersistedHistoryViewState(
   sessionHistory: AssistantSessionHistoryState | null | undefined,
 ): PersistedHistoryViewState {
-  if (sessionHistory === null || sessionHistory === undefined) {
+  if (
+    sessionHistory === null
+    || sessionHistory === undefined
+    || sessionHistory.isPersistedThread !== true
+  ) {
     return 'none'
   }
 

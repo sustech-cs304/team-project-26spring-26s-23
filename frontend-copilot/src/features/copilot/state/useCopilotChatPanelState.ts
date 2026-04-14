@@ -78,6 +78,7 @@ export interface CopilotChatPanelShellProps {
   sessionStatus: 'idle' | 'creating' | 'error'
   sessionError: string | null
   sessionHistory?: AssistantSessionHistoryState | null
+  historyRestoreError?: string | null
   retrySessionHistory?: () => void
   selectSessionHistoryRun?: (runId: string | null) => void
   onSessionRunSettled?: (runId: string | null) => void
@@ -101,6 +102,7 @@ export interface CopilotChatPanelState {
   historyDrift: PersistedHistoryDriftSummary | null
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
+  hasTransientConversation: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
   composerInputRef: RefObject<HTMLTextAreaElement>
@@ -231,6 +233,10 @@ export function useCopilotChatPanelState({
 
     return sessionHistory.selectedRunId === runId && sessionHistory.replayStatus !== 'ready'
   }, [conversation.length, runState.phase, runState.runId, sessionHistory])
+  const hasTransientConversation = useMemo(
+    () => shouldRenderTransientConversation && (conversation.length > 0 || runState.phase !== 'idle'),
+    [conversation.length, runState.phase, shouldRenderTransientConversation],
+  )
   const projectedConversation = useMemo(
     () => [
       ...persistedConversation,
@@ -654,6 +660,7 @@ export function useCopilotChatPanelState({
     onAcknowledgeHistoryRebind: () => {
       setHistoryRebindAcknowledged(true)
     },
+    hasTransientConversation,
     conversation: projectedConversation,
     assistantPlaceholder,
     composerInputRef,

@@ -751,6 +751,51 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('prefers transient send feedback over persisted history loading gating', async () => {
+    const sendMessage = createStartOnlyPendingSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLoadingPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '历史恢复前先显示即时反馈')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible while persisted detail still loading',
+    )
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-history-loading-skeleton') === null,
+      'persisted loading skeleton hidden when transient content exists',
+    )
+
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('历史恢复前先显示即时反馈')
+    expect(rendered.getByTestId('chat-assistant-placeholder').textContent).toContain('助手正在准备响应')
+
+    rendered.unmount()
+  })
+
   it('removes the assistant placeholder when a tool card arrives before assistant text', async () => {
     const toolEventControl = createDeferredSignal()
     const sendMessage = createToolFirstPendingSendMessageSpy(toolEventControl)
@@ -1742,6 +1787,42 @@ function createPersistedWorkspaceStateLoader() {
   }))
 }
 
+function createLoadingPersistedHistoryState(): AssistantSessionHistoryState {
+  return {
+    summary: {
+      threadId: 'session-loading',
+      boundAgentId: 'general',
+      title: '加载中的历史线程',
+      titleSource: 'deterministic',
+      summary: '历史摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      lastActivityAt: '2026-04-13T15:05:00Z',
+      lastRunId: 'run-loading-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '历史摘要',
+      driftSummary: {
+        status: 'not_evaluated',
+      },
+    },
+    isPersistedThread: true,
+    hasLoadedDetail: false,
+    detailStatus: 'loading',
+    detailError: null,
+    timelineItems: [],
+    runSummaries: [],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: null,
+    selectedRunId: 'run-loading-1',
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+    replayByRunId: {},
+  }
+}
+
 function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
   const driftPayload = {
     status: 'historical_provider_removed',
@@ -1772,6 +1853,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
       lastAssistantMessagePreview: '历史摘要',
       driftSummary: driftPayload,
     },
+    isPersistedThread: true,
     detailStatus: 'ready',
     detailError: null,
     timelineItems: [

@@ -138,6 +138,29 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('data-testid="chat-message-scroll-region"')
   })
 
+  it('does not treat a new live session history shell as persisted loading', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          isPersistedThread: false,
+          detailStatus: 'loading',
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+    expect(html).not.toContain('data-testid="chat-history-retry-button"')
+  })
+
   it('shows persisted history messages directly once detail is ready', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
@@ -306,6 +329,7 @@ function createPersistedHistoryState(
         status: 'not_evaluated',
       },
     },
+    isPersistedThread: true,
     hasLoadedDetail: false,
     detailStatus: 'idle',
     detailError: null,

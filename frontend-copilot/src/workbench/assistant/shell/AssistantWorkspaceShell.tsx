@@ -52,6 +52,7 @@ export function AssistantWorkspaceShell({
     sessionListState,
     sessionStatus,
     sessionError,
+    historyRestoreError,
     createSessionLabel,
     createSessionButtonDisabled,
     renderedSessions,
@@ -146,6 +147,7 @@ export function AssistantWorkspaceShell({
             directoryState={directoryState}
             sessionStatus={sessionStatus}
             sessionError={sessionError}
+            historyRestoreError={historyRestoreError}
             sessionHistory={activeSessionHistory}
             retrySessionHistory={retryActiveSessionHistoryLoad}
             selectSessionHistoryRun={selectActiveSessionHistoryRun}
