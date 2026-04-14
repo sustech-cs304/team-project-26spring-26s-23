@@ -1,3 +1,4 @@
+import { getDefaultModelRoutesCopy } from '../locale'
 import { SelectField } from '../components/FormFields'
 import type { SelectOption } from '../types'
 
@@ -11,9 +12,10 @@ export interface DefaultModelRoutesSectionDomain {
 
 interface DefaultModelRoutesSectionProps {
   defaultModels: DefaultModelRoutesSectionDomain
+  language: string
 }
 
-export function DefaultModelRoutesSection({ defaultModels }: DefaultModelRoutesSectionProps) {
+export function DefaultModelRoutesSection({ defaultModels, language }: DefaultModelRoutesSectionProps) {
   const {
     primaryAssistantModel,
     fastAssistantModel,
@@ -22,34 +24,36 @@ export function DefaultModelRoutesSection({ defaultModels }: DefaultModelRoutesS
     onFastAssistantModelChange,
   } = defaultModels
 
+  const copy = getDefaultModelRoutesCopy(language)
+
   return (
     <div className="settings-page">
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">默认模型</h3>
-            <p className="settings-card__subtitle">为不同场景选择默认使用的模型。</p>
+            <h3 className="settings-card__title">{copy.title}</h3>
+            <p className="settings-card__subtitle">{copy.subtitle}</p>
           </div>
         </div>
 
         <div className="settings-stack">
           <div className="form-grid form-grid--two">
             <SelectField
-              label="主助手模型"
-              description="请选择默认用于聊天的模型。"
+              label={copy.primaryLabel}
+              description={copy.primaryDescription}
               value={primaryAssistantModel}
               options={allModelOptions}
               onChange={onPrimaryAssistantModelChange}
-              placeholder="请选择默认模型"
+              placeholder={copy.placeholder}
               triggerTestId="primary-default-model-trigger"
             />
             <SelectField
-              label="快速执行模型"
-              description="请选择默认用于快速操作的模型。"
+              label={copy.fastLabel}
+              description={copy.fastDescription}
               value={fastAssistantModel}
               options={allModelOptions}
               onChange={onFastAssistantModelChange}
-              placeholder="请选择默认模型"
+              placeholder={copy.placeholder}
               triggerTestId="fast-default-model-trigger"
             />
           </div>

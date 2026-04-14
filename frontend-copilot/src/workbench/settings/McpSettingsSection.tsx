@@ -1,8 +1,8 @@
+import { getMcpSettingsCopy, getToolPermissionOptions } from '../locale'
 import { SelectField, ToggleSwitch } from '../components/FormFields'
 
-import { toolPermissionOptions } from './config'
-
 interface McpSettingsSectionProps {
+  language: string
   toolPermissionMode: string
   mcpAutoDiscoveryEnabled: boolean
   onToolPermissionModeChange: (value: string) => void
@@ -10,24 +10,27 @@ interface McpSettingsSectionProps {
 }
 
 export function McpSettingsSection({
+  language,
   toolPermissionMode,
   mcpAutoDiscoveryEnabled,
   onToolPermissionModeChange,
   onMcpAutoDiscoveryEnabledChange,
 }: McpSettingsSectionProps) {
+  const copy = getMcpSettingsCopy(language)
+  const toolPermissionOptions = getToolPermissionOptions(language)
   return (
     <div className="settings-page">
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">MCP 服务器</h3>
+            <h3 className="settings-card__title">{copy.title}</h3>
           </div>
         </div>
 
         <div className="settings-stack">
           <div className="form-grid form-grid--two">
             <SelectField
-              label="工具权限策略"
+              label={copy.permissionStrategyLabel}
               value={toolPermissionMode}
               options={toolPermissionOptions}
               onChange={onToolPermissionModeChange}
@@ -36,7 +39,7 @@ export function McpSettingsSection({
 
           <div className="toggle-grid">
             <ToggleSwitch
-              label="自动发现 MCP 服务"
+              label={copy.autoDiscoveryLabel}
               checked={mcpAutoDiscoveryEnabled}
               onChange={onMcpAutoDiscoveryEnabledChange}
             />

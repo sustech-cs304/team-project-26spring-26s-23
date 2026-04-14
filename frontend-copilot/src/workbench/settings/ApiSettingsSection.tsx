@@ -1,10 +1,14 @@
 import type { CopilotBootstrapController, CopilotBootstrapState } from '../../features/copilot/types'
+import {
+  getApiReconnectOptions,
+  getApiSettingsCopy,
+} from '../locale'
 import { SelectField, TextField, ToggleSwitch } from '../components/FormFields'
 
-import { apiReconnectOptions } from './config'
 import { HostConfigRuntimeOverrideCard } from './ConfigCenterPublicFieldCards'
 
 interface ApiSettingsSectionProps {
+  language: string
   bootstrap: CopilotBootstrapController
   apiBaseUrl: string
   apiReconnectMode: string
@@ -15,6 +19,7 @@ interface ApiSettingsSectionProps {
 }
 
 export function ApiSettingsSection({
+  language,
   bootstrap,
   apiBaseUrl,
   apiReconnectMode,
@@ -23,54 +28,57 @@ export function ApiSettingsSection({
   onApiReconnectModeChange,
   onHealthPollingEnabledChange,
 }: ApiSettingsSectionProps) {
+  const copy = getApiSettingsCopy(language)
+  const apiReconnectOptions = getApiReconnectOptions(language)
+
   return (
     <div className="settings-page">
-      <HostConfigRuntimeOverrideCard />
+      <HostConfigRuntimeOverrideCard language={language} />
 
       <section className="settings-card settings-card--form">
         <div className="settings-card__header settings-card__header--spaced">
           <div>
-            <h3 className="settings-card__title">API 服务器</h3>
+            <h3 className="settings-card__title">{copy.title}</h3>
           </div>
           <span className={`inline-badge ${resolveBootstrapBadgeClass(bootstrap.state)}`}>
-            {formatBootstrapStatusLabel(bootstrap.state)}
+            {formatBootstrapStatusLabel(bootstrap.state, language)}
           </span>
         </div>
 
         <div className="settings-stack">
           <div className="settings-card__header">
             <div>
-              <h4 className="settings-card__title">根层启动摘要</h4>
+              <h4 className="settings-card__title">{copy.summaryTitle}</h4>
             </div>
           </div>
 
           <div className="workspace-facts">
             <article className="workspace-fact">
-              <span>当前状态</span>
-              <strong>{formatBootstrapStatusLabel(bootstrap.state)}</strong>
+              <span>{copy.currentStatusLabel}</span>
+              <strong>{formatBootstrapStatusLabel(bootstrap.state, language)}</strong>
             </article>
             <article className="workspace-fact">
-              <span>重试动作</span>
-              <strong>{bootstrap.retrying ? '根层重试中' : '由根层统一持有'}</strong>
+              <span>{copy.retryActionLabel}</span>
+              <strong>{bootstrap.retrying ? copy.bootstrapRetryLabels.retrying : copy.bootstrapRetryLabels.idle}</strong>
             </article>
           </div>
 
           <div className="toolbar-actions">
             <button type="button" className="ghost-button" onClick={bootstrap.retry} disabled={bootstrap.retrying}>
-              {bootstrap.retrying ? '正在重试…' : '重试读取运行态'}
+              {bootstrap.retrying ? copy.retryingText : copy.retryIdleText}
             </button>
           </div>
 
           <div className="form-grid form-grid--two">
             <TextField
-              label="后端地址"
+              label={copy.apiBaseUrlLabel}
               value={apiBaseUrl}
               onChange={onApiBaseUrlChange}
               placeholder="http://127.0.0.1:8000"
               type="url"
             />
             <SelectField
-              label="重连策略"
+              label={copy.reconnectPolicyLabel}
               value={apiReconnectMode}
               options={apiReconnectOptions}
               onChange={onApiReconnectModeChange}
@@ -78,7 +86,7 @@ export function ApiSettingsSection({
           </div>
 
           <ToggleSwitch
-            label="启用健康检查轮询"
+            label={copy.healthPollingLabel}
             checked={healthPollingEnabled}
             onChange={onHealthPollingEnabledChange}
           />
@@ -88,24 +96,26 @@ export function ApiSettingsSection({
   )
 }
 
-function formatBootstrapStatusLabel(state: CopilotBootstrapState): string {
+function formatBootstrapStatusLabel(state: CopilotBootstrapState, language: string): string {
+  const labels = getApiSettingsCopy(language).bootstrapStatusLabels
+
   switch (state.status) {
     case 'loading':
-      return '根层读取中'
+      return labels.loading
     case 'empty':
-      return '尚未配置'
+      return labels.empty
     case 'incomplete':
-      return '配置缺失'
+      return labels.incomplete
     case 'starting':
-      return '宿主启动中'
+      return labels.starting
     case 'ready':
-      return '运行态已就绪'
+      return labels.ready
     case 'failed':
-      return '宿主启动失败'
+      return labels.failed
     case 'degraded':
-      return '运行态降级'
+      return labels.degraded
     case 'error':
-      return '读取失败'
+      return labels.error
   }
 }
 

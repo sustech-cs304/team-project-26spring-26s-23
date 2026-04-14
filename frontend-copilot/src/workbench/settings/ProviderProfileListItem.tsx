@@ -1,5 +1,6 @@
 import { Fragment, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 
+import { normalizeWorkbenchLanguage } from '../locale'
 import type { ProviderProfile } from '../types'
 
 import {
@@ -9,6 +10,7 @@ import {
 
 interface ProviderProfileListItemProps {
   profile: ProviderProfile
+  language: string
   active: boolean
   visualIndex: number
   showDropGapBefore: boolean
@@ -19,6 +21,7 @@ interface ProviderProfileListItemProps {
 
 export function ProviderProfileListItem({
   profile,
+  language,
   active,
   visualIndex,
   showDropGapBefore,
@@ -26,9 +29,15 @@ export function ProviderProfileListItem({
   onClick,
   onContextMenu,
 }: ProviderProfileListItemProps) {
-  const providerTypeLabel = resolveProviderTypeLabel(profile)
-  const providerStatusNotice = resolveProviderStatusNotice(profile)
-  const providerLocation = (profile.baseUrl?.trim() || profile.endpoint.trim()) || '未设置服务地址'
+  const locale = normalizeWorkbenchLanguage(language)
+  const providerTypeLabel = resolveProviderTypeLabel(profile, language)
+  const providerStatusNotice = resolveProviderStatusNotice(profile, language)
+  const providerLocation = (profile.baseUrl?.trim() || profile.endpoint.trim()) || (locale === 'en-US'
+    ? 'Service URL not configured'
+    : '未设置服务地址')
+  const apiKeyStateLabel = profile.hasApiKey
+    ? (locale === 'en-US' ? 'API key configured' : '已配置密钥')
+    : (locale === 'en-US' ? 'API key missing' : '未配置密钥')
 
   return (
     <Fragment>
@@ -59,7 +68,7 @@ export function ProviderProfileListItem({
           </span>
           <span className="provider-card__meta-row">
             <span className="provider-card__meta">{providerTypeLabel}</span>
-            <span className="provider-card__meta">{profile.hasApiKey ? '已配置密钥' : '未配置密钥'}</span>
+            <span className="provider-card__meta">{apiKeyStateLabel}</span>
           </span>
           <span className="provider-card__description">{providerLocation}</span>
           {providerStatusNotice ? (

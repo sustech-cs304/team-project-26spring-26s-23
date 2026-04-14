@@ -1,8 +1,8 @@
+import { getBackupCycleOptions, getDataSettingsCopy } from '../locale'
 import { SelectField, TextField, ToggleSwitch } from '../components/FormFields'
 
-import { backupCycleOptions } from './config'
-
 interface DataSettingsSectionProps {
+  language: string
   dataPath: string
   backupCycle: string
   backupEnabled: boolean
@@ -14,6 +14,7 @@ interface DataSettingsSectionProps {
 }
 
 export function DataSettingsSection({
+  language,
   dataPath,
   backupCycle,
   backupEnabled,
@@ -23,29 +24,31 @@ export function DataSettingsSection({
   onBackupEnabledChange,
   onLaunchSyncEnabledChange,
 }: DataSettingsSectionProps) {
+  const copy = getDataSettingsCopy(language)
+  const backupCycleOptions = getBackupCycleOptions(language)
   return (
     <div className="settings-page">
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">数据设置</h3>
+            <h3 className="settings-card__title">{copy.title}</h3>
           </div>
         </div>
 
         <div className="settings-stack">
           <div className="form-grid form-grid--two">
             <TextField
-              label="数据目录"
+              label={copy.dataPathLabel}
               value={dataPath}
               onChange={onDataPathChange}
-              placeholder="输入本地目录"
+              placeholder={copy.dataPathPlaceholder}
             />
-            <SelectField label="备份周期" value={backupCycle} options={backupCycleOptions} onChange={onBackupCycleChange} />
+            <SelectField label={copy.backupCycleLabel} value={backupCycle} options={backupCycleOptions} onChange={onBackupCycleChange} />
           </div>
 
           <div className="toggle-grid">
-            <ToggleSwitch label="启用自动备份" checked={backupEnabled} onChange={onBackupEnabledChange} />
-            <ToggleSwitch label="启动时同步" checked={launchSyncEnabled} onChange={onLaunchSyncEnabledChange} />
+            <ToggleSwitch label={copy.backupEnabledLabel} checked={backupEnabled} onChange={onBackupEnabledChange} />
+            <ToggleSwitch label={copy.launchSyncLabel} checked={launchSyncEnabled} onChange={onLaunchSyncEnabledChange} />
           </div>
         </div>
       </section>

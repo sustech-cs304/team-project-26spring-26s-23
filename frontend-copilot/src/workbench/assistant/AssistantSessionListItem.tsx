@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 
+import { getAssistantSessionCopy, type WorkbenchLanguage } from '../locale'
 import type { AssistantSessionShell } from '../types'
 import {
   getAssistantSessionCardTestId,
@@ -18,6 +19,7 @@ import {
 import { resolveAssistantSessionTitle } from './assistant-session-helpers'
 
 interface AssistantSessionListItemProps {
+  language?: WorkbenchLanguage
   sessionEntry: AssistantSessionShell
   active: boolean
   visualIndex: number
@@ -33,6 +35,7 @@ interface AssistantSessionListItemProps {
 }
 
 export function AssistantSessionListItem({
+  language = 'zh-CN',
   sessionEntry,
   active,
   visualIndex,
@@ -47,6 +50,7 @@ export function AssistantSessionListItem({
   onCancelRename,
 }: AssistantSessionListItemProps) {
   const renameInputRef = useRef<HTMLInputElement | null>(null)
+  const copy = getAssistantSessionCopy(language)
 
   useEffect(() => {
     if (!editing || renameInputRef.current === null) {
@@ -99,7 +103,7 @@ export function AssistantSessionListItem({
                   type="text"
                   className="topic-card__title-input"
                   data-testid={getAssistantSessionRenameInputTestId(sessionEntry.sessionId)}
-                  aria-label={`重命名 ${resolveAssistantSessionTitle(sessionEntry)}`}
+                  aria-label={copy.renameSessionAriaLabel(resolveAssistantSessionTitle(sessionEntry))}
                   value={editingValue}
                   onChange={handleRenameInputChange}
                   onKeyDown={handleRenameInputKeyDown}

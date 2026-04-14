@@ -10,14 +10,19 @@ import {
 interface ProviderProfileDragOverlayProps {
   provider: ProviderProfile | null
   dragGhostRef: MutableRefObject<HTMLDivElement | null>
+  language?: string
 }
 
-export function ProviderProfileDragOverlay({ provider, dragGhostRef }: ProviderProfileDragOverlayProps) {
+export function ProviderProfileDragOverlay({
+  provider,
+  dragGhostRef,
+  language = 'zh-CN',
+}: ProviderProfileDragOverlayProps) {
   if (provider === null) {
     return null
   }
 
-  const providerStatusNotice = resolveProviderStatusNotice(provider)
+  const providerStatusNotice = resolveProviderStatusNotice(provider, language)
 
   return (
     <div
@@ -30,7 +35,7 @@ export function ProviderProfileDragOverlay({ provider, dragGhostRef }: ProviderP
         <span className="provider-card__title">{provider.name}</span>
       </span>
       <span className="provider-card__meta-row">
-        <span className="provider-card__meta">{resolveProviderTypeLabel(provider)}</span>
+        <span className="provider-card__meta">{resolveProviderTypeLabel(provider, language)}</span>
         {providerStatusNotice ? <span className="provider-card__meta">{providerStatusNotice.title}</span> : null}
       </span>
     </div>

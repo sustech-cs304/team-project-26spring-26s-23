@@ -33,6 +33,7 @@ import { useAssistantSessionManagementState } from './state/useAssistantSessionM
 
 interface UseAssistantWorkspaceStateInput {
   bootstrap: CopilotBootstrapController
+  language?: string
   listAgents?: typeof listRuntimeAgents
   createSession?: typeof createRuntimeThread
   getCapabilities?: typeof getRuntimeCapabilities
@@ -77,6 +78,7 @@ interface UseAssistantWorkspaceStateResult {
 
 export function useAssistantWorkspaceState({
   bootstrap,
+  language = 'zh-CN',
   listAgents: listAgentsImpl = listRuntimeAgents,
   createSession: createSessionImpl = createRuntimeThread,
   getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
@@ -107,6 +109,7 @@ export function useAssistantWorkspaceState({
     setSelectedAgentId,
   } = useAssistantDirectoryState({
     bootstrap,
+    language,
     listAgents: listAgentsImpl,
     initialDirectoryState,
   })
@@ -122,6 +125,7 @@ export function useAssistantWorkspaceState({
     handleCreateSession: createSessionForSelectedAgent,
   } = useAssistantSessionCreation({
     bootstrap,
+    language,
     selectedAgent,
     setSelectedAgentId,
     createSession: createSessionImpl,

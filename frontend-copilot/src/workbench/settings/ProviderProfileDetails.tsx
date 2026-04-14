@@ -1,3 +1,4 @@
+import { getProviderDetailsCopy } from '../locale'
 import { SelectField, TextField } from '../components/FormFields'
 import { ProviderModelListPanel } from './ProviderModelListPanel'
 import { ProviderSecretPanel } from './ProviderSecretPanel'
@@ -14,9 +15,10 @@ import {
 
 interface ProviderProfileDetailsProps {
   detail: ProviderProfileDetailsDomain
+  language: string
 }
 
-export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) {
+export function ProviderProfileDetails({ detail, language }: ProviderProfileDetailsProps) {
   const {
     activeProviderDetail,
     activeProviderPreviewModelId,
@@ -33,14 +35,16 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
     onRemoveModel,
   } = detail
 
-  const providerTypeOptions = createProviderTypeSelectOptions(activeProviderDetail)
-  const providerStatusNotice = resolveProviderStatusNotice(activeProviderDetail)
-  const providerAuthFieldState = resolveProviderAuthFieldState(activeProviderDetail)
+  const copy = getProviderDetailsCopy(language)
+  const providerTypeOptions = createProviderTypeSelectOptions(activeProviderDetail, language)
+  const providerStatusNotice = resolveProviderStatusNotice(activeProviderDetail, language)
+  const providerAuthFieldState = resolveProviderAuthFieldState(activeProviderDetail, language)
   const providerBaseUrlFieldState = resolveProviderBaseUrlFieldState(activeProviderDetail, {
     previewModelId: activeProviderPreviewModelId,
+    language,
   })
-  const providerBaseUrlValidationMessage = resolveProviderBaseUrlValidationMessage(activeProviderDetail)
-  const providerModelEditingAvailability = resolveProviderModelEditingAvailability(activeProviderDetail)
+  const providerBaseUrlValidationMessage = resolveProviderBaseUrlValidationMessage(activeProviderDetail, language)
+  const providerModelEditingAvailability = resolveProviderModelEditingAvailability(activeProviderDetail, language)
   const providerTypeValue = (activeProviderDetail.providerId ?? activeProviderDetail.protocol).trim()
   const baseUrlValue = activeProviderDetail.baseUrl ?? activeProviderDetail.endpoint
 
@@ -49,7 +53,7 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">服务信息</h3>
+            <h3 className="settings-card__title">{copy.serviceInfoTitle}</h3>
           </div>
         </div>
 
@@ -66,21 +70,21 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
 
           <div className="form-grid form-grid--two">
             <TextField
-              label="显示名称"
+              label={copy.displayNameLabel}
               value={activeProviderDetail.name}
               onChange={(value) => onUpdateActiveProvider({ name: value, displayName: value })}
-              placeholder="输入服务商名称"
+              placeholder={copy.displayNamePlaceholder}
               inputTestId="provider-display-name-input"
             />
             <SelectField
-              label="服务类型"
+              label={copy.providerTypeLabel}
               value={providerTypeValue}
               options={providerTypeOptions}
               onChange={(value) => onUpdateActiveProvider(buildProviderTypeSelectionPatch(activeProviderDetail, value))}
               triggerTestId="provider-type-select-trigger"
             />
             <TextField
-              label="服务地址"
+              label={copy.serviceAddressLabel}
               description={providerBaseUrlFieldState.description}
               feedback={providerBaseUrlValidationMessage ?? undefined}
               value={baseUrlValue}
@@ -95,6 +99,7 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
             />
             <ProviderSecretPanel
               providerId={activeProviderDetail.id}
+              language={language}
               visible={providerAuthFieldState.visible}
               label={providerAuthFieldState.label}
               description={providerAuthFieldState.description}
@@ -113,6 +118,7 @@ export function ProviderProfileDetails({ detail }: ProviderProfileDetailsProps) 
       </section>
 
       <ProviderModelListPanel
+        language={language}
         availableModels={activeProviderDetail.availableModels}
         canEditModels={providerModelEditingAvailability.canEditModels}
         description={providerModelEditingAvailability.description}
