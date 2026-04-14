@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+from pathlib import Path
 
 import pytest
 
@@ -219,11 +220,37 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
 
 
 def test_canonical_sustech_integration_roots_are_importable() -> None:
+    blackboard_spec = importlib.util.find_spec("app.integrations.sustech.blackboard")
+    tis_spec = importlib.util.find_spec("app.integrations.sustech.teaching_information_system")
+
+    assert blackboard_spec is not None
+    assert tis_spec is not None
+    assert blackboard_spec.origin is not None
+    assert tis_spec.origin is not None
+    assert Path(blackboard_spec.origin).as_posix().endswith(
+        "app/integrations/sustech/blackboard/__init__.py"
+    )
+    assert Path(tis_spec.origin).as_posix().endswith(
+        "app/integrations/sustech/teaching_information_system/__init__.py"
+    )
+
     blackboard = importlib.import_module("app.integrations.sustech.blackboard")
     tis = importlib.import_module("app.integrations.sustech.teaching_information_system")
 
+    assert Path(blackboard.__file__).as_posix().endswith(
+        "app/integrations/sustech/blackboard/__init__.py"
+    )
+    assert Path(tis.__file__).as_posix().endswith(
+        "app/integrations/sustech/teaching_information_system/__init__.py"
+    )
     assert callable(blackboard.get_blackboard_tool_contracts)
     assert callable(tis.get_tis_tool_contracts)
+    assert blackboard.get_blackboard_tool_contracts.__module__.startswith(
+        "app.integrations.sustech.blackboard"
+    )
+    assert tis.get_tis_tool_contracts.__module__.startswith(
+        "app.integrations.sustech.teaching_information_system"
+    )
 
 
 
