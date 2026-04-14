@@ -4,7 +4,7 @@ import type { AssistantSessionHistoryState } from '../../workbench/assistant/ass
 import { createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 import { createSessionShell } from './CopilotChatPanel.test-support'
 import { createCopilotModelCatalog } from './model-picker'
-import { evaluatePersistedHistoryDrift } from './persisted-history-drift'
+import { evaluatePersistedHistoryDrift, resolvePersistedHistoryDrift } from './persisted-history-drift'
 
 describe('persisted history drift evaluation', () => {
   it('returns null when history or session shell is unavailable', () => {
@@ -25,6 +25,58 @@ describe('persisted history drift evaluation', () => {
       providerProfiles,
       models,
     })).toBeNull()
+  })
+
+  it('prefers structured backend drift conclusions when replay interpretation is available', () => {
+    const providerProfiles = [createProviderProfile()]
+    const models = createCopilotModelCatalog(providerProfiles).models
+    const sessionShell = createSessionShell({
+      capabilities: {
+        allAvailableTools: [],
+      },
+    })
+    const history = createHistoryState({
+      availabilityInterpretation: {
+        status: 'historical_provider_removed',
+        historicalModelId: 'server-model',
+        historicalToolIds: ['tool.server-only'],
+        historicalThinkingSummary: '服务端历史思考',
+        warnings: [{
+          code: 'historical_provider_removed',
+          message: '服务端判定：历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。',
+        }],
+        requiresExplicitRebind: true,
+      },
+      historicalSnapshot: {
+        resolvedModelId: 'legacy-model',
+        resolvedModelRoute: {
+          routeRef: {
+            routeKind: 'provider-model',
+            profileId: 'provider-legacy',
+            modelId: 'legacy-model',
+          },
+        },
+        resolvedToolIds: ['tool.file-convert'],
+      },
+    })
+
+    const drift = resolvePersistedHistoryDrift({
+      history,
+      sessionShell,
+      providerProfiles,
+      models,
+    })
+
+    expect(drift).toEqual({
+      historicalModelId: 'server-model',
+      historicalToolIds: ['tool.server-only'],
+      historicalThinkingSummary: '服务端历史思考',
+      warnings: [{
+        code: 'historical_provider_removed',
+        message: '服务端判定：历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。',
+      }],
+      requiresExplicitRebind: true,
+    })
   })
 
   it('surfaces removed providers and missing tools from replay snapshots', () => {
@@ -205,6 +257,7 @@ function createHistoryState(input: {
   historicalSnapshot?: Record<string, unknown> | null
   latestConfigurationSnapshot?: Record<string, unknown> | null
   availabilityDrift?: Record<string, unknown> | null
+  availabilityInterpretation?: Record<string, unknown> | null
   replayStatus?: AssistantSessionHistoryState['replayStatus']
 } = {}): AssistantSessionHistoryState {
   const runSummary = {
@@ -267,7 +320,7 @@ function createHistoryState(input: {
           toolCallBlocks: [],
           diagnosticBlocks: [],
           terminalState: null,
-          availabilityInterpretation: null,
+          availabilityInterpretation: input.availabilityInterpretation ?? null,
         }
       : null,
   }

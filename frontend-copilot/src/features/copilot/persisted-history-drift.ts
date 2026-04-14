@@ -22,6 +22,20 @@ export interface PersistedHistoryDriftSummary {
   requiresExplicitRebind: boolean
 }
 
+export function resolvePersistedHistoryDrift(input: {
+  history: AssistantSessionHistoryState | null
+  sessionShell: AssistantSessionShell | null
+  providerProfiles: ProviderProfile[]
+  models: CopilotModelOption[]
+}): PersistedHistoryDriftSummary | null {
+  const backendSummary = resolveBackendPersistedHistoryDrift(input.history)
+  if (backendSummary !== null) {
+    return backendSummary
+  }
+
+  return evaluatePersistedHistoryDrift(input)
+}
+
 export function evaluatePersistedHistoryDrift(input: {
   history: AssistantSessionHistoryState | null
   sessionShell: AssistantSessionShell | null
@@ -112,8 +126,9 @@ export function evaluatePersistedHistoryDrift(input: {
 function resolveHistoricalSnapshot(
   history: AssistantSessionHistoryState,
 ): Record<string, unknown> | null {
-  if (history.replayStatus === 'ready' && history.replay?.historicalSnapshot !== null) {
-    return { ...history.replay.historicalSnapshot }
+  const replay = history.replay
+  if (history.replayStatus === 'ready' && replay !== null && replay.historicalSnapshot !== null) {
+    return { ...replay.historicalSnapshot }
   }
 
   const latestConfigurationSnapshot = history.latestConfigurationSnapshot
@@ -121,14 +136,21 @@ function resolveHistoricalSnapshot(
     return null
   }
 
+  const modelSnapshot = isRecord(latestConfigurationSnapshot['modelSnapshot'])
+    ? latestConfigurationSnapshot['modelSnapshot']
+    : null
+  const toolsSnapshot = isRecord(latestConfigurationSnapshot['toolsSnapshot'])
+    ? latestConfigurationSnapshot['toolsSnapshot']
+    : null
+
   return {
-    resolvedModelId: readString(latestConfigurationSnapshot.modelSnapshot?.resolvedModelId),
-    resolvedModelRoute: cloneRecord(latestConfigurationSnapshot.modelSnapshot?.resolvedModelRoute),
-    selectedModelRoute: cloneRecord(latestConfigurationSnapshot.modelSnapshot?.selectedModelRoute),
-    requestedThinkingSelection: cloneRecord(latestConfigurationSnapshot.modelSnapshot?.requestedThinkingSelection),
-    appliedThinkingSelection: cloneRecord(latestConfigurationSnapshot.modelSnapshot?.appliedThinkingSelection),
-    resolvedToolIds: readStringArray(latestConfigurationSnapshot.toolsSnapshot?.resolvedToolIds),
-    enabledToolIds: readStringArray(latestConfigurationSnapshot.toolsSnapshot?.enabledToolIds),
+    resolvedModelId: readString(modelSnapshot?.['resolvedModelId']),
+    resolvedModelRoute: cloneRecord(modelSnapshot?.['resolvedModelRoute']),
+    selectedModelRoute: cloneRecord(modelSnapshot?.['selectedModelRoute']),
+    requestedThinkingSelection: cloneRecord(modelSnapshot?.['requestedThinkingSelection']),
+    appliedThinkingSelection: cloneRecord(modelSnapshot?.['appliedThinkingSelection']),
+    resolvedToolIds: readStringArray(toolsSnapshot?.['resolvedToolIds']),
+    enabledToolIds: readStringArray(toolsSnapshot?.['enabledToolIds']),
   }
 }
 
@@ -171,6 +193,52 @@ function resolveProviderModelProfile(
   return providerProfile.availableModels.find((model) => model.modelId === normalizedModelId) ?? null
 }
 
+function resolveBackendPersistedHistoryDrift(
+  history: AssistantSessionHistoryState | null,
+): PersistedHistoryDriftSummary | null {
+  if (history === null) {
+    return null
+  }
+
+  if (history.replayStatus === 'ready' && history.replay !== null) {
+    const replaySummary = readBackendPersistedHistoryDriftSummary(history.replay.availabilityInterpretation)
+    if (replaySummary !== null) {
+      return replaySummary
+    }
+  }
+
+  return readBackendPersistedHistoryDriftSummary(history.availabilityDrift)
+}
+
+function readBackendPersistedHistoryDriftSummary(value: unknown): PersistedHistoryDriftSummary | null {
+  const record = isRecord(value) ? value : null
+  if (record === null) {
+    return null
+  }
+
+  const warnings = readWarningArray(record.warnings)
+  const requiresExplicitRebind = typeof record.requiresExplicitRebind === 'boolean'
+    ? record.requiresExplicitRebind
+    : null
+  const historicalThinkingSummary = normalizeOptionalString(readString(record.historicalThinkingSummary))
+    ?? formatHistoricalThinkingSummary(record.historicalThinkingSelection)
+  const hasStructuredConclusion = Array.isArray(record.warnings)
+    || requiresExplicitRebind !== null
+    || historicalThinkingSummary !== null
+
+  if (!hasStructuredConclusion) {
+    return null
+  }
+
+  return {
+    historicalModelId: normalizeOptionalString(readString(record.historicalModelId)),
+    historicalToolIds: readStringArray(record.historicalToolIds),
+    historicalThinkingSummary,
+    warnings,
+    requiresExplicitRebind: requiresExplicitRebind ?? warnings.length > 0,
+  }
+}
+
 function formatHistoricalThinkingSummary(value: unknown): string | null {
   const record = isRecord(value) ? value : null
   if (record === null) {
@@ -201,6 +269,21 @@ function readRouteRef(value: unknown): { profileId: string; modelId: string } | 
     : null
 }
 
+function readWarningArray(value: unknown): PersistedHistoryDriftWarning[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((item) => {
+    const record = isRecord(item) ? item : null
+    const code = record === null ? null : normalizePersistedHistoryDriftCode(record.code)
+    const message = record === null ? null : normalizeOptionalString(readString(record.message))
+    return code !== null && message !== null
+      ? [{ code, message }]
+      : []
+  })
+}
+
 function readString(value: unknown): string | null {
   return typeof value === 'string' ? value : null
 }
@@ -222,6 +305,16 @@ function normalizeOptionalString(value: string | null | undefined): string | nul
 
 function cloneRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? { ...value } : {}
+}
+
+function normalizePersistedHistoryDriftCode(value: unknown): PersistedHistoryDriftCode | null {
+  if (value === 'historical_valid_currently_missing'
+    || value === 'historical_provider_removed'
+    || value === 'historical_tool_unregistered'
+    || value === 'historical_thinking_no_longer_supported') {
+    return value
+  }
+  return null
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

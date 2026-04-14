@@ -35,7 +35,7 @@ import {
   type CopilotTransientErrorState,
 } from '../copilot-chat-helpers'
 import {
-  evaluatePersistedHistoryDrift,
+  resolvePersistedHistoryDrift,
   type PersistedHistoryDriftSummary,
 } from '../persisted-history-drift'
 import { buildPersistedConversationFromHistory } from '../persisted-history-view-model'
@@ -218,7 +218,7 @@ export function useCopilotChatPanelState({
   const historyDrift = useMemo(
     () => !workspaceStateLoaded
       ? null
-      : evaluatePersistedHistoryDrift({
+      : resolvePersistedHistoryDrift({
           history: sessionHistory,
           sessionShell,
           providerProfiles: workspaceProviderProfiles,
