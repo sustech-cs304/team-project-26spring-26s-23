@@ -1,3 +1,9 @@
+"""Legacy compatibility wrappers for older Blackboard provider-side tool imports.
+
+Canonical runtime/tooling surface lives in `app.blackboard.facade` via
+`get_blackboard_tool_contracts()`. Keep this module thin and compatibility-only.
+"""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -111,3 +117,12 @@ def sync_blackboard_snapshot(
         "logs": _jsonable(report.logs),
         "log_summary": _jsonable(report.log_summary),
     }
+
+
+# Legacy compatibility exports only; canonical runtime/tooling surface lives in
+# app.blackboard.facade via get_blackboard_tool_contracts().
+__all__ = [
+    "search_course_catalog",
+    "refresh_calendar_ics",
+    "sync_blackboard_snapshot",
+]

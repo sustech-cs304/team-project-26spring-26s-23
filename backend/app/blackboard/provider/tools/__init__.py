@@ -1,3 +1,9 @@
+"""Legacy compatibility re-exports for older Blackboard provider-side tool imports.
+
+Canonical runtime/tooling surface lives in `app.blackboard.facade` via
+`get_blackboard_tool_contracts()`.
+"""
+
 from .agent_tools import (
     refresh_calendar_ics,
     search_course_catalog,
