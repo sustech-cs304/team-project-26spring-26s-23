@@ -23,7 +23,7 @@ _CURRENT_RUNTIME_TOOL_EXECUTION_CONTEXT: ContextVar[RuntimeToolExecutionContext 
 
 RuntimeExecutableToolExecutor = Callable[[Mapping[str, Any] | None], Awaitable[dict[str, Any]]]
 ToolHostCapabilitiesFactory = Callable[
-    [ToolContract, "RuntimeToolExecutionContext | None"],
+    [ToolContract, ToolInvocationContext, "RuntimeToolExecutionContext | None"],
     ToolHostCapabilities,
 ]
 
@@ -164,6 +164,7 @@ def build_contract_runtime_binding(
         )
         host = _build_host_capabilities(
             contract_tool=contract_tool,
+            invocation_context=invocation_context,
             runtime_context=runtime_context,
             host_capabilities_factory=host_capabilities_factory,
         )
@@ -225,12 +226,13 @@ def build_default_contract_runtime_bindings(
 def _build_host_capabilities(
     *,
     contract_tool: ToolContract,
+    invocation_context: ToolInvocationContext,
     runtime_context: RuntimeToolExecutionContext | None,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None,
 ) -> ToolHostCapabilities:
     if host_capabilities_factory is None:
         return ToolHostCapabilities()
-    return host_capabilities_factory(contract_tool, runtime_context)
+    return host_capabilities_factory(contract_tool, invocation_context, runtime_context)
 
 
 def _build_invocation_context(
@@ -295,6 +297,7 @@ __all__ = [
     "RuntimeExecutableToolBinding",
     "RuntimeExecutableToolError",
     "RuntimeToolExecutionContext",
+    "ToolHostCapabilitiesFactory",
     "build_contract_runtime_binding",
     "build_default_contract_runtime_bindings",
     "get_current_runtime_tool_execution_context",

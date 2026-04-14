@@ -1,6 +1,6 @@
 """Host capability abstractions for runtime-agnostic tools."""
 
-from .errors import MissingHostCapabilityError
+from .errors import HostCapabilityOperationError, MissingHostCapabilityError
 from .interfaces import (
     ArtifactStore,
     EventSink,
@@ -16,6 +16,7 @@ __all__ = [
     "ArtifactStore",
     "EventSink",
     "HostArtifact",
+    "HostCapabilityOperationError",
     "HostEvent",
     "MissingHostCapabilityError",
     "SecretProvider",

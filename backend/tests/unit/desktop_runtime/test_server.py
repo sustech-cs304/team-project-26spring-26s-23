@@ -36,9 +36,12 @@ from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeM
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
 
+from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
     ENV_HOST,
+    ENV_HOST_CAPABILITY_BRIDGE_TOKEN,
+    ENV_HOST_CAPABILITY_BRIDGE_URL,
     ENV_PORT,
     ENV_USER_DATA_DIR,
     LOCAL_TOKEN_HEADER_NAME,
@@ -166,6 +169,7 @@ def test_create_app_mounts_runtime_dependencies_from_composition(tmp_path: Path)
         assert dependencies.agent_executor is app.state.copilot_runtime_agent_executor
         assert dependencies.runtime_bridge is app.state.copilot_runtime_bridge
         assert dependencies.scaffold is app.state.copilot_runtime_scaffold
+        assert dependencies.host_capabilities_factory is app.state.copilot_runtime_host_capabilities_factory
         assert dependencies.agent_registry.get_default().name == "default"
         assert dependencies.tool_registry.get_default().name == "default"
 
@@ -645,6 +649,8 @@ def test_create_app_without_explicit_config_reads_environment_values(
     monkeypatch.setenv(ENV_HOST, "127.0.0.1")
     monkeypatch.setenv(ENV_PORT, "9988")
     monkeypatch.setenv(ENV_USER_DATA_DIR, "env-user-data")
+    monkeypatch.setenv(ENV_HOST_CAPABILITY_BRIDGE_URL, "http://127.0.0.1:45678/host/private/capability-bridge")
+    monkeypatch.setenv(ENV_HOST_CAPABILITY_BRIDGE_TOKEN, "capability-token-123")
 
     app = create_app(agent_executor=_build_test_agent_executor(), model_route_resolver=_ResolvedRouteResolver())
 
@@ -656,6 +662,8 @@ def test_create_app_without_explicit_config_reads_environment_values(
     assert runtime_config.host == "127.0.0.1"
     assert runtime_config.port == 9988
     assert runtime_config.user_data_dir == (BACKEND_DIR / "env-user-data").resolve()
+    assert runtime_config.host_capability_bridge_url == "http://127.0.0.1:45678/host/private/capability-bridge"
+    assert runtime_config.host_capability_bridge_token == "capability-token-123"
 
 
 
@@ -728,18 +736,44 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
 
 
 
-def test_create_app_closes_host_model_route_bridge_client_on_shutdown(tmp_path: Path) -> None:
-    app = _create_test_app(tmp_path)
+def test_create_app_closes_host_bridge_clients_on_shutdown(tmp_path: Path) -> None:
+    host_capability_bridge_client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="capability-token-123",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "requestId": request.read().decode("utf-8"),
+                    "ok": True,
+                    "result": {"path": "workspace-root"},
+                },
+                request=request,
+            )
+        ),
+    )
+    app = create_app(
+        _build_config(tmp_path),
+        agent_executor=_build_test_agent_executor(),
+        model_route_resolver=_ResolvedRouteResolver(),
+        host_capability_bridge_client=host_capability_bridge_client,
+    )
 
     with TestClient(app):
-        bridge_client = app.state.host_model_route_bridge_client
-        http_client = bridge_client._get_client()
-        assert isinstance(http_client, httpx.AsyncClient)
-        assert bridge_client._client is http_client
-        assert http_client.is_closed is False
+        model_bridge_client = app.state.host_model_route_bridge_client
+        model_http_client = model_bridge_client._get_client()
+        capability_http_client = app.state.host_capability_bridge_client._get_sync_client()
+        assert isinstance(model_http_client, httpx.AsyncClient)
+        assert isinstance(capability_http_client, httpx.Client)
+        assert model_bridge_client._client is model_http_client
+        assert app.state.host_capability_bridge_client._sync_client is capability_http_client
+        assert model_http_client.is_closed is False
+        assert capability_http_client.is_closed is False
 
-    assert bridge_client._client is None
-    assert http_client.is_closed is True
+    assert model_bridge_client._client is None
+    assert model_http_client.is_closed is True
+    assert app.state.host_capability_bridge_client._sync_client is None
+    assert capability_http_client.is_closed is True
 
 
 

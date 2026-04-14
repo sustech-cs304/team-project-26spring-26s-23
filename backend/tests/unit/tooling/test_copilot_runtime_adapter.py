@@ -99,12 +99,15 @@ class _RecordingContractTool:
 def test_build_contract_runtime_binding_maps_success_and_runtime_context() -> None:
     contract_tool = _RecordingContractTool()
     captured_runtime_contexts: list[RuntimeToolExecutionContext | None] = []
+    captured_invocation_contexts: list[ToolInvocationContext] = []
 
     def host_factory(
         tool: _RecordingContractTool,
+        invocation_context: ToolInvocationContext,
         runtime_context: RuntimeToolExecutionContext | None,
     ) -> ToolHostCapabilities:
         assert tool is contract_tool
+        captured_invocation_contexts.append(invocation_context)
         captured_runtime_contexts.append(runtime_context)
         return ToolHostCapabilities()
 
@@ -151,6 +154,7 @@ def test_build_contract_runtime_binding_maps_success_and_runtime_context() -> No
         },
     }
     assert captured_runtime_contexts == [runtime_context]
+    assert len(captured_invocation_contexts) == 1
     assert len(contract_tool.calls) == 1
     assert contract_tool.calls[0]["arguments"] == {"keyword": "数据库"}
     assert contract_tool.calls[0]["host"].available_capability_names() == ()
@@ -162,6 +166,7 @@ def test_build_contract_runtime_binding_maps_success_and_runtime_context() -> No
     assert invocation_context.requested_at == datetime(2026, 4, 13, 18, 0, tzinfo=UTC)
     assert invocation_context.trace == {"source": "runtime"}
     assert invocation_context.metadata == {"requestId": "request-1"}
+    assert captured_invocation_contexts[0] == invocation_context
 
 
 def test_build_contract_runtime_binding_raises_runtime_error_for_failure_envelope() -> None:

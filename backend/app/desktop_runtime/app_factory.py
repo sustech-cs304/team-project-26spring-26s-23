@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from ..copilot_runtime import PydanticAIAgentExecutor, build_default_runtime_dependencies, build_router
 from ..copilot_runtime.model_routes import RuntimeModelRouteResolver
 from ..copilot_runtime.session_store import InMemorySessionStore
+from .capability_bridge_client import DesktopCapabilityBridgeClient
+from .capability_bridge_host_capabilities import build_desktop_bridge_host_capabilities_factory
 from .config import BACKEND_DIR, DesktopRuntimeConfig, get_backend_version, parse_runtime_config
 from .host_model_route_bridge import HostModelRouteBridgeClient
 from .health import DESKTOP_RUNTIME_SERVICE_NAME
@@ -30,6 +32,7 @@ def create_app(
     session_store: InMemorySessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
     model_route_resolver: RuntimeModelRouteResolver | None = None,
+    host_capability_bridge_client: DesktopCapabilityBridgeClient | None = None,
 ) -> FastAPI:
     runtime_config = config
     if runtime_config is None:
@@ -41,11 +44,25 @@ def create_app(
         bridge_url=runtime_config.host_model_route_bridge_url,
         bridge_token=runtime_config.host_model_route_bridge_token,
     )
+    resolved_host_capability_bridge_client = host_capability_bridge_client or DesktopCapabilityBridgeClient(
+        bridge_url=(
+            runtime_config.host_capability_bridge_url
+            or runtime_config.host_model_route_bridge_url
+        ),
+        bridge_token=(
+            runtime_config.host_capability_bridge_token
+            or runtime_config.host_model_route_bridge_token
+        ),
+    )
+    host_capabilities_factory = build_desktop_bridge_host_capabilities_factory(
+        bridge_client=resolved_host_capability_bridge_client,
+    )
     runtime_dependencies = build_default_runtime_dependencies(
         runtime_config=runtime_config,
         session_store=session_store,
         agent_executor=agent_executor,
         model_route_resolver=model_route_resolver or host_model_route_bridge_client,
+        host_capabilities_factory=host_capabilities_factory,
     )
     runtime_session_store = runtime_dependencies.session_store
     runtime_agent_executor = runtime_dependencies.agent_executor
@@ -59,6 +76,8 @@ def create_app(
         app.state.runtime_config = runtime_config
         app.state.lifecycle_manager = lifecycle_manager
         app.state.host_model_route_bridge_client = host_model_route_bridge_client
+        app.state.host_capability_bridge_client = resolved_host_capability_bridge_client
+        app.state.copilot_runtime_host_capabilities_factory = host_capabilities_factory
         app.state.copilot_runtime_dependencies = runtime_dependencies
         app.state.copilot_runtime_scaffold = runtime_scaffold
         app.state.copilot_runtime_session_store = runtime_session_store
@@ -71,9 +90,12 @@ def create_app(
             yield
         finally:
             try:
-                await host_model_route_bridge_client.aclose()
+                await resolved_host_capability_bridge_client.aclose()
             finally:
-                lifecycle_manager.shutdown()
+                try:
+                    await host_model_route_bridge_client.aclose()
+                finally:
+                    lifecycle_manager.shutdown()
 
     app = FastAPI(
         title=DESKTOP_RUNTIME_SERVICE_NAME,

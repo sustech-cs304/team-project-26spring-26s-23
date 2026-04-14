@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.tools.file_convert import convert_file_to_str
-from app.tooling.runtime_adapter.copilot_runtime import build_default_contract_runtime_bindings
+from app.tooling.runtime_adapter.copilot_runtime import (
+    ToolHostCapabilitiesFactory,
+    build_default_contract_runtime_bindings,
+)
 
 DEFAULT_TOOLSET_NAME = "default"
 DEFAULT_TOOLSET_LABEL = "Default"
@@ -300,7 +303,10 @@ async def _execute_default_weather_tool(arguments: Mapping[str, Any] | None) -> 
     return await execute_weather_current_tool(arguments)
 
 
-def _build_contract_runtime_executable_tools() -> tuple[ExecutableTool, ...]:
+def _build_contract_runtime_executable_tools(
+    *,
+    host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
+) -> tuple[ExecutableTool, ...]:
     return tuple(
         ExecutableTool(
             descriptor=ToolDescriptor(
@@ -314,12 +320,17 @@ def _build_contract_runtime_executable_tools() -> tuple[ExecutableTool, ...]:
             function_name=binding.function_name,
             parameters_json_schema=binding.parameters_json_schema,
         )
-        for binding in build_default_contract_runtime_bindings()
+        for binding in build_default_contract_runtime_bindings(
+            host_capabilities_factory=host_capabilities_factory,
+        )
     )
 
 
 
-def build_default_tool_registry() -> ToolRegistry:
+def build_default_tool_registry(
+    *,
+    host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
+) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
         ToolsetDescriptor(
@@ -348,7 +359,9 @@ def build_default_tool_registry() -> ToolRegistry:
                     ),
                     execute=_execute_default_weather_tool,
                 ),
-                *_build_contract_runtime_executable_tools(),
+                *_build_contract_runtime_executable_tools(
+                    host_capabilities_factory=host_capabilities_factory,
+                ),
             ),
         )
     )

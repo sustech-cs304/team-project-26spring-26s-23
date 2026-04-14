@@ -24,6 +24,7 @@ from app.blackboard.provider.use_cases import (
 )
 from app.tooling import (
     ArtifactStore,
+    HostCapabilityOperationError,
     HostCapabilityRequirement,
     HostEvent,
     MissingHostCapabilityError,
@@ -199,6 +200,34 @@ def _map_exception(error: Exception) -> NormalizedToolError:
             code="host_capability_missing",
             message=str(error),
             details={"capability": error.capability},
+        )
+    if isinstance(error, HostCapabilityOperationError):
+        if error.code in {"unsupported_capability", "unsupported_operation"}:
+            return NormalizedToolError(
+                code="host_capability_missing",
+                message=error.message,
+                retryable=error.retryable,
+                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
+            )
+        if error.code in {"temporarily_unavailable", "timeout"}:
+            return NormalizedToolError(
+                code=error.code,
+                message=error.message,
+                retryable=error.retryable,
+                details={"capability": error.capability, **error.details},
+            )
+        if error.code in {"permission_denied", "not_found", "conflict"}:
+            return NormalizedToolError(
+                code=error.code,
+                message=error.message,
+                retryable=error.retryable,
+                details={"capability": error.capability, **error.details},
+            )
+        return NormalizedToolError(
+            code="execution_failed",
+            message=error.message,
+            retryable=error.retryable,
+            details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
         )
     if isinstance(error, BlackboardAuthenticationError):
         return NormalizedToolError(
