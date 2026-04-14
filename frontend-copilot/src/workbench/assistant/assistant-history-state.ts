@@ -114,6 +114,30 @@ export function createAssistantSessionHistoryState(
   }
 }
 
+export function retryAssistantSessionHistoryDetail(
+  state: AssistantSessionHistoryState,
+): AssistantSessionHistoryState {
+  return {
+    ...state,
+    detailStatus: 'idle',
+    detailError: null,
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+  }
+}
+
+export function retryAssistantSessionHistoryReplay(
+  state: AssistantSessionHistoryState,
+): AssistantSessionHistoryState {
+  return {
+    ...state,
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+  }
+}
+
 export function setAssistantSessionHistoryDetailLoading(
   state: AssistantSessionHistoryState,
 ): AssistantSessionHistoryState {

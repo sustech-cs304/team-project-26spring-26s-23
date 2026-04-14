@@ -37,6 +37,8 @@ import {
   applyAssistantSessionHistoryDetail,
   applyAssistantSessionHistoryReplay,
   createAssistantSessionHistoryState,
+  retryAssistantSessionHistoryDetail,
+  retryAssistantSessionHistoryReplay,
   setAssistantSessionHistoryDetailError,
   setAssistantSessionHistoryDetailLoading,
   setAssistantSessionHistoryReplayError,
@@ -92,6 +94,7 @@ interface UseAssistantWorkspaceStateResult {
   sessionDragGhostRef: MutableRefObject<HTMLDivElement | null>
   selectAgent: (agentId: string | null) => void
   handleCreateSession: () => Promise<void>
+  retryActiveSessionHistoryLoad: () => void
   handleSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   handleSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
@@ -124,10 +127,16 @@ export function useAssistantWorkspaceState({
   const [sessionHistoryById, setSessionHistoryById] = useState<Record<string, AssistantSessionHistoryState>>({})
   const historyDetailRequestVersionRef = useRef<Record<string, number>>({})
   const historyReplayRequestVersionRef = useRef<Record<string, number>>({})
+  const historyRestoreRetryTimerRef = useRef<number | null>(null)
+  const [historyRestoreRetryKey, setHistoryRestoreRetryKey] = useState(0)
   const isMountedRef = useRef(true)
 
   useEffect(() => () => {
     isMountedRef.current = false
+    if (historyRestoreRetryTimerRef.current !== null) {
+      window.clearTimeout(historyRestoreRetryTimerRef.current)
+      historyRestoreRetryTimerRef.current = null
+    }
   }, [])
 
   const {
@@ -158,6 +167,34 @@ export function useAssistantWorkspaceState({
     getCapabilities: getCapabilitiesImpl,
     initialSessionShell,
   })
+
+  const retrySessionHistoryLoad = useCallback((sessionId: string) => {
+    setSessionHistoryById((current) => {
+      const historyState = current[sessionId]
+      if (historyState === undefined) {
+        return current
+      }
+
+      const nextHistoryState = historyState.detailStatus === 'error'
+        ? retryAssistantSessionHistoryDetail(historyState)
+        : historyState.replayStatus === 'error'
+          ? retryAssistantSessionHistoryReplay(historyState)
+          : historyState
+
+      return nextHistoryState === historyState
+        ? current
+        : {
+            ...current,
+            [sessionId]: nextHistoryState,
+          }
+    })
+  }, [])
+
+  const activateSessionWithHistoryRetry = useCallback((sessionEntry: AssistantSessionShell) => {
+    retrySessionHistoryLoad(sessionEntry.sessionId)
+    activateSession(sessionEntry)
+  }, [activateSession, retrySessionHistoryLoad])
+
   const {
     renderedSessions,
     dragPreviewIndex,
@@ -174,7 +211,7 @@ export function useAssistantWorkspaceState({
   } = useAssistantSessionInteractionState({
     sessionListState,
     setSessionListState,
-    activateSession,
+    activateSession: activateSessionWithHistoryRetry,
   })
   const {
     renamingSessionId,
@@ -201,10 +238,43 @@ export function useAssistantWorkspaceState({
     ? null
     : sessionHistoryById[sessionShell.sessionId] ?? null
 
+  const retryActiveSessionHistoryLoad = useCallback(() => {
+    if (sessionShell === null) {
+      return
+    }
+
+    retrySessionHistoryLoad(sessionShell.sessionId)
+  }, [retrySessionHistoryLoad, sessionShell])
+
   const handleCreateSession = useCallback(async () => {
     dismissManagedSessionContextMenu()
     await createSessionForSelectedAgent()
   }, [createSessionForSelectedAgent, dismissManagedSessionContextMenu])
+
+  const clearHistoryRestoreRetry = useCallback(() => {
+    if (historyRestoreRetryTimerRef.current === null) {
+      return
+    }
+
+    window.clearTimeout(historyRestoreRetryTimerRef.current)
+    historyRestoreRetryTimerRef.current = null
+  }, [])
+
+  const scheduleHistoryRestoreRetry = useCallback(() => {
+    if (historyRestoreRetryTimerRef.current !== null) {
+      return
+    }
+
+    historyRestoreRetryTimerRef.current = window.setTimeout(() => {
+      historyRestoreRetryTimerRef.current = null
+      if (!isMountedRef.current) {
+        return
+      }
+
+      setHistoryRestoreRetryKey((current) => current + 1)
+    }, 0)
+  }, [])
+
 
   useEffect(() => {
     if (directoryState.agents.length === 0) {
@@ -241,60 +311,87 @@ export function useAssistantWorkspaceState({
     }
 
     let cancelled = false
-    restoredRuntimeUrlRef.current = runtimeUrl
 
     void (async () => {
       const persistedShellState = persistedShellStateRef.current
-      const historyResult = await listHistoryThreadsImpl()
 
-      if (cancelled || !historyResult.ok || historyResult.threads.length === 0) {
-        return
-      }
+      try {
+        const historyResult = await listHistoryThreadsImpl()
 
-      const restoredSessions = historyResult.threads.map((summary) => createAssistantSessionShellFromHistorySummary({
-        summary,
-        agents: directoryState.agents,
-      }))
-      const preferredActiveSessionId = persistedShellState.selectedThreadId !== null
-        && restoredSessions.some((sessionEntry) => sessionEntry.sessionId === persistedShellState.selectedThreadId)
-        ? persistedShellState.selectedThreadId
-        : restoredSessions[0]?.sessionId ?? null
-
-      setSessionListState((current) => {
-        const restoredSessionIds = new Set(restoredSessions.map((sessionEntry) => sessionEntry.sessionId))
-        const liveOnlySessions = current.sessions.filter((sessionEntry) => !restoredSessionIds.has(sessionEntry.sessionId))
-        const mergedSessions = [...restoredSessions, ...liveOnlySessions]
-        const nextActiveSessionId = preferredActiveSessionId
-          ?? (current.activeSessionId !== null && mergedSessions.some((sessionEntry) => sessionEntry.sessionId === current.activeSessionId)
-            ? current.activeSessionId
-            : mergedSessions[0]?.sessionId ?? null)
-
-        return {
-          sessions: mergedSessions,
-          activeSessionId: nextActiveSessionId,
+        if (cancelled || !isMountedRef.current) {
+          return
         }
-      })
-      setSessionHistoryById((current) => {
-        const nextState = { ...current }
-        for (const summary of historyResult.threads) {
-          const selectedRunId = persistedShellState.selectedRunIdByThreadId[summary.threadId] ?? null
-          nextState[summary.threadId] = createAssistantSessionHistoryState(summary, selectedRunId)
-        }
-        return nextState
-      })
 
-      if (preferredActiveSessionId !== null) {
-        const activeSession = restoredSessions.find((sessionEntry) => sessionEntry.sessionId === preferredActiveSessionId) ?? null
-        if (activeSession !== null) {
-          setSelectedAgentId(activeSession.boundAgent.id)
+        if (!historyResult.ok) {
+          scheduleHistoryRestoreRetry()
+          return
         }
+
+        const restoredSessions = historyResult.threads.map((summary) => createAssistantSessionShellFromHistorySummary({
+          summary,
+          agents: directoryState.agents,
+        }))
+        const preferredActiveSessionId = persistedShellState.selectedThreadId !== null
+          && restoredSessions.some((sessionEntry) => sessionEntry.sessionId === persistedShellState.selectedThreadId)
+          ? persistedShellState.selectedThreadId
+          : restoredSessions[0]?.sessionId ?? null
+
+        setSessionListState((current) => {
+          const restoredSessionIds = new Set(restoredSessions.map((sessionEntry) => sessionEntry.sessionId))
+          const liveOnlySessions = current.sessions.filter((sessionEntry) => !restoredSessionIds.has(sessionEntry.sessionId))
+          const mergedSessions = [...restoredSessions, ...liveOnlySessions]
+          const nextActiveSessionId = preferredActiveSessionId
+            ?? (current.activeSessionId !== null && mergedSessions.some((sessionEntry) => sessionEntry.sessionId === current.activeSessionId)
+              ? current.activeSessionId
+              : mergedSessions[0]?.sessionId ?? null)
+
+          return {
+            sessions: mergedSessions,
+            activeSessionId: nextActiveSessionId,
+          }
+        })
+        setSessionHistoryById((current) => {
+          const nextState = { ...current }
+          for (const summary of historyResult.threads) {
+            const selectedRunId = persistedShellState.selectedRunIdByThreadId[summary.threadId] ?? null
+            nextState[summary.threadId] = createAssistantSessionHistoryState(summary, selectedRunId)
+          }
+          return nextState
+        })
+
+        if (preferredActiveSessionId !== null) {
+          const activeSession = restoredSessions.find((sessionEntry) => sessionEntry.sessionId === preferredActiveSessionId) ?? null
+          if (activeSession !== null) {
+            setSelectedAgentId(activeSession.boundAgent.id)
+          }
+        }
+
+        clearHistoryRestoreRetry()
+        restoredRuntimeUrlRef.current = runtimeUrl
+      } catch {
+        if (cancelled || !isMountedRef.current) {
+          return
+        }
+
+        scheduleHistoryRestoreRetry()
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [bootstrap.state, directoryState.agents, listHistoryThreadsImpl, setSelectedAgentId, setSessionListState, setSessionHistoryById])
+  }, [
+    bootstrap.state,
+    clearHistoryRestoreRetry,
+    directoryState.agents,
+    historyRestoreRetryKey,
+    isMountedRef,
+    listHistoryThreadsImpl,
+    scheduleHistoryRestoreRetry,
+    setSelectedAgentId,
+    setSessionListState,
+    setSessionHistoryById,
+  ])
 
   useEffect(() => {
     if (!isCopilotConnectableState(bootstrap.state) || sessionShell === null) {
@@ -409,7 +506,7 @@ export function useAssistantWorkspaceState({
       historyState === undefined
       || historyState.detailStatus !== 'ready'
       || selectedRunId === null
-      || historyState.replayStatus === 'loading'
+      || historyState.replayStatus !== 'idle'
       || historyState.replay?.run.runId === selectedRunId
     ) {
       return
@@ -496,6 +593,7 @@ export function useAssistantWorkspaceState({
     sessionDragGhostRef,
     selectAgent,
     handleCreateSession,
+    retryActiveSessionHistoryLoad,
     handleSessionPointerDown,
     handleSessionClick,
     handleSessionContextMenu,
