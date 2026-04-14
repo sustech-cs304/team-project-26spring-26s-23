@@ -163,6 +163,160 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
+  it('creates history state for a new live session and refreshes persisted detail after run settlement', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const liveFixture = createLivePersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    let includePersistedLiveSession = false
+    const listHistoryThreads = vi.fn().mockImplementation(async () => ({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: includePersistedLiveSession ? [liveFixture.summary] : [],
+    }))
+    const createSession = vi.fn().mockResolvedValue(createSessionResponse({
+      threadId: 'thread-live',
+      createdAt: '2026-04-14T08:00:00Z',
+      updatedAt: '2026-04-14T08:00:00Z',
+    }))
+    const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse({
+      sessionId: 'thread-live',
+    }))
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(liveFixture.detail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(liveFixture.replay)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length >= 1)
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
+    ))
+
+    expect(getLastMockCopilotChatPanelProps()).toMatchObject({
+      sessionShell: expect.objectContaining({
+        sessionId: 'thread-live',
+      }),
+      sessionHistory: expect.objectContaining({
+        selectedRunId: expect.anything(),
+      }),
+    })
+
+    includePersistedLiveSession = true
+    await act(async () => {
+      getLastMockCopilotChatPanelProps().onSessionRunSettled?.('run-live-1')
+    })
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === 'thread-live')
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryRunReplay.mock.calls.some(([runId]) => runId === 'run-live-1')
+    ))
+
+    expect(getHistoryThreadDetail).toHaveBeenCalledWith('thread-live')
+    expect(getHistoryRunReplay).toHaveBeenCalledWith('run-live-1')
+    expect(getLastMockCopilotChatPanelProps()).toMatchObject({
+      sessionHistory: expect.objectContaining({
+        detailStatus: 'ready',
+        replayStatus: 'ready',
+        selectedRunId: 'run-live-1',
+      }),
+    })
+
+    rendered.unmount()
+  })
+
+  it('keeps multiple restored threads visible and loads replay for the selected run of the active thread', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const firstFixture = createPersistedHistoryFixture()
+    const secondFixture = createMultiRunPersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true,
+      version: 'chat-history-v1',
+      threads: [firstFixture.summary, secondFixture.summary],
+    })
+    const getHistoryThreadDetail = vi.fn().mockImplementation(async (threadId: string) => (
+      threadId === secondFixture.summary.threadId ? secondFixture.detail : firstFixture.detail
+    ))
+    const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => {
+      if (runId === firstFixture.replay.run.runId) {
+        return firstFixture.replay
+      }
+
+      return secondFixture.replaysByRunId[runId]
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === firstFixture.summary.threadId)
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryRunReplay.mock.calls.some(([runId]) => runId === firstFixture.replay.run.runId)
+    ))
+
+    expect(rendered.getByTestId('assistant-session-card-thread-1').textContent).toContain('历史线程')
+    expect(rendered.getByTestId('assistant-session-card-thread-2').textContent).toContain('第二历史线程')
+
+    await clickElement(rendered.getByTestId('assistant-session-card-thread-2'))
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === secondFixture.summary.threadId)
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryRunReplay.mock.calls.some(([runId]) => runId === secondFixture.replay.run.runId)
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-2'
+    ))
+
+    await act(async () => {
+      getLastMockCopilotChatPanelProps().selectSessionHistoryRun?.('run-2a')
+    })
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryRunReplay.mock.calls.some(([runId]) => runId === 'run-2a')
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-2a'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-session-card-thread-1'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-1'
+    ))
+
+    rendered.unmount()
+  })
+
   it('retries persisted list restore after the first failure and eventually hydrates the thread', async () => {
     mockCopilotChatPanel.mockClear()
 
@@ -372,11 +526,272 @@ function createPersistedHistoryFixture() {
   }
 }
 
+function createLivePersistedHistoryFixture() {
+  const summary = {
+    threadId: 'thread-live',
+    boundAgentId: 'general',
+    title: '新建后落库线程',
+    titleSource: 'deterministic',
+    summary: '最新成功摘要',
+    summarySource: 'deterministic',
+    createdAt: '2026-04-14T08:00:00Z',
+    updatedAt: '2026-04-14T08:03:00Z',
+    lastActivityAt: '2026-04-14T08:03:00Z',
+    lastRunId: 'run-live-1',
+    lastRunStatus: 'completed',
+    lastUserMessagePreview: '最新问题',
+    lastAssistantMessagePreview: '最新成功摘要',
+    driftSummary: {
+      status: 'not_evaluated',
+    },
+  }
+
+  return {
+    summary,
+    detail: {
+      ok: true as const,
+      version: 'chat-history-v1',
+      thread: {
+        ...summary,
+      },
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId: 'run-live-1',
+          sequenceStart: 0,
+          text: '最新问题',
+        },
+        {
+          kind: 'assistant_message',
+          runId: 'run-live-1',
+          sequenceStart: 1,
+          text: '最新成功摘要',
+        },
+      ],
+      runSummaries: [
+        {
+          runId: 'run-live-1',
+          threadId: 'thread-live',
+          status: 'completed',
+          createdAt: '2026-04-14T08:00:00Z',
+          updatedAt: '2026-04-14T08:03:00Z',
+          startedAt: '2026-04-14T08:00:01Z',
+          terminalAt: '2026-04-14T08:03:00Z',
+          resolvedModelId: 'openai/gpt-4.1',
+          requestedMessageText: '最新问题',
+          assistantText: '最新成功摘要',
+        },
+      ],
+      latestConfigurationSnapshot: {
+        runId: 'run-live-1',
+        modelSnapshot: {
+          resolvedModelId: 'openai/gpt-4.1',
+        },
+        toolsSnapshot: {
+          resolvedToolIds: ['tool.file-convert'],
+        },
+      },
+      availabilityDrift: {
+        status: 'not_evaluated',
+      },
+    },
+    replay: {
+      ok: true as const,
+      version: 'chat-history-v1',
+      run: {
+        runId: 'run-live-1',
+        threadId: 'thread-live',
+        status: 'completed',
+        createdAt: '2026-04-14T08:00:00Z',
+        updatedAt: '2026-04-14T08:03:00Z',
+        startedAt: '2026-04-14T08:00:01Z',
+        terminalAt: '2026-04-14T08:03:00Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '最新问题',
+        assistantText: '最新成功摘要',
+      },
+      historicalSnapshot: {
+        resolvedModelId: 'openai/gpt-4.1',
+        resolvedToolIds: ['tool.file-convert'],
+      },
+      orderedEvents: [],
+      toolCallBlocks: [],
+      diagnosticBlocks: [],
+      terminalState: null,
+      availabilityInterpretation: {
+        status: 'not_evaluated',
+      },
+    },
+  }
+}
+
+function createMultiRunPersistedHistoryFixture() {
+  const summary = {
+    threadId: 'thread-2',
+    boundAgentId: 'general',
+    title: '第二历史线程',
+    titleSource: 'deterministic',
+    summary: '第二线程摘要',
+    summarySource: 'deterministic',
+    createdAt: '2026-04-13T16:00:00Z',
+    updatedAt: '2026-04-13T16:08:00Z',
+    lastActivityAt: '2026-04-13T16:08:00Z',
+    lastRunId: 'run-2b',
+    lastRunStatus: 'completed',
+    lastUserMessagePreview: '第二线程问题',
+    lastAssistantMessagePreview: '第二线程新答案',
+    driftSummary: {
+      status: 'not_evaluated',
+    },
+  }
+
+  const run2aReplay = {
+    ok: true as const,
+    version: 'chat-history-v1',
+    run: {
+      runId: 'run-2a',
+      threadId: 'thread-2',
+      status: 'completed',
+      createdAt: '2026-04-13T16:00:00Z',
+      updatedAt: '2026-04-13T16:03:00Z',
+      startedAt: '2026-04-13T16:00:01Z',
+      terminalAt: '2026-04-13T16:03:00Z',
+      resolvedModelId: 'openai/gpt-4.1-mini',
+      requestedMessageText: '旧问题',
+      assistantText: '旧答案',
+    },
+    historicalSnapshot: {
+      resolvedModelId: 'openai/gpt-4.1-mini',
+      resolvedToolIds: ['tool.file-convert'],
+    },
+    orderedEvents: [],
+    toolCallBlocks: [],
+    diagnosticBlocks: [],
+    terminalState: null,
+    availabilityInterpretation: {
+      status: 'not_evaluated',
+    },
+  }
+  const run2bReplay = {
+    ok: true as const,
+    version: 'chat-history-v1',
+    run: {
+      runId: 'run-2b',
+      threadId: 'thread-2',
+      status: 'completed',
+      createdAt: '2026-04-13T16:05:00Z',
+      updatedAt: '2026-04-13T16:08:00Z',
+      startedAt: '2026-04-13T16:05:01Z',
+      terminalAt: '2026-04-13T16:08:00Z',
+      resolvedModelId: 'openai/gpt-4.1',
+      requestedMessageText: '第二线程问题',
+      assistantText: '第二线程新答案',
+    },
+    historicalSnapshot: {
+      resolvedModelId: 'openai/gpt-4.1',
+      resolvedToolIds: ['tool.file-convert'],
+    },
+    orderedEvents: [],
+    toolCallBlocks: [],
+    diagnosticBlocks: [],
+    terminalState: null,
+    availabilityInterpretation: {
+      status: 'not_evaluated',
+    },
+  }
+
+  return {
+    summary,
+    detail: {
+      ok: true as const,
+      version: 'chat-history-v1',
+      thread: {
+        ...summary,
+      },
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId: 'run-2a',
+          sequenceStart: 0,
+          text: '旧问题',
+        },
+        {
+          kind: 'assistant_message',
+          runId: 'run-2a',
+          sequenceStart: 1,
+          text: '旧答案',
+        },
+        {
+          kind: 'user_message',
+          runId: 'run-2b',
+          sequenceStart: 2,
+          text: '第二线程问题',
+        },
+        {
+          kind: 'assistant_message',
+          runId: 'run-2b',
+          sequenceStart: 3,
+          text: '第二线程新答案',
+        },
+      ],
+      runSummaries: [
+        {
+          runId: 'run-2a',
+          threadId: 'thread-2',
+          status: 'completed',
+          createdAt: '2026-04-13T16:00:00Z',
+          updatedAt: '2026-04-13T16:03:00Z',
+          startedAt: '2026-04-13T16:00:01Z',
+          terminalAt: '2026-04-13T16:03:00Z',
+          resolvedModelId: 'openai/gpt-4.1-mini',
+          requestedMessageText: '旧问题',
+          assistantText: '旧答案',
+        },
+        {
+          runId: 'run-2b',
+          threadId: 'thread-2',
+          status: 'completed',
+          createdAt: '2026-04-13T16:05:00Z',
+          updatedAt: '2026-04-13T16:08:00Z',
+          startedAt: '2026-04-13T16:05:01Z',
+          terminalAt: '2026-04-13T16:08:00Z',
+          resolvedModelId: 'openai/gpt-4.1',
+          requestedMessageText: '第二线程问题',
+          assistantText: '第二线程新答案',
+        },
+      ],
+      latestConfigurationSnapshot: {
+        runId: 'run-2b',
+        modelSnapshot: {
+          resolvedModelId: 'openai/gpt-4.1',
+        },
+        toolsSnapshot: {
+          resolvedToolIds: ['tool.file-convert'],
+        },
+      },
+      availabilityDrift: {
+        status: 'not_evaluated',
+      },
+    },
+    replay: run2bReplay,
+    replaysByRunId: {
+      'run-2a': run2aReplay,
+      'run-2b': run2bReplay,
+    },
+  }
+}
+
 function getLastMockCopilotChatPanelProps(): {
+  sessionShell?: {
+    sessionId?: string
+  }
   sessionHistory?: {
     detailStatus?: string
     replayStatus?: string
+    selectedRunId?: string | null
   }
+  selectSessionHistoryRun?: (runId: string | null) => void
+  onSessionRunSettled?: (runId: string | null) => void
 } {
   const props = mockCopilotChatPanel.mock.calls[mockCopilotChatPanel.mock.calls.length - 1]?.[0]
   if (props === undefined) {
@@ -384,10 +799,16 @@ function getLastMockCopilotChatPanelProps(): {
   }
 
   return props as {
+    sessionShell?: {
+      sessionId?: string
+    }
     sessionHistory?: {
       detailStatus?: string
       replayStatus?: string
+      selectedRunId?: string | null
     }
+    selectSessionHistoryRun?: (runId: string | null) => void
+    onSessionRunSettled?: (runId: string | null) => void
   }
 }
 

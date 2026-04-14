@@ -23,6 +23,7 @@ export function CopilotChatPanelShell(props: CopilotChatPanelShellProps) {
         sessionError={props.sessionError}
         sessionHistory={props.sessionHistory ?? null}
         onRetrySessionHistory={props.retrySessionHistory}
+        onSelectSessionHistoryRun={props.selectSessionHistoryRun}
         {...panelState}
       />
     </section>

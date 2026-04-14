@@ -17,6 +17,7 @@ export type AssistantSessionHistoryLoadStatus = 'idle' | 'loading' | 'ready' | '
 
 export interface AssistantSessionHistoryState {
   summary: CopilotHistoryThreadSummary
+  hasLoadedDetail?: boolean
   detailStatus: AssistantSessionHistoryLoadStatus
   detailError: string | null
   timelineItems: Record<string, unknown>[]
@@ -27,6 +28,7 @@ export interface AssistantSessionHistoryState {
   replayStatus: AssistantSessionHistoryLoadStatus
   replayError: string | null
   replay: CopilotHistoryRunReplaySuccess | null
+  replayByRunId?: Record<string, CopilotHistoryRunReplaySuccess>
 }
 
 export function createEmptyAssistantSessionCapabilities(): AssistantSessionCapabilities {
@@ -65,6 +67,16 @@ export function createAssistantSessionShellFromHistorySummary(input: {
   }
 }
 
+export function createAssistantSessionHistoryStateFromSessionShell(
+  sessionShell: AssistantSessionShell,
+  selectedRunId: string | null,
+): AssistantSessionHistoryState {
+  return createAssistantSessionHistoryState(
+    createAssistantHistorySummaryFromSessionShell(sessionShell),
+    selectedRunId,
+  )
+}
+
 export function syncAssistantSessionShellBoundAgent(
   sessionShell: AssistantSessionShell,
   agents: AgentType[],
@@ -101,16 +113,50 @@ export function createAssistantSessionHistoryState(
 ): AssistantSessionHistoryState {
   return {
     summary: { ...summary },
+    hasLoadedDetail: false,
     detailStatus: 'idle',
     detailError: null,
     timelineItems: [],
     runSummaries: [],
     latestConfigurationSnapshot: null,
     availabilityDrift: null,
-    selectedRunId: selectedRunId ?? summary.lastRunId,
+    selectedRunId: resolveAssistantSessionSelectedRunId({
+      persistedSelectedRunId: selectedRunId,
+      fallbackRunId: summary.lastRunId,
+    }),
     replayStatus: 'idle',
     replayError: null,
     replay: null,
+    replayByRunId: {},
+  }
+}
+
+export function syncAssistantSessionHistorySummary(
+  state: AssistantSessionHistoryState,
+  summary: CopilotHistoryThreadSummary,
+  selectedRunId: string | null,
+): AssistantSessionHistoryState {
+  const nextSelectedRunId = resolveAssistantSessionSelectedRunId({
+    persistedSelectedRunId: selectedRunId,
+    currentSelectedRunId: state.selectedRunId,
+    runSummaries: state.runSummaries,
+    fallbackRunId: summary.lastRunId,
+  })
+  const replayForSelectedRun = getAssistantSessionHistoryReplayForRun(state, nextSelectedRunId)
+
+  return {
+    ...state,
+    summary: { ...summary },
+    selectedRunId: nextSelectedRunId,
+    replayStatus: replayForSelectedRun !== null
+      ? 'ready'
+      : nextSelectedRunId === null
+        ? 'idle'
+        : state.selectedRunId === nextSelectedRunId
+          ? state.replayStatus
+          : 'idle',
+    replayError: state.selectedRunId === nextSelectedRunId ? state.replayError : null,
+    replay: replayForSelectedRun ?? state.replay,
   }
 }
 
@@ -121,9 +167,6 @@ export function retryAssistantSessionHistoryDetail(
     ...state,
     detailStatus: 'idle',
     detailError: null,
-    replayStatus: 'idle',
-    replayError: null,
-    replay: null,
   }
 }
 
@@ -134,7 +177,7 @@ export function retryAssistantSessionHistoryReplay(
     ...state,
     replayStatus: 'idle',
     replayError: null,
-    replay: null,
+    replay: getAssistantSessionHistoryReplayForRun(state, state.selectedRunId) ?? state.replay,
   }
 }
 
@@ -153,15 +196,17 @@ export function applyAssistantSessionHistoryDetail(
   detail: CopilotHistoryThreadDetailSuccess,
 ): AssistantSessionHistoryState {
   const runSummaries = detail.runSummaries.map((runSummary) => ({ ...runSummary }))
-  const selectedRunId = runSummaries.some((runSummary) => runSummary.runId === state.selectedRunId)
-    ? state.selectedRunId
-    : detail.thread.lastRunId
-      ?? runSummaries[runSummaries.length - 1]?.runId
-      ?? null
+  const selectedRunId = resolveAssistantSessionSelectedRunId({
+    currentSelectedRunId: state.selectedRunId,
+    runSummaries,
+    fallbackRunId: detail.thread.lastRunId,
+  })
+  const replayForSelectedRun = getAssistantSessionHistoryReplayForRun(state, selectedRunId)
 
   return {
     ...state,
     summary: { ...detail.thread },
+    hasLoadedDetail: true,
     detailStatus: 'ready',
     detailError: null,
     timelineItems: detail.timelineItems.map((item) => ({ ...item })),
@@ -173,6 +218,15 @@ export function applyAssistantSessionHistoryDetail(
       ? null
       : { ...detail.availabilityDrift },
     selectedRunId,
+    replayStatus: replayForSelectedRun !== null
+      ? 'ready'
+      : selectedRunId === null
+        ? 'idle'
+        : state.selectedRunId === selectedRunId
+          ? state.replayStatus
+          : 'idle',
+    replayError: state.selectedRunId === selectedRunId ? state.replayError : null,
+    replay: replayForSelectedRun ?? state.replay,
   }
 }
 
@@ -187,6 +241,29 @@ export function setAssistantSessionHistoryDetailError(
   }
 }
 
+export function selectAssistantSessionHistoryRun(
+  state: AssistantSessionHistoryState,
+  runId: string | null,
+): AssistantSessionHistoryState {
+  const nextSelectedRunId = normalizeOptionalString(runId)
+  if (nextSelectedRunId === state.selectedRunId) {
+    return state.replayStatus === 'error'
+      ? retryAssistantSessionHistoryReplay(state)
+      : state
+  }
+
+  const replayForSelectedRun = getAssistantSessionHistoryReplayForRun(state, nextSelectedRunId)
+  return {
+    ...state,
+    selectedRunId: nextSelectedRunId,
+    replayStatus: replayForSelectedRun !== null
+      ? 'ready'
+      : 'idle',
+    replayError: null,
+    replay: replayForSelectedRun ?? state.replay,
+  }
+}
+
 export function setAssistantSessionHistoryReplayLoading(
   state: AssistantSessionHistoryState,
 ): AssistantSessionHistoryState {
@@ -194,6 +271,7 @@ export function setAssistantSessionHistoryReplayLoading(
     ...state,
     replayStatus: 'loading',
     replayError: null,
+    replay: getAssistantSessionHistoryReplayForRun(state, state.selectedRunId) ?? state.replay,
   }
 }
 
@@ -201,25 +279,17 @@ export function applyAssistantSessionHistoryReplay(
   state: AssistantSessionHistoryState,
   replay: CopilotHistoryRunReplaySuccess,
 ): AssistantSessionHistoryState {
+  const nextReplay = cloneAssistantSessionHistoryReplay(replay)
+
   return {
     ...state,
     selectedRunId: replay.run.runId,
     replayStatus: 'ready',
     replayError: null,
-    replay: {
-      ...replay,
-      run: { ...replay.run },
-      historicalSnapshot: replay.historicalSnapshot === null ? null : { ...replay.historicalSnapshot },
-      orderedEvents: replay.orderedEvents.map((event) => ({
-        ...event,
-        payload: { ...event.payload },
-      })),
-      toolCallBlocks: replay.toolCallBlocks.map((block) => ({ ...block })),
-      diagnosticBlocks: replay.diagnosticBlocks.map((block) => ({ ...block })),
-      terminalState: replay.terminalState === null ? null : { ...replay.terminalState },
-      availabilityInterpretation: replay.availabilityInterpretation === null
-        ? null
-        : { ...replay.availabilityInterpretation },
+    replay: nextReplay,
+    replayByRunId: {
+      ...(state.replayByRunId ?? {}),
+      [replay.run.runId]: nextReplay,
     },
   }
 }
@@ -232,6 +302,7 @@ export function setAssistantSessionHistoryReplayError(
     ...state,
     replayStatus: 'error',
     replayError: error,
+    replay: getAssistantSessionHistoryReplayForRun(state, state.selectedRunId) ?? state.replay,
   }
 }
 
@@ -254,6 +325,29 @@ export function resolveAssistantHistoryBoundAgent(boundAgentId: string, agents: 
   }
 }
 
+function createAssistantHistorySummaryFromSessionShell(
+  sessionShell: AssistantSessionShell,
+): CopilotHistoryThreadSummary {
+  const title = normalizeOptionalString(sessionShell.title)
+
+  return {
+    threadId: sessionShell.sessionId,
+    boundAgentId: sessionShell.boundAgent.id,
+    title,
+    titleSource: title === null ? null : 'session-shell',
+    summary: null,
+    summarySource: null,
+    createdAt: sessionShell.createdAt,
+    updatedAt: sessionShell.updatedAt,
+    lastActivityAt: sessionShell.updatedAt,
+    lastRunId: null,
+    lastRunStatus: null,
+    lastUserMessagePreview: null,
+    lastAssistantMessagePreview: null,
+    driftSummary: null,
+  }
+}
+
 function resolveAssistantHistorySessionTitle(summary: CopilotHistoryThreadSummary): string {
   const title = summary.title?.trim()
   if (title) {
@@ -271,4 +365,82 @@ function resolveAssistantHistorySessionTitle(summary: CopilotHistoryThreadSummar
   }
 
   return summary.boundAgentId.trim() || '历史会话'
+}
+
+function resolveAssistantSessionSelectedRunId(input: {
+  persistedSelectedRunId?: string | null
+  currentSelectedRunId?: string | null
+  runSummaries?: CopilotHistoryRunSummary[]
+  fallbackRunId?: string | null
+}): string | null {
+  const availableRunIds = new Set(
+    (input.runSummaries ?? [])
+      .map((runSummary) => normalizeOptionalString(runSummary.runId))
+      .filter((runId): runId is string => runId !== null),
+  )
+  const candidates = [
+    normalizeOptionalString(input.persistedSelectedRunId),
+    normalizeOptionalString(input.currentSelectedRunId),
+    normalizeOptionalString(input.fallbackRunId),
+    input.runSummaries?.[input.runSummaries.length - 1]?.runId ?? null,
+  ]
+
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizeOptionalString(candidate)
+    if (normalizedCandidate === null) {
+      continue
+    }
+
+    if (availableRunIds.size === 0 || availableRunIds.has(normalizedCandidate)) {
+      return normalizedCandidate
+    }
+  }
+
+  return null
+}
+
+function getAssistantSessionHistoryReplayForRun(
+  state: AssistantSessionHistoryState,
+  runId: string | null,
+): CopilotHistoryRunReplaySuccess | null {
+  const normalizedRunId = normalizeOptionalString(runId)
+  if (normalizedRunId === null) {
+    return null
+  }
+
+  const cachedReplay = state.replayByRunId?.[normalizedRunId]
+  if (cachedReplay !== undefined) {
+    return cloneAssistantSessionHistoryReplay(cachedReplay)
+  }
+
+  if (state.replay?.run.runId === normalizedRunId) {
+    return cloneAssistantSessionHistoryReplay(state.replay)
+  }
+
+  return null
+}
+
+function cloneAssistantSessionHistoryReplay(
+  replay: CopilotHistoryRunReplaySuccess,
+): CopilotHistoryRunReplaySuccess {
+  return {
+    ...replay,
+    run: { ...replay.run },
+    historicalSnapshot: replay.historicalSnapshot === null ? null : { ...replay.historicalSnapshot },
+    orderedEvents: replay.orderedEvents.map((event) => ({
+      ...event,
+      payload: { ...event.payload },
+    })),
+    toolCallBlocks: replay.toolCallBlocks.map((block) => ({ ...block })),
+    diagnosticBlocks: replay.diagnosticBlocks.map((block) => ({ ...block })),
+    terminalState: replay.terminalState === null ? null : { ...replay.terminalState },
+    availabilityInterpretation: replay.availabilityInterpretation === null
+      ? null
+      : { ...replay.availabilityInterpretation },
+  }
+}
+
+function normalizeOptionalString(value: string | null | undefined): string | null {
+  const normalizedValue = value?.trim() ?? ''
+  return normalizedValue === '' ? null : normalizedValue
 }

@@ -37,12 +37,15 @@ import {
   applyAssistantSessionHistoryDetail,
   applyAssistantSessionHistoryReplay,
   createAssistantSessionHistoryState,
+  createAssistantSessionHistoryStateFromSessionShell,
   retryAssistantSessionHistoryDetail,
   retryAssistantSessionHistoryReplay,
+  selectAssistantSessionHistoryRun,
   setAssistantSessionHistoryDetailError,
   setAssistantSessionHistoryDetailLoading,
   setAssistantSessionHistoryReplayError,
   setAssistantSessionHistoryReplayLoading,
+  syncAssistantSessionHistorySummary,
   syncAssistantSessionShellBoundAgent,
   type AssistantSessionHistoryState,
 } from './assistant-history-state'
@@ -95,6 +98,8 @@ interface UseAssistantWorkspaceStateResult {
   selectAgent: (agentId: string | null) => void
   handleCreateSession: () => Promise<void>
   retryActiveSessionHistoryLoad: () => void
+  selectActiveSessionHistoryRun: (runId: string | null) => void
+  handleActiveSessionRunSettled: (runId: string | null) => void
   handleSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   handleSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
@@ -125,6 +130,7 @@ export function useAssistantWorkspaceState({
   const restoredRuntimeUrlRef = useRef<string | null>(null)
   const persistedShellStateRef = useRef(loadShellStateImpl())
   const [sessionHistoryById, setSessionHistoryById] = useState<Record<string, AssistantSessionHistoryState>>({})
+  const historyListRequestVersionRef = useRef(0)
   const historyDetailRequestVersionRef = useRef<Record<string, number>>({})
   const historyReplayRequestVersionRef = useRef<Record<string, number>>({})
   const historyRestoreRetryTimerRef = useRef<number | null>(null)
@@ -238,6 +244,35 @@ export function useAssistantWorkspaceState({
     ? null
     : sessionHistoryById[sessionShell.sessionId] ?? null
 
+  useEffect(() => {
+    setSessionHistoryById((current) => {
+      let hasChanged = false
+      const nextState = { ...current }
+      const sessionIds = new Set(sessionListState.sessions.map((sessionEntry) => sessionEntry.sessionId))
+
+      for (const sessionEntry of sessionListState.sessions) {
+        if (nextState[sessionEntry.sessionId] !== undefined) {
+          continue
+        }
+
+        const selectedRunId = persistedShellStateRef.current.selectedRunIdByThreadId[sessionEntry.sessionId] ?? null
+        nextState[sessionEntry.sessionId] = createAssistantSessionHistoryStateFromSessionShell(sessionEntry, selectedRunId)
+        hasChanged = true
+      }
+
+      for (const sessionId of Object.keys(nextState)) {
+        if (sessionIds.has(sessionId)) {
+          continue
+        }
+
+        delete nextState[sessionId]
+        hasChanged = true
+      }
+
+      return hasChanged ? nextState : current
+    })
+  }, [sessionListState.sessions])
+
   const retryActiveSessionHistoryLoad = useCallback(() => {
     if (sessionShell === null) {
       return
@@ -245,6 +280,47 @@ export function useAssistantWorkspaceState({
 
     retrySessionHistoryLoad(sessionShell.sessionId)
   }, [retrySessionHistoryLoad, sessionShell])
+
+  const selectActiveSessionHistoryRun = useCallback((runId: string | null) => {
+    if (sessionShell === null) {
+      return
+    }
+
+    setSessionHistoryById((current) => {
+      const historyState = current[sessionShell.sessionId]
+      if (historyState === undefined) {
+        return current
+      }
+
+      const nextHistoryState = selectAssistantSessionHistoryRun(historyState, runId)
+      return nextHistoryState === historyState
+        ? current
+        : {
+            ...current,
+            [sessionShell.sessionId]: nextHistoryState,
+          }
+    })
+  }, [sessionShell])
+
+  const handleActiveSessionRunSettled = useCallback((runId: string | null) => {
+    if (sessionShell === null) {
+      return
+    }
+
+    setSessionHistoryById((current) => {
+      const historyState = current[sessionShell.sessionId]
+        ?? createAssistantSessionHistoryStateFromSessionShell(sessionShell, runId)
+      const nextHistoryState = retryAssistantSessionHistoryDetail(
+        selectAssistantSessionHistoryRun(historyState, runId),
+      )
+
+      return {
+        ...current,
+        [sessionShell.sessionId]: nextHistoryState,
+      }
+    })
+    setHistoryRestoreRetryKey((current) => current + 1)
+  }, [sessionShell])
 
   const handleCreateSession = useCallback(async () => {
     dismissManagedSessionContextMenu()
@@ -306,10 +382,13 @@ export function useAssistantWorkspaceState({
     }
 
     const runtimeUrl = bootstrap.state.runtimeUrl
-    if (restoredRuntimeUrlRef.current === runtimeUrl) {
+    const restoreKey = `${runtimeUrl}:${historyRestoreRetryKey}`
+    if (restoredRuntimeUrlRef.current === restoreKey) {
       return
     }
 
+    const requestVersion = historyListRequestVersionRef.current + 1
+    historyListRequestVersionRef.current = requestVersion
     let cancelled = false
 
     void (async () => {
@@ -318,7 +397,7 @@ export function useAssistantWorkspaceState({
       try {
         const historyResult = await listHistoryThreadsImpl()
 
-        if (cancelled || !isMountedRef.current) {
+        if (cancelled || !isMountedRef.current || historyListRequestVersionRef.current !== requestVersion) {
           return
         }
 
@@ -351,11 +430,21 @@ export function useAssistantWorkspaceState({
           }
         })
         setSessionHistoryById((current) => {
-          const nextState = { ...current }
+          const nextState: Record<string, AssistantSessionHistoryState> = {}
           for (const summary of historyResult.threads) {
             const selectedRunId = persistedShellState.selectedRunIdByThreadId[summary.threadId] ?? null
-            nextState[summary.threadId] = createAssistantSessionHistoryState(summary, selectedRunId)
+            const currentHistoryState = current[summary.threadId]
+            nextState[summary.threadId] = currentHistoryState === undefined
+              ? createAssistantSessionHistoryState(summary, selectedRunId)
+              : syncAssistantSessionHistorySummary(currentHistoryState, summary, selectedRunId)
           }
+
+          for (const [sessionId, historyState] of Object.entries(current)) {
+            if (nextState[sessionId] === undefined) {
+              nextState[sessionId] = historyState
+            }
+          }
+
           return nextState
         })
 
@@ -367,9 +456,9 @@ export function useAssistantWorkspaceState({
         }
 
         clearHistoryRestoreRetry()
-        restoredRuntimeUrlRef.current = runtimeUrl
+        restoredRuntimeUrlRef.current = restoreKey
       } catch {
-        if (cancelled || !isMountedRef.current) {
+        if (cancelled || !isMountedRef.current || historyListRequestVersionRef.current !== requestVersion) {
           return
         }
 
@@ -565,10 +654,12 @@ export function useAssistantWorkspaceState({
       }),
     )
 
-    persistShellStateImpl({
+    const nextShellState = {
       selectedThreadId: sessionListState.activeSessionId,
       selectedRunIdByThreadId,
-    })
+    }
+    persistedShellStateRef.current = nextShellState
+    persistShellStateImpl(nextShellState)
   }, [persistShellStateImpl, sessionHistoryById, sessionListState.activeSessionId])
 
   return {
@@ -594,6 +685,8 @@ export function useAssistantWorkspaceState({
     selectAgent,
     handleCreateSession,
     retryActiveSessionHistoryLoad,
+    selectActiveSessionHistoryRun,
+    handleActiveSessionRunSettled,
     handleSessionPointerDown,
     handleSessionClick,
     handleSessionContextMenu,

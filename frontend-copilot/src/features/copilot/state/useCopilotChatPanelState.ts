@@ -79,6 +79,8 @@ export interface CopilotChatPanelShellProps {
   sessionError: string | null
   sessionHistory?: AssistantSessionHistoryState | null
   retrySessionHistory?: () => void
+  selectSessionHistoryRun?: (runId: string | null) => void
+  onSessionRunSettled?: (runId: string | null) => void
   sendMessage?: typeof dispatchCopilotMessage
   cancelRun?: typeof cancelRuntimeRun
   getThinkingCapability?: typeof getRuntimeThinkingCapability
@@ -112,6 +114,8 @@ export function useCopilotChatPanelState({
   sessionShell,
   directoryState,
   sessionHistory = null,
+  selectSessionHistoryRun,
+  onSessionRunSettled,
   sendMessage = dispatchCopilotMessage,
   cancelRun = cancelRuntimeRun,
   getThinkingCapability = getRuntimeThinkingCapability,
@@ -130,6 +134,8 @@ export function useCopilotChatPanelState({
   const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
   const activeAbortControllerRef = useRef<AbortController | null>(null)
   const [historyRebindAcknowledged, setHistoryRebindAcknowledged] = useState(false)
+  const pendingHistorySyncRunIdRef = useRef<string | null>(null)
+  const lastSettledRunIdRef = useRef<string | null>(null)
 
   const sessionIdentity = sessionShell === null
     ? null
@@ -200,15 +206,40 @@ export function useCopilotChatPanelState({
     () => buildPersistedConversationFromHistory(sessionHistory),
     [sessionHistory],
   )
+  const shouldRenderTransientConversation = useMemo(() => {
+    if (sessionHistory === null || sessionHistory.detailStatus !== 'ready') {
+      return conversation.length > 0 || runState.phase !== 'idle'
+    }
+
+    if (runState.phase === 'starting' || runState.phase === 'streaming') {
+      return true
+    }
+
+    if (conversation.length > 0 && runState.runId === null) {
+      return true
+    }
+
+    const runId = runState.runId?.trim() ?? ''
+    if (runId === '') {
+      return false
+    }
+
+    const persistedRunIds = new Set(sessionHistory.runSummaries.map((runSummary) => runSummary.runId))
+    if (!persistedRunIds.has(runId)) {
+      return true
+    }
+
+    return sessionHistory.selectedRunId === runId && sessionHistory.replayStatus !== 'ready'
+  }, [conversation.length, runState.phase, runState.runId, sessionHistory])
   const projectedConversation = useMemo(
     () => [
       ...persistedConversation,
       ...buildCopilotMessageListItems({
-        history: conversation,
-        runState,
+        history: shouldRenderTransientConversation ? conversation : [],
+        runState: shouldRenderTransientConversation ? runState : createIdleCopilotRunState(),
       }),
     ],
-    [conversation, persistedConversation, runState],
+    [conversation, persistedConversation, runState, shouldRenderTransientConversation],
   )
   const assistantPlaceholder = useMemo(
     () => resolveCopilotAssistantPlaceholderState(runState),
@@ -254,6 +285,58 @@ export function useCopilotChatPanelState({
   useEffect(() => {
     setHistoryRebindAcknowledged(false)
   }, [historyDriftResetKey])
+
+  useEffect(() => {
+    pendingHistorySyncRunIdRef.current = null
+    lastSettledRunIdRef.current = null
+  }, [sessionShell?.sessionId])
+
+  useEffect(() => {
+    if (runState.phase !== 'completed' && runState.phase !== 'failed' && runState.phase !== 'cancelled') {
+      return
+    }
+
+    const runId = runState.runId?.trim() ?? ''
+    if (runId === '' || lastSettledRunIdRef.current === runId) {
+      return
+    }
+
+    lastSettledRunIdRef.current = runId
+    pendingHistorySyncRunIdRef.current = runId
+    onSessionRunSettled?.(runId)
+  }, [onSessionRunSettled, runState.phase, runState.runId])
+
+  useEffect(() => {
+    const pendingRunId = pendingHistorySyncRunIdRef.current
+    if (pendingRunId === null || sessionHistory === null || sessionHistory.detailStatus !== 'ready') {
+      return
+    }
+
+    if (!sessionHistory.runSummaries.some((runSummary) => runSummary.runId === pendingRunId)) {
+      return
+    }
+
+    pendingHistorySyncRunIdRef.current = null
+    setConversation([])
+    setRunState((current) => current.runId === pendingRunId ? createIdleCopilotRunState() : current)
+  }, [sessionHistory])
+
+  useEffect(() => {
+    if (selectSessionHistoryRun === undefined || sessionHistory === null || sessionHistory.selectedRunId === null) {
+      return
+    }
+
+    if (runState.phase === 'starting' || runState.phase === 'streaming') {
+      return
+    }
+
+    if (runState.runId === null || runState.runId === sessionHistory.selectedRunId) {
+      return
+    }
+
+    setConversation([])
+    setRunState(createIdleCopilotRunState())
+  }, [runState.phase, runState.runId, selectSessionHistoryRun, sessionHistory])
 
   useEffect(() => {
     let cancelled = false

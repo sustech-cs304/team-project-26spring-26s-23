@@ -47,6 +47,7 @@ export interface CopilotPanelShellProps {
   sessionError: string | null
   sessionHistory?: AssistantSessionHistoryState | null
   onRetrySessionHistory?: () => void
+  onSelectSessionHistoryRun?: (runId: string | null) => void
   sendError: CopilotTransientErrorState | null
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
@@ -189,6 +190,10 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           acknowledged: props.historyRebindAcknowledged,
           onAcknowledge: props.onAcknowledgeHistoryRebind,
         })}
+        {shouldRenderMessageSurface && renderPersistedHistoryRunSelector({
+          sessionHistory: props.sessionHistory,
+          onSelectSessionHistoryRun: props.onSelectSessionHistoryRun,
+        })}
         {persistedHistoryViewState === 'loading'
           ? renderPersistedHistoryLoading()
           : persistedHistoryViewState === 'error'
@@ -237,7 +242,7 @@ function resolvePersistedHistoryViewState(
     return 'none'
   }
 
-  if (sessionHistory.detailStatus === 'ready') {
+  if (sessionHistory.detailStatus === 'ready' || sessionHistory.hasLoadedDetail === true) {
     return 'ready'
   }
 
@@ -302,6 +307,53 @@ function renderPersistedHistoryRetryPrompt(onRetrySessionHistory?: () => void) {
       历史消息加载失败，点击重试
     </button>
   )
+}
+
+function renderPersistedHistoryRunSelector(input: {
+  sessionHistory: AssistantSessionHistoryState | null | undefined
+  onSelectSessionHistoryRun?: (runId: string | null) => void
+}) {
+  const sessionHistory = input.sessionHistory
+  if (
+    sessionHistory === null
+    || sessionHistory === undefined
+    || sessionHistory.runSummaries.length < 2
+    || (sessionHistory.detailStatus !== 'ready' && sessionHistory.hasLoadedDetail !== true)
+  ) {
+    return null
+  }
+
+  return (
+    <label className="copilot-panel__description" data-testid="chat-history-run-selector-label">
+      <span>查看运行版本</span>
+      <select
+        data-testid="chat-history-run-selector"
+        value={sessionHistory.selectedRunId ?? ''}
+        disabled={input.onSelectSessionHistoryRun === undefined}
+        onChange={(event) => {
+          input.onSelectSessionHistoryRun?.(event.target.value === '' ? null : event.target.value)
+        }}
+      >
+        {sessionHistory.runSummaries.map((runSummary, index) => (
+          <option key={runSummary.runId} value={runSummary.runId}>
+            {formatPersistedHistoryRunOptionLabel(runSummary, index)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function formatPersistedHistoryRunOptionLabel(
+  runSummary: AssistantSessionHistoryState['runSummaries'][number],
+  index: number,
+): string {
+  const statusLabel = runSummary.status.trim() === '' ? 'unknown' : runSummary.status
+  const modelLabel = runSummary.resolvedModelId?.trim() ?? ''
+  const assistantPreview = runSummary.assistantText?.trim() ?? ''
+  const previewLabel = assistantPreview === '' ? '' : ` · ${assistantPreview.slice(0, 18)}`
+
+  return `#${index + 1} · ${statusLabel}${modelLabel === '' ? '' : ` · ${modelLabel}`}${previewLabel}`
 }
 
 function renderHistoryDriftNotice(input: {
