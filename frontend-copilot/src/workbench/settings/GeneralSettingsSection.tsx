@@ -1,7 +1,5 @@
-import { getGeneralSettingsCopy, getProxyModeOptions } from '../locale'
+import { getGeneralSettingsCopy, getLanguageOptions, getProxyModeOptions } from '../locale'
 import { SelectField, ToggleSwitch } from '../components/FormFields'
-
-import { languageOptions } from './config'
 
 interface GeneralSettingsSectionProps {
   language: string
@@ -29,6 +27,7 @@ export function GeneralSettingsSection({
   onDebugModeEnabledChange,
 }: GeneralSettingsSectionProps) {
   const copy = getGeneralSettingsCopy(language)
+  const languageOptions = getLanguageOptions(language)
   const proxyModeOptions = getProxyModeOptions(language)
 
   return (

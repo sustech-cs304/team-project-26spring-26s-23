@@ -1345,7 +1345,7 @@ export function getLanguageOptions(language: string): SelectOption[] {
 
   return [
     { value: 'zh-CN', label: '简体中文' },
-    { value: 'en-US', label: 'English' },
+    { value: 'en-US', label: '英语' },
   ]
 }
 
