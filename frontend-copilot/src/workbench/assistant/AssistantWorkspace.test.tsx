@@ -222,6 +222,16 @@ describe('AssistantWorkspace render + interactions', () => {
       sessionHistory: expect.objectContaining({
         isPersistedThread: false,
       }),
+      runtimeControllerBySessionId: expect.objectContaining({
+        'thread-live': expect.objectContaining({
+          runState: expect.objectContaining({
+            phase: 'idle',
+          }),
+          composerDraft: expect.objectContaining({
+            messageText: '',
+          }),
+        }),
+      }),
     })
 
     includePersistedLiveSession = true
@@ -305,6 +315,10 @@ describe('AssistantWorkspace render + interactions', () => {
     ))
 
     expect(getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null).toBeNull()
+    expect(getLastMockCopilotChatPanelProps().runtimeControllerBySessionId).toEqual(expect.objectContaining({
+      'thread-live': expect.any(Object),
+      'thread-new': expect.any(Object),
+    }))
 
     includePersistedLiveSession = true
     await act(async () => {
@@ -1384,6 +1398,14 @@ function getLastMockCopilotChatPanelProps(): {
   }
   selectSessionHistoryRun?: (runId: string | null) => void
   onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
+  runtimeControllerBySessionId?: Record<string, {
+    composerDraft?: {
+      messageText?: string
+    }
+    runState?: {
+      phase?: string
+    }
+  }>
 } {
   const props = mockCopilotChatPanel.mock.calls[mockCopilotChatPanel.mock.calls.length - 1]?.[0]
   if (props === undefined) {
@@ -1404,6 +1426,14 @@ function getLastMockCopilotChatPanelProps(): {
     }
     selectSessionHistoryRun?: (runId: string | null) => void
     onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
+    runtimeControllerBySessionId?: Record<string, {
+      composerDraft?: {
+        messageText?: string
+      }
+      runState?: {
+        phase?: string
+      }
+    }>
   }
 }
 

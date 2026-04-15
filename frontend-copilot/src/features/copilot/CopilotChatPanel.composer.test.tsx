@@ -936,6 +936,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
+    expect(rendered.container.textContent).not.toContain('旧话题问题')
+    expect(rendered.container.textContent).not.toContain('旧话题回复')
+
     settleOldRun.release()
     await waitForCondition(
       () => onSessionRunSettled.mock.calls.length === 1,
@@ -946,6 +949,26 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.container.textContent).not.toContain('旧话题问题')
     expect(rendered.container.textContent).not.toContain('旧话题回复')
     expect(rendered.queryByTestId('chat-assistant-placeholder')).toBeNull()
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        onSessionRunSettled={onSessionRunSettled}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await waitForText(rendered.container, '旧话题问题')
+    expect(rendered.container.textContent).toContain('旧话题回复')
 
     rendered.unmount()
   })
@@ -1189,18 +1212,19 @@ describe('CopilotChatPanel composer interactions', () => {
       && entry.nextSessionId === 'session-1'
       && entry.nextTransientConversationLength === 1
     ))
-    const unexpectedWaitingLog = emittedDebugEntries.find((entry) => (
+    const matchingWaitingLog = emittedDebugEntries.find((entry) => (
       entry.scope === 'copilot-chat-panel'
       && entry.event === 'pending-history-sync-waiting'
       && entry.sessionId === 'session-1'
       && entry.pendingRunId === 'run-1'
+      && entry.waitReason === 'selected-run-missing-from-detail'
     ))
  
     expect(matchingSettledLog).toBeDefined()
     expect(matchingForwardSwitchLog).toBeDefined()
     expect(matchingCommittedSyncLog).toBeDefined()
     expect(matchingReturnSwitchLog).toBeDefined()
-    expect(unexpectedWaitingLog).toBeUndefined()
+    expect(matchingWaitingLog).toBeDefined()
 
     rendered.unmount()
   })
