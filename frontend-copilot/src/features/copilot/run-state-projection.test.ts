@@ -137,6 +137,95 @@ describe('run state projection', () => {
     })
   })
 
+  it('keeps failed tool turns visible without projecting a terminal error when the run later completes', () => {
+    const projectedTurns = projectConversationTurnsFromRunState({
+      userTurns: [{
+        id: 'user:1',
+        kind: 'user',
+        title: '',
+        content: '请解释这次工具失败',
+        status: 'completed',
+      }],
+      runState: {
+        ...createIdleCopilotRunState(),
+        phase: 'completed',
+        runId: 'run-tool-recovered',
+        threadId: 'session-1',
+        resolvedModelId: 'qwen-plus',
+        resolvedModelRoute: createRuntimeModelRoute(),
+        resolvedToolIds: ['tool.weather-current'],
+        requestOptions: { trace: true },
+        segments: [
+          {
+            id: 'tool:run-tool-recovered:tool.weather-current:call-1',
+            kind: 'tool',
+            runId: 'run-tool-recovered',
+            startedSequence: 2,
+            lastSequence: 3,
+            status: 'failed',
+            toolCallId: 'tool.weather-current:call-1',
+            toolId: 'tool.weather-current',
+            toolPhase: 'failed',
+            title: '工具调用失败',
+            summary: '工具执行失败。',
+            inputSummary: '{"location":"Shenzhen"}',
+            resultSummary: null,
+            errorSummary: 'boom',
+          },
+          {
+            id: 'assistant:run-tool-recovered:1',
+            kind: 'assistant',
+            runId: 'run-tool-recovered',
+            assistantMessageId: 'run-tool-recovered:assistant',
+            text: '我可以解释失败并继续。',
+            firstContentSequence: 4,
+            startedSequence: 4,
+            lastSequence: 5,
+            status: 'completed',
+            resolvedModelId: 'qwen-plus',
+            resolvedModelRoute: createRuntimeModelRoute(),
+            resolvedToolIds: ['tool.weather-current'],
+            requestOptions: { trace: true },
+          },
+          {
+            id: 'terminal:run-tool-recovered:completed',
+            kind: 'terminal',
+            runId: 'run-tool-recovered',
+            startedSequence: 5,
+            lastSequence: 5,
+            status: 'completed',
+            terminalPhase: 'completed',
+            assistantMessageId: 'run-tool-recovered:assistant',
+            cancelReason: null,
+            failure: null,
+            resolvedModelId: 'qwen-plus',
+            resolvedModelRoute: createRuntimeModelRoute(),
+            resolvedToolIds: ['tool.weather-current'],
+            requestOptions: { trace: true },
+          },
+        ],
+      },
+    })
+
+    expect(projectedTurns.map((turn) => turn.kind)).toEqual([
+      'user',
+      'tool',
+      'assistant',
+    ])
+    expect(projectedTurns[1]).toMatchObject({
+      kind: 'tool',
+      content: '工具执行失败。',
+      status: 'failed',
+      errorSummary: 'boom',
+    })
+    expect(projectedTurns[2]).toMatchObject({
+      kind: 'assistant',
+      content: '我可以解释失败并继续。',
+      status: 'completed',
+    })
+    expect(projectedTurns.find((turn) => turn.kind === 'error')).toBeUndefined()
+  })
+
   it('preserves explicit authentication failure guidance when projecting failed runs', () => {
     const projectedTurns = projectConversationTurnsFromRunState({
       userTurns: [],

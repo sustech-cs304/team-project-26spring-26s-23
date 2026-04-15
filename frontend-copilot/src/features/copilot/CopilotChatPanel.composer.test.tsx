@@ -1011,7 +1011,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('keeps a failed tool step visible when the runtime emits tool_event failed', async () => {
+  it('keeps a failed tool step visible when the runtime emits tool_event failed before run_completed', async () => {
     const sendMessage = createToolFailureSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
@@ -1038,9 +1038,11 @@ describe('CopilotChatPanel composer interactions', () => {
     await setFormControlValue(messageInput, '请调用天气工具')
     await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
     await waitForText(rendered.container, '工具调用失败')
+    await waitForText(rendered.container, '我可以解释工具失败并继续')
 
     expect(rendered.container.textContent).not.toContain('工具执行失败。')
-    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).not.toContain('发送失败')
+    expect(rendered.container.textContent).toContain('我可以解释工具失败并继续')
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--failed')).toHaveLength(1)
 
     await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
@@ -1610,58 +1612,87 @@ function createToolLifecycleSendMessageSpy() {
 }
 
 function createToolFailureSendMessageSpy() {
-  return vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
-    {
-      type: 'run_started',
-      runId: 'run-tool-failed',
-      sessionId: input.sessionId,
-      sequence: 1,
-      payload: {
-        assistantMessageId: 'run-tool-failed:assistant',
-      },
-    },
-    createRuntimeToolEvent({
-      runId: 'run-tool-failed',
-      sessionId: input.sessionId,
-      sequence: 2,
-      payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
-        phase: 'started',
-        title: '调用天气工具',
-        summary: '正在获取 Shenzhen 的天气。',
-        inputSummary: '{"location":"Shenzhen"}',
-      },
-    }),
-    createRuntimeToolEvent({
-      runId: 'run-tool-failed',
-      sessionId: input.sessionId,
-      sequence: 3,
-      payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
-        phase: 'failed',
-        title: '工具调用失败',
-        summary: '工具执行失败。',
-        inputSummary: '{"location":"Shenzhen"}',
-        errorSummary: 'boom',
-      },
-    }),
-    {
-      type: 'run_failed',
-      runId: 'run-tool-failed',
-      sessionId: input.sessionId,
-      sequence: 4,
-      payload: {
-        code: 'tool_execution_failed',
-        message: 'Tool failed: boom',
-        details: {
-          toolId: 'tool.weather-current',
-          toolCallId: 'tool.weather-current:call-1',
+  return vi.fn((input: CopilotMessageDispatchInput) => {
+    const routeRef = input.modelRoute.routeRef ?? {
+      routeKind: 'provider-model' as const,
+      profileId: 'unknown-profile',
+      modelId: 'unknown-model',
+    }
+
+    return createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-tool-failed',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-tool-failed:assistant',
         },
       },
-    },
-  ]))
+      createRuntimeToolEvent({
+        runId: 'run-tool-failed',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'started',
+          title: '调用天气工具',
+          summary: '正在获取 Shenzhen 的天气。',
+          inputSummary: '{"location":"Shenzhen"}',
+        },
+      }),
+      createRuntimeToolEvent({
+        runId: 'run-tool-failed',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'failed',
+          title: '工具调用失败',
+          summary: '工具执行失败。',
+          inputSummary: '{"location":"Shenzhen"}',
+          errorSummary: 'boom',
+        },
+      }),
+      {
+        type: 'text_delta',
+        runId: 'run-tool-failed',
+        sessionId: input.sessionId,
+        sequence: 4,
+        payload: {
+          assistantMessageId: 'run-tool-failed:assistant',
+          delta: '我可以解释工具失败并继续',
+        },
+      },
+      {
+        type: 'run_completed',
+        runId: 'run-tool-failed',
+        sessionId: input.sessionId,
+        sequence: 5,
+        payload: {
+          assistantMessageId: 'run-tool-failed:assistant',
+          assistantText: '我可以解释工具失败并继续',
+          resolvedModelId: routeRef.modelId,
+          resolvedModelRoute: createRuntimeResolvedModelRoute({
+            routeRef,
+            providerProfileId: routeRef.profileId,
+            provider: 'openai',
+            providerId: 'openai',
+            adapterId: 'openai',
+            endpointFamily: 'openai',
+            endpointType: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            modelId: routeRef.modelId,
+            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+          }),
+          resolvedToolIds: ['tool.weather-current'],
+          requestOptions: input.requestOptions ?? {},
+        },
+      },
+    ])
+  })
 }
 
 function createPersistedWorkspaceStateLoader() {

@@ -102,6 +102,99 @@ describe('run segment reducer', () => {
     })
   })
 
+  it('keeps failed tool steps visible while still allowing the run to complete', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const stateAfterEvents = [
+      {
+        type: 'run_started' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'started',
+          title: '调用天气工具',
+          summary: '正在获取 Shenzhen 的天气。',
+          inputSummary: '{"location":"Shenzhen"}',
+        },
+      }),
+      createRuntimeToolEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 3,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'failed',
+          title: '工具调用失败',
+          summary: '工具执行失败。',
+          inputSummary: '{"location":"Shenzhen"}',
+          errorSummary: 'boom',
+        },
+      }),
+      {
+        type: 'text_delta' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 4,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          delta: '我可以解释失败并继续。',
+        },
+      },
+      createRuntimeRunCompletedEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 5,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+          assistantText: '我可以解释失败并继续。',
+          resolvedModelId: 'qwen-plus',
+          resolvedModelRoute: createRuntimeModelRoute(),
+          resolvedToolIds: ['tool.weather-current'],
+          requestOptions: { trace: true },
+        },
+      }),
+    ].reduce(applyRuntimeRunEventToCopilotRunState, initialState)
+
+    expect(stateAfterEvents.phase).toBe('completed')
+    expect(stateAfterEvents.failure).toBeNull()
+    expect(stateAfterEvents.segments.map((segment) => segment.kind)).toEqual([
+      'tool',
+      'assistant',
+      'terminal',
+    ])
+    expect(stateAfterEvents.segments[0]).toMatchObject({
+      kind: 'tool',
+      status: 'failed',
+      toolPhase: 'failed',
+      errorSummary: 'boom',
+    })
+    expect(stateAfterEvents.segments[1]).toMatchObject({
+      kind: 'assistant',
+      text: '我可以解释失败并继续。',
+      status: 'completed',
+    })
+    expect(stateAfterEvents.segments[2]).toMatchObject({
+      kind: 'terminal',
+      terminalPhase: 'completed',
+    })
+  })
+
   it('keeps reasoning segments distinct from tool and assistant content', () => {
     const initialState = createStartingCopilotRunState({
       threadId: 'session-1',
