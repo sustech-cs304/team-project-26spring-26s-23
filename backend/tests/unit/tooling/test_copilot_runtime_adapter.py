@@ -169,18 +169,66 @@ def test_build_contract_runtime_binding_maps_success_and_runtime_context() -> No
     assert captured_invocation_contexts[0] == invocation_context
 
 
-def test_build_contract_runtime_binding_raises_runtime_error_for_failure_envelope() -> None:
+def test_build_contract_runtime_binding_returns_failure_envelope_for_contract_error() -> None:
     contract_tool = _RecordingContractTool(fail=True)
     binding = build_contract_runtime_binding(contract_tool)
 
-    with pytest.raises(RuntimeExecutableToolError) as exc_info:
-        asyncio.run(binding.execute({"keyword": ""}))
+    result = asyncio.run(binding.execute({"keyword": ""}))
 
-    assert exc_info.value.code == "invalid_input"
-    assert str(exc_info.value) == "keyword is required."
-    assert exc_info.value.details == {"field": "keyword"}
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "invalid_input",
+            "message": "keyword is required.",
+            "retryable": False,
+            "details": {"field": "keyword"},
+        },
+        "artifacts": [],
+        "metadata": {"toolId": "campus.course-search"},
+    }
     assert len(contract_tool.calls) == 1
     invocation_context = contract_tool.calls[0]["context"]
     assert invocation_context.invocation_id == "campus.course-search:direct"
     assert invocation_context.tool_id == "campus.course-search"
     assert invocation_context.run_id is None
+
+
+
+def test_build_contract_runtime_binding_keeps_runtime_error_for_missing_error_payload() -> None:
+    class _BrokenResult:
+        status = "error"
+        error = None
+
+        def to_dict(self) -> dict[str, Any]:
+            return {
+                "status": "error",
+                "artifacts": [],
+                "metadata": {"toolId": "campus.course-search"},
+            }
+
+    class _BrokenContractTool(_RecordingContractTool):
+        async def invoke(
+            self,
+            *,
+            arguments: dict[str, Any] | None,
+            context: ToolInvocationContext,
+            host: ToolHostCapabilities,
+        ) -> ToolResultEnvelope:
+            self.calls.append(
+                {
+                    "arguments": {} if arguments is None else dict(arguments),
+                    "context": context,
+                    "host": host,
+                }
+            )
+            return _BrokenResult()  # type: ignore[return-value]
+
+    contract_tool = _BrokenContractTool()
+    binding = build_contract_runtime_binding(contract_tool)
+
+    with pytest.raises(RuntimeExecutableToolError) as exc_info:
+        asyncio.run(binding.execute({"keyword": "数据库"}))
+
+    assert exc_info.value.code == "execution_failed"
+    assert str(exc_info.value) == "Tool returned an error result without a normalized error payload."
+    assert len(contract_tool.calls) == 1

@@ -558,6 +558,79 @@ def test_post_root_run_stream_includes_traceback_in_failed_tool_details(
 
 
 
+def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_bridge_payloads: list[dict[str, Any]] = []
+    captured_headers: list[str | None] = []
+
+    def _invalid_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+    ) -> Any:
+        _ = (username, password, keyword, field, operator, limit)
+        raise ValueError("keyword must be a non-empty string.")
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", _invalid_search)
+
+    app = _create_app(
+        host_capability_bridge_client=_create_recording_bridge_client(
+            captured_payloads=captured_bridge_payloads,
+            captured_headers=captured_headers,
+            secret_values={"sustech.username": "alice", "sustech.casPassword": "secret"},
+        )
+    )
+
+    with TestClient(app) as client:
+        assert app.state.copilot_runtime_agent_executor._tool_registry is app.state.copilot_runtime_tool_registry
+        _configure_contract_tool_test_model(
+            app,
+            tool_id="blackboard.course_catalog.search",
+            tool_arguments={
+                "keyword": "",
+                "username": "alice",
+                "password": "secret",
+            },
+            output_text="I can explain the failure and continue.",
+        )
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                model_id="gpt-4.1",
+                user_text="Search Blackboard course catalog.",
+                enabled_tools=["blackboard.course_catalog.search"],
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+    event_types = [event["type"] for event in events]
+    tool_events = [event for event in events if event["type"] == "tool_event"]
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert response.status_code == 200
+    assert event_types[0] == "run_started"
+    assert event_types[-1] == "run_completed"
+    assert "run_failed" not in event_types
+    assert event_types.count("tool_event") == 2
+    assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
+    assert tool_events[1]["payload"]["errorSummary"] == "keyword must be a non-empty string."
+    assert events[-1]["payload"]["assistantText"] == "I can explain the failure and continue."
+    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.course_catalog.search"]
+    assert captured_headers == ["bridge-token-123"] * len(captured_headers)
+
+
+
 def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_backed_host_capabilities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

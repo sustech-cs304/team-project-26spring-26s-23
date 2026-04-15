@@ -67,6 +67,7 @@ from .tool_registry import (
     summarize_tool_result,
 )
 from app.tooling.runtime_adapter.copilot_runtime import (
+    CONTRACT_RUNTIME_TOOL_KIND,
     RuntimeExecutableToolError,
     RuntimeToolExecutionContext,
     runtime_tool_execution_scope,
@@ -77,6 +78,19 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
     "You are the SUSTech Copilot backend assistant. "
     "Provide concise, accurate, text-only answers. "
     "Do not claim to have used tools when no tools are available."
+)
+_RECOVERABLE_CONTRACT_TOOL_ERROR_CODES = frozenset(
+    {
+        "authentication_required",
+        "cancelled",
+        "conflict",
+        "invalid_input",
+        "not_found",
+        "permission_denied",
+        "rate_limited",
+        "temporarily_unavailable",
+        "timeout",
+    }
 )
 ToolLifecyclePhase = Literal["started", "completed", "failed"]
 _EVENT_STREAM_DONE = object()
@@ -1429,6 +1443,114 @@ class PydanticAIAgentExecutor:
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
             ) from exc
+
+        if tool.descriptor.kind == CONTRACT_RUNTIME_TOOL_KIND:
+            status = result.get("status")
+            if status not in {"success", "error"}:
+                error_message = (
+                    f"Contract tool '{tool_id}' returned an invalid status: {status!r}."
+                )
+                self._emit_tool_event(
+                    ctx,
+                    RuntimeToolLifecycleEvent(
+                        tool_call_id=tool_call_id,
+                        tool_id=tool_id,
+                        phase="failed",
+                        title="工具调用失败",
+                        summary="工具执行失败。",
+                        input_summary=input_summary,
+                        error_summary=error_message,
+                    ),
+                )
+                raise ToolInvocationError(
+                    code="tool_execution_failed",
+                    message=error_message,
+                    tool_id=tool_id,
+                    tool_call_id=tool_call_id,
+                )
+            if status == "error":
+                error_payload = result.get("error")
+                error_code = (
+                    error_payload.get("code") if isinstance(error_payload, Mapping) else None
+                )
+                error_message = (
+                    error_payload.get("message")
+                    if isinstance(error_payload, Mapping)
+                    else None
+                )
+                error_details = (
+                    error_payload.get("details")
+                    if isinstance(error_payload, Mapping)
+                    and isinstance(error_payload.get("details"), Mapping)
+                    else None
+                )
+                if not isinstance(error_code, str) or error_code.strip() == "":
+                    integrity_message = (
+                        "Contract tool returned an error result without a valid error code."
+                    )
+                    self._emit_tool_event(
+                        ctx,
+                        RuntimeToolLifecycleEvent(
+                            tool_call_id=tool_call_id,
+                            tool_id=tool_id,
+                            phase="failed",
+                            title="工具调用失败",
+                            summary="工具执行失败。",
+                            input_summary=input_summary,
+                            error_summary=integrity_message,
+                        ),
+                    )
+                    raise ToolInvocationError(
+                        code="tool_execution_failed",
+                        message=integrity_message,
+                        tool_id=tool_id,
+                        tool_call_id=tool_call_id,
+                    )
+                if not isinstance(error_message, str) or error_message.strip() == "":
+                    integrity_message = (
+                        "Contract tool returned an error result without a valid error message."
+                    )
+                    self._emit_tool_event(
+                        ctx,
+                        RuntimeToolLifecycleEvent(
+                            tool_call_id=tool_call_id,
+                            tool_id=tool_id,
+                            phase="failed",
+                            title="工具调用失败",
+                            summary="工具执行失败。",
+                            input_summary=input_summary,
+                            error_summary=integrity_message,
+                        ),
+                    )
+                    raise ToolInvocationError(
+                        code="tool_execution_failed",
+                        message=integrity_message,
+                        tool_id=tool_id,
+                        tool_call_id=tool_call_id,
+                    )
+                normalized_error_code = error_code.strip()
+                normalized_error_message = error_message.strip()
+                self._emit_tool_event(
+                    ctx,
+                    RuntimeToolLifecycleEvent(
+                        tool_call_id=tool_call_id,
+                        tool_id=tool_id,
+                        phase="failed",
+                        title="工具调用失败",
+                        summary="工具执行失败。",
+                        input_summary=input_summary,
+                        error_summary=normalized_error_message,
+                    ),
+                )
+                if normalized_error_code in _RECOVERABLE_CONTRACT_TOOL_ERROR_CODES:
+                    return result
+                raise ToolInvocationError(
+                    code=normalized_error_code,
+                    message=normalized_error_message,
+                    tool_id=tool_id,
+                    tool_call_id=tool_call_id,
+                    details=error_details,
+                )
 
         result_summary = summarize_tool_result(result)
         completed_title, completed_summary = self._build_completed_copy(

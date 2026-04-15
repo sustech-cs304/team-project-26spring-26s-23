@@ -508,6 +508,109 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
 
 
 
+def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+    ) -> CourseCatalogSearchResult:
+        _ = (username, password, keyword, field, operator, limit)
+        raise ValueError("keyword must be a non-empty string.")
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="blackboard.course_catalog.search:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="blackboard.course_catalog.search",
+            arguments={
+                "username": "alice",
+                "password": "secret",
+                "keyword": "",
+            },
+        )
+    )
+
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "invalid_input"
+    assert result["error"]["message"] == "keyword must be a non-empty string."
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].tool_id == "blackboard.course_catalog.search"
+    assert emitted_tool_events[-1].error_summary == "keyword must be a non-empty string."
+
+
+
+def test_execute_bound_tool_keeps_fatal_contract_integrity_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+    ) -> CourseCatalogSearchResult:
+        _ = (username, password, keyword, field, operator, limit)
+        raise RuntimeError("blackboard search exploded")
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="blackboard.course_catalog.search:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    with pytest.raises(ToolInvocationError) as exc_info:
+        asyncio.run(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id="blackboard.course_catalog.search",
+                arguments={
+                    "username": "alice",
+                    "password": "secret",
+                    "keyword": "数据库系统",
+                },
+            )
+        )
+
+    assert exc_info.value.code == "execution_failed"
+    assert exc_info.value.tool_id == "blackboard.course_catalog.search"
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].error_summary == "blackboard search exploded"
+
+
+
 def test_open_event_stream_propagates_cancelled_error_from_agent_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

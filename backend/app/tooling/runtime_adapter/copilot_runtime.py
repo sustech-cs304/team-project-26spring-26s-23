@@ -173,19 +173,12 @@ def build_contract_runtime_binding(
             context=invocation_context,
             host=host,
         )
-        if result.status == "error":
-            error = result.error
-            if error is None:
-                raise RuntimeExecutableToolError(
-                    code="execution_failed",
-                    message=(
-                        "Tool returned an error result without a normalized error payload."
-                    ),
-                )
+        if result.status == "error" and result.error is None:
             raise RuntimeExecutableToolError(
-                code=error.code,
-                message=error.message,
-                details=error.details,
+                code="execution_failed",
+                message=(
+                    "Tool returned an error result without a normalized error payload."
+                ),
             )
         return result.to_dict()
 
