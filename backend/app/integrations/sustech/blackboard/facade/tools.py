@@ -40,6 +40,7 @@ from app.tooling import (
     ToolSchema,
     WorkspaceResolver,
 )
+from app.tooling.contract.errors import build_tool_exception_details, redact_tool_error_value
 
 _STATE_NAMESPACE_CALENDAR_REFRESH = "blackboard.calendar_refresh"
 _STATE_NAMESPACE_SNAPSHOT_SYNC = "blackboard.snapshot_sync"
@@ -93,7 +94,14 @@ class _BlackboardFacadeToolBase:
                 metadata=envelope_metadata,
             )
         except Exception as ex:
-            error = _map_exception(ex)
+            error = _map_exception(
+                ex,
+                diagnostic_context=_error_diagnostic_context(
+                    tool_id=self.metadata.tool_id,
+                    context=context,
+                    arguments=normalized_arguments,
+                ),
+            )
             _emit_event(
                 host,
                 context=context,
@@ -198,62 +206,118 @@ def _message_or_fallback(error: Exception, fallback: str) -> str:
     return message or fallback
 
 
-def _map_exception(error: Exception) -> NormalizedToolError:
+
+def _error_diagnostic_context(
+    *,
+    tool_id: str,
+    context: ToolInvocationContext,
+    arguments: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "integration": "blackboard",
+        "toolId": tool_id,
+        "invocationId": context.invocation_id,
+        "argumentKeys": sorted(str(key) for key in arguments.keys()),
+    }
+
+
+
+def _build_error_details(
+    *,
+    error: Exception,
+    details: Mapping[str, Any] | None = None,
+    diagnostic_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return build_tool_exception_details(
+        error=error,
+        details=details,
+        diagnostic_context=diagnostic_context,
+        sanitizer=redact_tool_error_value,
+    )
+
+
+
+def _normalized_error_with_details(
+    *,
+    normalized: NormalizedToolError,
+    error: Exception,
+    diagnostic_context: Mapping[str, Any] | None = None,
+) -> NormalizedToolError:
+    return NormalizedToolError(
+        code=normalized.code,
+        message=normalized.message,
+        retryable=normalized.retryable,
+        details=_build_error_details(
+            error=error,
+            details=normalized.details,
+            diagnostic_context=diagnostic_context,
+        ),
+    )
+
+
+
+def _map_exception(
+    error: Exception,
+    *,
+    diagnostic_context: Mapping[str, Any] | None = None,
+) -> NormalizedToolError:
+    normalized: NormalizedToolError
     if isinstance(error, MissingHostCapabilityError):
-        return NormalizedToolError(
+        normalized = NormalizedToolError(
             code="host_capability_missing",
             message=str(error),
             details={"capability": error.capability},
         )
-    if isinstance(error, HostCapabilityOperationError):
+    elif isinstance(error, HostCapabilityOperationError):
         if error.code in {"unsupported_capability", "unsupported_operation"}:
-            return NormalizedToolError(
+            normalized = NormalizedToolError(
                 code="host_capability_missing",
                 message=error.message,
                 retryable=error.retryable,
                 details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
             )
-        if error.code in {"temporarily_unavailable", "timeout"}:
-            return NormalizedToolError(
+        elif error.code in {"temporarily_unavailable", "timeout"}:
+            normalized = NormalizedToolError(
                 code=error.code,
                 message=error.message,
                 retryable=error.retryable,
                 details={"capability": error.capability, **error.details},
             )
-        if error.code in {"permission_denied", "not_found", "conflict"}:
-            return NormalizedToolError(
+        elif error.code in {"permission_denied", "not_found", "conflict"}:
+            normalized = NormalizedToolError(
                 code=error.code,
                 message=error.message,
                 retryable=error.retryable,
                 details={"capability": error.capability, **error.details},
             )
-        return NormalizedToolError(
-            code="execution_failed",
-            message=error.message,
-            retryable=error.retryable,
-            details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
-        )
-    if isinstance(error, BlackboardAuthenticationError):
-        return NormalizedToolError(
+        else:
+            normalized = NormalizedToolError(
+                code="execution_failed",
+                message=error.message,
+                retryable=error.retryable,
+                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
+            )
+    elif isinstance(error, BlackboardAuthenticationError):
+        normalized = NormalizedToolError(
             code="authentication_required",
             message=_message_or_fallback(error, "Blackboard credentials are required."),
         )
-    if isinstance(error, ValueError):
-        return NormalizedToolError(
+    elif isinstance(error, ValueError):
+        normalized = NormalizedToolError(
             code="invalid_input",
             message=_message_or_fallback(error, "Tool arguments are invalid."),
         )
-    if isinstance(error, PermissionError):
-        return NormalizedToolError(
+    elif isinstance(error, PermissionError):
+        normalized = NormalizedToolError(
             code="permission_denied",
             message=_message_or_fallback(error, "Blackboard access was denied."),
         )
-    if isinstance(error, httpx.TimeoutException):
-        return NormalizedToolError(
+    elif isinstance(error, httpx.TimeoutException):
+        normalized = NormalizedToolError(
             code="timeout",
             message=_message_or_fallback(error, "Blackboard request timed out."),
         )
-    if isinstance(error, httpx.HTTPStatusError):
+    elif isinstance(error, httpx.HTTPStatusError):
         status_code = error.response.status_code
         code = "execution_failed"
         if status_code == 401:
@@ -268,21 +332,27 @@ def _map_exception(error: Exception) -> NormalizedToolError:
             code = "rate_limited"
         elif status_code in {502, 503, 504}:
             code = "temporarily_unavailable"
-        return NormalizedToolError(
+        normalized = NormalizedToolError(
             code=code,
             message=_message_or_fallback(error, f"Blackboard request failed with {status_code}."),
             details={"statusCode": status_code},
         )
-    if isinstance(error, httpx.HTTPError):
-        return NormalizedToolError(
+    elif isinstance(error, httpx.HTTPError):
+        normalized = NormalizedToolError(
             code="temporarily_unavailable",
             message=_message_or_fallback(error, "Blackboard host is temporarily unavailable."),
         )
-    if isinstance(error, RuntimeError) and "CAS 登录失败" in str(error):
-        return NormalizedToolError(code="authentication_required", message=str(error))
-    return NormalizedToolError(
-        code="execution_failed",
-        message=_message_or_fallback(error, "Blackboard tool execution failed."),
+    elif isinstance(error, RuntimeError) and "CAS 登录失败" in str(error):
+        normalized = NormalizedToolError(code="authentication_required", message=str(error))
+    else:
+        normalized = NormalizedToolError(
+            code="execution_failed",
+            message=_message_or_fallback(error, "Blackboard tool execution failed."),
+        )
+    return _normalized_error_with_details(
+        normalized=normalized,
+        error=error,
+        diagnostic_context=diagnostic_context,
     )
 
 

@@ -566,7 +566,9 @@ def test_credit_gpa_tool_maps_missing_workspace_capability() -> None:
     assert result.status == "error"
     assert result.error is not None
     assert result.error.code == "host_capability_missing"
-    assert result.error.details == {"capability": "workspace_resolver"}
+    assert result.error.details["capability"] == "workspace_resolver"
+    assert result.error.details["exceptionType"] == "MissingHostCapabilityError"
+    assert "traceback" in result.error.details
 
 
 def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypatch: Any) -> None:
@@ -756,5 +758,112 @@ def test_tis_sql_query_tool_uses_workspace_override_and_reports_non_result_summa
     with sqlite3.connect(str(db_path)) as connection:
         updated_score = connection.execute("SELECT score FROM grades WHERE id = 1").fetchone()
     assert updated_score == (96,)
+
+
+
+def test_personal_grades_tool_injects_traceback_details_for_unknown_errors(monkeypatch: Any) -> None:
+    def _boom_fetch(
+        username: str,
+        password: str,
+        *,
+        role_code: str | None = None,
+        homepage_html: str | None = None,
+        config: Any = None,
+        enable_console_logging: bool = False,
+        persist: bool = False,
+        db_manager: TISDatabaseManager | None = None,
+        owner_key: str | None = None,
+    ) -> TISGradeQueryResult:
+        _ = (
+            username,
+            password,
+            role_code,
+            homepage_html,
+            config,
+            enable_console_logging,
+            persist,
+            db_manager,
+            owner_key,
+        )
+        raise RuntimeError("tis personal grades exploded")
+
+    monkeypatch.setattr(facade_tools, "fetch_personal_grades_with_credentials", _boom_fetch)
+
+    result = _invoke_tool(
+        TISPersonalGradesFetchTool(),
+        arguments={"username": "alice", "password": "secret"},
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.code == "execution_failed"
+    assert result.error.message == "tis personal grades exploded"
+    assert result.error.details["exceptionType"] == "RuntimeError"
+    assert result.error.details["exceptionMessage"] == "tis personal grades exploded"
+    assert "RuntimeError: tis personal grades exploded" in result.error.details["traceback"]
+    assert result.error.details["diagnosticContext"] == {
+        "integration": "teaching_information_system",
+        "toolId": "tis.personal_grades.fetch",
+        "invocationId": "invoke-1",
+        "argumentKeys": ["password", "username"],
+    }
+
+
+
+def test_personal_grades_tool_redacts_sensitive_values_in_enriched_error_details(
+    monkeypatch: Any,
+) -> None:
+    sensitive_message = (
+        "payload={'password': 'hunter2', 'token': 'abc123'}\n"
+        "Authorization: Bearer super-secret\n"
+        "cookie: session=abc"
+    )
+
+    def _boom_fetch(
+        username: str,
+        password: str,
+        *,
+        role_code: str | None = None,
+        homepage_html: str | None = None,
+        config: Any = None,
+        enable_console_logging: bool = False,
+        persist: bool = False,
+        db_manager: TISDatabaseManager | None = None,
+        owner_key: str | None = None,
+    ) -> TISGradeQueryResult:
+        _ = (
+            username,
+            password,
+            role_code,
+            homepage_html,
+            config,
+            enable_console_logging,
+            persist,
+            db_manager,
+            owner_key,
+        )
+        raise RuntimeError(sensitive_message)
+
+    monkeypatch.setattr(facade_tools, "fetch_personal_grades_with_credentials", _boom_fetch)
+
+    result = _invoke_tool(
+        TISPersonalGradesFetchTool(),
+        arguments={"username": "alice", "password": "secret"},
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    details = result.error.details
+    assert details["exceptionType"] == "RuntimeError"
+    assert "[REDACTED]" in details["exceptionMessage"]
+    assert "[REDACTED]" in details["traceback"]
+    assert "hunter2" not in details["exceptionMessage"]
+    assert "abc123" not in details["exceptionMessage"]
+    assert "super-secret" not in details["exceptionMessage"]
+    assert "session=abc" not in details["exceptionMessage"]
+    assert "hunter2" not in details["traceback"]
+    assert "abc123" not in details["traceback"]
+    assert "super-secret" not in details["traceback"]
+    assert "session=abc" not in details["traceback"]
 
 

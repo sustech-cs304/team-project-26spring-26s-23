@@ -443,7 +443,9 @@ def test_calendar_refresh_tool_maps_missing_workspace_capability() -> None:
     assert result.status == "error"
     assert result.error is not None
     assert result.error.code == "host_capability_missing"
-    assert result.error.details == {"capability": "workspace_resolver"}
+    assert result.error.details["capability"] == "workspace_resolver"
+    assert result.error.details["exceptionType"] == "MissingHostCapabilityError"
+    assert "traceback" in result.error.details
 
 
 def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkeypatch: Any) -> None:
@@ -862,4 +864,87 @@ def test_snapshot_sync_tool_maps_secret_lookup_without_provider_to_missing_capab
     assert result.status == "error"
     assert result.error is not None
     assert result.error.code == "host_capability_missing"
-    assert result.error.details == {"capability": "secret_provider"}
+    assert result.error.details["capability"] == "secret_provider"
+    assert result.error.details["exceptionType"] == "MissingHostCapabilityError"
+    assert "traceback" in result.error.details
+
+
+
+def test_course_catalog_tool_injects_traceback_details_for_unknown_errors(monkeypatch: Any) -> None:
+    def _boom_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+    ) -> CourseCatalogSearchResult:
+        _ = (username, password, keyword, field, operator, limit)
+        raise RuntimeError("blackboard search exploded")
+
+    monkeypatch.setattr(facade_tools, "search_course_catalog_with_credentials", _boom_search)
+
+    result = _invoke_tool(
+        BlackboardCourseCatalogSearchTool(),
+        arguments={"keyword": "CS305", "username": "alice", "password": "secret"},
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.code == "execution_failed"
+    assert result.error.message == "blackboard search exploded"
+    assert result.error.details["exceptionType"] == "RuntimeError"
+    assert result.error.details["exceptionMessage"] == "blackboard search exploded"
+    assert "RuntimeError: blackboard search exploded" in result.error.details["traceback"]
+    assert result.error.details["diagnosticContext"] == {
+        "integration": "blackboard",
+        "toolId": "blackboard.course_catalog.search",
+        "invocationId": "invoke-1",
+        "argumentKeys": ["keyword", "password", "username"],
+    }
+
+
+
+def test_course_catalog_tool_redacts_sensitive_values_in_enriched_error_details(
+    monkeypatch: Any,
+) -> None:
+    sensitive_message = (
+        "payload={'password': 'hunter2', 'token': 'abc123'}\n"
+        "Authorization: Bearer super-secret\n"
+        "cookie: session=abc"
+    )
+
+    def _boom_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+    ) -> CourseCatalogSearchResult:
+        _ = (username, password, keyword, field, operator, limit)
+        raise RuntimeError(sensitive_message)
+
+    monkeypatch.setattr(facade_tools, "search_course_catalog_with_credentials", _boom_search)
+
+    result = _invoke_tool(
+        BlackboardCourseCatalogSearchTool(),
+        arguments={"keyword": "CS305", "username": "alice", "password": "secret"},
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    details = result.error.details
+    assert details["exceptionType"] == "RuntimeError"
+    assert "[REDACTED]" in details["exceptionMessage"]
+    assert "[REDACTED]" in details["traceback"]
+    assert "hunter2" not in details["exceptionMessage"]
+    assert "abc123" not in details["exceptionMessage"]
+    assert "super-secret" not in details["exceptionMessage"]
+    assert "session=abc" not in details["exceptionMessage"]
+    assert "hunter2" not in details["traceback"]
+    assert "abc123" not in details["traceback"]
+    assert "super-secret" not in details["traceback"]
+    assert "session=abc" not in details["traceback"]
