@@ -115,6 +115,44 @@ export interface CopilotChatPanelState {
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
+interface CopilotSessionTransientState {
+  conversation: CopilotMessageListItem[]
+  runState: CopilotRunState
+}
+
+const EMPTY_COPILOT_SESSION_TRANSIENT_STATE: CopilotSessionTransientState = {
+  conversation: [],
+  runState: createIdleCopilotRunState(),
+}
+
+function resolveCopilotSessionTransientState(
+  stateBySessionId: Record<string, CopilotSessionTransientState>,
+  sessionId: string | null | undefined,
+): CopilotSessionTransientState {
+  if (sessionId === null || sessionId === undefined || sessionId.trim() === '') {
+    return EMPTY_COPILOT_SESSION_TRANSIENT_STATE
+  }
+
+  return stateBySessionId[sessionId] ?? EMPTY_COPILOT_SESSION_TRANSIENT_STATE
+}
+
+function updateCopilotSessionTransientState(
+  stateBySessionId: Record<string, CopilotSessionTransientState>,
+  sessionId: string,
+  updater: (state: CopilotSessionTransientState) => CopilotSessionTransientState,
+): Record<string, CopilotSessionTransientState> {
+  const currentState = resolveCopilotSessionTransientState(stateBySessionId, sessionId)
+  const nextState = updater(currentState)
+  if (nextState === currentState) {
+    return stateBySessionId
+  }
+
+  return {
+    ...stateBySessionId,
+    [sessionId]: nextState,
+  }
+}
+
 export function useCopilotChatPanelState({
   state,
   selectedAgent,
@@ -129,8 +167,7 @@ export function useCopilotChatPanelState({
   loadWorkspaceState = loadSettingsWorkspaceState,
 }: CopilotChatPanelShellProps): CopilotChatPanelState {
   const [composerDraft, setComposerDraft] = useState<CopilotChatComposerDraft>(createEmptyComposerDraft)
-  const [conversation, setConversation] = useState<CopilotMessageListItem[]>([])
-  const [runState, setRunState] = useState<CopilotRunState>(createIdleCopilotRunState)
+  const [transientStateBySessionId, setTransientStateBySessionId] = useState<Record<string, CopilotSessionTransientState>>({})
   const [thinkingCapability, setThinkingCapability] = useState<RuntimeThinkingCapability | null>(null)
   const [sendError, setSendError] = useState<CopilotTransientErrorState | null>(null)
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
@@ -141,13 +178,19 @@ export function useCopilotChatPanelState({
   const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
   const activeAbortControllerRef = useRef<AbortController | null>(null)
   const [historyRebindAcknowledged, setHistoryRebindAcknowledged] = useState(false)
-  const pendingHistorySyncRunIdRef = useRef<string | null>(null)
-  const lastSettledRunIdRef = useRef<string | null>(null)
-  const pendingHistorySyncLogKeyRef = useRef<string | null>(null)
+  const pendingHistorySyncRunIdBySessionRef = useRef<Record<string, string | null>>({})
+  const lastSettledRunIdBySessionRef = useRef<Record<string, string | null>>({})
+  const pendingHistorySyncLogKeyBySessionRef = useRef<Record<string, string | null>>({})
+  const transientStateBySessionIdRef = useRef<Record<string, CopilotSessionTransientState>>({})
   const previousSessionIdRef = useRef<string | null>(null)
-  const transientConversationLengthRef = useRef(0)
-  const transientRunPhaseRef = useRef<CopilotRunState['phase']>('idle')
-  const transientRunIdRef = useRef<string | null>(null)
+
+  const activeSessionId = sessionShell?.sessionId ?? null
+  const activeTransientState = useMemo(
+    () => resolveCopilotSessionTransientState(transientStateBySessionId, activeSessionId),
+    [activeSessionId, transientStateBySessionId],
+  )
+  const conversation = activeTransientState.conversation
+  const runState = activeTransientState.runState
 
   const sessionIdentity = sessionShell === null
     ? null
@@ -302,14 +345,12 @@ export function useCopilotChatPanelState({
 
     if (sessionShell === null) {
       setComposerDraft(createEmptyComposerDraft())
-      setRunState(createIdleCopilotRunState())
       setThinkingCapability(null)
       setSendError(null)
       return
     }
 
     setComposerDraft(createComposerDraftFromSession(sessionShell))
-    setRunState(createIdleCopilotRunState())
     setThinkingCapability(null)
     setSendError(null)
   }, [sessionIdentity, sessionShell])
@@ -319,50 +360,63 @@ export function useCopilotChatPanelState({
   }, [historyDriftResetKey])
 
   useEffect(() => {
-    transientConversationLengthRef.current = conversation.length
-    transientRunPhaseRef.current = runState.phase
-    transientRunIdRef.current = runState.runId
-  }, [conversation.length, runState.phase, runState.runId])
+    transientStateBySessionIdRef.current = transientStateBySessionId
+  }, [transientStateBySessionId])
 
   useEffect(() => {
-    pendingHistorySyncRunIdRef.current = null
-    lastSettledRunIdRef.current = null
-    pendingHistorySyncLogKeyRef.current = null
-  }, [sessionShell?.sessionId])
+    for (const [sessionId, transientState] of Object.entries(transientStateBySessionId)) {
+      const sessionRunState = transientState.runState
+      if (
+        sessionRunState.phase !== 'completed'
+        && sessionRunState.phase !== 'failed'
+        && sessionRunState.phase !== 'cancelled'
+      ) {
+        continue
+      }
+
+      const runId = sessionRunState.runId?.trim() ?? ''
+      const settledSessionId = sessionRunState.threadId?.trim() ?? ''
+      if (runId === '' || settledSessionId === '' || lastSettledRunIdBySessionRef.current[sessionId] === runId) {
+        continue
+      }
+
+      lastSettledRunIdBySessionRef.current[sessionId] = runId
+      const tracksPendingHistorySync = sessionId === settledSessionId
+      if (tracksPendingHistorySync) {
+        pendingHistorySyncRunIdBySessionRef.current[sessionId] = runId
+        pendingHistorySyncLogKeyBySessionRef.current[sessionId] = null
+      }
+
+      appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'run-settled-pending-history-sync', {
+        sessionId: settledSessionId,
+        transientSessionId: sessionId,
+        activeSessionId: sessionShell?.sessionId ?? null,
+        runId,
+        runPhase: sessionRunState.phase,
+        detailStatus: settledSessionId === sessionShell?.sessionId ? sessionHistory?.detailStatus ?? null : null,
+        selectedRunId: settledSessionId === sessionShell?.sessionId ? sessionHistory?.selectedRunId ?? null : null,
+        tracksPendingHistorySync,
+      })
+      onSessionRunSettled?.(runId, settledSessionId)
+    }
+  }, [
+    debugModeEnabled,
+    onSessionRunSettled,
+    sessionHistory?.detailStatus,
+    sessionHistory?.selectedRunId,
+    sessionShell?.sessionId,
+    transientStateBySessionId,
+  ])
 
   useEffect(() => {
-    if (runState.phase !== 'completed' && runState.phase !== 'failed' && runState.phase !== 'cancelled') {
+    const sessionId = sessionShell?.sessionId?.trim() ?? ''
+    if (sessionId === '') {
       return
     }
 
-    const runId = runState.runId?.trim() ?? ''
-    const settledSessionId = runState.threadId?.trim() ?? ''
-    if (runId === '' || settledSessionId === '' || lastSettledRunIdRef.current === runId) {
-      return
-    }
-
-    lastSettledRunIdRef.current = runId
-    const tracksPendingHistorySync = settledSessionId === sessionShell?.sessionId
-    if (tracksPendingHistorySync) {
-      pendingHistorySyncRunIdRef.current = runId
-      pendingHistorySyncLogKeyRef.current = null
-    }
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'run-settled-pending-history-sync', {
-      sessionId: settledSessionId,
-      activeSessionId: sessionShell?.sessionId ?? null,
-      runId,
-      runPhase: runState.phase,
-      detailStatus: sessionHistory?.detailStatus ?? null,
-      selectedRunId: sessionHistory?.selectedRunId ?? null,
-      tracksPendingHistorySync,
-    })
-    onSessionRunSettled?.(runId, settledSessionId)
-  }, [debugModeEnabled, onSessionRunSettled, runState.phase, runState.runId, runState.threadId, sessionHistory?.detailStatus, sessionHistory?.selectedRunId, sessionShell?.sessionId])
-
-  useEffect(() => {
-    const pendingRunId = pendingHistorySyncRunIdRef.current
+    const pendingRunId = pendingHistorySyncRunIdBySessionRef.current[sessionId] ?? null
     if (pendingRunId === null) {
-      pendingHistorySyncLogKeyRef.current = null
+      pendingHistorySyncLogKeyBySessionRef.current[sessionId] = null
       return
     }
 
@@ -386,10 +440,10 @@ export function useCopilotChatPanelState({
         sessionHistory?.detailStatus ?? '',
         hasRenderablePersistedSelectedConversation ? 'renderable' : 'empty',
       ].join('::')
-      if (pendingHistorySyncLogKeyRef.current !== logKey) {
-        pendingHistorySyncLogKeyRef.current = logKey
+      if (pendingHistorySyncLogKeyBySessionRef.current[sessionId] !== logKey) {
+        pendingHistorySyncLogKeyBySessionRef.current[sessionId] = logKey
         appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'pending-history-sync-waiting', {
-          sessionId: sessionShell?.sessionId ?? null,
+          sessionId,
           pendingRunId,
           selectedRunId: sessionHistory?.selectedRunId ?? null,
           detailStatus: sessionHistory?.detailStatus ?? null,
@@ -402,22 +456,25 @@ export function useCopilotChatPanelState({
       return
     }
 
-    pendingHistorySyncLogKeyRef.current = null
+    pendingHistorySyncLogKeyBySessionRef.current[sessionId] = null
     const readySessionHistory = sessionHistory
     if (readySessionHistory === null) {
       return
     }
 
     appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'pending-history-sync-committed', {
-      sessionId: sessionShell?.sessionId ?? null,
+      sessionId,
       pendingRunId,
       selectedRunId: readySessionHistory.selectedRunId,
       persistedConversationLength: persistedConversation.length,
       persistedConversationSource: persistedSelectedRunConversationSource,
     })
-    pendingHistorySyncRunIdRef.current = null
-    setConversation([])
-    setRunState((current) => current.runId === pendingRunId ? createIdleCopilotRunState() : current)
+    pendingHistorySyncRunIdBySessionRef.current[sessionId] = null
+    setTransientStateBySessionId((current) => updateCopilotSessionTransientState(current, sessionId, (sessionState) => ({
+      ...sessionState,
+      conversation: [],
+      runState: sessionState.runState.runId === pendingRunId ? createIdleCopilotRunState() : sessionState.runState,
+    })))
   }, [
     debugModeEnabled,
     hasRenderablePersistedSelectedConversation,
@@ -451,8 +508,13 @@ export function useCopilotChatPanelState({
       persistedConversationLength: persistedConversation.length,
       persistedConversationSource: persistedSelectedRunConversationSource,
     })
-    setConversation([])
-    setRunState(createIdleCopilotRunState())
+    if (sessionShell !== null) {
+      setTransientStateBySessionId((current) => updateCopilotSessionTransientState(current, sessionShell.sessionId, (sessionState) => ({
+        ...sessionState,
+        conversation: [],
+        runState: createIdleCopilotRunState(),
+      })))
+    }
   }, [
     debugModeEnabled,
     persistedConversation.length,
@@ -601,22 +663,33 @@ export function useCopilotChatPanelState({
   ])
 
   useEffect(() => {
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'session-switch-cleared-transient', {
-      previousSessionId: previousSessionIdRef.current,
-      nextSessionId: sessionShell?.sessionId ?? null,
-      transientConversationLength: transientConversationLengthRef.current,
-      runStatePhase: transientRunPhaseRef.current,
-      runStateRunId: transientRunIdRef.current,
-      pendingHistorySyncRunId: pendingHistorySyncRunIdRef.current,
+    const previousSessionId = previousSessionIdRef.current
+    const previousTransientState = resolveCopilotSessionTransientState(transientStateBySessionIdRef.current, previousSessionId)
+    const nextSessionId = sessionShell?.sessionId ?? null
+    const nextTransientState = resolveCopilotSessionTransientState(transientStateBySessionIdRef.current, nextSessionId)
+
+    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'session-switch-retained-transient', {
+      previousSessionId,
+      nextSessionId,
+      previousTransientConversationLength: previousTransientState.conversation.length,
+      previousRunStatePhase: previousTransientState.runState.phase,
+      previousRunStateRunId: previousTransientState.runState.runId,
+      previousPendingHistorySyncRunId: previousSessionId === null
+        ? null
+        : pendingHistorySyncRunIdBySessionRef.current[previousSessionId] ?? null,
+      nextTransientConversationLength: nextTransientState.conversation.length,
+      nextRunStatePhase: nextTransientState.runState.phase,
+      nextRunStateRunId: nextTransientState.runState.runId,
+      nextPendingHistorySyncRunId: nextSessionId === null
+        ? null
+        : pendingHistorySyncRunIdBySessionRef.current[nextSessionId] ?? null,
     })
-    previousSessionIdRef.current = sessionShell?.sessionId ?? null
+    previousSessionIdRef.current = nextSessionId
     activeAbortControllerRef.current?.abort()
     activeAbortControllerRef.current = null
-    setConversation([])
-    setRunState(createIdleCopilotRunState())
     setThinkingCapability(null)
     setSendError(null)
-  }, [sessionShell?.sessionId])
+  }, [debugModeEnabled, sessionShell?.sessionId])
 
   useEffect(() => {
     const selectedModelRoute = selectedModelRouteFromDraft
@@ -779,6 +852,37 @@ export function useCopilotChatPanelState({
 
     const abortController = new AbortController()
     activeAbortControllerRef.current = abortController
+    const boundSessionId = sessionShell?.sessionId ?? null
+    const setBoundRunState: Dispatch<SetStateAction<CopilotRunState>> = (value) => {
+      if (boundSessionId === null) {
+        return
+      }
+
+      setTransientStateBySessionId((current) => updateCopilotSessionTransientState(current, boundSessionId, (sessionState) => {
+        const nextRunState = typeof value === 'function' ? value(sessionState.runState) : value
+        return nextRunState === sessionState.runState
+          ? sessionState
+          : {
+              ...sessionState,
+              runState: nextRunState,
+            }
+      }))
+    }
+    const setBoundConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>> = (value) => {
+      if (boundSessionId === null) {
+        return
+      }
+
+      setTransientStateBySessionId((current) => updateCopilotSessionTransientState(current, boundSessionId, (sessionState) => {
+        const nextConversation = typeof value === 'function' ? value(sessionState.conversation) : value
+        return nextConversation === sessionState.conversation
+          ? sessionState
+          : {
+              ...sessionState,
+              conversation: nextConversation,
+            }
+      }))
+    }
 
     try {
       await orchestrateCopilotSend({
@@ -792,10 +896,10 @@ export function useCopilotChatPanelState({
         composerInputRef,
         sendMessage,
         debugModeEnabled: isCopilotConnectableState(state) ? state.bootstrapFields.debugModeEnabled : false,
-        setRunState,
+        setRunState: setBoundRunState,
         setSendError,
         setComposerDraft,
-        setConversation,
+        setConversation: setBoundConversation,
         signal: abortController.signal,
         thinkingCapabilityOverride: (selectedModelOption?.thinkingCapabilityOverride ?? null) as Record<string, unknown> | null,
       })

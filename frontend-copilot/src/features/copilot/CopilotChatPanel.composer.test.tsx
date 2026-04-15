@@ -878,7 +878,79 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('drops freshly sent conversation after switching away and back before persisted replay becomes renderable', async () => {
+  it('keeps a late-settling run bound to its original session without polluting the current session view', async () => {
+    const settleOldRun = createDeferredSignal()
+    const onSessionRunSettled = vi.fn()
+    const sendMessage = createDeferredResolvedSendMessageSpy(settleOldRun, {
+      assistantText: '旧话题回复',
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const firstSessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        onSessionRunSettled={onSessionRunSettled}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '旧话题问题')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'old session placeholder visible before switching topics',
+    )
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({ sessionId: 'session-2' })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        onSessionRunSettled={onSessionRunSettled}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    settleOldRun.release()
+    await waitForCondition(
+      () => onSessionRunSettled.mock.calls.length === 1,
+      'late-settling run reported after switching to a new session',
+    )
+
+    expect(onSessionRunSettled).toHaveBeenCalledWith('run-1', 'session-1')
+    expect(rendered.container.textContent).not.toContain('旧话题问题')
+    expect(rendered.container.textContent).not.toContain('旧话题回复')
+    expect(rendered.queryByTestId('chat-assistant-placeholder')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('keeps session-scoped transient conversation after switching away and back before persisted replay becomes renderable', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
     const firstSessionShell = createSessionShell()
@@ -970,13 +1042,14 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    expect(rendered.container.textContent).not.toContain('你好')
-    expect(rendered.container.textContent).not.toContain('这是助手回显')
+    expect(rendered.container.textContent).toContain('你好')
+    expect(rendered.container.textContent).toContain('这是助手回显')
+    expect(rendered.queryByTestId('chat-empty-state')).toBeNull()
 
     rendered.unmount()
   })
 
-  it('emits debug handoff logs when replay stays empty across a topic switch', async () => {
+  it('emits debug handoff logs when retained transient state waits for persisted replay across a topic switch', async () => {
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -1088,25 +1161,36 @@ describe('CopilotChatPanel composer interactions', () => {
       .filter((call) => call[0] === '[copilot-debug]' && typeof call[1] === 'object' && call[1] !== null)
       .map((call) => call[1] as Record<string, unknown>)
 
+    const matchingSettledLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'run-settled-pending-history-sync'
+      && entry.sessionId === 'session-1'
+      && entry.transientSessionId === 'session-1'
+      && entry.runId === 'run-1'
+    ))
     const matchingForwardSwitchLog = emittedDebugEntries.find((entry) => (
       entry.scope === 'copilot-chat-panel'
-      && entry.event === 'session-switch-cleared-transient'
+      && entry.event === 'session-switch-retained-transient'
       && entry.previousSessionId === 'session-1'
       && entry.nextSessionId === 'session-2'
+      && entry.previousTransientConversationLength === 1
     ))
     const matchingPendingSyncLog = emittedDebugEntries.find((entry) => (
       entry.scope === 'copilot-chat-panel'
       && entry.event === 'pending-history-sync-waiting'
+      && entry.sessionId === 'session-1'
       && entry.pendingRunId === 'run-1'
-      && entry.waitReason === 'missing-session-history'
+      && entry.waitReason === 'persisted-selected-run-empty'
     ))
     const matchingReturnSwitchLog = emittedDebugEntries.find((entry) => (
       entry.scope === 'copilot-chat-panel'
-      && entry.event === 'session-switch-cleared-transient'
+      && entry.event === 'session-switch-retained-transient'
       && entry.previousSessionId === 'session-2'
       && entry.nextSessionId === 'session-1'
+      && entry.nextTransientConversationLength === 1
     ))
 
+    expect(matchingSettledLog).toBeDefined()
     expect(matchingForwardSwitchLog).toBeDefined()
     expect(matchingPendingSyncLog).toBeDefined()
     expect(matchingReturnSwitchLog).toBeDefined()
@@ -1955,6 +2039,73 @@ function createResolvedSendMessageSpy() {
         },
       },
     ])
+  })
+}
+
+function createDeferredResolvedSendMessageSpy(
+  control: DeferredSignal,
+  overrides: {
+    runId?: string
+    assistantText?: string
+  } = {},
+) {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    const routeRef = input.modelRoute.routeRef ?? {
+      routeKind: 'provider-model' as const,
+      profileId: 'unknown-profile',
+      modelId: 'unknown-model',
+    }
+    const runId = overrides.runId ?? 'run-1'
+    const assistantText = overrides.assistantText ?? '这是助手回显'
+
+    yield {
+      type: 'run_started',
+      runId,
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: `${runId}:assistant`,
+      },
+    }
+
+    await control.wait()
+    yield {
+      type: 'text_delta',
+      runId,
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        assistantMessageId: `${runId}:assistant`,
+        delta: assistantText,
+      },
+    }
+    yield {
+      type: 'run_completed',
+      runId,
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        assistantMessageId: `${runId}:assistant`,
+        assistantText,
+        resolvedModelId: routeRef.modelId,
+        resolvedModelRoute: createRuntimeResolvedModelRoute({
+          routeRef,
+          providerProfileId: routeRef.profileId,
+          provider: 'openai',
+          providerId: 'openai',
+          adapterId: 'openai',
+          endpointFamily: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: routeRef.modelId,
+          catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+        }),
+        resolvedToolIds: input.enabledTools,
+        requestOptions: input.requestOptions ?? {},
+      },
+    }
   })
 }
 
