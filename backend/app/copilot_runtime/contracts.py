@@ -17,6 +17,7 @@ THREAD_GET_METHOD = "thread/get"
 RUN_START_METHOD = "run/start"
 RUN_STREAM_METHOD = "run/stream"
 RUN_CANCEL_METHOD = "run/cancel"
+TOOL_APPROVAL_SUBMIT_METHOD = "tool/approval/submit"
 CAPABILITIES_GET_METHOD = "capabilities/get"
 THINKING_CAPABILITY_GET_METHOD = "thinking/capability/get"
 THINKING_CAPABILITY_SCHEMA_VERSION = "canonical-thinking-capability-v2"
@@ -256,6 +257,14 @@ class RuntimeMessageExecutionPolicy(RuntimeContract):
     def resolve_thinking_level_intent(self) -> ThinkingLevelIntent | None:
         selection = self.resolve_thinking_selection()
         return None if selection is None else selection.to_legacy_level_intent()
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeToolApprovalSubmitRequest(RuntimeContract):
+    run_id: str
+    tool_call_id: str
+    decision: str
+    user_feedback: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -533,6 +542,7 @@ class RuntimeScaffold(RuntimeContract):
             "current_stage_supports_run_start": RUN_START_METHOD in self.supported_methods,
             "current_stage_supports_run_stream": RUN_STREAM_METHOD in self.supported_methods,
             "current_stage_supports_run_cancel": RUN_CANCEL_METHOD in self.supported_methods,
+            "current_stage_supports_tool_approval_submit": TOOL_APPROVAL_SUBMIT_METHOD in self.supported_methods,
             "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD in self.supported_methods,
             "current_stage_supports_thinking_capability_get": THINKING_CAPABILITY_GET_METHOD in self.supported_methods,
             "model_configured": self.model_configured,
@@ -588,6 +598,7 @@ def build_runtime_scaffold(
             RUN_START_METHOD,
             RUN_STREAM_METHOD,
             RUN_CANCEL_METHOD,
+            TOOL_APPROVAL_SUBMIT_METHOD,
             CAPABILITIES_GET_METHOD,
             THINKING_CAPABILITY_GET_METHOD,
         ),

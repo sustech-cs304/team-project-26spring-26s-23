@@ -12,6 +12,7 @@ from .contracts import (
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
+    TOOL_APPROVAL_SUBMIT_METHOD,
     THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
@@ -21,6 +22,7 @@ from .contracts import (
     RuntimeMessagePayload,
     ThinkingLevelIntent,
     RuntimeRunCancelRequest,
+    RuntimeToolApprovalSubmitRequest,
     RuntimeRunStartRequest,
     RuntimeRunStreamRequest,
     RuntimeScaffold,
@@ -213,6 +215,34 @@ class RuntimeProtocolParser:
             field_name="runId",
         )
         return RuntimeRunCancelRequest(run_id=run_id)
+
+    def extract_tool_approval_submit_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeToolApprovalSubmitRequest:
+        request_body = self._require_payload_body(payload, requested_method=TOOL_APPROVAL_SUBMIT_METHOD)
+        run_id = self._require_non_empty_string(
+            request_body.get("runId"),
+            field_name="runId",
+            requested_method=TOOL_APPROVAL_SUBMIT_METHOD,
+        )
+        tool_call_id = self._require_non_empty_string(
+            request_body.get("toolCallId"),
+            field_name="toolCallId",
+            requested_method=TOOL_APPROVAL_SUBMIT_METHOD,
+        )
+        decision = self._require_non_empty_string(
+            request_body.get("decision"),
+            field_name="decision",
+            requested_method=TOOL_APPROVAL_SUBMIT_METHOD,
+        )
+        user_feedback = request_body.get("userFeedback", None)
+        return RuntimeToolApprovalSubmitRequest(
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            decision=decision,
+            user_feedback=user_feedback,
+        )
 
     def _extract_agent_id_request(
         self,

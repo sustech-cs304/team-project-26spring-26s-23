@@ -23,6 +23,7 @@ from ..contracts import (
     THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
+    TOOL_APPROVAL_SUBMIT_METHOD,
     RuntimeScaffold,
 )
 from ..model_routes import RuntimeModelRouteResolutionError
@@ -102,6 +103,12 @@ def build_router(
 
         if requested_method == RUN_CANCEL_METHOD:
             return _handle_run_cancel_request(
+                dependencies=dependencies,
+                payload=payload,
+            )
+
+        if requested_method == TOOL_APPROVAL_SUBMIT_METHOD:
+            return _handle_tool_approval_submit_request(
                 dependencies=dependencies,
                 payload=payload,
             )
@@ -301,6 +308,37 @@ def _handle_run_cancel_request(
         ).to_dict()
     )
 
+
+
+def _handle_tool_approval_submit_request(
+    *,
+    dependencies: RuntimeTransportDependencies,
+    payload: dict[str, Any] | None,
+) -> JSONResponse:
+    try:
+        req = dependencies.parser.extract_tool_approval_submit_request(payload)
+        run, accepted = dependencies.runtime_bridge.submit_tool_approval(
+            run_id=req.run_id,
+            tool_call_id=req.tool_call_id,
+            decision=req.decision,
+            user_feedback=req.user_feedback,
+        )
+    except RuntimeProtocolError as exc:
+        return protocol_error_response(exc)
+    except RunNotFoundError as exc:
+        return run_not_found_response(
+            run_id=exc.run_id,
+            scaffold=dependencies.scaffold,
+            requested_method=TOOL_APPROVAL_SUBMIT_METHOD,
+        )
+    # Temporary placeholder response
+    return JSONResponse(
+        content={
+            "runId": run.run_id,
+            "status": run.status,
+            "accepted": accepted,
+        }
+    )
 
 
 def _handle_capabilities_get_request(

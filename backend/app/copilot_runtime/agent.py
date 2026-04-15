@@ -403,8 +403,10 @@ class _PydanticAIEventStream:
         except asyncio.CancelledError as exc:
             self._run_exception = exc
             raise
-        except ToolApprovalSuspensionError:
+        except ToolApprovalSuspensionError as exc:
             self._suspension_state = True
+            import json
+            self._cached_output = json.dumps({"tool_calls": list(self._function_tool_call_ids)})
         except Exception as exc:
             self._run_exception = exc
         finally:

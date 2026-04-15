@@ -143,6 +143,27 @@ class RuntimeBridge:
         except LookupError as exc:
             raise RunNotFoundError(run_id) from exc
 
+    def submit_tool_approval(self, *, run_id: str, tool_call_id: str, decision: str, user_feedback: str | None = None) -> tuple[RuntimeRunRecord, bool]:
+        """Process frontend approval or rejection for a suspended tool and resume or fail the run."""
+        try:
+            run = self._session_store.get_run(run_id)
+            if run is None:
+                raise RunNotFoundError(run_id)
+            # Create a continuation run or fail the current one based on decision
+            if decision.lower() != "approve":
+                self._session_store.mark_run_cancelled(run_id, metadata={"tool_rejection": tool_call_id, "user_feedback": user_feedback})
+                accepted = False
+            else:
+                self._session_store.mark_run_streaming(run_id)
+                accepted = True
+            
+            updated_run = self._session_store.get_run(run_id)
+            if updated_run is None:
+                raise RunNotFoundError(run_id)
+            return updated_run, accepted
+        except Exception as exc:
+            raise RuntimeError(f"Failed to submit tool approval: {exc}") from exc
+
     def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:
             raise RuntimeError("Runtime scaffold is required for capabilities queries.")
