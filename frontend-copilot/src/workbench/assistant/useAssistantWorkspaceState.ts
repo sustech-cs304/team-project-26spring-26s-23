@@ -106,7 +106,7 @@ interface UseAssistantWorkspaceStateResult {
   handleCreateSession: () => Promise<void>
   retryActiveSessionHistoryLoad: () => void
   selectActiveSessionHistoryRun: (runId: string | null) => void
-  handleActiveSessionRunSettled: (runId: string | null) => void
+  handleActiveSessionRunSettled: (runId: string | null, sessionId: string | null) => void
   handleSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   handleSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
@@ -391,27 +391,42 @@ export function useAssistantWorkspaceState({
     })
   }, [appendWorkspaceDebugLog, sessionShell])
 
-  const handleActiveSessionRunSettled = useCallback((runId: string | null) => {
-    if (sessionShell === null) {
+  const handleActiveSessionRunSettled = useCallback((runId: string | null, sessionId: string | null) => {
+    const settledSessionId = sessionId?.trim() ?? ''
+    if (settledSessionId === '') {
       return
     }
 
-    appendWorkspaceDebugLog('active-session-run-settled', {
-      sessionId: sessionShell.sessionId,
+    const settledSessionShell = sessionListStateRef.current.sessions.find(
+      (sessionEntry) => sessionEntry.sessionId === settledSessionId,
+    ) ?? null
+
+    appendWorkspaceDebugLog('session-run-settled', {
+      sessionId: settledSessionId,
+      activeSessionId: sessionShell?.sessionId ?? null,
       runId,
-      previousSelectedRunId: sessionHistoryById[sessionShell.sessionId]?.selectedRunId ?? null,
+      previousSelectedRunId: sessionHistoryById[settledSessionId]?.selectedRunId ?? null,
+      hasSessionShell: settledSessionShell !== null,
     })
     setSessionHistoryById((current) => {
-      const historyState = current[sessionShell.sessionId]
-        ?? createAssistantSessionHistoryStateFromSessionShell(sessionShell, runId)
+      const historyState = current[settledSessionId]
+        ?? (settledSessionShell === null
+          ? undefined
+          : createAssistantSessionHistoryStateFromSessionShell(settledSessionShell, runId))
+      if (historyState === undefined) {
+        return current
+      }
+
       const nextHistoryState = retryAssistantSessionHistoryDetail(
         selectAssistantSessionHistoryRun(historyState, runId),
       )
 
-      return {
-        ...current,
-        [sessionShell.sessionId]: nextHistoryState,
-      }
+      return nextHistoryState === historyState
+        ? current
+        : {
+            ...current,
+            [settledSessionId]: nextHistoryState,
+          }
     })
     setHistoryRestoreRetryKey((current) => current + 1)
   }, [appendWorkspaceDebugLog, sessionHistoryById, sessionShell])
@@ -566,12 +581,14 @@ export function useAssistantWorkspaceState({
           const restoredSessionIds = new Set(restoredSessions.map((sessionEntry) => sessionEntry.sessionId))
           const liveOnlySessions = current.sessions.filter((sessionEntry) => !restoredSessionIds.has(sessionEntry.sessionId))
           const mergedSessions = [...restoredSessions, ...liveOnlySessions]
-          const preserveCurrentActiveLiveSession = shouldProtectUserLiveSelection
-            && current.activeSessionId !== null
-            && current.sessions.some((sessionEntry) => (
-              sessionEntry.sessionId === current.activeSessionId
-              && sessionEntry.capabilities.capabilitiesVersion !== 'history-shell'
-            ))
+          const currentActiveSession = current.activeSessionId === null
+            ? null
+            : current.sessions.find((sessionEntry) => sessionEntry.sessionId === current.activeSessionId) ?? null
+          const currentActiveSessionIsLiveOnly = currentActiveSession !== null
+            && currentActiveSession.capabilities.capabilitiesVersion !== 'history-shell'
+            && !restoredSessionIds.has(currentActiveSession.sessionId)
+          const preserveCurrentActiveLiveSession = currentActiveSessionIsLiveOnly
+            || (shouldProtectUserLiveSelection && currentActiveSession !== null && currentActiveSession.capabilities.capabilitiesVersion !== 'history-shell')
           const nextActiveSessionId = preserveCurrentActiveLiveSession
             ? current.activeSessionId
             : preferredActiveSessionId
@@ -585,6 +602,7 @@ export function useAssistantWorkspaceState({
             activeSessionChanged: current.activeSessionId !== nextActiveSessionId,
             liveOnlySessionCount: liveOnlySessions.length,
             mergedSessionCount: mergedSessions.length,
+            currentActiveSessionIsLiveOnly,
             preserveCurrentActiveLiveSession,
           }
 

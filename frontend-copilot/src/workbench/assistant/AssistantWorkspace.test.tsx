@@ -226,7 +226,7 @@ describe('AssistantWorkspace render + interactions', () => {
 
     includePersistedLiveSession = true
     await act(async () => {
-      getLastMockCopilotChatPanelProps().onSessionRunSettled?.('run-live-1')
+      getLastMockCopilotChatPanelProps().onSessionRunSettled?.('run-live-1', 'thread-live')
     })
 
     await waitForAssistantWorkspaceCondition(() => (
@@ -245,6 +245,102 @@ describe('AssistantWorkspace render + interactions', () => {
         selectedRunId: 'run-live-1',
       }),
     })
+
+    rendered.unmount()
+  })
+
+  it('keeps a late-settling run bound to its original session after switching to a newer live session', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const liveFixture = createLivePersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    let includePersistedLiveSession = false
+    const listHistoryThreads = vi.fn().mockImplementation(async () => ({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: includePersistedLiveSession ? [liveFixture.summary] : [],
+    }))
+    const createSession = vi.fn()
+      .mockResolvedValueOnce(createSessionResponse({
+        threadId: 'thread-live',
+        createdAt: '2026-04-14T08:00:00Z',
+        updatedAt: '2026-04-14T08:00:00Z',
+      }))
+      .mockResolvedValueOnce(createSessionResponse({
+        threadId: 'thread-new',
+        createdAt: '2026-04-14T08:05:00Z',
+        updatedAt: '2026-04-14T08:05:00Z',
+      }))
+    const getCapabilities = vi.fn().mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({
+      sessionId,
+      capabilitiesVersion: `cap-${sessionId}`,
+    }))
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(liveFixture.detail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(liveFixture.replay)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length >= 1)
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-new'
+    ))
+
+    expect(getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null).toBeNull()
+
+    includePersistedLiveSession = true
+    await act(async () => {
+      getLastMockCopilotChatPanelProps().onSessionRunSettled?.('run-live-1', 'thread-live')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length >= 2)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-new'
+    ))
+
+    expect(getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null).toBeNull()
+    expect(getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === 'thread-live')).toBe(false)
+    expect(getHistoryRunReplay.mock.calls.some(([runId]) => runId === 'run-live-1')).toBe(false)
+    expect(getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === 'thread-new')).toBe(false)
+
+    await clickElement(rendered.getByTestId('assistant-session-card-thread-live'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === 'thread-live')
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryRunReplay.mock.calls.some(([runId]) => runId === 'run-live-1')
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-live-1'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-session-card-thread-new'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-new'
+    ))
+    expect(getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null).toBeNull()
 
     rendered.unmount()
   })
@@ -295,7 +391,7 @@ describe('AssistantWorkspace render + interactions', () => {
 
     includePersistedLiveSession = true
     await act(async () => {
-      getLastMockCopilotChatPanelProps().onSessionRunSettled?.('run-live-1')
+      getLastMockCopilotChatPanelProps().onSessionRunSettled?.('run-live-1', 'thread-live')
     })
 
     await waitForAssistantWorkspaceCondition(() => (
@@ -1086,7 +1182,7 @@ function getLastMockCopilotChatPanelProps(): {
     selectedRunId?: string | null
   }
   selectSessionHistoryRun?: (runId: string | null) => void
-  onSessionRunSettled?: (runId: string | null) => void
+  onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
 } {
   const props = mockCopilotChatPanel.mock.calls[mockCopilotChatPanel.mock.calls.length - 1]?.[0]
   if (props === undefined) {
@@ -1106,7 +1202,7 @@ function getLastMockCopilotChatPanelProps(): {
       selectedRunId?: string | null
     }
     selectSessionHistoryRun?: (runId: string | null) => void
-    onSessionRunSettled?: (runId: string | null) => void
+    onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
   }
 }
 

@@ -85,7 +85,7 @@ export interface CopilotChatPanelShellProps {
   historyRestoreError?: string | null
   retrySessionHistory?: () => void
   selectSessionHistoryRun?: (runId: string | null) => void
-  onSessionRunSettled?: (runId: string | null) => void
+  onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
   sendMessage?: typeof dispatchCopilotMessage
   cancelRun?: typeof cancelRuntimeRun
   getThinkingCapability?: typeof getRuntimeThinkingCapability
@@ -227,6 +227,10 @@ export function useCopilotChatPanelState({
     [persistedConversation],
   )
   const shouldRenderTransientConversation = useMemo(() => {
+    if (runState.phase !== 'idle' && runState.threadId !== sessionShell?.sessionId) {
+      return false
+    }
+
     if (sessionHistory === null || sessionHistory.detailStatus !== 'ready') {
       return conversation.length > 0 || runState.phase !== 'idle'
     }
@@ -254,7 +258,7 @@ export function useCopilotChatPanelState({
     }
 
     return !hasRenderablePersistedSelectedConversation
-  }, [conversation.length, hasRenderablePersistedSelectedConversation, runState.phase, runState.runId, sessionHistory])
+  }, [conversation.length, hasRenderablePersistedSelectedConversation, runState.phase, runState.runId, runState.threadId, sessionHistory, sessionShell?.sessionId])
   const hasTransientConversation = useMemo(
     () => shouldRenderTransientConversation && (conversation.length > 0 || runState.phase !== 'idle'),
     [conversation.length, runState.phase, shouldRenderTransientConversation],
@@ -332,22 +336,28 @@ export function useCopilotChatPanelState({
     }
 
     const runId = runState.runId?.trim() ?? ''
-    if (runId === '' || lastSettledRunIdRef.current === runId) {
+    const settledSessionId = runState.threadId?.trim() ?? ''
+    if (runId === '' || settledSessionId === '' || lastSettledRunIdRef.current === runId) {
       return
     }
 
     lastSettledRunIdRef.current = runId
-    pendingHistorySyncRunIdRef.current = runId
-    pendingHistorySyncLogKeyRef.current = null
+    const tracksPendingHistorySync = settledSessionId === sessionShell?.sessionId
+    if (tracksPendingHistorySync) {
+      pendingHistorySyncRunIdRef.current = runId
+      pendingHistorySyncLogKeyRef.current = null
+    }
     appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'run-settled-pending-history-sync', {
-      sessionId: sessionShell?.sessionId ?? null,
+      sessionId: settledSessionId,
+      activeSessionId: sessionShell?.sessionId ?? null,
       runId,
       runPhase: runState.phase,
       detailStatus: sessionHistory?.detailStatus ?? null,
       selectedRunId: sessionHistory?.selectedRunId ?? null,
+      tracksPendingHistorySync,
     })
-    onSessionRunSettled?.(runId)
-  }, [debugModeEnabled, onSessionRunSettled, runState.phase, runState.runId, sessionHistory?.detailStatus, sessionHistory?.selectedRunId, sessionShell?.sessionId])
+    onSessionRunSettled?.(runId, settledSessionId)
+  }, [debugModeEnabled, onSessionRunSettled, runState.phase, runState.runId, runState.threadId, sessionHistory?.detailStatus, sessionHistory?.selectedRunId, sessionShell?.sessionId])
 
   useEffect(() => {
     const pendingRunId = pendingHistorySyncRunIdRef.current
@@ -422,6 +432,10 @@ export function useCopilotChatPanelState({
       return
     }
 
+    if (runState.threadId !== sessionShell?.sessionId) {
+      return
+    }
+
     if (runState.phase === 'starting' || runState.phase === 'streaming') {
       return
     }
@@ -445,6 +459,7 @@ export function useCopilotChatPanelState({
     persistedSelectedRunConversationSource,
     runState.phase,
     runState.runId,
+    runState.threadId,
     selectSessionHistoryRun,
     sessionHistory,
     sessionShell?.sessionId,
