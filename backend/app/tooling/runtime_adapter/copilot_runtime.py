@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.tooling.contract import ToolContract, ToolInvocationContext
+from app.tooling.contract.errors import NormalizedToolError
+from app.tooling.contract.results import ToolResultEnvelope
 from app.tooling.host_capabilities import ToolHostCapabilities
 
 CONTRACT_RUNTIME_TOOL_KIND = "contract"
@@ -174,12 +176,14 @@ def build_contract_runtime_binding(
             host=host,
         )
         if result.status == "error" and result.error is None:
-            raise RuntimeExecutableToolError(
-                code="execution_failed",
-                message=(
-                    "Tool returned an error result without a normalized error payload."
+            return ToolResultEnvelope.failure(
+                error=NormalizedToolError(
+                    code="execution_failed",
+                    message="Tool returned an error result without a normalized error payload.",
+                    details={"integrity": "missing_error_payload"},
                 ),
-            )
+                metadata={"toolId": metadata.tool_id},
+            ).to_dict()
         return result.to_dict()
 
     return RuntimeExecutableToolBinding(

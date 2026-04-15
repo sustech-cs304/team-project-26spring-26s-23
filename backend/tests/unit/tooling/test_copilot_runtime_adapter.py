@@ -16,7 +16,6 @@ from app.tooling import (
 )
 from app.tooling.runtime_adapter.copilot_runtime import (
     CONTRACT_RUNTIME_TOOL_KIND,
-    RuntimeExecutableToolError,
     RuntimeToolExecutionContext,
     build_contract_runtime_binding,
     runtime_tool_execution_scope,
@@ -194,7 +193,7 @@ def test_build_contract_runtime_binding_returns_failure_envelope_for_contract_er
 
 
 
-def test_build_contract_runtime_binding_keeps_runtime_error_for_missing_error_payload() -> None:
+def test_build_contract_runtime_binding_returns_failure_for_missing_error_payload() -> None:
     class _BrokenResult:
         status = "error"
         error = None
@@ -226,9 +225,17 @@ def test_build_contract_runtime_binding_keeps_runtime_error_for_missing_error_pa
     contract_tool = _BrokenContractTool()
     binding = build_contract_runtime_binding(contract_tool)
 
-    with pytest.raises(RuntimeExecutableToolError) as exc_info:
-        asyncio.run(binding.execute({"keyword": "数据库"}))
+    result = asyncio.run(binding.execute({"keyword": "数据库"}))
 
-    assert exc_info.value.code == "execution_failed"
-    assert str(exc_info.value) == "Tool returned an error result without a normalized error payload."
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "execution_failed",
+            "message": "Tool returned an error result without a normalized error payload.",
+            "retryable": False,
+            "details": {"integrity": "missing_error_payload"},
+        },
+        "artifacts": [],
+        "metadata": {"toolId": "campus.course-search"},
+    }
     assert len(contract_tool.calls) == 1

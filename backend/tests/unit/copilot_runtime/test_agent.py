@@ -23,7 +23,6 @@ from app.copilot_runtime.agent import (
     ModelNotConfiguredError,
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
-    ToolInvocationError,
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
@@ -197,7 +196,7 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
 
 
 
-def test_open_event_stream_fails_when_weather_tool_is_not_enabled() -> None:
+def test_open_event_stream_keeps_running_when_weather_tool_is_not_enabled() -> None:
     executor = PydanticAIAgentExecutor(
         model=TestModel(
             call_tools=["weather_current"],
@@ -226,10 +225,12 @@ def test_open_event_stream_fails_when_weather_tool_is_not_enabled() -> None:
         if event.type in {"tool_started", "tool_completed", "tool_failed"}
     ]
 
-    assert isinstance(result["error"], ToolInvocationError)
-    assert result["error"].code == "tool_not_enabled"
+    assert result["error"] is None
+    assert result["output"] == "unused"
     assert [payload["phase"] for payload in tool_events] == ["started", "failed"]
-    assert tool_events[-1]["errorSummary"] is not None
+    assert tool_events[-1]["errorSummary"] == (
+        "Tool 'tool.weather-current' is not enabled for this run."
+    )
 
 
 
@@ -349,7 +350,7 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
     assert result["events"][9].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
 
 
-def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
+def test_open_event_stream_emits_failed_tool_event_when_completed_raw_tool_call_never_executes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executor = PydanticAIAgentExecutor(model="test-model")
@@ -393,9 +394,8 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
         )
     )
 
-    assert result["output"] is None
-    assert isinstance(result["error"], AgentExecutionError)
-    assert "no actual tool execution followed" in str(result["error"])
+    assert result["error"] is None
+    assert result["output"] == "我先查一下。"
     assert [event.type for event in result["events"]] == [
         "assistant_segment_started",
         "assistant_segment_delta",
@@ -403,8 +403,9 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
         "diagnostic",
         "diagnostic",
         "diagnostic",
+        "tool_failed",
     ]
-    assert result["events"][-1].payload == {
+    assert result["events"][-2].payload == {
         "code": "raw_tool_call_unexecuted",
         "message": "Provider tool call arguments became complete, but no actual tool execution followed.",
         "details": {
@@ -419,6 +420,56 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
         },
         "stage": "drive_raw_tool_call",
     }
+    assert result["events"][-1].payload == {
+        "toolCallId": tool_call_id,
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "phase": "failed",
+        "title": "工具调用失败",
+        "summary": "模型产生了工具调用，但运行时未真正执行该调用。",
+        "inputSummary": '{"location": "Shenzhen"}',
+        "errorSummary": "Provider tool call arguments became complete, but no actual tool execution followed.",
+    }
+
+
+
+def test_execute_bound_tool_returns_tool_not_found_failure_without_raising() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="tool.missing:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"tool.missing"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-missing-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="tool.missing",
+            arguments={"location": "Shenzhen"},
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_not_found",
+            "message": "Unknown tool 'tool.missing'.",
+            "retryable": False,
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": "tool.missing",
+            "toolCallId": "tool.missing:call-1",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["failed"]
+    assert emitted_tool_events[-1].error_summary == "Unknown tool 'tool.missing'."
 
 
 
@@ -560,7 +611,7 @@ def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising
 
 
 
-def test_execute_bound_tool_keeps_fatal_contract_integrity_error(
+def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_search(
@@ -591,21 +642,35 @@ def test_execute_bound_tool_keeps_fatal_contract_integrity_error(
         ),
     )
 
-    with pytest.raises(ToolInvocationError) as exc_info:
-        asyncio.run(
-            executor._execute_bound_tool(
-                ctx,
-                tool_id="blackboard.course_catalog.search",
-                arguments={
-                    "username": "alice",
-                    "password": "secret",
-                    "keyword": "数据库系统",
-                },
-            )
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="blackboard.course_catalog.search",
+            arguments={
+                "username": "alice",
+                "password": "secret",
+                "keyword": "数据库系统",
+            },
         )
+    )
 
-    assert exc_info.value.code == "execution_failed"
-    assert exc_info.value.tool_id == "blackboard.course_catalog.search"
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "execution_failed"
+    assert result["error"]["message"] == "blackboard search exploded"
+    assert result["metadata"] == {
+        "toolId": "blackboard.course_catalog.search",
+    }
+    assert result["error"]["details"]["exceptionType"] == "RuntimeError"
+    assert "Traceback (most recent call last):" in result["error"]["details"]["traceback"]
+    assert (
+        result["error"]["details"]["diagnosticContext"]
+        == {
+            "integration": "blackboard",
+            "toolId": "blackboard.course_catalog.search",
+            "invocationId": "blackboard.course_catalog.search:call-1",
+            "argumentKeys": ["keyword", "password", "username"],
+        }
+    )
     assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
     assert emitted_tool_events[-1].error_summary == "blackboard search exploded"
 

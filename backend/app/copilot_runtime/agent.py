@@ -79,7 +79,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
     "Provide concise, accurate, text-only answers. "
     "Do not claim to have used tools when no tools are available."
 )
-_RECOVERABLE_CONTRACT_TOOL_ERROR_CODES = frozenset(
+_RETRYABLE_TOOL_ERROR_CODES = frozenset(
     {
         "authentication_required",
         "cancelled",
@@ -470,6 +470,22 @@ class _PydanticAIEventStream:
         ]
         if not pending_states:
             return
+
+        def resolve_tool_id(tool_name: str | None) -> str:
+            normalized_tool_name = None if tool_name is None else tool_name.strip()
+            if not normalized_tool_name:
+                return "tool.unknown"
+            if normalized_tool_name == "weather_current":
+                return WEATHER_CURRENT_TOOL_ID
+            for registered_tool_id in self._deps.tool_registry.list_tool_ids():
+                try:
+                    executable_tool = self._deps.tool_registry.resolve_tool(registered_tool_id)
+                except LookupError:
+                    continue
+                if executable_tool.function_name == normalized_tool_name:
+                    return registered_tool_id
+            return normalized_tool_name
+
         for state in pending_states:
             parsed_arguments = self._parse_tool_call_arguments(state.args)
             details: dict[str, Any] = {
@@ -481,10 +497,14 @@ class _PydanticAIEventStream:
                 "toolName": state.tool_name,
                 "argumentsComplete": True,
             }
+            raw_tool_input: dict[str, Any] | None = None
             if parsed_arguments is not None:
                 details["toolArguments"] = parsed_arguments
+                raw_tool_input = parsed_arguments
             elif isinstance(state.args, dict):
-                details["toolArguments"] = dict(state.args)
+                raw_tool_arguments = dict(state.args)
+                details["toolArguments"] = raw_tool_arguments
+                raw_tool_input = raw_tool_arguments
             elif isinstance(state.args, str) and state.args.strip() != "":
                 details["toolArgumentsJson"] = state.args
             self._event_buffer.record_event(
@@ -495,9 +515,19 @@ class _PydanticAIEventStream:
                     stage="drive_raw_tool_call",
                 )
             )
-        raise AgentExecutionError(
-            "Observed provider tool call arguments became complete, but no actual tool execution followed."
-        )
+            self.record_tool_lifecycle_event(
+                RuntimeToolLifecycleEvent(
+                    tool_call_id=state.tool_call_id,
+                    tool_id=resolve_tool_id(state.tool_name),
+                    phase="failed",
+                    title="工具调用失败",
+                    summary="模型产生了工具调用，但运行时未真正执行该调用。",
+                    input_summary=summarize_tool_arguments(raw_tool_input),
+                    error_summary=(
+                        "Provider tool call arguments became complete, but no actual tool execution followed."
+                    ),
+                )
+            )
 
     def _require_run_task(self) -> asyncio.Task[None]:
         if self._run_task is None:
@@ -1309,26 +1339,22 @@ class PydanticAIAgentExecutor:
 
         try:
             tool = ctx.deps.tool_registry.resolve_tool(tool_id)
-        except LookupError as exc:
+        except LookupError:
             error_message = f"Unknown tool '{tool_id}'."
-            self._emit_tool_event(
+            self._emit_failed_tool_event(
                 ctx,
-                RuntimeToolLifecycleEvent(
-                    tool_call_id=tool_call_id,
-                    tool_id=tool_id,
-                    phase="failed",
-                    title="工具调用失败",
-                    summary="工具未注册。",
-                    input_summary=input_summary,
-                    error_summary=error_message,
-                ),
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                summary="工具未注册。",
+                input_summary=input_summary,
+                error_summary=error_message,
             )
-            raise ToolInvocationError(
-                code="tool_not_found",
-                message=error_message,
+            return self._build_tool_failure_result(
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
-            ) from exc
+                code="tool_not_found",
+                message=error_message,
+            )
 
         started_title, started_summary = self._build_started_copy(
             tool_id=tool_id,
@@ -1349,23 +1375,19 @@ class PydanticAIAgentExecutor:
 
         if tool_id not in ctx.deps.enabled_tool_ids:
             error_message = f"Tool '{tool_id}' is not enabled for this run."
-            self._emit_tool_event(
+            self._emit_failed_tool_event(
                 ctx,
-                RuntimeToolLifecycleEvent(
-                    tool_call_id=tool_call_id,
-                    tool_id=tool_id,
-                    phase="failed",
-                    title="工具调用失败",
-                    summary="当前运行未启用该工具。",
-                    input_summary=input_summary,
-                    error_summary=error_message,
-                ),
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                summary="当前运行未启用该工具。",
+                input_summary=input_summary,
+                error_summary=error_message,
             )
-            raise ToolInvocationError(
-                code="tool_not_enabled",
-                message=error_message,
+            return self._build_tool_failure_result(
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
+                code="tool_not_enabled",
+                message=error_message,
             )
 
         execution_context = RuntimeToolExecutionContext(
@@ -1394,27 +1416,21 @@ class PydanticAIAgentExecutor:
                 toolId=tool_id,
                 error=summarize_exception(exc),
             )
-            self._emit_tool_event(
+            self._emit_failed_tool_event(
                 ctx,
-                RuntimeToolLifecycleEvent(
-                    tool_call_id=tool_call_id,
-                    tool_id=tool_id,
-                    phase="failed",
-                    title="工具调用失败",
-                    summary="工具执行失败。",
-                    input_summary=input_summary,
-                    error_summary=exc.message,
-                ),
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                summary="工具执行失败。",
+                input_summary=input_summary,
+                error_summary=exc.message,
             )
-            raise ToolInvocationError(
-                code=exc.code,
-                message=exc.message,
+            return self._build_tool_failure_result(
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
+                code=exc.code,
+                message=exc.message,
                 details=exc.details,
-            ) from exc
-        except ToolInvocationError:
-            raise
+            )
         except Exception as exc:
             error_message = f"Tool '{tool_id}' failed: {exc}"
             log_runtime_chain_debug(
@@ -1425,24 +1441,21 @@ class PydanticAIAgentExecutor:
                 toolId=tool_id,
                 error=summarize_exception(exc),
             )
-            self._emit_tool_event(
+            self._emit_failed_tool_event(
                 ctx,
-                RuntimeToolLifecycleEvent(
-                    tool_call_id=tool_call_id,
-                    tool_id=tool_id,
-                    phase="failed",
-                    title="工具调用失败",
-                    summary="工具执行失败。",
-                    input_summary=input_summary,
-                    error_summary=str(exc),
-                ),
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                summary="工具执行失败。",
+                input_summary=input_summary,
+                error_summary=str(exc),
             )
-            raise ToolInvocationError(
-                code="tool_execution_failed",
-                message=error_message,
+            return self._build_tool_failure_result(
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
-            ) from exc
+                code="tool_execution_failed",
+                message=error_message,
+                details={"exceptionType": type(exc).__name__},
+            )
 
         if tool.descriptor.kind == CONTRACT_RUNTIME_TOOL_KIND:
             status = result.get("status")
@@ -1450,23 +1463,20 @@ class PydanticAIAgentExecutor:
                 error_message = (
                     f"Contract tool '{tool_id}' returned an invalid status: {status!r}."
                 )
-                self._emit_tool_event(
+                self._emit_failed_tool_event(
                     ctx,
-                    RuntimeToolLifecycleEvent(
-                        tool_call_id=tool_call_id,
-                        tool_id=tool_id,
-                        phase="failed",
-                        title="工具调用失败",
-                        summary="工具执行失败。",
-                        input_summary=input_summary,
-                        error_summary=error_message,
-                    ),
+                    tool_call_id=tool_call_id,
+                    tool_id=tool_id,
+                    summary="工具执行失败。",
+                    input_summary=input_summary,
+                    error_summary=error_message,
                 )
-                raise ToolInvocationError(
-                    code="tool_execution_failed",
-                    message=error_message,
+                return self._build_tool_failure_result(
                     tool_id=tool_id,
                     tool_call_id=tool_call_id,
+                    code="tool_execution_failed",
+                    message=error_message,
+                    details={"integrity": "invalid_status", "status": status},
                 )
             if status == "error":
                 error_payload = result.get("error")
@@ -1478,79 +1488,54 @@ class PydanticAIAgentExecutor:
                     if isinstance(error_payload, Mapping)
                     else None
                 )
-                error_details = (
-                    error_payload.get("details")
-                    if isinstance(error_payload, Mapping)
-                    and isinstance(error_payload.get("details"), Mapping)
-                    else None
-                )
                 if not isinstance(error_code, str) or error_code.strip() == "":
                     integrity_message = (
                         "Contract tool returned an error result without a valid error code."
                     )
-                    self._emit_tool_event(
+                    self._emit_failed_tool_event(
                         ctx,
-                        RuntimeToolLifecycleEvent(
-                            tool_call_id=tool_call_id,
-                            tool_id=tool_id,
-                            phase="failed",
-                            title="工具调用失败",
-                            summary="工具执行失败。",
-                            input_summary=input_summary,
-                            error_summary=integrity_message,
-                        ),
+                        tool_call_id=tool_call_id,
+                        tool_id=tool_id,
+                        summary="工具执行失败。",
+                        input_summary=input_summary,
+                        error_summary=integrity_message,
                     )
-                    raise ToolInvocationError(
-                        code="tool_execution_failed",
-                        message=integrity_message,
+                    return self._build_tool_failure_result(
                         tool_id=tool_id,
                         tool_call_id=tool_call_id,
+                        code="tool_execution_failed",
+                        message=integrity_message,
+                        details={"integrity": "invalid_error_code"},
                     )
                 if not isinstance(error_message, str) or error_message.strip() == "":
                     integrity_message = (
                         "Contract tool returned an error result without a valid error message."
                     )
-                    self._emit_tool_event(
+                    self._emit_failed_tool_event(
                         ctx,
-                        RuntimeToolLifecycleEvent(
-                            tool_call_id=tool_call_id,
-                            tool_id=tool_id,
-                            phase="failed",
-                            title="工具调用失败",
-                            summary="工具执行失败。",
-                            input_summary=input_summary,
-                            error_summary=integrity_message,
-                        ),
-                    )
-                    raise ToolInvocationError(
-                        code="tool_execution_failed",
-                        message=integrity_message,
-                        tool_id=tool_id,
-                        tool_call_id=tool_call_id,
-                    )
-                normalized_error_code = error_code.strip()
-                normalized_error_message = error_message.strip()
-                self._emit_tool_event(
-                    ctx,
-                    RuntimeToolLifecycleEvent(
                         tool_call_id=tool_call_id,
                         tool_id=tool_id,
-                        phase="failed",
-                        title="工具调用失败",
                         summary="工具执行失败。",
                         input_summary=input_summary,
-                        error_summary=normalized_error_message,
-                    ),
-                )
-                if normalized_error_code in _RECOVERABLE_CONTRACT_TOOL_ERROR_CODES:
-                    return result
-                raise ToolInvocationError(
-                    code=normalized_error_code,
-                    message=normalized_error_message,
-                    tool_id=tool_id,
+                        error_summary=integrity_message,
+                    )
+                    return self._build_tool_failure_result(
+                        tool_id=tool_id,
+                        tool_call_id=tool_call_id,
+                        code="tool_execution_failed",
+                        message=integrity_message,
+                        details={"integrity": "invalid_error_message"},
+                    )
+                normalized_error_message = error_message.strip()
+                self._emit_failed_tool_event(
+                    ctx,
                     tool_call_id=tool_call_id,
-                    details=error_details,
+                    tool_id=tool_id,
+                    summary="工具执行失败。",
+                    input_summary=input_summary,
+                    error_summary=normalized_error_message,
                 )
+                return result
 
         result_summary = summarize_tool_result(result)
         completed_title, completed_summary = self._build_completed_copy(
@@ -1571,6 +1556,64 @@ class PydanticAIAgentExecutor:
             ),
         )
         return result
+
+    def _build_tool_failure_result(
+        self,
+        *,
+        tool_id: str,
+        tool_call_id: str,
+        code: str,
+        message: str,
+        details: Mapping[str, Any] | None = None,
+        retryable: bool | None = None,
+    ) -> dict[str, Any]:
+        normalized_code = code.strip() or "tool_execution_failed"
+        normalized_message = message.strip() or "Tool execution failed."
+        normalized_details = {} if details is None else dict(details)
+        resolved_retryable = (
+            normalized_code in _RETRYABLE_TOOL_ERROR_CODES
+            if retryable is None
+            else retryable
+        )
+        error_payload: dict[str, Any] = {
+            "code": normalized_code,
+            "message": normalized_message,
+            "retryable": resolved_retryable,
+        }
+        if normalized_details:
+            error_payload["details"] = normalized_details
+        return {
+            "status": "error",
+            "error": error_payload,
+            "artifacts": [],
+            "metadata": {
+                "toolId": tool_id,
+                "toolCallId": tool_call_id,
+            },
+        }
+
+    def _emit_failed_tool_event(
+        self,
+        ctx: RunContext[_PydanticAIAgentRunDeps],
+        *,
+        tool_call_id: str,
+        tool_id: str,
+        summary: str,
+        input_summary: str | None,
+        error_summary: str,
+    ) -> None:
+        self._emit_tool_event(
+            ctx,
+            RuntimeToolLifecycleEvent(
+                tool_call_id=tool_call_id,
+                tool_id=tool_id,
+                phase="failed",
+                title="工具调用失败",
+                summary=summary,
+                input_summary=input_summary,
+                error_summary=error_summary,
+            ),
+        )
 
     def _emit_tool_event(
         self,

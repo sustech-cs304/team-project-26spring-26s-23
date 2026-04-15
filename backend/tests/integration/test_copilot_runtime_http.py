@@ -468,7 +468,7 @@ def test_post_root_run_stream_emits_real_tool_lifecycle_events() -> None:
 
 
 
-def test_post_root_run_stream_includes_traceback_in_failed_tool_details(
+def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured_bridge_payloads: list[dict[str, Any]] = []
@@ -532,28 +532,18 @@ def test_post_root_run_stream_includes_traceback_in_failed_tool_details(
     diagnostic_events = [event for event in events if event["type"] == "run_diagnostic"]
 
     assert event_types[:2] == ["run_started", "run_metadata"]
-    assert event_types[-1] == "run_failed"
+    assert event_types[-1] == "run_completed"
+    assert "run_failed" not in event_types
     assert event_types.count("run_diagnostic") == 1
     assert event_types.count("tool_event") == 2
     assert event_types.index("run_diagnostic") < event_types.index("tool_event")
     assert diagnostic_events[0]["payload"]["code"] == "raw_tool_call_observed"
 
-    tool_call_id = tool_events[0]["payload"]["toolCallId"]
     assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
     assert tool_events[1]["payload"]["toolId"] == "blackboard.course_catalog.search"
-    assert events[-1]["payload"]["code"] == "execution_failed"
-    assert events[-1]["payload"]["message"] == "blackboard search exploded"
-    assert events[-1]["payload"]["details"]["toolId"] == "blackboard.course_catalog.search"
-    assert events[-1]["payload"]["details"]["toolCallId"] == tool_call_id
-    assert events[-1]["payload"]["details"]["exceptionType"] == "RuntimeError"
-    assert "Traceback (most recent call last):" in events[-1]["payload"]["details"]["traceback"]
-    assert "RuntimeError: blackboard search exploded" in events[-1]["payload"]["details"]["traceback"]
-    assert events[-1]["payload"]["details"]["diagnosticContext"] == {
-        "integration": "blackboard",
-        "toolId": "blackboard.course_catalog.search",
-        "invocationId": tool_call_id,
-        "argumentKeys": ["keyword", "password", "username"],
-    }
+    assert tool_events[1]["payload"]["errorSummary"] == "blackboard search exploded"
+    assert events[-1]["payload"]["assistantText"] == "unused"
+    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.course_catalog.search"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
 
 

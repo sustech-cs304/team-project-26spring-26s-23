@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from app.copilot_runtime.agent import AgentExecutionError, RuntimeToolLifecycleEvent, ToolInvocationError
+from app.copilot_runtime.agent import AgentExecutionError, RuntimeToolLifecycleEvent
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.execution_support import ThreadNotFoundError
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
@@ -255,7 +255,13 @@ class _CancellingExecutor(_StreamingExecutor):
 
 
 class _ToolFailingExecutor(_StreamingExecutor):
-    def __init__(self, *, code: str, message: str, tool_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        message: str,
+        tool_id: str,
+        assistant_text: str = "Tool failed but I can still help.",
+    ) -> None:
         tool_call_id = f"{tool_id}:call-1"
         tool_events = [
             RuntimeToolLifecycleEvent(
@@ -277,13 +283,8 @@ class _ToolFailingExecutor(_StreamingExecutor):
             ),
         ]
         super().__init__(
-            deltas=[],
-            output=ToolInvocationError(
-                code=code,
-                message=message,
-                tool_id=tool_id,
-                tool_call_id=tool_call_id,
-            ),
+            deltas=[assistant_text],
+            output=assistant_text,
             tool_events=tool_events,
         )
 
@@ -631,10 +632,20 @@ def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_execut
                     "stage": "drive_raw_tool_call",
                 },
             ),
+            RuntimeExecutionEvent(
+                type="tool_failed",
+                payload={
+                    "toolCallId": tool_call_id,
+                    "toolId": WEATHER_CURRENT_TOOL_ID,
+                    "phase": "failed",
+                    "title": "工具调用失败",
+                    "summary": "模型产生了工具调用，但运行时未真正执行该调用。",
+                    "inputSummary": '{"location": "Shenzhen"}',
+                    "errorSummary": "Provider tool call arguments became complete, but no actual tool execution followed.",
+                },
+            ),
         ],
-        output=AgentExecutionError(
-            "Observed provider tool call arguments became complete, but no actual tool execution followed."
-        ),
+        output="我先查一下。",
     )
     registry = build_default_agent_registry(executor_factory=lambda: executor)
     orchestrator = RuntimeMessageRunOrchestrator(
@@ -663,8 +674,8 @@ def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_execut
         "run_diagnostic",
         "run_diagnostic",
         "run_diagnostic",
-        "run_diagnostic",
-        "run_failed",
+        "tool_event",
+        "run_completed",
     ]
     _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
     assert events[3].payload["code"] == "raw_tool_call_observed"
@@ -672,16 +683,15 @@ def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_execut
     assert events[5].payload["code"] == "raw_tool_call_unexecuted"
     assert events[5].payload["details"]["toolCallId"] == tool_call_id
     assert events[6].payload == {
-        "code": "agent_execution_failed",
-        "message": "Observed provider tool call arguments became complete, but no actual tool execution followed.",
-        "details": {},
-        "stage": "execute_model",
+        "toolCallId": tool_call_id,
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "phase": "failed",
+        "title": "工具调用失败",
+        "summary": "模型产生了工具调用，但运行时未真正执行该调用。",
+        "inputSummary": '{"location": "Shenzhen"}',
+        "errorSummary": "Provider tool call arguments became complete, but no actual tool execution followed.",
     }
-    assert events[7].payload == {
-        "code": "agent_execution_failed",
-        "message": "Observed provider tool call arguments became complete, but no actual tool execution followed.",
-        "details": {},
-    }
+    assert events[7].payload["assistantText"] == "我先查一下。"
     assert store.list_messages("thread-1") == ()
 
 
@@ -713,11 +723,10 @@ def test_stream_events_host_resolution_failure_emits_diagnostic_and_failed_witho
 
 
 
-def test_stream_events_tool_failure_emits_failed_tool_event_then_failed_terminal_event() -> None:
+def test_stream_events_tool_failure_emits_failed_tool_event_and_run_completes() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _ToolFailingExecutor(
-        code="tool_execution_failed",
         message="Tool 'tool.weather-current' failed: boom",
         tool_id=WEATHER_CURRENT_TOOL_ID,
     )
@@ -741,11 +750,18 @@ def test_stream_events_tool_failure_emits_failed_tool_event_then_failed_terminal
         )
     )
 
-    assert [event.type for event in events] == ["run_started", "run_metadata", "tool_event", "tool_event", "run_failed"]
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
     _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
     assert events[3].payload["phase"] == "failed"
-    assert events[-1].payload["code"] == "tool_execution_failed"
-    assert events[-1].payload["details"]["toolId"] == WEATHER_CURRENT_TOOL_ID
+    assert events[-1].payload["assistantText"] == "Tool failed but I can still help."
+    assert "run_failed" not in [event.type for event in events]
     assert store.list_messages("thread-1") == ()
 
 
