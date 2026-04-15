@@ -177,6 +177,69 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
   })
 
+  it('keeps an active restored session visible even when selectedAgent is temporarily null', () => {
+    const html = renderToStaticMarkup(
+      <CopilotPanelShell
+        state={createReadyState()}
+        retrying={false}
+        onRetry={vi.fn()}
+        selectedAgent={null}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedSessionHistoryState({
+          detailStatus: 'ready',
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-1',
+              sequenceStart: 1,
+              text: '启动恢复历史',
+            },
+          ],
+        })}
+        sendError={null}
+        modelGroups={[]}
+        thinkingCapability={null}
+        composerDraft={createEmptyComposerDraft()}
+        onComposerDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancelCurrentRun={vi.fn()}
+        sendStatus="idle"
+        canCancelSend={false}
+        sendDisabledReason={null}
+        historyDrift={null}
+        historyRebindAcknowledged={false}
+        onAcknowledgeHistoryRebind={vi.fn()}
+        conversation={[
+          {
+            id: 'history:user:run-1',
+            kind: 'user',
+            title: '',
+            content: '启动恢复历史',
+            status: 'completed',
+          },
+        ]}
+        assistantPlaceholder={{
+          shouldRender: false,
+          dismissReason: 'inactive',
+        }}
+        composerInputRef={createRef<HTMLTextAreaElement>()}
+        composerHeight={160}
+        onComposerResizeStart={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('启动恢复历史')
+    expect(html).not.toContain('暂无可用助手')
+  })
+
   it('shows a concise restore diagnostic when history recovery fails before any session is available', () => {
     const html = renderToStaticMarkup(
       <CopilotPanelShell

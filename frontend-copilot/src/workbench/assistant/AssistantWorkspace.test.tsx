@@ -1296,6 +1296,54 @@ describe('AssistantWorkspace render + interactions', () => {
 
     rendered.unmount()
   })
+
+  it('keeps startup-restored history thread immediately visible even before directory selection finishes syncing', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const delayedAgents = createDeferred<typeof directoryResponse>()
+    const listAgents = vi.fn().mockImplementation(async () => delayedAgents.promise)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true,
+      version: 'chat-history-v1',
+      threads: [historyFixture.summary],
+    })
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(historyFixture.detail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+    const bootstrap = createBootstrapController()
+    if ('bootstrapFields' in bootstrap.state) {
+      bootstrap.state.bootstrapFields.debugModeEnabled = true
+    }
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={bootstrap}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === historyFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().selectedAgent?.id === historyFixture.summary.boundAgentId
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+    ))
+
+    expect(getHistoryThreadDetail).toHaveBeenCalledWith(historyFixture.summary.threadId)
+    expect(getHistoryRunReplay).toHaveBeenCalledWith(historyFixture.replay.run.runId)
+    delayedAgents.resolve(directoryResponse)
+    await flushAssistantWorkspaceMicrotasks()
+
+    rendered.unmount()
+  })
 })
 
 function createPersistedHistoryFixture() {
@@ -1846,6 +1894,9 @@ async function updateAssistantWorkspaceRuntimeControllers(
 }
 
 function getLastMockCopilotChatPanelProps(): {
+  selectedAgent?: {
+    id?: string
+  } | null
   sessionShell?: {
     sessionId?: string
   }
@@ -1870,6 +1921,9 @@ function getLastMockCopilotChatPanelProps(): {
   }
 
   return props as {
+    selectedAgent?: {
+      id?: string
+    } | null
     sessionShell?: {
       sessionId?: string
     }
