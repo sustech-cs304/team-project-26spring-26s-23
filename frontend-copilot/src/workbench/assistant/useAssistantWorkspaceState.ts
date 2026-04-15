@@ -244,6 +244,7 @@ export function useAssistantWorkspaceState({
   const [historyRestoreRetryKey, setHistoryRestoreRetryKey] = useState(0)
   const isMountedRef = useRef(true)
   const [historyRestoreError, setHistoryRestoreError] = useState<string | null>(null)
+  const directoryAgentsRef = useRef(initialDirectoryState.agents)
   const debugModeEnabled = isCopilotDebugModeEnabled(bootstrap.state)
   const debugModeEnabledRef = useRef(debugModeEnabled)
   const appendWorkspaceDebugLog = useCallback((event: string, context: Record<string, unknown> = {}) => {
@@ -254,11 +255,15 @@ export function useAssistantWorkspaceState({
     debugModeEnabledRef.current = debugModeEnabled
   }, [debugModeEnabled])
 
-  useEffect(() => () => {
-    isMountedRef.current = false
-    if (historyRestoreRetryTimerRef.current !== null) {
-      window.clearTimeout(historyRestoreRetryTimerRef.current)
-      historyRestoreRetryTimerRef.current = null
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return () => {
+      isMountedRef.current = false
+      if (historyRestoreRetryTimerRef.current !== null) {
+        window.clearTimeout(historyRestoreRetryTimerRef.current)
+        historyRestoreRetryTimerRef.current = null
+      }
     }
   }, [])
 
@@ -272,6 +277,11 @@ export function useAssistantWorkspaceState({
     listAgents: listAgentsImpl,
     initialDirectoryState,
   })
+
+  useEffect(() => {
+    directoryAgentsRef.current = directoryState.agents
+  }, [directoryState.agents])
+
   const {
     sessionListState,
     setSessionListState,
@@ -672,6 +682,20 @@ export function useAssistantWorkspaceState({
         const historyResult = await listHistoryThreadsImpl()
 
         if (cancelled || !isMountedRef.current || historyListRequestVersionRef.current !== requestVersion) {
+          appendWorkspaceDebugLog('history-restore-request-discarded', {
+            runtimeUrl,
+            restoreKey,
+            requestVersion,
+            latestRequestVersion: historyListRequestVersionRef.current,
+            discardReason: cancelled
+              ? 'effect-cleanup'
+              : !isMountedRef.current
+                ? 'unmounted'
+                : 'stale-request-version',
+            ok: historyResult.ok,
+            threadCount: historyResult.ok ? historyResult.threads.length : null,
+            error: historyResult.ok ? null : historyResult.error,
+          })
           return
         }
 
@@ -702,10 +726,11 @@ export function useAssistantWorkspaceState({
         const currentSessionsById = new Map(
           sessionListStateRef.current.sessions.map((sessionEntry) => [sessionEntry.sessionId, sessionEntry] as const),
         )
+        const agentsAtRestoreApply = directoryAgentsRef.current
         const restoredSessions = effectiveThreadSummaries.map((summary) => {
           const restoredSession = createAssistantSessionShellFromHistorySummary({
             summary,
-            agents: directoryState.agents,
+            agents: agentsAtRestoreApply,
           })
           const currentSession = currentSessionsById.get(summary.threadId)
 
@@ -805,6 +830,8 @@ export function useAssistantWorkspaceState({
             threadCount: 0,
             cachedThreadSummaryCount: cachedThreadSummaries.length,
             usingPersistedThreadSummaryCache,
+            agentCountAtApply: agentsAtRestoreApply.length,
+            sessionCountBeforeRestore: currentSessionsById.size,
             restoredSessionCount: restoredSessions.length,
             retryDelayMs,
             preferredActiveSessionId,
@@ -822,6 +849,10 @@ export function useAssistantWorkspaceState({
           threadCount: historyResult.threads.length,
           isEmpty: false,
           usingPersistedThreadSummaryCache,
+          agentCountAtApply: agentsAtRestoreApply.length,
+          sessionCountBeforeRestore: currentSessionsById.size,
+          effectiveThreadSummaryCount: effectiveThreadSummaries.length,
+          restoredSessionCount: restoredSessions.length,
           preferredActiveSessionId,
           shouldProtectUserLiveSelection,
           ...(restoreSelectionSummary ?? {}),
@@ -865,7 +896,6 @@ export function useAssistantWorkspaceState({
   }, [
     bootstrap.state,
     clearHistoryRestoreRetry,
-    directoryState.agents,
     historyRestoreRetryKey,
     isMountedRef,
     listHistoryThreadsImpl,
@@ -1215,7 +1245,11 @@ export function useAssistantWorkspaceState({
       selectedThreadId: nextShellState.selectedThreadId,
       selectedRunIdCount: Object.keys(nextShellState.selectedRunIdByThreadId).length,
       selectedRunIdByThreadId: nextShellState.selectedRunIdByThreadId,
+      sessionCount: sessionListState.sessions.length,
       threadSummaryCount: nextShellState.threadSummaries.length,
+      threadSummarySource: sessionListState.sessions.length > 0
+        ? 'session-list'
+        : 'previous-shell-cache',
       skippedSelectedRunCount: Object.keys(sessionHistoryById).length - Object.keys(nextShellState.selectedRunIdByThreadId).length,
     })
     persistedShellStateRef.current = nextShellState
