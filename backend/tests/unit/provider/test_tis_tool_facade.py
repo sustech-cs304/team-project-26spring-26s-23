@@ -491,6 +491,83 @@ def test_credit_gpa_tool_uses_secret_provider_and_database_db_when_persisting(
     assert database.requests == ["teaching_information_system/tis-credit.db"]
 
 
+def test_credit_gpa_tool_uses_default_database_db_when_persisting(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    database = StubDatabaseResolver(tmp_path / "database-root")
+
+    def _fake_fetch(
+        username: str,
+        password: str,
+        *,
+        role_code: str | None = None,
+        homepage_html: str | None = None,
+        config: Any = None,
+        enable_console_logging: bool = False,
+        persist: bool = False,
+        db_manager: TISDatabaseManager | None = None,
+        owner_key: str | None = None,
+    ) -> TISCreditGPAQueryResult:
+        _ = (homepage_html, config, enable_console_logging)
+        captured.update(
+            {
+                "username": username,
+                "password": password,
+                "role_code": role_code,
+                "persist": persist,
+                "owner_key": owner_key,
+                "db_path": None if db_manager is None else db_manager.describe().db_path,
+            }
+        )
+        return _build_credit_gpa_result(
+            persistence={
+                "enabled": True,
+                "owner_key": owner_key,
+                "db_path": None if db_manager is None else db_manager.describe().db_path,
+            }
+        )
+
+    monkeypatch.setattr(facade_tools, "fetch_credit_gpa_with_credentials", _fake_fetch)
+
+    result = _invoke_tool(
+        TISCreditGPAFetchTool(),
+        arguments={
+            "username": "alice",
+            "password": "secret",
+            "persist": True,
+        },
+        host=ToolHostCapabilities(database_resolver=database),
+    )
+
+    resolved_path = (tmp_path / "database-root" / "teaching_information_system/sustech_tis.db").as_posix()
+
+    assert result.status == "success"
+    assert captured == {
+        "username": "alice",
+        "password": "secret",
+        "role_code": None,
+        "persist": True,
+        "owner_key": None,
+        "db_path": resolved_path,
+    }
+    assert result.output is not None
+    assert result.output["persistence"] == {
+        "enabled": True,
+        "owner_key": None,
+        "db_path": resolved_path,
+    }
+    assert result.metadata == {
+        "toolId": "tis.credit_gpa.fetch",
+        "credentialSource": "arguments",
+        "persistenceRequested": True,
+        "dbPathSource": "default",
+    }
+    assert database.requests == ["teaching_information_system/sustech_tis.db"]
+
+
+
 def test_credit_gpa_tool_defaults_to_sustech_secret_names_when_secret_names_omitted(
     monkeypatch: Any,
 ) -> None:
@@ -569,6 +646,26 @@ def test_credit_gpa_tool_maps_missing_database_capability() -> None:
     assert result.error.details["capability"] == "database_resolver"
     assert result.error.details["exceptionType"] == "MissingHostCapabilityError"
     assert "traceback" in result.error.details
+
+
+def test_credit_gpa_tool_rejects_explicit_db_path_when_persisting() -> None:
+    result = _invoke_tool(
+        TISCreditGPAFetchTool(),
+        arguments={
+            "username": "alice",
+            "password": "secret",
+            "persist": True,
+            "dbPath": "C:/tmp/tis-explicit.db",
+        },
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.code == "invalid_input"
+    assert result.error.message == (
+        "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
+    )
+
 
 
 def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypatch: Any) -> None:
@@ -659,22 +756,21 @@ def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypa
 
 def test_tis_sql_query_tool_queries_default_database(
     tmp_path: Path,
-    monkeypatch: Any,
 ) -> None:
+    database = StubDatabaseResolver(tmp_path / "database-root")
     db_path = _create_sqlite_db(
-        tmp_path / "tis-default.db",
+        database.root / "teaching_information_system/sustech_tis.db",
         script="""
         CREATE TABLE grades (id INTEGER PRIMARY KEY, course_name TEXT, score INTEGER);
         INSERT INTO grades (id, course_name, score) VALUES (1, '数据库系统', 95), (2, '机器学习', 98);
         """,
     )
     event_sink = StubEventSink()
-    monkeypatch.setattr(facade_tools, "_default_tis_sql_query_db_path", lambda _host: db_path)
 
     result = _invoke_tool(
         TISSQLQueryTool(),
         arguments={"sql": "SELECT id, course_name, score FROM grades ORDER BY id"},
-        host=ToolHostCapabilities(event_sink=event_sink),
+        host=ToolHostCapabilities(database_resolver=database, event_sink=event_sink),
     )
 
     assert result.status == "success"
@@ -704,6 +800,7 @@ def test_tis_sql_query_tool_queries_default_database(
         "dbPathSource": "default",
         "persistArtifactRequested": False,
     }
+    assert database.requests == ["teaching_information_system/sustech_tis.db"]
     assert [event.event_type for event in event_sink.events] == [
         "tis.sql.query.started",
         "tis.sql.query.completed",

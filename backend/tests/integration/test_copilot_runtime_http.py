@@ -776,6 +776,134 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
 
 
 
+def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bridge_backed_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_sync: dict[str, Any] = {}
+    captured_bridge_payloads: list[dict[str, Any]] = []
+    captured_headers: list[str | None] = []
+
+    def _fake_sync(
+        username: str,
+        password: str,
+        *,
+        db_path: Path | None = None,
+        reset_schema: bool = False,
+        resource_course_limit: int = 3,
+        verify_second_sync: bool = True,
+        progress: Any = None,
+        enable_console_logging: bool = False,
+    ) -> BlackboardSnapshotSyncReport:
+        _ = enable_console_logging
+        captured_sync.update(
+            {
+                "username": username,
+                "password": password,
+                "db_path": db_path,
+                "reset_schema": reset_schema,
+                "resource_course_limit": resource_course_limit,
+                "verify_second_sync": verify_second_sync,
+            }
+        )
+        if progress is not None:
+            progress("fetching courses")
+            progress("syncing sqlite")
+        return _build_blackboard_snapshot_report(
+            db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path,
+            resource_course_limit=resource_course_limit,
+        )
+
+    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+
+    app = _create_app(
+        host_capability_bridge_client=_create_recording_bridge_client(
+            captured_payloads=captured_bridge_payloads,
+            captured_headers=captured_headers,
+            secret_values={"sustech.username": "alice", "sustech.casPassword": "secret"},
+        )
+    )
+
+    with TestClient(app) as client:
+        assert app.state.copilot_runtime_agent_executor._tool_registry is app.state.copilot_runtime_tool_registry
+        _configure_contract_tool_test_model(
+            app,
+            tool_id="blackboard.snapshot.sync",
+            tool_arguments={
+                "stateKey": "snapshot-latest",
+                "artifactName": "snapshot.json",
+            },
+            output_text="Blackboard default bridge answer",
+        )
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                model_id="gpt-4.1",
+                user_text="Sync Blackboard snapshot with the default desktop database.",
+                enabled_tools=["blackboard.snapshot.sync"],
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+    tool_call_id = _assert_contract_tool_run_events(
+        events,
+        tool_id="blackboard.snapshot.sync",
+        assistant_text="Blackboard default bridge answer",
+    )
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert response.status_code == 200
+    assert captured_sync == {
+        "username": "alice",
+        "password": "secret",
+        "db_path": Path("database-root/blackboard/sustech.db"),
+        "reset_schema": False,
+        "resource_course_limit": 3,
+        "verify_second_sync": True,
+    }
+    assert captured_headers == ["bridge-token-123"] * len(captured_headers)
+    assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
+        ("event", "emit_event"),
+        ("secret", "get_secret"),
+        ("secret", "get_secret"),
+        ("database", "resolve_path"),
+        ("state", "put_value"),
+        ("artifact", "save_text"),
+        ("event", "emit_event"),
+    ]
+    database_request = next(
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("database", "resolve_path")
+    )
+    state_request = next(
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("state", "put_value")
+    )
+    artifact_request = next(
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("artifact", "save_text")
+    )
+    assert all(item["toolId"] == "blackboard.snapshot.sync" for item in captured_bridge_payloads)
+    assert all(item["runId"] == run_id for item in captured_bridge_payloads)
+    assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
+    assert database_request["payload"]["relativePath"] == "blackboard/sustech.db"
+    assert state_request["payload"]["value"]["output"]["dbPath"] == "database-root/blackboard/sustech.db"
+    assert json.loads(artifact_request["payload"]["text"])["dbPath"] == "database-root/blackboard/sustech.db"
+    assert artifact_request["payload"]["metadata"] == {
+        "toolId": "blackboard.snapshot.sync",
+        "invocationId": tool_call_id,
+    }
+
+
+
 def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_capabilities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -898,6 +1026,140 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
     assert str(state_request["payload"]["key"]).endswith(":credit-gpa-latest")
     assert state_request["payload"]["value"]["output"]["summary"]["average_credit_gpa"] == 3.82
     assert json.loads(artifact_request["payload"]["text"])["summary"]["average_credit_gpa"] == 3.82
+    assert artifact_request["payload"]["metadata"] == {
+        "toolId": "tis.credit_gpa.fetch",
+        "invocationId": tool_call_id,
+    }
+
+
+
+def test_post_root_run_stream_executes_tis_credit_gpa_with_default_bridge_backed_database_when_persisting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_fetch: dict[str, Any] = {}
+    captured_bridge_payloads: list[dict[str, Any]] = []
+    captured_headers: list[str | None] = []
+
+    def _fake_fetch(
+        username: str,
+        password: str,
+        *,
+        role_code: str | None = None,
+        homepage_html: str | None = None,
+        config: Any = None,
+        enable_console_logging: bool = False,
+        persist: bool = False,
+        db_manager: Any = None,
+        owner_key: str | None = None,
+    ) -> TISCreditGPAQueryResult:
+        _ = (homepage_html, config, enable_console_logging)
+        captured_fetch.update(
+            {
+                "username": username,
+                "password": password,
+                "role_code": role_code,
+                "persist": persist,
+                "db_path": None if db_manager is None else db_manager.describe().db_path,
+                "owner_key": owner_key,
+            }
+        )
+        return _build_tis_credit_gpa_result(
+            persistence={
+                "enabled": persist,
+                "owner_key": owner_key,
+                "db_path": None if db_manager is None else db_manager.describe().db_path,
+            }
+        )
+
+    monkeypatch.setattr(tis_facade_tools, "fetch_credit_gpa_with_credentials", _fake_fetch)
+
+    app = _create_app(
+        host_capability_bridge_client=_create_recording_bridge_client(
+            captured_payloads=captured_bridge_payloads,
+            captured_headers=captured_headers,
+            secret_values={"sustech.username": "20251234", "sustech.casPassword": "cas-secret"},
+        )
+    )
+
+    with TestClient(app) as client:
+        assert app.state.copilot_runtime_agent_executor._tool_registry is app.state.copilot_runtime_tool_registry
+        _configure_contract_tool_test_model(
+            app,
+            tool_id="tis.credit_gpa.fetch",
+            tool_arguments={
+                "persist": True,
+                "stateKey": "credit-gpa-latest",
+                "artifactName": "credit-gpa.json",
+            },
+            output_text="TIS default bridge answer",
+        )
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                model_id="gpt-4.1",
+                user_text="Fetch TIS credit GPA with persistence on the default desktop database.",
+                enabled_tools=["tis.credit_gpa.fetch"],
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+    tool_call_id = _assert_contract_tool_run_events(
+        events,
+        tool_id="tis.credit_gpa.fetch",
+        assistant_text="TIS default bridge answer",
+    )
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert response.status_code == 200
+    assert captured_fetch == {
+        "username": "20251234",
+        "password": "cas-secret",
+        "role_code": None,
+        "persist": True,
+        "db_path": "database-root/teaching_information_system/sustech_tis.db",
+        "owner_key": None,
+    }
+    assert captured_headers == ["bridge-token-123"] * len(captured_headers)
+    assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
+        ("event", "emit_event"),
+        ("secret", "get_secret"),
+        ("secret", "get_secret"),
+        ("database", "resolve_path"),
+        ("state", "put_value"),
+        ("artifact", "save_text"),
+        ("event", "emit_event"),
+    ]
+    database_request = next(
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("database", "resolve_path")
+    )
+    state_request = next(
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("state", "put_value")
+    )
+    artifact_request = next(
+        item
+        for item in captured_bridge_payloads
+        if (item["capability"], item["operation"]) == ("artifact", "save_text")
+    )
+    assert all(item["toolId"] == "tis.credit_gpa.fetch" for item in captured_bridge_payloads)
+    assert all(item["runId"] == run_id for item in captured_bridge_payloads)
+    assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
+    assert database_request["payload"]["relativePath"] == "teaching_information_system/sustech_tis.db"
+    assert state_request["payload"]["value"]["output"]["persistence"]["db_path"] == (
+        "database-root/teaching_information_system/sustech_tis.db"
+    )
+    assert json.loads(artifact_request["payload"]["text"])["persistence"]["db_path"] == (
+        "database-root/teaching_information_system/sustech_tis.db"
+    )
     assert artifact_request["payload"]["metadata"] == {
         "toolId": "tis.credit_gpa.fetch",
         "invocationId": tool_call_id,
@@ -1247,7 +1509,10 @@ def _build_tis_homepage() -> TISHomepageProfile:
 
 
 
-def _build_tis_credit_gpa_result() -> TISCreditGPAQueryResult:
+def _build_tis_credit_gpa_result(
+    *,
+    persistence: dict[str, Any] | None = None,
+) -> TISCreditGPAQueryResult:
     return TISCreditGPAQueryResult(
         success=True,
         source_url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
@@ -1285,6 +1550,7 @@ def _build_tis_credit_gpa_result() -> TISCreditGPAQueryResult:
         ],
         logs=[_build_tis_log_event("integration.tis.credit_gpa")],
         resolved_role_code="01",
+        persistence=persistence,
     )
 
 

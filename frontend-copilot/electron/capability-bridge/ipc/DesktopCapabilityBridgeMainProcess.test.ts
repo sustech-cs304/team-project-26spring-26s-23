@@ -159,6 +159,26 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       },
     })
 
+    const expectedDefaultTisDatabasePath = path.resolve(
+      fixture.hostedPaths.databaseDir,
+      'teaching_information_system',
+      'sustech_tis.db',
+    )
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'database-2',
+      capability: 'database',
+      operation: 'resolve_path',
+      payload: {
+        relativePath: 'teaching_information_system/sustech_tis.db',
+      },
+    }))).resolves.toEqual({
+      requestId: 'database-2',
+      ok: true,
+      result: {
+        path: expectedDefaultTisDatabasePath,
+      },
+    })
+
     const artifactResponse = await service.handleRequest(buildRequest({
       requestId: 'artifact-1',
       capability: 'artifact',

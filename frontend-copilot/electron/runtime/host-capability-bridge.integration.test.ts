@@ -147,7 +147,51 @@ describe('createHostCapabilityBridge integrated runtime regression', () => {
       },
     })
 
-    const blackboardArtifactText = '{"dbPath":"workspace-root/backend/data/snapshot.db","integrityOk":true}'
+    const blackboardDatabasePath = await postBridgeRequest(bridge, {
+      requestId: 'bb-database-1',
+      capability: 'database',
+      operation: 'resolve_path',
+      toolId: 'blackboard.snapshot.sync',
+      runId: 'run-blackboard-1',
+      toolCallId: 'blackboard.snapshot.sync:call-1',
+      payload: {
+        relativePath: 'blackboard/sustech.db',
+      },
+    })
+    expect(blackboardDatabasePath.response.status).toBe(200)
+    expect(blackboardDatabasePath.payload).toEqual({
+      requestId: 'bb-database-1',
+      ok: true,
+      result: {
+        path: path.resolve(fixture.hostedPaths.databaseDir, 'blackboard', 'sustech.db'),
+      },
+    })
+
+    const tisDatabasePath = await postBridgeRequest(bridge, {
+      requestId: 'tis-database-1',
+      capability: 'database',
+      operation: 'resolve_path',
+      toolId: 'tis.credit_gpa.fetch',
+      runId: 'run-tis-1',
+      toolCallId: 'tis.credit_gpa.fetch:call-1',
+      payload: {
+        relativePath: 'teaching_information_system/sustech_tis.db',
+      },
+    })
+    expect(tisDatabasePath.response.status).toBe(200)
+    expect(tisDatabasePath.payload).toEqual({
+      requestId: 'tis-database-1',
+      ok: true,
+      result: {
+        path: path.resolve(
+          fixture.hostedPaths.databaseDir,
+          'teaching_information_system',
+          'sustech_tis.db',
+        ),
+      },
+    })
+
+    const blackboardArtifactText = '{"dbPath":"database-root/blackboard/sustech.db","integrityOk":true}'
     const blackboardArtifact = await postBridgeRequest(bridge, {
       requestId: 'bb-artifact-1',
       capability: 'artifact',

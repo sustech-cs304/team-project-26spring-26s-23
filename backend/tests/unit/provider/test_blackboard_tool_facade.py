@@ -619,6 +619,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
 
 
 def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_omitted(
+    tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
     captured: dict[str, Any] = {}
@@ -697,7 +698,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
 
     monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
 
-    database = StubDatabaseResolver(Path("database-root"))
+    database = StubDatabaseResolver(tmp_path / "database-root")
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
@@ -709,7 +710,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
     assert captured == {
         "username": "student@sustech.edu.cn",
         "password": "cas-secret",
-        "db_path": Path("database-root/blackboard/sustech.db"),
+        "db_path": tmp_path / "database-root" / "blackboard/sustech.db",
         "reset_schema": False,
         "resource_course_limit": 3,
         "verify_second_sync": True,
@@ -720,26 +721,44 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
         "dbPathSource": "default",
     }
     assert secret_provider.requests == ["sustech.username", "sustech.casPassword"]
+    assert database.requests == ["blackboard/sustech.db"]
+
+
+def test_snapshot_sync_tool_rejects_explicit_db_path() -> None:
+    result = _invoke_tool(
+        BlackboardSnapshotSyncTool(),
+        arguments={
+            "username": "alice",
+            "password": "secret",
+            "dbPath": "C:/tmp/blackboard-explicit.db",
+        },
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.code == "invalid_input"
+    assert result.error.message == (
+        "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
+    )
 
 
 def test_blackboard_sql_query_tool_queries_default_database(
     tmp_path: Path,
-    monkeypatch: Any,
 ) -> None:
+    database = StubDatabaseResolver(tmp_path / "database-root")
     db_path = _create_sqlite_db(
-        tmp_path / "blackboard-default.db",
+        database.root / "blackboard/sustech.db",
         script="""
         CREATE TABLE courses (id INTEGER PRIMARY KEY, name TEXT);
         INSERT INTO courses (id, name) VALUES (1, 'CS305'), (2, 'CS307');
         """,
     )
     event_sink = StubEventSink()
-    monkeypatch.setattr(facade_tools, "_default_blackboard_sql_query_db_path", lambda _host: db_path)
 
     result = _invoke_tool(
         BlackboardSQLQueryTool(),
         arguments={"sql": "SELECT id, name FROM courses ORDER BY id"},
-        host=ToolHostCapabilities(event_sink=event_sink),
+        host=ToolHostCapabilities(database_resolver=database, event_sink=event_sink),
     )
 
     assert result.status == "success"
@@ -769,6 +788,7 @@ def test_blackboard_sql_query_tool_queries_default_database(
         "dbPathSource": "default",
         "persistArtifactRequested": False,
     }
+    assert database.requests == ["blackboard/sustech.db"]
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.sql.query.started",
         "blackboard.sql.query.completed",
