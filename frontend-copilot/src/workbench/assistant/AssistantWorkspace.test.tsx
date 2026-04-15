@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act } from 'react'
+import { StrictMode, act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -9,6 +9,7 @@ import {
   clickElement,
   createBootstrapController,
   createCapabilitiesResponse,
+  createDeferred,
   createDirectoryResponse,
   createSessionResponse,
   renderWithRoot,
@@ -1002,6 +1003,125 @@ describe('AssistantWorkspace render + interactions', () => {
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live-race'
     ))
     await waitForAssistantWorkspaceCondition(() => rendered.queryByTestId('assistant-session-card-thread-1') !== null)
+
+    rendered.unmount()
+  })
+
+  it('keeps a non-empty restore visible under StrictMode when startup agent hydration overlaps the restore request', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    const directoryResponse = createDirectoryResponse()
+    const historyFixture = createPersistedHistoryFixture()
+    const secondMountRestore = createDeferred<{
+      ok: true
+      version: 'chat-history-v1'
+      threads: [typeof historyFixture.summary]
+    }>()
+    let historyRequestCount = 0
+    const listHistoryThreads = vi.fn().mockImplementation(() => {
+      historyRequestCount += 1
+      if (historyRequestCount === 2) {
+        return secondMountRestore.promise
+      }
+
+      return new Promise<{
+        ok: true
+        version: 'chat-history-v1'
+        threads: [typeof historyFixture.summary]
+      }>(() => {})
+    })
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(historyFixture.detail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+    const bootstrap = createBootstrapController()
+    if ('bootstrapFields' in bootstrap.state) {
+      bootstrap.state.bootstrapFields.debugModeEnabled = true
+    }
+
+    const rendered = renderWithRoot(
+      <StrictMode>
+        <AssistantWorkspace
+          bootstrap={bootstrap}
+          listAgents={listAgents}
+          listHistoryThreads={listHistoryThreads}
+          getHistoryThreadDetail={getHistoryThreadDetail}
+          getHistoryRunReplay={getHistoryRunReplay}
+        />
+      </StrictMode>,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length >= 2)
+    await waitForAssistantWorkspaceCondition(() => listAgents.mock.calls.length >= 2)
+    await flushAssistantWorkspaceEffects()
+
+    expect(listHistoryThreads).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      secondMountRestore.resolve({
+        ok: true,
+        version: 'chat-history-v1',
+        threads: [historyFixture.summary],
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => rendered.queryByTestId('assistant-session-card-thread-1') !== null)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-1'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+    ))
+    await flushAssistantWorkspaceEffects()
+
+    expect(readPersistedAssistantWorkspaceShellState()).toMatchObject({
+      selectedThreadId: 'thread-1',
+      threadSummaries: [
+        expect.objectContaining({
+          threadId: 'thread-1',
+        }),
+      ],
+    })
+    expect(debugSpy.mock.calls.some((call) => (
+      call[0] === '[copilot-debug]'
+      && typeof call[1] === 'object'
+      && call[1] !== null
+      && 'scope' in call[1]
+      && call[1].scope === 'assistant-workspace'
+      && 'event' in call[1]
+      && call[1].event === 'history-restore-request-succeeded'
+      && 'threadCount' in call[1]
+      && call[1].threadCount === 1
+      && 'restoredSessionCount' in call[1]
+      && call[1].restoredSessionCount === 1
+    ))).toBe(true)
+    expect(debugSpy.mock.calls.some((call) => (
+      call[0] === '[copilot-debug]'
+      && typeof call[1] === 'object'
+      && call[1] !== null
+      && 'scope' in call[1]
+      && call[1].scope === 'assistant-workspace'
+      && 'event' in call[1]
+      && call[1].event === 'workspace-shell-state-persisted'
+      && 'threadSummaryCount' in call[1]
+      && call[1].threadSummaryCount === 1
+      && 'threadSummarySource' in call[1]
+      && call[1].threadSummarySource === 'session-list'
+    ))).toBe(true)
+    expect(debugSpy.mock.calls.some((call) => (
+      call[0] === '[copilot-debug]'
+      && typeof call[1] === 'object'
+      && call[1] !== null
+      && 'scope' in call[1]
+      && call[1].scope === 'assistant-workspace'
+      && 'event' in call[1]
+      && call[1].event === 'history-restore-request-discarded'
+      && 'discardReason' in call[1]
+      && call[1].discardReason === 'stale-request-version'
+      && 'threadCount' in call[1]
+      && call[1].threadCount === 1
+    ))).toBe(false)
 
     rendered.unmount()
   })
