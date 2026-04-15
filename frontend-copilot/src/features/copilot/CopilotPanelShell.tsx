@@ -161,19 +161,19 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
     )
   }
 
-  if (props.selectedAgent === null) {
-    return (
-      <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
-        <p className="copilot-panel__eyebrow">Copilot</p>
-        <h2 className="copilot-panel__title">暂无可用助手</h2>
-        <p className="copilot-panel__description">
-          请检查连接状态，或稍后再试。
-        </p>
-      </section>
-    )
-  }
-
   if (props.sessionShell === null) {
+    if (props.selectedAgent === null) {
+      return (
+        <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
+          <p className="copilot-panel__eyebrow">Copilot</p>
+          <h2 className="copilot-panel__title">暂无可用助手</h2>
+          <p className="copilot-panel__description">
+            请检查连接状态，或稍后再试。
+          </p>
+        </section>
+      )
+    }
+
     return (
       <section className="copilot-panel__inline-placeholder" aria-live="polite" data-testid="chat-session-placeholder">
         <p className="copilot-panel__inline-placeholder-text">可在左侧选择助手并新建会话</p>

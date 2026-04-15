@@ -750,42 +750,38 @@ export function useAssistantWorkspaceState({
           : restoredSessions[0]?.sessionId ?? null
 
         const shouldProtectUserLiveSelection = liveSessionSelectionVersionRef.current !== liveSessionSelectionVersionAtRequest
-        let restoreSelectionSummary: Record<string, unknown> | null = null
+        const restoredSessionIds = new Set(restoredSessions.map((sessionEntry) => sessionEntry.sessionId))
+        const currentSessionListState = sessionListStateRef.current
+        const liveOnlySessions = currentSessionListState.sessions.filter((sessionEntry) => !restoredSessionIds.has(sessionEntry.sessionId))
+        const mergedSessions = [...restoredSessions, ...liveOnlySessions]
+        const currentActiveSession = currentSessionListState.activeSessionId === null
+          ? null
+          : currentSessionListState.sessions.find((sessionEntry) => sessionEntry.sessionId === currentSessionListState.activeSessionId) ?? null
+        const currentActiveSessionIsLiveOnly = currentActiveSession !== null
+          && currentActiveSession.capabilities.capabilitiesVersion !== 'history-shell'
+          && !restoredSessionIds.has(currentActiveSession.sessionId)
+        const preserveCurrentActiveLiveSession = currentActiveSessionIsLiveOnly
+          || (shouldProtectUserLiveSelection && currentActiveSession !== null && currentActiveSession.capabilities.capabilitiesVersion !== 'history-shell')
+        const restoredActiveSessionId = preserveCurrentActiveLiveSession
+          ? currentSessionListState.activeSessionId
+          : preferredActiveSessionId
+            ?? (currentSessionListState.activeSessionId !== null && mergedSessions.some((sessionEntry) => sessionEntry.sessionId === currentSessionListState.activeSessionId)
+              ? currentSessionListState.activeSessionId
+              : mergedSessions[0]?.sessionId ?? null)
+        const restoreSelectionSummary: Record<string, unknown> = {
+          previousActiveSessionId: currentSessionListState.activeSessionId,
+          nextActiveSessionId: restoredActiveSessionId,
+          activeSessionChanged: currentSessionListState.activeSessionId !== restoredActiveSessionId,
+          liveOnlySessionCount: liveOnlySessions.length,
+          mergedSessionCount: mergedSessions.length,
+          currentActiveSessionIsLiveOnly,
+          preserveCurrentActiveLiveSession,
+          usingPersistedThreadSummaryCache,
+        }
 
-        setSessionListState((current) => {
-          const restoredSessionIds = new Set(restoredSessions.map((sessionEntry) => sessionEntry.sessionId))
-          const liveOnlySessions = current.sessions.filter((sessionEntry) => !restoredSessionIds.has(sessionEntry.sessionId))
-          const mergedSessions = [...restoredSessions, ...liveOnlySessions]
-          const currentActiveSession = current.activeSessionId === null
-            ? null
-            : current.sessions.find((sessionEntry) => sessionEntry.sessionId === current.activeSessionId) ?? null
-          const currentActiveSessionIsLiveOnly = currentActiveSession !== null
-            && currentActiveSession.capabilities.capabilitiesVersion !== 'history-shell'
-            && !restoredSessionIds.has(currentActiveSession.sessionId)
-          const preserveCurrentActiveLiveSession = currentActiveSessionIsLiveOnly
-            || (shouldProtectUserLiveSelection && currentActiveSession !== null && currentActiveSession.capabilities.capabilitiesVersion !== 'history-shell')
-          const nextActiveSessionId = preserveCurrentActiveLiveSession
-            ? current.activeSessionId
-            : preferredActiveSessionId
-              ?? (current.activeSessionId !== null && mergedSessions.some((sessionEntry) => sessionEntry.sessionId === current.activeSessionId)
-                ? current.activeSessionId
-                : mergedSessions[0]?.sessionId ?? null)
-
-          restoreSelectionSummary = {
-            previousActiveSessionId: current.activeSessionId,
-            nextActiveSessionId,
-            activeSessionChanged: current.activeSessionId !== nextActiveSessionId,
-            liveOnlySessionCount: liveOnlySessions.length,
-            mergedSessionCount: mergedSessions.length,
-            currentActiveSessionIsLiveOnly,
-            preserveCurrentActiveLiveSession,
-            usingPersistedThreadSummaryCache,
-          }
-
-          return {
-            sessions: mergedSessions,
-            activeSessionId: nextActiveSessionId,
-          }
+        setSessionListState({
+          sessions: mergedSessions,
+          activeSessionId: restoredActiveSessionId,
         })
         setSessionHistoryById((current) => {
           const nextState: Record<string, AssistantSessionHistoryState> = {}
@@ -818,6 +814,16 @@ export function useAssistantWorkspaceState({
           return nextState
         })
 
+        const restoredActiveSession = restoredActiveSessionId === null
+          ? null
+          : restoredSessionsById.get(restoredActiveSessionId)
+            ?? currentSessionsById.get(restoredActiveSessionId)
+            ?? null
+        const selectedAgentSyncApplied = !shouldProtectUserLiveSelection && restoredActiveSession !== null
+        if (selectedAgentSyncApplied) {
+          setSelectedAgentId(restoredActiveSession.boundAgent.id)
+        }
+
         if (isProvisionalEmptyRestore) {
           restoredRuntimeUrlRef.current = null
           provisionalEmptyRestoreKeyRef.current = restoreKey
@@ -836,6 +842,9 @@ export function useAssistantWorkspaceState({
             retryDelayMs,
             preferredActiveSessionId,
             shouldProtectUserLiveSelection,
+            selectedAgentSyncApplied,
+            selectedAgentSyncSessionId: restoredActiveSession?.sessionId ?? null,
+            selectedAgentSyncAgentId: restoredActiveSession?.boundAgent.id ?? null,
             ...(restoreSelectionSummary ?? {}),
           })
           return
@@ -855,15 +864,11 @@ export function useAssistantWorkspaceState({
           restoredSessionCount: restoredSessions.length,
           preferredActiveSessionId,
           shouldProtectUserLiveSelection,
+          selectedAgentSyncApplied,
+          selectedAgentSyncSessionId: restoredActiveSession?.sessionId ?? null,
+          selectedAgentSyncAgentId: restoredActiveSession?.boundAgent.id ?? null,
           ...(restoreSelectionSummary ?? {}),
         })
-
-        if (!shouldProtectUserLiveSelection && preferredActiveSessionId !== null) {
-          const activeSession = restoredSessions.find((sessionEntry) => sessionEntry.sessionId === preferredActiveSessionId) ?? null
-          if (activeSession !== null) {
-            setSelectedAgentId(activeSession.boundAgent.id)
-          }
-        }
 
         clearHistoryRestoreRetry()
         resetHistoryRestoreRetryBackoff()
