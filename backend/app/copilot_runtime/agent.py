@@ -404,11 +404,12 @@ class _PydanticAIEventStream:
             self._run_exception = exc
             raise
         except ToolApprovalSuspensionError:
-            self._cached_output = "Operation suspended pending user approval."
+            self._suspension_state = True
         except Exception as exc:
             self._run_exception = exc
         finally:
-            self._event_buffer.finish_assistant_segment()
+            if not getattr(self, "_suspension_state", False):
+                self._event_buffer.finish_assistant_segment()
             self._event_buffer.finish_reasoning_segment()
             self._flush_pending_events_to_queue(reason="run_finished")
             self._event_queue.put_nowait(_EVENT_STREAM_DONE)

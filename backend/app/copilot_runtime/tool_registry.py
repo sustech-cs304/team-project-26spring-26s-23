@@ -75,7 +75,7 @@ class RiskLevel(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ToolSecurityConfig:
-    risk_level: RiskLevel = RiskLevel.HIGH
+    risk_level: RiskLevel = RiskLevel.LOW
     approval_method: str = "button_click"
 
 ToolExecutor = Callable[[Mapping[str, Any] | None], Awaitable[dict[str, Any]]]
