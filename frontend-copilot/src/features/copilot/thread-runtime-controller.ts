@@ -21,10 +21,12 @@ export interface CopilotThreadRuntimeControllerState {
   pendingHistorySyncRunId: string | null
   lastSettledRunId: string | null
   pendingHistorySyncLogKey: string | null
+  lastAccessedAt: number
 }
 
 export function createCopilotThreadRuntimeControllerState(
   sessionShell?: Pick<AssistantSessionShell, 'sessionId'> | null,
+  createdAt = Date.now(),
 ): CopilotThreadRuntimeControllerState {
   return {
     sessionId: sessionShell?.sessionId ?? '',
@@ -38,7 +40,47 @@ export function createCopilotThreadRuntimeControllerState(
     pendingHistorySyncRunId: null,
     lastSettledRunId: null,
     pendingHistorySyncLogKey: null,
+    lastAccessedAt: createdAt,
   }
+}
+
+export function touchCopilotThreadRuntimeControllerState(
+  state: CopilotThreadRuntimeControllerState,
+  touchedAt = Date.now(),
+): CopilotThreadRuntimeControllerState {
+  return state.lastAccessedAt === touchedAt
+    ? state
+    : {
+        ...state,
+        lastAccessedAt: touchedAt,
+      }
+}
+
+export function isCopilotThreadRuntimeControllerHandoffPending(
+  state: CopilotThreadRuntimeControllerState,
+): boolean {
+  return state.pendingHistorySyncRunId !== null
+}
+
+export function hasCopilotThreadRuntimeControllerActiveRun(
+  state: CopilotThreadRuntimeControllerState,
+): boolean {
+  return state.runState.phase === 'starting'
+    || state.runState.phase === 'streaming'
+    || state.activeAbortController !== null
+}
+
+export function isCopilotThreadRuntimeControllerLruCandidate(
+  state: CopilotThreadRuntimeControllerState,
+): boolean {
+  return !hasCopilotThreadRuntimeControllerActiveRun(state)
+    && !isCopilotThreadRuntimeControllerHandoffPending(state)
+    && (
+      state.runState.phase === 'idle'
+      || state.runState.phase === 'completed'
+      || state.runState.phase === 'failed'
+      || state.runState.phase === 'cancelled'
+    )
 }
 
 export function resolveCopilotThreadRuntimeControllerState(
@@ -59,6 +101,10 @@ export function updateCopilotThreadRuntimeControllerStateRecord(
   stateBySessionId: Record<string, CopilotThreadRuntimeControllerState>,
   sessionId: string,
   updater: (state: CopilotThreadRuntimeControllerState) => CopilotThreadRuntimeControllerState,
+  options: {
+    touch?: boolean
+    touchedAt?: number
+  } = {},
 ): Record<string, CopilotThreadRuntimeControllerState> {
   const normalizedSessionId = sessionId.trim()
   if (normalizedSessionId === '') {
@@ -68,8 +114,11 @@ export function updateCopilotThreadRuntimeControllerStateRecord(
   const existingState = stateBySessionId[normalizedSessionId]
   const currentState = existingState ?? createCopilotThreadRuntimeControllerState({
     sessionId: normalizedSessionId,
-  })
-  const nextState = updater(currentState)
+  }, options.touchedAt)
+  let nextState = updater(currentState)
+  if (options.touch !== false) {
+    nextState = touchCopilotThreadRuntimeControllerState(nextState, options.touchedAt)
+  }
   if (existingState !== undefined && nextState === currentState) {
     return stateBySessionId
   }
@@ -83,17 +132,21 @@ export function updateCopilotThreadRuntimeControllerStateRecord(
 export function syncCopilotThreadRuntimeControllerStateRecord(
   stateBySessionId: Record<string, CopilotThreadRuntimeControllerState>,
   sessionShells: AssistantSessionShell[],
+  options: {
+    createdAt?: number
+  } = {},
 ): Record<string, CopilotThreadRuntimeControllerState> {
   let hasChanged = false
   const nextState = { ...stateBySessionId }
   const sessionIds = new Set(sessionShells.map((sessionShell) => sessionShell.sessionId))
+  const createdAt = options.createdAt ?? Date.now()
 
   for (const sessionShell of sessionShells) {
     if (nextState[sessionShell.sessionId] !== undefined) {
       continue
     }
 
-    nextState[sessionShell.sessionId] = createCopilotThreadRuntimeControllerState(sessionShell)
+    nextState[sessionShell.sessionId] = createCopilotThreadRuntimeControllerState(sessionShell, createdAt)
     hasChanged = true
   }
 

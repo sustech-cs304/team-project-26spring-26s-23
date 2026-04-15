@@ -21,7 +21,9 @@ import {
   listCopilotHistoryThreads,
 } from '../../features/copilot/history'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../../features/copilot/debug-mode-log'
+import { buildPersistedConversationFromHistory } from '../../features/copilot/persisted-history-view-model'
 import {
+  isCopilotThreadRuntimeControllerLruCandidate,
   syncCopilotThreadRuntimeControllerStateRecord,
   updateCopilotThreadRuntimeControllerStateRecord,
   type CopilotThreadRuntimeControllerState,
@@ -147,6 +149,75 @@ function summarizeAssistantHistoryStateForLog(
   }
 }
 
+export const COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY = 8
+
+function hasRebuildablePersistedConversation(
+  historyState: AssistantSessionHistoryState | undefined,
+): boolean {
+  if (
+    historyState === undefined
+    || historyState.isPersistedThread !== true
+    || historyState.detailStatus !== 'ready'
+  ) {
+    return false
+  }
+
+  return buildPersistedConversationFromHistory(historyState).conversation.length > 0
+}
+
+function pruneCopilotThreadRuntimeControllers(input: {
+  controllers: Record<string, CopilotThreadRuntimeControllerState>
+  sessionHistoryById: Record<string, AssistantSessionHistoryState>
+  activeSessionId: string | null
+  maxControllerCount: number
+}): {
+  nextControllers: Record<string, CopilotThreadRuntimeControllerState>
+  evictedSessionIds: string[]
+} {
+  const controllerEntries = Object.entries(input.controllers)
+  if (controllerEntries.length <= input.maxControllerCount) {
+    return {
+      nextControllers: input.controllers,
+      evictedSessionIds: [],
+    }
+  }
+
+  const evictableSessionIds = controllerEntries
+    .filter(([sessionId, controllerState]) => (
+      sessionId !== input.activeSessionId
+      && isCopilotThreadRuntimeControllerLruCandidate(controllerState)
+      && hasRebuildablePersistedConversation(input.sessionHistoryById[sessionId])
+    ))
+    .sort(([leftSessionId, leftControllerState], [rightSessionId, rightControllerState]) => {
+      if (leftControllerState.lastAccessedAt !== rightControllerState.lastAccessedAt) {
+        return leftControllerState.lastAccessedAt - rightControllerState.lastAccessedAt
+      }
+      return leftSessionId.localeCompare(rightSessionId)
+    })
+    .map(([sessionId]) => sessionId)
+  const evictionCount = Math.min(
+    controllerEntries.length - input.maxControllerCount,
+    evictableSessionIds.length,
+  )
+  if (evictionCount <= 0) {
+    return {
+      nextControllers: input.controllers,
+      evictedSessionIds: [],
+    }
+  }
+
+  const evictedSessionIds = evictableSessionIds.slice(0, evictionCount)
+  const nextControllers = { ...input.controllers }
+  for (const sessionId of evictedSessionIds) {
+    delete nextControllers[sessionId]
+  }
+
+  return {
+    nextControllers,
+    evictedSessionIds,
+  }
+}
+
 export function useAssistantWorkspaceState({
   bootstrap,
   listAgents: listAgentsImpl = listRuntimeAgents,
@@ -227,6 +298,19 @@ export function useAssistantWorkspaceState({
     sessionListStateRef.current = sessionListState
   }, [sessionListState])
 
+  const touchRuntimeController = useCallback((sessionId: string | null | undefined) => {
+    const normalizedSessionId = sessionId?.trim() ?? ''
+    if (normalizedSessionId === '') {
+      return
+    }
+
+    setRuntimeControllerBySessionId((current) => updateCopilotThreadRuntimeControllerStateRecord(
+      current,
+      normalizedSessionId,
+      (controllerState) => controllerState,
+    ))
+  }, [])
+
   const retrySessionHistoryLoad = useCallback((sessionId: string) => {
     setSessionHistoryById((current) => {
       const historyState = current[sessionId]
@@ -285,6 +369,7 @@ export function useAssistantWorkspaceState({
       markUserLiveSessionSelection()
     }
 
+    touchRuntimeController(sessionEntry.sessionId)
     retrySessionHistoryLoad(sessionEntry.sessionId)
     activateSession(sessionEntry)
   }, [
@@ -294,6 +379,7 @@ export function useAssistantWorkspaceState({
     retrySessionHistoryLoad,
     sessionHistoryById,
     sessionListState.activeSessionId,
+    touchRuntimeController,
   ])
 
   const {
@@ -338,6 +424,9 @@ export function useAssistantWorkspaceState({
   const activeSessionHistory = sessionShell === null
     ? null
     : sessionHistoryById[sessionShell.sessionId] ?? null
+  const runtimeControllerRegistrySessionKey = sessionListState.sessions
+    .map((sessionEntry) => sessionEntry.sessionId)
+    .join('::')
 
   useEffect(() => {
     setSessionHistoryById((current) => {
@@ -372,7 +461,30 @@ export function useAssistantWorkspaceState({
 
   useEffect(() => {
     setRuntimeControllerBySessionId((current) => syncCopilotThreadRuntimeControllerStateRecord(current, sessionListState.sessions))
-  }, [sessionListState.sessions])
+  }, [runtimeControllerRegistrySessionKey])
+
+  useEffect(() => {
+    setRuntimeControllerBySessionId((current) => {
+      const { nextControllers, evictedSessionIds } = pruneCopilotThreadRuntimeControllers({
+        controllers: current,
+        sessionHistoryById,
+        activeSessionId: sessionListState.activeSessionId,
+        maxControllerCount: COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY,
+      })
+      if (evictedSessionIds.length === 0) {
+        return current
+      }
+
+      appendWorkspaceDebugLog('runtime-controller-lru-evicted', {
+        activeSessionId: sessionListState.activeSessionId,
+        maxControllerCount: COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY,
+        controllerCountBefore: Object.keys(current).length,
+        controllerCountAfter: Object.keys(nextControllers).length,
+        evictedSessionIds,
+      })
+      return nextControllers
+    })
+  }, [appendWorkspaceDebugLog, runtimeControllerBySessionId, sessionHistoryById, sessionListState.activeSessionId])
 
   const retryActiveSessionHistoryLoad = useCallback(() => {
     if (sessionShell === null) {
