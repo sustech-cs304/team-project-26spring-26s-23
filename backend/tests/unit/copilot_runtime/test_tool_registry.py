@@ -22,6 +22,7 @@ from app.copilot_runtime.tool_registry import (
     WEATHER_CURRENT_TOOL_ID,
     execute_weather_current_tool,
     summarize_tool_arguments,
+    summarize_tool_result,
 )
 
 CONTRACT_TOOL_IDS = (
@@ -304,3 +305,112 @@ def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_large_tex
     assert "hidden" not in summary
     assert len(summary) <= 512
     assert "…" in summary
+
+
+@pytest.mark.parametrize(
+    ("result", "expected_summary"),
+    [
+        (
+            {
+                "status": "success",
+                "output": {
+                    "dbPath": "database-root/blackboard/snapshot.db",
+                    "scrapedCounts": {
+                        "courses": 1,
+                        "assignments": 1,
+                        "resources": 1,
+                        "grades": 1,
+                        "announcements": 1,
+                    },
+                    "integrityOk": True,
+                    "secondSyncHasNoNewRecords": True,
+                    "secondSyncHasNoDeletedRecords": True,
+                },
+                "artifacts": [
+                    {
+                        "artifactId": "artifact-1",
+                        "uri": "artifact://blackboard/snapshot.json",
+                    }
+                ],
+                "metadata": {
+                    "toolId": "blackboard.snapshot.sync",
+                    "stateKey": "snapshot-latest",
+                },
+            },
+            (
+                "Blackboard snapshot 同步完成；db=database-root/blackboard/snapshot.db；"
+                "courses 1、assignments 1、resources 1、grades 1、announcements 1；"
+                "完整性校验通过；二次同步无新增且无删除"
+            ),
+        ),
+        (
+            {
+                "status": "success",
+                "output": {
+                    "sourceUrl": "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx",
+                    "totalRecords": 1,
+                    "resolvedRoleCode": "01",
+                },
+                "artifacts": [{"artifactId": "artifact-1"}],
+                "metadata": {
+                    "toolId": "tis.personal_grades.fetch",
+                    "stateKey": "grades-latest",
+                },
+            },
+            "TIS 成绩抓取完成；1 条记录；role=01",
+        ),
+        (
+            {
+                "status": "success",
+                "output": {
+                    "sourceUrl": "https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
+                    "resolvedRoleCode": "01",
+                    "summary": {
+                        "average_credit_gpa": 3.82,
+                        "rank": "5/100",
+                    },
+                    "persistence": {
+                        "enabled": True,
+                        "owner_key": "student_a",
+                    },
+                },
+                "artifacts": [{"artifactId": "artifact-1"}],
+                "metadata": {
+                    "toolId": "tis.credit_gpa.fetch",
+                    "stateKey": "credit-gpa-latest",
+                },
+            },
+            "TIS 绩点摘要抓取完成；均绩 3.82；排名 5/100；role=01；含持久化摘要",
+        ),
+        (
+            {
+                "status": "success",
+                "output": {
+                    "sourceUrl": "https://tis.sustech.edu.cn/Xsxk/queryYxkc",
+                    "semester": {
+                        "label": "2025秋季",
+                    },
+                    "courseCount": 1,
+                    "resolvedRoleCode": "01",
+                },
+                "artifacts": [{"artifactId": "artifact-1"}],
+                "metadata": {
+                    "toolId": "tis.selected_courses.fetch",
+                    "stateKey": "selected-courses-latest",
+                },
+            },
+            "TIS 选课抓取完成；2025秋季；1 门课程；role=01",
+        ),
+    ],
+)
+def test_summarize_tool_result_prefers_compact_contract_output_over_envelope(
+    result: dict[str, object],
+    expected_summary: str,
+) -> None:
+    summary = summarize_tool_result(result)
+
+    assert summary == expected_summary
+    assert summary is not None
+    assert '"status"' not in summary
+    assert '"metadata"' not in summary
+    assert not summary.startswith("{")

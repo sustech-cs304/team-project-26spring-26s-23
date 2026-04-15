@@ -374,9 +374,15 @@ def test_personal_grades_tool_shapes_output_and_persists_host_state_and_artifact
         "owner_key": None,
     }
     assert result.output is not None
+    assert set(result.output) == {
+        "sourceUrl",
+        "totalRecords",
+        "resolvedRoleCode",
+        "logSummary",
+    }
     assert result.output["sourceUrl"] == "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx"
     assert result.output["totalRecords"] == 1
-    assert result.output["gradeRecords"][0]["course_name"] == "数据库系统"
+    assert result.output["resolvedRoleCode"] == "01"
     assert result.output["logSummary"] == {
         "total": 1,
         "by_level": {"info": 1},
@@ -392,8 +398,22 @@ def test_personal_grades_tool_shapes_output_and_persists_host_state_and_artifact
     }
     assert len(result.artifacts) == 1
     assert result.artifacts[0].artifact_id == "artifact-1"
-    assert json.loads(artifact_store.saved_texts[0]["text"])["sourceUrl"] == "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx"
-    assert state_store.values[("tis.personal_grades.fetch", "grades-latest")]["output"]["totalRecords"] == 1
+    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
+    persisted_state_output = state_store.values[("tis.personal_grades.fetch", "grades-latest")]["output"]
+    assert persisted_state_output == persisted_artifact_output
+    assert set(persisted_artifact_output) == {
+        "sourceUrl",
+        "totalRecords",
+        "resolvedRoleCode",
+        "homepage",
+        "gradeRecords",
+        "probes",
+        "logSummary",
+        "logs",
+    }
+    assert persisted_artifact_output["gradeRecords"][0]["course_name"] == "数据库系统"
+    assert persisted_artifact_output["probes"][0]["probe_label"] == "grades-api"
+    assert persisted_artifact_output["logs"][0]["source"] == "test.personal_grades"
     assert [event.event_type for event in event_sink.events] == [
         "tis.personal_grades.fetch.started",
         "tis.personal_grades.fetch.completed",
@@ -412,6 +432,8 @@ def test_credit_gpa_tool_uses_secret_provider_and_database_db_when_persisting(
         }
     )
     database = StubDatabaseResolver(tmp_path / "database-root")
+    state_store = StubStateStore()
+    artifact_store = StubArtifactStore()
 
     def _fake_fetch(
         username: str,
@@ -456,10 +478,14 @@ def test_credit_gpa_tool_uses_secret_provider_and_database_db_when_persisting(
             "ownerKey": " student_a ",
             "dbRelativePath": "teaching_information_system/tis-credit.db",
             "resetSchema": "true",
+            "stateKey": "credit-gpa-latest",
+            "artifactName": "credit-gpa.json",
         },
         host=ToolHostCapabilities(
             secret_provider=secret_provider,
             database_resolver=database,
+            state_store=state_store,
+            artifact_store=artifact_store,
         ),
     )
 
@@ -475,7 +501,15 @@ def test_credit_gpa_tool_uses_secret_provider_and_database_db_when_persisting(
         "db_path": resolved_path,
     }
     assert result.output is not None
+    assert set(result.output) == {
+        "sourceUrl",
+        "resolvedRoleCode",
+        "summary",
+        "logSummary",
+        "persistence",
+    }
     assert result.output["summary"]["average_credit_gpa"] == 3.82
+    assert result.output["resolvedRoleCode"] == "01"
     assert result.output["persistence"] == {
         "enabled": True,
         "owner_key": "student_a",
@@ -486,7 +520,32 @@ def test_credit_gpa_tool_uses_secret_provider_and_database_db_when_persisting(
         "credentialSource": "host_secrets",
         "persistenceRequested": True,
         "dbPathSource": "database_relative",
+        "stateNamespace": "tis.credit_gpa.fetch",
+        "stateKey": "credit-gpa-latest",
     }
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].artifact_id == "artifact-1"
+    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
+    persisted_state_output = state_store.values[("tis.credit_gpa.fetch", "credit-gpa-latest")]["output"]
+    assert persisted_state_output == persisted_artifact_output
+    assert set(persisted_artifact_output) == {
+        "sourceUrl",
+        "pageUrl",
+        "apiUrl",
+        "resolvedRoleCode",
+        "homepage",
+        "summary",
+        "termRecords",
+        "yearRecords",
+        "probes",
+        "logSummary",
+        "logs",
+        "persistence",
+    }
+    assert persisted_artifact_output["termRecords"][0]["academic_year_term"] == "2025秋季"
+    assert persisted_artifact_output["yearRecords"][0]["academic_year"] == "2025-2026"
+    assert persisted_artifact_output["probes"][0]["probe_label"] == "credit-gpa-api"
+    assert persisted_artifact_output["logs"][0]["source"] == "test.credit_gpa"
     assert secret_provider.requests == ["tis.username", "tis.password"]
     assert database.requests == ["teaching_information_system/tis-credit.db"]
 
@@ -670,6 +729,8 @@ def test_credit_gpa_tool_rejects_explicit_db_path_when_persisting() -> None:
 
 def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
+    state_store = StubStateStore()
+    artifact_store = StubArtifactStore()
     event_sink = StubEventSink()
 
     def _fake_fetch(
@@ -712,8 +773,14 @@ def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypa
             "roleCode": " 01 ",
             "pageNum": "2",
             "pageSize": "30",
+            "stateKey": "selected-courses-latest",
+            "artifactName": "selected-courses.json",
         },
-        host=ToolHostCapabilities(event_sink=event_sink),
+        host=ToolHostCapabilities(
+            state_store=state_store,
+            artifact_store=artifact_store,
+            event_sink=event_sink,
+        ),
     )
     error_result = _invoke_tool(
         TISSelectedCoursesFetchTool(),
@@ -735,14 +802,53 @@ def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypa
         "persist": False,
     }
     assert result.output is not None
+    assert set(result.output) == {
+        "sourceUrl",
+        "semester",
+        "currentSemester",
+        "semesterSource",
+        "resolvedRoleCode",
+        "resolvedPylx",
+        "summary",
+        "courseCount",
+        "logSummary",
+    }
     assert result.output["courseCount"] == 1
     assert result.output["semesterSource"] == "parameter"
-    assert result.output["courses"][0]["course_name"] == "数据库系统"
+    assert result.output["resolvedRoleCode"] == "01"
+    assert result.output["resolvedPylx"] == "1"
     assert result.metadata == {
         "toolId": "tis.selected_courses.fetch",
         "credentialSource": "arguments",
         "persistenceRequested": False,
+        "stateNamespace": "tis.selected_courses.fetch",
+        "stateKey": "selected-courses-latest",
     }
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].artifact_id == "artifact-1"
+    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
+    persisted_state_output = state_store.values[("tis.selected_courses.fetch", "selected-courses-latest")]["output"]
+    assert persisted_state_output == persisted_artifact_output
+    assert set(persisted_artifact_output) == {
+        "sourceUrl",
+        "pageUrl",
+        "apiUrl",
+        "semester",
+        "currentSemester",
+        "semesterSource",
+        "resolvedRoleCode",
+        "resolvedPylx",
+        "homepage",
+        "summary",
+        "courseCount",
+        "courses",
+        "probes",
+        "logSummary",
+        "logs",
+    }
+    assert persisted_artifact_output["courses"][0]["course_name"] == "数据库系统"
+    assert persisted_artifact_output["probes"][0]["probe_label"] == "selected-courses-api"
+    assert persisted_artifact_output["logs"][0]["source"] == "test.selected_courses"
     assert [event.event_type for event in event_sink.events] == [
         "tis.selected_courses.fetch.started",
         "tis.selected_courses.fetch.completed",

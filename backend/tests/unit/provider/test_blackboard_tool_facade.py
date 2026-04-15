@@ -595,9 +595,33 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "verify_second_sync": False,
     }
     assert result.output is not None
+    assert set(result.output) == {
+        "dbPath",
+        "resourceCourseLimit",
+        "scrapedCounts",
+        "firstSyncStats",
+        "integrityOk",
+        "secondSyncHasNoNewRecords",
+        "secondSyncHasNoDeletedRecords",
+        "logSummary",
+    }
     assert result.output["dbPath"] == "database-root/blackboard/snapshot.db"
     assert result.output["resourceCourseLimit"] == 2
-    assert result.output["progressMessages"] == ["fetching courses", "syncing sqlite"]
+    assert result.output["scrapedCounts"] == {
+        "courses": 1,
+        "assignments": 1,
+        "resources": 1,
+        "grades": 1,
+        "announcements": 1,
+    }
+    assert result.output["firstSyncStats"] == {
+        "courses": {"inserted": 1, "updated": 0, "deleted": 0},
+        "assignments": {"inserted": 1, "updated": 0, "deleted": 0},
+        "resources": {"inserted": 1, "updated": 0, "deleted": 0},
+        "grades": {"inserted": 1, "updated": 0, "deleted": 0},
+        "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
+    }
+    assert result.output["integrityOk"] is True
     assert result.output["secondSyncHasNoNewRecords"] is True
     assert result.output["secondSyncHasNoDeletedRecords"] is True
     assert result.metadata == {
@@ -610,8 +634,46 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert len(result.artifacts) == 1
     assert result.artifacts[0].artifact_id == "artifact-1"
     assert database.requests == ["blackboard/snapshot.db"]
-    assert json.loads(artifact_store.saved_texts[0]["text"])["dbPath"] == "database-root/blackboard/snapshot.db"
-    assert state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]["integrityOk"] is True
+    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
+    persisted_state_output = state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]
+    assert persisted_state_output == persisted_artifact_output
+    assert set(persisted_artifact_output) == {
+        "dbPath",
+        "resourceCourseLimit",
+        "scrapedCounts",
+        "firstSyncStats",
+        "secondSyncStats",
+        "tableCounts",
+        "expectedActiveCounts",
+        "integrityOk",
+        "secondSyncHasNoNewRecords",
+        "secondSyncHasNoDeletedRecords",
+        "logSummary",
+        "logs",
+        "progressMessages",
+    }
+    assert persisted_artifact_output["progressMessages"] == ["fetching courses", "syncing sqlite"]
+    assert persisted_artifact_output["secondSyncStats"] == {
+        "courses": {"inserted": 0, "updated": 1, "deleted": 0},
+        "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
+        "resources": {"inserted": 0, "updated": 1, "deleted": 0},
+        "grades": {"inserted": 0, "updated": 1, "deleted": 0},
+        "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
+    }
+    assert persisted_artifact_output["tableCounts"] == {
+        "courses": {"total": 1, "active": 1},
+        "assignments": {"total": 1, "active": 1},
+        "resources": {"total": 1, "active": 1},
+        "grades": {"total": 1, "active": 1},
+        "announcements": {"total": 1, "active": 1},
+    }
+    assert persisted_artifact_output["expectedActiveCounts"] == {
+        "courses": 1,
+        "assignments": 1,
+        "resources": 1,
+        "grades": 1,
+        "announcements": 1,
+    }
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",
