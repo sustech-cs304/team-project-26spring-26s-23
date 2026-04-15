@@ -26,6 +26,7 @@ from app.copilot_runtime.agent import (
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
 
 
 def test_run_raises_model_not_configured_when_no_model_is_available() -> None:
@@ -473,6 +474,49 @@ def test_execute_bound_tool_returns_tool_not_found_failure_without_raising() -> 
 
 
 
+def test_execute_bound_tool_returns_tool_not_enabled_failure_without_raising() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset(),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-disabled",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            arguments={"location": "Shenzhen"},
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_not_enabled",
+            "message": "Tool 'tool.weather-current' is not enabled for this run.",
+            "retryable": False,
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": WEATHER_CURRENT_TOOL_ID,
+            "toolCallId": f"{WEATHER_CURRENT_TOOL_ID}:call-1",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].error_summary == (
+        "Tool 'tool.weather-current' is not enabled for this run."
+    )
+
+
+
 def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -673,6 +717,78 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
     )
     assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
     assert emitted_tool_events[-1].error_summary == "blackboard search exploded"
+
+
+
+def test_execute_bound_tool_returns_contract_integrity_failure_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+
+    async def execute_malformed_tool(_arguments):
+        return {
+            "status": "error",
+            "error": {"message": "missing code"},
+            "artifacts": [],
+            "metadata": {"toolId": "contract.invalid"},
+        }
+
+    malformed_tool = SimpleNamespace(
+        descriptor=SimpleNamespace(
+            kind=CONTRACT_RUNTIME_TOOL_KIND,
+            display_name="Malformed Contract Tool",
+        ),
+        execute=execute_malformed_tool,
+    )
+    original_resolve_tool = registry.resolve_tool
+
+    def resolve_tool(tool_id: str):
+        if tool_id == "contract.invalid":
+            return malformed_tool
+        return original_resolve_tool(tool_id)
+
+    monkeypatch.setattr(registry, "resolve_tool", resolve_tool)
+
+    ctx = SimpleNamespace(
+        tool_call_id="contract.invalid:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"contract.invalid"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-integrity",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="contract.invalid",
+            arguments={"query": "hello"},
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_execution_failed",
+            "message": "Contract tool returned an error result without a valid error code.",
+            "retryable": False,
+            "details": {"integrity": "invalid_error_code"},
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": "contract.invalid",
+            "toolCallId": "contract.invalid:call-1",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].tool_id == "contract.invalid"
+    assert emitted_tool_events[-1].error_summary == (
+        "Contract tool returned an error result without a valid error code."
+    )
 
 
 
