@@ -851,6 +851,51 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
     ]
 
 
+
+def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatch: Any) -> None:
+    event_sink = StubEventSink()
+
+    def _invalid_credentials_sync(
+        username: str,
+        password: str,
+        *,
+        db_path: Path | None = None,
+        reset_schema: bool = False,
+        resource_course_limit: int = 3,
+        verify_second_sync: bool = True,
+        progress: Any = None,
+        enable_console_logging: bool = False,
+    ) -> BlackboardSnapshotSyncReport:
+        _ = (
+            username,
+            password,
+            db_path,
+            reset_schema,
+            resource_course_limit,
+            verify_second_sync,
+            progress,
+            enable_console_logging,
+        )
+        raise RuntimeError("CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。")
+
+    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _invalid_credentials_sync)
+
+    result = _invoke_tool(
+        BlackboardSnapshotSyncTool(),
+        arguments={"username": "alice", "password": "secret"},
+        host=ToolHostCapabilities(event_sink=event_sink),
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.code == "authentication_required"
+    assert result.error.message == "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+    assert [event.event_type for event in event_sink.events] == [
+        "blackboard.snapshot.sync.started",
+        "blackboard.snapshot.sync.failed",
+    ]
+
+
 def test_snapshot_sync_tool_maps_secret_lookup_without_provider_to_missing_capability() -> None:
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),

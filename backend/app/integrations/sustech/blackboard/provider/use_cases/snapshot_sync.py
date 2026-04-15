@@ -560,8 +560,15 @@ def fetch_blackboard_snapshot(
         _emit(progress, "使用 CASClient 认证")
         logger.info("▶ 开始 Blackboard snapshot 抓取")
         if not cas_client.login(normalized_username, normalized_password, BLACKBOARD_LOGIN_SERVICE_URL):
-            logger.error("❌ CAS 登录失败")
-            raise RuntimeError("CAS 登录失败")
+            failure_message = str(cas_client.last_login_failure_message or "CAS 登录失败").strip() or "CAS 登录失败"
+            logger.error(
+                "❌ CAS 登录失败",
+                payload={
+                    "failure_reason": cas_client.last_login_failure_reason,
+                    "failure_message": failure_message,
+                },
+            )
+            raise RuntimeError(failure_message)
 
         context = BlackboardAPIContext(client=cas_client.client, logger=api_logger)
         course_api = BlackboardCourseAPI(cas_client.client, parser=BlackboardCourseParser())

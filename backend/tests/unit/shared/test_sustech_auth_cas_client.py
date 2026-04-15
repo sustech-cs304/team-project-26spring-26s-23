@@ -204,10 +204,16 @@ def test_login_returns_false_when_execution_token_is_missing() -> None:
         (
             "error",
             "❌ 无法获取 execution token",
-            {"service_url": "https://portal.sustech.edu.cn/home"},
+            {
+                "service_url": "https://portal.sustech.edu.cn/home",
+                "failure_reason": "execution_missing",
+                "failure_message": "CAS 登录失败：无法获取登录页面令牌。",
+            },
             None,
         )
     ]
+    assert cas_client.last_login_failure_reason == "execution_missing"
+    assert cas_client.last_login_failure_message == "CAS 登录失败：无法获取登录页面令牌。"
 
 
 
@@ -274,3 +280,47 @@ def test_login_returns_false_when_final_page_still_contains_login_markers() -> N
     assert logger.events[-1][2] is not None
     assert logger.events[-1][2]["has_login_form"] is True
     assert logger.events[-1][2]["has_execution"] is True
+    assert logger.events[-1][2]["failure_reason"] == "login_failed"
+    assert logger.events[-1][2]["failure_message"] == "CAS 登录失败"
+    assert cas_client.last_login_failure_reason == "login_failed"
+    assert cas_client.last_login_failure_message == "CAS 登录失败"
+
+
+
+def test_login_returns_false_with_invalid_credential_markers_and_records_explicit_failure_message() -> None:
+    logger = _RecordingLogger()
+    fake_http_client = _FakeHTTPClient(
+        get_response=httpx.Response(
+            200,
+            text='<html><input name="execution" value="e1s1" /></html>',
+            request=httpx.Request("GET", "https://cas.sustech.edu.cn/cas/login"),
+        ),
+        post_response=httpx.Response(
+            200,
+            text='''
+            <html>
+                <div class="errors">用户名或密码错误</div>
+                <form>
+                    <input name="username" />
+                    <input name="password" />
+                    <input name="execution" value="e1s2" />
+                </form>
+            </html>
+            ''',
+            request=httpx.Request("GET", "https://cas.sustech.edu.cn/cas/login"),
+        ),
+    )
+    cas_client = _build_cas_client(fake_http_client, logger=logger)
+
+    try:
+        assert cas_client.login("123", "secret", "https://portal.sustech.edu.cn/home") is False
+    finally:
+        cas_client.close()
+
+    assert cas_client.last_login_failure_reason == "invalid_credentials"
+    assert cas_client.last_login_failure_message == "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+    assert logger.events[-1][0] == "warning"
+    assert logger.events[-1][1] == "❌ CAS 登录失败"
+    assert logger.events[-1][2] is not None
+    assert logger.events[-1][2]["failure_reason"] == "invalid_credentials"
+    assert logger.events[-1][2]["failure_message"] == "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"

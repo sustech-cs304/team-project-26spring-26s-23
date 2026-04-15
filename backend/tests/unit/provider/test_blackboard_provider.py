@@ -377,6 +377,42 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
     _assert_true(int(snapshot.log_summary["total"]) >= 5, "snapshot fetch should produce multiple logs")
 
 
+
+def test_fetch_blackboard_snapshot_raises_explicit_invalid_credentials_message() -> None:
+    original_cas_client = snapshot_sync_use_case.CASClient
+
+    class _FakeCASClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            self.client = object()
+            self.closed = False
+            self.last_login_failure_reason = "invalid_credentials"
+            self.last_login_failure_message = "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+
+        def login(self, username: str, password: str, service_url: str) -> bool:
+            _assert_equal(username, "alice", "snapshot username")
+            _assert_equal(password, "secret", "snapshot password")
+            _assert_true(bool(service_url), "snapshot service url should exist")
+            return False
+
+        def close(self) -> None:
+            self.closed = True
+
+    try:
+        snapshot_sync_use_case.CASClient = _FakeCASClient  # type: ignore[assignment]
+        try:
+            fetch_blackboard_snapshot("alice", "secret")
+        except RuntimeError as exc:
+            _assert_equal(
+                str(exc),
+                "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。",
+                "snapshot invalid credential message",
+            )
+        else:
+            raise AssertionError("snapshot should raise RuntimeError for invalid credentials")
+    finally:
+        snapshot_sync_use_case.CASClient = original_cas_client  # type: ignore[assignment]
+
+
 def test_agent_tools_return_stable_shapes() -> None:
     original_search = agent_tools.search_course_catalog_with_credentials
     original_refresh = agent_tools.refresh_calendar_ics_subscription

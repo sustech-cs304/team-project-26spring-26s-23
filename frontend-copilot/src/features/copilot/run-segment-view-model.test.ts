@@ -170,6 +170,73 @@ describe('run segment view model', () => {
     })
   })
 
+  it('surfaces explicit authentication failure guidance on terminal items', () => {
+    const items = buildCopilotRunSegmentViewModel({
+      segments: [
+        {
+          id: 'assistant:run-auth:1',
+          kind: 'assistant',
+          runId: 'run-auth',
+          assistantMessageId: 'run-auth:assistant',
+          text: '回答内容',
+          firstContentSequence: 1,
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'completed',
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+        {
+          id: 'terminal:run-auth:failed',
+          kind: 'terminal',
+          runId: 'run-auth',
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'failed',
+          terminalPhase: 'failed',
+          assistantMessageId: 'run-auth:assistant',
+          cancelReason: null,
+          failure: {
+            code: 'authentication_required',
+            message: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+            details: {
+              toolId: 'blackboard.snapshot.sync',
+            },
+          },
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+      activeModelRoute: createRuntimeModelRoute(),
+      resolvedModelId: null,
+      resolvedModelRoute: null,
+      resolvedToolIds: [],
+      requestOptions: {},
+      requestedThinkingSelection: null,
+      appliedThinkingSelection: null,
+      requestedThinkingLevel: null,
+      appliedThinkingLevel: null,
+      thinkingCapabilitySnapshot: null,
+      reasoningSuppressed: false,
+      reasoningTraceState: 'visible',
+      reasoningSuppressionBasis: null,
+    })
+
+    expect(items[1]).toMatchObject({
+      kind: 'terminal',
+      content: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+      errorDetail: {
+        code: 'authentication_required',
+        summaryMessage: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+        rawMessage: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+      },
+    })
+  })
+
   it('omits reasoning cards when run state marks the trace as suppressed but keeps visible reasoning unchanged otherwise', () => {
     const suppressedItems = buildCopilotRunSegmentViewModel({
       segments: [{

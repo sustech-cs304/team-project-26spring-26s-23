@@ -46,6 +46,8 @@ class CASClient:
             "Upgrade-Insecure-Requests": "1",
         }
         self.client = httpx.Client(follow_redirects=True, timeout=30.0, headers=headers)
+        self.last_login_failure_reason: str | None = None
+        self.last_login_failure_message: str | None = None
 
     def login(self, username: str, password: str, service_url: str) -> bool:
         """
@@ -59,15 +61,23 @@ class CASClient:
         Returns:
             是否登录成功
         """
+        self.last_login_failure_reason = None
+        self.last_login_failure_message = None
         params = {"service": service_url}
         response = self.client.get(self.cas_login_url, params=params)
 
         execution = self._extract_execution(response.text)
         if not execution:
+            self.last_login_failure_reason = "execution_missing"
+            self.last_login_failure_message = "CAS 登录失败：无法获取登录页面令牌。"
             if self.logger is not None:
                 self.logger.error(
                     "❌ 无法获取 execution token",
-                    payload={"service_url": service_url},
+                    payload={
+                        "service_url": service_url,
+                        "failure_reason": self.last_login_failure_reason,
+                        "failure_message": self.last_login_failure_message,
+                    },
                 )
             return False
 
@@ -95,6 +105,7 @@ class CASClient:
         has_execution = 'name="execution"' in lowered_body
         hit_authentication_require = any("/authentication/require" in item for item in redirect_chain)
         hit_session_invalid = "/session/invalid" in final_path
+        invalid_credentials = self._contains_invalid_credential_markers(response.text or "")
         success = (
             service_domain in final_url
             and not has_login_form
@@ -102,6 +113,13 @@ class CASClient:
             and not hit_authentication_require
             and not hit_session_invalid
         )
+        if not success:
+            if invalid_credentials:
+                self.last_login_failure_reason = "invalid_credentials"
+                self.last_login_failure_message = "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+            else:
+                self.last_login_failure_reason = "login_failed"
+                self.last_login_failure_message = "CAS 登录失败"
 
         if self.logger is not None:
             payload = {
@@ -116,9 +134,27 @@ class CASClient:
             if success:
                 self.logger.info("✅ CAS 登录成功", payload=payload)
             else:
+                payload["failure_reason"] = self.last_login_failure_reason
+                payload["failure_message"] = self.last_login_failure_message
                 self.logger.warning("❌ CAS 登录失败", payload=payload)
 
         return success
+
+    def _contains_invalid_credential_markers(self, html: str) -> bool:
+        lowered = str(html or "").lower()
+        return any(
+            marker in lowered
+            for marker in (
+                "用户名或密码",
+                "用户名或者密码",
+                "密码错误",
+                "密码有误",
+                "账号或密码",
+                "incorrect username or password",
+                "invalid username or password",
+                "invalid credentials",
+            )
+        )
 
     def _extract_execution(self, html: str) -> Optional[str]:
         """从 CAS 登录页面提取 execution token。"""

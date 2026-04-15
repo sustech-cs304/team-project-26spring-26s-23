@@ -136,4 +136,67 @@ describe('run state projection', () => {
       thinkingCapabilitySnapshot,
     })
   })
+
+  it('preserves explicit authentication failure guidance when projecting failed runs', () => {
+    const projectedTurns = projectConversationTurnsFromRunState({
+      userTurns: [],
+      runState: {
+        ...createIdleCopilotRunState(),
+        phase: 'failed',
+        runId: 'run-auth',
+        threadId: 'session-1',
+        failure: {
+          code: 'authentication_required',
+          message: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+          details: {
+            toolId: 'blackboard.snapshot.sync',
+          },
+        },
+        segments: [
+          {
+            id: 'assistant:run-auth:1',
+            kind: 'assistant',
+            runId: 'run-auth',
+            assistantMessageId: 'run-auth:assistant',
+            text: '之前已有部分输出',
+            firstContentSequence: 1,
+            startedSequence: 1,
+            lastSequence: 1,
+            status: 'completed',
+            resolvedModelId: null,
+            resolvedModelRoute: null,
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+          {
+            id: 'terminal:run-auth:failed',
+            kind: 'terminal',
+            runId: 'run-auth',
+            startedSequence: 2,
+            lastSequence: 2,
+            status: 'failed',
+            terminalPhase: 'failed',
+            assistantMessageId: null,
+            cancelReason: null,
+            failure: {
+              code: 'authentication_required',
+              message: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+              details: {
+                toolId: 'blackboard.snapshot.sync',
+              },
+            },
+            resolvedModelId: null,
+            resolvedModelRoute: null,
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        ],
+      },
+    })
+
+    expect(projectedTurns).toMatchObject([{
+      kind: 'error',
+      content: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+    }])
+  })
 })
