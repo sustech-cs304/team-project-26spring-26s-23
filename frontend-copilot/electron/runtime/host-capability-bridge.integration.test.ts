@@ -127,6 +127,26 @@ describe('createHostCapabilityBridge integrated runtime regression', () => {
       },
     })
 
+    const blackboardFallbackUsernameSecret = await postBridgeRequest(bridge, {
+      requestId: 'bb-username-secret-2',
+      capability: 'secret',
+      operation: 'get_secret',
+      toolId: 'blackboard.snapshot.sync',
+      runId: 'run-blackboard-1',
+      toolCallId: 'blackboard.snapshot.sync:call-1',
+      payload: {
+        secretName: 'sustech.username',
+      },
+    })
+    expect(blackboardFallbackUsernameSecret.response.status).toBe(200)
+    expect(blackboardFallbackUsernameSecret.payload).toEqual({
+      requestId: 'bb-username-secret-2',
+      ok: true,
+      result: {
+        value: 'student@example.com',
+      },
+    })
+
     const blackboardSecret = await postBridgeRequest(bridge, {
       requestId: 'bb-secret-1',
       capability: 'secret',
@@ -141,6 +161,26 @@ describe('createHostCapabilityBridge integrated runtime regression', () => {
     expect(blackboardSecret.response.status).toBe(200)
     expect(blackboardSecret.payload).toEqual({
       requestId: 'bb-secret-1',
+      ok: true,
+      result: {
+        value: 'cas-secret',
+      },
+    })
+
+    const blackboardFallbackPasswordSecret = await postBridgeRequest(bridge, {
+      requestId: 'bb-secret-2',
+      capability: 'secret',
+      operation: 'get_secret',
+      toolId: 'blackboard.snapshot.sync',
+      runId: 'run-blackboard-1',
+      toolCallId: 'blackboard.snapshot.sync:call-1',
+      payload: {
+        secretName: 'sustech.casPassword',
+      },
+    })
+    expect(blackboardFallbackPasswordSecret.response.status).toBe(200)
+    expect(blackboardFallbackPasswordSecret.payload).toEqual({
+      requestId: 'bb-secret-2',
       ok: true,
       result: {
         value: 'cas-secret',
@@ -342,7 +382,7 @@ describe('createHostCapabilityBridge integrated runtime regression', () => {
         relayToRenderer: false,
       },
     )
-    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(1)
-    expect(settingsWorkspaceService.loadSustechCasSecret).toHaveBeenCalledTimes(1)
+    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(2)
+    expect(settingsWorkspaceService.loadSustechCasSecret).toHaveBeenCalledTimes(2)
   })
 })

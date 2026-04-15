@@ -98,6 +98,34 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       },
     })
     await expect(service.handleRequest(buildRequest({
+      requestId: 'secret-username-2',
+      capability: 'secret',
+      operation: 'get_secret',
+      payload: {
+        secretName: 'sustech.username',
+      },
+    }))).resolves.toEqual({
+      requestId: 'secret-username-2',
+      ok: true,
+      result: {
+        value: 'student@example.com',
+      },
+    })
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'secret-password-1',
+      capability: 'secret',
+      operation: 'get_secret',
+      payload: {
+        secretName: 'sustech.casPassword',
+      },
+    }))).resolves.toEqual({
+      requestId: 'secret-password-1',
+      ok: true,
+      result: {
+        value: 'cas-secret',
+      },
+    })
+    await expect(service.handleRequest(buildRequest({
       requestId: 'secret-1',
       capability: 'secret',
       operation: 'get_secret',
@@ -328,7 +356,8 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     }), {
       relayToRenderer: false,
     })
-    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(1)
+    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(2)
+    expect(settingsWorkspaceService.loadSustechCasSecret).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledWith({
       profileIds: ['openrouter'],
