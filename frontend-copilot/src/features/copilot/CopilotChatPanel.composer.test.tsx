@@ -1217,7 +1217,7 @@ describe('CopilotChatPanel composer interactions', () => {
       && entry.event === 'pending-history-sync-waiting'
       && entry.sessionId === 'session-1'
       && entry.pendingRunId === 'run-1'
-      && entry.waitReason === 'selected-run-missing-from-detail'
+      && entry.waitReason === 'handoff-run-missing-from-detail'
     ))
  
     expect(matchingSettledLog).toBeDefined()
