@@ -878,6 +878,242 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('drops freshly sent conversation after switching away and back before persisted replay becomes renderable', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const firstSessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '你好')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('你好')
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('这是助手回显')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({ sessionId: 'session-2' })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'session-1',
+              status: 'completed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '这是助手回显',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).not.toContain('你好')
+    expect(rendered.container.textContent).not.toContain('这是助手回显')
+
+    rendered.unmount()
+  })
+
+  it('emits debug handoff logs when replay stays empty across a topic switch', async () => {
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const firstSessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '你好')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({ sessionId: 'session-2' })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'session-1',
+              status: 'completed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '这是助手回显',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const emittedDebugEntries = debugSpy.mock.calls
+      .filter((call) => call[0] === '[copilot-debug]' && typeof call[1] === 'object' && call[1] !== null)
+      .map((call) => call[1] as Record<string, unknown>)
+
+    const matchingForwardSwitchLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'session-switch-cleared-transient'
+      && entry.previousSessionId === 'session-1'
+      && entry.nextSessionId === 'session-2'
+    ))
+    const matchingPendingSyncLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'pending-history-sync-waiting'
+      && entry.pendingRunId === 'run-1'
+      && entry.waitReason === 'missing-session-history'
+    ))
+    const matchingReturnSwitchLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'session-switch-cleared-transient'
+      && entry.previousSessionId === 'session-2'
+      && entry.nextSessionId === 'session-1'
+    ))
+
+    expect(matchingForwardSwitchLog).toBeDefined()
+    expect(matchingPendingSyncLog).toBeDefined()
+    expect(matchingReturnSwitchLog).toBeDefined()
+
+    rendered.unmount()
+  })
+
   it('removes the assistant placeholder when a tool card arrives before assistant text', async () => {
     const toolEventControl = createDeferredSignal()
     const sendMessage = createToolFirstPendingSendMessageSpy(toolEventControl)

@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { HostedBackendService } from './runtime/hosted-backend-service'
 import { createElectronCopilotHistoryService } from './copilot-history-service'
+
+let debugModeEnabled = false
+
+beforeEach(() => {
+  debugModeEnabled = false
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -46,6 +52,7 @@ describe('createElectronCopilotHistoryService', () => {
     const service = createElectronCopilotHistoryService({
       ensureHostedBackendService: async () => hostedBackendService,
       getLocalToken: () => 'history-token',
+      getDebugModeEnabled: () => debugModeEnabled,
     })
 
     const result = await service.listThreads()
@@ -102,6 +109,7 @@ describe('createElectronCopilotHistoryService', () => {
         runtimeBaseUrl: 'http://127.0.0.1:8765',
       }),
       getLocalToken: () => null,
+      getDebugModeEnabled: () => debugModeEnabled,
     })
 
     await expect(service.getThreadDetail('missing-thread')).resolves.toEqual({
@@ -159,6 +167,7 @@ describe('createElectronCopilotHistoryService', () => {
     const service = createElectronCopilotHistoryService({
       ensureHostedBackendService: async () => hostedBackendService,
       getLocalToken: () => 'history-token',
+      getDebugModeEnabled: () => debugModeEnabled,
     })
 
     await expect(service.deleteThread('thread-1')).resolves.toEqual({
@@ -209,12 +218,148 @@ describe('createElectronCopilotHistoryService', () => {
         runtimeBaseUrl: null,
       }),
       getLocalToken: () => 'history-token',
+      getDebugModeEnabled: () => debugModeEnabled,
     })
 
     await expect(service.getRunReplay('run-1')).resolves.toEqual({
       ok: false,
       error: 'Failed to load persisted chat run replay for "run-1": Hosted backend runtime URL is unavailable.',
     })
+  })
+
+  it('emits structured debug logs for successful and failing history requests only when debug mode is enabled', async () => {
+    const appendLog = vi.fn(async () => undefined)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({
+          ok: true,
+          version: 'chat-history-v1',
+          threads: [
+            {
+              threadId: 'thread-1',
+              boundAgentId: 'default',
+              title: '历史线程',
+              titleSource: 'deterministic',
+              summary: '已持久化回复',
+              summarySource: 'deterministic',
+              createdAt: '2026-04-13T14:00:00Z',
+              updatedAt: '2026-04-13T14:05:00Z',
+              lastActivityAt: '2026-04-13T14:05:00Z',
+              lastRunId: 'run-1',
+              lastRunStatus: 'completed',
+              lastUserMessagePreview: '你好',
+              lastAssistantMessagePreview: '已持久化回复',
+              driftSummary: {
+                status: 'not_evaluated',
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({
+          ok: true,
+          version: 'chat-history-v1',
+          threads: [
+            {
+              threadId: 'thread-1',
+              boundAgentId: 'default',
+              title: '历史线程',
+              titleSource: 'deterministic',
+              summary: '已持久化回复',
+              summarySource: 'deterministic',
+              createdAt: '2026-04-13T14:00:00Z',
+              updatedAt: '2026-04-13T14:05:00Z',
+              lastActivityAt: '2026-04-13T14:05:00Z',
+              lastRunId: 'run-1',
+              lastRunStatus: 'completed',
+              lastUserMessagePreview: '你好',
+              lastAssistantMessagePreview: '已持久化回复',
+              driftSummary: {
+                status: 'not_evaluated',
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        text: async () => JSON.stringify({
+          detail: {
+            code: 'thread_not_found',
+            message: 'Thread missing.',
+          },
+        }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = createHostedBackendServiceStub({
+      runtimeBaseUrl: 'http://127.0.0.1:8765',
+    })
+    const service = createElectronCopilotHistoryService({
+      ensureHostedBackendService: async () => hostedBackendService,
+      getLocalToken: () => 'history-token',
+      appendLog,
+      getDebugModeEnabled: () => debugModeEnabled,
+    })
+
+    await service.listThreads()
+    expect(appendLog).not.toHaveBeenCalled()
+
+    debugModeEnabled = true
+    await service.listThreads()
+    await service.getThreadDetail('missing-thread')
+
+    expect(appendLog.mock.calls).toEqual([
+      [
+        'debug',
+        '[copilot-history] request-started',
+        expect.objectContaining({
+          operation: 'list-threads',
+          path: '/history/threads',
+          method: 'GET',
+          runtimeUrl: 'http://127.0.0.1:8765/history/threads',
+          hasLocalToken: true,
+        }),
+      ],
+      [
+        'debug',
+        '[copilot-history] request-succeeded',
+        expect.objectContaining({
+          operation: 'list-threads',
+          status: 200,
+          threadCount: 1,
+        }),
+      ],
+      [
+        'debug',
+        '[copilot-history] request-started',
+        expect.objectContaining({
+          operation: 'get-thread-detail',
+          path: '/history/threads/missing-thread',
+          method: 'GET',
+          runtimeUrl: 'http://127.0.0.1:8765/history/threads/missing-thread',
+        }),
+      ],
+      [
+        'debug',
+        '[copilot-history] request-failed',
+        expect.objectContaining({
+          operation: 'get-thread-detail',
+          status: 404,
+          failureCode: 'thread_not_found',
+          failureReason: 'Thread missing.',
+        }),
+      ],
+    ])
   })
 })
 
