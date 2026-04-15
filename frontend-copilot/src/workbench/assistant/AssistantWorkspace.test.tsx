@@ -411,6 +411,7 @@ describe('AssistantWorkspace render + interactions', () => {
     expect(readPersistedAssistantWorkspaceShellState()).toEqual({
       selectedThreadId: 'thread-live',
       selectedRunIdByThreadId: {},
+      threadSummaries: [],
     })
 
     rendered.unmount()
@@ -794,6 +795,14 @@ describe('AssistantWorkspace render + interactions', () => {
       selectedRunIdByThreadId: {
         'thread-2': 'run-2a',
       },
+      threadSummaries: expect.arrayContaining([
+        expect.objectContaining({
+          threadId: 'thread-1',
+        }),
+        expect.objectContaining({
+          threadId: 'thread-2',
+        }),
+      ]),
     })
 
     const historyListCallCountBeforeRemount = listHistoryThreads.mock.calls.length
@@ -1764,18 +1773,25 @@ function getLastMockCopilotChatPanelProps(): {
 function readPersistedAssistantWorkspaceShellState(): {
   selectedThreadId: string | null
   selectedRunIdByThreadId: Record<string, string>
+  threadSummaries: Array<{
+    threadId: string
+  }>
 } {
   const rawValue = window.localStorage.getItem(ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY)
   if (rawValue === null) {
     return {
       selectedThreadId: null,
       selectedRunIdByThreadId: {},
+      threadSummaries: [],
     }
   }
 
   return JSON.parse(rawValue) as {
     selectedThreadId: string | null
     selectedRunIdByThreadId: Record<string, string>
+    threadSummaries: Array<{
+      threadId: string
+    }>
   }
 }
 
