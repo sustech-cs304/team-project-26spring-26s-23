@@ -706,7 +706,45 @@ def _calendar_refresh_output(result: CalendarICSSyncResult) -> dict[str, Any]:
     }
 
 
+def _compact_sync_stats(stats: Mapping[str, Any]) -> dict[str, int]:
+    return {
+        "inserted": int(stats.get("inserted", 0)),
+        "updated": int(stats.get("updated", 0)),
+        "deleted": int(stats.get("deleted", 0)),
+    }
+
+
+
+def _compact_sync_stats_by_table(
+    stats_by_table: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, int]]:
+    return {
+        str(table): _compact_sync_stats(stats)
+        for table, stats in stats_by_table.items()
+    }
+
+
+
 def _snapshot_sync_output(
+    report: BlackboardSnapshotSyncReport,
+    *,
+    progress_messages: Sequence[str],
+) -> dict[str, Any]:
+    _ = progress_messages
+    return {
+        "dbPath": report.db_path.as_posix(),
+        "resourceCourseLimit": report.snapshot.resource_course_limit,
+        "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
+        "firstSyncStats": _compact_sync_stats_by_table(report.first_sync_stats),
+        "integrityOk": report.integrity_ok,
+        "secondSyncHasNoNewRecords": report.second_sync_has_no_new_records(),
+        "secondSyncHasNoDeletedRecords": report.second_sync_has_no_deleted_records(),
+        "logSummary": _jsonable(report.log_summary),
+    }
+
+
+
+def _snapshot_sync_persisted_output(
     report: BlackboardSnapshotSyncReport,
     *,
     progress_messages: Sequence[str],
@@ -923,29 +961,19 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
             "resourceCourseLimit": {"type": "integer"},
             "scrapedCounts": {"type": "object"},
             "firstSyncStats": {"type": "object"},
-            "secondSyncStats": {"type": ["object", "null"]},
-            "tableCounts": {"type": "object"},
-            "expectedActiveCounts": {"type": "object"},
             "integrityOk": {"type": "boolean"},
             "secondSyncHasNoNewRecords": {"type": "boolean"},
             "secondSyncHasNoDeletedRecords": {"type": "boolean"},
             "logSummary": {"type": "object"},
-            "logs": {"type": "array"},
-            "progressMessages": {"type": "array"},
         },
         required=(
             "dbPath",
-            "resourceCourseLimit",
             "scrapedCounts",
             "firstSyncStats",
-            "secondSyncStats",
-            "tableCounts",
-            "expectedActiveCounts",
             "integrityOk",
             "secondSyncHasNoNewRecords",
             "secondSyncHasNoDeletedRecords",
             "logSummary",
-            "logs",
         ),
     ),
     capability_requirements=(
@@ -1082,6 +1110,15 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
             progress=progress_messages.append,
         )
         output = _snapshot_sync_output(report, progress_messages=progress_messages)
+        persist_details = (
+            _read_optional_text(arguments, "stateKey") is not None
+            or _read_optional_text(arguments, "artifactName") is not None
+        )
+        persisted_output = (
+            _snapshot_sync_persisted_output(report, progress_messages=progress_messages)
+            if persist_details
+            else output
+        )
         metadata = {
             "credentialSource": credentials.source,
             "dbPathSource": _db_path_source(arguments),
@@ -1092,14 +1129,14 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
                 arguments=arguments,
                 context=context,
                 host=host,
-                output=output,
+                output=persisted_output,
             )
         )
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
-            output=output,
+            output=persisted_output,
         )
         return output, artifacts, metadata
 

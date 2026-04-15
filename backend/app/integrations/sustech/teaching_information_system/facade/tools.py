@@ -739,7 +739,29 @@ def _common_metadata(
     return metadata
 
 
+
+def _detail_export_requested(arguments: Mapping[str, Any]) -> bool:
+    return (
+        _read_optional_text(arguments, "stateKey") is not None
+        or _read_optional_text(arguments, "artifactName") is not None
+    )
+
+
+
 def _personal_grades_output(result: TISGradeQueryResult) -> dict[str, Any]:
+    output: dict[str, Any] = {
+        "sourceUrl": result.source_url,
+        "totalRecords": result.total_records,
+        "resolvedRoleCode": result.resolved_role_code,
+        "logSummary": _summarize_logs(result.logs),
+    }
+    if result.persistence is not None:
+        output["persistence"] = _jsonable(result.persistence)
+    return output
+
+
+
+def _personal_grades_persisted_output(result: TISGradeQueryResult) -> dict[str, Any]:
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
         "totalRecords": result.total_records,
@@ -755,7 +777,21 @@ def _personal_grades_output(result: TISGradeQueryResult) -> dict[str, Any]:
     return output
 
 
+
 def _credit_gpa_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
+    output: dict[str, Any] = {
+        "sourceUrl": result.source_url,
+        "resolvedRoleCode": result.resolved_role_code,
+        "summary": _jsonable(result.summary),
+        "logSummary": _summarize_logs(result.logs),
+    }
+    if result.persistence is not None:
+        output["persistence"] = _jsonable(result.persistence)
+    return output
+
+
+
+def _credit_gpa_persisted_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
         "pageUrl": result.page_url,
@@ -774,7 +810,28 @@ def _credit_gpa_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
     return output
 
 
+
 def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str, Any]:
+    output: dict[str, Any] = {
+        "sourceUrl": result.source_url,
+        "semester": _jsonable(result.semester),
+        "currentSemester": _jsonable(result.current_semester),
+        "semesterSource": result.semester_source,
+        "resolvedRoleCode": result.resolved_role_code,
+        "resolvedPylx": result.resolved_pylx,
+        "summary": _jsonable(result.summary),
+        "courseCount": len(result.courses),
+        "logSummary": _summarize_logs(result.logs),
+    }
+    if result.persistence is not None:
+        output["persistence"] = _jsonable(result.persistence)
+    return output
+
+
+
+def _selected_courses_persisted_output(
+    result: TISSelectedCoursesQueryResult,
+) -> dict[str, Any]:
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
         "pageUrl": result.page_url,
@@ -886,21 +943,13 @@ _PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
             "sourceUrl": {"type": "string"},
             "totalRecords": {"type": "integer"},
             "resolvedRoleCode": {"type": ["string", "null"]},
-            "homepage": {"type": "object"},
-            "gradeRecords": {"type": "array"},
-            "probes": {"type": "array"},
             "logSummary": {"type": "object"},
-            "logs": {"type": "array"},
             "persistence": {"type": ["object", "null"]},
         },
         required=(
             "sourceUrl",
             "totalRecords",
-            "homepage",
-            "gradeRecords",
-            "probes",
             "logSummary",
-            "logs",
         ),
     ),
     capability_requirements=(
@@ -957,29 +1006,15 @@ _CREDIT_GPA_FETCH_METADATA = ToolMetadata(
     output_schema=_schema(
         properties={
             "sourceUrl": {"type": "string"},
-            "pageUrl": {"type": "string"},
-            "apiUrl": {"type": "string"},
             "resolvedRoleCode": {"type": ["string", "null"]},
-            "homepage": {"type": "object"},
             "summary": {"type": "object"},
-            "termRecords": {"type": "array"},
-            "yearRecords": {"type": "array"},
-            "probes": {"type": "array"},
             "logSummary": {"type": "object"},
-            "logs": {"type": "array"},
             "persistence": {"type": ["object", "null"]},
         },
         required=(
             "sourceUrl",
-            "pageUrl",
-            "apiUrl",
-            "homepage",
             "summary",
-            "termRecords",
-            "yearRecords",
-            "probes",
             "logSummary",
-            "logs",
         ),
     ),
     capability_requirements=(
@@ -1039,35 +1074,23 @@ _SELECTED_COURSES_FETCH_METADATA = ToolMetadata(
     output_schema=_schema(
         properties={
             "sourceUrl": {"type": "string"},
-            "pageUrl": {"type": "string"},
-            "apiUrl": {"type": "string"},
             "semester": {"type": "object"},
             "currentSemester": {"type": ["object", "null"]},
             "semesterSource": {"type": ["string", "null"]},
             "resolvedRoleCode": {"type": ["string", "null"]},
             "resolvedPylx": {"type": ["string", "null"]},
-            "homepage": {"type": "object"},
             "summary": {"type": "object"},
             "courseCount": {"type": "integer"},
-            "courses": {"type": "array"},
-            "probes": {"type": "array"},
             "logSummary": {"type": "object"},
-            "logs": {"type": "array"},
             "persistence": {"type": ["object", "null"]},
         },
         required=(
             "sourceUrl",
-            "pageUrl",
-            "apiUrl",
             "semester",
             "currentSemester",
-            "homepage",
             "summary",
             "courseCount",
-            "courses",
-            "probes",
             "logSummary",
-            "logs",
         ),
     ),
     capability_requirements=(
@@ -1134,6 +1157,11 @@ class TISPersonalGradesFetchTool(_TISFacadeToolBase):
             owner_key=owner_key,
         )
         output = _personal_grades_output(result)
+        persisted_output = (
+            _personal_grades_persisted_output(result)
+            if _detail_export_requested(arguments)
+            else output
+        )
         metadata = _common_metadata(
             credential_source=credentials.source,
             persist=persist,
@@ -1145,14 +1173,14 @@ class TISPersonalGradesFetchTool(_TISFacadeToolBase):
                 arguments=arguments,
                 context=context,
                 host=host,
-                output=output,
+                output=persisted_output,
             )
         )
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
-            output=output,
+            output=persisted_output,
         )
         return output, artifacts, metadata
 
@@ -1188,6 +1216,11 @@ class TISCreditGPAFetchTool(_TISFacadeToolBase):
             owner_key=owner_key,
         )
         output = _credit_gpa_output(result)
+        persisted_output = (
+            _credit_gpa_persisted_output(result)
+            if _detail_export_requested(arguments)
+            else output
+        )
         metadata = _common_metadata(
             credential_source=credentials.source,
             persist=persist,
@@ -1199,14 +1232,14 @@ class TISCreditGPAFetchTool(_TISFacadeToolBase):
                 arguments=arguments,
                 context=context,
                 host=host,
-                output=output,
+                output=persisted_output,
             )
         )
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
-            output=output,
+            output=persisted_output,
         )
         return output, artifacts, metadata
 
@@ -1254,6 +1287,11 @@ class TISSelectedCoursesFetchTool(_TISFacadeToolBase):
             owner_key=owner_key,
         )
         output = _selected_courses_output(result)
+        persisted_output = (
+            _selected_courses_persisted_output(result)
+            if _detail_export_requested(arguments)
+            else output
+        )
         metadata = _common_metadata(
             credential_source=credentials.source,
             persist=persist,
@@ -1265,14 +1303,14 @@ class TISSelectedCoursesFetchTool(_TISFacadeToolBase):
                 arguments=arguments,
                 context=context,
                 host=host,
-                output=output,
+                output=persisted_output,
             )
         )
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
-            output=output,
+            output=persisted_output,
         )
         return output, artifacts, metadata
 
