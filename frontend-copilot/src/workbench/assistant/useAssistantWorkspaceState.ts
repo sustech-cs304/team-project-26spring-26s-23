@@ -691,10 +691,18 @@ export function useAssistantWorkspaceState({
           return
         }
 
+        const isProvisionalEmptyRestore = historyResult.threads.length === 0
+        const cachedThreadSummaries = isProvisionalEmptyRestore
+          ? persistedShellState.threadSummaries
+          : []
+        const usingPersistedThreadSummaryCache = isProvisionalEmptyRestore && cachedThreadSummaries.length > 0
+        const effectiveThreadSummaries = usingPersistedThreadSummaryCache
+          ? cachedThreadSummaries
+          : historyResult.threads
         const currentSessionsById = new Map(
           sessionListStateRef.current.sessions.map((sessionEntry) => [sessionEntry.sessionId, sessionEntry] as const),
         )
-        const restoredSessions = historyResult.threads.map((summary) => {
+        const restoredSessions = effectiveThreadSummaries.map((summary) => {
           const restoredSession = createAssistantSessionShellFromHistorySummary({
             summary,
             agents: directoryState.agents,
@@ -746,6 +754,7 @@ export function useAssistantWorkspaceState({
             mergedSessionCount: mergedSessions.length,
             currentActiveSessionIsLiveOnly,
             preserveCurrentActiveLiveSession,
+            usingPersistedThreadSummaryCache,
           }
 
           return {
@@ -755,7 +764,7 @@ export function useAssistantWorkspaceState({
         })
         setSessionHistoryById((current) => {
           const nextState: Record<string, AssistantSessionHistoryState> = {}
-          for (const summary of historyResult.threads) {
+          for (const summary of effectiveThreadSummaries) {
             const selectedRunId = persistedShellState.selectedRunIdByThreadId[summary.threadId] ?? null
             const currentHistoryState = current[summary.threadId]
             const syncedHistoryState = currentHistoryState === undefined
@@ -784,7 +793,6 @@ export function useAssistantWorkspaceState({
           return nextState
         })
 
-        const isProvisionalEmptyRestore = historyResult.threads.length === 0
         if (isProvisionalEmptyRestore) {
           restoredRuntimeUrlRef.current = null
           provisionalEmptyRestoreKeyRef.current = restoreKey
@@ -795,6 +803,9 @@ export function useAssistantWorkspaceState({
             restoreKey,
             requestVersion,
             threadCount: 0,
+            cachedThreadSummaryCount: cachedThreadSummaries.length,
+            usingPersistedThreadSummaryCache,
+            restoredSessionCount: restoredSessions.length,
             retryDelayMs,
             preferredActiveSessionId,
             shouldProtectUserLiveSelection,
@@ -810,6 +821,7 @@ export function useAssistantWorkspaceState({
           requestVersion,
           threadCount: historyResult.threads.length,
           isEmpty: false,
+          usingPersistedThreadSummaryCache,
           preferredActiveSessionId,
           shouldProtectUserLiveSelection,
           ...(restoreSelectionSummary ?? {}),
@@ -1164,26 +1176,51 @@ export function useAssistantWorkspaceState({
   ])
 
   useEffect(() => {
+    const previousShellState = persistedShellStateRef.current
     const selectedRunIdByThreadId = Object.fromEntries(
-      Object.entries(sessionHistoryById).flatMap(([sessionId, historyState]) => {
-        const persistableSelectedRunId = resolveAssistantSessionHistoryPersistableSelectedRunId(historyState)
-        return persistableSelectedRunId === null ? [] : [[sessionId, persistableSelectedRunId] as const]
+      sessionListState.sessions.flatMap((sessionEntry) => {
+        const historyState = sessionHistoryById[sessionEntry.sessionId]
+        const persistableSelectedRunId = historyState === undefined
+          ? null
+          : resolveAssistantSessionHistoryPersistableSelectedRunId(historyState)
+        const fallbackSelectedRunId = sessionEntry.capabilities.capabilitiesVersion === 'history-shell'
+          ? previousShellState.selectedRunIdByThreadId[sessionEntry.sessionId] ?? null
+          : null
+        const nextSelectedRunId = persistableSelectedRunId ?? fallbackSelectedRunId
+
+        return nextSelectedRunId === null ? [] : [[sessionEntry.sessionId, nextSelectedRunId] as const]
       }),
     )
+    const threadSummaries = sessionListState.sessions.length > 0
+      ? sessionListState.sessions.flatMap((sessionEntry) => {
+          const historyState = sessionHistoryById[sessionEntry.sessionId]
+          if (historyState?.isPersistedThread === true) {
+            return [{ ...historyState.summary }]
+          }
+          if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
+            return []
+          }
+          return [createAssistantSessionHistoryStateFromSessionShell(sessionEntry, null).summary]
+        })
+      : previousShellState.threadSummaries
 
     const nextShellState = {
-      selectedThreadId: sessionListState.activeSessionId,
+      selectedThreadId: sessionListState.activeSessionId ?? (sessionListState.sessions.length === 0
+        ? previousShellState.selectedThreadId
+        : null),
       selectedRunIdByThreadId,
+      threadSummaries,
     }
     appendWorkspaceDebugLog('workspace-shell-state-persisted', {
       selectedThreadId: nextShellState.selectedThreadId,
       selectedRunIdCount: Object.keys(nextShellState.selectedRunIdByThreadId).length,
       selectedRunIdByThreadId: nextShellState.selectedRunIdByThreadId,
+      threadSummaryCount: nextShellState.threadSummaries.length,
       skippedSelectedRunCount: Object.keys(sessionHistoryById).length - Object.keys(nextShellState.selectedRunIdByThreadId).length,
     })
     persistedShellStateRef.current = nextShellState
     persistShellStateImpl(nextShellState)
-  }, [appendWorkspaceDebugLog, persistShellStateImpl, sessionHistoryById, sessionListState.activeSessionId])
+  }, [appendWorkspaceDebugLog, persistShellStateImpl, sessionHistoryById, sessionListState.activeSessionId, sessionListState.sessions])
 
   return {
     directoryState,
