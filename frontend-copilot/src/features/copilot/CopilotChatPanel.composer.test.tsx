@@ -1175,12 +1175,12 @@ describe('CopilotChatPanel composer interactions', () => {
       && entry.nextSessionId === 'session-2'
       && entry.previousTransientConversationLength === 1
     ))
-    const matchingPendingSyncLog = emittedDebugEntries.find((entry) => (
+    const matchingCommittedSyncLog = emittedDebugEntries.find((entry) => (
       entry.scope === 'copilot-chat-panel'
-      && entry.event === 'pending-history-sync-waiting'
+      && entry.event === 'pending-history-sync-committed'
       && entry.sessionId === 'session-1'
       && entry.pendingRunId === 'run-1'
-      && entry.waitReason === 'persisted-selected-run-empty'
+      && entry.persistedConversationSource === 'summary'
     ))
     const matchingReturnSwitchLog = emittedDebugEntries.find((entry) => (
       entry.scope === 'copilot-chat-panel'
@@ -1189,11 +1189,18 @@ describe('CopilotChatPanel composer interactions', () => {
       && entry.nextSessionId === 'session-1'
       && entry.nextTransientConversationLength === 1
     ))
-
+    const unexpectedWaitingLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'pending-history-sync-waiting'
+      && entry.sessionId === 'session-1'
+      && entry.pendingRunId === 'run-1'
+    ))
+ 
     expect(matchingSettledLog).toBeDefined()
     expect(matchingForwardSwitchLog).toBeDefined()
-    expect(matchingPendingSyncLog).toBeDefined()
+    expect(matchingCommittedSyncLog).toBeDefined()
     expect(matchingReturnSwitchLog).toBeDefined()
+    expect(unexpectedWaitingLog).toBeUndefined()
 
     rendered.unmount()
   })

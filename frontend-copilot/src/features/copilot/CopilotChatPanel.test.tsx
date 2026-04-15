@@ -300,6 +300,7 @@ describe('CopilotChatPanel', () => {
           replay: null,
         })}
         retrySessionHistory={retrySessionHistory}
+        persistedSelectedRunConversationPending={false}
       />,
     )
 
@@ -311,6 +312,51 @@ describe('CopilotChatPanel', () => {
     expect(retrySessionHistory).toHaveBeenCalledOnce()
 
     rendered.unmount()
+  })
+
+  it('renders summary fallback content when the selected persisted run has no timeline or replay yet', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'thread-1',
+              status: 'completed',
+              createdAt: '2026-04-13T15:00:00Z',
+              updatedAt: '2026-04-13T15:05:00Z',
+              startedAt: '2026-04-13T15:00:01Z',
+              terminalAt: '2026-04-13T15:05:00Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '历史摘要',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('你好')
+    expect(html).toContain('历史摘要')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
   })
 
   it('shows persisted capability hydration failures as a visible retryable notice and disables send', async () => {
