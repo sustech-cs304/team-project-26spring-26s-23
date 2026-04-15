@@ -19,6 +19,7 @@ import {
 } from './assistant-workspace-controller'
 import { runCreateSessionPendingScenario } from './test-support/assistant-workspace-creation-scenarios'
 import { ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY } from './assistant-workspace-shell-state'
+import { COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY } from './useAssistantWorkspaceState'
 import {
   runSessionContextMenuScenario,
   runSessionDeletionScenario,
@@ -411,6 +412,145 @@ describe('AssistantWorkspace render + interactions', () => {
       selectedThreadId: 'thread-live',
       selectedRunIdByThreadId: {},
     })
+
+    rendered.unmount()
+  })
+
+  it('evicts least recently used rebuildable completed controllers and recreates them from cached history on reopen', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    const evictedFixture = fixtures[0]
+    if (evictedFixture === undefined) {
+      throw new Error('Expected at least one LRU fixture.')
+    }
+
+    const {
+      rendered,
+      getHistoryThreadDetail,
+      getHistoryRunReplay,
+    } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures, {
+      afterFirstThreadReady: async () => {
+        await updateAssistantWorkspaceRuntimeControllers((current) => ({
+          ...current,
+          [evictedFixture.summary.threadId]: {
+            ...current[evictedFixture.summary.threadId],
+            runState: {
+              ...current[evictedFixture.summary.threadId]?.runState,
+              phase: 'completed',
+              runId: evictedFixture.replay.run.runId,
+              threadId: evictedFixture.summary.threadId,
+            },
+          },
+        }))
+      },
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return Object.keys(controllerRecord).length === COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY
+        && controllerRecord[evictedFixture.summary.threadId] === undefined
+    }, 24)
+
+    const detailCallCountBeforeReopen = getHistoryThreadDetail.mock.calls.filter(
+      ([threadId]) => threadId === evictedFixture.summary.threadId,
+    ).length
+    const replayCallCountBeforeReopen = getHistoryRunReplay.mock.calls.filter(
+      ([runId]) => runId === evictedFixture.replay.run.runId,
+    ).length
+
+    await clickElement(rendered.getByTestId(`assistant-session-card-${evictedFixture.summary.threadId}`))
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return getLastMockCopilotChatPanelProps().sessionShell?.sessionId === evictedFixture.summary.threadId
+        && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+        && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+        && controllerRecord[evictedFixture.summary.threadId] !== undefined
+    }, 24)
+
+    expect(getHistoryThreadDetail.mock.calls.filter(
+      ([threadId]) => threadId === evictedFixture.summary.threadId,
+    ).length).toBe(detailCallCountBeforeReopen)
+    expect(getHistoryRunReplay.mock.calls.filter(
+      ([runId]) => runId === evictedFixture.replay.run.runId,
+    ).length).toBe(replayCallCountBeforeReopen)
+
+    rendered.unmount()
+  })
+
+  it('does not evict streaming controllers when the registry exceeds the LRU capacity', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    const protectedFixture = fixtures[0]
+    const evictableFixture = fixtures[1]
+    if (protectedFixture === undefined || evictableFixture === undefined) {
+      throw new Error('Expected protected and evictable LRU fixtures.')
+    }
+
+    const { rendered } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures, {
+      afterFirstThreadReady: async () => {
+        await updateAssistantWorkspaceRuntimeControllers((current) => ({
+          ...current,
+          [protectedFixture.summary.threadId]: {
+            ...current[protectedFixture.summary.threadId],
+            runState: {
+              ...current[protectedFixture.summary.threadId]?.runState,
+              phase: 'streaming',
+              runId: protectedFixture.replay.run.runId,
+              threadId: protectedFixture.summary.threadId,
+            },
+          },
+        }))
+      },
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return Object.keys(controllerRecord).length === COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY
+        && controllerRecord[protectedFixture.summary.threadId] !== undefined
+        && controllerRecord[protectedFixture.summary.threadId]?.runState?.phase === 'streaming'
+        && controllerRecord[evictableFixture.summary.threadId] === undefined
+    }, 24)
+
+    rendered.unmount()
+  })
+
+  it('does not evict handoff-pending controllers while pending history sync is unresolved', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    const protectedFixture = fixtures[0]
+    const evictableFixture = fixtures[1]
+    if (protectedFixture === undefined || evictableFixture === undefined) {
+      throw new Error('Expected protected and evictable LRU fixtures.')
+    }
+
+    const { rendered } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures, {
+      afterFirstThreadReady: async () => {
+        await updateAssistantWorkspaceRuntimeControllers((current) => ({
+          ...current,
+          [protectedFixture.summary.threadId]: {
+            ...current[protectedFixture.summary.threadId],
+            runState: {
+              ...current[protectedFixture.summary.threadId]?.runState,
+              phase: 'completed',
+              runId: protectedFixture.replay.run.runId,
+              threadId: protectedFixture.summary.threadId,
+            },
+            pendingHistorySyncRunId: protectedFixture.replay.run.runId,
+          },
+        }))
+      },
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return Object.keys(controllerRecord).length === COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY
+        && controllerRecord[protectedFixture.summary.threadId] !== undefined
+        && controllerRecord[protectedFixture.summary.threadId]?.pendingHistorySyncRunId === protectedFixture.replay.run.runId
+        && controllerRecord[evictableFixture.summary.threadId] === undefined
+    }, 24)
 
     rendered.unmount()
   })
@@ -1384,6 +1524,198 @@ function createMultiRunPersistedHistoryFixture() {
   }
 }
 
+type MockRuntimeControllerRecord = Record<string, {
+  composerDraft?: {
+    messageText?: string
+  }
+  runState?: {
+    phase?: string
+    runId?: string | null
+    threadId?: string | null
+  }
+  pendingHistorySyncRunId?: string | null
+  activeAbortController?: AbortController | null
+  lastAccessedAt?: number
+  [key: string]: unknown
+}>
+
+function createLruPersistedHistoryFixtures(
+  count = COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY + 1,
+) {
+  return Array.from({ length: count }, (_, index) => createIndexedPersistedHistoryFixture(index + 1))
+}
+
+function createIndexedPersistedHistoryFixture(index: number) {
+  const suffix = String(index).padStart(2, '0')
+  const threadId = `thread-lru-${suffix}`
+  const runId = `run-lru-${suffix}`
+  const userText = `LRU 问题 ${index}`
+  const assistantText = `LRU 回答 ${index}`
+  const createdAt = `2026-04-14T08:${suffix}:00Z`
+  const updatedAt = `2026-04-14T08:${suffix}:30Z`
+  const summary = {
+    threadId,
+    boundAgentId: 'general',
+    title: `LRU 线程 ${index}`,
+    titleSource: 'deterministic',
+    summary: assistantText,
+    summarySource: 'deterministic',
+    createdAt,
+    updatedAt,
+    lastActivityAt: updatedAt,
+    lastRunId: runId,
+    lastRunStatus: 'completed',
+    lastUserMessagePreview: userText,
+    lastAssistantMessagePreview: assistantText,
+    driftSummary: {
+      status: 'not_evaluated',
+    },
+  }
+  const runSummary = {
+    runId,
+    threadId,
+    status: 'completed',
+    createdAt,
+    updatedAt,
+    startedAt: createdAt,
+    terminalAt: updatedAt,
+    resolvedModelId: 'openai/gpt-4.1',
+    requestedMessageText: userText,
+    assistantText,
+  }
+
+  return {
+    summary,
+    detail: {
+      ok: true as const,
+      version: 'chat-history-v1',
+      thread: {
+        ...summary,
+      },
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId,
+          sequenceStart: 0,
+          text: userText,
+        },
+        {
+          kind: 'assistant_message',
+          runId,
+          sequenceStart: 1,
+          text: assistantText,
+        },
+      ],
+      runSummaries: [{
+        ...runSummary,
+      }],
+      latestConfigurationSnapshot: {
+        runId,
+        modelSnapshot: {
+          resolvedModelId: 'openai/gpt-4.1',
+        },
+        toolsSnapshot: {
+          resolvedToolIds: ['tool.file-convert'],
+        },
+      },
+      availabilityDrift: {
+        status: 'not_evaluated',
+      },
+    },
+    replay: {
+      ok: true as const,
+      version: 'chat-history-v1',
+      run: {
+        ...runSummary,
+      },
+      historicalSnapshot: {
+        resolvedModelId: 'openai/gpt-4.1',
+        resolvedToolIds: ['tool.file-convert'],
+      },
+      orderedEvents: [],
+      toolCallBlocks: [],
+      diagnosticBlocks: [],
+      terminalState: null,
+      availabilityInterpretation: {
+        status: 'not_evaluated',
+      },
+    },
+  }
+}
+
+async function renderAssistantWorkspaceWithHydratedLruFixtures(
+  fixtures: ReturnType<typeof createLruPersistedHistoryFixtures>,
+  options: {
+    afterFirstThreadReady?: () => Promise<void>
+  } = {},
+) {
+  const directoryResponse = createDirectoryResponse()
+  const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+  const fixtureByThreadId = Object.fromEntries(fixtures.map((fixture) => [fixture.summary.threadId, fixture]))
+  const fixtureByRunId = Object.fromEntries(fixtures.map((fixture) => [fixture.replay.run.runId, fixture]))
+  const getCapabilities = vi.fn().mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({
+    sessionId,
+    capabilitiesVersion: `cap-${sessionId}`,
+  }))
+  const getHistoryThreadDetail = vi.fn().mockImplementation(async (threadId: string) => fixtureByThreadId[threadId].detail)
+  const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => fixtureByRunId[runId].replay)
+  const rendered = renderWithRoot(
+    <AssistantWorkspace
+      bootstrap={createBootstrapController()}
+      getCapabilities={getCapabilities}
+      getHistoryThreadDetail={getHistoryThreadDetail}
+      getHistoryRunReplay={getHistoryRunReplay}
+      initialDirectoryState={directoryState}
+      listHistoryThreads={vi.fn().mockResolvedValue({
+        ok: true as const,
+        version: 'chat-history-v1',
+        threads: fixtures.map((fixture) => fixture.summary),
+      })}
+    />,
+  )
+
+  await waitForAssistantWorkspaceCondition(
+    () => rendered.queryByTestId(`assistant-session-card-${fixtures[0]?.summary.threadId ?? ''}`) !== null,
+    24,
+  )
+
+  for (const [index, fixture] of fixtures.entries()) {
+    await clickElement(rendered.getByTestId(`assistant-session-card-${fixture.summary.threadId}`))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === fixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === fixture.replay.run.runId
+    ), 24)
+
+    if (index === 0) {
+      await options.afterFirstThreadReady?.()
+    }
+  }
+
+  return {
+    rendered,
+    getCapabilities,
+    getHistoryThreadDetail,
+    getHistoryRunReplay,
+  }
+}
+
+async function updateAssistantWorkspaceRuntimeControllers(
+  updater: (current: MockRuntimeControllerRecord) => MockRuntimeControllerRecord,
+) {
+  const setter = getLastMockCopilotChatPanelProps().setRuntimeControllerBySessionId
+  if (setter === undefined) {
+    throw new Error('Expected runtime controller setter from AssistantWorkspace.')
+  }
+
+  await act(async () => {
+    setter((current) => updater(current))
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
 function getLastMockCopilotChatPanelProps(): {
   sessionShell?: {
     sessionId?: string
@@ -1398,14 +1730,10 @@ function getLastMockCopilotChatPanelProps(): {
   }
   selectSessionHistoryRun?: (runId: string | null) => void
   onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
-  runtimeControllerBySessionId?: Record<string, {
-    composerDraft?: {
-      messageText?: string
-    }
-    runState?: {
-      phase?: string
-    }
-  }>
+  runtimeControllerBySessionId?: MockRuntimeControllerRecord
+  setRuntimeControllerBySessionId?: (
+    value: MockRuntimeControllerRecord | ((current: MockRuntimeControllerRecord) => MockRuntimeControllerRecord)
+  ) => void
 } {
   const props = mockCopilotChatPanel.mock.calls[mockCopilotChatPanel.mock.calls.length - 1]?.[0]
   if (props === undefined) {
@@ -1426,14 +1754,10 @@ function getLastMockCopilotChatPanelProps(): {
     }
     selectSessionHistoryRun?: (runId: string | null) => void
     onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
-    runtimeControllerBySessionId?: Record<string, {
-      composerDraft?: {
-        messageText?: string
-      }
-      runState?: {
-        phase?: string
-      }
-    }>
+    runtimeControllerBySessionId?: MockRuntimeControllerRecord
+    setRuntimeControllerBySessionId?: (
+      value: MockRuntimeControllerRecord | ((current: MockRuntimeControllerRecord) => MockRuntimeControllerRecord)
+    ) => void
   }
 }
 
