@@ -145,8 +145,8 @@ export function syncAssistantSessionHistorySummary(
   selectedRunId: string | null,
 ): AssistantSessionHistoryState {
   const nextSelectedRunId = resolveAssistantSessionSelectedRunId({
-    persistedSelectedRunId: selectedRunId,
     currentSelectedRunId: state.selectedRunId,
+    persistedSelectedRunId: selectedRunId,
     runSummaries: state.runSummaries,
     fallbackRunId: summary.lastRunId,
   })
@@ -430,8 +430,8 @@ function resolveAssistantSessionSelectedRunId(input: {
       .filter((runId): runId is string => runId !== null),
   )
   const candidates = [
-    normalizeOptionalString(input.persistedSelectedRunId),
     normalizeOptionalString(input.currentSelectedRunId),
+    normalizeOptionalString(input.persistedSelectedRunId),
     normalizeOptionalString(input.fallbackRunId),
     input.runSummaries?.[input.runSummaries.length - 1]?.runId ?? null,
   ]
@@ -448,6 +448,27 @@ function resolveAssistantSessionSelectedRunId(input: {
   }
 
   return null
+}
+
+export function resolveAssistantSessionHistoryPersistableSelectedRunId(
+  state: AssistantSessionHistoryState,
+): string | null {
+  const selectedRunId = normalizeOptionalString(state.selectedRunId)
+  if (selectedRunId === null || state.isPersistedThread !== true) {
+    return null
+  }
+
+  const hasStableDetail = state.detailStatus === 'ready' || state.hasLoadedDetail === true
+  if (!hasStableDetail) {
+    return null
+  }
+
+  const selectedRunExistsInDetail = state.runSummaries.some((runSummary) => (
+    normalizeOptionalString(runSummary.runId) === selectedRunId
+  ))
+  return selectedRunExistsInDetail || hasAssistantSessionHistoryReplayForRun(state, selectedRunId)
+    ? selectedRunId
+    : null
 }
 
 export function hasAssistantSessionHistoryReplayForRun(

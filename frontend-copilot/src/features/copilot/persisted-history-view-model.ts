@@ -35,7 +35,7 @@ interface PersistedRunContext {
   availabilityDrift: Record<string, unknown> | null
 }
 
-export type PersistedConversationSource = 'none' | 'timeline' | 'replay'
+export type PersistedConversationSource = 'none' | 'summary' | 'timeline' | 'replay'
 
 export interface PersistedConversationBuildResult {
   conversation: CopilotMessageListItem[]
@@ -59,12 +59,14 @@ export function buildPersistedConversationFromHistory(
     timelineItems: filterTimelineItemsForSelectedRun(history.timelineItems, selectedRunId),
     runContexts,
   })
+  const summaryConversation = buildPersistedConversationFromRunSummary({
+    history,
+    selectedRunId,
+    runContexts,
+  })
 
   if (selectedRunId === null) {
-    return {
-      conversation: timelineConversation,
-      selectedRunConversationSource: timelineConversation.length === 0 ? 'none' : 'timeline',
-    }
+    return resolvePersistedConversationFallbackResult(timelineConversation, summaryConversation)
   }
 
   const replayConversation = buildPersistedConversationFromReplay(history, selectedRunId)
@@ -73,10 +75,7 @@ export function buildPersistedConversationFromHistory(
         conversation: replayConversation,
         selectedRunConversationSource: 'replay',
       }
-    : {
-        conversation: timelineConversation,
-        selectedRunConversationSource: timelineConversation.length === 0 ? 'none' : 'timeline',
-      }
+    : resolvePersistedConversationFallbackResult(timelineConversation, summaryConversation)
 }
 
 function buildPersistedConversationFromTimeline(input: {
@@ -105,6 +104,163 @@ function buildPersistedConversationFromTimeline(input: {
         return []
     }
   })
+}
+
+function resolvePersistedConversationFallbackResult(
+  timelineConversation: CopilotMessageListItem[],
+  summaryConversation: CopilotMessageListItem[],
+): PersistedConversationBuildResult {
+  if (timelineConversation.length > 0) {
+    return {
+      conversation: timelineConversation,
+      selectedRunConversationSource: 'timeline',
+    }
+  }
+
+  if (summaryConversation.length > 0) {
+    return {
+      conversation: summaryConversation,
+      selectedRunConversationSource: 'summary',
+    }
+  }
+
+  return {
+    conversation: [],
+    selectedRunConversationSource: 'none',
+  }
+}
+
+function buildPersistedConversationFromRunSummary(input: {
+  history: AssistantSessionHistoryState
+  selectedRunId: string | null
+  runContexts: Map<string, PersistedRunContext>
+}): CopilotMessageListItem[] {
+  const runSummary = resolvePersistedConversationRunSummary(
+    input.history.runSummaries,
+    input.selectedRunId,
+    input.history.summary.lastRunId,
+  )
+  if (runSummary === null) {
+    return buildPersistedConversationFromThreadSummaryPreview(input)
+  }
+
+  const runId = normalizeOptionalString(runSummary.runId)
+    ?? input.selectedRunId
+    ?? normalizeOptionalString(input.history.summary.lastRunId)
+    ?? 'history-summary-run'
+  const runContext = input.runContexts.get(runId) ?? createFallbackRunContext()
+  const summaryConversation: CopilotMessageListItem[] = []
+  const userMessageText = normalizeOptionalString(runSummary.requestedMessageText)
+  if (userMessageText !== null) {
+    summaryConversation.push({
+      id: `history:summary:user:${runId}`,
+      kind: 'user',
+      title: '',
+      content: userMessageText,
+      status: 'completed',
+    })
+  }
+
+  const assistantText = normalizeOptionalString(runSummary.assistantText)
+  if (assistantText !== null) {
+    const assistantItem: CopilotAssistantMessageItem = {
+      id: `history:summary:assistant:${runId}`,
+      kind: 'assistant',
+      runId,
+      sequence: summaryConversation.length,
+      title: runContext.resolvedModelId ?? normalizeOptionalString(runSummary.resolvedModelId) ?? '助手响应',
+      content: assistantText,
+      status: 'completed',
+      resolvedModelId: runContext.resolvedModelId ?? normalizeOptionalString(runSummary.resolvedModelId),
+      resolvedModelRoute: runContext.resolvedModelRoute,
+      resolvedToolIds: [...runContext.resolvedToolIds],
+      requestOptions: { ...runContext.requestOptions },
+      requestedThinkingSelection: cloneRuntimeThinkingSelection(runContext.requestedThinkingSelection),
+      appliedThinkingSelection: cloneRuntimeThinkingSelection(runContext.appliedThinkingSelection),
+      thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runContext.thinkingCapabilitySnapshot),
+      reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(runContext.reasoningSuppressionBasis),
+      availabilityInterpretation: cloneRecord(runContext.availabilityInterpretation),
+      availabilityDrift: cloneRecord(runContext.availabilityDrift),
+      historicalSnapshot: cloneRecord(runContext.historicalSnapshot),
+    }
+    summaryConversation.push(assistantItem)
+  }
+
+  return summaryConversation.length > 0
+    ? summaryConversation
+    : buildPersistedConversationFromThreadSummaryPreview(input)
+}
+
+function buildPersistedConversationFromThreadSummaryPreview(input: {
+  history: AssistantSessionHistoryState
+  selectedRunId: string | null
+  runContexts: Map<string, PersistedRunContext>
+}): CopilotMessageListItem[] {
+  const runId = input.selectedRunId
+    ?? normalizeOptionalString(input.history.summary.lastRunId)
+    ?? 'history-summary-preview'
+  const runContext = input.runContexts.get(runId) ?? createFallbackRunContext()
+  const previewConversation: CopilotMessageListItem[] = []
+  const userPreview = normalizeOptionalString(input.history.summary.lastUserMessagePreview)
+  if (userPreview !== null) {
+    previewConversation.push({
+      id: `history:preview:user:${runId}`,
+      kind: 'user',
+      title: '',
+      content: userPreview,
+      status: 'completed',
+    })
+  }
+
+  const assistantPreview = normalizeOptionalString(input.history.summary.lastAssistantMessagePreview)
+  if (assistantPreview !== null) {
+    const assistantItem: CopilotAssistantMessageItem = {
+      id: `history:preview:assistant:${runId}`,
+      kind: 'assistant',
+      runId,
+      sequence: previewConversation.length,
+      title: runContext.resolvedModelId ?? '助手响应',
+      content: assistantPreview,
+      status: 'completed',
+      resolvedModelId: runContext.resolvedModelId,
+      resolvedModelRoute: runContext.resolvedModelRoute,
+      resolvedToolIds: [...runContext.resolvedToolIds],
+      requestOptions: { ...runContext.requestOptions },
+      requestedThinkingSelection: cloneRuntimeThinkingSelection(runContext.requestedThinkingSelection),
+      appliedThinkingSelection: cloneRuntimeThinkingSelection(runContext.appliedThinkingSelection),
+      thinkingCapabilitySnapshot: cloneRuntimeThinkingCapability(runContext.thinkingCapabilitySnapshot),
+      reasoningSuppressionBasis: cloneRuntimeReasoningSuppressionBasis(runContext.reasoningSuppressionBasis),
+      availabilityInterpretation: cloneRecord(runContext.availabilityInterpretation),
+      availabilityDrift: cloneRecord(runContext.availabilityDrift),
+      historicalSnapshot: cloneRecord(runContext.historicalSnapshot),
+    }
+    previewConversation.push(assistantItem)
+  }
+
+  return previewConversation
+}
+
+function resolvePersistedConversationRunSummary(
+  runSummaries: AssistantSessionHistoryState['runSummaries'],
+  selectedRunId: string | null,
+  fallbackRunId: string | null,
+): AssistantSessionHistoryState['runSummaries'][number] | null {
+  const candidates = [selectedRunId, normalizeOptionalString(fallbackRunId)]
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizeOptionalString(candidate)
+    if (normalizedCandidate === null) {
+      continue
+    }
+
+    const matchingRunSummary = runSummaries.find((runSummary) => (
+      normalizeOptionalString(runSummary.runId) === normalizedCandidate
+    ))
+    if (matchingRunSummary !== undefined) {
+      return matchingRunSummary
+    }
+  }
+
+  return runSummaries[runSummaries.length - 1] ?? null
 }
 
 function buildPersistedConversationFromReplay(

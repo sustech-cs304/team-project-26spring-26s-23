@@ -64,6 +64,7 @@ export interface CopilotPanelShellProps {
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
   persistedSelectedRunConversationSource?: PersistedConversationSource
+  persistedSelectedRunConversationPending?: boolean
   hasTransientConversation?: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
@@ -192,7 +193,9 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   const effectivePersistedHistoryViewState = props.hasTransientConversation === true
     && persistedHistoryViewState !== 'ready'
     ? 'none'
-    : persistedHistoryViewState
+    : props.persistedSelectedRunConversationPending === true && persistedHistoryViewState === 'ready'
+      ? 'none'
+      : persistedHistoryViewState
   const shouldRenderMessageSurface = effectivePersistedHistoryViewState === 'none' || effectivePersistedHistoryViewState === 'ready'
   const persistedConversationSource = props.persistedSelectedRunConversationSource ?? 'none'
 

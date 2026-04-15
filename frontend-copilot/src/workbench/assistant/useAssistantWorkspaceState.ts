@@ -40,6 +40,7 @@ import {
   applyAssistantSessionHistoryReplay,
   createAssistantSessionHistoryState,
   createAssistantSessionHistoryStateFromSessionShell,
+  resolveAssistantSessionHistoryPersistableSelectedRunId,
   retryAssistantSessionCapabilitiesHydration,
   retryAssistantSessionHistoryDetail,
   retryAssistantSessionHistoryReplay,
@@ -338,7 +339,9 @@ export function useAssistantWorkspaceState({
           continue
         }
 
-        const selectedRunId = persistedShellStateRef.current.selectedRunIdByThreadId[sessionEntry.sessionId] ?? null
+        const selectedRunId = sessionEntry.capabilities.capabilitiesVersion === 'history-shell'
+          ? persistedShellStateRef.current.selectedRunIdByThreadId[sessionEntry.sessionId] ?? null
+          : null
         nextState[sessionEntry.sessionId] = createAssistantSessionHistoryStateFromSessionShell(sessionEntry, selectedRunId)
         hasChanged = true
       }
@@ -996,8 +999,8 @@ export function useAssistantWorkspaceState({
   useEffect(() => {
     const selectedRunIdByThreadId = Object.fromEntries(
       Object.entries(sessionHistoryById).flatMap(([sessionId, historyState]) => {
-        const selectedRunId = historyState.selectedRunId?.trim() ?? ''
-        return selectedRunId === '' ? [] : [[sessionId, selectedRunId] as const]
+        const persistableSelectedRunId = resolveAssistantSessionHistoryPersistableSelectedRunId(historyState)
+        return persistableSelectedRunId === null ? [] : [[sessionId, persistableSelectedRunId] as const]
       }),
     )
 
@@ -1009,6 +1012,7 @@ export function useAssistantWorkspaceState({
       selectedThreadId: nextShellState.selectedThreadId,
       selectedRunIdCount: Object.keys(nextShellState.selectedRunIdByThreadId).length,
       selectedRunIdByThreadId: nextShellState.selectedRunIdByThreadId,
+      skippedSelectedRunCount: Object.keys(sessionHistoryById).length - Object.keys(nextShellState.selectedRunIdByThreadId).length,
     })
     persistedShellStateRef.current = nextShellState
     persistShellStateImpl(nextShellState)

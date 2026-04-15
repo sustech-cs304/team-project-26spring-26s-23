@@ -86,6 +86,7 @@ export interface CopilotChatPanelShellProps {
   retrySessionHistory?: () => void
   selectSessionHistoryRun?: (runId: string | null) => void
   onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
+  persistedSelectedRunConversationPending?: boolean
   sendMessage?: typeof dispatchCopilotMessage
   cancelRun?: typeof cancelRuntimeRun
   getThinkingCapability?: typeof getRuntimeThinkingCapability
@@ -107,6 +108,7 @@ export interface CopilotChatPanelState {
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
   persistedSelectedRunConversationSource: PersistedConversationSource
+  persistedSelectedRunConversationPending: boolean
   hasTransientConversation: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
@@ -269,6 +271,15 @@ export function useCopilotChatPanelState({
     () => persistedConversation.length > 0,
     [persistedConversation],
   )
+  const persistedSelectedRunConversationPending = useMemo(() => (
+    sessionHistory !== null
+    && sessionHistory.isPersistedThread === true
+    && sessionHistory.detailStatus === 'ready'
+    && sessionHistory.selectedRunId !== null
+    && !hasRenderablePersistedSelectedConversation
+    && sessionHistory.replayStatus !== 'error'
+    && sessionHistory.replayStatus !== 'ready'
+  ), [hasRenderablePersistedSelectedConversation, sessionHistory])
   const shouldRenderTransientConversation = useMemo(() => {
     if (runState.phase !== 'idle' && runState.threadId !== sessionShell?.sessionId) {
       return false
@@ -282,11 +293,11 @@ export function useCopilotChatPanelState({
       return true
     }
 
-    if (conversation.length > 0 && runState.runId === null) {
+    const runId = runState.runId?.trim() ?? ''
+    if (conversation.length > 0 && runId === '') {
       return true
     }
 
-    const runId = runState.runId?.trim() ?? ''
     if (runId === '') {
       return false
     }
@@ -297,7 +308,9 @@ export function useCopilotChatPanelState({
     }
 
     if (sessionHistory.selectedRunId !== runId) {
-      return false
+      const hasTerminalTransientRunForActiveSession = runState.threadId === sessionShell?.sessionId
+        && (runState.phase === 'completed' || runState.phase === 'failed' || runState.phase === 'cancelled')
+      return hasTerminalTransientRunForActiveSession && !hasRenderablePersistedSelectedConversation
     }
 
     return !hasRenderablePersistedSelectedConversation
@@ -501,6 +514,10 @@ export function useCopilotChatPanelState({
       return
     }
 
+    if (!hasRenderablePersistedSelectedConversation) {
+      return
+    }
+
     appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'persisted-selection-preempted-transient', {
       sessionId: sessionShell?.sessionId ?? null,
       transientRunId: runState.runId,
@@ -517,6 +534,7 @@ export function useCopilotChatPanelState({
     }
   }, [
     debugModeEnabled,
+    hasRenderablePersistedSelectedConversation,
     persistedConversation.length,
     persistedSelectedRunConversationSource,
     runState.phase,
@@ -769,6 +787,7 @@ export function useCopilotChatPanelState({
       selectedRunId: sessionHistory?.selectedRunId ?? null,
       persistedConversationLength: persistedConversation.length,
       persistedConversationSource: persistedSelectedRunConversationSource,
+      persistedSelectedRunConversationPending,
       hasRenderablePersistedSelectedConversation,
       shouldRenderTransientConversation,
       hasTransientConversation,
@@ -786,6 +805,7 @@ export function useCopilotChatPanelState({
     hasRenderablePersistedSelectedConversation,
     hasTransientConversation,
     persistedConversation.length,
+    persistedSelectedRunConversationPending,
     persistedSelectedRunConversationSource,
     runState.phase,
     runState.runId,
@@ -941,6 +961,7 @@ export function useCopilotChatPanelState({
     historyDrift,
     historyRebindAcknowledged,
     persistedSelectedRunConversationSource,
+    persistedSelectedRunConversationPending,
     onAcknowledgeHistoryRebind: () => {
       setHistoryRebindAcknowledged(true)
     },
