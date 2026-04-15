@@ -517,10 +517,12 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
-  it('does not retry an initially empty persisted history snapshot after startup', async () => {
+  it('retries an initially empty persisted history snapshot and restores threads when a later retry returns data', async () => {
     mockCopilotChatPanel.mockClear()
 
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    const nativeSetTimeout = window.setTimeout.bind(window)
+    const scheduledRetries: Array<{ handler: (() => void); delay: number }> = []
     const directoryResponse = createDirectoryResponse()
     const directoryState = createAssistantAgentDirectoryState(directoryResponse)
     const historyFixture = createPersistedHistoryFixture()
@@ -537,6 +539,23 @@ describe('AssistantWorkspace render + interactions', () => {
     if ('bootstrapFields' in bootstrap.state) {
       bootstrap.state.bootstrapFields.debugModeEnabled = true
     }
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation(((handler: TimerHandler, delay?: number) => {
+      const retryDelayMs = typeof delay === 'number' ? delay : 0
+      if (retryDelayMs === 0) {
+        return nativeSetTimeout(handler, retryDelayMs) as unknown as number
+      }
+      if (typeof handler !== 'function') {
+        throw new Error('Expected history restore retry handler to be a function.')
+      }
+
+      scheduledRetries.push({
+        handler: () => {
+          handler()
+        },
+        delay: retryDelayMs,
+      })
+      return (1_000_000 + scheduledRetries.length) as unknown as number
+    }) as typeof window.setTimeout)
 
     const rendered = renderWithRoot(
       <AssistantWorkspace
@@ -551,15 +570,40 @@ describe('AssistantWorkspace render + interactions', () => {
 
     await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length === 1)
     expect(rendered.queryByTestId('assistant-session-card-thread-1')).toBeNull()
-
-    historyVisible = true
-    await flushAssistantWorkspaceEffects()
-    await flushAssistantWorkspaceEffects()
-
-    expect(listHistoryThreads).toHaveBeenCalledTimes(1)
-    expect(rendered.queryByTestId('assistant-session-card-thread-1')).toBeNull()
     expect(getHistoryThreadDetail).not.toHaveBeenCalled()
     expect(getHistoryRunReplay).not.toHaveBeenCalled()
+    expect(scheduledRetries).toHaveLength(1)
+    expect(scheduledRetries[0]?.delay).toBe(1_000)
+    expect(debugSpy.mock.calls.some((call) => (
+      call[0] === '[copilot-debug]'
+      && typeof call[1] === 'object'
+      && call[1] !== null
+      && 'scope' in call[1]
+      && call[1].scope === 'assistant-workspace'
+      && 'event' in call[1]
+      && call[1].event === 'history-restore-request-empty-provisional'
+      && 'threadCount' in call[1]
+      && call[1].threadCount === 0
+    ))).toBe(true)
+
+    historyVisible = true
+    const scheduledRetry = scheduledRetries.shift()
+    if (scheduledRetry === undefined) {
+      throw new Error('Expected a scheduled history restore retry handler.')
+    }
+
+    await act(async () => {
+      scheduledRetry.handler()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length === 2)
+    await waitForAssistantWorkspaceCondition(() => rendered.queryByTestId('assistant-session-card-thread-1') !== null)
+    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 1)
+    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length >= 1)
+
+    expect(rendered.getByTestId('assistant-session-card-thread-1').textContent).toContain('历史线程')
     expect(debugSpy.mock.calls.some((call) => (
       call[0] === '[copilot-debug]'
       && typeof call[1] === 'object'
@@ -569,11 +613,12 @@ describe('AssistantWorkspace render + interactions', () => {
       && 'event' in call[1]
       && call[1].event === 'history-restore-request-succeeded'
       && 'isEmpty' in call[1]
-      && call[1].isEmpty === true
+      && call[1].isEmpty === false
       && 'threadCount' in call[1]
-      && call[1].threadCount === 0
+      && call[1].threadCount === 1
     ))).toBe(true)
 
+    setTimeoutSpy.mockRestore()
     rendered.unmount()
   })
 

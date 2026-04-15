@@ -150,6 +150,7 @@ export function useAssistantWorkspaceState({
   initialSessionShell = null,
 }: UseAssistantWorkspaceStateInput): UseAssistantWorkspaceStateResult {
   const restoredRuntimeUrlRef = useRef<string | null>(null)
+  const provisionalEmptyRestoreKeyRef = useRef<string | null>(null)
   const persistedShellStateRef = useRef(loadShellStateImpl())
   const [sessionHistoryById, setSessionHistoryById] = useState<Record<string, AssistantSessionHistoryState>>({})
   const historyListRequestVersionRef = useRef(0)
@@ -504,7 +505,7 @@ export function useAssistantWorkspaceState({
 
     const runtimeUrl = bootstrap.state.runtimeUrl
     const restoreKey = `${runtimeUrl}:${historyRestoreRetryKey}`
-    if (restoredRuntimeUrlRef.current === restoreKey) {
+    if (restoredRuntimeUrlRef.current === restoreKey || provisionalEmptyRestoreKeyRef.current === restoreKey) {
       return
     }
 
@@ -536,6 +537,7 @@ export function useAssistantWorkspaceState({
 
         if (!historyResult.ok) {
           restoredRuntimeUrlRef.current = null
+          provisionalEmptyRestoreKeyRef.current = null
           setHistoryRestoreError(historyResult.error)
           const retryDelayMs = scheduleHistoryRestoreRetry()
           appendWorkspaceDebugLog('history-restore-request-failed', {
@@ -642,12 +644,32 @@ export function useAssistantWorkspaceState({
           return nextState
         })
 
+        const isProvisionalEmptyRestore = historyResult.threads.length === 0
+        if (isProvisionalEmptyRestore) {
+          restoredRuntimeUrlRef.current = null
+          provisionalEmptyRestoreKeyRef.current = restoreKey
+          setHistoryRestoreError(null)
+          const retryDelayMs = scheduleHistoryRestoreRetry()
+          appendWorkspaceDebugLog('history-restore-request-empty-provisional', {
+            runtimeUrl,
+            restoreKey,
+            requestVersion,
+            threadCount: 0,
+            retryDelayMs,
+            preferredActiveSessionId,
+            shouldProtectUserLiveSelection,
+            ...(restoreSelectionSummary ?? {}),
+          })
+          return
+        }
+
+        provisionalEmptyRestoreKeyRef.current = null
         appendWorkspaceDebugLog('history-restore-request-succeeded', {
           runtimeUrl,
           restoreKey,
           requestVersion,
           threadCount: historyResult.threads.length,
-          isEmpty: historyResult.threads.length === 0,
+          isEmpty: false,
           preferredActiveSessionId,
           shouldProtectUserLiveSelection,
           ...(restoreSelectionSummary ?? {}),
@@ -671,6 +693,7 @@ export function useAssistantWorkspaceState({
 
         const formattedError = formatAssistantWorkspaceError(error)
         restoredRuntimeUrlRef.current = null
+        provisionalEmptyRestoreKeyRef.current = null
         setHistoryRestoreError(formattedError)
         const retryDelayMs = scheduleHistoryRestoreRetry()
         appendWorkspaceDebugLog('history-restore-request-failed', {
