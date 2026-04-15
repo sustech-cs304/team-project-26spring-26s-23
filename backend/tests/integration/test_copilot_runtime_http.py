@@ -401,7 +401,6 @@ def test_post_root_run_start_unexpected_failure_with_origin_returns_json_and_cor
         for record in caplog.records
     )
 
-
 def test_post_root_run_stream_emits_real_tool_lifecycle_events() -> None:
     tool_events = [
         RuntimeToolLifecycleEvent(
@@ -466,6 +465,97 @@ def test_post_root_run_stream_emits_real_tool_lifecycle_events() -> None:
     assert events[-1]["payload"]["assistantText"] == "Weather answer"
     assert events[-1]["payload"]["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
     assert executor.captured_calls[0]["enabled_tools"] == [WEATHER_CURRENT_TOOL_ID]
+
+
+
+def test_post_root_run_stream_includes_traceback_in_failed_tool_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_bridge_payloads: list[dict[str, Any]] = []
+    captured_headers: list[str | None] = []
+
+    def _boom_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+    ) -> Any:
+        _ = (username, password, keyword, field, operator, limit)
+        raise RuntimeError("blackboard search exploded")
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", _boom_search)
+
+    app = _create_app(
+        host_capability_bridge_client=_create_recording_bridge_client(
+            captured_payloads=captured_bridge_payloads,
+            captured_headers=captured_headers,
+            secret_values={"sustech.username": "alice", "sustech.casPassword": "secret"},
+        )
+    )
+
+    with TestClient(app) as client:
+        assert app.state.copilot_runtime_agent_executor._tool_registry is app.state.copilot_runtime_tool_registry
+        _configure_contract_tool_test_model(
+            app,
+            tool_id="blackboard.course_catalog.search",
+            tool_arguments={
+                "keyword": "CS305",
+                "username": "alice",
+                "password": "secret",
+            },
+            output_text="unused",
+        )
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                model_id="gpt-4.1",
+                user_text="Search Blackboard course catalog.",
+                enabled_tools=["blackboard.course_catalog.search"],
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+
+    events = _parse_sse_events(response.text)
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert response.status_code == 200
+    event_types = [event["type"] for event in events]
+    tool_events = [event for event in events if event["type"] == "tool_event"]
+    diagnostic_events = [event for event in events if event["type"] == "run_diagnostic"]
+
+    assert event_types[:2] == ["run_started", "run_metadata"]
+    assert event_types[-1] == "run_failed"
+    assert event_types.count("run_diagnostic") == 1
+    assert event_types.count("tool_event") == 2
+    assert event_types.index("run_diagnostic") < event_types.index("tool_event")
+    assert diagnostic_events[0]["payload"]["code"] == "raw_tool_call_observed"
+
+    tool_call_id = tool_events[0]["payload"]["toolCallId"]
+    assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
+    assert tool_events[1]["payload"]["toolId"] == "blackboard.course_catalog.search"
+    assert events[-1]["payload"]["code"] == "execution_failed"
+    assert events[-1]["payload"]["message"] == "blackboard search exploded"
+    assert events[-1]["payload"]["details"]["toolId"] == "blackboard.course_catalog.search"
+    assert events[-1]["payload"]["details"]["toolCallId"] == tool_call_id
+    assert events[-1]["payload"]["details"]["exceptionType"] == "RuntimeError"
+    assert "Traceback (most recent call last):" in events[-1]["payload"]["details"]["traceback"]
+    assert "RuntimeError: blackboard search exploded" in events[-1]["payload"]["details"]["traceback"]
+    assert events[-1]["payload"]["details"]["diagnosticContext"] == {
+        "integration": "blackboard",
+        "toolId": "blackboard.course_catalog.search",
+        "invocationId": tool_call_id,
+        "argumentKeys": ["keyword", "password", "username"],
+    }
+    assert captured_headers == ["bridge-token-123"] * len(captured_headers)
+
 
 
 def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_backed_host_capabilities(
