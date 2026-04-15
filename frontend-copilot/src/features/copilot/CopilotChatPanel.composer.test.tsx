@@ -1057,6 +1057,51 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('keeps a failed tool step visible when a later non-tool fatal failure ends the run', async () => {
+    const sendMessage = createToolFailureThenFatalSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请调用天气工具并处理 fatal 失败')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '工具调用失败')
+    await waitForText(rendered.container, '发送失败')
+    await waitForText(rendered.container, '当前响应失败，请重试。')
+
+    expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--failed')).toHaveLength(1)
+    expect(rendered.container.textContent).not.toContain('我可以解释工具失败并继续')
+
+    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      'failed tool panel visible after fatal run',
+    )
+
+    expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('工具执行失败。')
+    expect(rendered.getByTestId('chat-message-tool-extra-1-1-text').textContent).toContain('boom')
+
+    rendered.unmount()
+  })
+
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {
       yield* []
@@ -1693,6 +1738,60 @@ function createToolFailureSendMessageSpy() {
       },
     ])
   })
+}
+
+function createToolFailureThenFatalSendMessageSpy() {
+  return vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+    {
+      type: 'run_started',
+      runId: 'run-tool-then-failed',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-then-failed:assistant',
+      },
+    },
+    createRuntimeToolEvent({
+      runId: 'run-tool-then-failed',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'started',
+        title: '调用天气工具',
+        summary: '正在获取 Shenzhen 的天气。',
+        inputSummary: '{"location":"Shenzhen"}',
+      },
+    }),
+    createRuntimeToolEvent({
+      runId: 'run-tool-then-failed',
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        phase: 'failed',
+        title: '工具调用失败',
+        summary: '工具执行失败。',
+        inputSummary: '{"location":"Shenzhen"}',
+        errorSummary: 'boom',
+      },
+    }),
+    {
+      type: 'run_failed',
+      runId: 'run-tool-then-failed',
+      sessionId: input.sessionId,
+      sequence: 4,
+      payload: {
+        code: 'agent_execution_failed',
+        message: 'Model stream collapsed.',
+        details: {
+          stage: 'execute_model',
+        },
+      },
+    },
+  ]))
 }
 
 function createPersistedWorkspaceStateLoader() {

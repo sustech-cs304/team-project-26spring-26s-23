@@ -195,6 +195,97 @@ describe('run segment reducer', () => {
     })
   })
 
+  it('keeps failed tool steps visible when a later non-tool fatal failure ends the run', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const stateAfterEvents = [
+      {
+        type: 'run_started' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-1:assistant',
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'started',
+          title: '调用天气工具',
+          summary: '正在获取 Shenzhen 的天气。',
+          inputSummary: '{"location":"Shenzhen"}',
+        },
+      }),
+      createRuntimeToolEvent({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 3,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'failed',
+          title: '工具调用失败',
+          summary: '工具执行失败。',
+          inputSummary: '{"location":"Shenzhen"}',
+          errorSummary: 'boom',
+        },
+      }),
+      {
+        type: 'run_failed' as const,
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 4,
+        payload: {
+          code: 'agent_execution_failed',
+          message: 'Model stream collapsed.',
+          details: {
+            stage: 'execute_model',
+          },
+        },
+      },
+    ].reduce(applyRuntimeRunEventToCopilotRunState, initialState)
+
+    expect(stateAfterEvents.phase).toBe('failed')
+    expect(stateAfterEvents.failure).toEqual({
+      code: 'agent_execution_failed',
+      message: 'Model stream collapsed.',
+      details: {
+        stage: 'execute_model',
+      },
+    })
+    expect(stateAfterEvents.segments.map((segment) => segment.kind)).toEqual([
+      'tool',
+      'terminal',
+    ])
+    expect(stateAfterEvents.segments[0]).toMatchObject({
+      kind: 'tool',
+      status: 'failed',
+      toolPhase: 'failed',
+      errorSummary: 'boom',
+    })
+    expect(stateAfterEvents.segments[1]).toMatchObject({
+      kind: 'terminal',
+      status: 'failed',
+      terminalPhase: 'failed',
+      failure: {
+        code: 'agent_execution_failed',
+        message: 'Model stream collapsed.',
+        details: {
+          stage: 'execute_model',
+        },
+      },
+    })
+  })
+
   it('keeps reasoning segments distinct from tool and assistant content', () => {
     const initialState = createStartingCopilotRunState({
       threadId: 'session-1',

@@ -832,6 +832,83 @@ def test_stream_events_recoverable_tool_failure_allows_run_completion() -> None:
 
 
 
+def test_stream_events_tool_failure_can_be_followed_by_true_non_tool_fatal_failure() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_call_id = f"{WEATHER_CURRENT_TOOL_ID}:call-1"
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id=tool_call_id,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id=tool_call_id,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="failed",
+            title="工具调用失败",
+            summary="工具执行失败。",
+            input_summary='{"location": "Shenzhen"}',
+            error_summary="boom",
+        ),
+    ]
+    executor = _StreamingExecutor(
+        deltas=[],
+        output=AgentExecutionError("model stream collapsed"),
+        tool_events=tool_events,
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "run_diagnostic",
+        "run_failed",
+    ]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert [event.payload["phase"] for event in events if event.type == "tool_event"] == [
+        "started",
+        "failed",
+    ]
+    assert events[4].payload == {
+        "code": "agent_execution_failed",
+        "message": "model stream collapsed",
+        "details": {},
+        "stage": "execute_model",
+    }
+    assert events[5].payload == {
+        "code": "agent_execution_failed",
+        "message": "model stream collapsed",
+        "details": {},
+    }
+    assert "run_completed" not in [event.type for event in events]
+    assert store.list_messages("thread-1") == ()
+
+
+
 def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")

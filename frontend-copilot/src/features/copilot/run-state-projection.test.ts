@@ -226,6 +226,89 @@ describe('run state projection', () => {
     expect(projectedTurns.find((turn) => turn.kind === 'error')).toBeUndefined()
   })
 
+  it('keeps failed tool turns visible and appends a terminal error turn when the run later fails fatally', () => {
+    const projectedTurns = projectConversationTurnsFromRunState({
+      userTurns: [{
+        id: 'user:1',
+        kind: 'user',
+        title: '',
+        content: '请解释这次工具失败',
+        status: 'completed',
+      }],
+      runState: {
+        ...createIdleCopilotRunState(),
+        phase: 'failed',
+        runId: 'run-tool-then-failed',
+        threadId: 'session-1',
+        failure: {
+          code: 'agent_execution_failed',
+          message: 'Model stream collapsed.',
+          details: {
+            stage: 'execute_model',
+          },
+        },
+        segments: [
+          {
+            id: 'tool:run-tool-then-failed:tool.weather-current:call-1',
+            kind: 'tool',
+            runId: 'run-tool-then-failed',
+            startedSequence: 2,
+            lastSequence: 3,
+            status: 'failed',
+            toolCallId: 'tool.weather-current:call-1',
+            toolId: 'tool.weather-current',
+            toolPhase: 'failed',
+            title: '工具调用失败',
+            summary: '工具执行失败。',
+            inputSummary: '{"location":"Shenzhen"}',
+            resultSummary: null,
+            errorSummary: 'boom',
+          },
+          {
+            id: 'terminal:run-tool-then-failed:failed',
+            kind: 'terminal',
+            runId: 'run-tool-then-failed',
+            startedSequence: 4,
+            lastSequence: 4,
+            status: 'failed',
+            terminalPhase: 'failed',
+            assistantMessageId: null,
+            cancelReason: null,
+            failure: {
+              code: 'agent_execution_failed',
+              message: 'Model stream collapsed.',
+              details: {
+                stage: 'execute_model',
+              },
+            },
+            resolvedModelId: null,
+            resolvedModelRoute: null,
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        ],
+      },
+    })
+
+    expect(projectedTurns.map((turn) => turn.kind)).toEqual([
+      'user',
+      'tool',
+      'error',
+    ])
+    expect(projectedTurns[1]).toMatchObject({
+      kind: 'tool',
+      content: '工具执行失败。',
+      status: 'failed',
+      errorSummary: 'boom',
+    })
+    expect(projectedTurns[2]).toMatchObject({
+      kind: 'error',
+      title: '发送失败',
+      content: '当前响应失败，请重试。',
+      status: 'failed',
+    })
+  })
+
   it('preserves explicit authentication failure guidance when projecting failed runs', () => {
     const projectedTurns = projectConversationTurnsFromRunState({
       userTurns: [],
