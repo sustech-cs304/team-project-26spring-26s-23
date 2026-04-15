@@ -13,9 +13,17 @@ import type { HostedBackendService } from './runtime/hosted-backend-service'
 
 const LOCAL_RUNTIME_TOKEN_HEADER = 'X-Local-Token'
 
+type ElectronCopilotHistoryLogLevel = 'debug' | 'info' | 'warn' | 'error'
+
 export interface CreateElectronCopilotHistoryServiceOptions {
   ensureHostedBackendService: () => Promise<HostedBackendService>
   getLocalToken: () => string | null
+  appendLog?: (
+    level: ElectronCopilotHistoryLogLevel,
+    message: string,
+    context: Record<string, unknown> | null,
+  ) => Promise<void> | void
+  getDebugModeEnabled?: () => Promise<boolean> | boolean
 }
 
 export interface ElectronCopilotHistoryService {
@@ -35,6 +43,7 @@ export function createElectronCopilotHistoryService(
     async listThreads() {
       return await requestHistory<CopilotHistoryListThreadsResult>({
         options,
+        operation: 'list-threads',
         path: '/history/threads',
         failureLabel: 'Failed to load persisted chat thread list',
       })
@@ -42,6 +51,7 @@ export function createElectronCopilotHistoryService(
     async getThreadDetail(threadId) {
       return await requestHistory<CopilotHistoryThreadDetailResult>({
         options,
+        operation: 'get-thread-detail',
         path: `/history/threads/${encodeURIComponent(threadId)}`,
         failureLabel: `Failed to load persisted chat thread detail for "${threadId}"`,
       })
@@ -49,6 +59,7 @@ export function createElectronCopilotHistoryService(
     async getRunReplay(runId) {
       return await requestHistory<CopilotHistoryRunReplayResult>({
         options,
+        operation: 'get-run-replay',
         path: `/history/runs/${encodeURIComponent(runId)}/replay`,
         failureLabel: `Failed to load persisted chat run replay for "${runId}"`,
       })
@@ -56,6 +67,7 @@ export function createElectronCopilotHistoryService(
     async deleteThread(threadId) {
       return await requestHistory<CopilotHistoryThreadDeleteResult>({
         options,
+        operation: 'delete-thread',
         path: `/history/threads/${encodeURIComponent(threadId)}`,
         method: 'DELETE',
         failureLabel: `Failed to delete persisted chat thread "${threadId}"`,
@@ -64,6 +76,7 @@ export function createElectronCopilotHistoryService(
     async purgeThread(threadId) {
       return await requestHistory<CopilotHistoryThreadPurgeResult>({
         options,
+        operation: 'purge-thread',
         path: `/history/threads/${encodeURIComponent(threadId)}/purge`,
         method: 'DELETE',
         failureLabel: `Failed to purge persisted chat thread "${threadId}"`,
@@ -72,6 +85,7 @@ export function createElectronCopilotHistoryService(
     async backupDatabase(request) {
       return await requestHistory<CopilotHistoryDatabaseBackupResult>({
         options,
+        operation: 'backup-database',
         path: '/history/database/backup',
         method: 'POST',
         body: request,
@@ -81,6 +95,7 @@ export function createElectronCopilotHistoryService(
     async restoreDatabase(request) {
       return await requestHistory<CopilotHistoryDatabaseRestoreResult>({
         options,
+        operation: 'restore-database',
         path: '/history/database/restore',
         method: 'POST',
         body: request,
@@ -92,11 +107,22 @@ export function createElectronCopilotHistoryService(
 
 async function requestHistory<TResult extends { ok: boolean } | { ok: false; error: string }>(input: {
   options: CreateElectronCopilotHistoryServiceOptions
+  operation: string
   path: string
   method?: 'GET' | 'POST' | 'DELETE'
   body?: unknown
   failureLabel: string
 }): Promise<TResult> {
+  const method = input.method ?? 'GET'
+  const body = input.body === undefined ? undefined : JSON.stringify(input.body)
+  const debugLoggingEnabled = await resolveHistoryDebugModeEnabled(input.options)
+  const requestContext = {
+    operation: input.operation,
+    path: input.path,
+    method,
+    hasBody: body !== undefined,
+  }
+
   try {
     const service = await input.options.ensureHostedBackendService()
     await service.start()
@@ -112,11 +138,15 @@ async function requestHistory<TResult extends { ok: boolean } | { ok: false; err
     if (token !== null) {
       headers.set(LOCAL_RUNTIME_TOKEN_HEADER, token)
     }
-    const method = input.method ?? 'GET'
-    const body = input.body === undefined ? undefined : JSON.stringify(input.body)
     if (body !== undefined) {
       headers.set('Content-Type', 'application/json')
     }
+
+    await appendHistoryDebugLog(input.options, debugLoggingEnabled, 'request-started', {
+      ...requestContext,
+      runtimeUrl,
+      hasLocalToken: token !== null,
+    })
 
     const response = await fetch(runtimeUrl, {
       method,
@@ -127,18 +157,103 @@ async function requestHistory<TResult extends { ok: boolean } | { ok: false; err
     const payload = parseJsonResponse(responseText)
 
     if (!response.ok) {
-      return buildFailureResult<TResult>(
-        `${input.failureLabel}: ${extractFailureMessage(payload, response.status, response.statusText)}`,
-      )
+      const failure = extractFailureDetail(payload, response.status, response.statusText)
+      await appendHistoryDebugLog(input.options, debugLoggingEnabled, 'request-failed', {
+        ...requestContext,
+        runtimeUrl,
+        status: response.status,
+        statusText: normalizeOptionalString(response.statusText),
+        failureCode: failure.code,
+        failureReason: failure.message,
+      })
+      return buildFailureResult<TResult>(`${input.failureLabel}: ${failure.message}`)
     }
 
     if (!isPlainRecord(payload) || payload.ok !== true) {
+      await appendHistoryDebugLog(input.options, debugLoggingEnabled, 'request-failed', {
+        ...requestContext,
+        runtimeUrl,
+        status: response.status,
+        statusText: normalizeOptionalString(response.statusText),
+        failureCode: 'invalid_payload',
+        failureReason: 'backend returned an invalid response payload.',
+      })
       return buildFailureResult<TResult>(`${input.failureLabel}: backend returned an invalid response payload.`)
     }
 
+    await appendHistoryDebugLog(input.options, debugLoggingEnabled, 'request-succeeded', {
+      ...requestContext,
+      runtimeUrl,
+      status: response.status,
+      ...summarizeHistorySuccessPayload(input.operation, payload),
+    })
+
     return payload as TResult
   } catch (error) {
+    await appendHistoryDebugLog(input.options, debugLoggingEnabled, 'request-failed', {
+      ...requestContext,
+      failureCode: 'exception',
+      failureReason: formatUnknownError(error),
+    })
     return buildFailureResult<TResult>(`${input.failureLabel}: ${formatUnknownError(error)}`)
+  }
+}
+
+async function resolveHistoryDebugModeEnabled(
+  options: CreateElectronCopilotHistoryServiceOptions,
+): Promise<boolean> {
+  if (options.getDebugModeEnabled === undefined) {
+    return false
+  }
+
+  try {
+    return await options.getDebugModeEnabled() === true
+  } catch {
+    return false
+  }
+}
+
+async function appendHistoryDebugLog(
+  options: CreateElectronCopilotHistoryServiceOptions,
+  debugLoggingEnabled: boolean,
+  event: string,
+  context: Record<string, unknown>,
+): Promise<void> {
+  if (!debugLoggingEnabled || options.appendLog === undefined) {
+    return
+  }
+
+  try {
+    await options.appendLog('debug', `[copilot-history] ${event}`, context)
+  } catch {
+    // Debug-only logging must never break history requests.
+  }
+}
+
+function summarizeHistorySuccessPayload(
+  operation: string,
+  payload: Record<string, any>,
+): Record<string, unknown> {
+  switch (operation) {
+    case 'list-threads':
+      return {
+        threadCount: Array.isArray(payload.threads) ? payload.threads.length : null,
+      }
+    case 'get-thread-detail':
+      return {
+        threadId: readOptionalString(isPlainRecord(payload.thread) ? payload.thread.threadId : null),
+        runCount: Array.isArray(payload.runSummaries) ? payload.runSummaries.length : null,
+        timelineItemCount: Array.isArray(payload.timelineItems) ? payload.timelineItems.length : null,
+      }
+    case 'get-run-replay':
+      return {
+        runId: readOptionalString(isPlainRecord(payload.run) ? payload.run.runId : null),
+        orderedEventCount: Array.isArray(payload.orderedEvents) ? payload.orderedEvents.length : null,
+        toolCallBlockCount: Array.isArray(payload.toolCallBlocks) ? payload.toolCallBlocks.length : null,
+        diagnosticBlockCount: Array.isArray(payload.diagnosticBlocks) ? payload.diagnosticBlocks.length : null,
+      }
+    default:
+      return {}
   }
 }
 
@@ -154,6 +269,10 @@ function normalizeOptionalString(value: unknown): string | null {
   return normalized === '' ? null : normalized
 }
 
+function readOptionalString(value: unknown): string | null {
+  return normalizeOptionalString(value)
+}
+
 function parseJsonResponse(text: string): unknown | null {
   const normalized = text.trim()
   if (normalized === '') {
@@ -167,23 +286,37 @@ function parseJsonResponse(text: string): unknown | null {
   }
 }
 
-function extractFailureMessage(payload: unknown, status: number, statusText: string): string {
+function extractFailureDetail(
+  payload: unknown,
+  status: number,
+  statusText: string,
+): { code: string | null; message: string } {
   if (isPlainRecord(payload)) {
     const detail = payload.detail
     if (isPlainRecord(detail)) {
       const message = normalizeOptionalString(detail.message)
       if (message !== null) {
-        return message
+        return {
+          code: normalizeOptionalString(detail.code),
+          message,
+        }
       }
     }
+
     const error = normalizeOptionalString(payload.error)
     if (error !== null) {
-      return error
+      return {
+        code: normalizeOptionalString(payload.code),
+        message: error,
+      }
     }
   }
 
   const normalizedStatusText = normalizeOptionalString(statusText)
-  return normalizedStatusText === null ? `HTTP ${status}` : `HTTP ${status} ${normalizedStatusText}`
+  return {
+    code: `http_${status}`,
+    message: normalizedStatusText === null ? `HTTP ${status}` : `HTTP ${status} ${normalizedStatusText}`,
+  }
 }
 
 function isPlainRecord(value: unknown): value is Record<string, any> {
