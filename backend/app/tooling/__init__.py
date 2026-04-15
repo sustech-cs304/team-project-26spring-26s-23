@@ -19,6 +19,7 @@ from .contract import (
 )
 from .host_capabilities import (
     ArtifactStore,
+    DatabaseResolver,
     EventSink,
     HostArtifact,
     HostCapabilityOperationError,
@@ -44,6 +45,7 @@ from .mcp_adapter import (
 __all__ = [
     "ArtifactStore",
     "DEFAULT_MCP_DIRECT_HOST_CAPABILITIES",
+    "DatabaseResolver",
     "EventSink",
     "HOST_CAPABILITY_NAMES",
     "HostArtifact",

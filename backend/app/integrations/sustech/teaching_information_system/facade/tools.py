@@ -27,6 +27,7 @@ from app.integrations.sustech.teaching_information_system.provider.use_cases imp
 from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
 from app.tooling import (
     ArtifactStore,
+    DatabaseResolver,
     HostCapabilityOperationError,
     HostCapabilityRequirement,
     HostEvent,
@@ -39,7 +40,6 @@ from app.tooling import (
     ToolMetadata,
     ToolResultEnvelope,
     ToolSchema,
-    WorkspaceResolver,
 )
 from app.tooling.contract.errors import build_tool_exception_details, redact_tool_error_value
 
@@ -454,13 +454,21 @@ def _read_persist_flag(arguments: Mapping[str, Any]) -> bool:
 
 
 def _validate_persistence_arguments(arguments: Mapping[str, Any], *, persist: bool) -> None:
+    if _read_optional_text(arguments, "dbPath") is not None:
+        raise ValueError(
+            "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
+        )
     if persist:
         return
-    for field_name in ("dbPath", "dbRelativePath", "ownerKey"):
+    for field_name in ("dbRelativePath", "ownerKey"):
         if _read_optional_text(arguments, field_name) is not None:
             raise ValueError(f"{field_name} requires persist=true.")
     if arguments.get("resetSchema") is not None:
         raise ValueError("resetSchema requires persist=true.")
+
+
+def _default_tis_db_relative_path() -> str:
+    return TISDatabaseManager.DEFAULT_DB_RELATIVE_PATH.as_posix()
 
 
 def _resolve_db_manager(
@@ -474,19 +482,16 @@ def _resolve_db_manager(
 
     reset_schema = _read_bool(arguments, "resetSchema", default=False)
     db_relative_path = _read_optional_text(arguments, "dbRelativePath")
-    if db_relative_path is not None:
-        workspace_resolver = cast(
-            WorkspaceResolver,
-            host.require_capability("workspace_resolver"),
-        )
-        resolved_path = workspace_resolver.resolve_workspace_path(relative_path=db_relative_path)
-        return TISDatabaseManager(db_path=resolved_path, reset_schema=reset_schema), "workspace"
-
-    db_path = _read_optional_text(arguments, "dbPath")
-    if db_path is not None:
-        return TISDatabaseManager(db_path=db_path, reset_schema=reset_schema), "argument"
-
-    return TISDatabaseManager(reset_schema=reset_schema), "default"
+    database_resolver = cast(
+        DatabaseResolver,
+        host.require_capability("database_resolver"),
+    )
+    relative_path = db_relative_path or _default_tis_db_relative_path()
+    resolved_path = database_resolver.resolve_database_path(relative_path=relative_path)
+    return (
+        TISDatabaseManager(db_path=resolved_path, reset_schema=reset_schema),
+        "database_relative" if db_relative_path is not None else "default",
+    )
 
 
 def _read_sql_query_result_limit(arguments: Mapping[str, Any]) -> int:
@@ -498,31 +503,38 @@ def _read_sql_query_result_limit(arguments: Mapping[str, Any]) -> int:
     return raw_limit
 
 
-def _default_tis_sql_query_db_path() -> Path:
-    manager = TISDatabaseManager()
-    try:
-        return Path(manager.db_path)
-    finally:
-        manager.engine.dispose()
+def _default_tis_sql_query_db_path(host: ToolHostCapabilities) -> Path:
+    database_resolver = cast(
+        DatabaseResolver,
+        host.require_capability("database_resolver"),
+    )
+    return database_resolver.resolve_database_path(
+        relative_path=_default_tis_db_relative_path()
+    )
 
 
 def _resolve_sql_query_db_path(
     arguments: Mapping[str, Any],
     host: ToolHostCapabilities,
 ) -> tuple[Path, str, bool]:
+    if _read_optional_text(arguments, "dbPath") is not None:
+        raise ValueError(
+            "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
+        )
+
     db_relative_path = _read_optional_text(arguments, "dbRelativePath")
     if db_relative_path is not None:
-        workspace_resolver = cast(
-            WorkspaceResolver,
-            host.require_capability("workspace_resolver"),
+        database_resolver = cast(
+            DatabaseResolver,
+            host.require_capability("database_resolver"),
         )
-        return workspace_resolver.resolve_workspace_path(relative_path=db_relative_path), "workspace", False
+        return (
+            database_resolver.resolve_database_path(relative_path=db_relative_path),
+            "database_relative",
+            False,
+        )
 
-    db_path = _read_optional_text(arguments, "dbPath")
-    if db_path is not None:
-        return Path(db_path), "argument", False
-
-    return _default_tis_sql_query_db_path(), "default", True
+    return _default_tis_sql_query_db_path(host), "default", True
 
 
 def _sql_statement_type(sql: str) -> str:
@@ -795,7 +807,6 @@ _SQL_QUERY_METADATA = ToolMetadata(
     input_schema=_schema(
         properties={
             "sql": {"type": "string", "minLength": 1},
-            "dbPath": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resultLimit": {"type": "integer"},
             "persistArtifact": {"type": "boolean"},
@@ -830,9 +841,9 @@ _SQL_QUERY_METADATA = ToolMetadata(
     ),
     capability_requirements=(
         HostCapabilityRequirement(
-            capability="workspace_resolver",
+            capability="database_resolver",
             required=False,
-            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used.",
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
         ),
         HostCapabilityRequirement(
             capability="artifact_store",
@@ -864,7 +875,6 @@ _PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
             "roleCode": {"type": "string"},
             "persist": {"type": "boolean"},
             "ownerKey": {"type": "string"},
-            "dbPath": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resetSchema": {"type": "boolean"},
             "stateKey": {"type": "string"},
@@ -900,9 +910,9 @@ _PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
             purpose="Resolve TIS/CAS credentials from host-managed secrets.",
         ),
         HostCapabilityRequirement(
-            capability="workspace_resolver",
+            capability="database_resolver",
             required=False,
-            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used for persistence.",
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used for persistence.",
         ),
         HostCapabilityRequirement(
             capability="state_store",
@@ -938,7 +948,6 @@ _CREDIT_GPA_FETCH_METADATA = ToolMetadata(
             "roleCode": {"type": "string"},
             "persist": {"type": "boolean"},
             "ownerKey": {"type": "string"},
-            "dbPath": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resetSchema": {"type": "boolean"},
             "stateKey": {"type": "string"},
@@ -980,9 +989,9 @@ _CREDIT_GPA_FETCH_METADATA = ToolMetadata(
             purpose="Resolve TIS/CAS credentials from host-managed secrets.",
         ),
         HostCapabilityRequirement(
-            capability="workspace_resolver",
+            capability="database_resolver",
             required=False,
-            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used for persistence.",
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used for persistence.",
         ),
         HostCapabilityRequirement(
             capability="state_store",
@@ -1021,7 +1030,6 @@ _SELECTED_COURSES_FETCH_METADATA = ToolMetadata(
             "pageSize": {"type": "integer"},
             "persist": {"type": "boolean"},
             "ownerKey": {"type": "string"},
-            "dbPath": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resetSchema": {"type": "boolean"},
             "stateKey": {"type": "string"},
@@ -1069,9 +1077,9 @@ _SELECTED_COURSES_FETCH_METADATA = ToolMetadata(
             purpose="Resolve TIS/CAS credentials from host-managed secrets.",
         ),
         HostCapabilityRequirement(
-            capability="workspace_resolver",
+            capability="database_resolver",
             required=False,
-            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used for persistence.",
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used for persistence.",
         ),
         HostCapabilityRequirement(
             capability="state_store",

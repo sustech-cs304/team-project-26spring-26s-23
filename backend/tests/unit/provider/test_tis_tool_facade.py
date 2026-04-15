@@ -44,12 +44,12 @@ class StubSecretProvider:
         return self.values.get(name)
 
 
-class StubWorkspaceResolver:
+class StubDatabaseResolver:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.requests: list[str | None] = []
 
-    def resolve_workspace_path(self, *, relative_path: str | None = None) -> Path:
+    def resolve_database_path(self, *, relative_path: str | None = None) -> Path:
         self.requests.append(relative_path)
         if relative_path is None:
             return self.root
@@ -307,7 +307,7 @@ def test_get_tis_tool_contracts_exposes_stable_tools_and_requirements() -> None:
     }
 
     assert requirements["secret_provider"].required is False
-    assert requirements["workspace_resolver"].required is False
+    assert requirements["database_resolver"].required is False
     assert requirements["state_store"].required is False
     assert requirements["artifact_store"].required is False
     assert requirements["event_sink"].required is False
@@ -400,7 +400,7 @@ def test_personal_grades_tool_shapes_output_and_persists_host_state_and_artifact
     ]
 
 
-def test_credit_gpa_tool_uses_secret_provider_and_workspace_db_when_persisting(
+def test_credit_gpa_tool_uses_secret_provider_and_database_db_when_persisting(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
@@ -411,7 +411,7 @@ def test_credit_gpa_tool_uses_secret_provider_and_workspace_db_when_persisting(
             "tis.password": "secret",
         }
     )
-    workspace = StubWorkspaceResolver(tmp_path / "workspace-root")
+    database = StubDatabaseResolver(tmp_path / "database-root")
 
     def _fake_fetch(
         username: str,
@@ -454,16 +454,16 @@ def test_credit_gpa_tool_uses_secret_provider_and_workspace_db_when_persisting(
             "roleCode": " 01 ",
             "persist": "true",
             "ownerKey": " student_a ",
-            "dbRelativePath": "backend/data/tis-credit.db",
+            "dbRelativePath": "teaching_information_system/tis-credit.db",
             "resetSchema": "true",
         },
         host=ToolHostCapabilities(
             secret_provider=secret_provider,
-            workspace_resolver=workspace,
+            database_resolver=database,
         ),
     )
 
-    resolved_path = (tmp_path / "workspace-root" / "backend/data/tis-credit.db").as_posix()
+    resolved_path = (tmp_path / "database-root" / "teaching_information_system/tis-credit.db").as_posix()
 
     assert result.status == "success"
     assert captured == {
@@ -485,10 +485,10 @@ def test_credit_gpa_tool_uses_secret_provider_and_workspace_db_when_persisting(
         "toolId": "tis.credit_gpa.fetch",
         "credentialSource": "host_secrets",
         "persistenceRequested": True,
-        "dbPathSource": "workspace",
+        "dbPathSource": "database_relative",
     }
     assert secret_provider.requests == ["tis.username", "tis.password"]
-    assert workspace.requests == ["backend/data/tis-credit.db"]
+    assert database.requests == ["teaching_information_system/tis-credit.db"]
 
 
 def test_credit_gpa_tool_defaults_to_sustech_secret_names_when_secret_names_omitted(
@@ -552,21 +552,21 @@ def test_credit_gpa_tool_defaults_to_sustech_secret_names_when_secret_names_omit
     assert secret_provider.requests == ["sustech.username", "sustech.casPassword"]
 
 
-def test_credit_gpa_tool_maps_missing_workspace_capability() -> None:
+def test_credit_gpa_tool_maps_missing_database_capability() -> None:
     result = _invoke_tool(
         TISCreditGPAFetchTool(),
         arguments={
             "username": "alice",
             "password": "secret",
             "persist": True,
-            "dbRelativePath": "backend/data/tis-credit.db",
+            "dbRelativePath": "teaching_information_system/tis-credit.db",
         },
     )
 
     assert result.status == "error"
     assert result.error is not None
     assert result.error.code == "host_capability_missing"
-    assert result.error.details["capability"] == "workspace_resolver"
+    assert result.error.details["capability"] == "database_resolver"
     assert result.error.details["exceptionType"] == "MissingHostCapabilityError"
     assert "traceback" in result.error.details
 
@@ -669,7 +669,7 @@ def test_tis_sql_query_tool_queries_default_database(
         """,
     )
     event_sink = StubEventSink()
-    monkeypatch.setattr(facade_tools, "_default_tis_sql_query_db_path", lambda: db_path)
+    monkeypatch.setattr(facade_tools, "_default_tis_sql_query_db_path", lambda _host: db_path)
 
     result = _invoke_tool(
         TISSQLQueryTool(),
@@ -710,12 +710,29 @@ def test_tis_sql_query_tool_queries_default_database(
     ]
 
 
-def test_tis_sql_query_tool_uses_workspace_override_and_reports_non_result_summary(
+def test_tis_sql_query_tool_rejects_explicit_db_path() -> None:
+    result = _invoke_tool(
+        TISSQLQueryTool(),
+        arguments={
+            "sql": "SELECT id, course_name, score FROM grades ORDER BY id",
+            "dbPath": "C:/tmp/tis-explicit.db",
+        },
+    )
+
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.code == "invalid_input"
+    assert result.error.message == (
+        "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
+    )
+
+
+def test_tis_sql_query_tool_uses_database_override_and_reports_non_result_summary(
     tmp_path: Path,
 ) -> None:
-    workspace = StubWorkspaceResolver(tmp_path / "workspace-root")
+    database = StubDatabaseResolver(tmp_path / "database-root")
     db_path = _create_sqlite_db(
-        workspace.root / "backend/data/tis-query.db",
+        database.root / "teaching_information_system/tis-query.db",
         script="""
         CREATE TABLE grades (id INTEGER PRIMARY KEY, score INTEGER);
         INSERT INTO grades (id, score) VALUES (1, 95), (2, 88);
@@ -726,15 +743,15 @@ def test_tis_sql_query_tool_uses_workspace_override_and_reports_non_result_summa
         TISSQLQueryTool(),
         arguments={
             "sql": "UPDATE grades SET score = 96 WHERE id = 1",
-            "dbRelativePath": "backend/data/tis-query.db",
+            "dbRelativePath": "teaching_information_system/tis-query.db",
         },
-        host=ToolHostCapabilities(workspace_resolver=workspace),
+        host=ToolHostCapabilities(database_resolver=database),
     )
 
     assert result.status == "success"
     assert result.output == {
         "sql": "UPDATE grades SET score = 96 WHERE id = 1",
-        "database": {"path": db_path.as_posix(), "source": "workspace"},
+        "database": {"path": db_path.as_posix(), "source": "database_relative"},
         "usedDefaultDatabase": False,
         "hasResultSet": False,
         "columns": [],
@@ -751,10 +768,10 @@ def test_tis_sql_query_tool_uses_workspace_override_and_reports_non_result_summa
     assert result.artifacts == ()
     assert result.metadata == {
         "toolId": "tis.sql.query",
-        "dbPathSource": "workspace",
+        "dbPathSource": "database_relative",
         "persistArtifactRequested": False,
     }
-    assert workspace.requests == ["backend/data/tis-query.db"]
+    assert database.requests == ["teaching_information_system/tis-query.db"]
     with sqlite3.connect(str(db_path)) as connection:
         updated_score = connection.execute("SELECT score FROM grades WHERE id = 1").fetchone()
     assert updated_score == (96,)

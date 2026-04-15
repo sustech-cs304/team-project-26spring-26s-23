@@ -67,6 +67,18 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                 },
                 request=request,
             )
+        if (capability, operation) == ("database", "resolve_path"):
+            relative_path = payload["payload"].get("relativePath")
+            suffix = "database-root" if relative_path is None else f"database-root/{relative_path}"
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {"path": suffix},
+                },
+                request=request,
+            )
         if (capability, operation) == ("workspace", "ensure_directory"):
             return httpx.Response(
                 200,
@@ -165,6 +177,10 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         context=context,
         relative_path="backend/data/calendar.db",
     )
+    database_path = client.resolve_database_path(
+        context=context,
+        relative_path="blackboard/snapshot.db",
+    )
     ensured_path = client.ensure_workspace_directory(
         context=context,
         relative_path="artifacts/reports",
@@ -219,6 +235,7 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     assert secret_value == "resolved-secret"
     assert secret_present is True
     assert workspace_path.as_posix() == "workspace-root/backend/data/calendar.db"
+    assert database_path.as_posix() == "database-root/blackboard/snapshot.db"
     assert ensured_path.as_posix() == "workspace-root/artifacts/reports"
     assert text_artifact.artifact_id == "artifact-text"
     assert text_artifact.metadata == {"toolId": context.tool_id}
@@ -232,6 +249,7 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         ("secret", "get_secret"),
         ("secret", "has_secret"),
         ("workspace", "resolve_path"),
+        ("database", "resolve_path"),
         ("workspace", "ensure_directory"),
         ("artifact", "save_text"),
         ("artifact", "save_bytes"),
@@ -244,7 +262,7 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     assert all(item["toolId"] == context.tool_id for item in captured_payloads)
     assert all(item["runId"] == context.run_id for item in captured_payloads)
     assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads)
-    assert base64.b64decode(captured_payloads[5]["payload"]["contentBase64"]).decode("utf-8") == "payload-bytes"
+    assert base64.b64decode(captured_payloads[6]["payload"]["contentBase64"]).decode("utf-8") == "payload-bytes"
 
 
 def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:

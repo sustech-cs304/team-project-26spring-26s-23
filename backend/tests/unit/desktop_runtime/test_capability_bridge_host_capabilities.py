@@ -35,6 +35,7 @@ class _RecordingBridgeClient:
         self.secret_requests: list[tuple[str, str, str | None, str]] = []
         self.secret_presence_requests: list[tuple[str, str]] = []
         self.workspace_resolve_requests: list[tuple[str, str | None]] = []
+        self.database_resolve_requests: list[tuple[str, str | None]] = []
         self.workspace_ensure_requests: list[tuple[str, str]] = []
         self.saved_artifacts: list[dict[str, Any]] = []
         self.state_values: dict[tuple[str, str], dict[str, Any]] = {}
@@ -71,6 +72,16 @@ class _RecordingBridgeClient:
     ) -> Path:
         self.workspace_resolve_requests.append((context.invocation_id, relative_path))
         root = Path("workspace-root")
+        return root if relative_path is None else root / relative_path
+
+    def resolve_database_path(
+        self,
+        *,
+        context: ToolInvocationContext,
+        relative_path: str | None = None,
+    ) -> Path:
+        self.database_resolve_requests.append((context.invocation_id, relative_path))
+        root = Path("database-root")
         return root if relative_path is None else root / relative_path
 
     def ensure_workspace_directory(
@@ -234,6 +245,7 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
 
     assert host.available_capability_names() == (
         "workspace_resolver",
+        "database_resolver",
         "artifact_store",
         "state_store",
         "secret_provider",
@@ -242,6 +254,7 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
 
     assert host.secret_provider is not None
     assert host.workspace_resolver is not None
+    assert host.database_resolver is not None
     assert host.artifact_store is not None
     assert host.state_store is not None
     assert host.event_sink is not None
@@ -250,6 +263,9 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     has_secret = asyncio.run(cast(Any, host.secret_provider).has_secret(name="cas.password"))
     workspace_path = host.workspace_resolver.resolve_workspace_path(
         relative_path="backend/data/calendar.db"
+    )
+    database_path = cast(Any, host.database_resolver).resolve_database_path(
+        relative_path="blackboard/calendar.db"
     )
     ensured_path = cast(Any, host.workspace_resolver).ensure_workspace_directory(
         relative_path="artifacts/reports"
@@ -309,6 +325,7 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     assert secret_value == "bridge-secret"
     assert has_secret is True
     assert workspace_path.as_posix() == "workspace-root/backend/data/calendar.db"
+    assert database_path.as_posix() == "database-root/blackboard/calendar.db"
     assert ensured_path.as_posix() == "workspace-root/artifacts/reports"
     assert artifact.artifact_id == "artifact-1"
     assert described_artifact.metadata["described"] is True
@@ -327,6 +344,9 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     ]
     assert bridge_client.workspace_resolve_requests == [
         (invocation_context.invocation_id, "backend/data/calendar.db")
+    ]
+    assert bridge_client.database_resolve_requests == [
+        (invocation_context.invocation_id, "blackboard/calendar.db")
     ]
     assert bridge_client.workspace_ensure_requests == [
         (invocation_context.invocation_id, "artifacts/reports")

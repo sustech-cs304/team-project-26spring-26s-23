@@ -145,6 +145,23 @@ class DesktopCapabilityBridgeClient:
         )
         return Path(result["path"])
 
+    def resolve_database_path(
+        self,
+        *,
+        context: ToolInvocationContext,
+        relative_path: str | None = None,
+    ) -> Path:
+        payload: dict[str, Any] = {}
+        if relative_path is not None:
+            payload["relativePath"] = relative_path
+        result = self._call_sync(
+            capability="database",
+            operation="resolve_path",
+            context=context,
+            payload=payload,
+        )
+        return Path(result["path"])
+
     def ensure_workspace_directory(
         self,
         *,

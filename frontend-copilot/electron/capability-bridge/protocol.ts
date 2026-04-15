@@ -1,4 +1,4 @@
-export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'artifact', 'state', 'event'] as const
+export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'database', 'artifact', 'state', 'event'] as const
 export type DesktopCapabilityName = (typeof DESKTOP_CAPABILITY_NAMES)[number]
 
 export const DESKTOP_CAPABILITY_OPERATIONS = [
@@ -39,6 +39,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: Record<
 > = {
   secret: ['get_secret', 'has_secret'],
   workspace: ['resolve_path', 'ensure_directory'],
+  database: ['resolve_path'],
   artifact: ['save_text', 'save_bytes', 'describe_artifact'],
   state: ['get_value', 'put_value', 'delete_value'],
   event: ['emit_event'],

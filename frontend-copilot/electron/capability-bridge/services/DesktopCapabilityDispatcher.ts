@@ -4,6 +4,7 @@ import type { CreateDesktopCapabilityBridgeServiceOptions } from '../types'
 import { createDesktopCapabilitySecretService } from './DesktopCapabilitySecretService'
 import type { ElectronSettingsWorkspaceService } from '../../settings-workspace/main-process'
 import { createDesktopCapabilityWorkspaceService } from './DesktopCapabilityWorkspaceService'
+import { createDesktopCapabilityDatabaseService } from './DesktopCapabilityDatabaseService'
 import { createDesktopCapabilityArtifactService } from './DesktopCapabilityArtifactService'
 import { createDesktopCapabilityStateService } from './DesktopCapabilityStateService'
 import { createDesktopCapabilityEventService } from './DesktopCapabilityEventService'
@@ -21,6 +22,7 @@ export function createDesktopCapabilityDispatcher(
 ): DesktopCapabilityDispatcher {
   const secretService = createDesktopCapabilitySecretService(options)
   const workspaceService = createDesktopCapabilityWorkspaceService(options)
+  const databaseService = createDesktopCapabilityDatabaseService(options)
   const artifactService = createDesktopCapabilityArtifactService(options)
   const stateService = createDesktopCapabilityStateService(options)
   const eventService = createDesktopCapabilityEventService(options)
@@ -32,6 +34,8 @@ export function createDesktopCapabilityDispatcher(
           return await secretService.handle(request)
         case 'workspace':
           return await workspaceService.handle(request)
+        case 'database':
+          return await databaseService.handle(request)
         case 'artifact':
           return await artifactService.handle(request)
         case 'state':

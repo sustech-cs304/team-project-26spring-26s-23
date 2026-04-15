@@ -70,7 +70,7 @@ function createSettingsWorkspaceServiceStub(): ElectronSettingsWorkspaceService 
 }
 
 describe('createElectronDesktopCapabilityBridgeService', () => {
-  it('routes requests across all five capability families and persists artifact/state data under host-controlled storage', async () => {
+  it('routes requests across all six capability families and persists artifact/state data under host-controlled storage', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
     activeTempRoots.push(fixture.tempRoot)
 
@@ -142,6 +142,22 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       },
     })
     await access(expectedWorkspaceDir)
+
+    const expectedDatabasePath = path.resolve(fixture.hostedPaths.databaseDir, 'blackboard', 'snapshot.db')
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'database-1',
+      capability: 'database',
+      operation: 'resolve_path',
+      payload: {
+        relativePath: 'blackboard/snapshot.db',
+      },
+    }))).resolves.toEqual({
+      requestId: 'database-1',
+      ok: true,
+      result: {
+        path: expectedDatabasePath,
+      },
+    })
 
     const artifactResponse = await service.handleRequest(buildRequest({
       requestId: 'artifact-1',
@@ -324,6 +340,37 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       errorRetryable: false,
       details: {
         workspaceRootDir: path.resolve(fixture.hostedPaths.runtimeRootDir),
+        resolvedPath,
+        relativePath: '../outside',
+      },
+    })
+  })
+
+  it('returns structured failures when database paths escape the approved root', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-database-denied')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+
+    const resolvedPath = path.resolve(fixture.hostedPaths.databaseDir, '../outside')
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'database-denied-1',
+      capability: 'database',
+      operation: 'resolve_path',
+      payload: {
+        relativePath: '../outside',
+      },
+    }))).resolves.toEqual({
+      requestId: 'database-denied-1',
+      ok: false,
+      errorCode: 'permission_denied',
+      errorMessage: 'Database path must resolve inside the desktop capability database root.',
+      errorRetryable: false,
+      details: {
+        databaseRootDir: path.resolve(fixture.hostedPaths.databaseDir),
         resolvedPath,
         relativePath: '../outside',
       },

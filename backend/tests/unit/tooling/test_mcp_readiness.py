@@ -197,7 +197,7 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
         readiness.capability for readiness in snapshot_report.capability_readiness
     ] == [
         "secret_provider",
-        "workspace_resolver",
+        "database_resolver",
         "state_store",
         "artifact_store",
         "event_sink",
@@ -205,7 +205,7 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     assert snapshot_report.blocking_reasons == ()
     assert snapshot_report.warnings == (
         "Host capability 'secret_provider' is not directly satisfiable in bare MCP mode.",
-        "Host capability 'workspace_resolver' is not directly satisfiable in bare MCP mode.",
+        "Host capability 'database_resolver' is not directly satisfiable in bare MCP mode.",
         "Host capability 'state_store' is not directly satisfiable in bare MCP mode.",
         "Host capability 'artifact_store' is not directly satisfiable in bare MCP mode.",
         "Host capability 'event_sink' is not directly satisfiable in bare MCP mode.",
@@ -217,7 +217,7 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     assert [
         readiness.capability for readiness in blackboard_sql_report.capability_readiness
     ] == [
-        "workspace_resolver",
+        "database_resolver",
         "artifact_store",
         "event_sink",
     ]
@@ -227,7 +227,7 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
         "destructiveHint": True,
     }
     assert blackboard_sql_report.warnings == (
-        "Host capability 'workspace_resolver' is not directly satisfiable in bare MCP mode.",
+        "Host capability 'database_resolver' is not directly satisfiable in bare MCP mode.",
         "Host capability 'artifact_store' is not directly satisfiable in bare MCP mode.",
         "Host capability 'event_sink' is not directly satisfiable in bare MCP mode.",
     )
@@ -246,7 +246,7 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     assert [
         readiness.capability for readiness in tis_sql_report.capability_readiness
     ] == [
-        "workspace_resolver",
+        "database_resolver",
         "artifact_store",
         "event_sink",
     ]

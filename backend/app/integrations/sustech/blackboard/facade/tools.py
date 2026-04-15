@@ -26,6 +26,7 @@ from app.integrations.sustech.blackboard.provider.use_cases import (
 )
 from app.tooling import (
     ArtifactStore,
+    DatabaseResolver,
     HostCapabilityOperationError,
     HostCapabilityRequirement,
     HostEvent,
@@ -38,7 +39,6 @@ from app.tooling import (
     ToolMetadata,
     ToolResultEnvelope,
     ToolSchema,
-    WorkspaceResolver,
 )
 from app.tooling.contract.errors import build_tool_exception_details, redact_tool_error_value
 
@@ -440,26 +440,32 @@ def _normalize_secret(value: Any) -> str | None:
     return normalized or None
 
 
-def _resolve_db_path(arguments: Mapping[str, Any], host: ToolHostCapabilities) -> Path | None:
-    db_relative_path = _read_optional_text(arguments, "dbRelativePath")
-    if db_relative_path is not None:
-        workspace_resolver = cast(
-            WorkspaceResolver,
-            host.require_capability("workspace_resolver"),
+def _reject_explicit_db_path(arguments: Mapping[str, Any]) -> None:
+    if _read_optional_text(arguments, "dbPath") is not None:
+        raise ValueError(
+            "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
         )
-        return workspace_resolver.resolve_workspace_path(relative_path=db_relative_path)
 
-    db_path = _read_optional_text(arguments, "dbPath")
-    if db_path is None:
-        return None
-    return Path(db_path)
+
+def _default_blackboard_db_relative_path() -> str:
+    return DatabaseManager.DEFAULT_DB_RELATIVE_PATH.as_posix()
+
+
+def _resolve_db_path(arguments: Mapping[str, Any], host: ToolHostCapabilities) -> Path:
+    _reject_explicit_db_path(arguments)
+    db_relative_path = _read_optional_text(arguments, "dbRelativePath")
+    database_resolver = cast(
+        DatabaseResolver,
+        host.require_capability("database_resolver"),
+    )
+    relative_path = db_relative_path or _default_blackboard_db_relative_path()
+    return database_resolver.resolve_database_path(relative_path=relative_path)
 
 
 def _db_path_source(arguments: Mapping[str, Any]) -> str:
+    _reject_explicit_db_path(arguments)
     if _read_optional_text(arguments, "dbRelativePath") is not None:
-        return "workspace"
-    if _read_optional_text(arguments, "dbPath") is not None:
-        return "argument"
+        return "database_relative"
     return "default"
 
 
@@ -472,23 +478,33 @@ def _read_sql_query_result_limit(arguments: Mapping[str, Any]) -> int:
     return raw_limit
 
 
-def _default_blackboard_sql_query_db_path() -> Path:
-    manager = DatabaseManager()
-    try:
-        return Path(manager.db_path)
-    finally:
-        manager.engine.dispose()
+def _default_blackboard_sql_query_db_path(host: ToolHostCapabilities) -> Path:
+    database_resolver = cast(
+        DatabaseResolver,
+        host.require_capability("database_resolver"),
+    )
+    return database_resolver.resolve_database_path(
+        relative_path=_default_blackboard_db_relative_path()
+    )
 
 
 def _resolve_sql_query_db_path(
     arguments: Mapping[str, Any],
     host: ToolHostCapabilities,
 ) -> tuple[Path, str, bool]:
-    db_path = _resolve_db_path(arguments, host)
-    if db_path is not None:
-        db_path_source = _db_path_source(arguments)
-        return db_path, db_path_source, False
-    return _default_blackboard_sql_query_db_path(), "default", True
+    _reject_explicit_db_path(arguments)
+    db_relative_path = _read_optional_text(arguments, "dbRelativePath")
+    if db_relative_path is not None:
+        database_resolver = cast(
+            DatabaseResolver,
+            host.require_capability("database_resolver"),
+        )
+        return (
+            database_resolver.resolve_database_path(relative_path=db_relative_path),
+            "database_relative",
+            False,
+        )
+    return _default_blackboard_sql_query_db_path(host), "default", True
 
 
 def _sql_statement_type(sql: str) -> str:
@@ -724,7 +740,6 @@ _SQL_QUERY_METADATA = ToolMetadata(
     input_schema=_schema(
         properties={
             "sql": {"type": "string", "minLength": 1},
-            "dbPath": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resultLimit": {"type": "integer"},
             "persistArtifact": {"type": "boolean"},
@@ -759,9 +774,9 @@ _SQL_QUERY_METADATA = ToolMetadata(
     ),
     capability_requirements=(
         HostCapabilityRequirement(
-            capability="workspace_resolver",
+            capability="database_resolver",
             required=False,
-            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used.",
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
         ),
         HostCapabilityRequirement(
             capability="artifact_store",
@@ -834,7 +849,6 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
     input_schema=_schema(
         properties={
             "feedUrl": {"type": "string", "minLength": 1},
-            "dbPath": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resetSchema": {"type": "boolean"},
             "stateKey": {"type": "string"},
@@ -865,9 +879,9 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
     ),
     capability_requirements=(
         HostCapabilityRequirement(
-            capability="workspace_resolver",
+            capability="database_resolver",
             required=False,
-            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used.",
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
         ),
         HostCapabilityRequirement(
             capability="state_store",
@@ -895,7 +909,6 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
             "password": {"type": "string"},
             "usernameSecretName": {"type": "string"},
             "passwordSecretName": {"type": "string"},
-            "dbPath": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resetSchema": {"type": "boolean"},
             "resourceCourseLimit": {"type": "integer"},
@@ -942,9 +955,9 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
             purpose="Resolve Blackboard CAS credentials from host-managed secrets.",
         ),
         HostCapabilityRequirement(
-            capability="workspace_resolver",
+            capability="database_resolver",
             required=False,
-            purpose="Resolve a host workspace-relative SQLite path when dbRelativePath is used.",
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
         ),
         HostCapabilityRequirement(
             capability="state_store",

@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 
 HostCapabilityName = Literal[
     "workspace_resolver",
+    "database_resolver",
     "artifact_store",
     "state_store",
     "secret_provider",
@@ -17,6 +18,7 @@ HostCapabilityName = Literal[
 
 HOST_CAPABILITY_NAMES: tuple[HostCapabilityName, ...] = (
     "workspace_resolver",
+    "database_resolver",
     "artifact_store",
     "state_store",
     "secret_provider",

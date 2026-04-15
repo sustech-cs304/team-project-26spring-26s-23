@@ -8,7 +8,7 @@ from typing import Any
 
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.tooling import HostArtifact, HostEvent, ToolContract, ToolHostCapabilities, ToolInvocationContext
-from app.tooling.host_capabilities import ArtifactStore, EventSink, SecretProvider, StateStore, WorkspaceResolver
+from app.tooling.host_capabilities import ArtifactStore, DatabaseResolver, EventSink, SecretProvider, StateStore, WorkspaceResolver
 from app.tooling.runtime_adapter.copilot_runtime import RuntimeToolExecutionContext, ToolHostCapabilitiesFactory
 
 _STATE_SCOPE_RUN_PREFIX = "run:"
@@ -57,6 +57,23 @@ class _BridgeBackedWorkspaceResolver(WorkspaceResolver):
 
     def ensure_workspace_directory(self, *, relative_path: str) -> Path:
         return self._bridge_client.ensure_workspace_directory(
+            context=self._invocation_context,
+            relative_path=relative_path,
+        )
+
+
+class _BridgeBackedDatabaseResolver(DatabaseResolver):
+    def __init__(
+        self,
+        *,
+        bridge_client: DesktopCapabilityBridgeClient,
+        invocation_context: ToolInvocationContext,
+    ) -> None:
+        self._bridge_client = bridge_client
+        self._invocation_context = invocation_context
+
+    def resolve_database_path(self, *, relative_path: str | None = None) -> Path:
+        return self._bridge_client.resolve_database_path(
             context=self._invocation_context,
             relative_path=relative_path,
         )
@@ -195,6 +212,10 @@ def build_desktop_bridge_host_capabilities_factory(
         _ = contract_tool, runtime_context
         return ToolHostCapabilities(
             workspace_resolver=_BridgeBackedWorkspaceResolver(
+                bridge_client=bridge_client,
+                invocation_context=invocation_context,
+            ),
+            database_resolver=_BridgeBackedDatabaseResolver(
                 bridge_client=bridge_client,
                 invocation_context=invocation_context,
             ),

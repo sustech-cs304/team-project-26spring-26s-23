@@ -12,6 +12,7 @@ from app.tooling.contract.results import ToolArtifactReference
 DesktopCapabilityName = Literal[
     "secret",
     "workspace",
+    "database",
     "artifact",
     "state",
     "event",
@@ -20,6 +21,7 @@ DesktopCapabilityName = Literal[
 DESKTOP_CAPABILITY_NAMES: tuple[DesktopCapabilityName, ...] = (
     "secret",
     "workspace",
+    "database",
     "artifact",
     "state",
     "event",
@@ -65,6 +67,7 @@ DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: dict[
 ] = {
     "secret": ("get_secret", "has_secret"),
     "workspace": ("resolve_path", "ensure_directory"),
+    "database": ("resolve_path",),
     "artifact": ("save_text", "save_bytes", "describe_artifact"),
     "state": ("get_value", "put_value", "delete_value"),
     "event": ("emit_event",),
@@ -204,6 +207,13 @@ DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
             "relativePath": {"type": "string", "minLength": 1},
         },
     },
+    ("database", "resolve_path"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "relativePath": {"type": "string", "minLength": 1},
+        },
+    },
     ("workspace", "ensure_directory"): {
         "type": "object",
         "additionalProperties": False,
@@ -303,6 +313,14 @@ DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
         },
     },
     ("workspace", "resolve_path"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["path"],
+        "properties": {
+            "path": {"type": "string", "minLength": 1},
+        },
+    },
+    ("database", "resolve_path"): {
         "type": "object",
         "additionalProperties": False,
         "required": ["path"],
@@ -588,7 +606,10 @@ def validate_desktop_capability_bridge_payload(
             "secretName": _require_string_field(normalized_payload, "secretName"),
         }
 
-    if operation_key == ("workspace", "resolve_path"):
+    if operation_key in {
+        ("workspace", "resolve_path"),
+        ("database", "resolve_path"),
+    }:
         _assert_allowed_fields(
             normalized_payload,
             allowed_fields={"relativePath"},
@@ -745,6 +766,7 @@ def validate_desktop_capability_bridge_result(
 
     if operation_key in {
         ("workspace", "resolve_path"),
+        ("database", "resolve_path"),
         ("workspace", "ensure_directory"),
     }:
         _assert_allowed_fields(

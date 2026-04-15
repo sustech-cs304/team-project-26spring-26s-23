@@ -28,6 +28,10 @@ _MCP_CAPABILITY_BRIDGE_NOTES: dict[HostCapabilityName, str] = {
         "Not directly satisfiable over a bare MCP tool boundary; "
         "requires an explicit workspace or roots bridge."
     ),
+    "database_resolver": (
+        "Not directly satisfiable over a bare MCP tool boundary; "
+        "requires an explicit host database storage bridge."
+    ),
     "artifact_store": (
         "Not directly satisfiable over a bare MCP tool boundary; "
         "requires a host-specific artifact persistence bridge."

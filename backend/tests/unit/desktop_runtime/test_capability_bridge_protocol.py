@@ -26,6 +26,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
     assert DESKTOP_CAPABILITY_NAMES == (
         "secret",
         "workspace",
+        "database",
         "artifact",
         "state",
         "event",
@@ -33,12 +34,14 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
     assert DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY == {
         "secret": ("get_secret", "has_secret"),
         "workspace": ("resolve_path", "ensure_directory"),
+        "database": ("resolve_path",),
         "artifact": ("save_text", "save_bytes", "describe_artifact"),
         "state": ("get_value", "put_value", "delete_value"),
         "event": ("emit_event",),
     }
     assert get_desktop_capability_operations("secret") == ("get_secret", "has_secret")
     assert get_desktop_capability_operations("workspace") == ("resolve_path", "ensure_directory")
+    assert get_desktop_capability_operations("database") == ("resolve_path",)
     assert get_desktop_capability_operations("artifact") == (
         "save_text",
         "save_bytes",
@@ -165,6 +168,16 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
         operation="resolve_path",
         payload={"relativePath": " docs/output "},
     ) == {"relativePath": "docs/output"}
+    assert validate_desktop_capability_bridge_payload(
+        capability="database",
+        operation="resolve_path",
+        payload={"relativePath": " blackboard/snapshot.db "},
+    ) == {"relativePath": "blackboard/snapshot.db"}
+    assert validate_desktop_capability_bridge_result(
+        capability="database",
+        operation="resolve_path",
+        result={"path": "database-root/blackboard/snapshot.db"},
+    ) == {"path": "database-root/blackboard/snapshot.db"}
     assert validate_desktop_capability_bridge_result(
         capability="state",
         operation="get_value",

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import create_engine, event, func, select
+
+from app.desktop_runtime.config import ENV_DATABASE_DIR
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.integrations.sustech.teaching_information_system.api.dto import (
@@ -30,12 +33,33 @@ class TISDatabaseDescription:
     size_bytes: int
 
 
+_DEFAULT_TIS_DB_RELATIVE_PATH = Path("teaching_information_system") / "sustech_tis.db"
+
+
+def resolve_default_tis_db_path(database_dir: str | Path | None = None) -> Path:
+    resolved_database_dir = _resolve_runtime_database_dir(database_dir)
+    return resolved_database_dir / _DEFAULT_TIS_DB_RELATIVE_PATH
+
+
+def _resolve_runtime_database_dir(database_dir: str | Path | None = None) -> Path:
+    if database_dir is not None:
+        return Path(database_dir)
+
+    configured_database_dir = str(os.environ.get(ENV_DATABASE_DIR) or "").strip()
+    if configured_database_dir == "":
+        raise RuntimeError(
+            "TIS database path requires the desktop runtime database directory."
+        )
+    return Path(configured_database_dir)
+
+
 class TISDatabaseManager:
     """为 TIS 数据层提供最小可用的 SQLAlchemy/SQLite 门面。"""
 
+    DEFAULT_DB_RELATIVE_PATH = _DEFAULT_TIS_DB_RELATIVE_PATH
+
     def __init__(self, db_path: str | Path | None = None, *, reset_schema: bool = False) -> None:
-        backend_dir = Path(__file__).resolve().parents[3]
-        self.db_path = Path(db_path) if db_path else backend_dir / "data" / "sustech_tis.db"
+        self.db_path = Path(db_path) if db_path is not None else resolve_default_tis_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         if reset_schema and self.db_path.exists():
             self.db_path.unlink()

@@ -3,6 +3,7 @@
 from .errors import HostCapabilityOperationError, MissingHostCapabilityError
 from .interfaces import (
     ArtifactStore,
+    DatabaseResolver,
     EventSink,
     HostArtifact,
     HostEvent,
@@ -14,6 +15,7 @@ from .interfaces import (
 
 __all__ = [
     "ArtifactStore",
+    "DatabaseResolver",
     "EventSink",
     "HostArtifact",
     "HostCapabilityOperationError",

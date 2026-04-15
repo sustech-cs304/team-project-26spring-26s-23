@@ -106,6 +106,12 @@ class WorkspaceResolver(Protocol):
     def resolve_workspace_path(self, *, relative_path: str | None = None) -> Path: ...
 
 
+class DatabaseResolver(Protocol):
+    """Resolve host-managed database paths under the canonical runtime database root."""
+
+    def resolve_database_path(self, *, relative_path: str | None = None) -> Path: ...
+
+
 class ArtifactStore(Protocol):
     """Persist tool-produced artifacts through a host-owned store."""
 
@@ -155,6 +161,7 @@ class ToolHostCapabilities:
     """Bound host capability handles available to a tool invocation."""
 
     workspace_resolver: WorkspaceResolver | None = None
+    database_resolver: DatabaseResolver | None = None
     artifact_store: ArtifactStore | None = None
     state_store: StateStore | None = None
     secret_provider: SecretProvider | None = None
@@ -164,6 +171,8 @@ class ToolHostCapabilities:
         available: list[str] = []
         if self.workspace_resolver is not None:
             available.append("workspace_resolver")
+        if self.database_resolver is not None:
+            available.append("database_resolver")
         if self.artifact_store is not None:
             available.append("artifact_store")
         if self.state_store is not None:
@@ -179,6 +188,10 @@ class ToolHostCapabilities:
             if self.workspace_resolver is None:
                 raise MissingHostCapabilityError(capability)
             return self.workspace_resolver
+        if capability == "database_resolver":
+            if self.database_resolver is None:
+                raise MissingHostCapabilityError(capability)
+            return self.database_resolver
         if capability == "artifact_store":
             if self.artifact_store is None:
                 raise MissingHostCapabilityError(capability)
@@ -209,6 +222,7 @@ class ToolHostCapabilities:
 
 __all__ = [
     "ArtifactStore",
+    "DatabaseResolver",
     "EventSink",
     "HostArtifact",
     "HostEvent",

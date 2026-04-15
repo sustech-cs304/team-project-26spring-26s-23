@@ -664,7 +664,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
             progress("fetching courses")
             progress("syncing sqlite")
         return _build_blackboard_snapshot_report(
-            db_path=Path("workspace-root/backend/data/default.db") if db_path is None else db_path,
+            db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path,
             resource_course_limit=resource_course_limit,
         )
 
@@ -684,7 +684,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
             app,
             tool_id="blackboard.snapshot.sync",
             tool_arguments={
-                "dbRelativePath": "backend/data/snapshot.db",
+                "dbRelativePath": "blackboard/snapshot.db",
                 "resourceCourseLimit": 2,
                 "verifySecondSync": False,
                 "stateKey": "snapshot-latest",
@@ -719,7 +719,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
     assert captured_sync == {
         "username": "alice",
         "password": "secret",
-        "db_path": Path("workspace-root/backend/data/snapshot.db"),
+        "db_path": Path("database-root/blackboard/snapshot.db"),
         "reset_schema": False,
         "resource_course_limit": 2,
         "verify_second_sync": False,
@@ -729,7 +729,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         ("event", "emit_event"),
         ("secret", "get_secret"),
         ("secret", "get_secret"),
-        ("workspace", "resolve_path"),
+        ("database", "resolve_path"),
         ("state", "put_value"),
         ("artifact", "save_text"),
         ("event", "emit_event"),
@@ -764,7 +764,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
     ]
     assert state_request["payload"]["scope"] == "tool"
     assert str(state_request["payload"]["key"]).endswith(":snapshot-latest")
-    assert state_request["payload"]["value"]["output"]["dbPath"] == "workspace-root/backend/data/snapshot.db"
+    assert state_request["payload"]["value"]["output"]["dbPath"] == "database-root/blackboard/snapshot.db"
     assert json.loads(artifact_request["payload"]["text"])["progressMessages"] == [
         "fetching courses",
         "syncing sqlite",
@@ -905,12 +905,12 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
 
 
 
-def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_workspace_and_artifact(
+def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_database_and_artifact(
     tmp_path: Path,
 ) -> None:
-    workspace_root = tmp_path / "workspace-root"
+    database_root = tmp_path / "database-root"
     db_path = _create_sqlite_db(
-        workspace_root / "backend/data/blackboard-query.db",
+        database_root / "blackboard/blackboard-query.db",
         script="""
         CREATE TABLE announcements (id INTEGER PRIMARY KEY, title TEXT);
         INSERT INTO announcements (id, title) VALUES
@@ -927,7 +927,7 @@ def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_w
             captured_payloads=captured_bridge_payloads,
             captured_headers=captured_headers,
             secret_values={},
-            workspace_root=workspace_root,
+            database_root=database_root,
         )
     )
 
@@ -937,7 +937,7 @@ def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_w
             tool_id="blackboard.sql.query",
             tool_arguments={
                 "sql": "SELECT id, title FROM announcements ORDER BY id",
-                "dbRelativePath": "backend/data/blackboard-query.db",
+                "dbRelativePath": "blackboard/blackboard-query.db",
                 "resultLimit": 1,
                 "persistArtifact": True,
             },
@@ -972,7 +972,7 @@ def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_w
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
-        ("workspace", "resolve_path"),
+        ("database", "resolve_path"),
         ("artifact", "save_text"),
         ("event", "emit_event"),
     ]
@@ -997,12 +997,12 @@ def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_w
 
 
 
-def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_workspace(
+def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_database(
     tmp_path: Path,
 ) -> None:
-    workspace_root = tmp_path / "workspace-root"
+    database_root = tmp_path / "database-root"
     db_path = _create_sqlite_db(
-        workspace_root / "backend/data/tis-query.db",
+        database_root / "teaching_information_system/tis-query.db",
         script="""
         CREATE TABLE grades (id INTEGER PRIMARY KEY, score INTEGER);
         INSERT INTO grades (id, score) VALUES (1, 95), (2, 88);
@@ -1016,7 +1016,7 @@ def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_workspac
             captured_payloads=captured_bridge_payloads,
             captured_headers=captured_headers,
             secret_values={},
-            workspace_root=workspace_root,
+            database_root=database_root,
         )
     )
 
@@ -1026,7 +1026,7 @@ def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_workspac
             tool_id="tis.sql.query",
             tool_arguments={
                 "sql": "UPDATE grades SET score = 96 WHERE id = 1",
-                "dbRelativePath": "backend/data/tis-query.db",
+                "dbRelativePath": "teaching_information_system/tis-query.db",
             },
             output_text="TIS SQL bridge answer",
         )
@@ -1059,7 +1059,7 @@ def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_workspac
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
-        ("workspace", "resolve_path"),
+        ("database", "resolve_path"),
         ("event", "emit_event"),
     ]
     assert all(item["toolId"] == "tis.sql.query" for item in captured_bridge_payloads)
@@ -1343,8 +1343,10 @@ def _create_recording_bridge_client(
     captured_headers: list[str | None],
     secret_values: dict[str, str],
     workspace_root: Path | None = None,
+    database_root: Path | None = None,
 ) -> DesktopCapabilityBridgeClient:
     resolved_workspace_root = Path("workspace-root") if workspace_root is None else workspace_root
+    resolved_database_root = Path("database-root") if database_root is None else database_root
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured_headers.append(request.headers.get(HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME))
@@ -1369,6 +1371,14 @@ def _create_recording_bridge_client(
                 resolved_workspace_root
                 if relative_path is None
                 else resolved_workspace_root / str(relative_path)
+            )
+            return success({"path": resolved_path.as_posix()})
+        if (capability, operation) == ("database", "resolve_path"):
+            relative_path = payload["payload"].get("relativePath")
+            resolved_path = (
+                resolved_database_root
+                if relative_path is None
+                else resolved_database_root / str(relative_path)
             )
             return success({"path": resolved_path.as_posix()})
         if (capability, operation) == ("state", "put_value"):

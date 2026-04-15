@@ -59,6 +59,18 @@ class StubWorkspaceResolver:
         return self.root / relative_path
 
 
+class StubDatabaseResolver:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.requests: list[str | None] = []
+
+    def resolve_database_path(self, *, relative_path: str | None = None) -> Path:
+        self.requests.append(relative_path)
+        if relative_path is None:
+            return self.root
+        return self.root / relative_path
+
+
 class StubStateStore:
     def __init__(self) -> None:
         self.values: dict[tuple[str, str], dict[str, Any]] = {}
@@ -120,9 +132,9 @@ class StubEventSink:
         self.events.append(event)
 
 
-class _NoopWorkspaceResolver:
-    def resolve_workspace_path(self, *, relative_path: str | None = None) -> Path:
-        return Path("workspace") if relative_path is None else Path("workspace") / relative_path
+class _NoopDatabaseResolver:
+    def resolve_database_path(self, *, relative_path: str | None = None) -> Path:
+        return Path("database") if relative_path is None else Path("database") / relative_path
 
 
 def _create_sqlite_db(path: Path, *, script: str) -> Path:
@@ -184,7 +196,7 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     }
 
     assert requirements["secret_provider"].required is False
-    assert requirements["workspace_resolver"].required is False
+    assert requirements["database_resolver"].required is False
     assert requirements["state_store"].required is False
     assert requirements["artifact_store"].required is False
     assert requirements["event_sink"].required is False
@@ -355,9 +367,9 @@ def test_course_catalog_tool_uses_secret_provider_and_maps_missing_credentials()
     assert error_result.error.message == "Blackboard CAS credentials are required."
 
 
-def test_calendar_refresh_tool_resolves_workspace_db_path_and_persists_state(monkeypatch: Any) -> None:
+def test_calendar_refresh_tool_resolves_database_db_path_and_persists_state(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
-    workspace = StubWorkspaceResolver(Path("workspace-root"))
+    database = StubDatabaseResolver(Path("database-root"))
     state_store = StubStateStore()
 
     def _fake_refresh(
@@ -383,7 +395,7 @@ def test_calendar_refresh_tool_resolves_workspace_db_path_and_persists_state(mon
         )
         return CalendarICSSyncResult(
             feed_url=feed_url,
-            db_path=Path(db_path or "workspace-root/backend/data/default.db"),
+            db_path=Path(db_path or "database-root/blackboard/sustech.db"),
             stats={
                 "inserted": 1,
                 "updated": 0,
@@ -402,55 +414,55 @@ def test_calendar_refresh_tool_resolves_workspace_db_path_and_persists_state(mon
         BlackboardCalendarRefreshTool(),
         arguments={
             "feedUrl": "https://example.local/calendar.ics",
-            "dbRelativePath": "backend/data/calendar.db",
+            "dbRelativePath": "blackboard/calendar.db",
             "resetSchema": "true",
             "stateKey": "calendar-latest",
         },
-        host=ToolHostCapabilities(workspace_resolver=workspace, state_store=state_store),
+        host=ToolHostCapabilities(database_resolver=database, state_store=state_store),
     )
 
     assert result.status == "success"
     assert captured == {
         "feed_url": "https://example.local/calendar.ics",
-        "db_path": Path("workspace-root/backend/data/calendar.db"),
+        "db_path": Path("database-root/blackboard/calendar.db"),
         "reset_schema": True,
     }
     assert result.output is not None
-    assert result.output["dbPath"] == "workspace-root/backend/data/calendar.db"
+    assert result.output["dbPath"] == "database-root/blackboard/calendar.db"
     assert result.output["stats"]["refreshed_at"] == "2026-04-13T16:05:00+00:00"
     assert result.output["activeEventCount"] == 1
     assert result.metadata == {
         "toolId": "blackboard.calendar.refresh",
-        "dbPathSource": "workspace",
+        "dbPathSource": "database_relative",
         "stateNamespace": "blackboard.calendar_refresh",
         "stateKey": "calendar-latest",
     }
-    assert workspace.requests == ["backend/data/calendar.db"]
+    assert database.requests == ["blackboard/calendar.db"]
     assert state_store.values[("blackboard.calendar_refresh", "calendar-latest")]["output"]["feedUrl"] == (
         "https://example.local/calendar.ics"
     )
 
 
-def test_calendar_refresh_tool_maps_missing_workspace_capability() -> None:
+def test_calendar_refresh_tool_maps_missing_database_capability() -> None:
     result = _invoke_tool(
         BlackboardCalendarRefreshTool(),
         arguments={
             "feedUrl": "https://example.local/calendar.ics",
-            "dbRelativePath": "backend/data/calendar.db",
+            "dbRelativePath": "blackboard/calendar.db",
         },
     )
 
     assert result.status == "error"
     assert result.error is not None
     assert result.error.code == "host_capability_missing"
-    assert result.error.details["capability"] == "workspace_resolver"
+    assert result.error.details["capability"] == "database_resolver"
     assert result.error.details["exceptionType"] == "MissingHostCapabilityError"
     assert "traceback" in result.error.details
 
 
 def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
-    workspace = StubWorkspaceResolver(Path("workspace-root"))
+    database = StubDatabaseResolver(Path("database-root"))
     artifact_store = StubArtifactStore()
     state_store = StubStateStore()
     event_sink = StubEventSink()
@@ -517,7 +529,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             announcements_payload=[{"announcement_id": "ann_1"}],
         )
         return BlackboardSnapshotSyncReport(
-            db_path=Path(db_path or "workspace-root/backend/data/default.db"),
+            db_path=Path(db_path or "database-root/blackboard/sustech.db"),
             snapshot=snapshot,
             payloads=payloads,
             first_sync_stats={
@@ -559,14 +571,14 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         arguments={
             "username": " alice ",
             "password": " secret ",
-            "dbRelativePath": "backend/data/snapshot.db",
+            "dbRelativePath": "blackboard/snapshot.db",
             "resourceCourseLimit": "2",
             "verifySecondSync": "false",
             "stateKey": "snapshot-latest",
             "artifactName": "snapshot.json",
         },
         host=ToolHostCapabilities(
-            workspace_resolver=workspace,
+            database_resolver=database,
             artifact_store=artifact_store,
             state_store=state_store,
             event_sink=event_sink,
@@ -577,13 +589,13 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert captured == {
         "username": "alice",
         "password": "secret",
-        "db_path": Path("workspace-root/backend/data/snapshot.db"),
+        "db_path": Path("database-root/blackboard/snapshot.db"),
         "reset_schema": False,
         "resource_course_limit": 2,
         "verify_second_sync": False,
     }
     assert result.output is not None
-    assert result.output["dbPath"] == "workspace-root/backend/data/snapshot.db"
+    assert result.output["dbPath"] == "database-root/blackboard/snapshot.db"
     assert result.output["resourceCourseLimit"] == 2
     assert result.output["progressMessages"] == ["fetching courses", "syncing sqlite"]
     assert result.output["secondSyncHasNoNewRecords"] is True
@@ -591,14 +603,14 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert result.metadata == {
         "toolId": "blackboard.snapshot.sync",
         "credentialSource": "arguments",
-        "dbPathSource": "workspace",
+        "dbPathSource": "database_relative",
         "stateNamespace": "blackboard.snapshot_sync",
         "stateKey": "snapshot-latest",
     }
     assert len(result.artifacts) == 1
     assert result.artifacts[0].artifact_id == "artifact-1"
-    assert workspace.requests == ["backend/data/snapshot.db"]
-    assert json.loads(artifact_store.saved_texts[0]["text"])["dbPath"] == "workspace-root/backend/data/snapshot.db"
+    assert database.requests == ["blackboard/snapshot.db"]
+    assert json.loads(artifact_store.saved_texts[0]["text"])["dbPath"] == "database-root/blackboard/snapshot.db"
     assert state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]["integrityOk"] is True
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
@@ -640,7 +652,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
             }
         )
         return BlackboardSnapshotSyncReport(
-            db_path=Path("workspace-root/backend/data/default.db"),
+            db_path=Path(db_path or "database-root/blackboard/sustech.db"),
             snapshot=BlackboardSnapshotFetchResult(
                 courses=[],
                 assignments_by_course={},
@@ -685,17 +697,19 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
 
     monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
 
+    database = StubDatabaseResolver(Path("database-root"))
+
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
         arguments={},
-        host=ToolHostCapabilities(secret_provider=secret_provider),
+        host=ToolHostCapabilities(secret_provider=secret_provider, database_resolver=database),
     )
 
     assert result.status == "success"
     assert captured == {
         "username": "student@sustech.edu.cn",
         "password": "cas-secret",
-        "db_path": None,
+        "db_path": Path("database-root/blackboard/sustech.db"),
         "reset_schema": False,
         "resource_course_limit": 3,
         "verify_second_sync": True,
@@ -720,7 +734,7 @@ def test_blackboard_sql_query_tool_queries_default_database(
         """,
     )
     event_sink = StubEventSink()
-    monkeypatch.setattr(facade_tools, "_default_blackboard_sql_query_db_path", lambda: db_path)
+    monkeypatch.setattr(facade_tools, "_default_blackboard_sql_query_db_path", lambda _host: db_path)
 
     result = _invoke_tool(
         BlackboardSQLQueryTool(),
@@ -761,50 +775,27 @@ def test_blackboard_sql_query_tool_queries_default_database(
     ]
 
 
-def test_blackboard_sql_query_tool_uses_explicit_db_path_and_persists_artifact_when_truncated(
-    tmp_path: Path,
-) -> None:
-    db_path = _create_sqlite_db(
-        tmp_path / "blackboard-explicit.db",
-        script="""
-        CREATE TABLE announcements (id INTEGER PRIMARY KEY, title TEXT);
-        INSERT INTO announcements (id, title) VALUES
-            (1, 'Welcome'),
-            (2, 'Exam'),
-            (3, 'Reminder');
-        """,
-    )
+def test_blackboard_sql_query_tool_rejects_explicit_db_path() -> None:
     artifact_store = StubArtifactStore()
 
     result = _invoke_tool(
         BlackboardSQLQueryTool(),
         arguments={
             "sql": "SELECT id, title FROM announcements ORDER BY id",
-            "dbPath": db_path.as_posix(),
+            "dbPath": "C:/tmp/blackboard-explicit.db",
             "resultLimit": 1,
             "persistArtifact": True,
         },
         host=ToolHostCapabilities(artifact_store=artifact_store),
     )
 
-    assert result.status == "success"
-    assert result.output is not None
-    assert result.output["database"] == {"path": db_path.as_posix(), "source": "argument"}
-    assert result.output["usedDefaultDatabase"] is False
-    assert result.output["rowsPreview"] == [{"id": 1, "title": "Welcome"}]
-    assert result.output["truncated"] is True
-    assert result.output["artifact"] is not None
-    assert result.output["artifact"]["artifactId"] == "artifact-1"
-    assert result.metadata == {
-        "toolId": "blackboard.sql.query",
-        "dbPathSource": "argument",
-        "persistArtifactRequested": True,
-    }
-    assert len(result.artifacts) == 1
-    assert result.artifacts[0].artifact_id == "artifact-1"
-    artifact_payload = json.loads(artifact_store.saved_texts[0]["text"])
-    assert artifact_payload["rowCount"] == 3
-    assert artifact_payload["rows"][2] == {"id": 3, "title": "Reminder"}
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.code == "invalid_input"
+    assert result.error.message == (
+        "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
+    )
+    assert result.artifacts == ()
 
 
 def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
@@ -838,7 +829,10 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
         arguments={"username": "alice", "password": "secret"},
-        host=ToolHostCapabilities(event_sink=event_sink),
+        host=ToolHostCapabilities(
+            event_sink=event_sink,
+            database_resolver=StubDatabaseResolver(Path("database-root")),
+        ),
     )
 
     assert result.status == "error"
@@ -883,7 +877,10 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
         arguments={"username": "alice", "password": "secret"},
-        host=ToolHostCapabilities(event_sink=event_sink),
+        host=ToolHostCapabilities(
+            event_sink=event_sink,
+            database_resolver=StubDatabaseResolver(Path("database-root")),
+        ),
     )
 
     assert result.status == "error"
@@ -903,7 +900,7 @@ def test_snapshot_sync_tool_maps_secret_lookup_without_provider_to_missing_capab
             "usernameSecretName": "bb.username",
             "passwordSecretName": "bb.password",
         },
-        host=ToolHostCapabilities(workspace_resolver=_NoopWorkspaceResolver()),
+        host=ToolHostCapabilities(database_resolver=_NoopDatabaseResolver()),
     )
 
     assert result.status == "error"

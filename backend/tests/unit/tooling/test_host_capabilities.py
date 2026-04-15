@@ -24,6 +24,16 @@ class StubWorkspaceResolver:
         return self.root / relative_path
 
 
+class StubDatabaseResolver:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def resolve_database_path(self, *, relative_path: str | None = None) -> Path:
+        if relative_path is None:
+            return self.root
+        return self.root / relative_path
+
+
 class StubArtifactStore:
     async def save_text(
         self,
@@ -116,6 +126,7 @@ def test_host_capability_models_serialize_to_stable_shape() -> None:
 def test_tool_host_capabilities_reports_available_handles_and_satisfies_requirements() -> None:
     capabilities = ToolHostCapabilities(
         workspace_resolver=StubWorkspaceResolver(Path("workspace")),
+        database_resolver=StubDatabaseResolver(Path("database")),
         artifact_store=StubArtifactStore(),
         state_store=StubStateStore(),
         secret_provider=StubSecretProvider(),
@@ -124,15 +135,18 @@ def test_tool_host_capabilities_reports_available_handles_and_satisfies_requirem
 
     assert capabilities.available_capability_names() == (
         "workspace_resolver",
+        "database_resolver",
         "artifact_store",
         "state_store",
         "secret_provider",
         "event_sink",
     )
     assert capabilities.require_capability("workspace_resolver") is capabilities.workspace_resolver
+    assert capabilities.require_capability("database_resolver") is capabilities.database_resolver
     capabilities.assert_satisfies(
         (
             HostCapabilityRequirement(capability="workspace_resolver"),
+            HostCapabilityRequirement(capability="database_resolver"),
             HostCapabilityRequirement(capability="event_sink"),
             HostCapabilityRequirement(capability="secret_provider", required=False),
         )
@@ -145,6 +159,9 @@ def test_tool_host_capabilities_raise_for_missing_required_binding() -> None:
 
     with pytest.raises(MissingHostCapabilityError, match="workspace_resolver"):
         capabilities.require_capability("workspace_resolver")
+
+    with pytest.raises(MissingHostCapabilityError, match="database_resolver"):
+        capabilities.require_capability("database_resolver")
 
     with pytest.raises(MissingHostCapabilityError, match="artifact_store"):
         capabilities.assert_satisfies(
