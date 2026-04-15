@@ -34,6 +34,10 @@ import {
   COPILOT_RUNTIME_RETRY_CHANNEL,
   type CopilotRuntimeLoadResult,
 } from '../copilot-runtime'
+import {
+  DESKTOP_NOTIFICATION_SHOW_CHANNEL,
+  type DesktopNotificationRequest,
+} from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from '../bootstrap-window'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
@@ -52,6 +56,7 @@ const RENDERER_IPC_CHANNELS = [
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   BOOTSTRAP_WINDOW_READY_CHANNEL,
 ] as const
 
@@ -142,6 +147,10 @@ export function registerRendererIpcHandlers(
 
   ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.retryCopilotRuntime()
+  })
+
+  ipcMain.handle(DESKTOP_NOTIFICATION_SHOW_CHANNEL, async (_event, request: DesktopNotificationRequest): Promise<void> => {
+    await handlers.notifyDesktopNotification(request)
   })
 
   ipcMain.handle(BOOTSTRAP_WINDOW_READY_CHANNEL, async (): Promise<void> => {

@@ -715,7 +715,7 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   it('shows a system notification after the assistant completes when notifications are enabled', async () => {
-    const notification = installMockNotification('granted')
+    const notification = installMockDesktopNotification()
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
@@ -753,18 +753,15 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(notification.records[0]).toEqual({
       title: '助手消息已完成',
-      options: {
-        body: '这是助手回显',
-        tag: 'run-1:completed',
-      },
+      body: '这是助手回显',
+      tag: 'run-1:completed',
     })
-    expect(notification.requestPermission).not.toHaveBeenCalled()
 
     rendered.unmount()
   })
 
   it('does not show a system notification when assistant notifications are disabled', async () => {
-    const notification = installMockNotification('granted')
+    const notification = installMockDesktopNotification()
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
@@ -805,13 +802,12 @@ describe('CopilotChatPanel composer interactions', () => {
     })
 
     expect(notification.records).toHaveLength(0)
-    expect(notification.requestPermission).not.toHaveBeenCalled()
 
     rendered.unmount()
   })
 
   it('shows a failure system notification after the assistant run fails when notifications are enabled', async () => {
-    const notification = installMockNotification('granted')
+    const notification = installMockDesktopNotification()
     const sendMessage = createToolFailureSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
@@ -849,12 +845,82 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(notification.records[0]).toEqual({
       title: '助手执行失败',
-      options: {
-        body: 'Tool failed: boom',
-        tag: 'run-tool-failed:failed',
-      },
+      body: 'Tool failed: boom',
+      tag: 'run-tool-failed:failed',
     })
-    expect(notification.requestPermission).not.toHaveBeenCalled()
+
+    rendered.unmount()
+  })
+
+  it('does not replay a historical notification when the notifications setting turns on after completion', async () => {
+    const notification = installMockDesktopNotification()
+    const sendMessage = createResolvedSendMessageSpy()
+    const disabledLoader = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: false,
+        },
+      }),
+    }))
+    const enabledLoader = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={disabledLoader}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '先关闭，完成后再开启')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+    expect(notification.records).toHaveLength(0)
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={enabledLoader}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(notification.records).toHaveLength(0)
 
     rendered.unmount()
   })
@@ -1890,61 +1956,41 @@ function createAbortableSendMessageSpy() {
   })
 }
 
-const originalNotification = globalThis.Notification
-
-interface MockNotificationRecord {
+interface MockDesktopNotificationRecord {
   title: string
-  options?: NotificationOptions
+  body: string
+  tag?: string
 }
 
-interface MockNotificationController {
-  records: MockNotificationRecord[]
-  requestPermission: ReturnType<typeof vi.fn>
+interface MockDesktopNotificationController {
+  records: MockDesktopNotificationRecord[]
 }
 
-function installMockNotification(permission: NotificationPermission): MockNotificationController {
-  const records: MockNotificationRecord[] = []
-  const requestPermission = vi.fn(async () => permission)
+function installMockDesktopNotification(): MockDesktopNotificationController {
+  const records: MockDesktopNotificationRecord[] = []
 
-  class MockNotification {
-    static permission: NotificationPermission = permission
-    static requestPermission = requestPermission
-
-    constructor(title: string, options?: NotificationOptions) {
-      records.push({ title, options })
-    }
-
-    close() {
-      return undefined
-    }
-  }
-
-  Object.defineProperty(globalThis, 'Notification', {
+  Object.defineProperty(window, 'desktopNotification', {
     configurable: true,
     writable: true,
-    value: MockNotification,
+    value: {
+      show: vi.fn(async (request: MockDesktopNotificationRecord) => {
+        records.push({ ...request })
+      }),
+    } as Window['desktopNotification'],
   })
 
   return {
     records,
-    requestPermission,
   }
 }
 
 function restoreNotificationApi() {
-  if (originalNotification === undefined) {
-    Object.defineProperty(globalThis, 'Notification', {
-      configurable: true,
-      writable: true,
-      value: undefined,
-    })
-    return
-  }
-
-  Object.defineProperty(globalThis, 'Notification', {
+  Object.defineProperty(window, 'desktopNotification', {
     configurable: true,
     writable: true,
-    value: originalNotification,
+    value: {
+      show: vi.fn(async () => undefined),
+    } as Window['desktopNotification'],
   })
 }
 

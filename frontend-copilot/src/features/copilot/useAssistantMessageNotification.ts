@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import type { DesktopNotificationRequest } from '../../../electron/desktop-notification'
 import type { CopilotAssistantSegment } from './run-segment-types'
 import type { CopilotRunState } from './types'
 
@@ -36,60 +37,78 @@ export function useAssistantMessageNotification({
   notificationsEnabled,
   runState,
 }: UseAssistantMessageNotificationInput): void {
-  const lastNotifiedRunKeyRef = useRef<string | null>(null)
+  const previousPhaseRef = useRef(runState.phase)
+  const previousRunIdRef = useRef<string | null>(runState.runId)
+  const lastHandledTransitionRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!notificationsEnabled) {
+    const previousPhase = previousPhaseRef.current
+    const previousRunId = previousRunIdRef.current
+    const nextPhase = runState.phase
+    const nextRunId = runState.runId
+
+    previousPhaseRef.current = nextPhase
+    previousRunIdRef.current = nextRunId
+
+    if (!notificationsEnabled || typeof window === 'undefined' || nextRunId === null) {
       return
     }
 
-    const notificationApi = globalThis.Notification
-    if (typeof window === 'undefined' || notificationApi === undefined || runState.runId === null) {
+    if (!isAssistantRunTerminalPhase(nextPhase) || isAssistantRunTerminalPhase(previousPhase)) {
       return
     }
 
-    if (runState.phase !== 'completed' && runState.phase !== 'failed') {
+    if (previousRunId !== nextRunId) {
       return
     }
 
-    const notificationKey = `${runState.runId}:${runState.phase}:${runState.segments.length}`
-    if (lastNotifiedRunKeyRef.current === notificationKey) {
+    const transitionKey = `${nextRunId}:${previousPhase}->${nextPhase}`
+    if (lastHandledTransitionRef.current === transitionKey) {
       return
     }
-    lastNotifiedRunKeyRef.current = notificationKey
+    lastHandledTransitionRef.current = transitionKey
 
-    if (notificationApi.permission === 'default') {
-      void notificationApi.requestPermission().then((permission) => {
-        if (permission === 'granted') {
-          showAssistantMessageNotification(notificationApi, language, runState)
-        }
-      }).catch(() => undefined)
-      return
-    }
-
-    if (notificationApi.permission !== 'granted') {
-      return
-    }
-
-    showAssistantMessageNotification(notificationApi, language, runState)
+    const request = createAssistantMessageNotificationRequest(language, runState)
+    void showAssistantMessageNotification(request)
   }, [language, notificationsEnabled, runState])
 }
 
-function showAssistantMessageNotification(
-  notificationApi: typeof Notification,
+function createAssistantMessageNotificationRequest(
   language: string,
   runState: CopilotRunState,
-) {
+): DesktopNotificationRequest {
   const copy = getAssistantMessageNotificationCopy(language)
   const title = runState.phase === 'completed' ? copy.successTitle : copy.failureTitle
   const body = runState.phase === 'completed'
     ? resolveAssistantSuccessBody(runState, copy)
     : resolveAssistantFailureBody(runState, copy)
 
-  new notificationApi(title, {
+  return {
+    title,
     body,
     tag: `${runState.runId}:${runState.phase}`,
-  })
+  }
+}
+
+async function showAssistantMessageNotification(request: DesktopNotificationRequest): Promise<void> {
+  const api = getDesktopNotificationApi()
+  if (api === undefined) {
+    return
+  }
+
+  await api.show(request)
+}
+
+function getDesktopNotificationApi() {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  return window.desktopNotification
+}
+
+function isAssistantRunTerminalPhase(phase: CopilotRunState['phase']): phase is 'completed' | 'failed' {
+  return phase === 'completed' || phase === 'failed'
 }
 
 function resolveAssistantSuccessBody(

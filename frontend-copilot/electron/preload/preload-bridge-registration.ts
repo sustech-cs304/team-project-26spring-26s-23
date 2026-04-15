@@ -11,6 +11,7 @@ const PRELOAD_BRIDGE_KEYS = [
   'configCenterPublicPatch',
   'settingsWorkspaceState',
   'settingsWorkspaceSecrets',
+  'desktopNotification',
   'bootstrapWindow',
 ] as const satisfies ReadonlyArray<keyof PreloadBridgeApis>
 

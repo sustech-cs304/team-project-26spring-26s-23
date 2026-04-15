@@ -1,4 +1,5 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron'
+import { app, BrowserWindow, Menu, Notification, ipcMain, shell } from 'electron'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
@@ -21,6 +22,7 @@ import { parseHostedRuntimeCommandLineArgumentsSafely } from './runtime/runtime-
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRuntimePaths } from './runtime/runtime-paths'
 import { isHostedBackendFailure, type HostedBackendFailure } from './runtime/runtime-diagnostics'
 import { createInitialHostedBackendState, type HostedBackendState } from './runtime/runtime-state'
+import type { DesktopNotificationRequest } from './desktop-notification'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -35,6 +37,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // │
 const APP_ROOT = path.join(__dirname, '..')
 const ELECTRON_APPLICATION_NAME = 'CanDue'
+const ELECTRON_NOTIFICATION_DISPLAY_NAME = '赶渡 CanDue'
+const ELECTRON_APPLICATION_ID = 'com.candue.app'
+const ELECTRON_NOTIFICATION_SHORTCUT_NAME = `${ELECTRON_NOTIFICATION_DISPLAY_NAME}.lnk`
+const ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID = '{D6B8D450-4B0B-4F22-9A1C-ACB1A5A5B6F1}'
 process.env.APP_ROOT = APP_ROOT
 
 // 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
@@ -47,6 +53,10 @@ const VITE_PUBLIC = process.env.VITE_PUBLIC ?? RENDERER_DIST
 
 // Set the Electron application name before any userData-derived path is resolved.
 app.setName(ELECTRON_APPLICATION_NAME)
+if (process.platform === 'win32') {
+  app.setAppUserModelId(ELECTRON_APPLICATION_ID)
+  app.setToastActivatorCLSID(ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID)
+}
 
 let win: BrowserWindow | null = null
 let hostedBackendService: HostedBackendService | null = null
@@ -86,6 +96,23 @@ async function notifyBootstrapWindowReady(): Promise<void> {
   showWindowWhenBootstrapScreenIsReady(win, mainRuntimeLogger.logStartupTrace)
 }
 
+async function notifyDesktopNotification(request: DesktopNotificationRequest): Promise<void> {
+  if (!Notification.isSupported()) {
+    return
+  }
+
+  const notificationOptions = {
+    title: request.title,
+    body: request.body,
+    icon: resolveDesktopNotificationIconPath(),
+    toastXml: buildDesktopNotificationToastXml(request),
+  } as ConstructorParameters<typeof Notification>[0] & { appID?: string }
+  notificationOptions.appID = ELECTRON_APPLICATION_ID
+
+  const notification = new Notification(notificationOptions)
+
+  notification.show()
+}
 
 async function loadCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   try {
@@ -352,6 +379,80 @@ function publishConfigCenterPublicSnapshotUpdate(snapshot: ConfigCenterPublicSna
   }
 }
 
+function ensureWindowsNotificationIdentityConfigured(): void {
+  if (process.platform !== 'win32') {
+    return
+  }
+
+  const shortcutPath = path.join(
+    resolveWindowsStartMenuProgramsDirectory(),
+    ELECTRON_NOTIFICATION_SHORTCUT_NAME,
+  )
+  const shortcutWritten = shell.writeShortcutLink(shortcutPath, {
+    target: app.getPath('exe'),
+    cwd: APP_ROOT,
+    description: ELECTRON_NOTIFICATION_DISPLAY_NAME,
+    icon: resolveDesktopNotificationIconPath(),
+    iconIndex: 0,
+    appUserModelId: ELECTRON_APPLICATION_ID,
+    toastActivatorClsid: ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID,
+  })
+
+  if (shortcutWritten) {
+    return
+  }
+
+  void mainRuntimeLogger.appendMainRuntimeLog('warn', '[desktop-runtime] Failed to create the Windows notification shortcut.', {
+    shortcutPath,
+    appUserModelId: ELECTRON_APPLICATION_ID,
+    toastActivatorClsid: ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID,
+  })
+}
+
+function resolveWindowsStartMenuProgramsDirectory(): string {
+  return path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+}
+
+function resolveDesktopNotificationIconPath(): string {
+  const generatedIconDir = path.join(VITE_PUBLIC, 'generated-icons')
+  const preferredNotificationIconPath = process.platform === 'win32'
+    ? path.join(generatedIconDir, 'icon.ico')
+    : path.join(generatedIconDir, 'icon.png')
+
+  return existsSync(preferredNotificationIconPath)
+    ? preferredNotificationIconPath
+    : path.join(VITE_PUBLIC, 'candue_icon.png')
+}
+
+function buildDesktopNotificationToastXml(request: DesktopNotificationRequest): string {
+  const escapedTitle = escapeDesktopNotificationXml(request.title)
+  const escapedBody = escapeDesktopNotificationXml(request.body)
+  const escapedAppName = escapeDesktopNotificationXml(ELECTRON_NOTIFICATION_DISPLAY_NAME)
+  const escapedIconPath = escapeDesktopNotificationXml(resolveDesktopNotificationIconPath())
+
+  return [
+    '<toast>',
+    '  <visual>',
+    '    <binding template="ToastGeneric">',
+    `      <text>${escapedAppName}</text>`,
+    `      <text>${escapedTitle}</text>`,
+    `      <text>${escapedBody}</text>`,
+    `      <image placement="appLogoOverride" hint-crop="none" src="file:///${escapedIconPath.replace(/\\/g, '/')}"/>`,
+    '    </binding>',
+    '  </visual>',
+    '</toast>',
+  ].join('\n')
+}
+
+function escapeDesktopNotificationXml(value: string): string {
+  return value
+    .replace(/&/g, String.fromCharCode(38, 97, 109, 112, 59))
+    .replace(/</g, String.fromCharCode(38, 108, 116, 59))
+    .replace(/>/g, String.fromCharCode(38, 103, 116, 59))
+    .replace(new RegExp(String.fromCharCode(34), 'g'), String.fromCharCode(38, 113, 117, 111, 116, 59))
+    .replace(new RegExp(String.fromCharCode(39), 'g'), String.fromCharCode(38, 97, 112, 111, 115, 59))
+}
+
 async function prepareApplicationRuntimePaths(): Promise<HostedRuntimePaths> {
   const paths = getHostedRuntimePaths()
   await ensureHostedRuntimeDirectories(paths)
@@ -428,10 +529,12 @@ void app.whenReady()
   .then(() => {
     mainRuntimeLogger.logStartupTrace('app:ready')
     Menu.setApplicationMenu(null)
+    ensureWindowsNotificationIdentityConfigured()
     registerMainProcessIpcHandlers(ipcMain, {
       services: mainProcessServices,
       loadCopilotRuntime,
       retryCopilotRuntime,
+      notifyDesktopNotification,
       notifyBootstrapWindowReady,
     })
     void startHostedBackend()

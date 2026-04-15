@@ -26,6 +26,22 @@ describe('CanDue product metadata', () => {
     expect(setNameIndex).toBeLessThan(getUserDataIndex)
   })
 
+  it('uses the packaged application id and localized display name for desktop notifications', () => {
+    const mainSource = readWorkspaceFile('electron/main.ts')
+
+    expect(mainSource).toContain("const ELECTRON_NOTIFICATION_DISPLAY_NAME = '赶渡 CanDue'")
+    expect(mainSource).toContain("const ELECTRON_APPLICATION_ID = 'com.candue.app'")
+    expect(mainSource).toContain("const ELECTRON_NOTIFICATION_SHORTCUT_NAME = `${ELECTRON_NOTIFICATION_DISPLAY_NAME}.lnk`")
+    expect(mainSource).toContain("const ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID = '{D6B8D450-4B0B-4F22-9A1C-ACB1A5A5B6F1}'")
+    expect(mainSource).toContain('app.setAppUserModelId(ELECTRON_APPLICATION_ID)')
+    expect(mainSource).toContain('app.setToastActivatorCLSID(ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID)')
+    expect(mainSource).toContain('notificationOptions.appID = ELECTRON_APPLICATION_ID')
+    expect(mainSource).toContain('shell.writeShortcutLink(shortcutPath, {')
+    expect(mainSource).toContain('appUserModelId: ELECTRON_APPLICATION_ID')
+    expect(mainSource).toContain('toastActivatorClsid: ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID')
+    expect(mainSource).toContain('const escapedAppName = escapeDesktopNotificationXml(ELECTRON_NOTIFICATION_DISPLAY_NAME)')
+  })
+
   it('keeps the package name npm-safe while exposing CanDue as the product name', () => {
     const packageJson = JSON.parse(readWorkspaceFile('package.json')) as {
       name: string
