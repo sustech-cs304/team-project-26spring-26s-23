@@ -49,6 +49,8 @@ export function AssistantWorkspaceShell({
     selectedAgent,
     sessionShell,
     activeSessionHistory,
+    runtimeControllerBySessionId,
+    setRuntimeControllerBySessionId,
     sessionListState,
     sessionStatus,
     sessionError,
@@ -152,6 +154,8 @@ export function AssistantWorkspaceShell({
             retrySessionHistory={retryActiveSessionHistoryLoad}
             selectSessionHistoryRun={selectActiveSessionHistoryRun}
             onSessionRunSettled={handleActiveSessionRunSettled}
+            runtimeControllerBySessionId={runtimeControllerBySessionId}
+            setRuntimeControllerBySessionId={setRuntimeControllerBySessionId}
           />
         </div>
       </main>

@@ -3,9 +3,11 @@ import {
   useEffect,
   useRef,
   useState,
+  type Dispatch,
   type MutableRefObject,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type SetStateAction,
 } from 'react'
 
 import {
@@ -19,6 +21,10 @@ import {
   listCopilotHistoryThreads,
 } from '../../features/copilot/history'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../../features/copilot/debug-mode-log'
+import {
+  syncCopilotThreadRuntimeControllerStateRecord,
+  type CopilotThreadRuntimeControllerState,
+} from '../../features/copilot/thread-runtime-controller'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import type { AgentType, AssistantSessionShell } from '../types'
 import type {
@@ -87,6 +93,8 @@ interface UseAssistantWorkspaceStateResult {
   selectedAgent: AgentType | null
   sessionShell: AssistantSessionShell | null
   activeSessionHistory: AssistantSessionHistoryState | null
+  runtimeControllerBySessionId: Record<string, CopilotThreadRuntimeControllerState>
+  setRuntimeControllerBySessionId: Dispatch<SetStateAction<Record<string, CopilotThreadRuntimeControllerState>>>
   sessionListState: AssistantSessionListState
   sessionStatus: AssistantWorkspaceSessionStatus
   sessionError: string | null
@@ -154,6 +162,7 @@ export function useAssistantWorkspaceState({
   const provisionalEmptyRestoreKeyRef = useRef<string | null>(null)
   const persistedShellStateRef = useRef(loadShellStateImpl())
   const [sessionHistoryById, setSessionHistoryById] = useState<Record<string, AssistantSessionHistoryState>>({})
+  const [runtimeControllerBySessionId, setRuntimeControllerBySessionId] = useState<Record<string, CopilotThreadRuntimeControllerState>>({})
   const historyListRequestVersionRef = useRef(0)
   const historyCapabilitiesRequestVersionRef = useRef<Record<string, number>>({})
   const historyDetailRequestVersionRef = useRef<Record<string, number>>({})
@@ -357,6 +366,10 @@ export function useAssistantWorkspaceState({
 
       return hasChanged ? nextState : current
     })
+  }, [sessionListState.sessions])
+
+  useEffect(() => {
+    setRuntimeControllerBySessionId((current) => syncCopilotThreadRuntimeControllerStateRecord(current, sessionListState.sessions))
   }, [sessionListState.sessions])
 
   const retryActiveSessionHistoryLoad = useCallback(() => {
@@ -1023,6 +1036,8 @@ export function useAssistantWorkspaceState({
     selectedAgent,
     sessionShell,
     activeSessionHistory,
+    runtimeControllerBySessionId,
+    setRuntimeControllerBySessionId,
     sessionListState,
     sessionStatus,
     sessionError,
