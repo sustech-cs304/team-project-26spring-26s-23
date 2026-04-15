@@ -129,7 +129,6 @@ export function useCopilotChatPanelState({
   sessionShell,
   directoryState,
   sessionHistory = null,
-  selectSessionHistoryRun,
   onSessionRunSettled,
   sendMessage = dispatchCopilotMessage,
   cancelRun = cancelRuntimeRun,
@@ -295,9 +294,27 @@ export function useCopilotChatPanelState({
   )
   const persistedConversation = persistedConversationBuildResult.conversation
   const persistedSelectedRunConversationSource = persistedConversationBuildResult.selectedRunConversationSource
+  const pendingHistorySyncRunId = activeTransientState.pendingHistorySyncRunId
+  const persistedHandoffConversationBuildResult = useMemo(
+    () => pendingHistorySyncRunId === null
+      ? {
+          conversation: [],
+          selectedRunConversationSource: 'none' as const,
+        }
+      : buildPersistedConversationFromHistory(sessionHistory, {
+          runId: pendingHistorySyncRunId,
+        }),
+    [pendingHistorySyncRunId, sessionHistory],
+  )
+  const persistedHandoffConversation = persistedHandoffConversationBuildResult.conversation
+  const persistedHandoffConversationSource = persistedHandoffConversationBuildResult.selectedRunConversationSource
   const hasRenderablePersistedSelectedConversation = useMemo(
     () => persistedConversation.length > 0,
     [persistedConversation],
+  )
+  const hasRenderablePersistedHandoffConversation = useMemo(
+    () => pendingHistorySyncRunId !== null && persistedHandoffConversation.length > 0,
+    [pendingHistorySyncRunId, persistedHandoffConversation],
   )
   const persistedSelectedRunConversationPending = useMemo(() => (
     sessionHistory !== null
@@ -338,11 +355,13 @@ export function useCopilotChatPanelState({
     if (sessionHistory.selectedRunId !== runId) {
       const hasTerminalTransientRunForActiveSession = runState.threadId === sessionShell?.sessionId
         && (runState.phase === 'completed' || runState.phase === 'failed' || runState.phase === 'cancelled')
-      return hasTerminalTransientRunForActiveSession && !hasRenderablePersistedSelectedConversation
+      return hasTerminalTransientRunForActiveSession
+        ? pendingHistorySyncRunId === runId || !hasRenderablePersistedSelectedConversation
+        : false
     }
 
     return !hasRenderablePersistedSelectedConversation
-  }, [conversation.length, hasRenderablePersistedSelectedConversation, runState.phase, runState.runId, runState.threadId, sessionHistory, sessionShell?.sessionId])
+  }, [conversation.length, hasRenderablePersistedSelectedConversation, pendingHistorySyncRunId, runState.phase, runState.runId, runState.threadId, sessionHistory, sessionShell?.sessionId])
   const hasTransientConversation = useMemo(
     () => shouldRenderTransientConversation && (conversation.length > 0 || runState.phase !== 'idle'),
     [conversation.length, runState.phase, shouldRenderTransientConversation],
@@ -467,13 +486,11 @@ export function useCopilotChatPanelState({
       ? 'missing-session-history'
       : sessionHistory.detailStatus !== 'ready'
         ? 'detail-not-ready'
-        : sessionHistory.selectedRunId !== pendingRunId
-          ? 'selected-run-mismatch'
-          : !sessionHistory.runSummaries.some((runSummary) => runSummary.runId === pendingRunId)
-            ? 'selected-run-missing-from-detail'
-            : !hasRenderablePersistedSelectedConversation
-              ? 'persisted-selected-run-empty'
-              : null
+        : !sessionHistory.runSummaries.some((runSummary) => runSummary.runId === pendingRunId)
+          ? 'handoff-run-missing-from-detail'
+          : !hasRenderablePersistedHandoffConversation
+            ? 'persisted-handoff-run-empty'
+            : null
 
     if (waitReason !== null) {
       const logKey = [
@@ -481,7 +498,7 @@ export function useCopilotChatPanelState({
         waitReason,
         sessionHistory?.selectedRunId ?? '',
         sessionHistory?.detailStatus ?? '',
-        hasRenderablePersistedSelectedConversation ? 'renderable' : 'empty',
+        hasRenderablePersistedHandoffConversation ? 'renderable' : 'empty',
       ].join('::')
       if (activeTransientState.pendingHistorySyncLogKey !== logKey) {
         updateSessionTransientStateById(sessionId, (sessionState) => ({
@@ -496,6 +513,8 @@ export function useCopilotChatPanelState({
           replayStatus: sessionHistory?.replayStatus ?? null,
           persistedConversationLength: persistedConversation.length,
           persistedConversationSource: persistedSelectedRunConversationSource,
+          persistedHandoffConversationLength: persistedHandoffConversation.length,
+          persistedHandoffConversationSource,
           waitReason,
         })
       }
@@ -513,6 +532,8 @@ export function useCopilotChatPanelState({
       selectedRunId: readySessionHistory.selectedRunId,
       persistedConversationLength: persistedConversation.length,
       persistedConversationSource: persistedSelectedRunConversationSource,
+      persistedHandoffConversationLength: persistedHandoffConversation.length,
+      persistedHandoffConversationSource,
     })
     updateSessionTransientStateById(sessionId, (sessionState) => ({
       ...sessionState,
@@ -525,60 +546,14 @@ export function useCopilotChatPanelState({
     activeTransientState.pendingHistorySyncLogKey,
     activeTransientState.pendingHistorySyncRunId,
     debugModeEnabled,
-    hasRenderablePersistedSelectedConversation,
+    hasRenderablePersistedHandoffConversation,
     persistedConversation.length,
+    persistedHandoffConversation.length,
+    persistedHandoffConversationSource,
     persistedSelectedRunConversationSource,
     sessionHistory,
     sessionShell?.sessionId,
     updateSessionTransientStateById,
-  ])
-
-  useEffect(() => {
-    if (selectSessionHistoryRun === undefined || sessionHistory === null || sessionHistory.selectedRunId === null) {
-      return
-    }
-
-    if (runState.threadId !== sessionShell?.sessionId) {
-      return
-    }
-
-    if (runState.phase === 'starting' || runState.phase === 'streaming') {
-      return
-    }
-
-    if (runState.runId === null || runState.runId === sessionHistory.selectedRunId) {
-      return
-    }
-
-    if (!hasRenderablePersistedSelectedConversation) {
-      return
-    }
-
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'persisted-selection-preempted-transient', {
-      sessionId: sessionShell?.sessionId ?? null,
-      transientRunId: runState.runId,
-      selectedRunId: sessionHistory.selectedRunId,
-      persistedConversationLength: persistedConversation.length,
-      persistedConversationSource: persistedSelectedRunConversationSource,
-    })
-    if (sessionShell !== null) {
-      setTransientStateBySessionId((current) => updateCopilotSessionTransientState(current, sessionShell.sessionId, (sessionState) => ({
-        ...sessionState,
-        conversation: [],
-        runState: createIdleCopilotRunState(),
-      })))
-    }
-  }, [
-    debugModeEnabled,
-    hasRenderablePersistedSelectedConversation,
-    persistedConversation.length,
-    persistedSelectedRunConversationSource,
-    runState.phase,
-    runState.runId,
-    runState.threadId,
-    selectSessionHistoryRun,
-    sessionHistory,
-    sessionShell?.sessionId,
   ])
 
   useEffect(() => {

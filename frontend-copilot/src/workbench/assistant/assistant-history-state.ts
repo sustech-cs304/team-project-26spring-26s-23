@@ -317,12 +317,18 @@ export function selectAssistantSessionHistoryRun(
 
 export function setAssistantSessionHistoryReplayLoading(
   state: AssistantSessionHistoryState,
+  runId: string | null = state.selectedRunId,
 ): AssistantSessionHistoryState {
+  const targetRunId = normalizeOptionalString(runId)
+  if (targetRunId === null || targetRunId !== state.selectedRunId) {
+    return state
+  }
+
   return {
     ...state,
     replayStatus: 'loading',
     replayError: null,
-    replay: getAssistantSessionHistoryReplayForRun(state, state.selectedRunId) ?? state.replay,
+    replay: getAssistantSessionHistoryReplayForRun(state, targetRunId) ?? state.replay,
   }
 }
 
@@ -331,13 +337,17 @@ export function applyAssistantSessionHistoryReplay(
   replay: CopilotHistoryRunReplaySuccess,
 ): AssistantSessionHistoryState {
   const nextReplay = cloneAssistantSessionHistoryReplay(replay)
+  const replayRunId = normalizeOptionalString(replay.run.runId)
+  const selectedRunId = normalizeOptionalString(state.selectedRunId)
+  const replayForSelectedRun = replayRunId !== null && replayRunId === selectedRunId
+    ? nextReplay
+    : getAssistantSessionHistoryReplayForRun(state, selectedRunId)
 
   return {
     ...state,
-    selectedRunId: replay.run.runId,
-    replayStatus: 'ready',
-    replayError: null,
-    replay: nextReplay,
+    replayStatus: replayForSelectedRun !== null ? 'ready' : state.replayStatus,
+    replayError: replayForSelectedRun !== null ? null : state.replayError,
+    replay: replayForSelectedRun ?? state.replay,
     replayByRunId: {
       ...(state.replayByRunId ?? {}),
       [replay.run.runId]: nextReplay,
@@ -348,12 +358,18 @@ export function applyAssistantSessionHistoryReplay(
 export function setAssistantSessionHistoryReplayError(
   state: AssistantSessionHistoryState,
   error: string,
+  runId: string | null = state.selectedRunId,
 ): AssistantSessionHistoryState {
+  const targetRunId = normalizeOptionalString(runId)
+  if (targetRunId === null || targetRunId !== state.selectedRunId) {
+    return state
+  }
+
   return {
     ...state,
     replayStatus: 'error',
     replayError: error,
-    replay: getAssistantSessionHistoryReplayForRun(state, state.selectedRunId) ?? state.replay,
+    replay: getAssistantSessionHistoryReplayForRun(state, targetRunId) ?? state.replay,
   }
 }
 

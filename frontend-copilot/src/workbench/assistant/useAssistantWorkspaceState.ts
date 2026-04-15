@@ -23,6 +23,7 @@ import {
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../../features/copilot/debug-mode-log'
 import {
   syncCopilotThreadRuntimeControllerStateRecord,
+  updateCopilotThreadRuntimeControllerStateRecord,
   type CopilotThreadRuntimeControllerState,
 } from '../../features/copilot/thread-runtime-controller'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
@@ -46,6 +47,7 @@ import {
   applyAssistantSessionHistoryReplay,
   createAssistantSessionHistoryState,
   createAssistantSessionHistoryStateFromSessionShell,
+  hasAssistantSessionHistoryReplayForRun,
   resolveAssistantSessionHistoryPersistableSelectedRunId,
   retryAssistantSessionCapabilitiesHydration,
   retryAssistantSessionHistoryDetail,
@@ -414,6 +416,7 @@ export function useAssistantWorkspaceState({
       return
     }
 
+    const settledRunId = runId?.trim() ?? ''
     const settledSessionShell = sessionListStateRef.current.sessions.find(
       (sessionEntry) => sessionEntry.sessionId === settledSessionId,
     ) ?? null
@@ -425,18 +428,27 @@ export function useAssistantWorkspaceState({
       previousSelectedRunId: sessionHistoryById[settledSessionId]?.selectedRunId ?? null,
       hasSessionShell: settledSessionShell !== null,
     })
+    if (settledRunId !== '') {
+      setRuntimeControllerBySessionId((current) => updateCopilotThreadRuntimeControllerStateRecord(
+        current,
+        settledSessionId,
+        (controllerState) => ({
+          ...controllerState,
+          pendingHistorySyncRunId: settledRunId,
+          pendingHistorySyncLogKey: null,
+        }),
+      ))
+    }
     setSessionHistoryById((current) => {
       const historyState = current[settledSessionId]
         ?? (settledSessionShell === null
           ? undefined
-          : createAssistantSessionHistoryStateFromSessionShell(settledSessionShell, runId))
+          : createAssistantSessionHistoryStateFromSessionShell(settledSessionShell, null))
       if (historyState === undefined) {
         return current
       }
 
-      const nextHistoryState = retryAssistantSessionHistoryDetail(
-        selectAssistantSessionHistoryRun(historyState, runId),
-      )
+      const nextHistoryState = retryAssistantSessionHistoryDetail(historyState)
 
       return nextHistoryState === historyState
         ? current
@@ -932,12 +944,27 @@ export function useAssistantWorkspaceState({
     const sessionId = sessionShell.sessionId
     const historyState = sessionHistoryById[sessionId]
     const selectedRunId = historyState?.selectedRunId ?? null
+    const pendingHandoffRunId = runtimeControllerBySessionId[sessionId]?.pendingHistorySyncRunId ?? null
+    const shouldRequestSelectedRunReplay = historyState !== undefined
+      && historyState.detailStatus === 'ready'
+      && selectedRunId !== null
+      && historyState.replayStatus === 'idle'
+      && !hasAssistantSessionHistoryReplayForRun(historyState, selectedRunId)
+    const shouldRequestPendingHandoffReplay = historyState !== undefined
+      && historyState.detailStatus === 'ready'
+      && pendingHandoffRunId !== null
+      && pendingHandoffRunId !== selectedRunId
+      && !hasAssistantSessionHistoryReplayForRun(historyState, pendingHandoffRunId)
+    const replayRequestRunId = shouldRequestSelectedRunReplay
+      ? selectedRunId
+      : shouldRequestPendingHandoffReplay
+        ? pendingHandoffRunId
+        : null
+    const tracksSelectedRunReplay = replayRequestRunId !== null && replayRequestRunId === selectedRunId
     if (
       historyState === undefined
       || historyState.detailStatus !== 'ready'
-      || selectedRunId === null
-      || historyState.replayStatus !== 'idle'
-      || historyState.replay?.run.runId === selectedRunId
+      || replayRequestRunId === null
     ) {
       return
     }
@@ -945,19 +972,24 @@ export function useAssistantWorkspaceState({
     const requestVersion = (historyReplayRequestVersionRef.current[sessionId] ?? 0) + 1
     historyReplayRequestVersionRef.current[sessionId] = requestVersion
 
-    setSessionHistoryById((current) => ({
-      ...current,
-      [sessionId]: setAssistantSessionHistoryReplayLoading(historyState),
-    }))
+    if (tracksSelectedRunReplay) {
+      setSessionHistoryById((current) => ({
+        ...current,
+        [sessionId]: setAssistantSessionHistoryReplayLoading(historyState, replayRequestRunId),
+      }))
+    }
     appendWorkspaceDebugLog('history-replay-request-started', {
       sessionId,
       requestVersion,
       selectedRunId,
+      replayRequestRunId,
+      pendingHandoffRunId,
+      tracksSelectedRunReplay,
       ...summarizeAssistantHistoryStateForLog(historyState),
     })
 
     void (async () => {
-      const replayResult = await getHistoryRunReplayImpl(selectedRunId)
+      const replayResult = await getHistoryRunReplayImpl(replayRequestRunId)
       if (
         !isMountedRef.current
         || historyReplayRequestVersionRef.current[sessionId] !== requestVersion
@@ -970,15 +1002,21 @@ export function useAssistantWorkspaceState({
           sessionId,
           requestVersion,
           selectedRunId,
+          replayRequestRunId,
+          pendingHandoffRunId,
+          tracksSelectedRunReplay,
           error: replayResult.error,
         })
-        setSessionHistoryById((current) => ({
-          ...current,
-          [sessionId]: setAssistantSessionHistoryReplayError(
-            current[sessionId] ?? historyState,
-            replayResult.error,
-          ),
-        }))
+        if (tracksSelectedRunReplay) {
+          setSessionHistoryById((current) => ({
+            ...current,
+            [sessionId]: setAssistantSessionHistoryReplayError(
+              current[sessionId] ?? historyState,
+              replayResult.error,
+              replayRequestRunId,
+            ),
+          }))
+        }
         return
       }
 
@@ -986,6 +1024,9 @@ export function useAssistantWorkspaceState({
         sessionId,
         requestVersion,
         selectedRunId,
+        replayRequestRunId,
+        pendingHandoffRunId,
+        tracksSelectedRunReplay,
         replayRunId: replayResult.run.runId,
         orderedEventCount: replayResult.orderedEvents.length,
         toolCallBlockCount: replayResult.toolCallBlocks.length,
@@ -1004,6 +1045,7 @@ export function useAssistantWorkspaceState({
     getHistoryRunReplayImpl,
     historyReplayRequestVersionRef,
     isMountedRef,
+    runtimeControllerBySessionId,
     sessionHistoryById,
     sessionShell,
     setSessionHistoryById,

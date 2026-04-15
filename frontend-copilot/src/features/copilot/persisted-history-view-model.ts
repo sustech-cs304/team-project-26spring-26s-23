@@ -42,8 +42,13 @@ export interface PersistedConversationBuildResult {
   selectedRunConversationSource: PersistedConversationSource
 }
 
+export interface PersistedConversationBuildOptions {
+  runId?: string | null
+}
+
 export function buildPersistedConversationFromHistory(
   history: AssistantSessionHistoryState | null,
+  options: PersistedConversationBuildOptions = {},
 ): PersistedConversationBuildResult {
   if (history === null || (!history.hasLoadedDetail && history.detailStatus !== 'ready')) {
     return {
@@ -52,24 +57,28 @@ export function buildPersistedConversationFromHistory(
     }
   }
 
-  const selectedRunId = normalizeOptionalString(history.selectedRunId)
+  const targetRunId = normalizeOptionalString(
+    Object.prototype.hasOwnProperty.call(options, 'runId')
+      ? options.runId
+      : history.selectedRunId,
+  )
   const runContexts = buildPersistedRunContextMap(history)
   const timelineConversation = buildPersistedConversationFromTimeline({
     history,
-    timelineItems: filterTimelineItemsForSelectedRun(history.timelineItems, selectedRunId),
+    timelineItems: filterTimelineItemsForSelectedRun(history.timelineItems, targetRunId),
     runContexts,
   })
   const summaryConversation = buildPersistedConversationFromRunSummary({
     history,
-    selectedRunId,
+    selectedRunId: targetRunId,
     runContexts,
   })
 
-  if (selectedRunId === null) {
+  if (targetRunId === null) {
     return resolvePersistedConversationFallbackResult(timelineConversation, summaryConversation)
   }
 
-  const replayConversation = buildPersistedConversationFromReplay(history, selectedRunId)
+  const replayConversation = buildPersistedConversationFromReplay(history, targetRunId)
   return replayConversation.some((item) => item.kind !== 'user')
     ? {
         conversation: replayConversation,
@@ -267,14 +276,10 @@ function buildPersistedConversationFromReplay(
   history: AssistantSessionHistoryState,
   selectedRunId: string,
 ): CopilotMessageListItem[] {
-  if (
-    history.replay === null
-    || history.replay.run.runId !== selectedRunId
-  ) {
+  const replay = resolvePersistedConversationReplay(history, selectedRunId)
+  if (replay === null) {
     return []
   }
-
-  const replay = history.replay
   const replayState = replay.orderedEvents.reduce((currentState, orderedEvent) => {
     const runtimeEvent = mapPersistedRunEventToRuntimeRunEvent(replay.run.runId, replay.run.threadId, replay.historicalSnapshot, orderedEvent)
     return runtimeEvent === null
@@ -306,6 +311,20 @@ function buildPersistedConversationFromReplay(
         content: userMessageText,
         status: 'completed',
       }, ...conversation]
+}
+
+function resolvePersistedConversationReplay(
+  history: AssistantSessionHistoryState,
+  runId: string,
+) {
+  const replayByRunId = history.replayByRunId?.[runId]
+  if (replayByRunId !== undefined) {
+    return replayByRunId
+  }
+
+  return history.replay !== null && history.replay.run.runId === runId
+    ? history.replay
+    : null
 }
 
 function buildPersistedRunContextMap(
