@@ -190,6 +190,87 @@ def test_history_routes_surface_backend_drift_conclusions_in_thread_detail_and_r
 
 
 
+def test_history_routes_support_rename_and_duplicate_for_persisted_threads(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path, local_token="history-token"))
+
+    with TestClient(app) as client:
+        store = app.state.copilot_runtime_session_store
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="复制这段对话"),
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="text_delta",
+            payload={"assistantMessageId": "run-1:assistant", "delta": "已复制的回复"},
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="run_completed",
+            payload={
+                "assistantMessageId": "run-1:assistant",
+                "assistantText": "已复制的回复",
+            },
+        )
+        store.mark_run_completed("run-1", assistant_text="已复制的回复")
+
+        headers = {LOCAL_TOKEN_HEADER_NAME: "history-token"}
+        rename_response = client.post(
+            "/history/threads/thread-1/rename",
+            headers=headers,
+            json={"title": "手动标题"},
+        )
+        duplicate_response = client.post(
+            "/history/threads/thread-1/duplicate",
+            headers=headers,
+            json={},
+        )
+
+        duplicate_payload = duplicate_response.json()
+        duplicate_thread_id = duplicate_payload["thread"]["threadId"]
+        duplicate_run_id = duplicate_payload["thread"]["lastRunId"]
+        threads_response = client.get("/history/threads", headers=headers)
+        duplicate_detail_response = client.get(f"/history/threads/{duplicate_thread_id}", headers=headers)
+        duplicate_replay_response = client.get(f"/history/runs/{duplicate_run_id}/replay", headers=headers)
+
+    assert rename_response.status_code == 200
+    assert duplicate_response.status_code == 200
+    assert threads_response.status_code == 200
+    assert duplicate_detail_response.status_code == 200
+    assert duplicate_replay_response.status_code == 200
+
+    rename_payload = rename_response.json()
+    threads_payload = threads_response.json()
+    duplicate_detail_payload = duplicate_detail_response.json()
+    duplicate_replay_payload = duplicate_replay_response.json()
+
+    assert rename_payload["thread"]["title"] == "手动标题"
+    assert rename_payload["thread"]["titleSource"] == "manual"
+    assert duplicate_payload["thread"]["threadId"] != "thread-1"
+    assert duplicate_payload["thread"]["title"] == "手动标题（副本）"
+    assert duplicate_payload["thread"]["titleSource"] == "manual"
+    assert duplicate_payload["thread"]["lastRunId"] != "run-1"
+    assert [thread["title"] for thread in threads_payload["threads"]] == [
+        "手动标题（副本）",
+        "手动标题",
+    ]
+    assert duplicate_detail_payload["thread"]["title"] == "手动标题（副本）"
+    assert [run["requestedMessageText"] for run in duplicate_detail_payload["runSummaries"]] == ["复制这段对话"]
+    assert [item["text"] for item in duplicate_detail_payload["timelineItems"] if "text" in item] == [
+        "复制这段对话",
+        "已复制的回复",
+    ]
+    assert [event["eventType"] for event in duplicate_replay_payload["orderedEvents"]] == [
+        "text_delta",
+        "run_completed",
+    ]
+    assert duplicate_replay_payload["run"]["threadId"] == duplicate_thread_id
+    assert duplicate_replay_payload["run"]["assistantText"] == "已复制的回复"
+
+
+
 def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path, local_token="history-token"))
 

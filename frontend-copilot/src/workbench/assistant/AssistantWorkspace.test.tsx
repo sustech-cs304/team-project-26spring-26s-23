@@ -12,6 +12,10 @@ import {
   createDeferred,
   createDirectoryResponse,
   createSessionResponse,
+  hoverElement,
+  inputText,
+  keyDownElement,
+  openContextMenu,
   renderWithRoot,
 } from './AssistantWorkspace.test-support'
 import {
@@ -114,6 +118,322 @@ describe('AssistantWorkspace render + interactions', () => {
 
   it('requires delete confirmation and returns the active session to the selected-agent empty state after deletion', async () => {
     await runSessionDeletionScenario()
+  })
+
+  it('persists renamed thread titles across remount for restored history threads', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const renamedSummary = {
+      ...historyFixture.summary,
+      title: '重命名后的历史线程',
+      titleSource: 'manual',
+      updatedAt: '2026-04-13T15:06:00Z',
+      lastActivityAt: '2026-04-13T15:06:00Z',
+    }
+    const renamedDetail = {
+      ...historyFixture.detail,
+      thread: {
+        ...renamedSummary,
+      },
+    }
+    let currentSummary = historyFixture.summary
+    let currentDetail = historyFixture.detail
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockImplementation(async () => ({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [currentSummary],
+    }))
+    const getHistoryThreadDetail = vi.fn().mockImplementation(async () => currentDetail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+    const renameHistoryThread = vi.fn().mockImplementation(async () => {
+      currentSummary = renamedSummary
+      currentDetail = renamedDetail
+      return {
+        ok: true as const,
+        version: 'chat-history-v1',
+        thread: renamedSummary,
+      }
+    })
+
+    const firstRender = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        renameHistoryThread={renameHistoryThread}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+
+    await openContextMenu(firstRender.getByTestId('assistant-session-card-thread-1'), 180, 120)
+    await clickElement(firstRender.getByTestId('assistant-session-context-action-rename'))
+
+    const renameInput = firstRender.getByTestId('assistant-session-rename-input-thread-1') as HTMLInputElement
+    await inputText(renameInput, renamedSummary.title)
+    await keyDownElement(renameInput, 'Enter')
+
+    await waitForAssistantWorkspaceCondition(() => (
+      (firstRender.getByTestId('assistant-session-card-thread-1').textContent ?? '').includes(renamedSummary.title)
+    ))
+
+    expect(renameHistoryThread).toHaveBeenCalledWith('thread-1', { title: renamedSummary.title })
+    expect(readPersistedAssistantWorkspaceShellState()).toMatchObject({
+      selectedThreadId: 'thread-1',
+      threadSummaries: expect.arrayContaining([
+        expect.objectContaining({
+          threadId: 'thread-1',
+          title: renamedSummary.title,
+        }),
+      ]),
+    })
+
+    const historyListCallCountBeforeRemount = listHistoryThreads.mock.calls.length
+    firstRender.unmount()
+    mockCopilotChatPanel.mockClear()
+
+    const remounted = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        renameHistoryThread={renameHistoryThread}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length > historyListCallCountBeforeRemount)
+    await waitForAssistantWorkspaceCondition(() => (
+      (remounted.getByTestId('assistant-session-card-thread-1').textContent ?? '').includes(renamedSummary.title)
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-1'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    remounted.unmount()
+  })
+
+  it('hides soft-deleted threads immediately and keeps them absent on remount', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    let isDeleted = false
+    const listHistoryThreads = vi.fn().mockImplementation(async () => ({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: isDeleted ? [] : [historyFixture.summary],
+    }))
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(historyFixture.detail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+    const deleteHistoryThread = vi.fn().mockImplementation(async () => {
+      isDeleted = true
+      return {
+        ok: true as const,
+        threadId: historyFixture.summary.threadId,
+        deletedAt: '2026-04-13T15:06:30Z',
+      }
+    })
+
+    const firstRender = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        deleteHistoryThread={deleteHistoryThread}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+
+    await openContextMenu(firstRender.getByTestId('assistant-session-card-thread-1'), 220, 140)
+    await clickElement(firstRender.getByTestId('assistant-session-context-action-delete'))
+    await clickElement(firstRender.getByTestId('assistant-session-context-action-delete-confirm'))
+
+    await waitForAssistantWorkspaceCondition(() => firstRender.queryByTestId('assistant-session-card-thread-1') === null)
+
+    expect(deleteHistoryThread).toHaveBeenCalledWith('thread-1')
+    expect(readPersistedAssistantWorkspaceShellState()).toMatchObject({
+      selectedThreadId: null,
+      selectedRunIdByThreadId: {},
+      threadSummaries: [],
+    })
+
+    const historyListCallCountBeforeRemount = listHistoryThreads.mock.calls.length
+    firstRender.unmount()
+    mockCopilotChatPanel.mockClear()
+
+    const remounted = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        deleteHistoryThread={deleteHistoryThread}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length > historyListCallCountBeforeRemount)
+    await waitForAssistantWorkspaceCondition(() => (
+      (remounted.getByTestId('mock-copilot-chat-panel') as HTMLDivElement).dataset.sessionId === ''
+    ))
+
+    expect(remounted.queryByTestId('assistant-session-card-thread-1')).toBeNull()
+
+    remounted.unmount()
+  })
+
+  it('duplicates persisted threads into a new conversation with copied history ready for replay', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const duplicatedRunId = 'run-1-copy'
+    const duplicatedThreadId = 'thread-1-copy'
+    const duplicatedSummary = {
+      ...historyFixture.summary,
+      threadId: duplicatedThreadId,
+      title: '历史线程（副本）',
+      titleSource: 'manual',
+      createdAt: '2026-04-13T15:06:30Z',
+      updatedAt: '2026-04-13T15:06:30Z',
+      lastActivityAt: '2026-04-13T15:06:30Z',
+      lastRunId: duplicatedRunId,
+    }
+    const duplicatedRunSummary = {
+      ...historyFixture.detail.runSummaries[0]!,
+      runId: duplicatedRunId,
+      threadId: duplicatedThreadId,
+    }
+    const duplicatedDetail = {
+      ...historyFixture.detail,
+      thread: {
+        ...duplicatedSummary,
+      },
+      timelineItems: historyFixture.detail.timelineItems.map((item) => ({
+        ...item,
+        runId: duplicatedRunId,
+      })),
+      runSummaries: [duplicatedRunSummary],
+      latestConfigurationSnapshot: {
+        ...historyFixture.detail.latestConfigurationSnapshot!,
+        runId: duplicatedRunId,
+      },
+    }
+    const duplicatedReplay = {
+      ...historyFixture.replay,
+      run: {
+        ...historyFixture.replay.run,
+        runId: duplicatedRunId,
+        threadId: duplicatedThreadId,
+      },
+    }
+    let threadSummaries = [historyFixture.summary]
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const getCapabilities = vi.fn().mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({
+      sessionId,
+      capabilitiesVersion: `cap-${sessionId}`,
+    }))
+    const listHistoryThreads = vi.fn().mockImplementation(async () => ({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: threadSummaries,
+    }))
+    const getHistoryThreadDetail = vi.fn().mockImplementation(async (threadId: string) => (
+      threadId === duplicatedThreadId ? duplicatedDetail : historyFixture.detail
+    ))
+    const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => (
+      runId === duplicatedRunId ? duplicatedReplay : historyFixture.replay
+    ))
+    const duplicateHistoryThread = vi.fn().mockImplementation(async () => {
+      threadSummaries = [duplicatedSummary, ...threadSummaries]
+      return {
+        ok: true as const,
+        version: 'chat-history-v1',
+        thread: duplicatedSummary,
+      }
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        duplicateHistoryThread={duplicateHistoryThread}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+
+    await openContextMenu(rendered.getByTestId('assistant-session-card-thread-1'), 260, 160)
+    await hoverElement(rendered.getByTestId('assistant-session-context-submenu-copy'))
+    await clickElement(rendered.getByTestId('assistant-session-context-action-copy-session'))
+
+    await waitForAssistantWorkspaceCondition(() => duplicateHistoryThread.mock.calls.length === 1)
+    await waitForAssistantWorkspaceCondition(() => rendered.queryByTestId(`assistant-session-card-${duplicatedThreadId}`) !== null)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === duplicatedThreadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+
+    expect(duplicateHistoryThread).toHaveBeenCalledWith('thread-1')
+    expect(getCapabilities.mock.calls.some(([input]) => input.sessionId === duplicatedThreadId)).toBe(true)
+    expect((rendered.getByTestId(`assistant-session-card-${duplicatedThreadId}`) as HTMLButtonElement).textContent).toContain(duplicatedSummary.title)
+    expect(readPersistedAssistantWorkspaceShellState()).toMatchObject({
+      selectedThreadId: duplicatedThreadId,
+      threadSummaries: expect.arrayContaining([
+        expect.objectContaining({
+          threadId: duplicatedThreadId,
+          title: duplicatedSummary.title,
+        }),
+      ]),
+    })
+
+    await act(async () => {
+      getLastMockCopilotChatPanelProps().selectSessionHistoryRun?.(duplicatedRunId)
+    })
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryRunReplay.mock.calls.some(([runId]) => runId === duplicatedRunId)
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === duplicatedRunId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+    ))
+
+    rendered.unmount()
   })
 
   it('restores persisted thread shells on startup and lazily loads detail plus replay for the active thread', async () => {

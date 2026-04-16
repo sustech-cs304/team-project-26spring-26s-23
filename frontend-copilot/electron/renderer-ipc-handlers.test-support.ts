@@ -9,7 +9,9 @@ import type {
   CopilotHistoryRunReplayResult,
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadDuplicateResult,
   CopilotHistoryThreadPurgeResult,
+  CopilotHistoryThreadRenameResult,
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type { RendererIpcHandlers } from './renderer-ipc-registration'
@@ -150,6 +152,50 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       diagnosticBlocks: [],
       terminalState: null,
       availabilityInterpretation: null,
+    })),
+    renameCopilotHistoryThread: vi.fn(async (): Promise<CopilotHistoryThreadRenameResult> => ({
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        threadId: 'thread-1',
+        boundAgentId: 'default',
+        title: '已重命名线程',
+        titleSource: 'manual',
+        summary: '已持久化回复',
+        summarySource: 'deterministic',
+        createdAt: '2026-04-13T14:00:00Z',
+        updatedAt: '2026-04-13T14:06:00Z',
+        lastActivityAt: '2026-04-13T14:05:00Z',
+        lastRunId: 'run-1',
+        lastRunStatus: 'completed',
+        lastUserMessagePreview: '你好',
+        lastAssistantMessagePreview: '已持久化回复',
+        driftSummary: {
+          status: 'not_evaluated',
+        },
+      },
+    })),
+    duplicateCopilotHistoryThread: vi.fn(async (): Promise<CopilotHistoryThreadDuplicateResult> => ({
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        threadId: 'thread-copy-1',
+        boundAgentId: 'default',
+        title: '历史线程（副本）',
+        titleSource: 'manual',
+        summary: '已持久化回复',
+        summarySource: 'deterministic',
+        createdAt: '2026-04-13T14:06:30Z',
+        updatedAt: '2026-04-13T14:06:30Z',
+        lastActivityAt: '2026-04-13T14:06:30Z',
+        lastRunId: 'run-copy-1',
+        lastRunStatus: 'completed',
+        lastUserMessagePreview: '你好',
+        lastAssistantMessagePreview: '已持久化回复',
+        driftSummary: {
+          status: 'not_evaluated',
+        },
+      },
     })),
     deleteCopilotHistoryThread: vi.fn(async (): Promise<CopilotHistoryThreadDeleteResult> => ({
       ok: true,

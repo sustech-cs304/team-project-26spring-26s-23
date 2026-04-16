@@ -89,6 +89,75 @@ def test_sqlite_session_store_persists_history_and_allocates_event_sequences(tmp
 
 
 
+def test_sqlite_session_store_supports_persistent_rename_and_duplicate(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="clone this thread"),
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="text_delta",
+            payload={"assistantMessageId": "run-1:assistant", "delta": "copied answer"},
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="run_completed",
+            payload={
+                "assistantMessageId": "run-1:assistant",
+                "assistantText": "copied answer",
+            },
+        )
+        store.mark_run_completed("run-1", assistant_text="copied answer")
+
+        history_service = store.create_history_query_service()
+        rename_result = history_service.rename_thread("thread-1", title="手动标题")
+        duplicate_result = history_service.duplicate_thread("thread-1")
+        duplicate_thread_id = duplicate_result.thread.threadId
+        duplicate_run_id = duplicate_result.thread.lastRunId
+
+        assert duplicate_run_id is not None
+
+        duplicate_detail = history_service.get_thread_detail(duplicate_thread_id)
+        duplicate_replay = history_service.get_run_replay(duplicate_run_id)
+        duplicated_runs = store.list_runs(duplicate_thread_id)
+        duplicated_messages = store.list_messages(duplicate_thread_id)
+
+        assert rename_result.thread.title == "手动标题"
+        assert rename_result.thread.titleSource == "manual"
+        assert duplicate_result.thread.threadId != "thread-1"
+        assert duplicate_result.thread.title == "手动标题（副本）"
+        assert duplicate_result.thread.titleSource == "manual"
+        assert duplicate_result.thread.lastRunStatus == "completed"
+        assert len(duplicated_runs) == 1
+        assert duplicated_runs[0].run_id != "run-1"
+        assert [(message.role, message.content) for message in duplicated_messages] == [
+            ("user", "clone this thread"),
+            ("assistant", "copied answer"),
+        ]
+        assert duplicate_detail.thread.threadId == duplicate_thread_id
+        assert duplicate_detail.thread.title == "手动标题（副本）"
+        assert [run.requestedMessageText for run in duplicate_detail.runSummaries] == ["clone this thread"]
+        assert [item["text"] for item in duplicate_detail.timelineItems if "text" in item] == [
+            "clone this thread",
+            "copied answer",
+        ]
+        assert [event.eventType for event in duplicate_replay.orderedEvents] == [
+            "text_delta",
+            "run_completed",
+        ]
+        assert duplicate_replay.run.threadId == duplicate_thread_id
+        assert duplicate_replay.run.runId == duplicate_run_id
+        assert duplicate_replay.run.assistantText == "copied answer"
+    finally:
+        store.dispose()
+
+
+
 def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path: Path) -> None:
     db_path = tmp_path / "database" / "chat.db"
     store = SQLiteSessionStore(db_path=db_path)

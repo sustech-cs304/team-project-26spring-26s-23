@@ -246,10 +246,36 @@ describe('createMainProcessServices', () => {
       },
     } as const
 
+    const renameThreadResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        ...listThreadsResult.threads[0],
+        title: '已重命名线程',
+        titleSource: 'manual',
+        updatedAt: '2026-04-13T14:06:00Z',
+      },
+    } as const
+    const duplicateThreadResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        ...listThreadsResult.threads[0],
+        threadId: 'thread-copy-1',
+        title: '历史线程（副本）',
+        titleSource: 'manual',
+        createdAt: '2026-04-13T14:06:30Z',
+        updatedAt: '2026-04-13T14:06:30Z',
+        lastActivityAt: '2026-04-13T14:06:30Z',
+        lastRunId: 'run-copy-1',
+      },
+    } as const
     const copilotHistoryService = {
       listThreads: vi.fn(async () => listThreadsResult),
       getThreadDetail: vi.fn(async (_threadId: string) => threadDetailResult),
       getRunReplay: vi.fn(async (_runId: string) => runReplayResult),
+      renameThread: vi.fn(async (_threadId: string, _request: { title: string }) => renameThreadResult),
+      duplicateThread: vi.fn(async (_threadId: string, _request?: { title?: string | null }) => duplicateThreadResult),
       deleteThread: vi.fn(async (_threadId: string) => deleteThreadResult),
       purgeThread: vi.fn(async (_threadId: string) => purgeThreadResult),
       backupDatabase: vi.fn(async (_request?: { targetPath?: string | null }) => backupDatabaseResult),
@@ -317,6 +343,8 @@ describe('createMainProcessServices', () => {
     await expect(services.listCopilotHistoryThreads()).resolves.toEqual(listThreadsResult)
     await expect(services.getCopilotHistoryThreadDetail('thread-1')).resolves.toEqual(threadDetailResult)
     await expect(services.getCopilotHistoryRunReplay('run-1')).resolves.toEqual(runReplayResult)
+    await expect(services.renameCopilotHistoryThread('thread-1', { title: '已重命名线程' })).resolves.toEqual(renameThreadResult)
+    await expect(services.duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' })).resolves.toEqual(duplicateThreadResult)
     await expect(services.deleteCopilotHistoryThread('thread-1')).resolves.toEqual(deleteThreadResult)
     await expect(services.purgeCopilotHistoryThread('thread-1')).resolves.toEqual(purgeThreadResult)
     await expect(services.backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual(
@@ -350,6 +378,8 @@ describe('createMainProcessServices', () => {
     expect(copilotHistoryService.listThreads).toHaveBeenCalledOnce()
     expect(copilotHistoryService.getThreadDetail).toHaveBeenCalledWith('thread-1')
     expect(copilotHistoryService.getRunReplay).toHaveBeenCalledWith('run-1')
+    expect(copilotHistoryService.renameThread).toHaveBeenCalledWith('thread-1', { title: '已重命名线程' })
+    expect(copilotHistoryService.duplicateThread).toHaveBeenCalledWith('thread-1', { title: '历史线程（副本）' })
     expect(copilotHistoryService.deleteThread).toHaveBeenCalledWith('thread-1')
     expect(copilotHistoryService.purgeThread).toHaveBeenCalledWith('thread-1')
     expect(copilotHistoryService.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })

@@ -8,16 +8,20 @@ import type {
   CopilotHistoryRunReplayResult,
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadDuplicateResult,
   CopilotHistoryThreadPurgeResult,
+  CopilotHistoryThreadRenameResult,
 } from '../../../electron/copilot-history'
 import {
   backupCopilotHistoryDatabase,
   deleteCopilotHistoryThread,
+  duplicateCopilotHistoryThread,
   getCopilotHistoryRunReplay,
   getCopilotHistoryThreadDetail,
   HISTORY_API_UNAVAILABLE_ERROR,
   listCopilotHistoryThreads,
   purgeCopilotHistoryThread,
+  renameCopilotHistoryThread,
   restoreCopilotHistoryDatabase,
 } from './history'
 
@@ -38,6 +42,14 @@ describe('copilot history bridge', () => {
       error: HISTORY_API_UNAVAILABLE_ERROR,
     })
     await expect(getCopilotHistoryRunReplay('run-1')).resolves.toEqual({
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    })
+    await expect(renameCopilotHistoryThread('thread-1', { title: '已重命名线程' })).resolves.toEqual({
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    })
+    await expect(duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' })).resolves.toEqual({
       ok: false,
       error: HISTORY_API_UNAVAILABLE_ERROR,
     })
@@ -113,6 +125,30 @@ describe('copilot history bridge', () => {
       terminalState: null,
       availabilityInterpretation: null,
     }
+    const renameResult: CopilotHistoryThreadRenameResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        ...detailResult.thread,
+        title: '已重命名线程',
+        titleSource: 'manual',
+        updatedAt: '2026-04-13T15:06:00Z',
+      },
+    }
+    const duplicateResult: CopilotHistoryThreadDuplicateResult = {
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        ...detailResult.thread,
+        threadId: 'thread-copy-1',
+        title: '历史线程（副本）',
+        titleSource: 'manual',
+        createdAt: '2026-04-13T15:06:30Z',
+        updatedAt: '2026-04-13T15:06:30Z',
+        lastActivityAt: '2026-04-13T15:06:30Z',
+        lastRunId: 'run-copy-1',
+      },
+    }
     const deleteResult: CopilotHistoryThreadDeleteResult = {
       ok: true,
       version: 'chat-history-v1',
@@ -144,6 +180,8 @@ describe('copilot history bridge', () => {
       listThreads: vi.fn().mockResolvedValue(listResult),
       getThreadDetail: vi.fn().mockResolvedValue(detailResult),
       getRunReplay: vi.fn().mockResolvedValue(replayResult),
+      renameThread: vi.fn().mockResolvedValue(renameResult),
+      duplicateThread: vi.fn().mockResolvedValue(duplicateResult),
       deleteThread: vi.fn().mockResolvedValue(deleteResult),
       purgeThread: vi.fn().mockResolvedValue(purgeResult),
       backupDatabase: vi.fn().mockResolvedValue(backupResult),
@@ -157,6 +195,8 @@ describe('copilot history bridge', () => {
     await expect(listCopilotHistoryThreads()).resolves.toEqual(listResult)
     await expect(getCopilotHistoryThreadDetail('thread-1')).resolves.toEqual(detailResult)
     await expect(getCopilotHistoryRunReplay('run-1')).resolves.toEqual(replayResult)
+    await expect(renameCopilotHistoryThread('thread-1', { title: '已重命名线程' })).resolves.toEqual(renameResult)
+    await expect(duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' })).resolves.toEqual(duplicateResult)
     await expect(deleteCopilotHistoryThread('thread-1')).resolves.toEqual(deleteResult)
     await expect(purgeCopilotHistoryThread('thread-1')).resolves.toEqual(purgeResult)
     await expect(backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual(backupResult)
@@ -164,6 +204,8 @@ describe('copilot history bridge', () => {
     expect(api.listThreads).toHaveBeenCalledOnce()
     expect(api.getThreadDetail).toHaveBeenCalledWith('thread-1')
     expect(api.getRunReplay).toHaveBeenCalledWith('run-1')
+    expect(api.renameThread).toHaveBeenCalledWith('thread-1', { title: '已重命名线程' })
+    expect(api.duplicateThread).toHaveBeenCalledWith('thread-1', { title: '历史线程（副本）' })
     expect(api.deleteThread).toHaveBeenCalledWith('thread-1')
     expect(api.purgeThread).toHaveBeenCalledWith('thread-1')
     expect(api.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })

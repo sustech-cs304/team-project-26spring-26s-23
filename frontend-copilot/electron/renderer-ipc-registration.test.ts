@@ -6,10 +6,12 @@ import { CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL } from './config-center/publ
 import {
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
@@ -38,6 +40,8 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+      COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+      COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
       COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
       COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
       COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
@@ -60,6 +64,8 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+      COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+      COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
       COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
       COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
       COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
@@ -76,6 +82,8 @@ describe('registerRendererIpcHandlers', () => {
     const listThreadsHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_LIST_THREADS_CHANNEL)
     const getThreadDetailHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL)
     const getRunReplayHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL)
+    const renameThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RENAME_THREAD_CHANNEL)
+    const duplicateThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL)
     const deleteThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DELETE_THREAD_CHANNEL)
     const purgeThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_PURGE_THREAD_CHANNEL)
     const backupDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL)
@@ -104,6 +112,12 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(getRunReplayHandler(undefined, 'run-1')).resolves.toEqual(
       await handlers.getCopilotHistoryRunReplay('run-1'),
+    )
+    await expect(renameThreadHandler(undefined, 'thread-1', { title: '已重命名线程' })).resolves.toEqual(
+      await handlers.renameCopilotHistoryThread('thread-1', { title: '已重命名线程' }),
+    )
+    await expect(duplicateThreadHandler(undefined, 'thread-1', { title: '历史线程（副本）' })).resolves.toEqual(
+      await handlers.duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' }),
     )
     await expect(deleteThreadHandler(undefined, 'thread-1')).resolves.toEqual(
       await handlers.deleteCopilotHistoryThread('thread-1'),

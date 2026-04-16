@@ -118,12 +118,60 @@ describe('createElectronCopilotHistoryService', () => {
     })
   })
 
-  it('issues delete and database mutation requests with the expected methods and payloads', async () => {
+  it('issues rename, duplicate, delete, and database mutation requests with the expected methods and payloads', async () => {
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => ({
       ok: true,
       status: 200,
       statusText: 'OK',
       text: async () => {
+        if (url.endsWith('/history/threads/thread-1/rename')) {
+          return JSON.stringify({
+            ok: true,
+            version: 'chat-history-v1',
+            thread: {
+              threadId: 'thread-1',
+              boundAgentId: 'default',
+              title: '已重命名线程',
+              titleSource: 'manual',
+              summary: '已持久化回复',
+              summarySource: 'deterministic',
+              createdAt: '2026-04-13T14:00:00Z',
+              updatedAt: '2026-04-13T14:06:00Z',
+              lastActivityAt: '2026-04-13T14:05:00Z',
+              lastRunId: 'run-1',
+              lastRunStatus: 'completed',
+              lastUserMessagePreview: '你好',
+              lastAssistantMessagePreview: '已持久化回复',
+              driftSummary: {
+                status: 'not_evaluated',
+              },
+            },
+          })
+        }
+        if (url.endsWith('/history/threads/thread-1/duplicate')) {
+          return JSON.stringify({
+            ok: true,
+            version: 'chat-history-v1',
+            thread: {
+              threadId: 'thread-copy-1',
+              boundAgentId: 'default',
+              title: '历史线程（副本）',
+              titleSource: 'manual',
+              summary: '已持久化回复',
+              summarySource: 'deterministic',
+              createdAt: '2026-04-13T14:06:30Z',
+              updatedAt: '2026-04-13T14:06:30Z',
+              lastActivityAt: '2026-04-13T14:06:30Z',
+              lastRunId: 'run-copy-1',
+              lastRunStatus: 'completed',
+              lastUserMessagePreview: '你好',
+              lastAssistantMessagePreview: '已持久化回复',
+              driftSummary: {
+                status: 'not_evaluated',
+              },
+            },
+          })
+        }
         if (url.endsWith('/history/threads/thread-1')) {
           return JSON.stringify({
             ok: true,
@@ -170,6 +218,50 @@ describe('createElectronCopilotHistoryService', () => {
       getDebugModeEnabled: () => debugModeEnabled,
     })
 
+    await expect(service.renameThread('thread-1', { title: '已重命名线程' })).resolves.toEqual({
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        threadId: 'thread-1',
+        boundAgentId: 'default',
+        title: '已重命名线程',
+        titleSource: 'manual',
+        summary: '已持久化回复',
+        summarySource: 'deterministic',
+        createdAt: '2026-04-13T14:00:00Z',
+        updatedAt: '2026-04-13T14:06:00Z',
+        lastActivityAt: '2026-04-13T14:05:00Z',
+        lastRunId: 'run-1',
+        lastRunStatus: 'completed',
+        lastUserMessagePreview: '你好',
+        lastAssistantMessagePreview: '已持久化回复',
+        driftSummary: {
+          status: 'not_evaluated',
+        },
+      },
+    })
+    await expect(service.duplicateThread('thread-1', { title: '历史线程（副本）' })).resolves.toEqual({
+      ok: true,
+      version: 'chat-history-v1',
+      thread: {
+        threadId: 'thread-copy-1',
+        boundAgentId: 'default',
+        title: '历史线程（副本）',
+        titleSource: 'manual',
+        summary: '已持久化回复',
+        summarySource: 'deterministic',
+        createdAt: '2026-04-13T14:06:30Z',
+        updatedAt: '2026-04-13T14:06:30Z',
+        lastActivityAt: '2026-04-13T14:06:30Z',
+        lastRunId: 'run-copy-1',
+        lastRunStatus: 'completed',
+        lastUserMessagePreview: '你好',
+        lastAssistantMessagePreview: '已持久化回复',
+        driftSummary: {
+          status: 'not_evaluated',
+        },
+      },
+    })
     await expect(service.deleteThread('thread-1')).resolves.toEqual({
       ok: true,
       version: 'chat-history-v1',
@@ -198,18 +290,24 @@ describe('createElectronCopilotHistoryService', () => {
       restoredAt: '2026-04-13T14:09:00Z',
     })
 
-    expect(hostedBackendService.start).toHaveBeenCalledTimes(4)
-    expect(fetchMock.mock.calls).toHaveLength(4)
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1')
-    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe('DELETE')
-    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1/purge')
-    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe('DELETE')
-    expect(fetchMock.mock.calls[2]?.[0]).toBe('http://127.0.0.1:8765/history/database/backup')
-    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBe('POST')
-    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).body).toBe('{"targetPath":"backups/history.db"}')
-    expect(fetchMock.mock.calls[3]?.[0]).toBe('http://127.0.0.1:8765/history/database/restore')
-    expect((fetchMock.mock.calls[3]?.[1] as RequestInit).method).toBe('POST')
-    expect((fetchMock.mock.calls[3]?.[1] as RequestInit).body).toBe('{"sourcePath":"backups/history.db"}')
+    expect(hostedBackendService.start).toHaveBeenCalledTimes(6)
+    expect(fetchMock.mock.calls).toHaveLength(6)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1/rename')
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe('POST')
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).body).toBe('{"title":"已重命名线程"}')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1/duplicate')
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe('POST')
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).body).toBe('{"title":"历史线程（副本）"}')
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1')
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBe('DELETE')
+    expect(fetchMock.mock.calls[3]?.[0]).toBe('http://127.0.0.1:8765/history/threads/thread-1/purge')
+    expect((fetchMock.mock.calls[3]?.[1] as RequestInit).method).toBe('DELETE')
+    expect(fetchMock.mock.calls[4]?.[0]).toBe('http://127.0.0.1:8765/history/database/backup')
+    expect((fetchMock.mock.calls[4]?.[1] as RequestInit).method).toBe('POST')
+    expect((fetchMock.mock.calls[4]?.[1] as RequestInit).body).toBe('{"targetPath":"backups/history.db"}')
+    expect(fetchMock.mock.calls[5]?.[0]).toBe('http://127.0.0.1:8765/history/database/restore')
+    expect((fetchMock.mock.calls[5]?.[1] as RequestInit).method).toBe('POST')
+    expect((fetchMock.mock.calls[5]?.[1] as RequestInit).body).toBe('{"sourcePath":"backups/history.db"}')
   })
 
   it('returns a structured failure when the hosted backend runtime URL is unavailable', async () => {

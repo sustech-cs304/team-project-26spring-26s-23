@@ -6,10 +6,12 @@ import type {
 import {
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { getExposedApi, getInvokeMock, loadPreloadModule } from './preload.test-support'
@@ -26,6 +28,8 @@ describe('preload history bridge', () => {
     await historyApi.listThreads()
     await historyApi.getThreadDetail('thread-1')
     await historyApi.getRunReplay('run-1')
+    await historyApi.renameThread('thread-1', { title: '已重命名线程' })
+    await historyApi.duplicateThread('thread-1', { title: '历史线程（副本）' })
     await historyApi.deleteThread('thread-1')
     await historyApi.purgeThread('thread-1')
     await historyApi.backupDatabase({ targetPath: 'backups/history.db' })
@@ -35,6 +39,8 @@ describe('preload history bridge', () => {
       [COPILOT_HISTORY_LIST_THREADS_CHANNEL],
       [COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL, 'thread-1'],
       [COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL, 'run-1'],
+      [COPILOT_HISTORY_RENAME_THREAD_CHANNEL, 'thread-1', { title: '已重命名线程' }],
+      [COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL, 'thread-1', { title: '历史线程（副本）' }],
       [COPILOT_HISTORY_DELETE_THREAD_CHANNEL, 'thread-1'],
       [COPILOT_HISTORY_PURGE_THREAD_CHANNEL, 'thread-1'],
       [COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL, { targetPath: 'backups/history.db' }],
