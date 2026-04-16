@@ -41,6 +41,7 @@ const ELECTRON_NOTIFICATION_DISPLAY_NAME = '赶渡 CanDue'
 const ELECTRON_APPLICATION_ID = 'com.candue.app'
 const ELECTRON_NOTIFICATION_SHORTCUT_NAME = `${ELECTRON_NOTIFICATION_DISPLAY_NAME}.lnk`
 const ELECTRON_NOTIFICATION_TOAST_ACTIVATOR_CLSID = '{D6B8D450-4B0B-4F22-9A1C-ACB1A5A5B6F1}'
+const ELECTRON_NOTIFICATION_GROUP = 'assistant-runs'
 process.env.APP_ROOT = APP_ROOT
 
 // 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
@@ -429,9 +430,10 @@ function buildDesktopNotificationToastXml(request: DesktopNotificationRequest): 
   const escapedBody = escapeDesktopNotificationXml(request.body)
   const escapedAppName = escapeDesktopNotificationXml(ELECTRON_NOTIFICATION_DISPLAY_NAME)
   const escapedIconPath = escapeDesktopNotificationXml(resolveDesktopNotificationIconPath())
+  const toastOpenTag = buildDesktopNotificationToastOpenTag(request)
 
   return [
-    '<toast>',
+    toastOpenTag,
     '  <visual>',
     '    <binding template="ToastGeneric">',
     `      <text>${escapedAppName}</text>`,
@@ -442,6 +444,17 @@ function buildDesktopNotificationToastXml(request: DesktopNotificationRequest): 
     '  </visual>',
     '</toast>',
   ].join('\n')
+}
+
+function buildDesktopNotificationToastOpenTag(request: DesktopNotificationRequest): string {
+  const normalizedTag = request.tag?.trim() ?? ''
+  if (normalizedTag === '') {
+    return '<toast>'
+  }
+
+  const escapedTag = escapeDesktopNotificationXml(normalizedTag)
+  const escapedGroup = escapeDesktopNotificationXml(ELECTRON_NOTIFICATION_GROUP)
+  return `<toast tag="${escapedTag}" group="${escapedGroup}">`
 }
 
 function escapeDesktopNotificationXml(value: string): string {
