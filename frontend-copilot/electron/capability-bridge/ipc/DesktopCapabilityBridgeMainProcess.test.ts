@@ -1,7 +1,10 @@
 import { access, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { DesktopCapabilityBridgeRequest } from '../protocol'
+import {
+  normalizeDesktopCapabilityBridgeRequest,
+  type DesktopCapabilityBridgeRequest,
+} from '../protocol'
 import { createDesktopCapabilityBridgePaths } from '../paths'
 import type { ElectronSettingsWorkspaceService } from '../../settings-workspace/main-process'
 import {
@@ -453,6 +456,20 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         operation: 'resolve_path',
       },
     })
+  })
+
+  it('fails fast while normalizing unsupported capability and operation combinations', () => {
+    expect(() => normalizeDesktopCapabilityBridgeRequest({
+      requestId: 'unsupported-normalize-1',
+      capability: 'secret',
+      operation: 'resolve_path',
+      toolId: 'tool.secret',
+      runId: 'run-1',
+      toolCallId: 'tool-call-1',
+      payload: {
+        relativePath: 'unexpected',
+      },
+    })).toThrow("Operation 'resolve_path' is not supported for capability 'secret'.")
   })
 
   it('returns a structured artifact failure for invalid base64 payloads', async () => {

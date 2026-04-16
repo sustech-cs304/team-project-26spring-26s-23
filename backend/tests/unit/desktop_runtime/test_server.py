@@ -775,6 +775,58 @@ def test_create_app_closes_host_bridge_clients_on_shutdown(tmp_path: Path) -> No
     assert capability_http_client.is_closed is True
 
 
+def test_create_app_shutdown_continues_when_bridge_close_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    close_calls: list[str] = []
+    shutdown_calls: list[str] = []
+    logged_messages: list[str] = []
+
+    class _FailingCapabilityBridgeClient(DesktopCapabilityBridgeClient):
+        async def aclose(self) -> None:
+            close_calls.append("capability")
+            await super().aclose()
+            raise RuntimeError("capability close failed")
+
+    host_capability_bridge_client = _FailingCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="capability-token-123",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"requestId": "ok", "ok": True, "result": {}},
+                request=request,
+            )
+        ),
+    )
+    app = create_app(
+        _build_config(tmp_path),
+        agent_executor=_build_test_agent_executor(),
+        model_route_resolver=_ResolvedRouteResolver(),
+        host_capability_bridge_client=host_capability_bridge_client,
+    )
+
+    with TestClient(app):
+        async def _failing_model_aclose() -> None:
+            shutdown_calls.append("model")
+            raise RuntimeError("model close failed")
+
+        def _record_shutdown() -> None:
+            shutdown_calls.append("lifecycle")
+
+        monkeypatch.setattr(app.state.host_model_route_bridge_client, "aclose", _failing_model_aclose)
+        monkeypatch.setattr(app.state.lifecycle_manager, "shutdown", _record_shutdown)
+        monkeypatch.setattr(
+            "app.desktop_runtime.app_factory._RUNTIME_LOGGER.exception",
+            lambda message, *args: logged_messages.append(message % args),
+        )
+
+    assert close_calls == ["capability"]
+    assert shutdown_calls == ["model", "lifecycle"]
+    assert logged_messages == [
+        "desktop-runtime shutdown failed while closing host capability bridge client",
+        "desktop-runtime shutdown failed while closing host model route bridge client",
+    ]
+
+
 
 def _create_test_app(tmp_path: Path) -> FastAPI:
     return create_app(

@@ -148,7 +148,7 @@ function normalizeDesktopCapabilityBridgePayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!isSupportedDesktopCapabilityOperation(capability, operation)) {
-    return { ...payload }
+    throw new Error(`Operation '${operation}' is not supported for capability '${capability}'.`)
   }
 
   switch (operation) {

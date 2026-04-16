@@ -12,7 +12,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.tooling.contract import ToolContract, ToolInvocationContext
-from app.tooling.contract.errors import NormalizedToolError
+from app.tooling.contract.errors import (
+    NormalizedToolError,
+    build_tool_exception_details,
+    redact_tool_error_value,
+)
 from app.tooling.contract.results import ToolResultEnvelope
 from app.tooling.host_capabilities import ToolHostCapabilities
 
@@ -170,11 +174,28 @@ def build_contract_runtime_binding(
             runtime_context=runtime_context,
             host_capabilities_factory=host_capabilities_factory,
         )
-        result = await contract_tool.invoke(
-            arguments=arguments,
-            context=invocation_context,
-            host=host,
-        )
+        try:
+            result = await contract_tool.invoke(
+                arguments=arguments,
+                context=invocation_context,
+                host=host,
+            )
+        except Exception as exc:
+            return ToolResultEnvelope.failure(
+                error=NormalizedToolError(
+                    code="execution_failed",
+                    message=f"Tool '{metadata.tool_id}' execution failed.",
+                    details=build_tool_exception_details(
+                        error=exc,
+                        diagnostic_context={
+                            "toolId": metadata.tool_id,
+                            "invocationId": invocation_context.invocation_id,
+                        },
+                        sanitizer=redact_tool_error_value,
+                    ),
+                ),
+                metadata={"toolId": metadata.tool_id},
+            ).to_dict()
         if result.status == "error" and result.error is None:
             return ToolResultEnvelope.failure(
                 error=NormalizedToolError(

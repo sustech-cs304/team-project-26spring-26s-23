@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -24,6 +25,7 @@ from .middlewares import DesktopNullOriginMiddleware, DesktopRuntimeFailureEnvel
 from .routes.diagnostics import build_diagnostics_router
 
 _DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
+_RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
 
 
 def create_app(
@@ -83,13 +85,21 @@ def create_app(
         try:
             yield
         finally:
-            try:
-                await resolved_host_capability_bridge_client.aclose()
-            finally:
+            for resource_name, close in (
+                ("host capability bridge client", resolved_host_capability_bridge_client.aclose),
+                ("host model route bridge client", host_model_route_bridge_client.aclose),
+            ):
                 try:
-                    await host_model_route_bridge_client.aclose()
-                finally:
-                    lifecycle_manager.shutdown()
+                    await close()
+                except Exception:  # pragma: no cover - defensive shutdown path
+                    _RUNTIME_LOGGER.exception(
+                        "desktop-runtime shutdown failed while closing %s",
+                        resource_name,
+                    )
+            try:
+                lifecycle_manager.shutdown()
+            except Exception:  # pragma: no cover - defensive shutdown path
+                _RUNTIME_LOGGER.exception("desktop-runtime lifecycle shutdown failed")
 
     app = FastAPI(
         title=DESKTOP_RUNTIME_SERVICE_NAME,

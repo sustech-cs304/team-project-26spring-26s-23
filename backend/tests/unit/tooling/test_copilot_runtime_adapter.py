@@ -237,3 +237,40 @@ def test_build_contract_runtime_binding_returns_failure_for_missing_error_payloa
         "metadata": {"toolId": "campus.course-search"},
     }
     assert len(contract_tool.calls) == 1
+
+
+def test_build_contract_runtime_binding_normalizes_unhandled_invoke_exceptions() -> None:
+    class _ExplodingContractTool(_RecordingContractTool):
+        async def invoke(
+            self,
+            *,
+            arguments: dict[str, Any] | None,
+            context: ToolInvocationContext,
+            host: ToolHostCapabilities,
+        ) -> ToolResultEnvelope:
+            self.calls.append(
+                {
+                    "arguments": {} if arguments is None else dict(arguments),
+                    "context": context,
+                    "host": host,
+                }
+            )
+            raise RuntimeError("token=secret-value exploded")
+
+    contract_tool = _ExplodingContractTool()
+    binding = build_contract_runtime_binding(contract_tool)
+
+    result = asyncio.run(binding.execute({"keyword": "数据库"}))
+
+    assert result["status"] == "error"
+    assert result["metadata"] == {"toolId": "campus.course-search"}
+    assert result["error"]["code"] == "execution_failed"
+    assert result["error"]["message"] == "Tool 'campus.course-search' execution failed."
+    assert result["error"]["details"]["exceptionType"] == "RuntimeError"
+    assert result["error"]["details"]["exceptionMessage"] == "token=[REDACTED] exploded"
+    assert result["error"]["details"]["diagnosticContext"] == {
+        "toolId": "campus.course-search",
+        "invocationId": "campus.course-search:direct",
+    }
+    assert "token=[REDACTED] exploded" in result["error"]["details"]["traceback"]
+    assert len(contract_tool.calls) == 1
