@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CopilotToolPresentationSource } from './tool-presentation'
-import { resolveCopilotToolPresentation } from './tool-presentation'
+import {
+  resolveCopilotToolPlatformGroup,
+  resolveCopilotToolPresentation,
+} from './tool-presentation'
 
 describe('resolveCopilotToolPresentation', () => {
   it('returns localized override copy and search keywords for known tools', () => {
@@ -38,5 +41,99 @@ describe('resolveCopilotToolPresentation', () => {
     expect(presentation.name.endsWith('…')).toBe(true)
     expect(presentation.description.length).toBeLessThanOrEqual(26)
     expect(presentation.description.endsWith('…')).toBe(true)
+  })
+})
+
+describe('resolveCopilotToolPlatformGroup', () => {
+  it('maps built-in and sustech tool namespaces to stable grouped platform buckets', () => {
+    expect(resolveCopilotToolPlatformGroup({
+      toolId: 'tool.file-convert',
+      kind: 'builtin',
+      displayName: 'File Convert',
+      description: 'Convert office files',
+    })).toMatchObject({
+      key: 'builtin',
+      title: 'Candue 内建',
+      order: 0,
+      sourceKind: 'builtin',
+    })
+
+    expect(resolveCopilotToolPlatformGroup({
+      toolId: 'blackboard.course_catalog.search',
+      kind: 'external',
+      displayName: 'Course Catalog Search',
+      description: 'Search Blackboard course catalog',
+    })).toMatchObject({
+      key: 'sustech-blackboard',
+      title: 'SUSTech Blackboard',
+      order: 10,
+      sourceKind: 'sustech-blackboard',
+    })
+
+    expect(resolveCopilotToolPlatformGroup({
+      toolId: 'tis.personal_grades.fetch',
+      kind: 'external',
+      displayName: 'Personal Grades Fetch',
+      description: 'Fetch personal grades',
+    })).toMatchObject({
+      key: 'sustech-tis',
+      title: 'SUSTech TIS',
+      order: 20,
+      sourceKind: 'sustech-tis',
+    })
+  })
+
+  it('derives stable future mcp group names from explicit source or provider metadata', () => {
+    const sourceTool = {
+      toolId: 'campus.files.read',
+      kind: 'external',
+      displayName: null,
+      description: null,
+      sourceId: 'campus_fs',
+    } as CopilotToolPresentationSource
+
+    const providerTool = {
+      toolId: 'campus.events.list',
+      kind: 'external',
+      displayName: null,
+      description: null,
+      provider: {
+        id: 'sustech_api',
+        name: 'SUSTech API',
+      },
+    } as CopilotToolPresentationSource
+
+    expect(resolveCopilotToolPlatformGroup(sourceTool)).toMatchObject({
+      key: 'mcp:campus-fs',
+      title: 'Campus FS',
+      order: 100,
+      sourceKind: 'mcp-server',
+    })
+    expect(resolveCopilotToolPlatformGroup(providerTool)).toMatchObject({
+      key: 'mcp:sustech-api',
+      title: 'SUSTech API',
+      order: 100,
+      sourceKind: 'mcp-server',
+    })
+  })
+
+  it('derives stable future mcp group names from mcp-style tool ids', () => {
+    const tool: CopilotToolPresentationSource = {
+      toolId: 'mcp.sustech_fs.read_file',
+      kind: 'external',
+      displayName: 'Read File',
+      description: 'Read files through MCP',
+    }
+
+    const platformGroup = resolveCopilotToolPlatformGroup(tool)
+
+    expect(platformGroup).toMatchObject({
+      key: 'mcp:sustech-fs',
+      title: 'SUSTech FS',
+      order: 100,
+      sourceKind: 'mcp-server',
+    })
+    expect(platformGroup.searchKeywords).toContain('mcp')
+    expect(platformGroup.searchKeywords).toContain('SUSTech FS')
   })
 })
