@@ -930,10 +930,6 @@ def run_blackboard_course_resources_sync(
             logger=logger.child("provider.use_cases.course_resources_sync.payloads"),
             include_assignment_attachments_as_resources=True,
         )
-        for rows in payloads.resource_payloads.values():
-            for row in rows:
-                row["assignment_id"] = None
-
         db_manager = DatabaseManager(db_path, reset_schema=reset_schema)
         _emit(progress, f"▶ 同步数据库: {db_manager.db_path.resolve().as_posix()}")
         logger.info(

@@ -18,6 +18,7 @@ import { DEFAULT_RUNTIME_HOST } from './runtime-config-flags'
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8'
 const INVALID_REQUEST_ID = 'invalid-request'
 const UNAUTHORIZED_REQUEST_ID = 'unauthorized'
+const HOST_CAPABILITY_BRIDGE_MAX_BODY_BYTES = 1024 * 1024
 
 export const HOST_CAPABILITY_BRIDGE_TOKEN_HEADER = 'X-Host-Capability-Bridge-Token'
 export const HOST_CAPABILITY_BRIDGE_PATH = '/host/private/capability-bridge'
@@ -110,7 +111,20 @@ async function handleHostCapabilityBridgeRequest(
   let requestBody: unknown
   try {
     requestBody = await readJsonBody(request)
-  } catch {
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      request.destroy(error)
+      writeJsonResponse(response, 413, createDesktopCapabilityBridgeFailureResponse({
+        requestId: INVALID_REQUEST_ID,
+        errorCode: 'payload_too_large',
+        errorMessage: `Host capability bridge request body exceeds ${HOST_CAPABILITY_BRIDGE_MAX_BODY_BYTES} bytes.`,
+        details: {
+          maxBodyBytes: HOST_CAPABILITY_BRIDGE_MAX_BODY_BYTES,
+        },
+      }))
+      return
+    }
+
     writeJsonResponse(response, 400, createDesktopCapabilityBridgeFailureResponse({
       requestId: INVALID_REQUEST_ID,
       errorCode: 'invalid_request',
@@ -162,13 +176,26 @@ function isValidHostCapabilityBridgeToken(request: IncomingMessage, token: strin
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
+  let totalBytes = 0
 
   for await (const chunk of request) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    totalBytes += buffer.byteLength
+    if (totalBytes > HOST_CAPABILITY_BRIDGE_MAX_BODY_BYTES) {
+      throw new PayloadTooLargeError(HOST_CAPABILITY_BRIDGE_MAX_BODY_BYTES)
+    }
+    chunks.push(buffer)
   }
 
   const rawBody = Buffer.concat(chunks).toString('utf8')
   return rawBody.trim() === '' ? null : JSON.parse(rawBody) as unknown
+}
+
+class PayloadTooLargeError extends Error {
+  constructor(limitBytes: number) {
+    super(`Payload exceeds ${limitBytes} bytes.`)
+    this.name = 'PayloadTooLargeError'
+  }
 }
 
 function resolveRequestIdCandidate(value: unknown): string {

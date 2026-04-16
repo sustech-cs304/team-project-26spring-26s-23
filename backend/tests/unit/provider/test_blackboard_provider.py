@@ -139,6 +139,14 @@ def test_build_blackboard_sync_payloads_and_expected_counts() -> None:
     )
     _assert_equal(expected["courses"], 1, "expected courses")
     _assert_equal(expected["assignments"], 1, "expected assignments")
+    attachment_resource = next(
+        row for row in payloads.resource_payloads["_course_1"] if row["title"] == "spec.pdf"
+    )
+    _assert_equal(
+        attachment_resource["assignment_id"],
+        payloads.assignment_payloads["_course_1"][0]["assignment_id"],
+        "assignment attachment resource keeps assignment link",
+    )
     _assert_equal(expected["resources"], 2, "expected resources")
     _assert_equal(expected["grades"], 1, "expected grades")
     _assert_equal(expected["announcements"], 1, "expected announcements")

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDesktopCapabilityBridgeSuccessResponse } from '../capability-bridge/protocol'
 import {
   createHostCapabilityBridge,
@@ -188,5 +188,51 @@ describe('createHostCapabilityBridge', () => {
       errorRetryable: false,
       details: {},
     })
+  })
+
+  it('rejects oversized request bodies before handler execution', async () => {
+    let handlerCalls = 0
+    const bridge = await createHostCapabilityBridge({
+      handleRequest() {
+        handlerCalls += 1
+        throw new Error('handleRequest should not be called for oversized payloads.')
+      },
+    })
+    activeStops.push(bridge.stop)
+
+    const abortSignal = AbortSignal.timeout(5_000)
+    const response = await fetch(bridge.bootstrap.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token,
+      },
+      body: JSON.stringify({
+        requestId: 'request-too-large',
+        capability: 'event',
+        operation: 'emit_event',
+        toolId: 'blackboard.snapshot.sync',
+        runId: 'run-1',
+        toolCallId: 'call-1',
+        payload: {
+          message: 'x'.repeat(1024 * 1024),
+        },
+      }),
+      signal: abortSignal,
+    })
+
+    expect(response.status).toBe(413)
+    await expect(response.json()).resolves.toEqual({
+      requestId: 'invalid-request',
+      ok: false,
+      errorCode: 'payload_too_large',
+      errorMessage: 'Host capability bridge request body exceeds 1048576 bytes.',
+      errorRetryable: false,
+      details: {
+        maxBodyBytes: 1048576,
+      },
+    })
+    expect(handlerCalls).toBe(0)
+    vi.clearAllTimers()
   })
 })
