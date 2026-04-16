@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import type { RuntimeToolDirectoryEntry } from '../chat-contract'
+import { resolveCopilotToolPresentation } from '../tool-presentation'
 import {
   filterCopilotTools,
   groupCopilotTools,
@@ -186,6 +187,7 @@ export function ToolPicker({
                     <div className="copilot-model-picker__list">
                       {group.tools.map((tool) => {
                         const isSelected = selectedToolSet.has(tool.toolId)
+                        const presentation = resolveCopilotToolPresentation(tool)
 
                         return isSelected
                           ? (
@@ -203,11 +205,8 @@ export function ToolPicker({
                                   ✓
                                 </span>
                                 <span className="copilot-model-picker__option-body">
-                                  <span className="copilot-model-picker__option-name">{tool.displayName ?? tool.toolId}</span>
-                                  <span className="copilot-model-picker__option-meta">{tool.toolId}</span>
-                                  {tool.description && (
-                                    <span className="copilot-tool-picker__option-description">{tool.description}</span>
-                                  )}
+                                  <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                  <span className="copilot-tool-picker__option-description">{presentation.description}</span>
                                 </span>
                                 <span className="copilot-model-picker__option-tags" aria-hidden="true">
                                   <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.kind, 'kind')}`}>
@@ -234,11 +233,8 @@ export function ToolPicker({
                                   +
                                 </span>
                                 <span className="copilot-model-picker__option-body">
-                                  <span className="copilot-model-picker__option-name">{tool.displayName ?? tool.toolId}</span>
-                                  <span className="copilot-model-picker__option-meta">{tool.toolId}</span>
-                                  {tool.description && (
-                                    <span className="copilot-tool-picker__option-description">{tool.description}</span>
-                                  )}
+                                  <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                  <span className="copilot-tool-picker__option-description">{presentation.description}</span>
                                 </span>
                                 <span className="copilot-model-picker__option-tags" aria-hidden="true">
                                   <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.kind, 'kind')}`}>

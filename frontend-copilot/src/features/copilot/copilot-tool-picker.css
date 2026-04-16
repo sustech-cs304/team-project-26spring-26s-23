@@ -39,14 +39,18 @@
 
 .copilot-tool-picker__option {
   align-items: flex-start;
+  gap: 0.62rem;
 }
 
 .copilot-tool-picker__option-check {
   display: inline-flex;
+  flex: 0 0 1.4rem;
   align-items: center;
   justify-content: center;
   width: 1.4rem;
+  min-width: 1.4rem;
   height: 1.4rem;
+  margin-top: 0.04rem;
   border-radius: 999px;
   border: 1px solid var(--border-color);
   background: var(--surface-muted);
@@ -61,10 +65,26 @@
   color: var(--accent-contrast);
 }
 
+.copilot-tool-picker__option-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .copilot-tool-picker__option-description {
+  display: block;
+  overflow: hidden;
   color: var(--text-secondary);
   font-size: 0.76rem;
-  line-height: 1.45;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot-tool-picker__option .copilot-model-picker__option-tags {
+  flex: 0 0 auto;
+  align-self: center;
 }
 
 .copilot-tool-picker__option-tag--builtin {

@@ -1,4 +1,5 @@
 import type { RuntimeToolDirectoryEntry } from './thread-run-contract'
+import { resolveCopilotToolPresentation } from './tool-presentation'
 
 export interface CopilotToolGroup {
   key: string
@@ -17,12 +18,14 @@ export function filterCopilotTools(input: {
       return true
     }
 
+    const presentation = resolveCopilotToolPresentation(tool)
     const searchableText = [
       tool.toolId,
       tool.displayName ?? '',
       tool.description ?? '',
       tool.kind,
       tool.availability,
+      ...presentation.searchKeywords,
     ].join(' ').toLowerCase()
 
     return searchableText.includes(normalizedQuery)
