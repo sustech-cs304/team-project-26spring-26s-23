@@ -11,20 +11,26 @@ import {
 import {
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
   type CopilotHistoryBackupDatabaseRequest,
   type CopilotHistoryDatabaseBackupResult,
   type CopilotHistoryDatabaseRestoreResult,
+  type CopilotHistoryDuplicateThreadRequest,
   type CopilotHistoryListThreadsResult,
+  type CopilotHistoryRenameThreadRequest,
   type CopilotHistoryRestoreDatabaseRequest,
   type CopilotHistoryRunReplayResult,
   type CopilotHistoryThreadDeleteResult,
   type CopilotHistoryThreadDetailResult,
+  type CopilotHistoryThreadDuplicateResult,
   type CopilotHistoryThreadPurgeResult,
+  type CopilotHistoryThreadRenameResult,
 } from '../copilot-history'
 import {
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
@@ -71,6 +77,8 @@ const RENDERER_IPC_CHANNELS = [
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
   COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
@@ -176,6 +184,28 @@ export function registerRendererIpcHandlers(
     COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
     async (_event, runId: string): Promise<CopilotHistoryRunReplayResult> => {
       return await handlers.getCopilotHistoryRunReplay(runId)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+    async (
+      _event,
+      threadId: string,
+      request: CopilotHistoryRenameThreadRequest,
+    ): Promise<CopilotHistoryThreadRenameResult> => {
+      return await handlers.renameCopilotHistoryThread(threadId, request)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+    async (
+      _event,
+      threadId: string,
+      request?: CopilotHistoryDuplicateThreadRequest,
+    ): Promise<CopilotHistoryThreadDuplicateResult> => {
+      return await handlers.duplicateCopilotHistoryThread(threadId, request)
     },
   )
 

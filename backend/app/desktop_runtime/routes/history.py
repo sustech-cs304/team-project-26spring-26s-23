@@ -55,6 +55,77 @@ def build_history_router() -> APIRouter:
                 },
             ) from exc
 
+    @router.post("/history/threads/{thread_id}/rename")
+    def rename_history_thread(
+        thread_id: str,
+        request: Request,
+        payload: dict[str, object] = Body(...),
+    ) -> dict[str, object]:
+        runtime_config = _get_runtime_config(request)
+        require_local_token(request, runtime_config)
+        service = _get_history_query_service(request)
+        title = _coerce_optional_text(payload.get("title"))
+        if title is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "rename_title_required",
+                    "message": "Rename requests require a non-empty title.",
+                    "threadId": thread_id,
+                },
+            )
+        try:
+            return service.rename_thread(thread_id, title=title).to_dict()
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "thread_not_found",
+                    "message": str(exc),
+                    "threadId": thread_id,
+                },
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_rename_request",
+                    "message": str(exc),
+                    "threadId": thread_id,
+                },
+            ) from exc
+
+    @router.post("/history/threads/{thread_id}/duplicate")
+    def duplicate_history_thread(
+        thread_id: str,
+        request: Request,
+        payload: dict[str, object] | None = Body(default=None),
+    ) -> dict[str, object]:
+        runtime_config = _get_runtime_config(request)
+        require_local_token(request, runtime_config)
+        service = _get_history_query_service(request)
+        title = _coerce_optional_text(None if payload is None else payload.get("title"))
+        try:
+            return service.duplicate_thread(thread_id, title=title).to_dict()
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "thread_not_found",
+                    "message": str(exc),
+                    "threadId": thread_id,
+                },
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_duplicate_request",
+                    "message": str(exc),
+                    "threadId": thread_id,
+                },
+            ) from exc
+
     @router.delete("/history/threads/{thread_id}")
     def delete_history_thread(thread_id: str, request: Request) -> dict[str, object]:
         runtime_config = _get_runtime_config(request)

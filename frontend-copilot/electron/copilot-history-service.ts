@@ -2,12 +2,16 @@ import type {
   CopilotHistoryBackupDatabaseRequest,
   CopilotHistoryDatabaseBackupResult,
   CopilotHistoryDatabaseRestoreResult,
+  CopilotHistoryDuplicateThreadRequest,
   CopilotHistoryListThreadsResult,
+  CopilotHistoryRenameThreadRequest,
   CopilotHistoryRestoreDatabaseRequest,
   CopilotHistoryRunReplayResult,
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadDuplicateResult,
   CopilotHistoryThreadPurgeResult,
+  CopilotHistoryThreadRenameResult,
 } from './copilot-history'
 import type { HostedBackendService } from './runtime/hosted-backend-service'
 
@@ -30,6 +34,14 @@ export interface ElectronCopilotHistoryService {
   listThreads: () => Promise<CopilotHistoryListThreadsResult>
   getThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
+  renameThread: (
+    threadId: string,
+    request: CopilotHistoryRenameThreadRequest,
+  ) => Promise<CopilotHistoryThreadRenameResult>
+  duplicateThread: (
+    threadId: string,
+    request?: CopilotHistoryDuplicateThreadRequest,
+  ) => Promise<CopilotHistoryThreadDuplicateResult>
   deleteThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
   purgeThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
   backupDatabase: (request?: CopilotHistoryBackupDatabaseRequest) => Promise<CopilotHistoryDatabaseBackupResult>
@@ -62,6 +74,26 @@ export function createElectronCopilotHistoryService(
         operation: 'get-run-replay',
         path: `/history/runs/${encodeURIComponent(runId)}/replay`,
         failureLabel: `Failed to load persisted chat run replay for "${runId}"`,
+      })
+    },
+    async renameThread(threadId, request) {
+      return await requestHistory<CopilotHistoryThreadRenameResult>({
+        options,
+        operation: 'rename-thread',
+        path: `/history/threads/${encodeURIComponent(threadId)}/rename`,
+        method: 'POST',
+        body: request,
+        failureLabel: `Failed to rename persisted chat thread "${threadId}"`,
+      })
+    },
+    async duplicateThread(threadId, request) {
+      return await requestHistory<CopilotHistoryThreadDuplicateResult>({
+        options,
+        operation: 'duplicate-thread',
+        path: `/history/threads/${encodeURIComponent(threadId)}/duplicate`,
+        method: 'POST',
+        body: request,
+        failureLabel: `Failed to duplicate persisted chat thread "${threadId}"`,
       })
     },
     async deleteThread(threadId) {
@@ -251,6 +283,11 @@ function summarizeHistorySuccessPayload(
         orderedEventCount: Array.isArray(payload.orderedEvents) ? payload.orderedEvents.length : null,
         toolCallBlockCount: Array.isArray(payload.toolCallBlocks) ? payload.toolCallBlocks.length : null,
         diagnosticBlockCount: Array.isArray(payload.diagnosticBlocks) ? payload.diagnosticBlocks.length : null,
+      }
+    case 'rename-thread':
+    case 'duplicate-thread':
+      return {
+        threadId: readOptionalString(isPlainRecord(payload.thread) ? payload.thread.threadId : null),
       }
     default:
       return {}

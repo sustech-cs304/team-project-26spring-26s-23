@@ -96,6 +96,20 @@ class PersistedThreadDeleteResponse(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
+class PersistedThreadRenameResponse(RuntimeContract):
+    ok: bool
+    thread: PersistedThreadSummaryDTO
+    version: str = HISTORY_QUERY_DTO_VERSION
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedThreadDuplicateResponse(RuntimeContract):
+    ok: bool
+    thread: PersistedThreadSummaryDTO
+    version: str = HISTORY_QUERY_DTO_VERSION
+
+
+@dataclass(frozen=True, slots=True)
 class PersistedThreadPurgeResponse(RuntimeContract):
     ok: bool
     threadId: str
@@ -131,7 +145,9 @@ __all__ = [
     "PersistedRunSummaryDTO",
     "PersistedThreadDeleteResponse",
     "PersistedThreadDetailResponse",
+    "PersistedThreadDuplicateResponse",
     "PersistedThreadListResponse",
     "PersistedThreadPurgeResponse",
+    "PersistedThreadRenameResponse",
     "PersistedThreadSummaryDTO",
 ]

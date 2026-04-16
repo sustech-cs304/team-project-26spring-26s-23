@@ -249,6 +249,31 @@ class RunEventRepository:
             created_at=_coerce_datetime(model.created_at),
         )
 
+    def clone_for_run(
+        self,
+        source_event: RunEventModel,
+        *,
+        run_id: str,
+        created_at: datetime,
+    ) -> RunEventModel:
+        payload_json = dict(source_event.payload_json or {})
+        model = RunEventModel(
+            run_id=run_id,
+            seq=source_event.seq,
+            event_type=source_event.event_type,
+            payload_json=payload_json,
+            payload_text_search=_build_payload_text_search(payload_json),
+            tool_call_id=source_event.tool_call_id,
+            tool_id=source_event.tool_id,
+            phase=source_event.phase,
+            created_at=_coerce_datetime(created_at),
+            redaction_version=source_event.redaction_version,
+            is_redacted=source_event.is_redacted,
+        )
+        self._session.add(model)
+        self._session.flush()
+        return model
+
     def _next_sequence(self, run_id: str) -> int:
         result = self._session.execute(
             select(func.coalesce(func.max(RunEventModel.seq), 0)).where(RunEventModel.run_id == run_id)

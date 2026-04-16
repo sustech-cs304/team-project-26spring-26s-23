@@ -12,10 +12,12 @@ import { createConfigCenterPublicSnapshotSubscriptionApi } from '../config-cente
 import {
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
   type CopilotHistoryApi,
 } from '../copilot-history'
@@ -70,6 +72,12 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       getRunReplay(runId) {
         return ipcRenderer.invoke(COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL, runId)
+      },
+      renameThread(threadId, request) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_RENAME_THREAD_CHANNEL, threadId, request)
+      },
+      duplicateThread(threadId, request) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL, threadId, request)
       },
       deleteThread(threadId) {
         return ipcRenderer.invoke(COPILOT_HISTORY_DELETE_THREAD_CHANNEL, threadId)

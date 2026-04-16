@@ -3,12 +3,16 @@ import type {
   CopilotHistoryBackupDatabaseRequest,
   CopilotHistoryDatabaseBackupResult,
   CopilotHistoryDatabaseRestoreResult,
+  CopilotHistoryDuplicateThreadRequest,
   CopilotHistoryListThreadsResult,
+  CopilotHistoryRenameThreadRequest,
   CopilotHistoryRestoreDatabaseRequest,
   CopilotHistoryRunReplayResult,
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadDuplicateResult,
   CopilotHistoryThreadPurgeResult,
+  CopilotHistoryThreadRenameResult,
 } from '../../../electron/copilot-history'
 
 const HISTORY_API_UNAVAILABLE_ERROR = 'window.copilotHistory is unavailable in the renderer process.'
@@ -62,6 +66,38 @@ export async function getCopilotHistoryRunReplay(
   }
 
   return api.getRunReplay(runId)
+}
+
+export async function renameCopilotHistoryThread(
+  threadId: string,
+  request: CopilotHistoryRenameThreadRequest,
+): Promise<CopilotHistoryThreadRenameResult> {
+  const api = getCopilotHistoryApi()
+
+  if (!api) {
+    return {
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    }
+  }
+
+  return api.renameThread(threadId, request)
+}
+
+export async function duplicateCopilotHistoryThread(
+  threadId: string,
+  request?: CopilotHistoryDuplicateThreadRequest,
+): Promise<CopilotHistoryThreadDuplicateResult> {
+  const api = getCopilotHistoryApi()
+
+  if (!api) {
+    return {
+      ok: false,
+      error: HISTORY_API_UNAVAILABLE_ERROR,
+    }
+  }
+
+  return api.duplicateThread(threadId, request)
 }
 
 export async function deleteCopilotHistoryThread(

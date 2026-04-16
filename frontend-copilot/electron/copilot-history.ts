@@ -1,6 +1,8 @@
 export const COPILOT_HISTORY_LIST_THREADS_CHANNEL = 'copilot-history:list-threads'
 export const COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL = 'copilot-history:get-thread-detail'
 export const COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL = 'copilot-history:get-run-replay'
+export const COPILOT_HISTORY_RENAME_THREAD_CHANNEL = 'copilot-history:rename-thread'
+export const COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL = 'copilot-history:duplicate-thread'
 export const COPILOT_HISTORY_DELETE_THREAD_CHANNEL = 'copilot-history:delete-thread'
 export const COPILOT_HISTORY_PURGE_THREAD_CHANNEL = 'copilot-history:purge-thread'
 export const COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL = 'copilot-history:backup-database'
@@ -17,6 +19,14 @@ export interface CopilotHistoryBackupDatabaseRequest {
 
 export interface CopilotHistoryRestoreDatabaseRequest {
   sourcePath: string
+}
+
+export interface CopilotHistoryRenameThreadRequest {
+  title: string
+}
+
+export interface CopilotHistoryDuplicateThreadRequest {
+  title?: string | null
 }
 
 export interface CopilotHistoryThreadSummary {
@@ -96,6 +106,18 @@ export interface CopilotHistoryThreadDeleteSuccess {
   deletedAt: string
 }
 
+export interface CopilotHistoryThreadRenameSuccess {
+  ok: true
+  version: string
+  thread: CopilotHistoryThreadSummary
+}
+
+export interface CopilotHistoryThreadDuplicateSuccess {
+  ok: true
+  version: string
+  thread: CopilotHistoryThreadSummary
+}
+
 export interface CopilotHistoryThreadPurgeSuccess {
   ok: true
   version: string
@@ -124,6 +146,8 @@ export type CopilotHistoryListThreadsResult = CopilotHistoryListThreadsSuccess |
 export type CopilotHistoryThreadDetailResult = CopilotHistoryThreadDetailSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryRunReplayResult = CopilotHistoryRunReplaySuccess | CopilotHistoryApiFailure
 export type CopilotHistoryThreadDeleteResult = CopilotHistoryThreadDeleteSuccess | CopilotHistoryApiFailure
+export type CopilotHistoryThreadRenameResult = CopilotHistoryThreadRenameSuccess | CopilotHistoryApiFailure
+export type CopilotHistoryThreadDuplicateResult = CopilotHistoryThreadDuplicateSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryThreadPurgeResult = CopilotHistoryThreadPurgeSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryDatabaseBackupResult = CopilotHistoryDatabaseBackupSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryDatabaseRestoreResult = CopilotHistoryDatabaseRestoreSuccess | CopilotHistoryApiFailure
@@ -132,6 +156,14 @@ export interface CopilotHistoryApi {
   listThreads: () => Promise<CopilotHistoryListThreadsResult>
   getThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
+  renameThread: (
+    threadId: string,
+    request: CopilotHistoryRenameThreadRequest,
+  ) => Promise<CopilotHistoryThreadRenameResult>
+  duplicateThread: (
+    threadId: string,
+    request?: CopilotHistoryDuplicateThreadRequest,
+  ) => Promise<CopilotHistoryThreadDuplicateResult>
   deleteThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
   purgeThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
   backupDatabase: (request?: CopilotHistoryBackupDatabaseRequest) => Promise<CopilotHistoryDatabaseBackupResult>

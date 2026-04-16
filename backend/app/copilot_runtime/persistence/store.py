@@ -44,6 +44,8 @@ if TYPE_CHECKING:
 
 
 _PERSISTENCE_LOGGER = logging.getLogger("uvicorn.error")
+_MANUAL_THREAD_TITLE_SOURCE = "manual"
+_DUPLICATE_THREAD_TITLE_SUFFIX = "（副本）"
 
 
 class SQLiteSessionStore(RuntimeSessionStore):
@@ -293,6 +295,87 @@ class SQLiteSessionStore(RuntimeSessionStore):
             projected_messages.extend(run.projected_messages())
         return tuple(projected_messages)
 
+    def rename_thread(self, thread_id: str, *, title: str) -> str:
+        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        normalized_title = _require_non_empty_string(title, field_name="title")
+        with run_lifecycle_transaction(self._session_factory) as repositories:
+            thread_model = repositories.threads.require(resolved_thread_id)
+            thread_model.title = normalized_title
+            thread_model.title_source = _MANUAL_THREAD_TITLE_SOURCE
+            thread_model.updated_at = datetime.now(UTC)
+            ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
+            return thread_model.id
+
+    def duplicate_thread(self, thread_id: str, *, title: str | None = None) -> str:
+        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        duplicated_at = datetime.now(UTC)
+        duplicated_thread_id = f"thread-{uuid4().hex}"
+        with run_lifecycle_transaction(self._session_factory) as repositories:
+            source_thread_model = repositories.threads.require(resolved_thread_id)
+            source_projection = repositories.projections.get_thread_projection(resolved_thread_id)
+            if source_projection is None:
+                ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
+                source_projection = repositories.projections.get_thread_projection(resolved_thread_id)
+            source_thread_title = _require_non_empty_string(
+                title,
+                field_name="title",
+            ) if title is not None and title.strip() != "" else (
+                source_thread_model.title
+                or (None if source_projection is None else source_projection.display_title)
+                or source_thread_model.bound_agent_id
+            )
+            duplicated_thread = RuntimeThreadRecord(
+                thread_id=duplicated_thread_id,
+                bound_agent_id=source_thread_model.bound_agent_id,
+                metadata=dict(source_thread_model.metadata_json or {}),
+                created_at=duplicated_at,
+                updated_at=duplicated_at,
+            )
+            duplicated_thread_model = repositories.threads.create_from_runtime_record(duplicated_thread)
+            duplicated_thread_model.title = _build_duplicate_thread_title(source_thread_title)
+            duplicated_thread_model.title_source = _MANUAL_THREAD_TITLE_SOURCE
+            duplicated_thread_model.summary_text = source_thread_model.summary_text
+            duplicated_thread_model.summary_source = source_thread_model.summary_source
+            duplicated_thread_model.last_user_message_preview = source_thread_model.last_user_message_preview
+            duplicated_thread_model.last_assistant_message_preview = source_thread_model.last_assistant_message_preview
+            source_run_models = repositories.runs.list_for_thread(resolved_thread_id)
+            last_source_run_id = source_run_models[-1].id if source_run_models else None
+            for source_run_model in source_run_models:
+                source_runtime_run = repositories.runs.to_runtime_record(source_run_model)
+                is_latest_run = source_run_model.id == last_source_run_id
+                duplicated_run = RuntimeRunRecord(
+                    run_id=f"run-{uuid4().hex}",
+                    thread_id=duplicated_thread_id,
+                    request=source_runtime_run.request,
+                    status=source_runtime_run.status,
+                    metadata=dict(source_runtime_run.metadata),
+                    cancel_requested=source_runtime_run.cancel_requested,
+                    assistant_text=source_runtime_run.assistant_text,
+                    created_at=source_runtime_run.created_at,
+                    updated_at=duplicated_at if is_latest_run else source_runtime_run.updated_at,
+                    started_at=source_runtime_run.started_at,
+                    terminal_at=(
+                        duplicated_at
+                        if is_latest_run and source_runtime_run.terminal_at is not None
+                        else source_runtime_run.terminal_at
+                    ),
+                )
+                repositories.runs.create_from_runtime_record(duplicated_run)
+                for source_event_model in repositories.events.list_for_run(source_run_model.id):
+                    repositories.events.clone_for_run(
+                        source_event_model,
+                        run_id=duplicated_run.run_id,
+                        created_at=source_event_model.created_at,
+                    )
+                repositories.threads.touch_for_run(duplicated_thread_model, duplicated_run)
+                ProjectionService.refresh_run_in_transaction(
+                    repositories,
+                    duplicated_run.run_id,
+                    refresh_thread=False,
+                )
+            ProjectionService.refresh_thread_in_transaction(repositories, duplicated_thread_id)
+            return duplicated_thread_id
+
     def delete_thread(self, thread_id: str) -> PersistedThreadDeleteResponse:
         resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
         with run_lifecycle_transaction(self._session_factory) as repositories:
@@ -495,6 +578,11 @@ def _open_sqlite_connection(path: Path) -> Iterator[sqlite3.Connection]:
         yield connection
     finally:
         connection.close()
+
+
+def _build_duplicate_thread_title(title: str) -> str:
+    normalized_title = _require_non_empty_string(title, field_name="title")
+    return f"{normalized_title}{_DUPLICATE_THREAD_TITLE_SUFFIX}"
 
 
 __all__ = ["SQLiteSessionStore"]

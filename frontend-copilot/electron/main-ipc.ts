@@ -33,6 +33,8 @@ export function registerMainProcessIpcHandlers(
     listCopilotHistoryThreads: services.listCopilotHistoryThreads,
     getCopilotHistoryThreadDetail: services.getCopilotHistoryThreadDetail,
     getCopilotHistoryRunReplay: services.getCopilotHistoryRunReplay,
+    renameCopilotHistoryThread: services.renameCopilotHistoryThread,
+    duplicateCopilotHistoryThread: services.duplicateCopilotHistoryThread,
     deleteCopilotHistoryThread: services.deleteCopilotHistoryThread,
     purgeCopilotHistoryThread: services.purgeCopilotHistoryThread,
     backupCopilotHistoryDatabase: services.backupCopilotHistoryDatabase,

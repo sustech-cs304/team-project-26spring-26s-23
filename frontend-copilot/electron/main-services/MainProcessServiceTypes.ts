@@ -10,12 +10,16 @@ import type {
   CopilotHistoryBackupDatabaseRequest,
   CopilotHistoryDatabaseBackupResult,
   CopilotHistoryDatabaseRestoreResult,
+  CopilotHistoryDuplicateThreadRequest,
   CopilotHistoryListThreadsResult,
+  CopilotHistoryRenameThreadRequest,
   CopilotHistoryRestoreDatabaseRequest,
   CopilotHistoryRunReplayResult,
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadDuplicateResult,
   CopilotHistoryThreadPurgeResult,
+  CopilotHistoryThreadRenameResult,
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type {
@@ -77,6 +81,14 @@ export interface MainProcessServices {
   listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
   getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
+  renameCopilotHistoryThread: (
+    threadId: string,
+    request: CopilotHistoryRenameThreadRequest,
+  ) => Promise<CopilotHistoryThreadRenameResult>
+  duplicateCopilotHistoryThread: (
+    threadId: string,
+    request?: CopilotHistoryDuplicateThreadRequest,
+  ) => Promise<CopilotHistoryThreadDuplicateResult>
   deleteCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
   purgeCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
   backupCopilotHistoryDatabase: (

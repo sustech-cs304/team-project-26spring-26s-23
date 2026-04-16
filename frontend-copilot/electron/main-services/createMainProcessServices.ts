@@ -52,6 +52,12 @@ export function createMainProcessServices(
     async getCopilotHistoryRunReplay(runId) {
       return await accessors.getCopilotHistoryService().getRunReplay(runId)
     },
+    async renameCopilotHistoryThread(threadId, request) {
+      return await accessors.getCopilotHistoryService().renameThread(threadId, request)
+    },
+    async duplicateCopilotHistoryThread(threadId, request) {
+      return await accessors.getCopilotHistoryService().duplicateThread(threadId, request)
+    },
     async deleteCopilotHistoryThread(threadId) {
       return await accessors.getCopilotHistoryService().deleteThread(threadId)
     },

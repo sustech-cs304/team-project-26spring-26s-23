@@ -26,8 +26,10 @@ from .query_dtos import (
     PersistedRunSummaryDTO,
     PersistedThreadDeleteResponse,
     PersistedThreadDetailResponse,
+    PersistedThreadDuplicateResponse,
     PersistedThreadListResponse,
     PersistedThreadPurgeResponse,
+    PersistedThreadRenameResponse,
     PersistedThreadSummaryDTO,
 )
 from .queries import PersistedChatQueryService
@@ -51,8 +53,10 @@ __all__ = [
     "PersistedRunSummaryDTO",
     "PersistedThreadDeleteResponse",
     "PersistedThreadDetailResponse",
+    "PersistedThreadDuplicateResponse",
     "PersistedThreadListResponse",
     "PersistedThreadPurgeResponse",
+    "PersistedThreadRenameResponse",
     "PersistedThreadSummaryDTO",
     "RedactionResult",
     "SQLiteSessionStore",

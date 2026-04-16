@@ -19,8 +19,10 @@ from .query_dtos import (
     PersistedRunSummaryDTO,
     PersistedThreadDeleteResponse,
     PersistedThreadDetailResponse,
+    PersistedThreadDuplicateResponse,
     PersistedThreadListResponse,
     PersistedThreadPurgeResponse,
+    PersistedThreadRenameResponse,
     PersistedThreadSummaryDTO,
 )
 from .repositories import PersistenceRepositories, run_lifecycle_transaction
@@ -138,6 +140,37 @@ class PersistedChatQueryService:
 
     def delete_thread(self, thread_id: str) -> PersistedThreadDeleteResponse:
         return self._require_session_store().delete_thread(thread_id)
+
+    def rename_thread(self, thread_id: str, *, title: str) -> PersistedThreadRenameResponse:
+        renamed_thread_id = self._require_session_store().rename_thread(thread_id, title=title)
+        with run_lifecycle_transaction(self._session_factory) as repositories:
+            thread_model = repositories.threads.require(renamed_thread_id)
+            return PersistedThreadRenameResponse(
+                ok=True,
+                thread=_build_thread_summary(
+                    repositories,
+                    thread_model,
+                    drift_evaluator=self._drift_evaluator,
+                ),
+            )
+
+    def duplicate_thread(
+        self,
+        thread_id: str,
+        *,
+        title: str | None = None,
+    ) -> PersistedThreadDuplicateResponse:
+        duplicated_thread_id = self._require_session_store().duplicate_thread(thread_id, title=title)
+        with run_lifecycle_transaction(self._session_factory) as repositories:
+            thread_model = repositories.threads.require(duplicated_thread_id)
+            return PersistedThreadDuplicateResponse(
+                ok=True,
+                thread=_build_thread_summary(
+                    repositories,
+                    thread_model,
+                    drift_evaluator=self._drift_evaluator,
+                ),
+            )
 
     def purge_thread(self, thread_id: str) -> PersistedThreadPurgeResponse:
         return self._require_session_store().purge_thread(thread_id)
