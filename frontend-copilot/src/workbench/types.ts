@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { RuntimeToolDirectoryEntry } from '../features/copilot/chat-contract'
 
 export type WorkspaceView = 'assistant' | 'capabilities' | 'files' | 'developer' | 'settings'
-export type HubWorkspaceView = Exclude<WorkspaceView, 'assistant' | 'capabilities' | 'settings'>
+export type HubWorkspaceView = Exclude<WorkspaceView, 'assistant' | 'settings'>
 export type AgentTypeId = string
 export type SettingsSection =
   | 'sustech-info'
