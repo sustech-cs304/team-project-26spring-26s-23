@@ -30,6 +30,7 @@ def sync_courses(
     *,
     extract_code: Callable[[str], str | None],
     extract_term: Callable[[str], str | None],
+    allow_soft_delete: bool = True,
     logger: BlackboardLogger | None = None,
 ) -> SyncStats:
     normalized: list[dict[str, Any]] = []
@@ -61,6 +62,7 @@ def sync_courses(
         model=Course,
         unique_field="course_id",
         records=normalized,
+        allow_soft_delete=allow_soft_delete,
         logger=logger,
     )
 
@@ -75,6 +77,7 @@ def sync_assignments(
     parse_total_score: Callable[[Any], str | None],
     parse_datetime: Callable[[Any], datetime | None],
     guess_resource_type_from_url: Callable[[str], str],
+    allow_attachment_resource_upsert: bool = True,
     logger: BlackboardLogger | None = None,
 ) -> SyncStats:
     normalized: list[dict[str, Any]] = []
@@ -141,17 +144,18 @@ def sync_assignments(
         scope_filter={"course_id": course_id},
         logger=logger,
     )
-    for assignment_id, (source_page, attachments) in attachments_by_assignment_id.items():
-        upsert_assignment_attachments(
-            session,
-            course_id=course_id,
-            assignment_id=assignment_id,
-            source_page=source_page,
-            attachments=attachments,
-            normalize_url=normalize_url,
-            stable_id=stable_id,
-            guess_resource_type_from_url=guess_resource_type_from_url,
-        )
+    if allow_attachment_resource_upsert:
+        for assignment_id, (source_page, attachments) in attachments_by_assignment_id.items():
+            upsert_assignment_attachments(
+                session,
+                course_id=course_id,
+                assignment_id=assignment_id,
+                source_page=source_page,
+                attachments=attachments,
+                normalize_url=normalize_url,
+                stable_id=stable_id,
+                guess_resource_type_from_url=guess_resource_type_from_url,
+            )
 
     refresh_course_stats(session, course_id)
     return stats

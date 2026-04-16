@@ -66,7 +66,6 @@ class BlackboardSnapshotFetchResult:
     resources_by_course: dict[str, list[ResourceDTO]]
     grades_by_course: dict[str, list[GradeDTO]]
     announcements: list[AnnouncementDTO]
-    resource_course_limit: int
     logs: list[BlackboardLogEvent] = dataclass_field(default_factory=list)
 
     def scraped_counts(self) -> dict[str, int]:
@@ -118,3 +117,25 @@ class BlackboardSnapshotSyncReport:
     def log_summary(self) -> dict[str, Any]:
         return summarize_log_events(self.logs)
 
+
+@dataclass(slots=True)
+class BlackboardCourseResourcesSyncReport:
+    db_path: Path
+    requested_course_ids: list[str]
+    processed_course_ids: list[str]
+    missing_course_ids: list[str]
+    failed_course_ids: list[str]
+    resource_payloads_by_course: dict[str, list[dict[str, Any]]]
+    sync_stats: dict[str, SyncStats]
+    table_counts: dict[str, dict[str, int]]
+    logs: list[BlackboardLogEvent] = dataclass_field(default_factory=list)
+
+    def scraped_counts(self) -> dict[str, int]:
+        return {
+            "courses": len(self.processed_course_ids),
+            "resources": sum(len(rows) for rows in self.resource_payloads_by_course.values()),
+        }
+
+    @property
+    def log_summary(self) -> dict[str, Any]:
+        return summarize_log_events(self.logs)

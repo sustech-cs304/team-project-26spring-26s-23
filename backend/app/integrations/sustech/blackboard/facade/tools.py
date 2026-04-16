@@ -15,12 +15,14 @@ import httpx
 
 from app.integrations.sustech.blackboard.data.db_manager import DatabaseManager
 from app.integrations.sustech.blackboard.provider.results import (
+    BlackboardCourseResourcesSyncReport,
     BlackboardSnapshotSyncReport,
     CalendarICSSyncResult,
     CourseCatalogSearchResult,
 )
 from app.integrations.sustech.blackboard.provider.use_cases import (
     refresh_calendar_ics_subscription,
+    run_blackboard_course_resources_sync,
     run_blackboard_snapshot_sync,
     search_course_catalog_with_credentials,
 )
@@ -44,6 +46,7 @@ from app.tooling.contract.errors import build_tool_exception_details, redact_too
 
 _STATE_NAMESPACE_CALENDAR_REFRESH = "blackboard.calendar_refresh"
 _STATE_NAMESPACE_SNAPSHOT_SYNC = "blackboard.snapshot_sync"
+_STATE_NAMESPACE_COURSE_RESOURCES_SYNC = "blackboard.course_resources_sync"
 _DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
 _DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
 
@@ -155,6 +158,27 @@ def _read_optional_int(arguments: Mapping[str, Any], field_name: str) -> int | N
         return int(value)
     except (TypeError, ValueError) as ex:
         raise ValueError(f"{field_name} must be an integer.") from ex
+
+
+def _read_required_string_list(arguments: Mapping[str, Any], field_name: str) -> list[str]:
+    value = arguments.get(field_name)
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be an array of non-empty strings.")
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        text = str(item or "").strip()
+        if not text:
+            raise ValueError(f"{field_name} must contain only non-empty strings.")
+        if text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+
+    if not normalized:
+        raise ValueError(f"{field_name} must contain at least one non-empty string.")
+    return normalized
 
 
 def _read_bool(arguments: Mapping[str, Any], field_name: str, *, default: bool) -> bool:
@@ -734,7 +758,6 @@ def _snapshot_sync_output(
     _ = progress_messages
     output: dict[str, Any] = {
         "dbPath": report.db_path.as_posix(),
-        "resourceCourseLimit": report.snapshot.resource_course_limit,
         "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
         "firstSyncStats": _compact_sync_stats_by_table(report.first_sync_stats),
         "secondSyncStats": (
@@ -782,7 +805,6 @@ def _snapshot_sync_persisted_output(
 ) -> dict[str, Any]:
     output: dict[str, Any] = {
         "dbPath": report.db_path.as_posix(),
-        "resourceCourseLimit": report.snapshot.resource_course_limit,
         "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
         "firstSyncStats": _jsonable(report.first_sync_stats),
         "secondSyncStats": _jsonable(report.second_sync_stats),
@@ -791,6 +813,53 @@ def _snapshot_sync_persisted_output(
         "integrityOk": report.integrity_ok,
         "secondSyncHasNoNewRecords": report.second_sync_has_no_new_records(),
         "secondSyncHasNoDeletedRecords": report.second_sync_has_no_deleted_records(),
+        "logSummary": _jsonable(report.log_summary),
+        "logs": _jsonable(report.logs),
+    }
+    if progress_messages:
+        output["progressMessages"] = list(progress_messages)
+    return output
+
+
+def _course_resources_sync_output(
+    report: BlackboardCourseResourcesSyncReport,
+    *,
+    progress_messages: Sequence[str],
+    persistence: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    _ = progress_messages
+    output: dict[str, Any] = {
+        "dbPath": report.db_path.as_posix(),
+        "requestedCourseIds": list(report.requested_course_ids),
+        "processedCourseIds": list(report.processed_course_ids),
+        "missingCourseIds": list(report.missing_course_ids),
+        "failedCourseIds": list(report.failed_course_ids),
+        "scrapedCounts": _jsonable(report.scraped_counts()),
+        "syncStats": _compact_sync_stats_by_table(report.sync_stats),
+        "tableCounts": _jsonable(report.table_counts),
+        "logSummary": _jsonable(report.log_summary),
+    }
+    if persistence:
+        output["persistence"] = _jsonable(persistence)
+    return output
+
+
+
+def _course_resources_sync_persisted_output(
+    report: BlackboardCourseResourcesSyncReport,
+    *,
+    progress_messages: Sequence[str],
+) -> dict[str, Any]:
+    output: dict[str, Any] = {
+        "dbPath": report.db_path.as_posix(),
+        "requestedCourseIds": list(report.requested_course_ids),
+        "processedCourseIds": list(report.processed_course_ids),
+        "missingCourseIds": list(report.missing_course_ids),
+        "failedCourseIds": list(report.failed_course_ids),
+        "scrapedCounts": _jsonable(report.scraped_counts()),
+        "syncStats": _jsonable(report.sync_stats),
+        "tableCounts": _jsonable(report.table_counts),
+        "resourcePayloadsByCourse": _jsonable(report.resource_payloads_by_course),
         "logSummary": _jsonable(report.log_summary),
         "logs": _jsonable(report.logs),
     }
@@ -971,7 +1040,7 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
 _SNAPSHOT_SYNC_METADATA = ToolMetadata(
     tool_id="blackboard.snapshot.sync",
     display_name="Blackboard Snapshot Sync",
-    description="Fetch a Blackboard snapshot and sync it into the existing SQLite store.",
+    description="Fetch a Blackboard base snapshot and sync it into the existing SQLite store.",
     input_schema=_schema(
         properties={
             "username": {"type": "string"},
@@ -980,7 +1049,6 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
             "passwordSecretName": {"type": "string"},
             "dbRelativePath": {"type": "string"},
             "resetSchema": {"type": "boolean"},
-            "resourceCourseLimit": {"type": "integer"},
             "verifySecondSync": {"type": "boolean"},
             "stateKey": {"type": "string"},
             "artifactName": {"type": "string"},
@@ -989,7 +1057,6 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
     output_schema=_schema(
         properties={
             "dbPath": {"type": "string"},
-            "resourceCourseLimit": {"type": "integer"},
             "scrapedCounts": {"type": "object"},
             "firstSyncStats": {"type": "object"},
             "secondSyncStats": {"type": ["object", "null"]},
@@ -1003,7 +1070,6 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
         },
         required=(
             "dbPath",
-            "resourceCourseLimit",
             "scrapedCounts",
             "firstSyncStats",
             "secondSyncStats",
@@ -1043,6 +1109,86 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
         ),
     ),
     tags=("blackboard", "snapshot", "sync"),
+    annotations={"domain": "blackboard", "facade": "tool-contract"},
+    idempotent=False,
+)
+
+_RESOURCE_SYNC_METADATA = ToolMetadata(
+    tool_id="blackboard.course_resources.sync",
+    display_name="Blackboard Course Resources Sync",
+    description="Sync Blackboard resources for explicit course IDs into the existing SQLite store.",
+    input_schema=_schema(
+        properties={
+            "courseIds": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "minItems": 1,
+                "uniqueItems": True,
+            },
+            "username": {"type": "string"},
+            "password": {"type": "string"},
+            "usernameSecretName": {"type": "string"},
+            "passwordSecretName": {"type": "string"},
+            "dbRelativePath": {"type": "string"},
+            "resetSchema": {"type": "boolean"},
+            "stateKey": {"type": "string"},
+            "artifactName": {"type": "string"},
+        },
+        required=("courseIds",),
+    ),
+    output_schema=_schema(
+        properties={
+            "dbPath": {"type": "string"},
+            "requestedCourseIds": {"type": "array"},
+            "processedCourseIds": {"type": "array"},
+            "missingCourseIds": {"type": "array"},
+            "failedCourseIds": {"type": "array"},
+            "scrapedCounts": {"type": "object"},
+            "syncStats": {"type": "object"},
+            "tableCounts": {"type": "object"},
+            "logSummary": {"type": "object"},
+            "persistence": {"type": ["object", "null"]},
+        },
+        required=(
+            "dbPath",
+            "requestedCourseIds",
+            "processedCourseIds",
+            "missingCourseIds",
+            "failedCourseIds",
+            "scrapedCounts",
+            "syncStats",
+            "tableCounts",
+            "logSummary",
+        ),
+    ),
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="secret_provider",
+            required=False,
+            purpose="Resolve Blackboard CAS credentials from host-managed secrets.",
+        ),
+        HostCapabilityRequirement(
+            capability="database_resolver",
+            required=False,
+            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
+        ),
+        HostCapabilityRequirement(
+            capability="state_store",
+            required=False,
+            purpose="Persist course resource sync summaries into host-managed state.",
+        ),
+        HostCapabilityRequirement(
+            capability="artifact_store",
+            required=False,
+            purpose="Persist course resource sync summaries as host-owned artifacts.",
+        ),
+        HostCapabilityRequirement(
+            capability="event_sink",
+            required=False,
+            purpose="Emit tool lifecycle events to the host.",
+        ),
+    ),
+    tags=("blackboard", "course_resources", "sync"),
     annotations={"domain": "blackboard", "facade": "tool-contract"},
     idempotent=False,
 )
@@ -1134,8 +1280,6 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
         )
         db_path = _resolve_db_path(arguments, host)
         reset_schema = _read_bool(arguments, "resetSchema", default=False)
-        raw_resource_course_limit = _read_optional_int(arguments, "resourceCourseLimit")
-        resource_course_limit = 3 if raw_resource_course_limit is None else max(raw_resource_course_limit, 0)
         verify_second_sync = _read_bool(arguments, "verifySecondSync", default=True)
         progress_messages: list[str] = []
         report = await asyncio.to_thread(
@@ -1144,7 +1288,6 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
             credentials.password,
             db_path=db_path,
             reset_schema=reset_schema,
-            resource_course_limit=resource_course_limit,
             verify_second_sync=verify_second_sync,
             progress=progress_messages.append,
         )
@@ -1182,6 +1325,76 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
         )
         if persistence_summary is not None:
             output = _snapshot_sync_output(
+                report,
+                progress_messages=progress_messages,
+                persistence=persistence_summary,
+            )
+        return output, artifacts, metadata
+
+
+class BlackboardCourseResourcesSyncTool(_BlackboardFacadeToolBase):
+    _metadata = _RESOURCE_SYNC_METADATA
+
+    async def _invoke_impl(
+        self,
+        *,
+        arguments: dict[str, Any],
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
+        credentials = await _resolve_credentials(
+            arguments,
+            host,
+            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
+            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
+        )
+        course_ids = _read_required_string_list(arguments, "courseIds")
+        db_path = _resolve_db_path(arguments, host)
+        reset_schema = _read_bool(arguments, "resetSchema", default=False)
+        progress_messages: list[str] = []
+        report = await asyncio.to_thread(
+            run_blackboard_course_resources_sync,
+            credentials.username,
+            credentials.password,
+            course_ids=course_ids,
+            db_path=db_path,
+            reset_schema=reset_schema,
+            progress=progress_messages.append,
+        )
+        output = _course_resources_sync_output(report, progress_messages=progress_messages)
+        persist_details = (
+            _read_optional_text(arguments, "stateKey") is not None
+            or _read_optional_text(arguments, "artifactName") is not None
+        )
+        persisted_output = (
+            _course_resources_sync_persisted_output(report, progress_messages=progress_messages)
+            if persist_details
+            else output
+        )
+        metadata = {
+            "credentialSource": credentials.source,
+            "dbPathSource": _db_path_source(arguments),
+        }
+        state_payload = await _persist_state_if_requested(
+            namespace=_STATE_NAMESPACE_COURSE_RESOURCES_SYNC,
+            arguments=arguments,
+            context=context,
+            host=host,
+            output=persisted_output,
+        )
+        metadata.update(state_payload)
+        artifacts = await _persist_artifact_if_requested(
+            arguments=arguments,
+            context=context,
+            host=host,
+            output=persisted_output,
+        )
+        persistence_summary = _build_output_persistence_summary(
+            state_payload=state_payload,
+            artifacts=artifacts,
+        )
+        if persistence_summary is not None:
+            output = _course_resources_sync_output(
                 report,
                 progress_messages=progress_messages,
                 persistence=persistence_summary,
@@ -1248,6 +1461,7 @@ BLACKBOARD_FACADE_TOOLS: tuple[ToolContract, ...] = (
     BlackboardCourseCatalogSearchTool(),
     BlackboardCalendarRefreshTool(),
     BlackboardSnapshotSyncTool(),
+    BlackboardCourseResourcesSyncTool(),
     BlackboardSQLQueryTool(),
 )
 
@@ -1262,6 +1476,7 @@ __all__ = [
     "BLACKBOARD_FACADE_TOOLS",
     "BlackboardCalendarRefreshTool",
     "BlackboardCourseCatalogSearchTool",
+    "BlackboardCourseResourcesSyncTool",
     "BlackboardSnapshotSyncTool",
     "BlackboardSQLQueryTool",
     "get_blackboard_tool_contracts",

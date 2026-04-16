@@ -1,4 +1,5 @@
 from .results import (
+    BlackboardCourseResourcesSyncReport,
     BlackboardSnapshotFetchResult,
     BlackboardSnapshotSyncReport,
     BlackboardSyncPayloads,
@@ -11,6 +12,7 @@ __all__ = [
     "ProgressCallback",
     "CourseCatalogSearchResult",
     "CalendarICSSyncResult",
+    "BlackboardCourseResourcesSyncReport",
     "BlackboardSnapshotFetchResult",
     "BlackboardSyncPayloads",
     "BlackboardSnapshotSyncReport",

@@ -17,7 +17,10 @@ from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import 
 from app.integrations.sustech.blackboard.provider.use_cases.course_catalog import (
     search_course_catalog_with_credentials,
 )
-from app.integrations.sustech.blackboard.provider.use_cases.snapshot_sync import run_blackboard_snapshot_sync
+from app.integrations.sustech.blackboard.provider.use_cases.snapshot_sync import (
+    run_blackboard_course_resources_sync,
+    run_blackboard_snapshot_sync,
+)
 
 
 def _jsonable(value: Any) -> Any:
@@ -92,7 +95,6 @@ def sync_blackboard_snapshot(
     password: str,
     db_path: str | Path | None = None,
     reset_schema: bool = False,
-    resource_course_limit: int = 3,
     verify_second_sync: bool = True,
 ) -> dict[str, Any]:
     report = run_blackboard_snapshot_sync(
@@ -100,12 +102,10 @@ def sync_blackboard_snapshot(
         password,
         db_path=db_path,
         reset_schema=reset_schema,
-        resource_course_limit=resource_course_limit,
         verify_second_sync=verify_second_sync,
     )
     return {
         "db_path": report.db_path.as_posix(),
-        "resource_course_limit": report.snapshot.resource_course_limit,
         "scraped_counts": report.snapshot.scraped_counts(),
         "first_sync_stats": _jsonable(report.first_sync_stats),
         "second_sync_stats": _jsonable(report.second_sync_stats),
@@ -119,11 +119,41 @@ def sync_blackboard_snapshot(
     }
 
 
+def sync_blackboard_course_resources(
+    *,
+    username: str,
+    password: str,
+    course_ids: list[str],
+    db_path: str | Path | None = None,
+    reset_schema: bool = False,
+) -> dict[str, Any]:
+    report = run_blackboard_course_resources_sync(
+        username,
+        password,
+        course_ids=course_ids,
+        db_path=db_path,
+        reset_schema=reset_schema,
+    )
+    return {
+        "db_path": report.db_path.as_posix(),
+        "requested_course_ids": list(report.requested_course_ids),
+        "processed_course_ids": list(report.processed_course_ids),
+        "missing_course_ids": list(report.missing_course_ids),
+        "failed_course_ids": list(report.failed_course_ids),
+        "scraped_counts": report.scraped_counts(),
+        "sync_stats": _jsonable(report.sync_stats),
+        "table_counts": _jsonable(report.table_counts),
+        "logs": _jsonable(report.logs),
+        "log_summary": _jsonable(report.log_summary),
+    }
+
+
 # Legacy compatibility exports only; canonical runtime/tooling surface lives in
 # app.integrations.sustech.blackboard.facade via get_blackboard_tool_contracts().
 __all__ = [
     "search_course_catalog",
     "refresh_calendar_ics",
+    "sync_blackboard_course_resources",
     "sync_blackboard_snapshot",
 ]
 

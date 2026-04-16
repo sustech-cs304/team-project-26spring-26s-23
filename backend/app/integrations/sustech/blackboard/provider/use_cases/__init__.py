@@ -8,6 +8,7 @@ from .snapshot_sync import (
     calculate_expected_active_counts,
     compare_active_counts,
     fetch_blackboard_snapshot,
+    run_blackboard_course_resources_sync,
     run_blackboard_snapshot_sync,
     sync_blackboard_payloads,
 )
@@ -21,5 +22,6 @@ __all__ = [
     "calculate_expected_active_counts",
     "compare_active_counts",
     "fetch_blackboard_snapshot",
+    "run_blackboard_course_resources_sync",
     "run_blackboard_snapshot_sync",
 ]

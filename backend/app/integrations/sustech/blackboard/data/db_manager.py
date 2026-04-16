@@ -169,6 +169,7 @@ class DatabaseManager:
         self,
         courses_data: list[dict[str, Any]],
         *,
+        allow_soft_delete: bool = True,
         logger: BlackboardLogger | None = None,
     ) -> SyncStats:
         with self._session_scope() as session:
@@ -177,6 +178,7 @@ class DatabaseManager:
                 courses_data,
                 extract_code=self._extract_code,
                 extract_term=self._extract_term,
+                allow_soft_delete=allow_soft_delete,
                 logger=logger,
             )
 
@@ -185,6 +187,7 @@ class DatabaseManager:
         course_id: str,
         assignments_data: list[dict[str, Any]],
         *,
+        allow_attachment_resource_upsert: bool = True,
         logger: BlackboardLogger | None = None,
     ) -> SyncStats:
         with self._session_scope() as session:
@@ -197,6 +200,7 @@ class DatabaseManager:
                 parse_total_score=extract_total_score,
                 parse_datetime=lambda value: parse_loose_datetime(None if value is None else str(value)),
                 guess_resource_type_from_url=self._guess_resource_type_from_url,
+                allow_attachment_resource_upsert=allow_attachment_resource_upsert,
                 logger=logger,
             )
 
