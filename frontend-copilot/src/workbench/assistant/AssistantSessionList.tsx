@@ -40,6 +40,7 @@ interface AssistantSessionListProps {
   onSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   onDismissContextMenu: () => void
   onRequestRename: (sessionId: string) => void
+  onDuplicateSession: (sessionId: string) => void
   onRenameValueChange: (value: string) => void
   onCommitRename: () => void
   onCancelRename: () => void
@@ -72,6 +73,7 @@ export function AssistantSessionList({
   onSessionContextMenu,
   onDismissContextMenu,
   onRequestRename,
+  onDuplicateSession,
   onRenameValueChange,
   onCommitRename,
   onCancelRename,
@@ -148,6 +150,7 @@ export function AssistantSessionList({
         deleteConfirmationSessionId={deleteConfirmationSessionId}
         onDismissContextMenu={onDismissContextMenu}
         onRequestRename={onRequestRename}
+        onDuplicateSession={onDuplicateSession}
         onRequestDelete={onRequestDelete}
         onConfirmDelete={onConfirmDelete}
         onCancelDelete={onCancelDelete}

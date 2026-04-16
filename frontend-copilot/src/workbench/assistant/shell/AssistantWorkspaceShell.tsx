@@ -6,9 +6,12 @@ import {
   listRuntimeAgents,
 } from '../../../features/copilot/chat-contract'
 import {
+  deleteCopilotHistoryThread,
+  duplicateCopilotHistoryThread,
   getCopilotHistoryRunReplay,
   getCopilotHistoryThreadDetail,
   listCopilotHistoryThreads,
+  renameCopilotHistoryThread,
 } from '../../../features/copilot/history'
 import { CopilotChatPanel } from '../../../features/copilot/CopilotChatPanel'
 import type { CopilotBootstrapController } from '../../../features/copilot/types'
@@ -29,6 +32,9 @@ export interface AssistantWorkspaceShellProps {
   listHistoryThreads?: typeof listCopilotHistoryThreads
   getHistoryThreadDetail?: typeof getCopilotHistoryThreadDetail
   getHistoryRunReplay?: typeof getCopilotHistoryRunReplay
+  renameHistoryThread?: typeof renameCopilotHistoryThread
+  duplicateHistoryThread?: typeof duplicateCopilotHistoryThread
+  deleteHistoryThread?: typeof deleteCopilotHistoryThread
   initialDirectoryState?: AssistantAgentDirectoryState
   initialSessionShell?: AssistantSessionShell | null
 }
@@ -41,6 +47,9 @@ export function AssistantWorkspaceShell({
   listHistoryThreads: listHistoryThreadsImpl = listCopilotHistoryThreads,
   getHistoryThreadDetail: getHistoryThreadDetailImpl = getCopilotHistoryThreadDetail,
   getHistoryRunReplay: getHistoryRunReplayImpl = getCopilotHistoryRunReplay,
+  renameHistoryThread: renameHistoryThreadImpl = renameCopilotHistoryThread,
+  duplicateHistoryThread: duplicateHistoryThreadImpl = duplicateCopilotHistoryThread,
+  deleteHistoryThread: deleteHistoryThreadImpl = deleteCopilotHistoryThread,
   initialDirectoryState = emptyAssistantAgentDirectoryState,
   initialSessionShell = null,
 }: AssistantWorkspaceShellProps) {
@@ -77,6 +86,7 @@ export function AssistantWorkspaceShell({
     handleSessionContextMenu,
     dismissSessionContextMenu,
     requestSessionRename,
+    duplicateSession,
     updateSessionRenameValue,
     commitSessionRename,
     cancelSessionRename,
@@ -92,6 +102,9 @@ export function AssistantWorkspaceShell({
     listHistoryThreads: listHistoryThreadsImpl,
     getHistoryThreadDetail: getHistoryThreadDetailImpl,
     getHistoryRunReplay: getHistoryRunReplayImpl,
+    renameHistoryThread: renameHistoryThreadImpl,
+    duplicateHistoryThread: duplicateHistoryThreadImpl,
+    deleteHistoryThread: deleteHistoryThreadImpl,
     initialDirectoryState,
     initialSessionShell,
   })
@@ -129,6 +142,7 @@ export function AssistantWorkspaceShell({
         onSessionContextMenu={handleSessionContextMenu}
         onDismissContextMenu={dismissSessionContextMenu}
         onRequestRename={requestSessionRename}
+        onDuplicateSession={duplicateSession}
         onRenameValueChange={updateSessionRenameValue}
         onCommitRename={commitSessionRename}
         onCancelRename={cancelSessionRename}

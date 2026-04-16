@@ -16,9 +16,12 @@ import {
   listRuntimeAgents,
 } from '../../features/copilot/chat-contract'
 import {
+  deleteCopilotHistoryThread,
+  duplicateCopilotHistoryThread,
   getCopilotHistoryRunReplay,
   getCopilotHistoryThreadDetail,
   listCopilotHistoryThreads,
+  renameCopilotHistoryThread,
 } from '../../features/copilot/history'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../../features/copilot/debug-mode-log'
 import { buildPersistedConversationFromHistory } from '../../features/copilot/persisted-history-view-model'
@@ -67,6 +70,10 @@ import {
   type AssistantSessionHistoryState,
 } from './assistant-history-state'
 import {
+  removeAssistantSessionShell,
+  renameAssistantSessionShell,
+} from './assistant-session-helpers'
+import {
   loadAssistantWorkspaceShellState,
   persistAssistantWorkspaceShellState,
 } from './assistant-workspace-shell-state'
@@ -86,6 +93,9 @@ interface UseAssistantWorkspaceStateInput {
   listHistoryThreads?: typeof listCopilotHistoryThreads
   getHistoryThreadDetail?: typeof getCopilotHistoryThreadDetail
   getHistoryRunReplay?: typeof getCopilotHistoryRunReplay
+  renameHistoryThread?: typeof renameCopilotHistoryThread
+  duplicateHistoryThread?: typeof duplicateCopilotHistoryThread
+  deleteHistoryThread?: typeof deleteCopilotHistoryThread
   loadShellState?: typeof loadAssistantWorkspaceShellState
   persistShellState?: typeof persistAssistantWorkspaceShellState
   initialDirectoryState?: AssistantAgentDirectoryState
@@ -128,6 +138,7 @@ interface UseAssistantWorkspaceStateResult {
   updateSessionRenameValue: (value: string) => void
   commitSessionRename: () => void
   cancelSessionRename: () => void
+  duplicateSession: (sessionId: string) => void
   requestSessionDelete: (sessionId: string) => void
   confirmSessionDelete: (sessionId: string) => void
   cancelSessionDelete: () => void
@@ -226,6 +237,9 @@ export function useAssistantWorkspaceState({
   listHistoryThreads: listHistoryThreadsImpl = listCopilotHistoryThreads,
   getHistoryThreadDetail: getHistoryThreadDetailImpl = getCopilotHistoryThreadDetail,
   getHistoryRunReplay: getHistoryRunReplayImpl = getCopilotHistoryRunReplay,
+  renameHistoryThread: renameHistoryThreadImpl = renameCopilotHistoryThread,
+  duplicateHistoryThread: duplicateHistoryThreadImpl = duplicateCopilotHistoryThread,
+  deleteHistoryThread: deleteHistoryThreadImpl = deleteCopilotHistoryThread,
   loadShellState: loadShellStateImpl = loadAssistantWorkspaceShellState,
   persistShellState: persistShellStateImpl = persistAssistantWorkspaceShellState,
   initialDirectoryState = emptyAssistantAgentDirectoryState,
@@ -417,6 +431,170 @@ export function useAssistantWorkspaceState({
     touchRuntimeController,
   ])
 
+  const renameSessionPersistence = useCallback(async (
+    sessionId: string,
+    nextTitle: string,
+    sessionEntry: AssistantSessionShell,
+  ) => {
+    if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
+      setSessionListState((current) => renameAssistantSessionShell(current, sessionId, nextTitle))
+      return
+    }
+
+    const result = await renameHistoryThreadImpl(sessionId, { title: nextTitle })
+    if (!result.ok) {
+      appendWorkspaceDebugLog('session-rename-failed', {
+        sessionId,
+        error: result.error,
+      })
+      throw new Error(result.error)
+    }
+
+    const renamedSessionShell = {
+      ...createAssistantSessionShellFromHistorySummary({
+        summary: result.thread,
+        agents: directoryAgentsRef.current,
+      }),
+      capabilities: sessionEntry.capabilities,
+    }
+
+    appendWorkspaceDebugLog('session-rename-succeeded', {
+      sessionId,
+      nextTitle: result.thread.title,
+      updatedAt: result.thread.updatedAt,
+    })
+    setSessionListState((current) => ({
+      ...current,
+      sessions: current.sessions.map((currentSession) => currentSession.sessionId === sessionId
+        ? renamedSessionShell
+        : currentSession),
+    }))
+    setSessionHistoryById((current) => {
+      const historyState = current[sessionId]
+      if (historyState === undefined) {
+        return current
+      }
+
+      return {
+        ...current,
+        [sessionId]: {
+          ...historyState,
+          summary: { ...result.thread },
+        },
+      }
+    })
+  }, [appendWorkspaceDebugLog, renameHistoryThreadImpl])
+
+  const duplicateSessionPersistence = useCallback(async (
+    sessionId: string,
+    sessionEntry: AssistantSessionShell,
+  ) => {
+    const result = await duplicateHistoryThreadImpl(sessionId)
+    if (!result.ok) {
+      appendWorkspaceDebugLog('session-duplicate-failed', {
+        sessionId,
+        sourceCapabilitiesVersion: sessionEntry.capabilities.capabilitiesVersion,
+        error: result.error,
+      })
+      throw new Error(result.error)
+    }
+
+    const duplicatedSessionShell = createAssistantSessionShellFromHistorySummary({
+      summary: result.thread,
+      agents: directoryAgentsRef.current,
+    })
+
+    appendWorkspaceDebugLog('session-duplicate-succeeded', {
+      sessionId,
+      duplicatedSessionId: duplicatedSessionShell.sessionId,
+      duplicatedTitle: result.thread.title,
+    })
+    setSessionListState((current) => ({
+      sessions: [
+        duplicatedSessionShell,
+        ...current.sessions.filter((currentSession) => currentSession.sessionId !== duplicatedSessionShell.sessionId),
+      ],
+      activeSessionId: duplicatedSessionShell.sessionId,
+    }))
+    setSessionHistoryById((current) => ({
+      ...current,
+      [duplicatedSessionShell.sessionId]: createAssistantSessionHistoryState(result.thread, null),
+    }))
+    setSelectedAgentId(duplicatedSessionShell.boundAgent.id)
+  }, [appendWorkspaceDebugLog, duplicateHistoryThreadImpl, setSelectedAgentId])
+
+  const deleteSessionPersistence = useCallback(async (
+    sessionId: string,
+    sessionEntry: AssistantSessionShell,
+  ) => {
+    if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
+      setSessionListState((current) => removeAssistantSessionShell(current, sessionId))
+      setSessionHistoryById((current) => {
+        if (current[sessionId] === undefined) {
+          return current
+        }
+        const nextState = { ...current }
+        delete nextState[sessionId]
+        return nextState
+      })
+      setRuntimeControllerBySessionId((current) => {
+        if (current[sessionId] === undefined) {
+          return current
+        }
+        const nextState = { ...current }
+        delete nextState[sessionId]
+        return nextState
+      })
+      return
+    }
+
+    const result = await deleteHistoryThreadImpl(sessionId)
+    if (!result.ok) {
+      appendWorkspaceDebugLog('session-delete-failed', {
+        sessionId,
+        sourceCapabilitiesVersion: sessionEntry.capabilities.capabilitiesVersion,
+        error: result.error,
+      })
+      throw new Error(result.error)
+    }
+
+    appendWorkspaceDebugLog('session-delete-succeeded', {
+      sessionId,
+      deletedAt: result.deletedAt,
+    })
+    setSessionListState((current) => ({
+      sessions: current.sessions.filter((currentSession) => currentSession.sessionId !== sessionId),
+      activeSessionId: current.activeSessionId === sessionId ? null : current.activeSessionId,
+    }))
+    setSessionHistoryById((current) => {
+      if (current[sessionId] === undefined) {
+        return current
+      }
+      const nextState = { ...current }
+      delete nextState[sessionId]
+      return nextState
+    })
+    setRuntimeControllerBySessionId((current) => {
+      if (current[sessionId] === undefined) {
+        return current
+      }
+      const nextState = { ...current }
+      delete nextState[sessionId]
+      return nextState
+    })
+    const previousShellState = persistedShellStateRef.current
+    const nextSelectedRunIdByThreadId = Object.fromEntries(
+      Object.entries(previousShellState.selectedRunIdByThreadId).filter(([threadId]) => threadId !== sessionId),
+    )
+    const nextShellState = {
+      selectedThreadId: previousShellState.selectedThreadId === sessionId ? null : previousShellState.selectedThreadId,
+      selectedRunIdByThreadId: nextSelectedRunIdByThreadId,
+      threadSummaries: previousShellState.threadSummaries.filter((threadSummary) => threadSummary.threadId !== sessionId),
+    }
+    persistedShellStateRef.current = nextShellState
+    persistShellStateImpl(nextShellState)
+  }, [appendWorkspaceDebugLog, deleteHistoryThreadImpl, persistShellStateImpl])
+
   const {
     renderedSessions,
     dragPreviewIndex,
@@ -445,6 +623,7 @@ export function useAssistantWorkspaceState({
     updateSessionRenameValue,
     commitSessionRename,
     cancelSessionRename,
+    duplicateSession,
     requestSessionDelete,
     confirmSessionDelete,
     cancelSessionDelete,
@@ -454,6 +633,9 @@ export function useAssistantWorkspaceState({
     setSelectedAgentId,
     dismissSessionContextMenu,
     showSessionContextMenu,
+    onRenameSession: renameSessionPersistence,
+    onDeleteSession: deleteSessionPersistence,
+    onDuplicateSession: duplicateSessionPersistence,
   })
 
   const activeSessionHistory = sessionShell === null
@@ -1332,6 +1514,7 @@ export function useAssistantWorkspaceState({
     updateSessionRenameValue,
     commitSessionRename,
     cancelSessionRename,
+    duplicateSession,
     requestSessionDelete,
     confirmSessionDelete,
     cancelSessionDelete,

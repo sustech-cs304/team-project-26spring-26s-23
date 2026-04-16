@@ -13,6 +13,7 @@ interface AssistantSessionContextMenuProps {
   deleteConfirmationSessionId: string | null
   onDismissContextMenu: () => void
   onRequestRename: (sessionId: string) => void
+  onDuplicateSession: (sessionId: string) => void
   onRequestDelete: (sessionId: string) => void
   onConfirmDelete: (sessionId: string) => void
   onCancelDelete: () => void
@@ -24,6 +25,7 @@ export function AssistantSessionContextMenu({
   deleteConfirmationSessionId,
   onDismissContextMenu,
   onRequestRename,
+  onDuplicateSession,
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -116,7 +118,13 @@ export function AssistantSessionContextMenu({
               className="session-context-menu__item"
               data-testid={action.testId}
               role="menuitem"
-              onClick={onDismissContextMenu}
+              onClick={() => {
+                if (action.testId === assistantSessionCopyActions[0]?.testId) {
+                  onDuplicateSession(sessionContextMenu.sessionId)
+                  return
+                }
+                onDismissContextMenu()
+              }}
             >
               {action.label}
             </button>
