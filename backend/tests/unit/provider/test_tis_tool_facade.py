@@ -377,11 +377,20 @@ def test_personal_grades_tool_shapes_output_and_persists_host_state_and_artifact
     assert set(result.output) == {
         "sourceUrl",
         "totalRecords",
+        "terms",
+        "counts",
         "resolvedRoleCode",
         "logSummary",
+        "persistence",
     }
     assert result.output["sourceUrl"] == "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx"
     assert result.output["totalRecords"] == 1
+    assert result.output["terms"] == ["2025-20261"]
+    assert result.output["counts"] == {
+        "records": 1,
+        "terms": 1,
+        "probes": 1,
+    }
     assert result.output["resolvedRoleCode"] == "01"
     assert result.output["logSummary"] == {
         "total": 1,
@@ -389,6 +398,17 @@ def test_personal_grades_tool_shapes_output_and_persists_host_state_and_artifact
         "by_layer": {"provider": 1},
         "by_source": {"test.personal_grades": 1},
     }
+    assert result.output["persistence"] == {
+        "state": {
+            "namespace": "tis.personal_grades.fetch",
+            "key": "grades-latest",
+        },
+        "artifacts": [result.artifacts[0].to_dict()],
+    }
+    assert "homepage" not in result.output
+    assert "probes" not in result.output
+    assert "logs" not in result.output
+    assert "gradeRecords" not in result.output
     assert result.metadata == {
         "toolId": "tis.personal_grades.fetch",
         "credentialSource": "arguments",
@@ -503,18 +523,36 @@ def test_credit_gpa_tool_uses_secret_provider_and_database_db_when_persisting(
     assert result.output is not None
     assert set(result.output) == {
         "sourceUrl",
+        "pageUrl",
+        "apiUrl",
         "resolvedRoleCode",
         "summary",
+        "counts",
         "logSummary",
         "persistence",
     }
     assert result.output["summary"]["average_credit_gpa"] == 3.82
+    assert result.output["counts"] == {
+        "terms": 1,
+        "years": 1,
+        "probes": 1,
+    }
     assert result.output["resolvedRoleCode"] == "01"
     assert result.output["persistence"] == {
         "enabled": True,
         "owner_key": "student_a",
         "db_path": resolved_path,
+        "state": {
+            "namespace": "tis.credit_gpa.fetch",
+            "key": "credit-gpa-latest",
+        },
+        "artifacts": [result.artifacts[0].to_dict()],
     }
+    assert "homepage" not in result.output
+    assert "probes" not in result.output
+    assert "logs" not in result.output
+    assert "termRecords" not in result.output
+    assert "yearRecords" not in result.output
     assert result.metadata == {
         "toolId": "tis.credit_gpa.fetch",
         "credentialSource": "host_secrets",
@@ -804,6 +842,8 @@ def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypa
     assert result.output is not None
     assert set(result.output) == {
         "sourceUrl",
+        "pageUrl",
+        "apiUrl",
         "semester",
         "currentSemester",
         "semesterSource",
@@ -811,12 +851,29 @@ def test_selected_courses_tool_normalizes_inputs_and_maps_invalid_input(monkeypa
         "resolvedPylx",
         "summary",
         "courseCount",
+        "counts",
         "logSummary",
+        "persistence",
     }
     assert result.output["courseCount"] == 1
+    assert result.output["counts"] == {
+        "courses": 1,
+        "probes": 1,
+    }
     assert result.output["semesterSource"] == "parameter"
     assert result.output["resolvedRoleCode"] == "01"
     assert result.output["resolvedPylx"] == "1"
+    assert result.output["persistence"] == {
+        "state": {
+            "namespace": "tis.selected_courses.fetch",
+            "key": "selected-courses-latest",
+        },
+        "artifacts": [result.artifacts[0].to_dict()],
+    }
+    assert "homepage" not in result.output
+    assert "probes" not in result.output
+    assert "logs" not in result.output
+    assert "courses" not in result.output
     assert result.metadata == {
         "toolId": "tis.selected_courses.fetch",
         "credentialSource": "arguments",

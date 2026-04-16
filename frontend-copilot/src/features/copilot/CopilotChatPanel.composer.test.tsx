@@ -990,7 +990,14 @@ describe('CopilotChatPanel composer interactions', () => {
     )
 
     expect(rendered.getByTestId('chat-message-tool-toggle-1').getAttribute('aria-expanded')).toBe('true')
-    expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    const outputJson = rendered.getByTestId('chat-message-tool-output-1-json')
+    expect(outputJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
+    expect(outputJson.textContent).toContain('condition')
+    expect(outputJson.textContent).toContain('temperatureC')
+    expect(outputJson.textContent).toContain('humidity')
+    expect(outputJson.textContent).toContain('体感舒适，适合外出。')
+    expect(outputJson.textContent).not.toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(rendered.getByTestId('chat-message-tool-extra-1-1-text').textContent).toContain('Shenzhen：晴 / 24°C / 湿度 60%')
     expect(rendered.getByTestId('chat-message-tool-input-toggle-1').textContent).toContain('输入')
     expect(rendered.getByTestId('chat-message-tool-input-toggle-1').getAttribute('aria-expanded')).toBe('false')
     expect(rendered.queryByTestId('chat-message-tool-input-panel-1')).toBeNull()
@@ -1612,7 +1619,7 @@ function createToolLifecycleSendMessageSpy() {
           toolId: 'tool.weather-current',
           phase: 'completed',
           title: '天气工具已返回结果',
-          summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+          summary: '{\n  "condition": "晴",\n  "humidity": 60,\n  "location": "Shenzhen",\n  "summary": "体感舒适，适合外出。",\n  "temperatureC": 24\n}',
           inputSummary: '{"location":"Shenzhen"}',
           resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
         },

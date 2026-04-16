@@ -68,7 +68,7 @@ describe('run state projection', () => {
           toolId: 'tool.weather-current',
           toolPhase: 'completed',
           title: '天气工具已返回结果',
-          summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+          summary: '{\n  "condition": "晴",\n  "humidity": 60,\n  "location": "Shenzhen",\n  "summary": "体感舒适，适合外出。",\n  "temperatureC": 24\n}',
           inputSummary: '{"location":"Shenzhen"}',
           resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
           errorSummary: null,
@@ -124,9 +124,10 @@ describe('run state projection', () => {
     })
     expect(projectedTurns[2]).toMatchObject({
       kind: 'tool',
-      content: 'Shenzhen：晴 / 24°C / 湿度 60%',
+      content: '{\n  "condition": "晴",\n  "humidity": 60,\n  "location": "Shenzhen",\n  "summary": "体感舒适，适合外出。",\n  "temperatureC": 24\n}',
       resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
     })
+    expect(() => JSON.parse(projectedTurns[2]?.content ?? '')).not.toThrow()
     expect(projectedTurns[3]).toMatchObject({
       kind: 'assistant',
       content: '第二段',

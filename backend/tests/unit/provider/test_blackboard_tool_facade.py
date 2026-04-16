@@ -600,10 +600,14 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "resourceCourseLimit",
         "scrapedCounts",
         "firstSyncStats",
+        "secondSyncStats",
+        "tableCounts",
+        "expectedActiveCounts",
         "integrityOk",
         "secondSyncHasNoNewRecords",
         "secondSyncHasNoDeletedRecords",
         "logSummary",
+        "persistence",
     }
     assert result.output["dbPath"] == "database-root/blackboard/snapshot.db"
     assert result.output["resourceCourseLimit"] == 2
@@ -621,6 +625,27 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "grades": {"inserted": 1, "updated": 0, "deleted": 0},
         "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
     }
+    assert result.output["secondSyncStats"] == {
+        "courses": {"inserted": 0, "updated": 1, "deleted": 0},
+        "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
+        "resources": {"inserted": 0, "updated": 1, "deleted": 0},
+        "grades": {"inserted": 0, "updated": 1, "deleted": 0},
+        "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
+    }
+    assert result.output["tableCounts"] == {
+        "courses": {"total": 1, "active": 1},
+        "assignments": {"total": 1, "active": 1},
+        "resources": {"total": 1, "active": 1},
+        "grades": {"total": 1, "active": 1},
+        "announcements": {"total": 1, "active": 1},
+    }
+    assert result.output["expectedActiveCounts"] == {
+        "courses": 1,
+        "assignments": 1,
+        "resources": 1,
+        "grades": 1,
+        "announcements": 1,
+    }
     assert result.output["integrityOk"] is True
     assert result.output["secondSyncHasNoNewRecords"] is True
     assert result.output["secondSyncHasNoDeletedRecords"] is True
@@ -633,6 +658,17 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     }
     assert len(result.artifacts) == 1
     assert result.artifacts[0].artifact_id == "artifact-1"
+    assert result.output["persistence"] == {
+        "state": {
+            "namespace": "blackboard.snapshot_sync",
+            "key": "snapshot-latest",
+        },
+        "artifacts": [result.artifacts[0].to_dict()],
+    }
+    assert "logs" not in result.output
+    assert "progressMessages" not in result.output
+    assert "courses" not in result.output
+    assert "payloads" not in result.output
     assert database.requests == ["blackboard/snapshot.db"]
     persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
     persisted_state_output = state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]
@@ -674,6 +710,8 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "grades": 1,
         "announcements": 1,
     }
+    assert "courses" not in persisted_artifact_output
+    assert "payloads" not in persisted_artifact_output
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",

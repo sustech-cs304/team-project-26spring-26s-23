@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Callable
 from types import SimpleNamespace
 
@@ -160,6 +161,31 @@ def test_run_returns_stable_text_from_controlled_agent_stub(
 
 
 
+def test_runtime_tool_lifecycle_event_to_payload_preserves_canonical_summary_and_result_summary() -> None:
+    canonical_summary = '{\n  "ok": true\n}'
+
+    payload = RuntimeToolLifecycleEvent(
+        tool_call_id="tool.weather-current:call-1",
+        tool_id=WEATHER_CURRENT_TOOL_ID,
+        phase="completed",
+        title="天气工具已返回结果",
+        summary=canonical_summary,
+        input_summary='{"location": "Shenzhen"}',
+        result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+    ).to_payload()
+
+    assert payload == {
+        "toolCallId": "tool.weather-current:call-1",
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "phase": "completed",
+        "title": "天气工具已返回结果",
+        "summary": canonical_summary,
+        "inputSummary": '{"location": "Shenzhen"}',
+        "resultSummary": "Shenzhen：晴 / 24°C / 湿度 60%",
+    }
+
+
+
 def test_open_event_stream_executes_weather_tool_and_records_started_completed_events() -> None:
     executor = PydanticAIAgentExecutor(
         model=TestModel(
@@ -193,7 +219,20 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
     assert result["output"] == "Weather reply"
     assert [payload["phase"] for payload in tool_events] == ["started", "completed"]
     assert all(payload["toolId"] == WEATHER_CURRENT_TOOL_ID for payload in tool_events)
-    assert tool_events[1]["resultSummary"] is not None
+
+    completed_payload = tool_events[1]
+    parsed_summary = json.loads(completed_payload["summary"])
+    assert set(parsed_summary) == {"condition", "humidity", "location", "summary", "temperatureC"}
+    assert isinstance(parsed_summary["location"], str)
+    assert parsed_summary["location"].strip() != ""
+    assert completed_payload["summary"] == json.dumps(
+        parsed_summary,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    )
+    assert completed_payload["resultSummary"] is not None
+    assert completed_payload["summary"] != completed_payload["resultSummary"]
 
 
 
