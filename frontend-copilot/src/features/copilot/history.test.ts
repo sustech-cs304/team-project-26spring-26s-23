@@ -9,7 +9,6 @@ import type {
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
   CopilotHistoryThreadDuplicateResult,
-  CopilotHistoryThreadPurgeResult,
   CopilotHistoryThreadRenameResult,
 } from '../../../electron/copilot-history'
 import {
@@ -20,7 +19,6 @@ import {
   getCopilotHistoryThreadDetail,
   HISTORY_API_UNAVAILABLE_ERROR,
   listCopilotHistoryThreads,
-  purgeCopilotHistoryThread,
   renameCopilotHistoryThread,
   restoreCopilotHistoryDatabase,
 } from './history'
@@ -54,10 +52,6 @@ describe('copilot history bridge', () => {
       error: HISTORY_API_UNAVAILABLE_ERROR,
     })
     await expect(deleteCopilotHistoryThread('thread-1')).resolves.toEqual({
-      ok: false,
-      error: HISTORY_API_UNAVAILABLE_ERROR,
-    })
-    await expect(purgeCopilotHistoryThread('thread-1')).resolves.toEqual({
       ok: false,
       error: HISTORY_API_UNAVAILABLE_ERROR,
     })
@@ -155,13 +149,6 @@ describe('copilot history bridge', () => {
       threadId: 'thread-1',
       deletedAt: '2026-04-13T15:06:00Z',
     }
-    const purgeResult: CopilotHistoryThreadPurgeResult = {
-      ok: true,
-      version: 'chat-history-v1',
-      threadId: 'thread-1',
-      purgedAt: '2026-04-13T15:07:00Z',
-      deletedAt: '2026-04-13T15:06:00Z',
-    }
     const backupResult: CopilotHistoryDatabaseBackupResult = {
       ok: true,
       version: 'chat-history-v1',
@@ -183,7 +170,6 @@ describe('copilot history bridge', () => {
       renameThread: vi.fn().mockResolvedValue(renameResult),
       duplicateThread: vi.fn().mockResolvedValue(duplicateResult),
       deleteThread: vi.fn().mockResolvedValue(deleteResult),
-      purgeThread: vi.fn().mockResolvedValue(purgeResult),
       backupDatabase: vi.fn().mockResolvedValue(backupResult),
       restoreDatabase: vi.fn().mockResolvedValue(restoreResult),
     }
@@ -198,7 +184,6 @@ describe('copilot history bridge', () => {
     await expect(renameCopilotHistoryThread('thread-1', { title: '已重命名线程' })).resolves.toEqual(renameResult)
     await expect(duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' })).resolves.toEqual(duplicateResult)
     await expect(deleteCopilotHistoryThread('thread-1')).resolves.toEqual(deleteResult)
-    await expect(purgeCopilotHistoryThread('thread-1')).resolves.toEqual(purgeResult)
     await expect(backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual(backupResult)
     await expect(restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' })).resolves.toEqual(restoreResult)
     expect(api.listThreads).toHaveBeenCalledOnce()
@@ -207,7 +192,6 @@ describe('copilot history bridge', () => {
     expect(api.renameThread).toHaveBeenCalledWith('thread-1', { title: '已重命名线程' })
     expect(api.duplicateThread).toHaveBeenCalledWith('thread-1', { title: '历史线程（副本）' })
     expect(api.deleteThread).toHaveBeenCalledWith('thread-1')
-    expect(api.purgeThread).toHaveBeenCalledWith('thread-1')
     expect(api.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })
     expect(api.restoreDatabase).toHaveBeenCalledWith({ sourcePath: 'backups/history.db' })
   })

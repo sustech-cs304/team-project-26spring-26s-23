@@ -10,7 +10,6 @@ import type {
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
   CopilotHistoryThreadDuplicateResult,
-  CopilotHistoryThreadPurgeResult,
   CopilotHistoryThreadRenameResult,
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
@@ -201,13 +200,6 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       ok: true,
       version: 'chat-history-v1',
       threadId: 'thread-1',
-      deletedAt: '2026-04-13T14:06:00Z',
-    })),
-    purgeCopilotHistoryThread: vi.fn(async (): Promise<CopilotHistoryThreadPurgeResult> => ({
-      ok: true,
-      version: 'chat-history-v1',
-      threadId: 'thread-1',
-      purgedAt: '2026-04-13T14:07:00Z',
       deletedAt: '2026-04-13T14:06:00Z',
     })),
     backupCopilotHistoryDatabase: vi.fn(async (): Promise<CopilotHistoryDatabaseBackupResult> => ({

@@ -105,7 +105,7 @@ Provider、route、Thinking 的完整事实请分别看：
 - projection 只是列表、时间线和 replay 便利层，必要时可以从 truth 重建
 - renderer 启动时先恢复轻量 thread shell，再按需读取 thread detail 和 run replay
 - drift 提示会把“历史快照事实”和“当前可用性判断”分开展示；若依赖缺失，继续对话必须显式 rebind
-- delete / purge / backup / restore 不直接让 renderer 触碰 SQLite 文件，而是通过 desktop runtime 的历史端点受控执行
+- delete / backup / restore 不直接让 renderer 触碰 SQLite 文件，而是通过 desktop runtime 的历史端点受控执行
 
 ## 工具步骤现在怎么走
 

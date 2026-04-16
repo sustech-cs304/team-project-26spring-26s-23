@@ -191,13 +191,6 @@ describe('createMainProcessServices', () => {
       threadId: 'thread-1',
       deletedAt: '2026-04-13T14:06:00Z',
     } as const
-    const purgeThreadResult = {
-      ok: true,
-      version: 'chat-history-v1',
-      threadId: 'thread-1',
-      purgedAt: '2026-04-13T14:07:00Z',
-      deletedAt: '2026-04-13T14:06:00Z',
-    } as const
     const backupDatabaseResult = {
       ok: true,
       version: 'chat-history-v1',
@@ -277,7 +270,6 @@ describe('createMainProcessServices', () => {
       renameThread: vi.fn(async (_threadId: string, _request: { title: string }) => renameThreadResult),
       duplicateThread: vi.fn(async (_threadId: string, _request?: { title?: string | null }) => duplicateThreadResult),
       deleteThread: vi.fn(async (_threadId: string) => deleteThreadResult),
-      purgeThread: vi.fn(async (_threadId: string) => purgeThreadResult),
       backupDatabase: vi.fn(async (_request?: { targetPath?: string | null }) => backupDatabaseResult),
       restoreDatabase: vi.fn(async (_request: { sourcePath: string }) => restoreDatabaseResult),
     } as unknown as ElectronCopilotHistoryService
@@ -346,7 +338,6 @@ describe('createMainProcessServices', () => {
     await expect(services.renameCopilotHistoryThread('thread-1', { title: '已重命名线程' })).resolves.toEqual(renameThreadResult)
     await expect(services.duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' })).resolves.toEqual(duplicateThreadResult)
     await expect(services.deleteCopilotHistoryThread('thread-1')).resolves.toEqual(deleteThreadResult)
-    await expect(services.purgeCopilotHistoryThread('thread-1')).resolves.toEqual(purgeThreadResult)
     await expect(services.backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual(
       backupDatabaseResult,
     )
@@ -381,7 +372,6 @@ describe('createMainProcessServices', () => {
     expect(copilotHistoryService.renameThread).toHaveBeenCalledWith('thread-1', { title: '已重命名线程' })
     expect(copilotHistoryService.duplicateThread).toHaveBeenCalledWith('thread-1', { title: '历史线程（副本）' })
     expect(copilotHistoryService.deleteThread).toHaveBeenCalledWith('thread-1')
-    expect(copilotHistoryService.purgeThread).toHaveBeenCalledWith('thread-1')
     expect(copilotHistoryService.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })
     expect(copilotHistoryService.restoreDatabase).toHaveBeenCalledWith({ sourcePath: 'backups/history.db' })
 

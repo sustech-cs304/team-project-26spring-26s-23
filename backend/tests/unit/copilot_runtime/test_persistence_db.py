@@ -34,6 +34,10 @@ def test_upgrade_database_creates_expected_tables_and_indexes(tmp_path: Path) ->
 
         assert {"threads", "runs", "run_events", "thread_projection", "run_projection"} <= table_names
 
+        thread_columns = {column["name"] for column in inspector.get_columns("threads")}
+        assert "archived_at" not in thread_columns
+        assert "deleted_at" not in thread_columns
+
         run_event_indexes = {item["name"] for item in inspector.get_indexes("run_events")}
         run_unique_constraints = {
             item["name"] for item in inspector.get_unique_constraints("run_events") if item.get("name")

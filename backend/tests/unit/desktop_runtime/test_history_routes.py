@@ -271,7 +271,7 @@ def test_history_routes_support_rename_and_duplicate_for_persisted_threads(tmp_p
 
 
 
-def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) -> None:
+def test_history_routes_support_delete_backup_and_restore(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path, local_token="history-token"))
 
     with TestClient(app) as client:
@@ -284,13 +284,6 @@ def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) 
         )
         store.mark_run_streaming("run-1")
         store.mark_run_completed("run-1", assistant_text="Recovered reply")
-        store.create_thread(bound_agent_id="default", thread_id="thread-2")
-        store.create_run(
-            thread_id="thread-2",
-            run_id="run-2",
-            request=_build_stored_run_input(user_text="Purge this thread too"),
-        )
-        store.mark_run_completed("run-2", assistant_text="Purged reply")
 
         headers = {LOCAL_TOKEN_HEADER_NAME: "history-token"}
         backup_response = client.post(
@@ -302,9 +295,6 @@ def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) 
         hidden_threads_response = client.get("/history/threads", headers=headers)
         deleted_detail_response = client.get("/history/threads/thread-1", headers=headers)
         deleted_replay_response = client.get("/history/runs/run-1/replay", headers=headers)
-        purge_response = client.request("DELETE", "/history/threads/thread-2/purge", headers=headers)
-        purged_detail_response = client.get("/history/threads/thread-2", headers=headers)
-        purged_replay_response = client.get("/history/runs/run-2/replay", headers=headers)
         restore_response = client.post(
             "/history/database/restore",
             headers=headers,
@@ -322,9 +312,6 @@ def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) 
     assert hidden_threads_response.status_code == 200
     assert deleted_detail_response.status_code == 404
     assert deleted_replay_response.status_code == 404
-    assert purge_response.status_code == 200
-    assert purged_detail_response.status_code == 404
-    assert purged_replay_response.status_code == 404
     assert restore_response.status_code == 200
     assert restored_threads_response.status_code == 200
     assert invalid_restore_response.status_code == 400
@@ -334,7 +321,6 @@ def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) 
     hidden_threads_payload = hidden_threads_response.json()
     deleted_detail_payload = deleted_detail_response.json()
     deleted_replay_payload = deleted_replay_response.json()
-    purge_payload = purge_response.json()
     restore_payload = restore_response.json()
     restored_threads_payload = restored_threads_response.json()
     invalid_restore_payload = invalid_restore_response.json()
@@ -343,22 +329,13 @@ def test_history_routes_support_delete_purge_backup_and_restore(tmp_path: Path) 
     assert backup_payload["databasePath"].endswith("copilot-chat.db")
     assert delete_payload["threadId"] == "thread-1"
     assert delete_payload["deletedAt"] is not None
-    assert [thread["threadId"] for thread in hidden_threads_payload["threads"]] == ["thread-2"]
-    assert hidden_threads_payload["threads"][0]["title"] == "Purge this thread too"
-    assert hidden_threads_payload["threads"][0]["lastRunId"] == "run-2"
-    assert hidden_threads_payload["threads"][0]["lastRunStatus"] == "completed"
-    assert hidden_threads_payload["threads"][0]["lastUserMessagePreview"] == "Purge this thread too"
-    assert hidden_threads_payload["threads"][0]["lastAssistantMessagePreview"] == "Purged reply"
-    assert hidden_threads_payload["threads"][0]["summary"] == "Purged reply"
-    assert hidden_threads_payload["threads"][0]["driftSummary"]["status"] == "not_evaluated"
+    assert [thread["threadId"] for thread in hidden_threads_payload["threads"]] == []
     assert deleted_detail_payload["detail"]["code"] == "thread_not_found"
     assert deleted_detail_payload["detail"]["threadId"] == "thread-1"
     assert deleted_replay_payload["detail"]["code"] == "run_not_found"
     assert deleted_replay_payload["detail"]["runId"] == "run-1"
-    assert purge_payload["threadId"] == "thread-2"
-    assert purge_payload["deletedAt"] is None
     assert restore_payload["sourcePath"] == backup_payload["backupPath"]
-    assert [thread["threadId"] for thread in restored_threads_payload["threads"]] == ["thread-2", "thread-1"]
+    assert [thread["threadId"] for thread in restored_threads_payload["threads"]] == ["thread-1"]
     assert invalid_restore_payload["detail"]["code"] == "restore_source_path_required"
 
 

@@ -158,7 +158,7 @@ def test_sqlite_session_store_supports_persistent_rename_and_duplicate(tmp_path:
 
 
 
-def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path: Path) -> None:
+def test_sqlite_session_store_supports_delete_backup_and_restore(tmp_path: Path) -> None:
     db_path = tmp_path / "database" / "chat.db"
     store = SQLiteSessionStore(db_path=db_path)
     try:
@@ -186,16 +186,6 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
         with pytest.raises(LookupError, match="Run 'run-1' does not exist."):
             history_service.get_run_replay("run-1")
 
-        store.create_thread(bound_agent_id="default", thread_id="thread-2")
-        store.create_run(
-            thread_id="thread-2",
-            run_id="run-2",
-            request=_build_stored_run_input(user_text="purge this thread"),
-        )
-        store.mark_run_completed("run-2", assistant_text="purged reply")
-        purge_result = store.purge_thread("thread-2")
-        purged_thread = store.get_thread("thread-2")
-        purged_run = store.get_run("run-2")
         restore_result = store.restore_database(source_path=backup_result.backupPath)
         restored_threads = history_service.list_threads()
         restored_detail = history_service.get_thread_detail("thread-1")
@@ -216,10 +206,6 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
         assert [thread.threadId for thread in hidden_threads.threads] == []
         assert deleted_thread is None
         assert deleted_run is None
-        assert purge_result.threadId == "thread-2"
-        assert purge_result.deletedAt is None
-        assert purged_thread is None
-        assert purged_run is None
         assert Path(backup_result.backupPath).is_file()
         assert restore_result.sourcePath == backup_result.backupPath
         assert [thread.threadId for thread in restored_threads.threads] == ["thread-1"]

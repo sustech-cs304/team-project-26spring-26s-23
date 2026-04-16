@@ -34,8 +34,6 @@ def upgrade() -> None:
         sa.Column("last_assistant_message_preview", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("schema_version", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )

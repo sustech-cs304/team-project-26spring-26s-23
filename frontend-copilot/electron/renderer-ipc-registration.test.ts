@@ -10,7 +10,6 @@ import {
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
-  COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
   COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
@@ -43,7 +42,6 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
       COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
       COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
-      COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
       COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
       COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
@@ -67,7 +65,6 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
       COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
       COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
-      COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
       COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
       COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
@@ -85,7 +82,6 @@ describe('registerRendererIpcHandlers', () => {
     const renameThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RENAME_THREAD_CHANNEL)
     const duplicateThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL)
     const deleteThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DELETE_THREAD_CHANNEL)
-    const purgeThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_PURGE_THREAD_CHANNEL)
     const backupDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL)
     const restoreDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL)
     const loadRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)
@@ -121,9 +117,6 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(deleteThreadHandler(undefined, 'thread-1')).resolves.toEqual(
       await handlers.deleteCopilotHistoryThread('thread-1'),
-    )
-    await expect(purgeThreadHandler(undefined, 'thread-1')).resolves.toEqual(
-      await handlers.purgeCopilotHistoryThread('thread-1'),
     )
     await expect(backupDatabaseHandler(undefined, { targetPath: 'backups/history.db' })).resolves.toEqual(
       await handlers.backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' }),
