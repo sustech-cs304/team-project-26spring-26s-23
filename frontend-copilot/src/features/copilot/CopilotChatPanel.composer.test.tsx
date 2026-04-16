@@ -1727,6 +1727,61 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('allows continuing a restored history thread immediately when no run browse is selected', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const sessionHistory = {
+      ...createHistoryStateWithProviderDrift(),
+      selectedRunId: null,
+      replayStatus: 'idle' as const,
+      replayError: null,
+      replay: null,
+    }
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={sessionHistory}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    await setFormControlValue(messageInput, '恢复后直接继续聊天')
+
+    expect(rendered.queryByTestId('chat-history-drift-notice')).toBeNull()
+    expect(rendered.queryByTestId('chat-history-run-selector-label')).toBeNull()
+    expect(sendButton.disabled).toBe(false)
+    expect(sendButton.title).toBe('发送消息')
+
+    await submitForm(composer)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
+      message: {
+        content: '恢复后直接继续聊天',
+      },
+    })
+
+    rendered.unmount()
+  })
+
   it('allows a subsequent successful send after a legacy-provider validation failure and clears the stale error message', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({

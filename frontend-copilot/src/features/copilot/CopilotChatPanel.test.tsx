@@ -359,6 +359,81 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
   })
 
+  it('keeps a restored history thread on the default chat path until run browse is explicitly selected', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          selectedRunId: null,
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-2b',
+              sequenceStart: 1,
+              text: '恢复后默认直接停留在普通聊天主视图。',
+            },
+          ],
+          runSummaries: [
+            {
+              runId: 'run-2a',
+              threadId: 'thread-1',
+              status: 'completed',
+              createdAt: '2026-04-13T15:00:00Z',
+              updatedAt: '2026-04-13T15:03:00Z',
+              startedAt: '2026-04-13T15:00:01Z',
+              terminalAt: '2026-04-13T15:03:00Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '第一轮',
+              assistantText: '第一轮回复',
+            },
+            {
+              runId: 'run-2b',
+              threadId: 'thread-1',
+              status: 'completed',
+              createdAt: '2026-04-13T15:04:00Z',
+              updatedAt: '2026-04-13T15:05:00Z',
+              startedAt: '2026-04-13T15:04:01Z',
+              terminalAt: '2026-04-13T15:05:00Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '第二轮',
+              assistantText: '第二轮回复',
+            },
+          ],
+          availabilityDrift: {
+            status: 'historical_provider_removed',
+            historicalModelId: 'legacy-model',
+            historicalToolIds: ['tool.file-convert'],
+            historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
+            warnings: [{
+              code: 'historical_provider_removed',
+              message: '历史线程绑定的模型服务商当前已不可用。',
+            }],
+            requiresExplicitRebind: true,
+          },
+          replayStatus: 'ready',
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('恢复后默认直接停留在普通聊天主视图。')
+    expect(html).not.toContain('data-testid="chat-history-run-selector-label"')
+    expect(html).not.toContain('data-testid="chat-history-drift-notice"')
+  })
+
   it('shows persisted capability hydration failures as a visible retryable notice and disables send', async () => {
     const retrySessionHistory = vi.fn()
     const rendered = renderWithRoot(

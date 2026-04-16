@@ -842,6 +842,93 @@ describe('AssistantWorkspace render + interactions', () => {
     remounted.unmount()
   })
 
+  it('clears a restored active thread back to the default thread view when history restore reapplies summaries', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const firstFixture = createPersistedHistoryFixture()
+    const secondFixture = createMultiRunPersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true,
+      version: 'chat-history-v1',
+      threads: [firstFixture.summary, secondFixture.summary],
+    })
+    const getHistoryThreadDetail = vi.fn().mockImplementation(async (threadId: string) => (
+      threadId === secondFixture.summary.threadId ? secondFixture.detail : firstFixture.detail
+    ))
+    const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => {
+      if (runId === firstFixture.replay.run.runId) {
+        return firstFixture.replay
+      }
+
+      return secondFixture.replaysByRunId[runId as keyof typeof secondFixture.replaysByRunId]
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === firstFixture.summary.threadId)
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-session-card-thread-2'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-2'
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === secondFixture.summary.threadId)
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+
+    await act(async () => {
+      getLastMockCopilotChatPanelProps().selectSessionHistoryRun?.('run-2a')
+    })
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-2a'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+    ))
+
+    const replayCallCountBeforeRestore = getHistoryRunReplay.mock.calls.length
+    const detailCallCountBeforeRestore = getHistoryThreadDetail.mock.calls.length
+
+    await act(async () => {
+      getLastMockCopilotChatPanelProps().onSessionRunSettled?.('run-2a', 'thread-2')
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => (
+      listHistoryThreads.mock.calls.length >= 2
+      && getHistoryThreadDetail.mock.calls.length > detailCallCountBeforeRestore
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-2'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'idle'
+    ))
+
+    expect(getHistoryRunReplay.mock.calls.length).toBe(replayCallCountBeforeRestore)
+    expect(readPersistedAssistantWorkspaceShellState()).toMatchObject({
+      selectedThreadId: 'thread-2',
+      selectedRunIdByThreadId: {},
+    })
+
+    rendered.unmount()
+  })
+
   it('retries an initially empty persisted history snapshot and restores threads when a later retry returns data', async () => {
     mockCopilotChatPanel.mockClear()
 
