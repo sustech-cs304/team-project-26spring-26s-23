@@ -147,12 +147,13 @@ describe('AssistantWorkspace render + interactions', () => {
       getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === historyFixture.summary.threadId)
     ))
     await waitForAssistantWorkspaceCondition(() => (
-      getHistoryRunReplay.mock.calls.some(([runId]) => runId === historyFixture.replay.run.runId)
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
 
     expect(listHistoryThreads).toHaveBeenCalledOnce()
     expect(getHistoryThreadDetail).toHaveBeenCalledWith(historyFixture.summary.threadId)
-    expect(getHistoryRunReplay).toHaveBeenCalledWith(historyFixture.replay.run.runId)
+    expect(getHistoryRunReplay).not.toHaveBeenCalled()
     expect(rendered.getByTestId('assistant-session-card-thread-1').textContent).toContain('历史线程')
 
     expect(getLastMockCopilotChatPanelProps()).toMatchObject({
@@ -164,8 +165,8 @@ describe('AssistantWorkspace render + interactions', () => {
       }),
       sessionHistory: expect.objectContaining({
         detailStatus: 'ready',
-        replayStatus: 'ready',
-        selectedRunId: 'run-1',
+        replayStatus: 'idle',
+        selectedRunId: null,
       }),
     })
 
@@ -253,8 +254,8 @@ describe('AssistantWorkspace render + interactions', () => {
     expect(getLastMockCopilotChatPanelProps()).toMatchObject({
       sessionHistory: expect.objectContaining({
         detailStatus: 'ready',
-        replayStatus: 'ready',
-        selectedRunId: 'run-live-1',
+        replayStatus: 'idle',
+        selectedRunId: null,
       }),
     })
 
@@ -348,8 +349,8 @@ describe('AssistantWorkspace render + interactions', () => {
     ))
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-live-1'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
 
     await clickElement(rendered.getByTestId('assistant-session-card-thread-new'))
@@ -466,7 +467,8 @@ describe('AssistantWorkspace render + interactions', () => {
       const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
       return getLastMockCopilotChatPanelProps().sessionShell?.sessionId === evictedFixture.summary.threadId
         && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
-        && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+        && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'idle'
+        && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
         && controllerRecord[evictedFixture.summary.threadId] !== undefined
     }, 24)
 
@@ -607,8 +609,14 @@ describe('AssistantWorkspace render + interactions', () => {
     })
 
     await waitForAssistantWorkspaceCondition(() => (
-      getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-live-1'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === 'thread-live')
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryRunReplay.mock.calls.some(([runId]) => runId === 'run-live-1')
+    ))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
 
     const historyListCallCountBeforeRemount = listHistoryThreads.mock.calls.length
@@ -635,17 +643,17 @@ describe('AssistantWorkspace render + interactions', () => {
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
     ))
     await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length > detailCallCountBeforeRemount)
-    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length > replayCallCountBeforeRemount)
 
     expect(remounted.getByTestId('assistant-session-card-thread-live').textContent).toContain('新建后落库线程')
+    expect(getHistoryRunReplay.mock.calls.length).toBe(replayCallCountBeforeRemount)
     expect(getLastMockCopilotChatPanelProps()).toMatchObject({
       sessionShell: expect.objectContaining({
         sessionId: 'thread-live',
       }),
       sessionHistory: expect.objectContaining({
         detailStatus: 'ready',
-        replayStatus: 'ready',
-        selectedRunId: 'run-live-1',
+        replayStatus: 'idle',
+        selectedRunId: null,
       }),
     })
 
@@ -690,10 +698,8 @@ describe('AssistantWorkspace render + interactions', () => {
     await waitForAssistantWorkspaceCondition(() => (
       getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === firstFixture.summary.threadId)
     ))
-    await waitForAssistantWorkspaceCondition(() => (
-      getHistoryRunReplay.mock.calls.some(([runId]) => runId === firstFixture.replay.run.runId)
-    ))
 
+    expect(getHistoryRunReplay).not.toHaveBeenCalled()
     expect(rendered.getByTestId('assistant-session-card-thread-1').textContent).toContain('历史线程')
     expect(rendered.getByTestId('assistant-session-card-thread-2').textContent).toContain('第二历史线程')
 
@@ -703,10 +709,8 @@ describe('AssistantWorkspace render + interactions', () => {
       getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === secondFixture.summary.threadId)
     ))
     await waitForAssistantWorkspaceCondition(() => (
-      getHistoryRunReplay.mock.calls.some(([runId]) => runId === secondFixture.replay.run.runId)
-    ))
-    await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-2'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
 
     await act(async () => {
@@ -729,7 +733,7 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
-  it('restores selectedRunIdByThreadId for a multi-run thread after remounting the workspace', async () => {
+  it('does not restore selectedRunIdByThreadId as the default view for a multi-run thread after remounting the workspace', async () => {
     mockCopilotChatPanel.mockClear()
 
     const directoryResponse = createDirectoryResponse()
@@ -767,9 +771,8 @@ describe('AssistantWorkspace render + interactions', () => {
     await waitForAssistantWorkspaceCondition(() => (
       getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === firstFixture.summary.threadId)
     ))
-    await waitForAssistantWorkspaceCondition(() => (
-      getHistoryRunReplay.mock.calls.some(([runId]) => runId === firstFixture.replay.run.runId)
-    ))
+
+    expect(getHistoryRunReplay).not.toHaveBeenCalled()
 
     await clickElement(firstRender.getByTestId('assistant-session-card-thread-2'))
     await waitForAssistantWorkspaceCondition(() => (
@@ -777,9 +780,6 @@ describe('AssistantWorkspace render + interactions', () => {
     ))
     await waitForAssistantWorkspaceCondition(() => (
       getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === secondFixture.summary.threadId)
-    ))
-    await waitForAssistantWorkspaceCondition(() => (
-      getHistoryRunReplay.mock.calls.some(([runId]) => runId === secondFixture.replay.run.runId)
     ))
 
     await act(async () => {
@@ -828,11 +828,16 @@ describe('AssistantWorkspace render + interactions', () => {
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-2'
     ))
     await waitForAssistantWorkspaceCondition(() => (
-      getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-2a'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'idle'
     ))
 
-    expect(getHistoryRunReplay.mock.calls.slice(replayCallCountBeforeRemount).some(([runId]) => runId === 'run-2a')).toBe(true)
+    expect(getHistoryRunReplay.mock.calls.slice(replayCallCountBeforeRemount).some(([runId]) => runId === 'run-2a')).toBe(false)
+    expect(readPersistedAssistantWorkspaceShellState()).toMatchObject({
+      selectedThreadId: 'thread-2',
+      selectedRunIdByThreadId: {},
+    })
 
     remounted.unmount()
   })
@@ -921,9 +926,13 @@ describe('AssistantWorkspace render + interactions', () => {
     await waitForAssistantWorkspaceCondition(() => listHistoryThreads.mock.calls.length === 2)
     await waitForAssistantWorkspaceCondition(() => rendered.queryByTestId('assistant-session-card-thread-1') !== null)
     await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 1)
-    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length >= 1)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
 
     expect(rendered.getByTestId('assistant-session-card-thread-1').textContent).toContain('历史线程')
+    expect(getHistoryRunReplay).not.toHaveBeenCalled()
     expect(debugSpy.mock.calls.some((call) => (
       call[0] === '[copilot-debug]'
       && typeof call[1] === 'object'
@@ -1071,7 +1080,7 @@ describe('AssistantWorkspace render + interactions', () => {
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-1'
       && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
     await flushAssistantWorkspaceEffects()
 
@@ -1232,9 +1241,19 @@ describe('AssistantWorkspace render + interactions', () => {
     await clickElement(rendered.getByTestId('assistant-session-card-thread-1'))
 
     await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 2)
-    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length >= 1)
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+    expect(getHistoryRunReplay).not.toHaveBeenCalled()
+
+    await act(async () => {
+      getLastMockCopilotChatPanelProps().selectSessionHistoryRun?.('run-1')
+    })
+
+    await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length >= 1)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-1'
       && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'error'
     ))
 
@@ -1242,7 +1261,7 @@ describe('AssistantWorkspace render + interactions', () => {
 
     await waitForAssistantWorkspaceCondition(() => getHistoryRunReplay.mock.calls.length >= 2)
     await waitForAssistantWorkspaceCondition(() => (
-      getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === 'run-1'
       && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
     ))
 
@@ -1334,11 +1353,11 @@ describe('AssistantWorkspace render + interactions', () => {
     ))
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
 
     expect(getHistoryThreadDetail).toHaveBeenCalledWith(historyFixture.summary.threadId)
-    expect(getHistoryRunReplay).toHaveBeenCalledWith(historyFixture.replay.run.runId)
+    expect(getHistoryRunReplay).not.toHaveBeenCalled()
     delayedAgents.resolve(directoryResponse)
     await flushAssistantWorkspaceMicrotasks()
 
@@ -1861,8 +1880,7 @@ async function renderAssistantWorkspaceWithHydratedLruFixtures(
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === fixture.summary.threadId
       && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.replayStatus === 'ready'
-      && getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId === fixture.replay.run.runId
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ), 24)
 
     if (index === 0) {
