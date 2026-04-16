@@ -381,8 +381,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
         with run_lifecycle_transaction(self._session_factory) as repositories:
             thread_model = repositories.threads.require(resolved_thread_id)
             deleted_at = thread_model.deleted_at or datetime.now(UTC)
-            if thread_model.deleted_at is None:
-                repositories.threads.soft_delete(resolved_thread_id, deleted_at=deleted_at)
+            repositories.threads.hard_delete(resolved_thread_id)
             return PersistedThreadDeleteResponse(
                 ok=True,
                 threadId=resolved_thread_id,
