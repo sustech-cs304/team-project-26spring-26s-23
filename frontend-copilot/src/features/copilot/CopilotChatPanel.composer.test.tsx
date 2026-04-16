@@ -840,7 +840,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('does not keep the assistant placeholder after a failed run with no assistant text', async () => {
+  it('does not keep the assistant placeholder after a terminal failure with no assistant text', async () => {
     const failureControl = createDeferredSignal()
     const sendMessage = createFailedBeforeAssistantSendMessageSpy(failureControl)
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -881,6 +881,7 @@ describe('CopilotChatPanel composer interactions', () => {
     )
 
     expect(rendered.container.textContent).toContain('工具执行失败，请重试。')
+    expect(rendered.container.textContent).not.toContain('助手消息已完成')
 
     rendered.unmount()
   })
