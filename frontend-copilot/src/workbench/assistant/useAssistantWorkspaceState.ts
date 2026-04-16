@@ -236,6 +236,7 @@ export function useAssistantWorkspaceState({
   const persistedShellStateRef = useRef(loadShellStateImpl())
   const [sessionHistoryById, setSessionHistoryById] = useState<Record<string, AssistantSessionHistoryState>>({})
   const [runtimeControllerBySessionId, setRuntimeControllerBySessionId] = useState<Record<string, CopilotThreadRuntimeControllerState>>({})
+  const runtimeControllerBySessionIdRef = useRef<Record<string, CopilotThreadRuntimeControllerState>>({})
   const historyListRequestVersionRef = useRef(0)
   const historyCapabilitiesRequestVersionRef = useRef<Record<string, number>>({})
   const historyDetailRequestVersionRef = useRef<Record<string, number>>({})
@@ -254,6 +255,10 @@ export function useAssistantWorkspaceState({
   useEffect(() => {
     debugModeEnabledRef.current = debugModeEnabled
   }, [debugModeEnabled])
+
+  useEffect(() => {
+    runtimeControllerBySessionIdRef.current = runtimeControllerBySessionId
+  }, [runtimeControllerBySessionId])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -808,17 +813,35 @@ export function useAssistantWorkspaceState({
               ? createAssistantSessionHistoryState(summary, null)
               : syncAssistantSessionHistorySummary(currentHistoryState, summary, null)
             const restoredSession = restoredSessionsById.get(summary.threadId)
+            const shouldDefaultRestoredActiveThreadView = restoredActiveSessionId === summary.threadId
+              && restoredSession?.capabilities.capabilitiesVersion === 'history-shell'
+            const pendingHistorySyncRunId = shouldDefaultRestoredActiveThreadView
+              ? runtimeControllerBySessionIdRef.current[summary.threadId]?.pendingHistorySyncRunId ?? null
+              : null
+            const defaultThreadViewHistoryState = shouldDefaultRestoredActiveThreadView
+              && syncedHistoryState.selectedRunId !== null
+              ? selectAssistantSessionHistoryRun(syncedHistoryState, null)
+              : syncedHistoryState
             const shouldRestartCapabilitiesHydration = currentHistoryState !== undefined
               && currentHistoryState.isPersistedThread !== true
               && restoredSession?.capabilities.capabilitiesVersion === 'history-shell'
 
+            if (defaultThreadViewHistoryState !== syncedHistoryState) {
+              appendWorkspaceDebugLog('history-restore-defaulted-active-thread-view', {
+                sessionId: summary.threadId,
+                previousSelectedRunId: syncedHistoryState.selectedRunId,
+                pendingHistorySyncRunId,
+                reason: 'restore-active-thread-default-thread-view',
+              })
+            }
+
             nextState[summary.threadId] = shouldRestartCapabilitiesHydration
               ? {
-                  ...syncedHistoryState,
+                  ...defaultThreadViewHistoryState,
                   capabilitiesStatus: 'idle',
                   capabilitiesError: null,
                 }
-              : syncedHistoryState
+              : defaultThreadViewHistoryState
           }
 
           for (const [sessionId, historyState] of Object.entries(current)) {
