@@ -73,7 +73,7 @@ Python runtime 当前通过 loopback HTTP 提供本地服务：
 - [`backend/app/copilot_runtime/protocol.py`](../../backend/app/copilot_runtime/protocol.py)
 - [`backend/app/copilot_runtime/message_runs.py`](../../backend/app/copilot_runtime/message_runs.py)
 - [`backend/app/copilot_runtime/run_events.py`](../../backend/app/copilot_runtime/run_events.py)
-- [`backend/app/copilot_runtime/persistence/`](../../backend/app/copilot_runtime/persistence/)
+- [`backend/app/copilot_runtime/persistence`](../../backend/app/copilot_runtime/persistence/__init__.py)
 
 ### 可选外部参考
 

@@ -101,6 +101,21 @@ def test_sqlite_session_store_supports_persistent_rename_and_duplicate(tmp_path:
         )
         store.record_run_event(
             "run-1",
+            event_type="run_started",
+            payload={"assistantMessageId": "run-1:assistant"},
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="tool_event",
+            payload={
+                "toolCallId": "tool.weather-current:call-1",
+                "toolId": "tool.weather-current",
+                "phase": "completed",
+                "summary": "tool output",
+            },
+        )
+        store.record_run_event(
+            "run-1",
             event_type="text_delta",
             payload={"assistantMessageId": "run-1:assistant", "delta": "copied answer"},
         )
@@ -147,9 +162,14 @@ def test_sqlite_session_store_supports_persistent_rename_and_duplicate(tmp_path:
             "copied answer",
         ]
         assert [event.eventType for event in duplicate_replay.orderedEvents] == [
+            "run_started",
+            "tool_event",
             "text_delta",
             "run_completed",
         ]
+        assert duplicate_replay.orderedEvents[0].payload["assistantMessageId"] == f"{duplicate_run_id}:assistant"
+        assert duplicate_replay.orderedEvents[1].payload["toolCallId"] == f"{duplicate_run_id}:call-1"
+        assert duplicate_replay.orderedEvents[3].payload["assistantMessageId"] == f"{duplicate_run_id}:assistant"
         assert duplicate_replay.run.threadId == duplicate_thread_id
         assert duplicate_replay.run.runId == duplicate_run_id
         assert duplicate_replay.run.assistantText == "copied answer"

@@ -203,6 +203,21 @@ def test_history_routes_support_rename_and_duplicate_for_persisted_threads(tmp_p
         )
         store.record_run_event(
             "run-1",
+            event_type="run_started",
+            payload={"assistantMessageId": "run-1:assistant"},
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="tool_event",
+            payload={
+                "toolCallId": "tool.weather-current:call-1",
+                "toolId": "tool.weather-current",
+                "phase": "completed",
+                "summary": "已复制的工具结果",
+            },
+        )
+        store.record_run_event(
+            "run-1",
             event_type="text_delta",
             payload={"assistantMessageId": "run-1:assistant", "delta": "已复制的回复"},
         )
@@ -263,9 +278,14 @@ def test_history_routes_support_rename_and_duplicate_for_persisted_threads(tmp_p
         "已复制的回复",
     ]
     assert [event["eventType"] for event in duplicate_replay_payload["orderedEvents"]] == [
+        "run_started",
+        "tool_event",
         "text_delta",
         "run_completed",
     ]
+    assert duplicate_replay_payload["orderedEvents"][0]["payload"]["assistantMessageId"] == f"{duplicate_run_id}:assistant"
+    assert duplicate_replay_payload["orderedEvents"][1]["payload"]["toolCallId"] == f"{duplicate_run_id}:call-1"
+    assert duplicate_replay_payload["orderedEvents"][3]["payload"]["assistantMessageId"] == f"{duplicate_run_id}:assistant"
     assert duplicate_replay_payload["run"]["threadId"] == duplicate_thread_id
     assert duplicate_replay_payload["run"]["assistantText"] == "已复制的回复"
 

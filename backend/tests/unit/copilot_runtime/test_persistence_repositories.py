@@ -43,6 +43,8 @@ def test_repositories_round_trip_truth_rows_and_projection_rows(tmp_path: Path) 
                 payload={
                     "assistantMessageId": "run-1:assistant",
                     "apiKey": "super-secret",
+                    "budgetTokens": 2048,
+                    "max_tokens": 1024,
                 },
             )
             second_event = repositories.events.append_event(
@@ -69,6 +71,8 @@ def test_repositories_round_trip_truth_rows_and_projection_rows(tmp_path: Path) 
             assert second_event.seq == 2
             assert first_event.is_redacted is True
             assert first_event.payload_json["apiKey"] == "[redacted]"
+            assert first_event.payload_json["budgetTokens"] == 2048
+            assert first_event.payload_json["max_tokens"] == 1024
             assert thread_projection.display_title == "hello persistence"
             assert run_projection.assistant_text_final == "hello back"
 
@@ -89,6 +93,8 @@ def test_repositories_round_trip_truth_rows_and_projection_rows(tmp_path: Path) 
                 ("text_delta", 2),
             ]
             assert stored_events[0].payload["apiKey"] == "[redacted]"
+            assert stored_events[0].payload["budgetTokens"] == 2048
+            assert stored_events[0].payload["max_tokens"] == 1024
             assert stored_thread_projection is not None
             assert stored_thread_projection.display_summary == "hello back"
             assert stored_run_projection is not None

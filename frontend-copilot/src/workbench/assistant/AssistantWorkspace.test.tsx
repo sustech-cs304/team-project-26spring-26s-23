@@ -293,6 +293,68 @@ describe('AssistantWorkspace render + interactions', () => {
     remounted.unmount()
   })
 
+  it('ignores array-shaped persisted shell records when restoring local storage state', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const malformedStoredState = {
+      selectedThreadId: historyFixture.summary.threadId,
+      selectedRunIdByThreadId: [],
+      threadSummaries: [
+        {
+          ...historyFixture.summary,
+          driftSummary: [],
+        },
+      ],
+    }
+
+    window.localStorage.setItem(
+      ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY,
+      JSON.stringify(malformedStoredState),
+    )
+
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [historyFixture.summary],
+    })
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(historyFixture.detail)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === historyFixture.summary.threadId
+    ))
+
+    expect(readPersistedAssistantWorkspaceShellState()).toMatchObject({
+      selectedThreadId: historyFixture.summary.threadId,
+      selectedRunIdByThreadId: {},
+      threadSummaries: [
+        expect.objectContaining({
+          threadId: historyFixture.summary.threadId,
+          driftSummary: expect.objectContaining({
+            status: 'not_evaluated',
+          }),
+        }),
+      ],
+    })
+
+    rendered.unmount()
+  })
+
   it('duplicates persisted threads into a new conversation with copied history ready for replay', async () => {
     mockCopilotChatPanel.mockClear()
 
