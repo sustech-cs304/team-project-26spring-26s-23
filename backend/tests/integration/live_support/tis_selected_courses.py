@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urljoin
 
-from app.teaching_information_system import DEFAULT_TIS_SERVICE_CONFIG, TISSelectedCoursesQueryResult
+from app.integrations.sustech.teaching_information_system import DEFAULT_TIS_SERVICE_CONFIG, TISSelectedCoursesQueryResult
 
 from .reporting import find_probe, now_iso, report_json
 from .tis_common import summarize_log_entries

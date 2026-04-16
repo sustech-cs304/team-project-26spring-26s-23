@@ -4,7 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.blackboard.api.dto import (
+import httpx
+
+from app.integrations.sustech.blackboard.api.dto import (
     AnnouncementDTO,
     AssignmentAttachmentDTO,
     AssignmentDTO,
@@ -14,21 +16,23 @@ from app.blackboard.api.dto import (
     GradeDTO,
     ResourceDTO,
 )
-from app.blackboard.provider.results import (
+from app.integrations.sustech.blackboard.provider.results import (
+    BlackboardCourseResourcesSyncReport,
     BlackboardSnapshotFetchResult,
     BlackboardSnapshotSyncReport,
     BlackboardSyncPayloads,
     CalendarICSSyncResult,
     CourseCatalogSearchResult,
 )
-from app.blackboard.provider.tools import agent_tools
-from app.blackboard.shared import BlackboardLogEvent
-from app.blackboard.provider.use_cases import course_catalog as course_catalog_use_case
-from app.blackboard.provider.use_cases import snapshot_sync as snapshot_sync_use_case
-from app.blackboard.provider.use_cases.calendar_ics import (
+from app.integrations.sustech.blackboard.provider.tools import agent_tools
+from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
+from app.integrations.sustech.blackboard.provider.use_cases import calendar_ics as calendar_ics_use_case
+from app.integrations.sustech.blackboard.provider.use_cases import course_catalog as course_catalog_use_case
+from app.integrations.sustech.blackboard.provider.use_cases import snapshot_sync as snapshot_sync_use_case
+from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
     refresh_calendar_ics_subscription_from_text,
 )
-from app.blackboard.provider.use_cases.snapshot_sync import (
+from app.integrations.sustech.blackboard.provider.use_cases.snapshot_sync import (
     build_blackboard_sync_payloads,
     calculate_expected_active_counts,
     compare_active_counts,
@@ -135,6 +139,14 @@ def test_build_blackboard_sync_payloads_and_expected_counts() -> None:
     )
     _assert_equal(expected["courses"], 1, "expected courses")
     _assert_equal(expected["assignments"], 1, "expected assignments")
+    attachment_resource = next(
+        row for row in payloads.resource_payloads["_course_1"] if row["title"] == "spec.pdf"
+    )
+    _assert_equal(
+        attachment_resource["assignment_id"],
+        payloads.assignment_payloads["_course_1"][0]["assignment_id"],
+        "assignment attachment resource keeps assignment link",
+    )
     _assert_equal(expected["resources"], 2, "expected resources")
     _assert_equal(expected["grades"], 1, "expected grades")
     _assert_equal(expected["announcements"], 1, "expected announcements")
@@ -174,6 +186,7 @@ END:VCALENDAR
 
     _assert_true(isinstance(result, CalendarICSSyncResult), "should return CalendarICSSyncResult")
     _assert_equal(result.feed_url, "https://example.local/provider.ics", "feed url")
+    _assert_equal(result.refresh_mode, "auto", "default refresh mode")
     _assert_equal(int(result.stats.get("inserted", 0)), 1, "inserted stats")
     _assert_equal(result.active_event_count, 1, "active event count")
     _assert_equal(result.active_events[0].title, "Provider Event", "event title")
@@ -181,9 +194,146 @@ END:VCALENDAR
     _assert_equal(result.log_summary["by_layer"].get("provider"), result.log_summary["total"], "calendar logs should be provider-layer")
 
 
+
+def test_refresh_calendar_ics_subscription_auto_uses_conditional_headers(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    db_path = tmp_path / "test_blackboard_provider_ics_auto.db"
+    feed_url = "https://example.local/provider-auto.ics"
+    refresh_calendar_ics_subscription_from_text(
+        feed_url,
+        """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:provider-auto@example.com
+SUMMARY:Provider Auto Event
+DTSTART:20260311T010000Z
+DTEND:20260311T020000Z
+END:VEVENT
+END:VCALENDAR
+""",
+        db_path=db_path,
+        reset_schema=True,
+        etag='"provider-auto-v1"',
+        last_modified="Wed, 15 Apr 2026 08:00:00 GMT",
+    )
+
+    captured_headers: list[dict[str, str]] = []
+
+    class _FakeHTTPClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeHTTPClient:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+        def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+            captured_headers.append(dict(headers or {}))
+            return httpx.Response(status_code=304, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(calendar_ics_use_case.httpx, "Client", _FakeHTTPClient)
+
+    result = calendar_ics_use_case.refresh_calendar_ics_subscription(
+        feed_url,
+        db_path=db_path,
+        refresh_mode="auto",
+    )
+
+    _assert_equal(
+        captured_headers,
+        [
+            {
+                "If-None-Match": '"provider-auto-v1"',
+                "If-Modified-Since": "Wed, 15 Apr 2026 08:00:00 GMT",
+            }
+        ],
+        "auto refresh should send conditional headers",
+    )
+    _assert_equal(result.refresh_mode, "auto", "auto refresh mode kept")
+    _assert_true(bool(result.stats.get("not_modified")), "auto refresh should honor 304 responses")
+    _assert_equal(result.active_event_count, 1, "auto refresh keeps cached events")
+
+
+
+def test_refresh_calendar_ics_subscription_force_ignores_conditional_headers(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    db_path = tmp_path / "test_blackboard_provider_ics_force.db"
+    feed_url = "https://example.local/provider-force.ics"
+    refresh_calendar_ics_subscription_from_text(
+        feed_url,
+        """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:provider-force@example.com
+SUMMARY:Provider Seed Event
+DTSTART:20260311T010000Z
+DTEND:20260311T020000Z
+END:VEVENT
+END:VCALENDAR
+""",
+        db_path=db_path,
+        reset_schema=True,
+        etag='"provider-force-v1"',
+        last_modified="Wed, 15 Apr 2026 08:00:00 GMT",
+    )
+
+    captured_headers: list[dict[str, str]] = []
+
+    class _FakeHTTPClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeHTTPClient:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+        def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+            captured_headers.append(dict(headers or {}))
+            return httpx.Response(
+                status_code=200,
+                text="""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:provider-force@example.com
+SUMMARY:Provider Forced Event
+DTSTART:20260312T010000Z
+DTEND:20260312T020000Z
+END:VEVENT
+END:VCALENDAR
+""",
+                headers={
+                    "etag": '"provider-force-v2"',
+                    "last-modified": "Thu, 16 Apr 2026 08:00:00 GMT",
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(calendar_ics_use_case.httpx, "Client", _FakeHTTPClient)
+
+    result = calendar_ics_use_case.refresh_calendar_ics_subscription(
+        feed_url,
+        db_path=db_path,
+        refresh_mode="force",
+    )
+
+    _assert_equal(captured_headers, [{}], "force refresh should ignore conditional headers")
+    _assert_equal(result.refresh_mode, "force", "force refresh mode kept")
+    _assert_equal(result.stats.get("etag"), '"provider-force-v2"', "force refresh should update etag")
+    _assert_equal(result.active_events[0].title, "Provider Forced Event", "force refresh should reload ICS payload")
+
+
 def test_search_course_catalog_use_case_delegates_to_api() -> None:
     original_cas_client = course_catalog_use_case.CASClient
     original_api = course_catalog_use_case.BlackboardCourseCatalogAPI
+    captured: dict[str, Any] = {}
 
     class _FakeCASClient:
         def __init__(self, *_: Any, **__: Any) -> None:
@@ -209,14 +359,29 @@ def test_search_course_catalog_use_case_delegates_to_api() -> None:
             field: str = "CourseName",
             operator: str = "Contains",
             limit: int | None = None,
+            fetch_mode: str = "full",
+            max_pages: int | None = 30,
         ) -> list[CourseCatalogResultDTO]:
+            captured.update(
+                {
+                    "keyword": keyword,
+                    "field": field,
+                    "operator": operator,
+                    "limit": limit,
+                    "fetch_mode": fetch_mode,
+                    "max_pages": max_pages,
+                }
+            )
             return [
                 CourseCatalogResultDTO(
                     course_id="_305_1",
                     course_identifier="CS305",
                     course_name=keyword,
                     instructor="张老师",
-                    description=f"field={field}, operator={operator}, limit={limit}",
+                    description=(
+                        f"field={field}, operator={operator}, limit={limit}, "
+                        f"fetch_mode={fetch_mode}, max_pages={max_pages}"
+                    ),
                 )
             ]
 
@@ -237,6 +402,8 @@ def test_search_course_catalog_use_case_delegates_to_api() -> None:
             field="CourseName",
             operator="Contains",
             limit=5,
+            fetch_mode="quick",
+            max_pages=7,
         )
     finally:
         course_catalog_use_case.CASClient = original_cas_client  # type: ignore[assignment]
@@ -246,6 +413,20 @@ def test_search_course_catalog_use_case_delegates_to_api() -> None:
     _assert_equal(result.total, 1, "search result total")
     _assert_equal(result.results[0].course_name, "数据库系统", "search result payload")
     _assert_equal(result.results[0].course_identifier, "CS305", "typed search result kept")
+    _assert_equal(result.fetch_mode, "quick", "fetch mode kept on result")
+    _assert_equal(result.max_pages, 7, "max pages kept on result")
+    _assert_equal(
+        captured,
+        {
+            "keyword": "数据库系统",
+            "field": "CourseName",
+            "operator": "Contains",
+            "limit": 5,
+            "fetch_mode": "quick",
+            "max_pages": 7,
+        },
+        "use case forwards fetch controls to api",
+    )
     _assert_equal(len(fake_cas_instances), 1, "CAS client created once")
     _assert_equal(fake_cas_instances[0].login_calls[0][0], "alice", "username forwarded")
     _assert_true(fake_cas_instances[0].closed, "CAS client closed")
@@ -321,20 +502,9 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
                 )
             ]
 
-    class _FakeContentAPI:
+    class _FailingContentAPI:
         def __init__(self, *_: Any, **__: Any) -> None:
-            pass
-
-        def get_course_content_dtos(self, course_id: str) -> list[ResourceDTO]:
-            return [
-                ResourceDTO(
-                    resource_id="res_1",
-                    course_id=course_id,
-                    title="Lecture 1",
-                    url="https://bb.example/file/lecture1.pdf",
-                    type="file",
-                )
-            ]
+            raise AssertionError("fetch_blackboard_snapshot should not instantiate BlackboardContentAPI")
 
     class _FakeAnnouncementAPI:
         def __init__(self, *_: Any, **__: Any) -> None:
@@ -357,9 +527,9 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
         snapshot_sync_use_case.BlackboardCourseAPI = _FakeCourseAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardAssignmentAPI = _FakeAssignmentAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardGradeAPI = _FakeGradeAPI  # type: ignore[assignment]
-        snapshot_sync_use_case.BlackboardContentAPI = _FakeContentAPI  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardContentAPI = _FailingContentAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardAnnouncementAPI = _FakeAnnouncementAPI  # type: ignore[assignment]
-        snapshot = fetch_blackboard_snapshot("alice", "secret", resource_course_limit=1)
+        snapshot = fetch_blackboard_snapshot("alice", "secret")
     finally:
         snapshot_sync_use_case.CASClient = original_cas_client  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardCourseAPI = original_course_api  # type: ignore[assignment]
@@ -371,16 +541,53 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
     _assert_equal(snapshot.courses[0].course_id, "_course_1", "snapshot keeps course dto")
     _assert_equal(snapshot.assignments_by_course["_course_1"][0].assignment_id, "asg_1", "snapshot keeps assignment dto")
     _assert_equal(snapshot.grades_by_course["_course_1"][0].grade_id, "grd_1", "snapshot keeps grade dto")
-    _assert_equal(snapshot.resources_by_course["_course_1"][0].resource_id, "res_1", "snapshot keeps resource dto")
+    _assert_true(snapshot.resources_by_course == {}, "snapshot no longer fetches resources by default")
     _assert_equal(snapshot.announcements[0].announcement_id, "ann_1", "snapshot keeps announcement dto")
     _assert_true(bool(snapshot.logs), "snapshot fetch should collect logs")
     _assert_true(int(snapshot.log_summary["total"]) >= 5, "snapshot fetch should produce multiple logs")
+
+
+
+def test_fetch_blackboard_snapshot_raises_explicit_invalid_credentials_message() -> None:
+    original_cas_client = snapshot_sync_use_case.CASClient
+
+    class _FakeCASClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            self.client = object()
+            self.closed = False
+            self.last_login_failure_reason = "invalid_credentials"
+            self.last_login_failure_message = "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+
+        def login(self, username: str, password: str, service_url: str) -> bool:
+            _assert_equal(username, "alice", "snapshot username")
+            _assert_equal(password, "secret", "snapshot password")
+            _assert_true(bool(service_url), "snapshot service url should exist")
+            return False
+
+        def close(self) -> None:
+            self.closed = True
+
+    try:
+        snapshot_sync_use_case.CASClient = _FakeCASClient  # type: ignore[assignment]
+        try:
+            fetch_blackboard_snapshot("alice", "secret")
+        except RuntimeError as exc:
+            _assert_equal(
+                str(exc),
+                "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。",
+                "snapshot invalid credential message",
+            )
+        else:
+            raise AssertionError("snapshot should raise RuntimeError for invalid credentials")
+    finally:
+        snapshot_sync_use_case.CASClient = original_cas_client  # type: ignore[assignment]
 
 
 def test_agent_tools_return_stable_shapes() -> None:
     original_search = agent_tools.search_course_catalog_with_credentials
     original_refresh = agent_tools.refresh_calendar_ics_subscription
     original_sync = agent_tools.run_blackboard_snapshot_sync
+    original_resource_sync = agent_tools.run_blackboard_course_resources_sync
 
     def _fake_search(*_: Any, **__: Any) -> CourseCatalogSearchResult:
         return CourseCatalogSearchResult(
@@ -388,6 +595,8 @@ def test_agent_tools_return_stable_shapes() -> None:
             field="CourseName",
             operator="Contains",
             limit=3,
+            fetch_mode="full",
+            max_pages=30,
             results=[
                 CourseCatalogResultDTO(
                     course_id="_course_1",
@@ -407,6 +616,7 @@ def test_agent_tools_return_stable_shapes() -> None:
         )
         return CalendarICSSyncResult(
             feed_url="https://example.local/tool.ics",
+            refresh_mode="auto",
             db_path=Path("backend/data/tool.db"),
             stats={"parsed": 1, "inserted": 1, "updated": 0, "deleted": 0, "refreshed_at": datetime(2026, 3, 6, 8, 0, 0)},
             active_events=[tool_event],
@@ -426,15 +636,7 @@ def test_agent_tools_return_stable_shapes() -> None:
                     )
                 ]
             },
-            resources_by_course={
-                "_course_1": [
-                    ResourceDTO(
-                        resource_id="res_1",
-                        course_id="_course_1",
-                        title="Lecture 1",
-                    )
-                ]
-            },
+            resources_by_course={},
             grades_by_course={
                 "_course_1": [
                     GradeDTO(
@@ -453,13 +655,12 @@ def test_agent_tools_return_stable_shapes() -> None:
                     title="Welcome",
                 )
             ],
-            resource_course_limit=3,
             logs=[BlackboardLogEvent(timestamp="2026-03-06T08:00:00Z", level="info", layer="provider", source="test.snapshot", message="ok")],
         )
         payloads = BlackboardSyncPayloads(
             course_payload=[{"course_id": "_course_1"}],
             assignment_payloads={"_course_1": [{"assignment_id": "asg_1"}]},
-            resource_payloads={"_course_1": [{"resource_id": "res_1"}]},
+            resource_payloads={},
             grade_payloads={"_course_1": [{"grade_id": "grd_1"}]},
             announcements_payload=[{"announcement_id": "ann_1"}],
         )
@@ -470,28 +671,28 @@ def test_agent_tools_return_stable_shapes() -> None:
             first_sync_stats={
                 "courses": {"inserted": 1, "updated": 0, "deleted": 0},
                 "assignments": {"inserted": 1, "updated": 0, "deleted": 0},
-                "resources": {"inserted": 1, "updated": 0, "deleted": 0},
+                "resources": {"inserted": 0, "updated": 0, "deleted": 0},
                 "grades": {"inserted": 1, "updated": 0, "deleted": 0},
                 "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
             },
             second_sync_stats={
                 "courses": {"inserted": 0, "updated": 1, "deleted": 0},
                 "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
-                "resources": {"inserted": 0, "updated": 1, "deleted": 0},
+                "resources": {"inserted": 0, "updated": 0, "deleted": 0},
                 "grades": {"inserted": 0, "updated": 1, "deleted": 0},
                 "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
             },
             table_counts={
                 "courses": {"total": 1, "active": 1},
                 "assignments": {"total": 1, "active": 1},
-                "resources": {"total": 1, "active": 1},
+                "resources": {"total": 0, "active": 0},
                 "grades": {"total": 1, "active": 1},
                 "announcements": {"total": 1, "active": 1},
             },
             expected_active_counts={
                 "courses": 1,
                 "assignments": 1,
-                "resources": 1,
+                "resources": 0,
                 "grades": 1,
                 "announcements": 1,
             },
@@ -499,10 +700,39 @@ def test_agent_tools_return_stable_shapes() -> None:
             logs=[BlackboardLogEvent(timestamp="2026-03-06T08:00:01Z", level="info", layer="provider", source="test.sync", message="ok")],
         )
 
+    def _fake_resource_sync(*_: Any, **__: Any) -> BlackboardCourseResourcesSyncReport:
+        return BlackboardCourseResourcesSyncReport(
+            db_path=Path("backend/data/resource-sync.db"),
+            requested_course_ids=["_course_1", "_course_2"],
+            processed_course_ids=["_course_1", "_course_2"],
+            missing_course_ids=[],
+            failed_course_ids=[],
+            resource_payloads_by_course={
+                "_course_1": [{"resource_id": "res_1"}],
+                "_course_2": [{"resource_id": "res_2"}],
+            },
+            sync_stats={
+                "courses": {"inserted": 2, "updated": 0, "deleted": 0},
+                "assignments": {"inserted": 2, "updated": 0, "deleted": 0},
+                "resources": {"inserted": 2, "updated": 0, "deleted": 0},
+                "grades": {"inserted": 0, "updated": 0, "deleted": 0},
+                "announcements": {"inserted": 0, "updated": 0, "deleted": 0},
+            },
+            table_counts={
+                "courses": {"total": 2, "active": 2},
+                "assignments": {"total": 2, "active": 2},
+                "resources": {"total": 2, "active": 2},
+                "grades": {"total": 0, "active": 0},
+                "announcements": {"total": 0, "active": 0},
+            },
+            logs=[BlackboardLogEvent(timestamp="2026-03-06T08:00:02Z", level="info", layer="provider", source="test.resource_sync", message="ok")],
+        )
+
     try:
         agent_tools.search_course_catalog_with_credentials = _fake_search  # type: ignore[assignment]
         agent_tools.refresh_calendar_ics_subscription = _fake_refresh  # type: ignore[assignment]
         agent_tools.run_blackboard_snapshot_sync = _fake_sync  # type: ignore[assignment]
+        agent_tools.run_blackboard_course_resources_sync = _fake_resource_sync  # type: ignore[assignment]
 
         search_result = agent_tools.search_course_catalog(
             username="alice",
@@ -515,10 +745,16 @@ def test_agent_tools_return_stable_shapes() -> None:
             username="alice",
             password="secret",
         )
+        resource_result = agent_tools.sync_blackboard_course_resources(
+            username="alice",
+            password="secret",
+            course_ids=["_course_1", "_course_2"],
+        )
     finally:
         agent_tools.search_course_catalog_with_credentials = original_search  # type: ignore[assignment]
         agent_tools.refresh_calendar_ics_subscription = original_refresh  # type: ignore[assignment]
         agent_tools.run_blackboard_snapshot_sync = original_sync  # type: ignore[assignment]
+        agent_tools.run_blackboard_course_resources_sync = original_resource_sync  # type: ignore[assignment]
 
     _assert_equal(search_result["total"], 1, "agent search total")
     _assert_true("log_summary" in search_result, "agent search should expose log summary")
@@ -526,5 +762,11 @@ def test_agent_tools_return_stable_shapes() -> None:
     _assert_equal(refresh_result["stats"]["refreshed_at"], "2026-03-06T08:00:00", "agent refresh datetime jsonable")
     _assert_true("logs" in refresh_result, "agent refresh should expose logs")
     _assert_true(snapshot_result["integrity_ok"], "agent snapshot integrity")
+    _assert_equal(snapshot_result["scraped_counts"]["resources"], 0, "agent snapshot default resource count")
     _assert_true(snapshot_result["second_sync_has_no_new_records"], "agent snapshot no new records")
     _assert_true("logs" in snapshot_result, "agent snapshot should expose logs")
+    _assert_equal(resource_result["requested_course_ids"], ["_course_1", "_course_2"], "agent resource requested course ids")
+    _assert_equal(resource_result["db_path"], "backend/data/resource-sync.db", "agent resource path jsonable")
+    _assert_equal(resource_result["scraped_counts"]["resources"], 2, "agent resource scraped count")
+    _assert_true("logs" in resource_result, "agent resource sync should expose logs")
+    _assert_true("log_summary" in resource_result, "agent resource sync should expose log summary")

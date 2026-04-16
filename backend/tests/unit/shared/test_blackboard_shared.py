@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.blackboard.api import CalendarEventDTO, CourseDTO
-from app.blackboard.shared import (
+from app.integrations.sustech.blackboard.api import CalendarEventDTO, CourseDTO
+from app.integrations.sustech.blackboard.shared import (
     BlackboardLogCollector,
     BlackboardConsoleSink,
     clean_text,

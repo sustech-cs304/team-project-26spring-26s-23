@@ -124,6 +124,40 @@ describe('ErrorDetailOverlay', () => {
     rendered.unmount()
   })
 
+  it('renders traceback diagnostics in the raw details group for tool failures', async () => {
+    const traceback = [
+      'Traceback (most recent call last):',
+      '  File "/workspace/backend/tool.py", line 42, in invoke',
+      '    raise RuntimeError("blackboard search exploded")',
+      'RuntimeError: blackboard search exploded',
+    ].join('\n')
+    const rendered = renderWithRoot(
+      <ErrorDetailOverlay
+        viewModel={createViewModel({
+          toolId: 'blackboard.course_catalog.search',
+          toolCallId: 'tool-call-1',
+          exceptionType: 'RuntimeError',
+          exceptionMessage: 'blackboard search exploded',
+          traceback,
+          diagnosticContext: {
+            integration: 'blackboard',
+          },
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const rawDetailsGroup = rendered.getByTestId('error-detail-overlay-group-raw-details')
+    const rawDetailsJson = rendered.getByTestId('error-detail-overlay-raw-details-json')
+
+    expect(rawDetailsJson.textContent).toContain('traceback')
+    expect(rawDetailsJson.textContent).toContain('Traceback (most recent call last):')
+    expect(rawDetailsJson.textContent).toContain('blackboard search exploded')
+    expect(rawDetailsGroup.textContent).toContain('Traceback (most recent call last):')
+
+    rendered.unmount()
+  })
+
   it('traps focus within the dialog when tabbing forward and backward', async () => {
     const rendered = renderWithRoot(
       <ErrorDetailOverlay
@@ -134,6 +168,12 @@ describe('ErrorDetailOverlay', () => {
 
     const copyAllButton = rendered.getByTestId('error-detail-overlay-copy-all') as HTMLButtonElement
     const lastGroupCopyButton = rendered.getByTestId('error-detail-overlay-group-copy-raw-details') as HTMLButtonElement
+
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve())
+      })
+    })
 
     await act(async () => {
       lastGroupCopyButton.focus()

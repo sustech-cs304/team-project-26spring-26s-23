@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import type { RuntimeToolDirectoryEntry } from '../chat-contract'
+import { resolveCopilotToolPresentation } from '../tool-presentation'
 import {
   filterCopilotTools,
   groupCopilotTools,
@@ -31,11 +32,20 @@ export function ToolPicker({
   const copy = getCopilotChatCopy(language)
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<string[]>([])
   const pickerRef = useRef<HTMLDivElement | null>(null)
   const panelId = useId()
 
+  const allGroupedTools = useMemo(
+    () => groupCopilotTools({ tools, recommendedToolIds }),
+    [recommendedToolIds, tools],
+  )
   const filteredTools = useMemo(() => filterCopilotTools({ tools, query: searchQuery }), [searchQuery, tools])
-  const groupedTools = useMemo(() => groupCopilotTools(filteredTools), [filteredTools])
+  const groupedTools = useMemo(
+    () => groupCopilotTools({ tools: filteredTools, recommendedToolIds }),
+    [filteredTools, recommendedToolIds],
+  )
+  const isSearching = searchQuery.trim() !== ''
   const selectedToolSet = useMemo(() => new Set(selectedToolIds), [selectedToolIds])
   const selectedToolSummary = useMemo(
     () => buildSelectedToolSummary(tools, selectedToolIds, language),
@@ -45,6 +55,15 @@ export function ToolPicker({
     () => buildToolPickerTriggerLabel(selectedToolSummary, language),
     [language, selectedToolSummary],
   )
+
+  useEffect(() => {
+    const allGroupKeySet = new Set(allGroupedTools.map((group) => group.key))
+
+    setCollapsedGroupKeys((current) => {
+      const next = current.filter((groupKey) => allGroupKeySet.has(groupKey))
+      return next.length === current.length ? current : next
+    })
+  }, [allGroupedTools])
 
   useEffect(() => {
     if (!isOpen) {
@@ -187,80 +206,114 @@ export function ToolPicker({
               ? (
                   <p className="copilot-model-picker__empty">{copy.toolPicker.noMatchingTools}</p>
                 )
-              : groupedTools.map((group) => (
-                  <section key={group.key} className="copilot-model-picker__group">
-                    <p className="copilot-model-picker__group-title">{group.title}</p>
-                    <div className="copilot-model-picker__list">
-                      {group.tools.map((tool) => {
-                        const isSelected = selectedToolSet.has(tool.toolId)
+              : groupedTools.map((group) => {
+                  const isExpanded = isSearching || !collapsedGroupKeys.includes(group.key)
 
-                        return isSelected
-                          ? (
-                              <button
-                                key={tool.toolId}
-                                type="button"
-                                className="copilot-model-picker__option copilot-tool-picker__option copilot-model-picker__option--selected copilot-tool-picker__option--selected"
-                                aria-pressed="true"
-                                onClick={() => {
-                                  onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
-                                }}
-                                data-testid={`chat-tool-option-${tool.toolId}`}
+                  return (
+                    <section key={group.key} className="copilot-model-picker__group copilot-tool-picker__group">
+                      {isExpanded
+                        ? (
+                            <button
+                              type="button"
+                              className="copilot-tool-picker__group-toggle"
+                              aria-expanded="true"
+                              onClick={() => {
+                                if (isSearching) {
+                                  return
+                                }
+
+                                setCollapsedGroupKeys((current) => toggleCollapsedGroupKey(current, group.key))
+                              }}
+                            >
+                              <span className="copilot-tool-picker__group-copy">
+                                <span className="copilot-tool-picker__group-title">{group.title}</span>
+                                <span className="copilot-tool-picker__group-count">{group.tools.length}</span>
+                              </span>
+                              <span
+                                className="copilot-tool-picker__group-caret"
+                                aria-hidden="true"
+                                data-expanded="true"
                               >
-                                <span className="copilot-tool-picker__option-check" aria-hidden="true">
-                                  ✓
-                                </span>
-                                <span className="copilot-model-picker__option-body">
-                                  <span className="copilot-model-picker__option-name">{tool.displayName ?? tool.toolId}</span>
-                                  <span className="copilot-model-picker__option-meta">{tool.toolId}</span>
-                                  {tool.description && (
-                                    <span className="copilot-tool-picker__option-description">{tool.description}</span>
-                                  )}
-                                </span>
-                                <span className="copilot-model-picker__option-tags" aria-hidden="true">
-                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.kind, 'kind')}`}>
-                                    {tool.kind}
-                                  </span>
-                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.availability, 'availability')}`}>
-                                    {formatToolAvailability(tool.availability, language)}
-                                  </span>
-                                </span>
-                              </button>
-                            )
-                          : (
-                              <button
-                                key={tool.toolId}
-                                type="button"
-                                className="copilot-model-picker__option copilot-tool-picker__option"
-                                aria-pressed="false"
-                                onClick={() => {
-                                  onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
-                                }}
-                                data-testid={`chat-tool-option-${tool.toolId}`}
+                                ▴
+                              </span>
+                            </button>
+                          )
+                        : (
+                            <button
+                              type="button"
+                              className="copilot-tool-picker__group-toggle"
+                              aria-expanded="false"
+                              onClick={() => {
+                                setCollapsedGroupKeys((current) => toggleCollapsedGroupKey(current, group.key))
+                              }}
+                            >
+                              <span className="copilot-tool-picker__group-copy">
+                                <span className="copilot-tool-picker__group-title">{group.title}</span>
+                                <span className="copilot-tool-picker__group-count">{group.tools.length}</span>
+                              </span>
+                              <span
+                                className="copilot-tool-picker__group-caret"
+                                aria-hidden="true"
+                                data-expanded="false"
                               >
-                                <span className="copilot-tool-picker__option-check" aria-hidden="true">
-                                  +
-                                </span>
-                                <span className="copilot-model-picker__option-body">
-                                  <span className="copilot-model-picker__option-name">{tool.displayName ?? tool.toolId}</span>
-                                  <span className="copilot-model-picker__option-meta">{tool.toolId}</span>
-                                  {tool.description && (
-                                    <span className="copilot-tool-picker__option-description">{tool.description}</span>
-                                  )}
-                                </span>
-                                <span className="copilot-model-picker__option-tags" aria-hidden="true">
-                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.kind, 'kind')}`}>
-                                    {tool.kind}
-                                  </span>
-                                  <span className={`copilot-model-picker__option-tag ${buildToolTagClassName(tool.availability, 'availability')}`}>
-                                    {formatToolAvailability(tool.availability, language)}
-                                  </span>
-                                </span>
-                              </button>
-                            )
-                      })}
-                    </div>
-                  </section>
-                ))}
+                                ▾
+                              </span>
+                            </button>
+                          )}
+
+                      {isExpanded && (
+                        <div className="copilot-model-picker__list copilot-tool-picker__group-list">
+                          {group.tools.map((tool) => {
+                            const isSelected = selectedToolSet.has(tool.toolId)
+                            const presentation = resolveCopilotToolPresentation(tool)
+
+                            return isSelected
+                              ? (
+                                  <button
+                                    key={tool.toolId}
+                                    type="button"
+                                    className="copilot-model-picker__option copilot-tool-picker__option copilot-model-picker__option--selected copilot-tool-picker__option--selected"
+                                    aria-pressed="true"
+                                    onClick={() => {
+                                      onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
+                                    }}
+                                    data-testid={`chat-tool-option-${tool.toolId}`}
+                                  >
+                                    <span className="copilot-tool-picker__option-check" aria-hidden="true">
+                                      ✓
+                                    </span>
+                                    <span className="copilot-model-picker__option-body">
+                                      <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                      <span className="copilot-tool-picker__option-description">{presentation.description}</span>
+                                    </span>
+                                  </button>
+                                )
+                              : (
+                                  <button
+                                    key={tool.toolId}
+                                    type="button"
+                                    className="copilot-model-picker__option copilot-tool-picker__option"
+                                    aria-pressed="false"
+                                    onClick={() => {
+                                      onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
+                                    }}
+                                    data-testid={`chat-tool-option-${tool.toolId}`}
+                                  >
+                                    <span className="copilot-tool-picker__option-check" aria-hidden="true">
+                                      +
+                                    </span>
+                                    <span className="copilot-model-picker__option-body">
+                                      <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                      <span className="copilot-tool-picker__option-description">{presentation.description}</span>
+                                    </span>
+                                  </button>
+                                )
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  )
+                })}
           </div>
         </section>
       )}
@@ -279,35 +332,8 @@ function buildToolPickerTriggerLabel(summary: string, language: string): string 
   return getCopilotChatCopy(language).toolPicker.triggerLabel(summary)
 }
 
-function buildToolTagClassName(value: string, role: 'kind' | 'availability'): string {
-  if (role === 'kind') {
-    return value === 'external'
-      ? 'copilot-tool-picker__option-tag--external'
-      : 'copilot-tool-picker__option-tag--builtin'
-  }
-
-  switch (value) {
-    case 'available':
-      return 'copilot-tool-picker__option-tag--available'
-    case 'disabled-by-global-setting':
-    case 'unavailable':
-      return 'copilot-tool-picker__option-tag--warning'
-    default:
-      return 'copilot-tool-picker__option-tag--neutral'
-  }
-}
-
-function formatToolAvailability(availability: string, language: string): string {
-  const labels = getCopilotChatCopy(language).toolPicker.availabilityLabels
-
-  switch (availability) {
-    case 'available':
-      return labels.available
-    case 'disabled-by-global-setting':
-      return labels.disabledByGlobalSetting
-    case 'unavailable':
-      return labels.unavailable
-    default:
-      return availability
-  }
+function toggleCollapsedGroupKey(collapsedGroupKeys: string[], groupKey: string): string[] {
+  return collapsedGroupKeys.includes(groupKey)
+    ? collapsedGroupKeys.filter((currentGroupKey) => currentGroupKey !== groupKey)
+    : [...collapsedGroupKeys, groupKey]
 }

@@ -1,4 +1,8 @@
 import type {
+  DesktopCapabilityBridgeRequest,
+  DesktopCapabilityBridgeResponse,
+} from '../capability-bridge/protocol'
+import type {
   ConfigCenterPublicPatch,
   ConfigCenterPublicPatchResult,
 } from '../config-center/public-patch'
@@ -18,11 +22,18 @@ import type {
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
 } from '../settings-workspace/ipc'
-import type { SettingsWorkspaceProviderRouteResolveRequest, SettingsWorkspaceProviderRouteResolveResult } from '../settings-workspace/provider-route-resolver'
+import type {
+  SettingsWorkspaceProviderRouteResolveRequest,
+  SettingsWorkspaceProviderRouteResolveResult,
+} from '../settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
+
+export interface MainProcessServiceLogOptions {
+  relayToRenderer?: boolean
+}
 
 export interface CreateMainProcessServicesOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
@@ -30,6 +41,7 @@ export interface CreateMainProcessServicesOptions {
     level: MainProcessServiceLogLevel,
     message: string,
     context: Record<string, unknown> | null,
+    options?: MainProcessServiceLogOptions,
   ) => void | Promise<void>
   publishConfigCenterPublicSnapshotUpdate: (
     snapshot: ConfigCenterPublicSnapshot,
@@ -58,4 +70,7 @@ export interface MainProcessServices {
   resolveSettingsWorkspaceProviderRoute: (
     request: SettingsWorkspaceProviderRouteResolveRequest,
   ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
+  handleDesktopCapabilityBridgeRequest: (
+    request: DesktopCapabilityBridgeRequest,
+  ) => Promise<DesktopCapabilityBridgeResponse>
 }

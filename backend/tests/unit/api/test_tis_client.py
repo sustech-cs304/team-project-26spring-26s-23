@@ -4,9 +4,9 @@ from typing import Any
 
 import httpx
 
-from app.teaching_information_system.api.client import TISClient
-from app.teaching_information_system.api.dto import DEFAULT_TIS_SERVICE_CONFIG, TISServiceConfig
-from app.teaching_information_system.api.fetch_helpers import _extract_response_auth_markers, _is_authenticated_tis_response
+from app.integrations.sustech.teaching_information_system.api.client import TISClient
+from app.integrations.sustech.teaching_information_system.api.dto import DEFAULT_TIS_SERVICE_CONFIG, TISServiceConfig
+from app.integrations.sustech.teaching_information_system.api.fetch_helpers import _extract_response_auth_markers, _is_authenticated_tis_response
 
 
 def _html_response(url: str, *, headers: dict[str, str] | None = None) -> httpx.Response:

@@ -20,8 +20,8 @@ sidebar_position: 6
 | `backend/app/desktop_runtime/` | Python runtime 入口、控制面端点、宿主桥客户端、生命周期装配。 | 已可用 |
 | `backend/app/copilot_runtime/` | 聊天协议、方法分发、run 编排、事件流、工具与 Thinking 适配。 | 已可用 |
 | `backend/app/tools/` | 当前工具实现与文件处理等辅助能力。 | 已可用 |
-| `backend/app/blackboard/` | Blackboard 相关领域能力。 | 部分接通 |
-| `backend/app/teaching_information_system/` | TIS 相关领域能力。 | 部分接通 |
+| `backend/app/integrations/sustech/blackboard/` | Blackboard 相关领域能力。 | 部分接通 |
+| `backend/app/integrations/sustech/teaching_information_system/` | TIS 相关领域能力。 | 部分接通 |
 | `backend/app/core/` | 认证等基础能力。 | 已可用 |
 | `backend/app/services/` | 预留或薄层服务位。 | 部分接通 |
 

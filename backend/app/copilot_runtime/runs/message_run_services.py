@@ -21,7 +21,6 @@ from ..agent import (
     AgentExecutionError,
     ModelNotConfiguredError,
     ProviderAdapterExecutionError,
-    ToolInvocationError,
 )
 from ..agent_registry import AgentDescriptor, AgentRegistry
 from ..contracts import (
@@ -473,27 +472,6 @@ class RuntimeMessageRunOrchestrator:
                 runId=context.run_id,
                 threadId=request.thread_id,
                 terminalReason="cancelled",
-                projectedEventTypes=[projected.type for projected in projected_events],
-                projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
-            )
-            for projected in projected_events:
-                yield projected
-            return
-        except ToolInvocationError as exc:
-            projected_events = context.projector.project(
-                context.execution_events.build_run_failed(
-                    code=exc.code,
-                    message=str(exc),
-                    details=dict(exc.details),
-                )
-            )
-            log_runtime_chain_debug(
-                "orchestrator.terminal",
-                enabled=context.debug_enabled,
-                runId=context.run_id,
-                threadId=request.thread_id,
-                terminalReason="failed",
-                error=summarize_exception(exc),
                 projectedEventTypes=[projected.type for projected in projected_events],
                 projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
             )

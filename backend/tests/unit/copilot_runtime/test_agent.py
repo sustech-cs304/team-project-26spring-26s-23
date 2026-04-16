@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Callable
 from types import SimpleNamespace
 
@@ -15,15 +16,18 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.test import TestModel
 
+import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
+from app.integrations.sustech.blackboard.provider.results import CourseCatalogSearchResult
 from app.copilot_runtime.agent import (
     AgentExecutionError,
     ModelNotConfiguredError,
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
-    ToolInvocationError,
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
-from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
+from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
 
 
 def test_run_raises_model_not_configured_when_no_model_is_available() -> None:
@@ -157,6 +161,31 @@ def test_run_returns_stable_text_from_controlled_agent_stub(
 
 
 
+def test_runtime_tool_lifecycle_event_to_payload_preserves_canonical_summary_and_result_summary() -> None:
+    canonical_summary = '{\n  "ok": true\n}'
+
+    payload = RuntimeToolLifecycleEvent(
+        tool_call_id="tool.weather-current:call-1",
+        tool_id=WEATHER_CURRENT_TOOL_ID,
+        phase="completed",
+        title="天气工具已返回结果",
+        summary=canonical_summary,
+        input_summary='{"location": "Shenzhen"}',
+        result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+    ).to_payload()
+
+    assert payload == {
+        "toolCallId": "tool.weather-current:call-1",
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "phase": "completed",
+        "title": "天气工具已返回结果",
+        "summary": canonical_summary,
+        "inputSummary": '{"location": "Shenzhen"}',
+        "resultSummary": "Shenzhen：晴 / 24°C / 湿度 60%",
+    }
+
+
+
 def test_open_event_stream_executes_weather_tool_and_records_started_completed_events() -> None:
     executor = PydanticAIAgentExecutor(
         model=TestModel(
@@ -190,11 +219,24 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
     assert result["output"] == "Weather reply"
     assert [payload["phase"] for payload in tool_events] == ["started", "completed"]
     assert all(payload["toolId"] == WEATHER_CURRENT_TOOL_ID for payload in tool_events)
-    assert tool_events[1]["resultSummary"] is not None
+
+    completed_payload = tool_events[1]
+    parsed_summary = json.loads(completed_payload["summary"])
+    assert set(parsed_summary) == {"condition", "humidity", "location", "summary", "temperatureC"}
+    assert isinstance(parsed_summary["location"], str)
+    assert parsed_summary["location"].strip() != ""
+    assert completed_payload["summary"] == json.dumps(
+        parsed_summary,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    )
+    assert completed_payload["resultSummary"] is not None
+    assert completed_payload["summary"] != completed_payload["resultSummary"]
 
 
 
-def test_open_event_stream_fails_when_weather_tool_is_not_enabled() -> None:
+def test_open_event_stream_keeps_running_when_weather_tool_is_not_enabled() -> None:
     executor = PydanticAIAgentExecutor(
         model=TestModel(
             call_tools=["weather_current"],
@@ -223,10 +265,12 @@ def test_open_event_stream_fails_when_weather_tool_is_not_enabled() -> None:
         if event.type in {"tool_started", "tool_completed", "tool_failed"}
     ]
 
-    assert isinstance(result["error"], ToolInvocationError)
-    assert result["error"].code == "tool_not_enabled"
+    assert result["error"] is None
+    assert result["output"] == "unused"
     assert [payload["phase"] for payload in tool_events] == ["started", "failed"]
-    assert tool_events[-1]["errorSummary"] is not None
+    assert tool_events[-1]["errorSummary"] == (
+        "Tool 'tool.weather-current' is not enabled for this run."
+    )
 
 
 
@@ -346,7 +390,7 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
     assert result["events"][9].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
 
 
-def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
+def test_open_event_stream_emits_failed_tool_event_when_completed_raw_tool_call_never_executes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executor = PydanticAIAgentExecutor(model="test-model")
@@ -390,9 +434,8 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
         )
     )
 
-    assert result["output"] is None
-    assert isinstance(result["error"], AgentExecutionError)
-    assert "no actual tool execution followed" in str(result["error"])
+    assert result["error"] is None
+    assert result["output"] == "我先查一下。"
     assert [event.type for event in result["events"]] == [
         "assistant_segment_started",
         "assistant_segment_delta",
@@ -400,8 +443,9 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
         "diagnostic",
         "diagnostic",
         "diagnostic",
+        "tool_failed",
     ]
-    assert result["events"][-1].payload == {
+    assert result["events"][-2].payload == {
         "code": "raw_tool_call_unexecuted",
         "message": "Provider tool call arguments became complete, but no actual tool execution followed.",
         "details": {
@@ -416,6 +460,384 @@ def test_open_event_stream_fails_when_completed_raw_tool_call_never_executes(
         },
         "stage": "drive_raw_tool_call",
     }
+    assert result["events"][-1].payload == {
+        "toolCallId": tool_call_id,
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "phase": "failed",
+        "title": "工具调用失败",
+        "summary": "模型产生了工具调用，但运行时未真正执行该调用。",
+        "inputSummary": '{"location": "Shenzhen"}',
+        "errorSummary": "Provider tool call arguments became complete, but no actual tool execution followed.",
+    }
+
+
+
+def test_execute_bound_tool_returns_tool_not_found_failure_without_raising() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="tool.missing:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"tool.missing"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-missing-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="tool.missing",
+            arguments={"location": "Shenzhen"},
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_not_found",
+            "message": "Unknown tool 'tool.missing'.",
+            "retryable": False,
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": "tool.missing",
+            "toolCallId": "tool.missing:call-1",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["failed"]
+    assert emitted_tool_events[-1].error_summary == "Unknown tool 'tool.missing'."
+
+
+
+def test_execute_bound_tool_returns_tool_not_enabled_failure_without_raising() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset(),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-disabled",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            arguments={"location": "Shenzhen"},
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_not_enabled",
+            "message": "Tool 'tool.weather-current' is not enabled for this run.",
+            "retryable": False,
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": WEATHER_CURRENT_TOOL_ID,
+            "toolCallId": f"{WEATHER_CURRENT_TOOL_ID}:call-1",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].error_summary == (
+        "Tool 'tool.weather-current' is not enabled for this run."
+    )
+
+
+
+def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
+    ) -> CourseCatalogSearchResult:
+        captured.update(
+            {
+                "username": username,
+                "password": password,
+                "keyword": keyword,
+                "field": field,
+                "operator": operator,
+                "limit": limit,
+                "fetch_mode": fetch_mode,
+                "max_pages": max_pages,
+            }
+        )
+        return CourseCatalogSearchResult(
+            keyword=keyword,
+            field=field,
+            operator=operator,
+            limit=limit,
+            results=[
+                CourseCatalogResultDTO(
+                    course_id="_course_1",
+                    course_identifier="CS305",
+                    course_name="数据库系统",
+                    instructor="张老师",
+                )
+            ],
+            logs=[],
+        )
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="blackboard.course_catalog.search:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="blackboard.course_catalog.search",
+            arguments={
+                "username": "alice",
+                "password": "secret",
+                "keyword": "数据库系统",
+            },
+        )
+    )
+
+    assert captured == {
+        "username": "alice",
+        "password": "secret",
+        "keyword": "数据库系统",
+        "field": "CourseName",
+        "operator": "Contains",
+        "limit": None,
+        "fetch_mode": "full",
+        "max_pages": 30,
+    }
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "execution_failed"
+    assert result["error"]["message"] == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
+    assert result["metadata"]["toolId"] == "blackboard.course_catalog.search"
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert all(event.tool_id == "blackboard.course_catalog.search" for event in emitted_tool_events)
+    assert emitted_tool_events[-1].error_summary == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
+
+
+
+def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
+    ) -> CourseCatalogSearchResult:
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
+        raise ValueError("keyword must be a non-empty string.")
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="blackboard.course_catalog.search:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="blackboard.course_catalog.search",
+            arguments={
+                "username": "alice",
+                "password": "secret",
+                "keyword": "",
+            },
+        )
+    )
+
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "invalid_input"
+    assert result["error"]["message"] == "keyword must be a non-empty string."
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].tool_id == "blackboard.course_catalog.search"
+    assert emitted_tool_events[-1].error_summary == "keyword must be a non-empty string."
+
+
+
+def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_search(
+        username: str,
+        password: str,
+        *,
+        keyword: str,
+        field: str = "CourseName",
+        operator: str = "Contains",
+        limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
+    ) -> CourseCatalogSearchResult:
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
+        raise RuntimeError("blackboard search exploded")
+
+    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="blackboard.course_catalog.search:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="blackboard.course_catalog.search",
+            arguments={
+                "username": "alice",
+                "password": "secret",
+                "keyword": "数据库系统",
+            },
+        )
+    )
+
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "execution_failed"
+    assert result["error"]["message"] == "blackboard search exploded"
+    assert result["metadata"] == {
+        "toolId": "blackboard.course_catalog.search",
+    }
+    assert result["error"]["details"]["exceptionType"] == "RuntimeError"
+    assert "Traceback (most recent call last):" in result["error"]["details"]["traceback"]
+    assert (
+        result["error"]["details"]["diagnosticContext"]
+        == {
+            "integration": "blackboard",
+            "toolId": "blackboard.course_catalog.search",
+            "invocationId": "blackboard.course_catalog.search:call-1",
+            "argumentKeys": ["keyword", "password", "username"],
+        }
+    )
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].error_summary == "blackboard search exploded"
+
+
+
+def test_execute_bound_tool_returns_contract_integrity_failure_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+
+    async def execute_malformed_tool(_arguments):
+        return {
+            "status": "error",
+            "error": {"message": "missing code"},
+            "artifacts": [],
+            "metadata": {"toolId": "contract.invalid"},
+        }
+
+    malformed_tool = SimpleNamespace(
+        descriptor=SimpleNamespace(
+            kind=CONTRACT_RUNTIME_TOOL_KIND,
+            display_name="Malformed Contract Tool",
+        ),
+        execute=execute_malformed_tool,
+    )
+    original_resolve_tool = registry.resolve_tool
+
+    def resolve_tool(tool_id: str):
+        if tool_id == "contract.invalid":
+            return malformed_tool
+        return original_resolve_tool(tool_id)
+
+    monkeypatch.setattr(registry, "resolve_tool", resolve_tool)
+
+    ctx = SimpleNamespace(
+        tool_call_id="contract.invalid:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"contract.invalid"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-contract-integrity",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="contract.invalid",
+            arguments={"query": "hello"},
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_execution_failed",
+            "message": "Contract tool returned an error result without a valid error code.",
+            "retryable": False,
+            "details": {"integrity": "invalid_error_code"},
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": "contract.invalid",
+            "toolCallId": "contract.invalid:call-1",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert emitted_tool_events[-1].tool_id == "contract.invalid"
+    assert emitted_tool_events[-1].error_summary == (
+        "Contract tool returned an error result without a valid error code."
+    )
 
 
 

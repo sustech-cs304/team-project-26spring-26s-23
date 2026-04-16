@@ -149,14 +149,14 @@ node ./scripts/smoke-thread-run-chat.mjs --provider-profile-id custom-provider-1
 
 ```bash
 cd backend
-python -m app.blackboard.provider.cli.search_course_catalog --keyword 计算机 --preview 5
+python -m app.integrations.sustech.blackboard.provider.cli.search_course_catalog --keyword 计算机 --preview 5
 ```
 
 ### Blackboard 日历 ICS 同步 CLI
 
 ```bash
 cd backend
-python -m app.blackboard.provider.cli.sync_calendar_ics --save-json
+python -m app.integrations.sustech.blackboard.provider.cli.sync_calendar_ics --save-json
 ```
 
 ## 快速结论

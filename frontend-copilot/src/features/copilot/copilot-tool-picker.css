@@ -37,16 +37,91 @@
   gap: 0.35rem;
 }
 
+.copilot-tool-picker__group {
+  gap: 0.2rem;
+}
+
+.copilot-tool-picker__group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.12rem 0.5rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease;
+}
+
+.copilot-tool-picker__group-toggle:hover {
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+}
+
+.copilot-tool-picker__group-toggle:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+
+.copilot-tool-picker__group-copy {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.copilot-tool-picker__group-title {
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.copilot-tool-picker__group-count {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.copilot-tool-picker__group-caret {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  transition:
+    transform 0.14s ease,
+    color 0.14s ease;
+}
+
+.copilot-tool-picker__group-caret[data-expanded='false'] {
+  transform: rotate(-90deg);
+}
+
+.copilot-tool-picker__group-list {
+  gap: 0.18rem;
+}
+
 .copilot-tool-picker__option {
   align-items: flex-start;
+  gap: 0.62rem;
 }
 
 .copilot-tool-picker__option-check {
   display: inline-flex;
+  flex: 0 0 1.4rem;
   align-items: center;
   justify-content: center;
   width: 1.4rem;
+  min-width: 1.4rem;
   height: 1.4rem;
+  margin-top: 0.04rem;
   border-radius: 999px;
   border: 1px solid var(--border-color);
   background: var(--surface-muted);
@@ -61,40 +136,21 @@
   color: var(--accent-contrast);
 }
 
+.copilot-tool-picker__option-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .copilot-tool-picker__option-description {
+  display: block;
+  overflow: hidden;
   color: var(--text-secondary);
   font-size: 0.76rem;
-  line-height: 1.45;
-}
-
-.copilot-tool-picker__option-tag--builtin {
-  border-color: var(--cap-tools-border);
-  background: var(--cap-tools-bg);
-  color: var(--cap-tools-text);
-}
-
-.copilot-tool-picker__option-tag--external {
-  border-color: var(--cap-search-border);
-  background: var(--cap-search-bg);
-  color: var(--cap-search-text);
-}
-
-.copilot-tool-picker__option-tag--available {
-  border-color: var(--success-border);
-  background: var(--success-soft);
-  color: var(--success-text);
-}
-
-.copilot-tool-picker__option-tag--warning {
-  border-color: var(--warning-border);
-  background: var(--warning-soft);
-  color: var(--warning-text);
-}
-
-.copilot-tool-picker__option-tag--neutral {
-  border-color: var(--border-color);
-  background: var(--surface-subtle);
-  color: var(--text-secondary);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {
