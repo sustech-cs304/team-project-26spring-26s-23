@@ -3,7 +3,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import type { CopilotHistoryRunReplaySuccess } from '../../../electron/copilot-history'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
+import { buildPersistedConversationFromHistory } from './persisted-history-view-model'
 import { CopilotChatPanel } from './CopilotChatPanel'
 import {
   clickElement,
@@ -434,6 +436,110 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('data-testid="chat-history-drift-notice"')
   })
 
+  it('does not replay user request text as assistant content when run_completed payload omits assistant fields', () => {
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      timelineItems: [],
+      runSummaries: [{
+        runId: 'run-1',
+        threadId: 'thread-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '用户原问题',
+        assistantText: '摘要中已有旧回复',
+      }],
+      replayStatus: 'ready',
+      replay: createRunReplayResult({
+        run: {
+          assistantText: null,
+          requestedMessageText: '用户原问题',
+        },
+        historicalSnapshot: {
+          requestMessage: {
+            role: 'user',
+            content: '用户原问题',
+          },
+        },
+        orderedEvents: [{
+          eventType: 'run_completed',
+          sequence: 1,
+          createdAt: '2026-04-13T15:05:00Z',
+          payload: {
+            resolvedModelId: 'openai/gpt-4.1',
+          },
+          toolCallId: null,
+          toolId: null,
+          phase: null,
+          isRedacted: false,
+          redactionVersion: 0,
+        }],
+      }),
+    }))
+
+    expect(conversation.selectedRunConversationSource).toBe('summary')
+    expect(conversation.conversation).toMatchObject([
+      { kind: 'user', content: '用户原问题' },
+      { kind: 'assistant', content: '摘要中已有旧回复' },
+    ])
+  })
+
+  it('falls back to persisted run assistantText when run_completed payload omits assistant fields', () => {
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      timelineItems: [],
+      runSummaries: [{
+        runId: 'run-1',
+        threadId: 'thread-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '用户原问题',
+        assistantText: '持久化助手回复',
+      }],
+      replayStatus: 'ready',
+      replay: createRunReplayResult({
+        run: {
+          assistantText: '持久化助手回复',
+          requestedMessageText: '用户原问题',
+        },
+        historicalSnapshot: {
+          requestMessage: {
+            role: 'user',
+            content: '用户原问题',
+          },
+        },
+        orderedEvents: [{
+          eventType: 'run_completed',
+          sequence: 1,
+          createdAt: '2026-04-13T15:05:00Z',
+          payload: {
+            resolvedModelId: 'openai/gpt-4.1',
+          },
+          toolCallId: null,
+          toolId: null,
+          phase: null,
+          isRedacted: false,
+          redactionVersion: 0,
+        }],
+      }),
+    }))
+
+    expect(conversation.selectedRunConversationSource).toBe('summary')
+    expect(conversation.conversation).toMatchObject([
+      { kind: 'user', content: '用户原问题' },
+      { kind: 'assistant', content: '持久化助手回复' },
+    ])
+  })
+
   it('keeps restored history visible while the directory is still loading if a session is already active', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
@@ -549,6 +655,36 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('当前 threadId')
   })
 })
+
+function createRunReplayResult(overrides: {
+  run?: Partial<CopilotHistoryRunReplaySuccess['run']>
+  historicalSnapshot?: Record<string, unknown> | null
+  orderedEvents?: CopilotHistoryRunReplaySuccess['orderedEvents']
+} = {}): CopilotHistoryRunReplaySuccess {
+  return {
+    ok: true,
+    version: 'chat-history-v1',
+    run: {
+      runId: 'run-1',
+      threadId: 'thread-1',
+      status: 'completed',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      startedAt: '2026-04-13T15:00:01Z',
+      terminalAt: '2026-04-13T15:05:00Z',
+      resolvedModelId: 'openai/gpt-4.1',
+      requestedMessageText: '你好',
+      assistantText: '历史摘要',
+      ...overrides.run,
+    },
+    historicalSnapshot: overrides.historicalSnapshot ?? null,
+    orderedEvents: overrides.orderedEvents ?? [],
+    toolCallBlocks: [],
+    diagnosticBlocks: [],
+    terminalState: null,
+    availabilityInterpretation: null,
+  }
+}
 
 function createPersistedHistoryState(
   overrides: Partial<AssistantSessionHistoryState> = {},

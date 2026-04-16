@@ -415,7 +415,6 @@ function mapPersistedRunEventToRuntimeRunEvent(
 ): RuntimeRunEvent | null {
   const payload = cloneRecord(event.payload)
   const historicalRecord = asRecord(historicalSnapshot)
-  const historicalRequestMessage = asRecord(historicalRecord?.requestMessage)
   const assistantMessageId = normalizeOptionalString(readString(payload.assistantMessageId)) ?? buildReplayAssistantMessageId(runId)
 
   switch (event.eventType) {
@@ -534,7 +533,7 @@ function mapPersistedRunEventToRuntimeRunEvent(
             ?? normalizeOptionalString(readString(payload.delta))
             ?? normalizeOptionalString(readString(payload.text))
             ?? normalizeOptionalString(readString(payload.message))
-            ?? normalizeOptionalString(readString(historicalRequestMessage?.content))
+            ?? normalizeOptionalString(readString(historicalRecord?.assistantText))
             ?? '',
           resolvedModelId,
           resolvedModelRoute,
