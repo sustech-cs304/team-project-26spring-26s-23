@@ -54,6 +54,7 @@ export interface CopilotComposerShellProps {
   sendStatus: 'idle' | 'sending'
   canCancel: boolean
   sendDisabledReason: string | null
+  interactionLocked?: boolean
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -70,13 +71,15 @@ export function CopilotComposerShell({
   sendStatus,
   canCancel,
   sendDisabledReason,
+  interactionLocked = false,
   composerInputRef,
   composerHeight,
   onResizeStart,
 }: CopilotComposerShellProps) {
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
   const isSending = sendStatus === 'sending'
-  const controlsDisabled = isSending
+  const controlsDisabled = isSending || interactionLocked
+  const inputDisabled = interactionLocked
   const thinkingControlRef = useRef<HTMLDivElement | null>(null)
   const thinkingPanelId = useId()
   const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
@@ -288,7 +291,7 @@ export function CopilotComposerShell({
         role="separator"
         aria-orientation="horizontal"
         aria-label="拖动以调整输入区高度"
-        onMouseDown={onResizeStart}
+        onMouseDown={interactionLocked ? undefined : onResizeStart}
       />
 
       <div
@@ -302,6 +305,7 @@ export function CopilotComposerShell({
             name="messageText"
             aria-label="消息内容"
             value={draft.messageText}
+            disabled={inputDisabled}
             onChange={(event) => {
               const nextValue = event.currentTarget.value
               onDraftChange((current) => ({

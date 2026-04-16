@@ -41,8 +41,14 @@ import type { CopilotBootstrapState, CopilotConnectableState } from './types'
 
 type PersistedHistoryViewState = 'none' | 'loading' | 'error' | 'ready'
 
+interface PersistedHistorySwitchLoadingGateResult {
+  viewState: PersistedHistoryViewState
+  isHoldingPreviousContent: boolean
+}
+
 const SWITCHED_HISTORY_LOADING_DELAY_MS = 300
 const SWITCHED_HISTORY_LOADING_MIN_VISIBLE_MS = 500
+const RETAINED_SESSION_COMPOSER_DISABLED_REASON = '正在切换话题，请稍候。'
 const useHistoryLoadingGateEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 export interface CopilotPanelShellProps {
@@ -84,19 +90,21 @@ export interface CopilotPanelShellProps {
 type ConnectableCopilotPanelShellProps = Omit<CopilotPanelShellProps, 'state'> & {
   state: CopilotConnectableState
   persistedHistoryViewState: PersistedHistoryViewState
+  composerInteractionLocked: boolean
   onOpenErrorDetail: (errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void
 }
 
 export function CopilotPanelShell(props: CopilotPanelShellProps) {
   const [selectedErrorDetail, setSelectedErrorDetail] = useState<ErrorDetailOverlayViewModel | null>(null)
   const errorDetailTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const retainedSessionShellRef = useRef<ConnectableCopilotPanelShellProps | null>(null)
   const rawPersistedHistoryViewState = resolvePersistedHistoryViewState(props.sessionHistory)
   const effectivePersistedHistoryViewState = resolveEffectivePersistedHistoryViewState({
     persistedHistoryViewState: rawPersistedHistoryViewState,
     hasTransientConversation: props.hasTransientConversation,
     persistedSelectedRunConversationPending: props.persistedSelectedRunConversationPending,
   })
-  const persistedHistoryViewState = usePersistedHistorySwitchLoadingGate({
+  const persistedHistorySwitchGate = usePersistedHistorySwitchLoadingGate({
     sessionId: props.sessionShell?.sessionId ?? null,
     sessionHistory: props.sessionHistory,
     persistedHistoryViewState: effectivePersistedHistoryViewState,
@@ -130,6 +138,8 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
   }
 
   if (!isCopilotConnectableState(props.state)) {
+    retainedSessionShellRef.current = null
+
     return (
       <CopilotRuntimeStateShell
         state={props.state}
@@ -139,14 +149,29 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
     )
   }
 
+  const liveSessionShellProps: ConnectableCopilotPanelShellProps = {
+    ...props,
+    state: props.state,
+    persistedHistoryViewState: persistedHistorySwitchGate.viewState,
+    composerInteractionLocked: false,
+    onOpenErrorDetail: handleOpenErrorDetail,
+  }
+  const renderedSessionShellProps = persistedHistorySwitchGate.isHoldingPreviousContent
+    ? buildRetainedSessionShellProps({
+        current: liveSessionShellProps,
+        retained: retainedSessionShellRef.current,
+      })
+    : liveSessionShellProps
+
+  updateRetainedSessionShellSnapshot({
+    current: liveSessionShellProps,
+    isHoldingPreviousContent: persistedHistorySwitchGate.isHoldingPreviousContent,
+    retained: retainedSessionShellRef,
+  })
+
   return (
     <>
-      {renderSessionShell({
-        ...props,
-        state: props.state,
-        persistedHistoryViewState,
-        onOpenErrorDetail: handleOpenErrorDetail,
-      })}
+      {renderSessionShell(renderedSessionShellProps)}
       <ErrorDetailOverlay
         viewModel={selectedErrorDetail}
         onClose={handleCloseErrorDetail}
@@ -269,6 +294,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           sendStatus={props.sendStatus}
           canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
+          interactionLocked={props.composerInteractionLocked}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}
           onResizeStart={props.onComposerResizeStart}
@@ -297,12 +323,60 @@ function resolveEffectivePersistedHistoryViewState(input: {
   return input.persistedHistoryViewState
 }
 
+function buildRetainedSessionShellProps(input: {
+  current: ConnectableCopilotPanelShellProps
+  retained: ConnectableCopilotPanelShellProps | null
+}): ConnectableCopilotPanelShellProps {
+  const baseProps = input.retained ?? input.current
+
+  return {
+    ...baseProps,
+    sendStatus: 'idle',
+    canCancelSend: false,
+    sendDisabledReason: RETAINED_SESSION_COMPOSER_DISABLED_REASON,
+    composerInteractionLocked: true,
+  }
+}
+
+function updateRetainedSessionShellSnapshot(input: {
+  current: ConnectableCopilotPanelShellProps
+  isHoldingPreviousContent: boolean
+  retained: MutableRefObject<ConnectableCopilotPanelShellProps | null>
+}) {
+  if (input.isHoldingPreviousContent) {
+    return
+  }
+
+  if (shouldRetainSessionShellSnapshot(input.current)) {
+    input.retained.current = input.current
+    return
+  }
+
+  if (shouldClearRetainedSessionShellSnapshot(input.current)) {
+    input.retained.current = null
+  }
+}
+
+function shouldRetainSessionShellSnapshot(props: ConnectableCopilotPanelShellProps): boolean {
+  return props.sessionShell !== null
+    && (props.persistedHistoryViewState === 'none' || props.persistedHistoryViewState === 'ready')
+}
+
+function shouldClearRetainedSessionShellSnapshot(props: ConnectableCopilotPanelShellProps): boolean {
+  return props.sessionShell === null
+    || props.persistedHistoryViewState === 'loading'
+    || props.persistedHistoryViewState === 'error'
+}
+
 function usePersistedHistorySwitchLoadingGate(input: {
   sessionId: string | null
   sessionHistory: AssistantSessionHistoryState | null | undefined
   persistedHistoryViewState: PersistedHistoryViewState
-}): PersistedHistoryViewState {
-  const [gatedViewState, setGatedViewState] = useState(input.persistedHistoryViewState)
+}): PersistedHistorySwitchLoadingGateResult {
+  const [gateState, setGateState] = useState<PersistedHistorySwitchLoadingGateResult>(() => ({
+    viewState: input.persistedHistoryViewState,
+    isHoldingPreviousContent: false,
+  }))
   const previousSessionIdRef = useRef<string | null>(input.sessionId)
   const activeGateRef = useRef<{ sessionId: string; shownAt: number | null } | null>(null)
   const latestInputRef = useRef(input)
@@ -310,6 +384,13 @@ function usePersistedHistorySwitchLoadingGate(input: {
   const hideTimerRef = useRef<number | null>(null)
 
   latestInputRef.current = input
+
+  const immediateSwitchedPersistedHistoryLoading = previousSessionIdRef.current !== null
+    && input.sessionId !== null
+    && previousSessionIdRef.current !== input.sessionId
+    && input.sessionHistory?.isPersistedThread === true
+    && input.persistedHistoryViewState === 'loading'
+    && (activeGateRef.current === null || activeGateRef.current.sessionId !== input.sessionId)
 
   useHistoryLoadingGateEffect(() => {
     return () => {
@@ -334,7 +415,10 @@ function usePersistedHistorySwitchLoadingGate(input: {
         sessionId: nextSessionId,
         shownAt: null,
       }
-      setGatedViewState('none')
+      setGateState({
+        viewState: 'none',
+        isHoldingPreviousContent: true,
+      })
       showTimerRef.current = window.setTimeout(() => {
         showTimerRef.current = null
         const activeGate = activeGateRef.current
@@ -349,7 +433,10 @@ function usePersistedHistorySwitchLoadingGate(input: {
         }
 
         activeGate.shownAt = Date.now()
-        setGatedViewState('loading')
+        setGateState({
+          viewState: 'loading',
+          isHoldingPreviousContent: false,
+        })
       }, SWITCHED_HISTORY_LOADING_DELAY_MS)
       previousSessionIdRef.current = nextSessionId
       return
@@ -361,14 +448,20 @@ function usePersistedHistorySwitchLoadingGate(input: {
         clearHistoryLoadingGateTimer(showTimerRef)
         clearHistoryLoadingGateTimer(hideTimerRef)
         activeGateRef.current = null
-        setGatedViewState(input.persistedHistoryViewState)
+        setGateState({
+          viewState: input.persistedHistoryViewState,
+          isHoldingPreviousContent: false,
+        })
         previousSessionIdRef.current = nextSessionId
         return
       }
 
       if (input.persistedHistoryViewState === 'loading') {
         clearHistoryLoadingGateTimer(hideTimerRef)
-        setGatedViewState(activeGate.shownAt === null ? 'none' : 'loading')
+        setGateState({
+          viewState: activeGate.shownAt === null ? 'none' : 'loading',
+          isHoldingPreviousContent: activeGate.shownAt === null,
+        })
         previousSessionIdRef.current = nextSessionId
         return
       }
@@ -376,7 +469,10 @@ function usePersistedHistorySwitchLoadingGate(input: {
       if (activeGate.shownAt === null) {
         clearHistoryLoadingGateTimer(showTimerRef)
         activeGateRef.current = null
-        setGatedViewState(input.persistedHistoryViewState)
+        setGateState({
+          viewState: input.persistedHistoryViewState,
+          isHoldingPreviousContent: false,
+        })
         previousSessionIdRef.current = nextSessionId
         return
       }
@@ -385,7 +481,10 @@ function usePersistedHistorySwitchLoadingGate(input: {
       if (remainingVisibleMs <= 0) {
         clearHistoryLoadingGateTimer(hideTimerRef)
         activeGateRef.current = null
-        setGatedViewState(input.persistedHistoryViewState)
+        setGateState({
+          viewState: input.persistedHistoryViewState,
+          isHoldingPreviousContent: false,
+        })
         previousSessionIdRef.current = nextSessionId
         return
       }
@@ -400,20 +499,34 @@ function usePersistedHistorySwitchLoadingGate(input: {
           }
 
           activeGateRef.current = null
-          setGatedViewState(latestInput.persistedHistoryViewState)
+          setGateState({
+            viewState: latestInput.persistedHistoryViewState,
+            isHoldingPreviousContent: false,
+          })
         }, remainingVisibleMs)
       }
 
-      setGatedViewState('loading')
+      setGateState({
+        viewState: 'loading',
+        isHoldingPreviousContent: false,
+      })
       previousSessionIdRef.current = nextSessionId
       return
     }
 
-    setGatedViewState(input.persistedHistoryViewState)
+    setGateState({
+      viewState: input.persistedHistoryViewState,
+      isHoldingPreviousContent: false,
+    })
     previousSessionIdRef.current = nextSessionId
   }, [input.persistedHistoryViewState, input.sessionHistory?.isPersistedThread, input.sessionId])
 
-  return gatedViewState
+  return immediateSwitchedPersistedHistoryLoading
+    ? {
+        viewState: 'none',
+        isHoldingPreviousContent: true,
+      }
+    : gateState
 }
 
 function clearHistoryLoadingGateTimer(timerRef: MutableRefObject<number | null>) {
