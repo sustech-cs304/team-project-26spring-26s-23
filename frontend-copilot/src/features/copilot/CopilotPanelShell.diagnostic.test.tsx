@@ -6,8 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { CopilotPanelShell } from './CopilotPanelShell'
-import { createEmptyComposerDraft } from './copilot-chat-helpers'
+import {
+  createEmptyComposerDraft,
+  type CopilotChatComposerDraft,
+} from './copilot-chat-helpers'
 import { createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
+import type { CopilotModelGroup } from './model-picker'
 import type { CopilotMessageListItem } from './run-segment-view-model'
 import {
   clickElement,
@@ -125,31 +129,52 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     expect(html).not.toContain('data-testid="chat-history-retry-button"')
   })
 
-  it('does not show the skeleton when a thread switch finishes within 300ms', async () => {
+  it('keeps previous content visible, locks the composer, and switches directly to the new thread when loading finishes within 300ms', async () => {
     vi.useFakeTimers()
     const rendered = renderWithRoot(buildHistoryLoadingGateShell({
       sessionId: 'thread-1',
       detailStatus: 'ready',
       hasLoadedDetail: true,
+      conversation: createHistoryLoadingGateConversation('旧话题回答'),
+      composerDraft: createHistoryLoadingGateComposerDraft('旧话题草稿'),
+      modelGroups: createHistoryLoadingGateModelGroups(),
     }))
 
     rendered.rerender(buildHistoryLoadingGateShell({
       sessionId: 'thread-2',
       detailStatus: 'loading',
+      conversation: createHistoryLoadingGateConversation('新话题回答'),
+      composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
+      modelGroups: createHistoryLoadingGateModelGroups(),
     }))
 
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
+    expect(rendered.container.textContent).not.toContain('新话题回答')
+
+    const retainedInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const retainedSendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const retainedModelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    expect(retainedInput.value).toBe('旧话题草稿')
+    expect(retainedInput.disabled).toBe(true)
+    expect(retainedSendButton.disabled).toBe(true)
+    expect(retainedSendButton.title).toBe('正在切换话题，请稍候。')
+    expect(retainedModelTrigger.disabled).toBe(true)
 
     await act(async () => {
       vi.advanceTimersByTime(299)
     })
 
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
 
     rendered.rerender(buildHistoryLoadingGateShell({
       sessionId: 'thread-2',
       detailStatus: 'ready',
       hasLoadedDetail: true,
+      conversation: createHistoryLoadingGateConversation('新话题回答'),
+      composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
+      modelGroups: createHistoryLoadingGateModelGroups(),
     }))
 
     await act(async () => {
@@ -157,35 +182,55 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     })
 
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('新话题回答')
+    expect(rendered.container.textContent).not.toContain('旧话题回答')
+
+    const readyInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const readySendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const readyModelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    expect(readyInput.value).toBe('新话题草稿')
+    expect(readyInput.disabled).toBe(false)
+    expect(readySendButton.disabled).toBe(false)
+    expect(readyModelTrigger.disabled).toBe(false)
     rendered.unmount()
   })
 
-  it('shows the skeleton only after 300ms when switching to another persisted thread', async () => {
+  it('switches from retained previous content to the skeleton after 300ms when the next persisted thread is still loading', async () => {
     vi.useFakeTimers()
     const rendered = renderWithRoot(buildHistoryLoadingGateShell({
       sessionId: 'thread-1',
       detailStatus: 'ready',
       hasLoadedDetail: true,
+      conversation: createHistoryLoadingGateConversation('旧话题回答'),
+      composerDraft: createHistoryLoadingGateComposerDraft('旧话题草稿'),
+      modelGroups: createHistoryLoadingGateModelGroups(),
     }))
 
     rendered.rerender(buildHistoryLoadingGateShell({
       sessionId: 'thread-2',
       detailStatus: 'loading',
+      conversation: createHistoryLoadingGateConversation('新话题回答'),
+      composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
+      modelGroups: createHistoryLoadingGateModelGroups(),
     }))
 
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
 
     await act(async () => {
       vi.advanceTimersByTime(299)
     })
 
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
 
     await act(async () => {
       vi.advanceTimersByTime(1)
     })
 
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-message-scroll-region')).toBeNull()
+    expect(rendered.container.textContent).not.toContain('旧话题回答')
     rendered.unmount()
   })
 
@@ -837,6 +882,10 @@ function buildHistoryLoadingGateShell(input: {
   detailStatus?: AssistantSessionHistoryState['detailStatus']
   hasLoadedDetail?: boolean
   isPersistedThread?: boolean
+  modelGroups?: ReturnType<typeof createHistoryLoadingGateModelGroups>
+  composerDraft?: ReturnType<typeof createHistoryLoadingGateComposerDraft>
+  conversation?: CopilotMessageListItem[]
+  sendDisabledReason?: string | null
 } = {}) {
   const sessionId = input.sessionId ?? 'thread-1'
   const detailStatus = input.detailStatus ?? 'idle'
@@ -868,19 +917,19 @@ function buildHistoryLoadingGateShell(input: {
         selectedRunId: isPersistedThread ? 'run-1' : null,
       })}
       sendError={null}
-      modelGroups={[]}
+      modelGroups={input.modelGroups ?? []}
       thinkingCapability={null}
-      composerDraft={createEmptyComposerDraft()}
+      composerDraft={input.composerDraft ?? createHistoryLoadingGateComposerDraft()}
       onComposerDraftChange={vi.fn()}
       onSend={vi.fn()}
       onCancelCurrentRun={vi.fn()}
       sendStatus="idle"
       canCancelSend={false}
-      sendDisabledReason={null}
+      sendDisabledReason={input.sendDisabledReason ?? null}
       historyDrift={null}
       historyRebindAcknowledged={false}
       onAcknowledgeHistoryRebind={vi.fn()}
-      conversation={[]}
+      conversation={input.conversation ?? []}
       assistantPlaceholder={{
         shouldRender: false,
         dismissReason: 'inactive',
@@ -890,6 +939,72 @@ function buildHistoryLoadingGateShell(input: {
       onComposerResizeStart={vi.fn()}
     />
   )
+}
+
+function createHistoryLoadingGateComposerDraft(messageText = ''): CopilotChatComposerDraft {
+  return {
+    ...createEmptyComposerDraft(),
+    messageText,
+    selectedModelId: 'provider-openai:openai/gpt-4.1',
+    selectedModelRoute: {
+      routeRef: {
+        routeKind: 'provider-model',
+        profileId: 'provider-openai',
+        modelId: 'openai/gpt-4.1',
+      },
+    },
+  }
+}
+
+function createHistoryLoadingGateConversation(content: string): CopilotMessageListItem[] {
+  return [{
+    id: `assistant:${content}`,
+    kind: 'assistant',
+    runId: 'run-history-loading-gate',
+    sequence: 1,
+    title: '助手响应',
+    content,
+    status: 'completed',
+    resolvedModelId: null,
+    resolvedModelRoute: null,
+    resolvedToolIds: [],
+    requestOptions: {},
+  }]
+}
+
+function createHistoryLoadingGateModelGroups(): CopilotModelGroup[] {
+  return [{
+    key: 'provider-openai',
+    title: 'OpenAI',
+    models: [{
+      id: 'provider-openai:openai/gpt-4.1',
+      selectionValue: 'provider-openai:openai/gpt-4.1',
+      modelId: 'openai/gpt-4.1',
+      name: 'GPT-4.1',
+      provider: 'OpenAI',
+      group: 'OpenAI',
+      tags: [],
+      icon: {
+        label: 'G',
+        accent: '#10a37f',
+      },
+      routeRef: {
+        routeKind: 'provider-model',
+        profileId: 'provider-openai',
+        modelId: 'openai/gpt-4.1',
+      },
+      route: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'provider-openai',
+          modelId: 'openai/gpt-4.1',
+        },
+      },
+      available: true,
+      unavailableReason: null,
+      thinkingCapabilityOverride: null,
+    }],
+  }]
 }
 
 function createPersistedSessionHistoryStateForThread(
