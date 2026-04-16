@@ -1,9 +1,11 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
   type FormEvent,
+  type MutableRefObject,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
   type SetStateAction,
@@ -36,6 +38,12 @@ import { isCopilotConnectableState } from './copilot-panel-diagnostics'
 import type { CopilotModelGroup } from './model-picker'
 import type { RuntimeThinkingCapability } from './thread-run-contract'
 import type { CopilotBootstrapState, CopilotConnectableState } from './types'
+
+type PersistedHistoryViewState = 'none' | 'loading' | 'error' | 'ready'
+
+const SWITCHED_HISTORY_LOADING_DELAY_MS = 300
+const SWITCHED_HISTORY_LOADING_MIN_VISIBLE_MS = 500
+const useHistoryLoadingGateEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 export interface CopilotPanelShellProps {
   state: CopilotBootstrapState
@@ -75,12 +83,24 @@ export interface CopilotPanelShellProps {
 
 type ConnectableCopilotPanelShellProps = Omit<CopilotPanelShellProps, 'state'> & {
   state: CopilotConnectableState
+  persistedHistoryViewState: PersistedHistoryViewState
   onOpenErrorDetail: (errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void
 }
 
 export function CopilotPanelShell(props: CopilotPanelShellProps) {
   const [selectedErrorDetail, setSelectedErrorDetail] = useState<ErrorDetailOverlayViewModel | null>(null)
   const errorDetailTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const rawPersistedHistoryViewState = resolvePersistedHistoryViewState(props.sessionHistory)
+  const effectivePersistedHistoryViewState = resolveEffectivePersistedHistoryViewState({
+    persistedHistoryViewState: rawPersistedHistoryViewState,
+    hasTransientConversation: props.hasTransientConversation,
+    persistedSelectedRunConversationPending: props.persistedSelectedRunConversationPending,
+  })
+  const persistedHistoryViewState = usePersistedHistorySwitchLoadingGate({
+    sessionId: props.sessionShell?.sessionId ?? null,
+    sessionHistory: props.sessionHistory,
+    persistedHistoryViewState: effectivePersistedHistoryViewState,
+  })
 
   useEffect(() => {
     if (!isCopilotConnectableState(props.state) || props.sessionShell === null) {
@@ -124,6 +144,7 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
       {renderSessionShell({
         ...props,
         state: props.state,
+        persistedHistoryViewState,
         onOpenErrorDetail: handleOpenErrorDetail,
       })}
       <ErrorDetailOverlay
@@ -192,14 +213,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
     )
   }
 
-  const persistedHistoryViewState = resolvePersistedHistoryViewState(props.sessionHistory)
-  const effectivePersistedHistoryViewState = props.hasTransientConversation === true
-    && persistedHistoryViewState !== 'ready'
-    ? 'none'
-    : props.persistedSelectedRunConversationPending === true && persistedHistoryViewState === 'ready'
-      ? 'none'
-      : persistedHistoryViewState
-  const shouldRenderMessageSurface = effectivePersistedHistoryViewState === 'none' || effectivePersistedHistoryViewState === 'ready'
+  const shouldRenderMessageSurface = props.persistedHistoryViewState === 'none' || props.persistedHistoryViewState === 'ready'
   const persistedConversationSource = props.persistedSelectedRunConversationSource ?? 'none'
 
   return (
@@ -225,9 +239,9 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           sessionHistory: props.sessionHistory,
           onSelectSessionHistoryRun: props.onSelectSessionHistoryRun,
         })}
-        {effectivePersistedHistoryViewState === 'loading'
+        {props.persistedHistoryViewState === 'loading'
           ? renderPersistedHistoryLoading()
-          : effectivePersistedHistoryViewState === 'error'
+          : props.persistedHistoryViewState === 'error'
             ? renderPersistedHistoryRetryPrompt(props.onRetrySessionHistory)
             : (
                 <CopilotMessagesShell
@@ -264,7 +278,152 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   )
 }
 
-type PersistedHistoryViewState = 'none' | 'loading' | 'error' | 'ready'
+function resolveEffectivePersistedHistoryViewState(input: {
+  persistedHistoryViewState: PersistedHistoryViewState
+  hasTransientConversation?: boolean
+  persistedSelectedRunConversationPending?: boolean
+}): PersistedHistoryViewState {
+  if (input.hasTransientConversation === true && input.persistedHistoryViewState !== 'ready') {
+    return 'none'
+  }
+
+  if (
+    input.persistedSelectedRunConversationPending === true
+    && input.persistedHistoryViewState === 'ready'
+  ) {
+    return 'none'
+  }
+
+  return input.persistedHistoryViewState
+}
+
+function usePersistedHistorySwitchLoadingGate(input: {
+  sessionId: string | null
+  sessionHistory: AssistantSessionHistoryState | null | undefined
+  persistedHistoryViewState: PersistedHistoryViewState
+}): PersistedHistoryViewState {
+  const [gatedViewState, setGatedViewState] = useState(input.persistedHistoryViewState)
+  const previousSessionIdRef = useRef<string | null>(input.sessionId)
+  const activeGateRef = useRef<{ sessionId: string; shownAt: number | null } | null>(null)
+  const latestInputRef = useRef(input)
+  const showTimerRef = useRef<number | null>(null)
+  const hideTimerRef = useRef<number | null>(null)
+
+  latestInputRef.current = input
+
+  useHistoryLoadingGateEffect(() => {
+    return () => {
+      clearHistoryLoadingGateTimer(showTimerRef)
+      clearHistoryLoadingGateTimer(hideTimerRef)
+    }
+  }, [])
+
+  useHistoryLoadingGateEffect(() => {
+    const previousSessionId = previousSessionIdRef.current
+    const nextSessionId = input.sessionId
+    const isSwitchedPersistedHistoryLoading = previousSessionId !== null
+      && nextSessionId !== null
+      && previousSessionId !== nextSessionId
+      && input.sessionHistory?.isPersistedThread === true
+      && input.persistedHistoryViewState === 'loading'
+
+    if (isSwitchedPersistedHistoryLoading) {
+      clearHistoryLoadingGateTimer(showTimerRef)
+      clearHistoryLoadingGateTimer(hideTimerRef)
+      activeGateRef.current = {
+        sessionId: nextSessionId,
+        shownAt: null,
+      }
+      setGatedViewState('none')
+      showTimerRef.current = window.setTimeout(() => {
+        showTimerRef.current = null
+        const activeGate = activeGateRef.current
+        const latestInput = latestInputRef.current
+        if (
+          activeGate === null
+          || activeGate.sessionId !== nextSessionId
+          || latestInput.sessionId !== nextSessionId
+          || latestInput.persistedHistoryViewState !== 'loading'
+        ) {
+          return
+        }
+
+        activeGate.shownAt = Date.now()
+        setGatedViewState('loading')
+      }, SWITCHED_HISTORY_LOADING_DELAY_MS)
+      previousSessionIdRef.current = nextSessionId
+      return
+    }
+
+    const activeGate = activeGateRef.current
+    if (activeGate !== null) {
+      if (nextSessionId !== activeGate.sessionId) {
+        clearHistoryLoadingGateTimer(showTimerRef)
+        clearHistoryLoadingGateTimer(hideTimerRef)
+        activeGateRef.current = null
+        setGatedViewState(input.persistedHistoryViewState)
+        previousSessionIdRef.current = nextSessionId
+        return
+      }
+
+      if (input.persistedHistoryViewState === 'loading') {
+        clearHistoryLoadingGateTimer(hideTimerRef)
+        setGatedViewState(activeGate.shownAt === null ? 'none' : 'loading')
+        previousSessionIdRef.current = nextSessionId
+        return
+      }
+
+      if (activeGate.shownAt === null) {
+        clearHistoryLoadingGateTimer(showTimerRef)
+        activeGateRef.current = null
+        setGatedViewState(input.persistedHistoryViewState)
+        previousSessionIdRef.current = nextSessionId
+        return
+      }
+
+      const remainingVisibleMs = SWITCHED_HISTORY_LOADING_MIN_VISIBLE_MS - (Date.now() - activeGate.shownAt)
+      if (remainingVisibleMs <= 0) {
+        clearHistoryLoadingGateTimer(hideTimerRef)
+        activeGateRef.current = null
+        setGatedViewState(input.persistedHistoryViewState)
+        previousSessionIdRef.current = nextSessionId
+        return
+      }
+
+      if (hideTimerRef.current === null) {
+        hideTimerRef.current = window.setTimeout(() => {
+          hideTimerRef.current = null
+          const currentGate = activeGateRef.current
+          const latestInput = latestInputRef.current
+          if (currentGate === null || currentGate.sessionId !== activeGate.sessionId) {
+            return
+          }
+
+          activeGateRef.current = null
+          setGatedViewState(latestInput.persistedHistoryViewState)
+        }, remainingVisibleMs)
+      }
+
+      setGatedViewState('loading')
+      previousSessionIdRef.current = nextSessionId
+      return
+    }
+
+    setGatedViewState(input.persistedHistoryViewState)
+    previousSessionIdRef.current = nextSessionId
+  }, [input.persistedHistoryViewState, input.sessionHistory?.isPersistedThread, input.sessionId])
+
+  return gatedViewState
+}
+
+function clearHistoryLoadingGateTimer(timerRef: MutableRefObject<number | null>) {
+  if (timerRef.current === null) {
+    return
+  }
+
+  window.clearTimeout(timerRef.current)
+  timerRef.current = null
+}
 
 function resolvePersistedHistoryViewState(
   sessionHistory: AssistantSessionHistoryState | null | undefined,
