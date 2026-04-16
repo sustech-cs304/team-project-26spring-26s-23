@@ -377,6 +377,26 @@ export function useAssistantWorkspaceState({
 
     if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
       markUserLiveSessionSelection()
+    } else if (historyState?.selectedRunId !== null) {
+      appendWorkspaceDebugLog('session-activate-cleared-run-selection', {
+        sessionId: sessionEntry.sessionId,
+        previousSelectedRunId: historyState.selectedRunId,
+        reason: 'default-thread-view',
+      })
+      setSessionHistoryById((current) => {
+        const currentHistoryState = current[sessionEntry.sessionId]
+        if (currentHistoryState === undefined || currentHistoryState.selectedRunId === null) {
+          return current
+        }
+
+        const nextHistoryState = selectAssistantSessionHistoryRun(currentHistoryState, null)
+        return nextHistoryState === currentHistoryState
+          ? current
+          : {
+              ...current,
+              [sessionEntry.sessionId]: nextHistoryState,
+            }
+      })
     }
 
     touchRuntimeController(sessionEntry.sessionId)
@@ -449,10 +469,7 @@ export function useAssistantWorkspaceState({
           continue
         }
 
-        const selectedRunId = sessionEntry.capabilities.capabilitiesVersion === 'history-shell'
-          ? persistedShellStateRef.current.selectedRunIdByThreadId[sessionEntry.sessionId] ?? null
-          : null
-        nextState[sessionEntry.sessionId] = createAssistantSessionHistoryStateFromSessionShell(sessionEntry, selectedRunId)
+        nextState[sessionEntry.sessionId] = createAssistantSessionHistoryStateFromSessionShell(sessionEntry, null)
         hasChanged = true
       }
 
@@ -786,11 +803,10 @@ export function useAssistantWorkspaceState({
         setSessionHistoryById((current) => {
           const nextState: Record<string, AssistantSessionHistoryState> = {}
           for (const summary of effectiveThreadSummaries) {
-            const selectedRunId = persistedShellState.selectedRunIdByThreadId[summary.threadId] ?? null
             const currentHistoryState = current[summary.threadId]
             const syncedHistoryState = currentHistoryState === undefined
-              ? createAssistantSessionHistoryState(summary, selectedRunId)
-              : syncAssistantSessionHistorySummary(currentHistoryState, summary, selectedRunId)
+              ? createAssistantSessionHistoryState(summary, null)
+              : syncAssistantSessionHistorySummary(currentHistoryState, summary, null)
             const restoredSession = restoredSessionsById.get(summary.threadId)
             const shouldRestartCapabilitiesHydration = currentHistoryState !== undefined
               && currentHistoryState.isPersistedThread !== true
@@ -1215,13 +1231,9 @@ export function useAssistantWorkspaceState({
     const selectedRunIdByThreadId = Object.fromEntries(
       sessionListState.sessions.flatMap((sessionEntry) => {
         const historyState = sessionHistoryById[sessionEntry.sessionId]
-        const persistableSelectedRunId = historyState === undefined
+        const nextSelectedRunId = historyState === undefined
           ? null
           : resolveAssistantSessionHistoryPersistableSelectedRunId(historyState)
-        const fallbackSelectedRunId = sessionEntry.capabilities.capabilitiesVersion === 'history-shell'
-          ? previousShellState.selectedRunIdByThreadId[sessionEntry.sessionId] ?? null
-          : null
-        const nextSelectedRunId = persistableSelectedRunId ?? fallbackSelectedRunId
 
         return nextSelectedRunId === null ? [] : [[sessionEntry.sessionId, nextSelectedRunId] as const]
       }),

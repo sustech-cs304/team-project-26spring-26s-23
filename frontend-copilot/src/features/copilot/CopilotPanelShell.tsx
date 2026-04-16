@@ -454,6 +454,7 @@ function renderPersistedHistoryRunSelector(input: {
   if (
     sessionHistory === null
     || sessionHistory === undefined
+    || sessionHistory.selectedRunId === null
     || sessionHistory.runSummaries.length < 2
     || (sessionHistory.detailStatus !== 'ready' && sessionHistory.hasLoadedDetail !== true)
   ) {

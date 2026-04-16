@@ -130,7 +130,6 @@ export function createAssistantSessionHistoryState(
     capabilitiesError: null,
     selectedRunId: resolveAssistantSessionSelectedRunId({
       persistedSelectedRunId: selectedRunId,
-      fallbackRunId: summary.lastRunId,
     }),
     replayStatus: 'idle',
     replayError: null,
@@ -148,7 +147,6 @@ export function syncAssistantSessionHistorySummary(
     currentSelectedRunId: state.selectedRunId,
     persistedSelectedRunId: selectedRunId,
     runSummaries: state.runSummaries,
-    fallbackRunId: summary.lastRunId,
   })
   const replayForSelectedRun = getAssistantSessionHistoryReplayForRun(state, nextSelectedRunId)
 
@@ -249,7 +247,6 @@ export function applyAssistantSessionHistoryDetail(
   const selectedRunId = resolveAssistantSessionSelectedRunId({
     currentSelectedRunId: state.selectedRunId,
     runSummaries,
-    fallbackRunId: detail.thread.lastRunId,
   })
   const replayForSelectedRun = getAssistantSessionHistoryReplayForRun(state, selectedRunId)
 
@@ -438,7 +435,6 @@ function resolveAssistantSessionSelectedRunId(input: {
   persistedSelectedRunId?: string | null
   currentSelectedRunId?: string | null
   runSummaries?: CopilotHistoryRunSummary[]
-  fallbackRunId?: string | null
 }): string | null {
   const availableRunIds = new Set(
     (input.runSummaries ?? [])
@@ -448,8 +444,6 @@ function resolveAssistantSessionSelectedRunId(input: {
   const candidates = [
     normalizeOptionalString(input.currentSelectedRunId),
     normalizeOptionalString(input.persistedSelectedRunId),
-    normalizeOptionalString(input.fallbackRunId),
-    input.runSummaries?.[input.runSummaries.length - 1]?.runId ?? null,
   ]
 
   for (const candidate of candidates) {

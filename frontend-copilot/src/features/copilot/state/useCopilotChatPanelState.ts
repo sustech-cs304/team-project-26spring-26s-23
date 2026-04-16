@@ -383,7 +383,9 @@ export function useCopilotChatPanelState({
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
   const canCancelSend = activeAbortController !== null && sendStatus === 'sending'
   const historyDrift = useMemo(
-    () => resolvePersistedHistoryDrift(sessionHistory),
+    () => sessionHistory?.selectedRunId === null
+      ? null
+      : resolvePersistedHistoryDrift(sessionHistory),
     [sessionHistory],
   )
   const historyDriftResetKey = useMemo(
@@ -796,6 +798,7 @@ export function useCopilotChatPanelState({
     appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'conversation-source-evaluated', {
       sessionId: sessionShell?.sessionId ?? null,
       selectedRunId: sessionHistory?.selectedRunId ?? null,
+      pendingHistorySyncRunId,
       persistedConversationLength: persistedConversation.length,
       persistedConversationSource: persistedSelectedRunConversationSource,
       persistedSelectedRunConversationPending,
@@ -809,12 +812,18 @@ export function useCopilotChatPanelState({
       replayStatus: sessionHistory?.replayStatus ?? null,
       timelineItemCount: sessionHistory?.timelineItems.length ?? 0,
       runSummaryCount: sessionHistory?.runSummaries.length ?? 0,
+      historyDriftVisible: historyDrift !== null,
+      historyViewMode: sessionHistory?.selectedRunId === null
+        ? 'thread-timeline'
+        : persistedSelectedRunConversationSource,
     })
   }, [
     conversation.length,
     debugModeEnabled,
     hasRenderablePersistedSelectedConversation,
     hasTransientConversation,
+    historyDrift,
+    pendingHistorySyncRunId,
     persistedConversation.length,
     persistedSelectedRunConversationPending,
     persistedSelectedRunConversationSource,
