@@ -22,7 +22,73 @@ afterAll(() => {
 })
 
 describe('ToolPicker', () => {
-  it('supports search, multi-select, select-all, invert and recommended shortcuts', async () => {
+  it('renders localized tool presentation, hides visible ids and keeps presentation hooks', async () => {
+    const rendered = renderWithRoot(<ToolPickerHarness />)
+    const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
+
+    await clickElement(trigger)
+
+    const panel = rendered.getByTestId('chat-tool-picker-panel')
+    const groups = panel.querySelector('.copilot-model-picker__groups')
+    expect(groups).not.toBeNull()
+
+    const fileOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+    const remoteOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+
+    expect(fileOption.textContent).toContain('文件转换')
+    expect(fileOption.textContent).toContain('转换常见办公文档')
+    expect(fileOption.textContent).toContain('builtin')
+    expect(fileOption.textContent).toContain('可用')
+    expect(remoteOption.textContent).toContain('联网搜索')
+    expect(remoteOption.textContent).toContain('搜索外部公开信息')
+    expect(remoteOption.textContent).toContain('external')
+    expect(remoteOption.textContent).toContain('全局关闭')
+
+    expect(panel.textContent).not.toContain('tool.file-convert')
+    expect(panel.textContent).not.toContain('tool.remote-search')
+    expect(panel.textContent).not.toContain('File Convert')
+    expect(panel.textContent).not.toContain('Remote Search')
+    expect(panel.textContent).not.toContain('Convert office files into other formats with a long English description')
+    expect(panel.textContent).not.toContain('Search public information through external providers with a long English description')
+
+    const fileName = fileOption.querySelector('.copilot-model-picker__option-body .copilot-tool-picker__option-name')
+    const fileDescription = fileOption.querySelector('.copilot-tool-picker__option-description')
+    const remoteDescription = remoteOption.querySelector('.copilot-tool-picker__option-description')
+    const selectedCheck = fileOption.querySelector('.copilot-tool-picker__option-check')
+    const unselectedCheck = remoteOption.querySelector('.copilot-tool-picker__option-check')
+
+    expect(fileName?.textContent).toBe('文件转换')
+    expect(fileDescription?.textContent).toBe('转换常见办公文档')
+    expect(remoteDescription?.textContent).toBe('搜索外部公开信息')
+    expect(selectedCheck?.textContent).toBe('✓')
+    expect(unselectedCheck?.textContent).toBe('+')
+
+    rendered.unmount()
+  })
+
+  it('supports searching by localized keywords and hidden ids after presentation polish', async () => {
+    const rendered = renderWithRoot(<ToolPickerHarness />)
+    const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
+
+    await clickElement(trigger)
+
+    const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
+    await setFormControlValue(searchInput, '联网')
+    expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+
+    await setFormControlValue(searchInput, '公开信息')
+    expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+
+    await setFormControlValue(searchInput, 'tool.file-convert')
+    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('supports multi-select, select-all, invert and recommended shortcuts', async () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
 
     const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
@@ -38,7 +104,7 @@ describe('ToolPicker', () => {
     expect((rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
-    await setFormControlValue(searchInput, '远程')
+    await setFormControlValue(searchInput, '联网')
 
     expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
@@ -95,15 +161,15 @@ function createTools(): RuntimeToolDirectoryEntry[] {
       toolId: 'tool.file-convert',
       kind: 'builtin',
       availability: 'available',
-      displayName: '文件转换',
-      description: 'DOCX/PDF/PPTX 转换工具',
+      displayName: 'File Convert',
+      description: 'Convert office files into other formats with a long English description',
     },
     {
       toolId: 'tool.remote-search',
       kind: 'external',
       availability: 'disabled-by-global-setting',
-      displayName: '远程搜索',
-      description: '访问外部搜索服务',
+      displayName: 'Remote Search',
+      description: 'Search public information through external providers with a long English description',
     },
   ]
 }
