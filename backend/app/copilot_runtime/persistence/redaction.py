@@ -2,16 +2,38 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 DEFAULT_REDACTION_VERSION = 1
 REDACTED_VALUE = "[redacted]"
-_SENSITIVE_KEY_PATTERN = re.compile(
-    r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|authorization|cookie|session|bearer)",
-    re.IGNORECASE,
+_SENSITIVE_KEY_NAMES = frozenset(
+    {
+        "apikey",
+        "accesskey",
+        "access_token",
+        "accesstoken",
+        "auth",
+        "auth_token",
+        "authtoken",
+        "authorization",
+        "bearer",
+        "bearer_token",
+        "bearertoken",
+        "cookie",
+        "id_token",
+        "idtoken",
+        "password",
+        "refresh_token",
+        "refreshtoken",
+        "secret",
+        "secretkey",
+        "session_cookie",
+        "session_secret",
+        "session_token",
+        "sessionid",
+    }
 )
 
 
@@ -70,7 +92,9 @@ def _is_sensitive_key(key: str) -> bool:
     normalized_key = key.strip().lower()
     if normalized_key == "":
         return False
-    return _SENSITIVE_KEY_PATTERN.search(normalized_key) is not None
+    canonical_key = normalized_key.replace("-", "_")
+    compact_key = "".join(character for character in canonical_key if character.isalnum())
+    return canonical_key in _SENSITIVE_KEY_NAMES or compact_key in _SENSITIVE_KEY_NAMES
 
 
 __all__ = [

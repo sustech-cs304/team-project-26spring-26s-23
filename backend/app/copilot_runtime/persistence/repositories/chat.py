@@ -248,16 +248,16 @@ class RunEventRepository:
         run_id: str,
         created_at: datetime,
     ) -> RunEventModel:
-        payload_json = dict(source_event.payload_json or {})
+        payload_json = _rewrite_cloned_event_payload(dict(source_event.payload_json or {}), run_id=run_id)
         model = RunEventModel(
             run_id=run_id,
             seq=source_event.seq,
             event_type=source_event.event_type,
             payload_json=payload_json,
             payload_text_search=_build_payload_text_search(payload_json),
-            tool_call_id=source_event.tool_call_id,
-            tool_id=source_event.tool_id,
-            phase=source_event.phase,
+            tool_call_id=_extract_optional_string(payload_json, "toolCallId", "tool_call_id"),
+            tool_id=_extract_optional_string(payload_json, "toolId", "tool_id"),
+            phase=_extract_optional_string(payload_json, "phase"),
             created_at=_coerce_datetime(created_at),
             redaction_version=source_event.redaction_version,
             is_redacted=source_event.is_redacted,
@@ -272,6 +272,25 @@ class RunEventRepository:
         )
         current_max = int(result.scalar_one())
         return current_max + 1
+
+
+def _rewrite_cloned_event_payload(payload: dict[str, Any], *, run_id: str) -> dict[str, Any]:
+    assistant_message_id = payload.get("assistantMessageId")
+    if isinstance(assistant_message_id, str) and assistant_message_id.strip() != "":
+        payload["assistantMessageId"] = f"{run_id}:assistant"
+
+    tool_call_id = payload.get("toolCallId")
+    if isinstance(tool_call_id, str) and tool_call_id.strip() != "":
+        payload["toolCallId"] = _rewrite_run_scoped_identifier(tool_call_id, run_id=run_id, fallback_suffix="tool-call")
+
+    return payload
+
+
+
+def _rewrite_run_scoped_identifier(value: str, *, run_id: str, fallback_suffix: str) -> str:
+    suffix = value.split(":", 1)[1].strip() if ":" in value else value.strip()
+    normalized_suffix = suffix if suffix != "" else fallback_suffix
+    return f"{run_id}:{normalized_suffix}"
 
 
 class ProjectionRepository:
