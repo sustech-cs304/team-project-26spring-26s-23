@@ -15,7 +15,6 @@ import {
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
-  COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
   COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
   type CopilotHistoryBackupDatabaseRequest,
@@ -29,7 +28,6 @@ import {
   type CopilotHistoryThreadDeleteResult,
   type CopilotHistoryThreadDetailResult,
   type CopilotHistoryThreadDuplicateResult,
-  type CopilotHistoryThreadPurgeResult,
   type CopilotHistoryThreadRenameResult,
 } from '../copilot-history'
 import {
@@ -80,7 +78,6 @@ const RENDERER_IPC_CHANNELS = [
   COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
-  COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
@@ -213,13 +210,6 @@ export function registerRendererIpcHandlers(
     COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
     async (_event, threadId: string): Promise<CopilotHistoryThreadDeleteResult> => {
       return await handlers.deleteCopilotHistoryThread(threadId)
-    },
-  )
-
-  ipcMain.handle(
-    COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
-    async (_event, threadId: string): Promise<CopilotHistoryThreadPurgeResult> => {
-      return await handlers.purgeCopilotHistoryThread(threadId)
     },
   )
 

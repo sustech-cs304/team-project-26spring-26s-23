@@ -4,7 +4,6 @@ export const COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL = 'copilot-history:get-run-r
 export const COPILOT_HISTORY_RENAME_THREAD_CHANNEL = 'copilot-history:rename-thread'
 export const COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL = 'copilot-history:duplicate-thread'
 export const COPILOT_HISTORY_DELETE_THREAD_CHANNEL = 'copilot-history:delete-thread'
-export const COPILOT_HISTORY_PURGE_THREAD_CHANNEL = 'copilot-history:purge-thread'
 export const COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL = 'copilot-history:backup-database'
 export const COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL = 'copilot-history:restore-database'
 
@@ -118,14 +117,6 @@ export interface CopilotHistoryThreadDuplicateSuccess {
   thread: CopilotHistoryThreadSummary
 }
 
-export interface CopilotHistoryThreadPurgeSuccess {
-  ok: true
-  version: string
-  threadId: string
-  purgedAt: string
-  deletedAt: string | null
-}
-
 export interface CopilotHistoryDatabaseBackupSuccess {
   ok: true
   version: string
@@ -148,7 +139,6 @@ export type CopilotHistoryRunReplayResult = CopilotHistoryRunReplaySuccess | Cop
 export type CopilotHistoryThreadDeleteResult = CopilotHistoryThreadDeleteSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryThreadRenameResult = CopilotHistoryThreadRenameSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryThreadDuplicateResult = CopilotHistoryThreadDuplicateSuccess | CopilotHistoryApiFailure
-export type CopilotHistoryThreadPurgeResult = CopilotHistoryThreadPurgeSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryDatabaseBackupResult = CopilotHistoryDatabaseBackupSuccess | CopilotHistoryApiFailure
 export type CopilotHistoryDatabaseRestoreResult = CopilotHistoryDatabaseRestoreSuccess | CopilotHistoryApiFailure
 
@@ -165,7 +155,6 @@ export interface CopilotHistoryApi {
     request?: CopilotHistoryDuplicateThreadRequest,
   ) => Promise<CopilotHistoryThreadDuplicateResult>
   deleteThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
-  purgeThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
   backupDatabase: (request?: CopilotHistoryBackupDatabaseRequest) => Promise<CopilotHistoryDatabaseBackupResult>
   restoreDatabase: (request: CopilotHistoryRestoreDatabaseRequest) => Promise<CopilotHistoryDatabaseRestoreResult>
 }

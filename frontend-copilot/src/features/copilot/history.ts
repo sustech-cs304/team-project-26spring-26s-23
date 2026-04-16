@@ -11,7 +11,6 @@ import type {
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
   CopilotHistoryThreadDuplicateResult,
-  CopilotHistoryThreadPurgeResult,
   CopilotHistoryThreadRenameResult,
 } from '../../../electron/copilot-history'
 
@@ -113,21 +112,6 @@ export async function deleteCopilotHistoryThread(
   }
 
   return api.deleteThread(threadId)
-}
-
-export async function purgeCopilotHistoryThread(
-  threadId: string,
-): Promise<CopilotHistoryThreadPurgeResult> {
-  const api = getCopilotHistoryApi()
-
-  if (!api) {
-    return {
-      ok: false,
-      error: HISTORY_API_UNAVAILABLE_ERROR,
-    }
-  }
-
-  return api.purgeThread(threadId)
 }
 
 export async function backupCopilotHistoryDatabase(

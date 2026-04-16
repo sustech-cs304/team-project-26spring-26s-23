@@ -143,23 +143,6 @@ def build_history_router() -> APIRouter:
                 },
             ) from exc
 
-    @router.delete("/history/threads/{thread_id}/purge")
-    def purge_history_thread(thread_id: str, request: Request) -> dict[str, object]:
-        runtime_config = _get_runtime_config(request)
-        require_local_token(request, runtime_config)
-        service = _get_history_query_service(request)
-        try:
-            return service.purge_thread(thread_id).to_dict()
-        except LookupError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "code": "thread_not_found",
-                    "message": str(exc),
-                    "threadId": thread_id,
-                },
-            ) from exc
-
     @router.post("/history/database/backup")
     def backup_history_database(
         request: Request,

@@ -28,7 +28,6 @@ from .query_dtos import (
     PersistedThreadDetailResponse,
     PersistedThreadDuplicateResponse,
     PersistedThreadListResponse,
-    PersistedThreadPurgeResponse,
     PersistedThreadRenameResponse,
     PersistedThreadSummaryDTO,
 )
@@ -55,7 +54,6 @@ __all__ = [
     "PersistedThreadDetailResponse",
     "PersistedThreadDuplicateResponse",
     "PersistedThreadListResponse",
-    "PersistedThreadPurgeResponse",
     "PersistedThreadRenameResponse",
     "PersistedThreadSummaryDTO",
     "RedactionResult",

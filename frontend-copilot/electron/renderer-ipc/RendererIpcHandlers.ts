@@ -15,7 +15,6 @@ import type {
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
   CopilotHistoryThreadDuplicateResult,
-  CopilotHistoryThreadPurgeResult,
   CopilotHistoryThreadRenameResult,
 } from '../copilot-history'
 import type {
@@ -64,7 +63,6 @@ export interface RendererIpcHandlers {
     request?: CopilotHistoryDuplicateThreadRequest,
   ) => Promise<CopilotHistoryThreadDuplicateResult>
   deleteCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
-  purgeCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
   backupCopilotHistoryDatabase: (
     request?: CopilotHistoryBackupDatabaseRequest,
   ) => Promise<CopilotHistoryDatabaseBackupResult>

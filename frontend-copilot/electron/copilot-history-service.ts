@@ -10,7 +10,6 @@ import type {
   CopilotHistoryThreadDeleteResult,
   CopilotHistoryThreadDetailResult,
   CopilotHistoryThreadDuplicateResult,
-  CopilotHistoryThreadPurgeResult,
   CopilotHistoryThreadRenameResult,
 } from './copilot-history'
 import type { HostedBackendService } from './runtime/hosted-backend-service'
@@ -43,7 +42,6 @@ export interface ElectronCopilotHistoryService {
     request?: CopilotHistoryDuplicateThreadRequest,
   ) => Promise<CopilotHistoryThreadDuplicateResult>
   deleteThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
-  purgeThread: (threadId: string) => Promise<CopilotHistoryThreadPurgeResult>
   backupDatabase: (request?: CopilotHistoryBackupDatabaseRequest) => Promise<CopilotHistoryDatabaseBackupResult>
   restoreDatabase: (request: CopilotHistoryRestoreDatabaseRequest) => Promise<CopilotHistoryDatabaseRestoreResult>
 }
@@ -103,15 +101,6 @@ export function createElectronCopilotHistoryService(
         path: `/history/threads/${encodeURIComponent(threadId)}`,
         method: 'DELETE',
         failureLabel: `Failed to delete persisted chat thread "${threadId}"`,
-      })
-    },
-    async purgeThread(threadId) {
-      return await requestHistory<CopilotHistoryThreadPurgeResult>({
-        options,
-        operation: 'purge-thread',
-        path: `/history/threads/${encodeURIComponent(threadId)}/purge`,
-        method: 'DELETE',
-        failureLabel: `Failed to purge persisted chat thread "${threadId}"`,
       })
     },
     async backupDatabase(request) {

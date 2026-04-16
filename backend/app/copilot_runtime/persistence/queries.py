@@ -21,7 +21,6 @@ from .query_dtos import (
     PersistedThreadDetailResponse,
     PersistedThreadDuplicateResponse,
     PersistedThreadListResponse,
-    PersistedThreadPurgeResponse,
     PersistedThreadRenameResponse,
     PersistedThreadSummaryDTO,
 )
@@ -60,7 +59,6 @@ class PersistedChatQueryService:
             thread_models = tuple(
                 repositories.session.execute(
                     select(ThreadModel)
-                    .where(ThreadModel.deleted_at.is_(None))
                     .order_by(ThreadModel.updated_at.desc(), ThreadModel.id.desc())
                 ).scalars()
             )
@@ -171,9 +169,6 @@ class PersistedChatQueryService:
                     drift_evaluator=self._drift_evaluator,
                 ),
             )
-
-    def purge_thread(self, thread_id: str) -> PersistedThreadPurgeResponse:
-        return self._require_session_store().purge_thread(thread_id)
 
     def backup_database(
         self,

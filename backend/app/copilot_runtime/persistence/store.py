@@ -24,7 +24,6 @@ from .query_dtos import (
     PersistedDatabaseBackupResponse,
     PersistedDatabaseRestoreResponse,
     PersistedThreadDeleteResponse,
-    PersistedThreadPurgeResponse,
 )
 from .queries import PersistedChatQueryService
 from .repositories import run_lifecycle_transaction
@@ -378,27 +377,13 @@ class SQLiteSessionStore(RuntimeSessionStore):
 
     def delete_thread(self, thread_id: str) -> PersistedThreadDeleteResponse:
         resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        deleted_at = datetime.now(UTC)
         with run_lifecycle_transaction(self._session_factory) as repositories:
-            thread_model = repositories.threads.require(resolved_thread_id)
-            deleted_at = thread_model.deleted_at or datetime.now(UTC)
+            repositories.threads.require(resolved_thread_id)
             repositories.threads.hard_delete(resolved_thread_id)
             return PersistedThreadDeleteResponse(
                 ok=True,
                 threadId=resolved_thread_id,
-                deletedAt=deleted_at,
-            )
-
-    def purge_thread(self, thread_id: str) -> PersistedThreadPurgeResponse:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
-        purged_at = datetime.now(UTC)
-        with run_lifecycle_transaction(self._session_factory) as repositories:
-            thread_model = repositories.threads.require(resolved_thread_id)
-            deleted_at = thread_model.deleted_at
-            repositories.threads.hard_delete(resolved_thread_id)
-            return PersistedThreadPurgeResponse(
-                ok=True,
-                threadId=resolved_thread_id,
-                purgedAt=purged_at,
                 deletedAt=deleted_at,
             )
 

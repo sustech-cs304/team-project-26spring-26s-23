@@ -16,7 +16,6 @@ import {
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
-  COPILOT_HISTORY_PURGE_THREAD_CHANNEL,
   COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
   type CopilotHistoryApi,
@@ -81,9 +80,6 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       deleteThread(threadId) {
         return ipcRenderer.invoke(COPILOT_HISTORY_DELETE_THREAD_CHANNEL, threadId)
-      },
-      purgeThread(threadId) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_PURGE_THREAD_CHANNEL, threadId)
       },
       backupDatabase(request) {
         return ipcRenderer.invoke(COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL, request)

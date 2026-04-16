@@ -110,15 +110,6 @@ class PersistedThreadDuplicateResponse(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
-class PersistedThreadPurgeResponse(RuntimeContract):
-    ok: bool
-    threadId: str
-    purgedAt: datetime
-    deletedAt: datetime | None = None
-    version: str = HISTORY_QUERY_DTO_VERSION
-
-
-@dataclass(frozen=True, slots=True)
 class PersistedDatabaseBackupResponse(RuntimeContract):
     ok: bool
     databasePath: str
@@ -147,7 +138,6 @@ __all__ = [
     "PersistedThreadDetailResponse",
     "PersistedThreadDuplicateResponse",
     "PersistedThreadListResponse",
-    "PersistedThreadPurgeResponse",
     "PersistedThreadRenameResponse",
     "PersistedThreadSummaryDTO",
 ]
