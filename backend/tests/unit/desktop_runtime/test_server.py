@@ -35,6 +35,8 @@ from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
+from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.desktop_runtime.config import (
@@ -212,8 +214,12 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
     assert toolset_summary["name"] == "default"
     assert toolset_summary["label"] == "Default"
     assert toolset_summary["default"] is True
-    assert toolset_summary["toolCount"] == 8
-    assert len(toolset_summary["tools"]) == 8
+    expected_contract_tool_ids = [
+        contract.metadata.tool_id
+        for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
+    ]
+    assert toolset_summary["toolCount"] == 2 + len(expected_contract_tool_ids)
+    assert len(toolset_summary["tools"]) == 2 + len(expected_contract_tool_ids)
     assert toolset_summary["tools"][0] == {
         "toolId": FILE_CONVERT_TOOL_ID,
         "kind": "builtin",
@@ -228,14 +234,7 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         "displayName": "Current Weather",
         "description": "Return a placeholder current-weather result for a requested location.",
     }
-    assert [tool["toolId"] for tool in toolset_summary["tools"][2:]] == [
-        "blackboard.course_catalog.search",
-        "blackboard.calendar.refresh",
-        "blackboard.snapshot.sync",
-        "tis.personal_grades.fetch",
-        "tis.credit_gpa.fetch",
-        "tis.selected_courses.fetch",
-    ]
+    assert [tool["toolId"] for tool in toolset_summary["tools"][2:]] == expected_contract_tool_ids
     assert all(tool["kind"] == "contract" for tool in toolset_summary["tools"][2:])
 
 

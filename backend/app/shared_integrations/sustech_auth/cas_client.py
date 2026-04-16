@@ -13,7 +13,8 @@ class CASLogger(Protocol):
         *,
         payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Any: ...
+    ) -> Any:
+        pass
 
     def warning(
         self,
@@ -21,7 +22,8 @@ class CASLogger(Protocol):
         *,
         payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Any: ...
+    ) -> Any:
+        pass
 
     def error(
         self,
@@ -29,7 +31,8 @@ class CASLogger(Protocol):
         *,
         payload: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Any: ...
+    ) -> Any:
+        pass
 
 
 class CASClient:

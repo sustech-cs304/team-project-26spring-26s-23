@@ -33,6 +33,7 @@ from app.tooling import (
     HostEvent,
     MissingHostCapabilityError,
     NormalizedToolError,
+    NormalizedToolErrorCode,
     ToolArtifactReference,
     ToolContract,
     ToolHostCapabilities,
@@ -280,14 +281,14 @@ def _map_exception(
             )
         elif error.code in {"temporarily_unavailable", "timeout"}:
             normalized = NormalizedToolError(
-                code=error.code,
+                code=cast(NormalizedToolErrorCode, error.code),
                 message=error.message,
                 retryable=error.retryable,
                 details={"capability": error.capability, **error.details},
             )
         elif error.code in {"permission_denied", "not_found", "conflict"}:
             normalized = NormalizedToolError(
-                code=error.code,
+                code=cast(NormalizedToolErrorCode, error.code),
                 message=error.message,
                 retryable=error.retryable,
                 details={"capability": error.capability, **error.details},
@@ -321,7 +322,7 @@ def _map_exception(
         )
     elif isinstance(error, httpx.HTTPStatusError):
         status_code = error.response.status_code
-        code = "execution_failed"
+        code: NormalizedToolErrorCode = "execution_failed"
         if status_code == 401:
             code = "authentication_required"
         elif status_code == 403:

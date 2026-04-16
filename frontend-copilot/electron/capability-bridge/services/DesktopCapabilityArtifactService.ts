@@ -28,6 +28,8 @@ export interface DesktopCapabilityArtifactService {
   handle(request: DesktopCapabilityBridgeRequest): Promise<Record<string, unknown>>
 }
 
+let artifactMutationQueue = Promise.resolve()
+
 export function createDesktopCapabilityArtifactService(
   options: CreateDesktopCapabilityBridgeServiceOptions,
 ): DesktopCapabilityArtifactService {
@@ -35,9 +37,9 @@ export function createDesktopCapabilityArtifactService(
     async handle(request) {
       switch (request.operation) {
         case 'save_text':
-          return await saveArtifactText(options, request)
+          return await enqueueArtifactMutation(async () => await saveArtifactText(options, request))
         case 'save_bytes':
-          return await saveArtifactBytes(options, request)
+          return await enqueueArtifactMutation(async () => await saveArtifactBytes(options, request))
         case 'describe_artifact':
           return await describeArtifact(options, request)
         default:
@@ -226,6 +228,17 @@ async function readArtifactIndex(filePath: string): Promise<PersistedArtifactInd
       },
     })
   }
+}
+
+async function enqueueArtifactMutation<TValue>(
+  operation: () => Promise<TValue>,
+): Promise<TValue> {
+  const nextOperation = artifactMutationQueue.then(operation)
+  artifactMutationQueue = nextOperation.then(
+    () => undefined,
+    () => undefined,
+  )
+  return await nextOperation
 }
 
 async function writeArtifactIndex(filePath: string, index: PersistedArtifactIndex): Promise<void> {

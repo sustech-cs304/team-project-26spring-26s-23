@@ -17,6 +17,8 @@ export interface DesktopCapabilityStateService {
   handle(request: DesktopCapabilityBridgeRequest): Promise<Record<string, unknown>>
 }
 
+let stateMutationQueue = Promise.resolve()
+
 export function createDesktopCapabilityStateService(
   options: CreateDesktopCapabilityBridgeServiceOptions,
 ): DesktopCapabilityStateService {
@@ -26,10 +28,14 @@ export function createDesktopCapabilityStateService(
         case 'get_value':
           return await getStateValue(options, request)
         case 'put_value':
-          await putStateValue(options, request)
+          await enqueueStateMutation(async () => {
+            await putStateValue(options, request)
+          })
           return {}
         case 'delete_value':
-          await deleteStateValue(options, request)
+          await enqueueStateMutation(async () => {
+            await deleteStateValue(options, request)
+          })
           return {}
         default:
           throw new DesktopCapabilityBridgeError(
@@ -284,6 +290,17 @@ async function writeStateDocument(
   const bridgePaths = createDesktopCapabilityBridgePaths(hostedPaths)
   await mkdir(path.dirname(bridgePaths.stateFile), { recursive: true })
   await writeFile(bridgePaths.stateFile, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+}
+
+async function enqueueStateMutation<TValue>(
+  operation: () => Promise<TValue>,
+): Promise<TValue> {
+  const nextOperation = stateMutationQueue.then(operation)
+  stateMutationQueue = nextOperation.then(
+    () => undefined,
+    () => undefined,
+  )
+  return await nextOperation
 }
 
 function createEmptyStateDocument(): PersistedStateDocument {

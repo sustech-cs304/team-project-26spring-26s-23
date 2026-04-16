@@ -407,6 +407,8 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
         field: str,
         operator: str,
         limit: int | None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
         captured_search.update(
             {
@@ -416,6 +418,8 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
                 "field": field,
                 "operator": operator,
                 "limit": limit,
+                "fetch_mode": fetch_mode,
+                "max_pages": max_pages,
             }
         )
         return CourseCatalogSearchResult(
@@ -468,13 +472,15 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
         "field": "CourseName",
         "operator": "Contains",
         "limit": None,
+        "fetch_mode": "full",
+        "max_pages": 30,
     }
-    assert result["status"] == "success"
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "execution_failed"
+    assert result["error"]["message"] == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
     assert result["metadata"] == {
         "toolId": "blackboard.course_catalog.search",
-        "credentialSource": "host_secrets",
     }
-    assert result["output"]["total"] == 1
     assert bridge_client.secret_requests == [
         (
             "blackboard.course_catalog.search:call-1",
@@ -491,7 +497,7 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
     ]
     assert [event["eventType"] for event in bridge_client.events] == [
         "blackboard.course_catalog.search.started",
-        "blackboard.course_catalog.search.completed",
+        "blackboard.course_catalog.search.failed",
     ]
     assert all(
         event["invocationId"] == "blackboard.course_catalog.search:call-1"

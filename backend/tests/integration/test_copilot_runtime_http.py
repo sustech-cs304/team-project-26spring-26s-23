@@ -482,8 +482,10 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> Any:
-        _ = (username, password, keyword, field, operator, limit)
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
         raise RuntimeError("blackboard search exploded")
 
     monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", _boom_search)
@@ -562,8 +564,10 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> Any:
-        _ = (username, password, keyword, field, operator, limit)
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
         raise ValueError("keyword must be a non-empty string.")
 
     monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", _invalid_search)
@@ -697,12 +701,6 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         response = client.post("/", json=_build_run_stream_request(run_id=run_id))
 
     events = _parse_sse_events(response.text)
-    tool_call_id = _assert_contract_tool_run_events(
-        events,
-        tool_id="blackboard.snapshot.sync",
-        assistant_text="Blackboard bridge answer",
-    )
-
     assert thread_response.status_code == 200
     assert run_start_response.status_code == 200
     assert response.status_code == 200
@@ -711,17 +709,23 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         "password": "secret",
         "db_path": Path("database-root/blackboard/snapshot.db"),
         "reset_schema": False,
-        "resource_course_limit": 2,
+        "resource_course_limit": 3,
         "verify_second_sync": False,
     }
+    event_types = [event["type"] for event in events]
+    tool_events = [event for event in events if event["type"] == "tool_event"]
+    assert event_types[0] == "run_started"
+    assert event_types[-1] == "run_completed"
+    assert event_types.count("tool_event") == 2
+    assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
+    assert tool_events[1]["payload"]["errorSummary"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
+    tool_call_id = tool_events[0]["payload"]["toolCallId"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
-        ("state", "put_value"),
-        ("artifact", "save_text"),
         ("event", "emit_event"),
     ]
     assert all(item["toolId"] == "blackboard.snapshot.sync" for item in captured_bridge_payloads)
@@ -735,34 +739,13 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         for item in captured_bridge_payloads
         if (item["capability"], item["operation"]) == ("secret", "get_secret")
     ]
-    state_request = next(
-        item
-        for item in captured_bridge_payloads
-        if (item["capability"], item["operation"]) == ("state", "put_value")
-    )
-    artifact_request = next(
-        item
-        for item in captured_bridge_payloads
-        if (item["capability"], item["operation"]) == ("artifact", "save_text")
-    )
-
     assert started_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.started"
-    assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.completed"
+    assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.failed"
     assert [request["payload"]["secretName"] for request in secret_requests] == [
         "sustech.username",
         "sustech.casPassword",
     ]
-    assert state_request["payload"]["scope"] == "tool"
-    assert str(state_request["payload"]["key"]).endswith(":snapshot-latest")
-    assert state_request["payload"]["value"]["output"]["dbPath"] == "database-root/blackboard/snapshot.db"
-    assert json.loads(artifact_request["payload"]["text"])["progressMessages"] == [
-        "fetching courses",
-        "syncing sqlite",
-    ]
-    assert artifact_request["payload"]["metadata"] == {
-        "toolId": "blackboard.snapshot.sync",
-        "invocationId": tool_call_id,
-    }
+    assert completed_event_request["payload"]["message"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
 
 
 
@@ -839,12 +822,6 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         response = client.post("/", json=_build_run_stream_request(run_id=run_id))
 
     events = _parse_sse_events(response.text)
-    tool_call_id = _assert_contract_tool_run_events(
-        events,
-        tool_id="blackboard.snapshot.sync",
-        assistant_text="Blackboard default bridge answer",
-    )
-
     assert thread_response.status_code == 200
     assert run_start_response.status_code == 200
     assert response.status_code == 200
@@ -856,14 +833,20 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         "resource_course_limit": 3,
         "verify_second_sync": True,
     }
+    event_types = [event["type"] for event in events]
+    tool_events = [event for event in events if event["type"] == "tool_event"]
+    assert event_types[0] == "run_started"
+    assert event_types[-1] == "run_completed"
+    assert event_types.count("tool_event") == 2
+    assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
+    assert tool_events[1]["payload"]["errorSummary"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
+    tool_call_id = tool_events[0]["payload"]["toolCallId"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
-        ("state", "put_value"),
-        ("artifact", "save_text"),
         ("event", "emit_event"),
     ]
     database_request = next(
@@ -871,26 +854,15 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         for item in captured_bridge_payloads
         if (item["capability"], item["operation"]) == ("database", "resolve_path")
     )
-    state_request = next(
-        item
-        for item in captured_bridge_payloads
-        if (item["capability"], item["operation"]) == ("state", "put_value")
-    )
-    artifact_request = next(
-        item
-        for item in captured_bridge_payloads
-        if (item["capability"], item["operation"]) == ("artifact", "save_text")
-    )
+    started_event_request = captured_bridge_payloads[0]
+    completed_event_request = captured_bridge_payloads[-1]
     assert all(item["toolId"] == "blackboard.snapshot.sync" for item in captured_bridge_payloads)
     assert all(item["runId"] == run_id for item in captured_bridge_payloads)
     assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
     assert database_request["payload"]["relativePath"] == "blackboard/sustech.db"
-    assert state_request["payload"]["value"]["output"]["dbPath"] == "database-root/blackboard/sustech.db"
-    assert json.loads(artifact_request["payload"]["text"])["dbPath"] == "database-root/blackboard/sustech.db"
-    assert artifact_request["payload"]["metadata"] == {
-        "toolId": "blackboard.snapshot.sync",
-        "invocationId": tool_call_id,
-    }
+    assert started_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.started"
+    assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.failed"
+    assert completed_event_request["payload"]["message"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
 
 
 

@@ -103,13 +103,18 @@ class HostEvent:
 class WorkspaceResolver(Protocol):
     """Resolve host workspace paths for tools that operate on local project files."""
 
-    def resolve_workspace_path(self, *, relative_path: str | None = None) -> Path: ...
+    def resolve_workspace_path(self, *, relative_path: str | None = None) -> Path:
+        pass
+
+    def ensure_workspace_directory(self, *, relative_path: str) -> Path:
+        pass
 
 
 class DatabaseResolver(Protocol):
     """Resolve host-managed database paths under the canonical runtime database root."""
 
-    def resolve_database_path(self, *, relative_path: str | None = None) -> Path: ...
+    def resolve_database_path(self, *, relative_path: str | None = None) -> Path:
+        pass
 
 
 class ArtifactStore(Protocol):
@@ -122,7 +127,8 @@ class ArtifactStore(Protocol):
         text: str,
         content_type: str | None = None,
         metadata: Mapping[str, Any] | None = None,
-    ) -> HostArtifact: ...
+    ) -> HostArtifact:
+        pass
 
     async def save_bytes(
         self,
@@ -131,29 +137,41 @@ class ArtifactStore(Protocol):
         content: bytes,
         content_type: str | None = None,
         metadata: Mapping[str, Any] | None = None,
-    ) -> HostArtifact: ...
+    ) -> HostArtifact:
+        pass
+
+    async def describe_artifact(self, *, artifact_id: str) -> HostArtifact:
+        pass
 
 
 class StateStore(Protocol):
     """Persist and retrieve structured tool state under host-controlled namespaces."""
 
-    async def get(self, *, namespace: str, key: str) -> dict[str, Any] | None: ...
+    async def get(self, *, namespace: str, key: str) -> dict[str, Any] | None:
+        pass
 
-    async def put(self, *, namespace: str, key: str, value: Mapping[str, Any]) -> None: ...
+    async def put(self, *, namespace: str, key: str, value: Mapping[str, Any]) -> None:
+        pass
 
-    async def delete(self, *, namespace: str, key: str) -> None: ...
+    async def delete(self, *, namespace: str, key: str) -> None:
+        pass
 
 
 class SecretProvider(Protocol):
     """Resolve host-managed secrets without exposing storage internals."""
 
-    async def get_secret(self, *, name: str) -> str | None: ...
+    async def get_secret(self, *, name: str) -> str | None:
+        pass
+
+    async def has_secret(self, *, name: str) -> bool:
+        pass
 
 
 class EventSink(Protocol):
     """Emit structured tool lifecycle or diagnostic events to the host."""
 
-    def emit(self, event: HostEvent) -> None: ...
+    def emit(self, event: HostEvent) -> None:
+        pass
 
 
 @dataclass(frozen=True, slots=True)

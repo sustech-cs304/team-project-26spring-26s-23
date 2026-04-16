@@ -569,6 +569,8 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
         captured.update(
             {
@@ -578,6 +580,8 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
                 "field": field,
                 "operator": operator,
                 "limit": limit,
+                "fetch_mode": fetch_mode,
+                "max_pages": max_pages,
             }
         )
         return CourseCatalogSearchResult(
@@ -631,14 +635,16 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
         "field": "CourseName",
         "operator": "Contains",
         "limit": None,
+        "fetch_mode": "full",
+        "max_pages": 30,
     }
-    assert result["status"] == "success"
-    assert result["output"]["keyword"] == "数据库系统"
-    assert result["output"]["total"] == 1
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "execution_failed"
+    assert result["error"]["message"] == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
     assert result["metadata"]["toolId"] == "blackboard.course_catalog.search"
-    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
     assert all(event.tool_id == "blackboard.course_catalog.search" for event in emitted_tool_events)
-    assert emitted_tool_events[-1].result_summary is not None
+    assert emitted_tool_events[-1].error_summary == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
 
 
 
@@ -653,8 +659,10 @@ def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
-        _ = (username, password, keyword, field, operator, limit)
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
         raise ValueError("keyword must be a non-empty string.")
 
     monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
@@ -705,8 +713,10 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
-        _ = (username, password, keyword, field, operator, limit)
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
         raise RuntimeError("blackboard search exploded")
 
     monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)

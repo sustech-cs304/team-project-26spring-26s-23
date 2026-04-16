@@ -24,16 +24,12 @@ from app.copilot_runtime.tool_registry import (
     summarize_tool_arguments,
     summarize_tool_result,
 )
+from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
-CONTRACT_TOOL_IDS = (
-    "blackboard.course_catalog.search",
-    "blackboard.calendar.refresh",
-    "blackboard.snapshot.sync",
-    "blackboard.sql.query",
-    "tis.personal_grades.fetch",
-    "tis.credit_gpa.fetch",
-    "tis.selected_courses.fetch",
-    "tis.sql.query",
+CONTRACT_TOOL_IDS = tuple(
+    contract.metadata.tool_id
+    for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
 )
 
 
@@ -125,6 +121,21 @@ def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() 
             "keyword": {"type": "string", "minLength": 1},
             "field": {"type": "string"},
             "operator": {"type": "string"},
+            "fetchMode": {
+                "type": "string",
+                "enum": ["quick", "full"],
+                "default": "full",
+                "description": (
+                    "quick searches only the initial result pages without following show-all; "
+                    "full also follows show-all pagination for more complete results."
+                ),
+            },
+            "maxPages": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 30,
+                "description": "Maximum number of result pages to continue fetching before stopping.",
+            },
             "limit": {"type": "integer"},
             "username": {"type": "string"},
             "password": {"type": "string"},

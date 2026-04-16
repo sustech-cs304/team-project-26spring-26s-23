@@ -538,4 +538,37 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
     expect(appendLog).not.toHaveBeenCalled()
   })
+
+  it('redacts unexpected internal errors before replying to the renderer', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-internal-error')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const appendLog = vi.fn()
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      appendLog,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'internal-error-1',
+      capability: 'artifact',
+      operation: 'save_text',
+      payload: {
+        name: 'reserved.json',
+        text: '{}',
+        metadata: {
+          __desktopCapabilityArtifact: 'reserved',
+        },
+      },
+    }))).resolves.toEqual({
+      requestId: 'internal-error-1',
+      ok: false,
+      errorCode: 'invalid_request',
+      errorMessage: "Artifact metadata must not include reserved field '__desktopCapabilityArtifact'.",
+      errorRetryable: false,
+      details: {},
+    })
+    expect(appendLog).not.toHaveBeenCalled()
+  })
 })

@@ -494,13 +494,16 @@ class _PydanticAIEventStream:
             return normalized_tool_name
 
         for state in pending_states:
+            tool_call_id = state.tool_call_id
+            if tool_call_id is None:
+                continue
             parsed_arguments = self._parse_tool_call_arguments(state.args)
             details: dict[str, Any] = {
                 "source": "pydantic_raw_stream",
                 "providerEndpointType": self._model_route_summary.get("endpointType"),
                 "observationKind": "execution_missing",
                 "partIndex": state.part_index,
-                "toolCallId": state.tool_call_id,
+                "toolCallId": tool_call_id,
                 "toolName": state.tool_name,
                 "argumentsComplete": True,
             }
@@ -524,7 +527,7 @@ class _PydanticAIEventStream:
             )
             self.record_tool_lifecycle_event(
                 RuntimeToolLifecycleEvent(
-                    tool_call_id=state.tool_call_id,
+                    tool_call_id=tool_call_id,
                     tool_id=resolve_tool_id(state.tool_name),
                     phase="failed",
                     title="工具调用失败",

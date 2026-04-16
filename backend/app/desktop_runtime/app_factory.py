@@ -45,14 +45,8 @@ def create_app(
         bridge_token=runtime_config.host_model_route_bridge_token,
     )
     resolved_host_capability_bridge_client = host_capability_bridge_client or DesktopCapabilityBridgeClient(
-        bridge_url=(
-            runtime_config.host_capability_bridge_url
-            or runtime_config.host_model_route_bridge_url
-        ),
-        bridge_token=(
-            runtime_config.host_capability_bridge_token
-            or runtime_config.host_model_route_bridge_token
-        ),
+        bridge_url=runtime_config.host_capability_bridge_url,
+        bridge_token=runtime_config.host_capability_bridge_token,
     )
     host_capabilities_factory = build_desktop_bridge_host_capabilities_factory(
         bridge_client=resolved_host_capability_bridge_client,

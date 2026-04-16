@@ -47,7 +47,7 @@ export function createElectronDesktopCapabilityBridgeService(
             capability: request.capability,
             operation: request.operation,
             requestId: request.requestId,
-            detail: normalizedError.errorMessage,
+            detail: error instanceof Error ? error.message : String(error),
           })
         }
 
@@ -77,7 +77,7 @@ function normalizeCapabilityBridgeError(error: unknown): {
 
   return {
     errorCode: 'internal_error',
-    errorMessage: error instanceof Error ? error.message : String(error),
+    errorMessage: 'Desktop capability bridge failed to process the request.',
     errorRetryable: false,
     details: {},
   }

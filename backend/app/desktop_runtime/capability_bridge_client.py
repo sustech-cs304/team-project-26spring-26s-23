@@ -15,6 +15,8 @@ from app.desktop_runtime.capability_bridge_protocol import (
     DESKTOP_CAPABILITY_BRIDGE_RETRYABLE_ERROR_CODES,
     DesktopCapabilityArtifactDescriptor,
     DesktopCapabilityBridgeRequest,
+    DesktopCapabilityName,
+    DesktopCapabilityOperation,
     validate_desktop_capability_bridge_result,
 )
 from app.tooling import ToolInvocationContext
@@ -39,8 +41,8 @@ def _normalize_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def _build_invalid_response_error(
     *,
-    capability: str,
-    operation: str,
+    capability: DesktopCapabilityName,
+    operation: DesktopCapabilityOperation,
     detail: str,
 ) -> HostCapabilityOperationError:
     return HostCapabilityOperationError(
@@ -56,8 +58,8 @@ def _build_invalid_response_error(
 
 def _build_unavailable_error(
     *,
-    capability: str,
-    operation: str,
+    capability: DesktopCapabilityName,
+    operation: DesktopCapabilityOperation,
     detail: str,
 ) -> HostCapabilityOperationError:
     return HostCapabilityOperationError(
@@ -309,8 +311,8 @@ class DesktopCapabilityBridgeClient:
     async def _call_async(
         self,
         *,
-        capability: str,
-        operation: str,
+        capability: DesktopCapabilityName,
+        operation: DesktopCapabilityOperation,
         context: ToolInvocationContext,
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
@@ -343,8 +345,8 @@ class DesktopCapabilityBridgeClient:
     def _call_sync(
         self,
         *,
-        capability: str,
-        operation: str,
+        capability: DesktopCapabilityName,
+        operation: DesktopCapabilityOperation,
         context: ToolInvocationContext,
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
@@ -377,8 +379,8 @@ class DesktopCapabilityBridgeClient:
     def _build_request(
         self,
         *,
-        capability: str,
-        operation: str,
+        capability: DesktopCapabilityName,
+        operation: DesktopCapabilityOperation,
         context: ToolInvocationContext,
         payload: Mapping[str, Any],
     ) -> DesktopCapabilityBridgeRequest:
@@ -392,7 +394,12 @@ class DesktopCapabilityBridgeClient:
             payload=dict(payload),
         )
 
-    def _require_bridge_url(self, *, capability: str, operation: str) -> str:
+    def _require_bridge_url(
+        self,
+        *,
+        capability: DesktopCapabilityName,
+        operation: DesktopCapabilityOperation,
+    ) -> str:
         bridge_url = self._bridge_url
         bridge_token = self._bridge_token
         if bridge_url is None or bridge_token is None:
@@ -413,27 +420,47 @@ class DesktopCapabilityBridgeClient:
         client = self._sync_client
         if client is None:
             client = httpx.Client(
-                transport=self._transport,
+                transport=self._get_sync_transport(),
                 timeout=self._timeout,
             )
             self._sync_client = client
         return client
 
+    def _get_sync_transport(self) -> httpx.BaseTransport | None:
+        transport = self._transport
+        if transport is None:
+            return None
+        if isinstance(transport, httpx.BaseTransport):
+            return transport
+        raise TypeError(
+            "Configured desktop capability bridge transport does not support sync requests."
+        )
+
     def _get_async_client(self) -> httpx.AsyncClient:
         client = self._async_client
         if client is None:
             client = httpx.AsyncClient(
-                transport=self._transport,
+                transport=self._get_async_transport(),
                 timeout=self._timeout,
             )
             self._async_client = client
         return client
 
+    def _get_async_transport(self) -> httpx.AsyncBaseTransport | None:
+        transport = self._transport
+        if transport is None:
+            return None
+        if isinstance(transport, httpx.AsyncBaseTransport):
+            return transport
+        raise TypeError(
+            "Configured desktop capability bridge transport does not support async requests."
+        )
+
     def _parse_response(
         self,
         *,
-        capability: str,
-        operation: str,
+        capability: DesktopCapabilityName,
+        operation: DesktopCapabilityOperation,
         request: DesktopCapabilityBridgeRequest,
         response: httpx.Response,
     ) -> dict[str, Any]:
