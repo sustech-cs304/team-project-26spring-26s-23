@@ -1125,18 +1125,6 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
 
 const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspaceView, HubWorkspaceContent>> = {
   'zh-CN': {
-    capabilities: {
-      eyebrow: '能力中心',
-      title: '已接入能力与工具栈',
-      panelTitle: '能力分组',
-      spotlightTitle: '工具调用与能力编排',
-      highlights: ['MCP 服务器接入', '网页抓取与浏览器自动化', '项目内检索与本地命令执行'],
-      entries: [
-        { id: 'capability-mcp', title: 'MCP 扩展能力' },
-        { id: 'capability-web', title: '联网搜索与抓取' },
-        { id: 'capability-local', title: '本地项目操作' },
-      ],
-    },
     files: {
       eyebrow: '文件工作区',
       title: '知识文件与资料入口',
@@ -1163,18 +1151,6 @@ const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspa
     },
   },
   'en-US': {
-    capabilities: {
-      eyebrow: 'Capabilities',
-      title: 'Connected Capabilities and Tooling',
-      panelTitle: 'Capability Groups',
-      spotlightTitle: 'Tool Calling and Capability Orchestration',
-      highlights: ['MCP server integration', 'Web fetching and browser automation', 'Project search and local command execution'],
-      entries: [
-        { id: 'capability-mcp', title: 'MCP Extensions' },
-        { id: 'capability-web', title: 'Web Search and Fetching' },
-        { id: 'capability-local', title: 'Local Project Operations' },
-      ],
-    },
     files: {
       eyebrow: 'Files',
       title: 'Knowledge Files and Resource Entry',

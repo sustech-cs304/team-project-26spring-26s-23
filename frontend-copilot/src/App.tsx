@@ -11,6 +11,7 @@ import {
   type WorkbenchLanguage,
 } from './workbench/locale'
 import { isHubWorkspaceView, railPrimaryItems, railSecondaryItems } from './workbench/config'
+import { CapabilitiesWorkspace } from './workbench/capabilities/CapabilitiesWorkspace'
 import {
   loadAnimationsEnabledPreference,
   subscribeToAnimationsEnabledPreferenceUpdates,
@@ -333,6 +334,10 @@ function renderActiveWorkspace(
         onLanguageChange={onWorkbenchLanguageChange}
       />
     )
+  }
+
+  if (activeWorkspace === 'capabilities') {
+    return <CapabilitiesWorkspace />
   }
 
   if (isHubWorkspaceView(activeWorkspace)) {
