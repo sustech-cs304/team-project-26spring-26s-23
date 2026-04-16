@@ -15,6 +15,7 @@ from app.integrations.sustech.blackboard.api.dto import (
     ResourceDTO,
 )
 from app.integrations.sustech.blackboard.provider.results import (
+    BlackboardCourseResourcesSyncReport,
     BlackboardSnapshotFetchResult,
     BlackboardSnapshotSyncReport,
     BlackboardSyncPayloads,
@@ -321,20 +322,9 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
                 )
             ]
 
-    class _FakeContentAPI:
+    class _FailingContentAPI:
         def __init__(self, *_: Any, **__: Any) -> None:
-            pass
-
-        def get_course_content_dtos(self, course_id: str) -> list[ResourceDTO]:
-            return [
-                ResourceDTO(
-                    resource_id="res_1",
-                    course_id=course_id,
-                    title="Lecture 1",
-                    url="https://bb.example/file/lecture1.pdf",
-                    type="file",
-                )
-            ]
+            raise AssertionError("fetch_blackboard_snapshot should not instantiate BlackboardContentAPI")
 
     class _FakeAnnouncementAPI:
         def __init__(self, *_: Any, **__: Any) -> None:
@@ -357,9 +347,9 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
         snapshot_sync_use_case.BlackboardCourseAPI = _FakeCourseAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardAssignmentAPI = _FakeAssignmentAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardGradeAPI = _FakeGradeAPI  # type: ignore[assignment]
-        snapshot_sync_use_case.BlackboardContentAPI = _FakeContentAPI  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardContentAPI = _FailingContentAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardAnnouncementAPI = _FakeAnnouncementAPI  # type: ignore[assignment]
-        snapshot = fetch_blackboard_snapshot("alice", "secret", resource_course_limit=1)
+        snapshot = fetch_blackboard_snapshot("alice", "secret")
     finally:
         snapshot_sync_use_case.CASClient = original_cas_client  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardCourseAPI = original_course_api  # type: ignore[assignment]
@@ -371,7 +361,7 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
     _assert_equal(snapshot.courses[0].course_id, "_course_1", "snapshot keeps course dto")
     _assert_equal(snapshot.assignments_by_course["_course_1"][0].assignment_id, "asg_1", "snapshot keeps assignment dto")
     _assert_equal(snapshot.grades_by_course["_course_1"][0].grade_id, "grd_1", "snapshot keeps grade dto")
-    _assert_equal(snapshot.resources_by_course["_course_1"][0].resource_id, "res_1", "snapshot keeps resource dto")
+    _assert_true(snapshot.resources_by_course == {}, "snapshot no longer fetches resources by default")
     _assert_equal(snapshot.announcements[0].announcement_id, "ann_1", "snapshot keeps announcement dto")
     _assert_true(bool(snapshot.logs), "snapshot fetch should collect logs")
     _assert_true(int(snapshot.log_summary["total"]) >= 5, "snapshot fetch should produce multiple logs")
@@ -417,6 +407,7 @@ def test_agent_tools_return_stable_shapes() -> None:
     original_search = agent_tools.search_course_catalog_with_credentials
     original_refresh = agent_tools.refresh_calendar_ics_subscription
     original_sync = agent_tools.run_blackboard_snapshot_sync
+    original_resource_sync = agent_tools.run_blackboard_course_resources_sync
 
     def _fake_search(*_: Any, **__: Any) -> CourseCatalogSearchResult:
         return CourseCatalogSearchResult(
@@ -462,15 +453,7 @@ def test_agent_tools_return_stable_shapes() -> None:
                     )
                 ]
             },
-            resources_by_course={
-                "_course_1": [
-                    ResourceDTO(
-                        resource_id="res_1",
-                        course_id="_course_1",
-                        title="Lecture 1",
-                    )
-                ]
-            },
+            resources_by_course={},
             grades_by_course={
                 "_course_1": [
                     GradeDTO(
@@ -489,13 +472,12 @@ def test_agent_tools_return_stable_shapes() -> None:
                     title="Welcome",
                 )
             ],
-            resource_course_limit=3,
             logs=[BlackboardLogEvent(timestamp="2026-03-06T08:00:00Z", level="info", layer="provider", source="test.snapshot", message="ok")],
         )
         payloads = BlackboardSyncPayloads(
             course_payload=[{"course_id": "_course_1"}],
             assignment_payloads={"_course_1": [{"assignment_id": "asg_1"}]},
-            resource_payloads={"_course_1": [{"resource_id": "res_1"}]},
+            resource_payloads={},
             grade_payloads={"_course_1": [{"grade_id": "grd_1"}]},
             announcements_payload=[{"announcement_id": "ann_1"}],
         )
@@ -506,28 +488,28 @@ def test_agent_tools_return_stable_shapes() -> None:
             first_sync_stats={
                 "courses": {"inserted": 1, "updated": 0, "deleted": 0},
                 "assignments": {"inserted": 1, "updated": 0, "deleted": 0},
-                "resources": {"inserted": 1, "updated": 0, "deleted": 0},
+                "resources": {"inserted": 0, "updated": 0, "deleted": 0},
                 "grades": {"inserted": 1, "updated": 0, "deleted": 0},
                 "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
             },
             second_sync_stats={
                 "courses": {"inserted": 0, "updated": 1, "deleted": 0},
                 "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
-                "resources": {"inserted": 0, "updated": 1, "deleted": 0},
+                "resources": {"inserted": 0, "updated": 0, "deleted": 0},
                 "grades": {"inserted": 0, "updated": 1, "deleted": 0},
                 "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
             },
             table_counts={
                 "courses": {"total": 1, "active": 1},
                 "assignments": {"total": 1, "active": 1},
-                "resources": {"total": 1, "active": 1},
+                "resources": {"total": 0, "active": 0},
                 "grades": {"total": 1, "active": 1},
                 "announcements": {"total": 1, "active": 1},
             },
             expected_active_counts={
                 "courses": 1,
                 "assignments": 1,
-                "resources": 1,
+                "resources": 0,
                 "grades": 1,
                 "announcements": 1,
             },
@@ -535,10 +517,39 @@ def test_agent_tools_return_stable_shapes() -> None:
             logs=[BlackboardLogEvent(timestamp="2026-03-06T08:00:01Z", level="info", layer="provider", source="test.sync", message="ok")],
         )
 
+    def _fake_resource_sync(*_: Any, **__: Any) -> BlackboardCourseResourcesSyncReport:
+        return BlackboardCourseResourcesSyncReport(
+            db_path=Path("backend/data/resource-sync.db"),
+            requested_course_ids=["_course_1", "_course_2"],
+            processed_course_ids=["_course_1", "_course_2"],
+            missing_course_ids=[],
+            failed_course_ids=[],
+            resource_payloads_by_course={
+                "_course_1": [{"resource_id": "res_1"}],
+                "_course_2": [{"resource_id": "res_2"}],
+            },
+            sync_stats={
+                "courses": {"inserted": 2, "updated": 0, "deleted": 0},
+                "assignments": {"inserted": 2, "updated": 0, "deleted": 0},
+                "resources": {"inserted": 2, "updated": 0, "deleted": 0},
+                "grades": {"inserted": 0, "updated": 0, "deleted": 0},
+                "announcements": {"inserted": 0, "updated": 0, "deleted": 0},
+            },
+            table_counts={
+                "courses": {"total": 2, "active": 2},
+                "assignments": {"total": 2, "active": 2},
+                "resources": {"total": 2, "active": 2},
+                "grades": {"total": 0, "active": 0},
+                "announcements": {"total": 0, "active": 0},
+            },
+            logs=[BlackboardLogEvent(timestamp="2026-03-06T08:00:02Z", level="info", layer="provider", source="test.resource_sync", message="ok")],
+        )
+
     try:
         agent_tools.search_course_catalog_with_credentials = _fake_search  # type: ignore[assignment]
         agent_tools.refresh_calendar_ics_subscription = _fake_refresh  # type: ignore[assignment]
         agent_tools.run_blackboard_snapshot_sync = _fake_sync  # type: ignore[assignment]
+        agent_tools.run_blackboard_course_resources_sync = _fake_resource_sync  # type: ignore[assignment]
 
         search_result = agent_tools.search_course_catalog(
             username="alice",
@@ -551,10 +562,16 @@ def test_agent_tools_return_stable_shapes() -> None:
             username="alice",
             password="secret",
         )
+        resource_result = agent_tools.sync_blackboard_course_resources(
+            username="alice",
+            password="secret",
+            course_ids=["_course_1", "_course_2"],
+        )
     finally:
         agent_tools.search_course_catalog_with_credentials = original_search  # type: ignore[assignment]
         agent_tools.refresh_calendar_ics_subscription = original_refresh  # type: ignore[assignment]
         agent_tools.run_blackboard_snapshot_sync = original_sync  # type: ignore[assignment]
+        agent_tools.run_blackboard_course_resources_sync = original_resource_sync  # type: ignore[assignment]
 
     _assert_equal(search_result["total"], 1, "agent search total")
     _assert_true("log_summary" in search_result, "agent search should expose log summary")
@@ -562,5 +579,11 @@ def test_agent_tools_return_stable_shapes() -> None:
     _assert_equal(refresh_result["stats"]["refreshed_at"], "2026-03-06T08:00:00", "agent refresh datetime jsonable")
     _assert_true("logs" in refresh_result, "agent refresh should expose logs")
     _assert_true(snapshot_result["integrity_ok"], "agent snapshot integrity")
+    _assert_equal(snapshot_result["scraped_counts"]["resources"], 0, "agent snapshot default resource count")
     _assert_true(snapshot_result["second_sync_has_no_new_records"], "agent snapshot no new records")
     _assert_true("logs" in snapshot_result, "agent snapshot should expose logs")
+    _assert_equal(resource_result["requested_course_ids"], ["_course_1", "_course_2"], "agent resource requested course ids")
+    _assert_equal(resource_result["db_path"], "backend/data/resource-sync.db", "agent resource path jsonable")
+    _assert_equal(resource_result["scraped_counts"]["resources"], 2, "agent resource scraped count")
+    _assert_true("logs" in resource_result, "agent resource sync should expose logs")
+    _assert_true("log_summary" in resource_result, "agent resource sync should expose log summary")

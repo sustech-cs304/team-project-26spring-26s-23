@@ -11,6 +11,7 @@ _EXPECTED_ROOT_EXPORTS = (
     "BLACKBOARD_FACADE_TOOLS",
     "BlackboardCalendarRefreshTool",
     "BlackboardCourseCatalogSearchTool",
+    "BlackboardCourseResourcesSyncTool",
     "BlackboardSnapshotSyncTool",
     "get_blackboard_tool_contracts",
 )
@@ -25,6 +26,7 @@ _EXPECTED_BLACKBOARD_TOOL_IDS = {
     "blackboard.course_catalog.search",
     "blackboard.calendar.refresh",
     "blackboard.snapshot.sync",
+    "blackboard.course_resources.sync",
     "blackboard.sql.query",
 }
 
@@ -66,3 +68,4 @@ def test_blackboard_provider_tool_package_stays_legacy_compat_only() -> None:
     assert legacy_tools_package.search_course_catalog is legacy_agent_tools.search_course_catalog
     assert legacy_tools_package.refresh_calendar_ics is legacy_agent_tools.refresh_calendar_ics
     assert legacy_tools_package.sync_blackboard_snapshot is legacy_agent_tools.sync_blackboard_snapshot
+    assert legacy_tools_package.sync_blackboard_course_resources is legacy_agent_tools.sync_blackboard_course_resources

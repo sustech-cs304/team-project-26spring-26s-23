@@ -23,10 +23,12 @@ from app.integrations.sustech.blackboard.api.dto import (
 from app.integrations.sustech.blackboard.facade.tools import (
     BlackboardCalendarRefreshTool,
     BlackboardCourseCatalogSearchTool,
+    BlackboardCourseResourcesSyncTool,
     BlackboardSQLQueryTool,
     BlackboardSnapshotSyncTool,
 )
 from app.integrations.sustech.blackboard.provider.results import (
+    BlackboardCourseResourcesSyncReport,
     BlackboardSnapshotFetchResult,
     BlackboardSnapshotSyncReport,
     BlackboardSyncPayloads,
@@ -149,6 +151,7 @@ def _invoke_tool(
         BlackboardCourseCatalogSearchTool
         | BlackboardCalendarRefreshTool
         | BlackboardSnapshotSyncTool
+        | BlackboardCourseResourcesSyncTool
         | BlackboardSQLQueryTool
     ),
     *,
@@ -187,13 +190,17 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
         "blackboard.course_catalog.search",
         "blackboard.calendar.refresh",
         "blackboard.snapshot.sync",
+        "blackboard.course_resources.sync",
         "blackboard.sql.query",
     ]
 
     snapshot_tool = BlackboardSnapshotSyncTool()
+    resource_tool = BlackboardCourseResourcesSyncTool()
     requirements = {
         requirement.capability: requirement for requirement in snapshot_tool.metadata.capability_requirements
     }
+    snapshot_input_schema = snapshot_tool.metadata.input_schema.schema
+    resource_input_schema = resource_tool.metadata.input_schema.schema
 
     assert requirements["secret_provider"].required is False
     assert requirements["database_resolver"].required is False
@@ -201,6 +208,15 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     assert requirements["artifact_store"].required is False
     assert requirements["event_sink"].required is False
     assert snapshot_tool.metadata.idempotent is False
+    assert "resourceCourseLimit" not in snapshot_input_schema["properties"]
+    assert "resourceCourseLimit" not in snapshot_input_schema.get("required", [])
+    assert resource_input_schema["required"] == ["courseIds"]
+    assert resource_input_schema["properties"]["courseIds"] == {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "minItems": 1,
+        "uniqueItems": True,
+    }
 
 
 def test_course_catalog_tool_invokes_use_case_and_shapes_output(monkeypatch: Any) -> None:
@@ -473,7 +489,6 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -485,7 +500,6 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
                 "password": password,
                 "db_path": db_path,
                 "reset_schema": reset_schema,
-                "resource_course_limit": resource_course_limit,
                 "verify_second_sync": verify_second_sync,
             }
         )
@@ -495,11 +509,11 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         snapshot = BlackboardSnapshotFetchResult(
             courses=[CourseDTO(course_id="_course_1", name="CS305 Database Systems")],
             assignments_by_course={
-                "_course_1": [AssignmentDTO(assignment_id="asg_1", course_id="_course_1", title="Homework 1")]
+                "_course_1": [
+                    AssignmentDTO(assignment_id="asg_1", course_id="_course_1", title="Homework 1")
+                ]
             },
-            resources_by_course={
-                "_course_1": [ResourceDTO(resource_id="res_1", course_id="_course_1", title="Lecture 1")]
-            },
+            resources_by_course={},
             grades_by_course={
                 "_course_1": [
                     GradeDTO(
@@ -518,13 +532,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
                     title="Welcome",
                 )
             ],
-            resource_course_limit=resource_course_limit,
             logs=[_build_log_event("test.snapshot.fetch")],
         )
         payloads = BlackboardSyncPayloads(
             course_payload=[{"course_id": "_course_1"}],
             assignment_payloads={"_course_1": [{"assignment_id": "asg_1"}]},
-            resource_payloads={"_course_1": [{"resource_id": "res_1"}]},
+            resource_payloads={},
             grade_payloads={"_course_1": [{"grade_id": "grd_1"}]},
             announcements_payload=[{"announcement_id": "ann_1"}],
         )
@@ -535,28 +548,28 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             first_sync_stats={
                 "courses": {"inserted": 1, "updated": 0, "deleted": 0},
                 "assignments": {"inserted": 1, "updated": 0, "deleted": 0},
-                "resources": {"inserted": 1, "updated": 0, "deleted": 0},
+                "resources": {"inserted": 0, "updated": 0, "deleted": 0},
                 "grades": {"inserted": 1, "updated": 0, "deleted": 0},
                 "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
             },
             second_sync_stats={
                 "courses": {"inserted": 0, "updated": 1, "deleted": 0},
                 "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
-                "resources": {"inserted": 0, "updated": 1, "deleted": 0},
+                "resources": {"inserted": 0, "updated": 0, "deleted": 0},
                 "grades": {"inserted": 0, "updated": 1, "deleted": 0},
                 "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
             },
             table_counts={
                 "courses": {"total": 1, "active": 1},
                 "assignments": {"total": 1, "active": 1},
-                "resources": {"total": 1, "active": 1},
+                "resources": {"total": 0, "active": 0},
                 "grades": {"total": 1, "active": 1},
                 "announcements": {"total": 1, "active": 1},
             },
             expected_active_counts={
                 "courses": 1,
                 "assignments": 1,
-                "resources": 1,
+                "resources": 0,
                 "grades": 1,
                 "announcements": 1,
             },
@@ -572,7 +585,6 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             "username": " alice ",
             "password": " secret ",
             "dbRelativePath": "blackboard/snapshot.db",
-            "resourceCourseLimit": "2",
             "verifySecondSync": "false",
             "stateKey": "snapshot-latest",
             "artifactName": "snapshot.json",
@@ -591,13 +603,11 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "password": "secret",
         "db_path": Path("database-root/blackboard/snapshot.db"),
         "reset_schema": False,
-        "resource_course_limit": 2,
         "verify_second_sync": False,
     }
     assert result.output is not None
     assert set(result.output) == {
         "dbPath",
-        "resourceCourseLimit",
         "scrapedCounts",
         "firstSyncStats",
         "secondSyncStats",
@@ -609,40 +619,40 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "logSummary",
         "persistence",
     }
+    assert "resourceCourseLimit" not in result.output
     assert result.output["dbPath"] == "database-root/blackboard/snapshot.db"
-    assert result.output["resourceCourseLimit"] == 2
     assert result.output["scrapedCounts"] == {
         "courses": 1,
         "assignments": 1,
-        "resources": 1,
+        "resources": 0,
         "grades": 1,
         "announcements": 1,
     }
     assert result.output["firstSyncStats"] == {
         "courses": {"inserted": 1, "updated": 0, "deleted": 0},
         "assignments": {"inserted": 1, "updated": 0, "deleted": 0},
-        "resources": {"inserted": 1, "updated": 0, "deleted": 0},
+        "resources": {"inserted": 0, "updated": 0, "deleted": 0},
         "grades": {"inserted": 1, "updated": 0, "deleted": 0},
         "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
     }
     assert result.output["secondSyncStats"] == {
         "courses": {"inserted": 0, "updated": 1, "deleted": 0},
         "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
-        "resources": {"inserted": 0, "updated": 1, "deleted": 0},
+        "resources": {"inserted": 0, "updated": 0, "deleted": 0},
         "grades": {"inserted": 0, "updated": 1, "deleted": 0},
         "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
     }
     assert result.output["tableCounts"] == {
         "courses": {"total": 1, "active": 1},
         "assignments": {"total": 1, "active": 1},
-        "resources": {"total": 1, "active": 1},
+        "resources": {"total": 0, "active": 0},
         "grades": {"total": 1, "active": 1},
         "announcements": {"total": 1, "active": 1},
     }
     assert result.output["expectedActiveCounts"] == {
         "courses": 1,
         "assignments": 1,
-        "resources": 1,
+        "resources": 0,
         "grades": 1,
         "announcements": 1,
     }
@@ -675,7 +685,6 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert persisted_state_output == persisted_artifact_output
     assert set(persisted_artifact_output) == {
         "dbPath",
-        "resourceCourseLimit",
         "scrapedCounts",
         "firstSyncStats",
         "secondSyncStats",
@@ -688,33 +697,205 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "logs",
         "progressMessages",
     }
+    assert "resourceCourseLimit" not in persisted_artifact_output
     assert persisted_artifact_output["progressMessages"] == ["fetching courses", "syncing sqlite"]
-    assert persisted_artifact_output["secondSyncStats"] == {
-        "courses": {"inserted": 0, "updated": 1, "deleted": 0},
-        "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
-        "resources": {"inserted": 0, "updated": 1, "deleted": 0},
-        "grades": {"inserted": 0, "updated": 1, "deleted": 0},
-        "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
-    }
-    assert persisted_artifact_output["tableCounts"] == {
-        "courses": {"total": 1, "active": 1},
-        "assignments": {"total": 1, "active": 1},
-        "resources": {"total": 1, "active": 1},
-        "grades": {"total": 1, "active": 1},
-        "announcements": {"total": 1, "active": 1},
-    }
-    assert persisted_artifact_output["expectedActiveCounts"] == {
-        "courses": 1,
-        "assignments": 1,
-        "resources": 1,
-        "grades": 1,
-        "announcements": 1,
-    }
+    assert persisted_artifact_output["scrapedCounts"]["resources"] == 0
+    assert persisted_artifact_output["tableCounts"]["resources"] == {"total": 0, "active": 0}
+    assert "resourcePayloadsByCourse" not in persisted_artifact_output
     assert "courses" not in persisted_artifact_output
     assert "payloads" not in persisted_artifact_output
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",
+    ]
+
+
+def test_course_resources_sync_tool_requires_course_ids_and_persists_artifact_and_state(
+    monkeypatch: Any,
+) -> None:
+    error_result = _invoke_tool(
+        BlackboardCourseResourcesSyncTool(),
+        arguments={"username": "alice", "password": "secret"},
+    )
+
+    assert error_result.status == "error"
+    assert error_result.error is not None
+    assert error_result.error.code == "invalid_input"
+    assert error_result.error.message == "courseIds must be an array of non-empty strings."
+
+    captured: dict[str, Any] = {}
+    database = StubDatabaseResolver(Path("database-root"))
+    artifact_store = StubArtifactStore()
+    state_store = StubStateStore()
+    event_sink = StubEventSink()
+
+    def _fake_sync(
+        username: str,
+        password: str,
+        *,
+        course_ids: list[str],
+        db_path: Path | None = None,
+        reset_schema: bool = False,
+        progress: Any = None,
+        enable_console_logging: bool = False,
+    ) -> BlackboardCourseResourcesSyncReport:
+        _ = enable_console_logging
+        captured.update(
+            {
+                "username": username,
+                "password": password,
+                "course_ids": list(course_ids),
+                "db_path": db_path,
+                "reset_schema": reset_schema,
+            }
+        )
+        if progress is not None:
+            progress("fetching requested courses")
+            progress("syncing resources")
+        return BlackboardCourseResourcesSyncReport(
+            db_path=Path(db_path or "database-root/blackboard/sustech.db"),
+            requested_course_ids=list(course_ids),
+            processed_course_ids=["_course_1", "_course_2"],
+            missing_course_ids=["_course_missing"],
+            failed_course_ids=["_course_failed"],
+            resource_payloads_by_course={
+                "_course_1": [{"resource_id": "res_1"}],
+                "_course_2": [{"resource_id": "res_2"}, {"resource_id": "res_3"}],
+            },
+            sync_stats={
+                "courses": {"inserted": 2, "updated": 0, "deleted": 0},
+                "assignments": {"inserted": 2, "updated": 0, "deleted": 0},
+                "resources": {"inserted": 3, "updated": 0, "deleted": 0},
+                "grades": {"inserted": 0, "updated": 0, "deleted": 0},
+                "announcements": {"inserted": 0, "updated": 0, "deleted": 0},
+            },
+            table_counts={
+                "courses": {"total": 2, "active": 2},
+                "assignments": {"total": 2, "active": 2},
+                "resources": {"total": 3, "active": 3},
+                "grades": {"total": 0, "active": 0},
+                "announcements": {"total": 0, "active": 0},
+            },
+            logs=[_build_log_event("test.course_resources.sync")],
+        )
+
+    monkeypatch.setattr(facade_tools, "run_blackboard_course_resources_sync", _fake_sync)
+
+    result = _invoke_tool(
+        BlackboardCourseResourcesSyncTool(),
+        arguments={
+            "username": " alice ",
+            "password": " secret ",
+            "courseIds": [" _course_1 ", "_course_2", "_course_missing", "_course_failed", "_course_2"],
+            "dbRelativePath": "blackboard/course-resources.db",
+            "stateKey": "course-resources-latest",
+            "artifactName": "course-resources.json",
+        },
+        host=ToolHostCapabilities(
+            database_resolver=database,
+            artifact_store=artifact_store,
+            state_store=state_store,
+            event_sink=event_sink,
+        ),
+    )
+
+    assert result.status == "success"
+    assert captured == {
+        "username": "alice",
+        "password": "secret",
+        "course_ids": ["_course_1", "_course_2", "_course_missing", "_course_failed"],
+        "db_path": Path("database-root/blackboard/course-resources.db"),
+        "reset_schema": False,
+    }
+    assert result.output is not None
+    assert set(result.output) == {
+        "dbPath",
+        "requestedCourseIds",
+        "processedCourseIds",
+        "missingCourseIds",
+        "failedCourseIds",
+        "scrapedCounts",
+        "syncStats",
+        "tableCounts",
+        "logSummary",
+        "persistence",
+    }
+    assert result.output == {
+        "dbPath": "database-root/blackboard/course-resources.db",
+        "requestedCourseIds": ["_course_1", "_course_2", "_course_missing", "_course_failed"],
+        "processedCourseIds": ["_course_1", "_course_2"],
+        "missingCourseIds": ["_course_missing"],
+        "failedCourseIds": ["_course_failed"],
+        "scrapedCounts": {"courses": 2, "resources": 3},
+        "syncStats": {
+            "courses": {"inserted": 2, "updated": 0, "deleted": 0},
+            "assignments": {"inserted": 2, "updated": 0, "deleted": 0},
+            "resources": {"inserted": 3, "updated": 0, "deleted": 0},
+            "grades": {"inserted": 0, "updated": 0, "deleted": 0},
+            "announcements": {"inserted": 0, "updated": 0, "deleted": 0},
+        },
+        "tableCounts": {
+            "courses": {"total": 2, "active": 2},
+            "assignments": {"total": 2, "active": 2},
+            "resources": {"total": 3, "active": 3},
+            "grades": {"total": 0, "active": 0},
+            "announcements": {"total": 0, "active": 0},
+        },
+        "logSummary": {
+            "total": 1,
+            "by_level": {"info": 1},
+            "by_layer": {"provider": 1},
+            "by_source": {"test.course_resources.sync": 1},
+        },
+        "persistence": {
+            "state": {
+                "namespace": "blackboard.course_resources_sync",
+                "key": "course-resources-latest",
+            },
+            "artifacts": [result.artifacts[0].to_dict()],
+        },
+    }
+    assert result.metadata == {
+        "toolId": "blackboard.course_resources.sync",
+        "credentialSource": "arguments",
+        "dbPathSource": "database_relative",
+        "stateNamespace": "blackboard.course_resources_sync",
+        "stateKey": "course-resources-latest",
+    }
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].artifact_id == "artifact-1"
+    assert "logs" not in result.output
+    assert "progressMessages" not in result.output
+    assert "resourcePayloadsByCourse" not in result.output
+    assert database.requests == ["blackboard/course-resources.db"]
+    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
+    persisted_state_output = state_store.values[("blackboard.course_resources_sync", "course-resources-latest")]["output"]
+    assert persisted_state_output == persisted_artifact_output
+    assert set(persisted_artifact_output) == {
+        "dbPath",
+        "requestedCourseIds",
+        "processedCourseIds",
+        "missingCourseIds",
+        "failedCourseIds",
+        "scrapedCounts",
+        "syncStats",
+        "tableCounts",
+        "resourcePayloadsByCourse",
+        "logSummary",
+        "logs",
+        "progressMessages",
+    }
+    assert persisted_artifact_output["progressMessages"] == [
+        "fetching requested courses",
+        "syncing resources",
+    ]
+    assert persisted_artifact_output["resourcePayloadsByCourse"] == {
+        "_course_1": [{"resource_id": "res_1"}],
+        "_course_2": [{"resource_id": "res_2"}, {"resource_id": "res_3"}],
+    }
+    assert [event.event_type for event in event_sink.events] == [
+        "blackboard.course_resources.sync.started",
+        "blackboard.course_resources.sync.completed",
     ]
 
 
@@ -736,7 +917,6 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -748,7 +928,6 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
                 "password": password,
                 "db_path": db_path,
                 "reset_schema": reset_schema,
-                "resource_course_limit": resource_course_limit,
                 "verify_second_sync": verify_second_sync,
             }
         )
@@ -760,7 +939,6 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
                 resources_by_course={},
                 grades_by_course={},
                 announcements=[],
-                resource_course_limit=resource_course_limit,
                 logs=[_build_log_event("test.snapshot.fetch.default-secrets")],
             ),
             payloads=BlackboardSyncPayloads(
@@ -812,7 +990,6 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
         "password": "cas-secret",
         "db_path": tmp_path / "database-root" / "blackboard/sustech.db",
         "reset_schema": False,
-        "resource_course_limit": 3,
         "verify_second_sync": True,
     }
     assert result.metadata == {
@@ -927,7 +1104,6 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -937,7 +1113,6 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
             password,
             db_path,
             reset_schema,
-            resource_course_limit,
             verify_second_sync,
             progress,
             enable_console_logging,
@@ -975,7 +1150,6 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -985,7 +1159,6 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
             password,
             db_path,
             reset_schema,
-            resource_course_limit,
             verify_second_sync,
             progress,
             enable_console_logging,
