@@ -61,6 +61,9 @@ from .session_store import (
 from .thinking_adapter import adapt_thinking_selection, resolve_canonical_thinking_capability
 
 
+from .run_events import RuntimeRunEventFactory
+from .tool_registry import ToolRegistry
+
 _RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
 
 
@@ -76,12 +79,14 @@ class RuntimeBridge:
         message_run_orchestrator: RuntimeMessageRunOrchestrator | None = None,
         model_route_resolver: RuntimeModelRouteResolver | None = None,
         provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
         self._scaffold = scaffold
         self._message_run_orchestrator = message_run_orchestrator
         self._model_route_resolver = model_route_resolver
+        self._tool_registry = tool_registry
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
@@ -149,20 +154,115 @@ class RuntimeBridge:
             run = self._session_store.get_run(run_id)
             if run is None:
                 raise RunNotFoundError(run_id)
-            # Create a continuation run or fail the current one based on decision
+            
+            # 1. State Validation
+            if run.status not in ("completed", "streaming", "pending"):
+                raise RuntimeError(f"Run {run_id} is in status {run.status}, cannot approve.")
+                
+            suspended_tool_data = None
+            if run.assistant_text and "suspended_tool_call" in run.assistant_text:
+                import json
+                try:
+                    parsed = json.loads(run.assistant_text)
+                    suspended_tool_data = parsed.get("suspended_tool_call")
+                except Exception:
+                    pass
+
+            if suspended_tool_data is None or suspended_tool_data.get("tool_call_id") != tool_call_id:
+                raise RuntimeError(f"Run {run_id} does not have a suspended tool call matching {tool_call_id}.")
+
+            # 2. Decision Logic
             if decision.lower() != "approve":
                 self._session_store.mark_run_cancelled(run_id, metadata={"tool_rejection": tool_call_id, "user_feedback": user_feedback})
+                
+                # Emit Cancelled Tool Lifecycle Event (for UI closure jump)
+                events = RuntimeRunEventFactory(session_id=run.thread_id, run_id=run.run_id)
+                tool_event = events.build(
+                    "tool_event",
+                    payload={
+                        "toolCallId": tool_call_id,
+                        "phase": "cancelled",
+                        "reason": user_feedback or "Rejected by user",
+                        "userFeedback": user_feedback
+                    }
+                )
+                self._update_run_state_from_event(run_id=run_id, event=tool_event)
                 accepted = False
             else:
                 self._session_store.mark_run_streaming(run_id)
                 accepted = True
-            
+                
+                # 3. Explicitly trigger resume/continuation logic
+                self._resume_suspended_tool_execution(run=run, tool_data=suspended_tool_data)
+
             updated_run = self._session_store.get_run(run_id)
             if updated_run is None:
                 raise RunNotFoundError(run_id)
             return updated_run, accepted
         except Exception as exc:
             raise RuntimeError(f"Failed to submit tool approval: {exc}") from exc
+
+    def _resume_suspended_tool_execution(self, *, run: RuntimeRunRecord, tool_data: dict[str, Any]) -> None:
+        """Trigger background logic to explicitly execute the authorized tool and continue agent generation."""
+        import asyncio
+        async def _continue_run() -> None:
+            tool_id = tool_data.get("tool_id")
+            tool_call_id = tool_data.get("tool_call_id")
+            arguments = dict(tool_data.get("arguments", []))
+            try:
+                _RUNTIME_LOGGER.info(f"Resuming tool execution for {tool_id} (call_id: {tool_call_id}) in run {run.run_id}")
+                
+                # Resolve enabled tools
+                agent_descriptor = self._resolve_agent(run.request.agent_id or "default")
+                resolved_tool_ids = self._message_run_orchestrator._resolve_enabled_tools(
+                    agent_id=run.request.agent_id or "default",
+                    enabled_tools=run.request.policy.enabled_tools,
+                ) if self._message_run_orchestrator else ()
+                
+                if tool_id is not None and tool_id in resolved_tool_ids and self._tool_registry:
+                    executable_tool = self._tool_registry.resolve_tool(tool_id)
+                    result = await executable_tool.execute(arguments)
+                    _RUNTIME_LOGGER.info(f"Suspendable tool execution completed. Result: {result}")
+                    
+                    from .run_events import RuntimeRunEventFactory
+                    events_factory = RuntimeRunEventFactory(session_id=run.thread_id, run_id=run.run_id)
+                    tool_event = events_factory.build(
+                        "tool_event",
+                        payload={
+                            "toolCallId": tool_call_id,
+                            "toolId": tool_id,
+                            "phase": "completed",
+                            "title": "执行完成",
+                            "summary": "工具执行成功",
+                            "resultSummary": str(result),
+                        }
+                    )
+                    self._update_run_state_from_event(run_id=run.run_id, event=tool_event)
+                    self._session_store.mark_run_completed(
+                        run.run_id, 
+                        assistant_text=str(result),
+                    )
+            except Exception as e:
+                _RUNTIME_LOGGER.error(f"Failed to resume tool execution: {e}")
+                from .run_events import RuntimeRunEventFactory
+                events_factory = RuntimeRunEventFactory(session_id=run.thread_id, run_id=run.run_id)
+                tool_event = events_factory.build(
+                    "tool_event",
+                    payload={
+                        "toolCallId": tool_call_id,
+                        "toolId": tool_id,
+                        "phase": "failed",
+                        "title": "执行失败",
+                        "errorSummary": str(e),
+                    }
+                )
+                self._update_run_state_from_event(run_id=run.run_id, event=tool_event)
+                self._session_store.mark_run_failed(
+                    run.run_id,
+                    metadata={"error": str(e)}
+                )
+                
+        asyncio.create_task(_continue_run())
 
     def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:
@@ -288,6 +388,7 @@ class RuntimeBridge:
         )
 
         terminal_seen = False
+        suspended_seen = False
         async for raw_event in self._call_orchestrator_stream_events(
             request=request,
             run_id=run.run_id,
@@ -300,9 +401,11 @@ class RuntimeBridge:
             self._update_run_state_from_event(run_id=run.run_id, event=event)
             if event.type in {RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE, RUN_CANCELLED_EVENT_TYPE}:
                 terminal_seen = True
+            elif event.type == "tool_lifecycle" and event.payload.get("phase") == "waiting_approval":
+                suspended_seen = True
             yield event
 
-        if not terminal_seen:
+        if not terminal_seen and not suspended_seen:
             self._session_store.mark_run_failed(
                 run.run_id,
                 metadata={
@@ -314,6 +417,9 @@ class RuntimeBridge:
                     },
                 },
             )
+        elif suspended_seen and not terminal_seen:
+            # We explicitly prevent marking as failed if the run is waiting for human approval
+            pass
 
     def _build_run_cancellation_checker(
         self,

@@ -155,9 +155,11 @@ class ToolApprovalSuspensionError(Exception):
         message: str,
         tool_id: str,
         tool_call_id: str | None = None,
+        arguments: Mapping[str, Any] | None = None,
     ) -> None:
         self.tool_id = tool_id
         self.tool_call_id = tool_call_id
+        self.arguments = arguments
         super().__init__(message)
 
 
@@ -406,7 +408,12 @@ class _PydanticAIEventStream:
         except ToolApprovalSuspensionError as exc:
             self._suspension_state = True
             import json
-            self._cached_output = json.dumps({"tool_calls": list(self._function_tool_call_ids)})
+            tool_call_info = {
+                "tool_id": exc.tool_id,
+                "tool_call_id": exc.tool_call_id,
+                "arguments": list(exc.arguments.items()) if exc.arguments else []
+            }
+            self._cached_output = json.dumps({"suspended_tool_call": tool_call_info, "tool_calls": list(self._function_tool_call_ids)})
         except Exception as exc:
             self._run_exception = exc
         finally:
@@ -1353,6 +1360,7 @@ class PydanticAIAgentExecutor:
                 message="Tool execution suspended, waiting for human in the loop approval.",
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
+                arguments=normalized_arguments,
             )
 
         try:

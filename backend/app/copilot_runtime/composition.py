@@ -80,6 +80,7 @@ def build_default_runtime_dependencies(
         message_run_orchestrator=message_run_orchestrator,
         model_route_resolver=resolved_model_route_resolver,
         provider_adapter_registry=resolved_agent_executor.provider_adapter_registry,
+        tool_registry=tool_registry,
     )
     return RuntimeDependencies(
         session_store=resolved_session_store,
