@@ -6,6 +6,7 @@ export interface RenderedCopilotChatPanel {
   container: HTMLDivElement
   getByTestId: (testId: string) => HTMLElement
   queryByTestId: (testId: string) => Element | null
+  rerender: (element: ReactElement) => void
   unmount: () => void
 }
 
@@ -30,6 +31,11 @@ export function renderWithRoot(element: ReactElement): RenderedCopilotChatPanel 
     },
     queryByTestId(testId: string) {
       return container.querySelector(`[data-testid="${testId}"]`)
+    },
+    rerender(nextElement: ReactElement) {
+      act(() => {
+        root.render(nextElement)
+      })
     },
     unmount() {
       act(() => {

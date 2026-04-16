@@ -15,6 +15,7 @@ describe('preload renderer bridge', () => {
       'configCenterPublicPatch',
       'settingsWorkspaceState',
       'settingsWorkspaceSecrets',
+      'desktopNotification',
       'bootstrapWindow',
     ])
     expect(exposedKeys).not.toContain('copilotSettings')

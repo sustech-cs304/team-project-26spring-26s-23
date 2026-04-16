@@ -52,6 +52,7 @@ import {
   orchestrateCopilotSend,
 } from '../copilot-send-controller'
 import { isCopilotConnectableState } from '../copilot-panel-diagnostics'
+import { useAssistantMessageNotification } from '../useAssistantMessageNotification'
 import { useCopilotComposerResize } from '../useCopilotComposerResize'
 import type { CopilotBootstrapState, CopilotRunState } from '../types'
 import {
@@ -97,6 +98,7 @@ export interface CopilotChatPanelState {
 }
 
 export function useCopilotChatPanelState({
+  language = 'zh-CN',
   state,
   selectedAgent,
   sessionShell,
@@ -111,6 +113,7 @@ export function useCopilotChatPanelState({
   const [runState, setRunState] = useState<CopilotRunState>(createIdleCopilotRunState)
   const [thinkingCapability, setThinkingCapability] = useState<RuntimeThinkingCapability | null>(null)
   const [sendError, setSendError] = useState<CopilotTransientErrorState | null>(null)
+  const [assistantNotificationsEnabled, setAssistantNotificationsEnabled] = useState(false)
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
   const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
   const [workspacePrimaryModelRoute, setWorkspacePrimaryModelRoute] = useState<ModelRouteRef | null>(null)
@@ -230,6 +233,7 @@ export function useCopilotChatPanelState({
         setWorkspaceProviderProfiles(result.state.providerProfiles)
         setWorkspacePrimaryModel(result.state.defaultModelRouting.primaryAssistantModel)
         setWorkspacePrimaryModelRoute(result.state.defaultModelRouting.primaryAssistantModelRoute ?? null)
+        setAssistantNotificationsEnabled(result.state.general.assistantNotificationsEnabled)
         setWorkspaceStateLoaded(true)
         return
       }
@@ -237,6 +241,7 @@ export function useCopilotChatPanelState({
       setWorkspaceProviderProfiles([])
       setWorkspacePrimaryModel('')
       setWorkspacePrimaryModelRoute(null)
+      setAssistantNotificationsEnabled(false)
       setWorkspaceStateLoaded(true)
     })()
 
@@ -430,6 +435,12 @@ export function useCopilotChatPanelState({
       console.debug('[copilot-chat-shell] session-summary', sessionDebugSummary)
     }
   }, [sessionDebugSummary])
+
+  useAssistantMessageNotification({
+    language,
+    notificationsEnabled: assistantNotificationsEnabled,
+    runState,
+  })
 
   const sendDisabledReason = useMemo(
     () => getCopilotSendDisabledReason({

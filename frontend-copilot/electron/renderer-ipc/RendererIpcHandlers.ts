@@ -17,6 +17,7 @@ import type {
 } from '../settings-workspace/ipc'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
+import type { DesktopNotificationRequest } from '../desktop-notification'
 
 export interface RendererIpcHandlers {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
@@ -39,5 +40,6 @@ export interface RendererIpcHandlers {
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
+  notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
   notifyBootstrapWindowReady: () => Promise<void>
 }

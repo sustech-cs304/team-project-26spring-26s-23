@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act } from 'react'
-import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 import { CopilotChatPanel } from './CopilotChatPanel'
 import {
@@ -42,6 +42,10 @@ beforeAll(() => {
 
 afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
+})
+
+afterEach(() => {
+  restoreNotificationApi()
 })
 
 describe('CopilotChatPanel composer interactions', () => {
@@ -706,6 +710,267 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(renderedIcon?.getAttribute('aria-label')).toBe('GPT 4.1 图标')
     expect(rendered.container.textContent).not.toContain('已完成')
     expect(rendered.container.querySelectorAll('.copilot-chat__message--assistant.copilot-chat__message--completed')).toHaveLength(1)
+
+    rendered.unmount()
+  })
+
+  it('shows a system notification after the assistant completes when notifications are enabled', async () => {
+    const notification = installMockDesktopNotification()
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请完成后通知我')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(() => notification.records.length === 1, 'assistant success notification emitted')
+
+    expect(notification.records[0]).toEqual({
+      title: '助手消息已完成',
+      body: '这是助手回显',
+      tag: 'run-1:completed',
+    })
+
+    rendered.unmount()
+  })
+
+  it('does not show a system notification when assistant notifications are disabled', async () => {
+    const notification = installMockDesktopNotification()
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: false,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '通知保持关闭')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(notification.records).toHaveLength(0)
+
+    rendered.unmount()
+  })
+
+  it('shows a failure system notification after the assistant run fails when notifications are enabled', async () => {
+    const notification = installMockDesktopNotification()
+    const sendMessage = createToolFailureSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '失败后通知我')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(() => notification.records.length === 1, 'assistant failure notification emitted')
+
+    expect(notification.records[0]).toEqual({
+      title: '助手执行失败',
+      body: 'Tool failed: boom',
+      tag: 'run-tool-failed:failed',
+    })
+
+    rendered.unmount()
+  })
+
+  it('swallows desktop notification delivery failures and logs a warning', async () => {
+    const notificationError = new Error('notification bridge unavailable')
+    const notification = installRejectingMockDesktopNotification(notificationError)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '即使通知失败也继续完成')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+    await waitForCondition(() => warnSpy.mock.calls.length === 1, 'assistant notification failure handled')
+
+    expect(notification.records).toHaveLength(1)
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[assistant-notification] Failed to show desktop notification.',
+      notificationError,
+    )
+
+    warnSpy.mockRestore()
+    rendered.unmount()
+  })
+
+  it('does not replay a historical notification when the notifications setting turns on after completion', async () => {
+    const notification = installMockDesktopNotification()
+    const sendMessage = createResolvedSendMessageSpy()
+    const disabledLoader = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: false,
+        },
+      }),
+    }))
+    const enabledLoader = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={disabledLoader}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '先关闭，完成后再开启')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+    expect(notification.records).toHaveLength(0)
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={enabledLoader}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(notification.records).toHaveLength(0)
 
     rendered.unmount()
   })
@@ -1738,6 +2003,63 @@ function createAbortableSendMessageSpy() {
         delta: '第二段',
       },
     }
+  })
+}
+
+interface MockDesktopNotificationRecord {
+  title: string
+  body: string
+  tag?: string
+}
+
+interface MockDesktopNotificationController {
+  records: MockDesktopNotificationRecord[]
+}
+
+function installMockDesktopNotification(): MockDesktopNotificationController {
+  const records: MockDesktopNotificationRecord[] = []
+
+  Object.defineProperty(window, 'desktopNotification', {
+    configurable: true,
+    writable: true,
+    value: {
+      show: vi.fn(async (request: MockDesktopNotificationRecord) => {
+        records.push({ ...request })
+      }),
+    } as Window['desktopNotification'],
+  })
+
+  return {
+    records,
+  }
+}
+
+function installRejectingMockDesktopNotification(error: Error): MockDesktopNotificationController {
+  const records: MockDesktopNotificationRecord[] = []
+
+  Object.defineProperty(window, 'desktopNotification', {
+    configurable: true,
+    writable: true,
+    value: {
+      show: vi.fn(async (request: MockDesktopNotificationRecord) => {
+        records.push({ ...request })
+        throw error
+      }),
+    } as Window['desktopNotification'],
+  })
+
+  return {
+    records,
+  }
+}
+
+function restoreNotificationApi() {
+  Object.defineProperty(window, 'desktopNotification', {
+    configurable: true,
+    writable: true,
+    value: {
+      show: vi.fn(async () => undefined),
+    } as Window['desktopNotification'],
   })
 }
 
