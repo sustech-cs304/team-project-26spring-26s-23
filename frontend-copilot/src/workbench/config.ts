@@ -161,18 +161,6 @@ export const settingsItems: SettingsNavItem[] = [
 ]
 
 export const hubWorkspaceContent: Record<HubWorkspaceView, HubWorkspaceContent> = {
-  capabilities: {
-    eyebrow: '能力中心',
-    title: '已接入能力与工具栈',
-    panelTitle: '能力分组',
-    spotlightTitle: '工具调用与能力编排',
-    highlights: ['MCP 服务器接入', '网页抓取与浏览器自动化', '项目内检索与本地命令执行'],
-    entries: [
-      { id: 'capability-mcp', title: 'MCP 扩展能力' },
-      { id: 'capability-web', title: '联网搜索与抓取' },
-      { id: 'capability-local', title: '本地项目操作' },
-    ],
-  },
   files: {
     eyebrow: '文件工作区',
     title: '知识文件与资料入口',
@@ -199,7 +187,7 @@ export const hubWorkspaceContent: Record<HubWorkspaceView, HubWorkspaceContent> 
   },
 }
 
-const hubWorkspaceViews: HubWorkspaceView[] = ['capabilities', 'files', 'developer']
+const hubWorkspaceViews: HubWorkspaceView[] = ['files', 'developer']
 
 export function isHubWorkspaceView(view: WorkspaceView): view is HubWorkspaceView {
   return hubWorkspaceViews.includes(view as HubWorkspaceView)

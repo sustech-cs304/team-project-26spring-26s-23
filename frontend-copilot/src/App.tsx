@@ -72,6 +72,21 @@ const SettingsWorkspace = lazy(async () => {
   }
 })
 
+const CapabilitiesWorkspace = lazy(async () => {
+  const startedAt = performance.now()
+  logStartupTrace('capabilities-workspace-import:start')
+
+  const module = await import('./workbench/capabilities/CapabilitiesWorkspace')
+
+  logStartupTrace('capabilities-workspace-import:resolved', {
+    durationMs: Math.round(performance.now() - startedAt),
+  })
+
+  return {
+    default: module.CapabilitiesWorkspace,
+  }
+})
+
 interface AppProps {
   bootstrap: CopilotBootstrapController
 }
@@ -194,7 +209,6 @@ function App({ bootstrap }: AppProps) {
               className={`rail-button${active ? ' rail-button--active' : ''}`}
               title={item.label}
               aria-label={item.label}
-              aria-pressed={active}
               onClick={() => setActiveWorkspace(item.id)}
             >
               <Icon size={18} className="rail-button__icon" />
@@ -215,7 +229,6 @@ function App({ bootstrap }: AppProps) {
               className={`rail-button${active ? ' rail-button--active' : ''}`}
               title={item.label}
               aria-label={item.label}
-              aria-pressed={active}
               onClick={() => setActiveWorkspace(item.id)}
             >
               <Icon size={18} className="rail-button__icon" />
@@ -286,6 +299,10 @@ function renderActiveWorkspace(
         onThemeModeChange={onThemeModeChange}
       />
     )
+  }
+
+  if (activeWorkspace === 'capabilities') {
+    return <CapabilitiesWorkspace />
   }
 
   if (isHubWorkspaceView(activeWorkspace)) {
