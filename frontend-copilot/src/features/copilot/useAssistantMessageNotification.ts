@@ -96,7 +96,11 @@ async function showAssistantMessageNotification(request: DesktopNotificationRequ
     return
   }
 
-  await api.show(request)
+  try {
+    await api.show(request)
+  } catch (error) {
+    console.warn('[assistant-notification] Failed to show desktop notification.', error)
+  }
 }
 
 function getDesktopNotificationApi() {

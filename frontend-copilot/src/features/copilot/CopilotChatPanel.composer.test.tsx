@@ -852,6 +852,56 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('swallows desktop notification delivery failures and logs a warning', async () => {
+    const notificationError = new Error('notification bridge unavailable')
+    const notification = installRejectingMockDesktopNotification(notificationError)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        general: {
+          assistantNotificationsEnabled: true,
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '即使通知失败也继续完成')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+    await waitForCondition(() => warnSpy.mock.calls.length === 1, 'assistant notification failure handled')
+
+    expect(notification.records).toHaveLength(1)
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[assistant-notification] Failed to show desktop notification.',
+      notificationError,
+    )
+
+    warnSpy.mockRestore()
+    rendered.unmount()
+  })
+
   it('does not replay a historical notification when the notifications setting turns on after completion', async () => {
     const notification = installMockDesktopNotification()
     const sendMessage = createResolvedSendMessageSpy()
@@ -1975,6 +2025,25 @@ function installMockDesktopNotification(): MockDesktopNotificationController {
     value: {
       show: vi.fn(async (request: MockDesktopNotificationRecord) => {
         records.push({ ...request })
+      }),
+    } as Window['desktopNotification'],
+  })
+
+  return {
+    records,
+  }
+}
+
+function installRejectingMockDesktopNotification(error: Error): MockDesktopNotificationController {
+  const records: MockDesktopNotificationRecord[] = []
+
+  Object.defineProperty(window, 'desktopNotification', {
+    configurable: true,
+    writable: true,
+    value: {
+      show: vi.fn(async (request: MockDesktopNotificationRecord) => {
+        records.push({ ...request })
+        throw error
       }),
     } as Window['desktopNotification'],
   })
