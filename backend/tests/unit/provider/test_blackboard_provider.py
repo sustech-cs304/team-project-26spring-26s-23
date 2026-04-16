@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.integrations.sustech.blackboard.api.dto import (
     AnnouncementDTO,
     AssignmentAttachmentDTO,
@@ -24,6 +26,7 @@ from app.integrations.sustech.blackboard.provider.results import (
 )
 from app.integrations.sustech.blackboard.provider.tools import agent_tools
 from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
+from app.integrations.sustech.blackboard.provider.use_cases import calendar_ics as calendar_ics_use_case
 from app.integrations.sustech.blackboard.provider.use_cases import course_catalog as course_catalog_use_case
 from app.integrations.sustech.blackboard.provider.use_cases import snapshot_sync as snapshot_sync_use_case
 from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
@@ -175,6 +178,7 @@ END:VCALENDAR
 
     _assert_true(isinstance(result, CalendarICSSyncResult), "should return CalendarICSSyncResult")
     _assert_equal(result.feed_url, "https://example.local/provider.ics", "feed url")
+    _assert_equal(result.refresh_mode, "auto", "default refresh mode")
     _assert_equal(int(result.stats.get("inserted", 0)), 1, "inserted stats")
     _assert_equal(result.active_event_count, 1, "active event count")
     _assert_equal(result.active_events[0].title, "Provider Event", "event title")
@@ -182,9 +186,146 @@ END:VCALENDAR
     _assert_equal(result.log_summary["by_layer"].get("provider"), result.log_summary["total"], "calendar logs should be provider-layer")
 
 
+
+def test_refresh_calendar_ics_subscription_auto_uses_conditional_headers(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    db_path = tmp_path / "test_blackboard_provider_ics_auto.db"
+    feed_url = "https://example.local/provider-auto.ics"
+    refresh_calendar_ics_subscription_from_text(
+        feed_url,
+        """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:provider-auto@example.com
+SUMMARY:Provider Auto Event
+DTSTART:20260311T010000Z
+DTEND:20260311T020000Z
+END:VEVENT
+END:VCALENDAR
+""",
+        db_path=db_path,
+        reset_schema=True,
+        etag='"provider-auto-v1"',
+        last_modified="Wed, 15 Apr 2026 08:00:00 GMT",
+    )
+
+    captured_headers: list[dict[str, str]] = []
+
+    class _FakeHTTPClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeHTTPClient:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+        def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+            captured_headers.append(dict(headers or {}))
+            return httpx.Response(status_code=304, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(calendar_ics_use_case.httpx, "Client", _FakeHTTPClient)
+
+    result = calendar_ics_use_case.refresh_calendar_ics_subscription(
+        feed_url,
+        db_path=db_path,
+        refresh_mode="auto",
+    )
+
+    _assert_equal(
+        captured_headers,
+        [
+            {
+                "If-None-Match": '"provider-auto-v1"',
+                "If-Modified-Since": "Wed, 15 Apr 2026 08:00:00 GMT",
+            }
+        ],
+        "auto refresh should send conditional headers",
+    )
+    _assert_equal(result.refresh_mode, "auto", "auto refresh mode kept")
+    _assert_true(bool(result.stats.get("not_modified")), "auto refresh should honor 304 responses")
+    _assert_equal(result.active_event_count, 1, "auto refresh keeps cached events")
+
+
+
+def test_refresh_calendar_ics_subscription_force_ignores_conditional_headers(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    db_path = tmp_path / "test_blackboard_provider_ics_force.db"
+    feed_url = "https://example.local/provider-force.ics"
+    refresh_calendar_ics_subscription_from_text(
+        feed_url,
+        """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:provider-force@example.com
+SUMMARY:Provider Seed Event
+DTSTART:20260311T010000Z
+DTEND:20260311T020000Z
+END:VEVENT
+END:VCALENDAR
+""",
+        db_path=db_path,
+        reset_schema=True,
+        etag='"provider-force-v1"',
+        last_modified="Wed, 15 Apr 2026 08:00:00 GMT",
+    )
+
+    captured_headers: list[dict[str, str]] = []
+
+    class _FakeHTTPClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def __enter__(self) -> _FakeHTTPClient:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+        def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+            captured_headers.append(dict(headers or {}))
+            return httpx.Response(
+                status_code=200,
+                text="""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:provider-force@example.com
+SUMMARY:Provider Forced Event
+DTSTART:20260312T010000Z
+DTEND:20260312T020000Z
+END:VEVENT
+END:VCALENDAR
+""",
+                headers={
+                    "etag": '"provider-force-v2"',
+                    "last-modified": "Thu, 16 Apr 2026 08:00:00 GMT",
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(calendar_ics_use_case.httpx, "Client", _FakeHTTPClient)
+
+    result = calendar_ics_use_case.refresh_calendar_ics_subscription(
+        feed_url,
+        db_path=db_path,
+        refresh_mode="force",
+    )
+
+    _assert_equal(captured_headers, [{}], "force refresh should ignore conditional headers")
+    _assert_equal(result.refresh_mode, "force", "force refresh mode kept")
+    _assert_equal(result.stats.get("etag"), '"provider-force-v2"', "force refresh should update etag")
+    _assert_equal(result.active_events[0].title, "Provider Forced Event", "force refresh should reload ICS payload")
+
+
 def test_search_course_catalog_use_case_delegates_to_api() -> None:
     original_cas_client = course_catalog_use_case.CASClient
     original_api = course_catalog_use_case.BlackboardCourseCatalogAPI
+    captured: dict[str, Any] = {}
 
     class _FakeCASClient:
         def __init__(self, *_: Any, **__: Any) -> None:
@@ -210,14 +351,29 @@ def test_search_course_catalog_use_case_delegates_to_api() -> None:
             field: str = "CourseName",
             operator: str = "Contains",
             limit: int | None = None,
+            fetch_mode: str = "full",
+            max_pages: int | None = 30,
         ) -> list[CourseCatalogResultDTO]:
+            captured.update(
+                {
+                    "keyword": keyword,
+                    "field": field,
+                    "operator": operator,
+                    "limit": limit,
+                    "fetch_mode": fetch_mode,
+                    "max_pages": max_pages,
+                }
+            )
             return [
                 CourseCatalogResultDTO(
                     course_id="_305_1",
                     course_identifier="CS305",
                     course_name=keyword,
                     instructor="张老师",
-                    description=f"field={field}, operator={operator}, limit={limit}",
+                    description=(
+                        f"field={field}, operator={operator}, limit={limit}, "
+                        f"fetch_mode={fetch_mode}, max_pages={max_pages}"
+                    ),
                 )
             ]
 
@@ -238,6 +394,8 @@ def test_search_course_catalog_use_case_delegates_to_api() -> None:
             field="CourseName",
             operator="Contains",
             limit=5,
+            fetch_mode="quick",
+            max_pages=7,
         )
     finally:
         course_catalog_use_case.CASClient = original_cas_client  # type: ignore[assignment]
@@ -247,6 +405,20 @@ def test_search_course_catalog_use_case_delegates_to_api() -> None:
     _assert_equal(result.total, 1, "search result total")
     _assert_equal(result.results[0].course_name, "数据库系统", "search result payload")
     _assert_equal(result.results[0].course_identifier, "CS305", "typed search result kept")
+    _assert_equal(result.fetch_mode, "quick", "fetch mode kept on result")
+    _assert_equal(result.max_pages, 7, "max pages kept on result")
+    _assert_equal(
+        captured,
+        {
+            "keyword": "数据库系统",
+            "field": "CourseName",
+            "operator": "Contains",
+            "limit": 5,
+            "fetch_mode": "quick",
+            "max_pages": 7,
+        },
+        "use case forwards fetch controls to api",
+    )
     _assert_equal(len(fake_cas_instances), 1, "CAS client created once")
     _assert_equal(fake_cas_instances[0].login_calls[0][0], "alice", "username forwarded")
     _assert_true(fake_cas_instances[0].closed, "CAS client closed")
@@ -415,6 +587,8 @@ def test_agent_tools_return_stable_shapes() -> None:
             field="CourseName",
             operator="Contains",
             limit=3,
+            fetch_mode="full",
+            max_pages=30,
             results=[
                 CourseCatalogResultDTO(
                     course_id="_course_1",
@@ -434,6 +608,7 @@ def test_agent_tools_return_stable_shapes() -> None:
         )
         return CalendarICSSyncResult(
             feed_url="https://example.local/tool.ics",
+            refresh_mode="auto",
             db_path=Path("backend/data/tool.db"),
             stats={"parsed": 1, "inserted": 1, "updated": 0, "deleted": 0, "refreshed_at": datetime(2026, 3, 6, 8, 0, 0)},
             active_events=[tool_event],

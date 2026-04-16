@@ -315,9 +315,11 @@ class BlackboardCourseCatalogAPI:
                 html = next_response.text
                 page_url = str(next_response.url)
 
-        _collect_from_page(response.text, str(response.url), "search")
+        if normalized_fetch_mode == "quick":
+            _merge_rows(parse_course_catalog_table(response.text))
+        else:
+            _collect_from_page(response.text, str(response.url), "search")
 
-        if normalized_fetch_mode == "full":
             show_all_url = find_course_catalog_show_all_url(response.text, str(response.url))
             if show_all_url:
                 try:

@@ -194,11 +194,15 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
         "blackboard.sql.query",
     ]
 
+    course_catalog_tool = BlackboardCourseCatalogSearchTool()
+    calendar_tool = BlackboardCalendarRefreshTool()
     snapshot_tool = BlackboardSnapshotSyncTool()
     resource_tool = BlackboardCourseResourcesSyncTool()
     requirements = {
         requirement.capability: requirement for requirement in snapshot_tool.metadata.capability_requirements
     }
+    course_catalog_input_schema = course_catalog_tool.metadata.input_schema.schema
+    calendar_input_schema = calendar_tool.metadata.input_schema.schema
     snapshot_input_schema = snapshot_tool.metadata.input_schema.schema
     resource_input_schema = resource_tool.metadata.input_schema.schema
 
@@ -208,6 +212,12 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     assert requirements["artifact_store"].required is False
     assert requirements["event_sink"].required is False
     assert snapshot_tool.metadata.idempotent is False
+    assert course_catalog_input_schema["properties"]["fetchMode"]["enum"] == ["quick", "full"]
+    assert course_catalog_input_schema["properties"]["fetchMode"]["default"] == "full"
+    assert course_catalog_input_schema["properties"]["maxPages"]["minimum"] == 1
+    assert course_catalog_input_schema["properties"]["maxPages"]["default"] == 30
+    assert calendar_input_schema["properties"]["refreshMode"]["enum"] == ["auto", "force"]
+    assert calendar_input_schema["properties"]["refreshMode"]["default"] == "auto"
     assert "resourceCourseLimit" not in snapshot_input_schema["properties"]
     assert "resourceCourseLimit" not in snapshot_input_schema.get("required", [])
     assert resource_input_schema["required"] == ["courseIds"]
@@ -231,6 +241,8 @@ def test_course_catalog_tool_invokes_use_case_and_shapes_output(monkeypatch: Any
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
         captured.update(
             {
@@ -240,6 +252,8 @@ def test_course_catalog_tool_invokes_use_case_and_shapes_output(monkeypatch: Any
                 "field": field,
                 "operator": operator,
                 "limit": limit,
+                "fetch_mode": fetch_mode,
+                "max_pages": max_pages,
             }
         )
         return CourseCatalogSearchResult(
@@ -247,6 +261,8 @@ def test_course_catalog_tool_invokes_use_case_and_shapes_output(monkeypatch: Any
             field=field,
             operator=operator,
             limit=limit,
+            fetch_mode=fetch_mode,
+            max_pages=max_pages,
             results=[
                 CourseCatalogResultDTO(
                     course_id="_course_1",
@@ -279,11 +295,15 @@ def test_course_catalog_tool_invokes_use_case_and_shapes_output(monkeypatch: Any
         "field": "CourseName",
         "operator": "Contains",
         "limit": 5,
+        "fetch_mode": "full",
+        "max_pages": 30,
     }
     assert result.output == {
         "keyword": "数据库系统",
         "field": "CourseName",
         "operator": "Contains",
+        "fetchMode": "full",
+        "maxPages": 30,
         "limit": 5,
         "total": 1,
         "results": [
@@ -343,6 +363,8 @@ def test_course_catalog_tool_uses_secret_provider_and_maps_missing_credentials()
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
         assert username == "alice"
         assert password == "secret"
@@ -350,7 +372,17 @@ def test_course_catalog_tool_uses_secret_provider_and_maps_missing_credentials()
         assert field == "CourseName"
         assert operator == "Contains"
         assert limit is None
-        return CourseCatalogSearchResult(keyword=keyword, field=field, operator=operator, limit=limit, results=[])
+        assert fetch_mode == "full"
+        assert max_pages == 30
+        return CourseCatalogSearchResult(
+            keyword=keyword,
+            field=field,
+            operator=operator,
+            limit=limit,
+            fetch_mode=fetch_mode,
+            max_pages=max_pages,
+            results=[],
+        )
 
     try:
         facade_tools.search_course_catalog_with_credentials = _fake_search
@@ -393,12 +425,14 @@ def test_calendar_refresh_tool_resolves_database_db_path_and_persists_state(monk
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
+        refresh_mode: str = "auto",
     ) -> CalendarICSSyncResult:
         captured.update(
             {
                 "feed_url": feed_url,
                 "db_path": db_path,
                 "reset_schema": reset_schema,
+                "refresh_mode": refresh_mode,
             }
         )
         event = CalendarEventDTO(
@@ -411,6 +445,7 @@ def test_calendar_refresh_tool_resolves_database_db_path_and_persists_state(monk
         )
         return CalendarICSSyncResult(
             feed_url=feed_url,
+            refresh_mode=refresh_mode,
             db_path=Path(db_path or "database-root/blackboard/sustech.db"),
             stats={
                 "inserted": 1,
@@ -430,6 +465,7 @@ def test_calendar_refresh_tool_resolves_database_db_path_and_persists_state(monk
         BlackboardCalendarRefreshTool(),
         arguments={
             "feedUrl": "https://example.local/calendar.ics",
+            "refreshMode": "force",
             "dbRelativePath": "blackboard/calendar.db",
             "resetSchema": "true",
             "stateKey": "calendar-latest",
@@ -442,8 +478,11 @@ def test_calendar_refresh_tool_resolves_database_db_path_and_persists_state(monk
         "feed_url": "https://example.local/calendar.ics",
         "db_path": Path("database-root/blackboard/calendar.db"),
         "reset_schema": True,
+        "refresh_mode": "force",
     }
     assert result.output is not None
+    assert result.output["feedUrl"] == "https://example.local/calendar.ics"
+    assert result.output["refreshMode"] == "force"
     assert result.output["dbPath"] == "database-root/blackboard/calendar.db"
     assert result.output["stats"]["refreshed_at"] == "2026-04-13T16:05:00+00:00"
     assert result.output["activeEventCount"] == 1
@@ -1214,8 +1253,10 @@ def test_course_catalog_tool_injects_traceback_details_for_unknown_errors(monkey
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
-        _ = (username, password, keyword, field, operator, limit)
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
         raise RuntimeError("blackboard search exploded")
 
     monkeypatch.setattr(facade_tools, "search_course_catalog_with_credentials", _boom_search)
@@ -1258,8 +1299,10 @@ def test_course_catalog_tool_redacts_sensitive_values_in_enriched_error_details(
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = "full",
+        max_pages: int = 30,
     ) -> CourseCatalogSearchResult:
-        _ = (username, password, keyword, field, operator, limit)
+        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
         raise RuntimeError(sensitive_message)
 
     monkeypatch.setattr(facade_tools, "search_course_catalog_with_credentials", _boom_search)
