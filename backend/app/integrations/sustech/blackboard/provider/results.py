@@ -25,6 +25,8 @@ class CourseCatalogSearchResult:
     field: str
     operator: str
     limit: int | None
+    fetch_mode: str
+    max_pages: int
     results: list[CourseCatalogResultDTO]
     logs: list[BlackboardLogEvent] = dataclass_field(default_factory=list)
 
@@ -40,6 +42,7 @@ class CourseCatalogSearchResult:
 @dataclass(slots=True)
 class CalendarICSSyncResult:
     feed_url: str
+    refresh_mode: str
     db_path: Path
     stats: dict[str, Any]
     active_events: list[CalendarEventDTO]

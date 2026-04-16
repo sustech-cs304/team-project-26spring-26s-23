@@ -14,6 +14,8 @@ from app.integrations.sustech.blackboard.shared import BlackboardLogEvent, Black
 
 
 _ics_parser = BlackboardCalendarICSParser()
+_ALLOWED_REFRESH_MODES = {"auto", "force"}
+_DEFAULT_REFRESH_MODE = "auto"
 
 
 def _normalize_feed_url(feed_url: str) -> str:
@@ -21,6 +23,13 @@ def _normalize_feed_url(feed_url: str) -> str:
     if not normalized_feed_url:
         raise ValueError("feed_url 不能为空")
     return normalized_feed_url
+
+
+def _normalize_refresh_mode(refresh_mode: str | None) -> str:
+    normalized = str(refresh_mode or "").strip().lower() or _DEFAULT_REFRESH_MODE
+    if normalized not in _ALLOWED_REFRESH_MODES:
+        raise ValueError("refresh_mode must be one of: auto, force")
+    return normalized
 
 
 def _event_rows(events: list[CalendarEventDTO]) -> list[dict[str, Any]]:
@@ -59,6 +68,7 @@ def _event_dto_from_row(row: dict[str, Any]) -> CalendarEventDTO:
 def _build_result(
     db_manager: DatabaseManager,
     feed_url: str,
+    refresh_mode: str,
     stats: dict[str, Any],
     *,
     logs: list[BlackboardLogEvent] | None = None,
@@ -67,6 +77,7 @@ def _build_result(
     all_event_rows = db_manager.list_calendar_events(feed_url, include_deleted=True)
     return CalendarICSSyncResult(
         feed_url=feed_url,
+        refresh_mode=refresh_mode,
         db_path=db_manager.db_path.resolve(),
         stats=stats,
         active_events=[_event_dto_from_row(row) for row in active_event_rows],
@@ -81,29 +92,39 @@ def refresh_calendar_ics_subscription(
     db_path: str | Path | None = None,
     reset_schema: bool = False,
     enable_console_logging: bool = False,
+    refresh_mode: str = _DEFAULT_REFRESH_MODE,
 ) -> CalendarICSSyncResult:
     normalized_feed_url = _normalize_feed_url(feed_url)
+    normalized_refresh_mode = _normalize_refresh_mode(refresh_mode)
     log_session = create_log_session(console=enable_console_logging)
     logger = log_session.make_logger(
         layer="provider",
         source="provider.use_cases.calendar_ics",
-        context={"feed_url": normalized_feed_url},
+        context={
+            "feed_url": normalized_feed_url,
+            "refresh_mode": normalized_refresh_mode,
+        },
     )
     db_manager = DatabaseManager(db_path, reset_schema=reset_schema)
     previous = db_manager.get_calendar_subscription(normalized_feed_url) or {}
     headers: dict[str, str] = {}
 
-    if previous.get("etag"):
-        headers["If-None-Match"] = str(previous["etag"])
-    if previous.get("last_modified"):
-        headers["If-Modified-Since"] = str(previous["last_modified"])
+    if normalized_refresh_mode == "auto":
+        if previous.get("etag"):
+            headers["If-None-Match"] = str(previous["etag"])
+        if previous.get("last_modified"):
+            headers["If-Modified-Since"] = str(previous["last_modified"])
 
     now = datetime.utcnow()
 
     try:
         logger.info(
             "▶ 开始刷新 ICS 订阅",
-            payload={"db_path": db_manager.db_path.resolve().as_posix(), "conditional_headers": sorted(headers.keys())},
+            payload={
+                "db_path": db_manager.db_path.resolve().as_posix(),
+                "refresh_mode": normalized_refresh_mode,
+                "conditional_headers": sorted(headers.keys()),
+            },
         )
         with httpx.Client(timeout=30.0, follow_redirects=True) as client:
             response = client.get(normalized_feed_url, headers=headers)
@@ -120,11 +141,17 @@ def refresh_calendar_ics_subscription(
             total = len(db_manager.list_calendar_events(normalized_feed_url, include_deleted=False))
             logger.info(
                 "ℹ ICS 订阅未变化",
-                payload={"total": total, "etag": previous.get("etag"), "last_modified": previous.get("last_modified")},
+                payload={
+                    "total": total,
+                    "etag": previous.get("etag"),
+                    "last_modified": previous.get("last_modified"),
+                    "refresh_mode": normalized_refresh_mode,
+                },
             )
             return _build_result(
                 db_manager,
                 normalized_feed_url,
+                normalized_refresh_mode,
                 {
                     "inserted": 0,
                     "updated": 0,
@@ -147,6 +174,7 @@ def refresh_calendar_ics_subscription(
                 "status_code": response.status_code,
                 "etag": response.headers.get("etag"),
                 "last_modified": response.headers.get("last-modified"),
+                "refresh_mode": normalized_refresh_mode,
             },
         )
         return refresh_calendar_ics_subscription_from_text(
@@ -155,6 +183,7 @@ def refresh_calendar_ics_subscription(
             db_path=db_manager.db_path,
             etag=response.headers.get("etag"),
             last_modified=response.headers.get("last-modified"),
+            refresh_mode=normalized_refresh_mode,
             _log_session=log_session,
         )
     except Exception as ex:
@@ -179,14 +208,19 @@ def refresh_calendar_ics_subscription_from_text(
     etag: str | None = None,
     last_modified: str | None = None,
     enable_console_logging: bool = False,
+    refresh_mode: str = _DEFAULT_REFRESH_MODE,
     _log_session: BlackboardLogSession | None = None,
 ) -> CalendarICSSyncResult:
     normalized_feed_url = _normalize_feed_url(feed_url)
+    normalized_refresh_mode = _normalize_refresh_mode(refresh_mode)
     log_session = _log_session or create_log_session(console=enable_console_logging)
     logger = log_session.make_logger(
         layer="provider",
         source="provider.use_cases.calendar_ics",
-        context={"feed_url": normalized_feed_url},
+        context={
+            "feed_url": normalized_feed_url,
+            "refresh_mode": normalized_refresh_mode,
+        },
     )
     db_manager = DatabaseManager(db_path, reset_schema=reset_schema)
     logger.info("▶ 开始解析 ICS 文本", payload={"text_length": len(ics_text)})
@@ -215,11 +249,13 @@ def refresh_calendar_ics_subscription_from_text(
             "total": total,
             "etag": etag,
             "last_modified": last_modified,
+            "refresh_mode": normalized_refresh_mode,
         },
     )
     return _build_result(
         db_manager,
         normalized_feed_url,
+        normalized_refresh_mode,
         {
             **stats,
             "parsed": len(events),
@@ -231,4 +267,3 @@ def refresh_calendar_ics_subscription_from_text(
         },
         logs=log_session.snapshot(),
     )
-

@@ -15,6 +15,28 @@ from app.integrations.sustech.blackboard.shared import DEFAULT_BLACKBOARD_BASE_U
 
 ResponseLogger = Callable[[str, httpx.Response], None]
 
+_ALLOWED_FETCH_MODES = {"quick", "full"}
+_DEFAULT_FETCH_MODE = "full"
+_DEFAULT_MAX_PAGES = 30
+
+
+def _normalize_fetch_mode(fetch_mode: str | None) -> str:
+    normalized = str(fetch_mode or "").strip().lower() or _DEFAULT_FETCH_MODE
+    if normalized not in _ALLOWED_FETCH_MODES:
+        raise ValueError("fetch_mode must be one of: full, quick")
+    return normalized
+
+
+def _normalize_max_pages(max_pages: int | None) -> int:
+    if max_pages is None:
+        return _DEFAULT_MAX_PAGES
+    if isinstance(max_pages, bool):
+        raise ValueError("max_pages must be a positive integer")
+    normalized = int(max_pages)
+    if normalized <= 0:
+        raise ValueError("max_pages must be a positive integer")
+    return normalized
+
 
 def find_course_catalog_show_all_url(html: str, page_url: str) -> str | None:
     """从课程目录页面识别“全部显示”链接。"""
@@ -200,8 +222,6 @@ def parse_course_catalog_table(html: str) -> list[CourseCatalogResultDTO]:
     return results
 
 
-
-
 class BlackboardCourseCatalogAPI:
     """课程目录搜索 facade。"""
 
@@ -223,12 +243,16 @@ class BlackboardCourseCatalogAPI:
         field: str = "CourseName",
         operator: str = "Contains",
         limit: int | None = None,
+        fetch_mode: str = _DEFAULT_FETCH_MODE,
+        max_pages: int | None = _DEFAULT_MAX_PAGES,
     ) -> list[CourseCatalogResultDTO]:
         """搜索 Blackboard 课程目录。"""
         cleaned_keyword = clean_text(keyword, max_length=120)
         if not cleaned_keyword:
             return []
 
+        normalized_fetch_mode = _normalize_fetch_mode(fetch_mode)
+        resolved_max_pages = _normalize_max_pages(max_pages)
         catalog_url = f"{self.base_url}/webapps/blackboard/execute/viewCatalog"
         params = {
             "type": "Course",
@@ -246,7 +270,6 @@ class BlackboardCourseCatalogAPI:
         except Exception:
             return []
 
-        max_pages = 30
         results: list[CourseCatalogResultDTO] = []
         seen_keys: set[tuple[str, str, str]] = set()
 
@@ -273,7 +296,7 @@ class BlackboardCourseCatalogAPI:
                 page_rows = parse_course_catalog_table(html)
                 _merge_rows(page_rows)
 
-                if page_count >= max_pages:
+                if page_count >= resolved_max_pages:
                     break
 
                 next_page_url = find_course_catalog_next_page_url(html, page_url)
@@ -294,18 +317,18 @@ class BlackboardCourseCatalogAPI:
 
         _collect_from_page(response.text, str(response.url), "search")
 
-        show_all_url = find_course_catalog_show_all_url(response.text, str(response.url))
-        if show_all_url:
-            try:
-                show_all_response = self.client.get(show_all_url)
-                if self.response_logger is not None:
-                    self.response_logger("Course-Catalog-Show-All", show_all_response)
-                show_all_response.raise_for_status()
-                _collect_from_page(show_all_response.text, str(show_all_response.url), "show-all")
-            except Exception:
-                pass
+        if normalized_fetch_mode == "full":
+            show_all_url = find_course_catalog_show_all_url(response.text, str(response.url))
+            if show_all_url:
+                try:
+                    show_all_response = self.client.get(show_all_url)
+                    if self.response_logger is not None:
+                        self.response_logger("Course-Catalog-Show-All", show_all_response)
+                    show_all_response.raise_for_status()
+                    _collect_from_page(show_all_response.text, str(show_all_response.url), "show-all")
+                except Exception:
+                    pass
 
         if limit is not None and limit > 0:
             return results[:limit]
         return results
-

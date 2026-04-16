@@ -198,6 +198,24 @@ def _read_bool(arguments: Mapping[str, Any], field_name: str, *, default: bool) 
     raise ValueError(f"{field_name} must be a boolean.")
 
 
+def _read_choice(
+    arguments: Mapping[str, Any],
+    field_name: str,
+    *,
+    choices: Sequence[str],
+    default: str,
+) -> str:
+    normalized = _read_optional_text(arguments, field_name)
+    if normalized is None:
+        return default
+
+    lowered = normalized.lower()
+    normalized_choices = tuple(str(item).lower() for item in choices)
+    if lowered not in normalized_choices:
+        raise ValueError(f"{field_name} must be one of: {', '.join(normalized_choices)}.")
+    return lowered
+
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Path):
         return value.as_posix()
@@ -709,6 +727,8 @@ def _course_catalog_output(
         "keyword": result.keyword,
         "field": result.field,
         "operator": result.operator,
+        "fetchMode": result.fetch_mode,
+        "maxPages": result.max_pages,
         "limit": result.limit,
         "total": result.total,
         "results": _jsonable(result.results),
@@ -717,9 +737,11 @@ def _course_catalog_output(
     }
 
 
+
 def _calendar_refresh_output(result: CalendarICSSyncResult) -> dict[str, Any]:
     return {
         "feedUrl": result.feed_url,
+        "refreshMode": result.refresh_mode,
         "dbPath": result.db_path.as_posix(),
         "stats": _jsonable(result.stats),
         "activeEventCount": result.active_event_count,
@@ -728,7 +750,6 @@ def _calendar_refresh_output(result: CalendarICSSyncResult) -> dict[str, Any]:
         "logSummary": _jsonable(result.log_summary),
         "logs": _jsonable(result.logs),
     }
-
 
 def _compact_sync_stats(stats: Mapping[str, Any]) -> dict[str, int]:
     return {
@@ -936,12 +957,31 @@ _SQL_QUERY_METADATA = ToolMetadata(
 _COURSE_CATALOG_SEARCH_METADATA = ToolMetadata(
     tool_id="blackboard.course_catalog.search",
     display_name="Blackboard Course Catalog Search",
-    description="Search Blackboard course catalog entries with Blackboard CAS credentials.",
+    description=(
+        "Search Blackboard course catalog entries with Blackboard CAS credentials. "
+        "Use fetchMode=quick for a lighter first-pass search that does not follow show-all, "
+        "or fetchMode=full to keep the more complete behavior; maxPages caps pagination depth."
+    ),
     input_schema=_schema(
         properties={
             "keyword": {"type": "string", "minLength": 1},
             "field": {"type": "string"},
             "operator": {"type": "string"},
+            "fetchMode": {
+                "type": "string",
+                "enum": ["quick", "full"],
+                "default": "full",
+                "description": (
+                    "quick searches only the initial result pages without following show-all; "
+                    "full also follows show-all pagination for more complete results."
+                ),
+            },
+            "maxPages": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 30,
+                "description": "Maximum number of result pages to continue fetching before stopping.",
+            },
             "limit": {"type": "integer"},
             "username": {"type": "string"},
             "password": {"type": "string"},
@@ -955,13 +995,25 @@ _COURSE_CATALOG_SEARCH_METADATA = ToolMetadata(
             "keyword": {"type": "string"},
             "field": {"type": "string"},
             "operator": {"type": "string"},
+            "fetchMode": {"type": "string", "enum": ["quick", "full"]},
+            "maxPages": {"type": "integer", "minimum": 1},
             "limit": {"type": ["integer", "null"]},
             "total": {"type": "integer"},
             "results": {"type": "array"},
             "logSummary": {"type": "object"},
             "logs": {"type": "array"},
         },
-        required=("keyword", "field", "operator", "total", "results", "logSummary", "logs"),
+        required=(
+            "keyword",
+            "field",
+            "operator",
+            "fetchMode",
+            "maxPages",
+            "total",
+            "results",
+            "logSummary",
+            "logs",
+        ),
     ),
     capability_requirements=(
         HostCapabilityRequirement(
@@ -980,13 +1032,27 @@ _COURSE_CATALOG_SEARCH_METADATA = ToolMetadata(
     idempotent=True,
 )
 
+
 _CALENDAR_REFRESH_METADATA = ToolMetadata(
     tool_id="blackboard.calendar.refresh",
     display_name="Blackboard Calendar Refresh",
-    description="Refresh a Blackboard ICS subscription into the existing SQLite store.",
+    description=(
+        "Refresh a Blackboard ICS subscription into the existing SQLite store. "
+        "Use refreshMode=auto for conditional requests with cached validators, "
+        "or refreshMode=force to ignore cached validators and re-download the ICS payload."
+    ),
     input_schema=_schema(
         properties={
             "feedUrl": {"type": "string", "minLength": 1},
+            "refreshMode": {
+                "type": "string",
+                "enum": ["auto", "force"],
+                "default": "auto",
+                "description": (
+                    "auto reuses saved ETag/Last-Modified headers for conditional refreshes; "
+                    "force ignores cached validators and fetches the ICS payload again."
+                ),
+            },
             "dbRelativePath": {"type": "string"},
             "resetSchema": {"type": "boolean"},
             "stateKey": {"type": "string"},
@@ -996,6 +1062,7 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
     output_schema=_schema(
         properties={
             "feedUrl": {"type": "string"},
+            "refreshMode": {"type": "string", "enum": ["auto", "force"]},
             "dbPath": {"type": "string"},
             "stats": {"type": "object"},
             "activeEventCount": {"type": "integer"},
@@ -1006,6 +1073,7 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
         },
         required=(
             "feedUrl",
+            "refreshMode",
             "dbPath",
             "stats",
             "activeEventCount",
@@ -1036,7 +1104,6 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
     annotations={"domain": "blackboard", "facade": "tool-contract"},
     idempotent=False,
 )
-
 _SNAPSHOT_SYNC_METADATA = ToolMetadata(
     tool_id="blackboard.snapshot.sync",
     display_name="Blackboard Snapshot Sync",
@@ -1209,6 +1276,11 @@ class BlackboardCourseCatalogSearchTool(_BlackboardFacadeToolBase):
         keyword = _read_required_text(arguments, "keyword")
         field = _read_optional_text(arguments, "field") or "CourseName"
         operator = _read_optional_text(arguments, "operator") or "Contains"
+        fetch_mode = _read_choice(arguments, "fetchMode", choices=("quick", "full"), default="full")
+        raw_max_pages = _read_optional_int(arguments, "maxPages")
+        max_pages = 30 if raw_max_pages is None else raw_max_pages
+        if max_pages <= 0:
+            raise ValueError("maxPages must be a positive integer.")
         raw_limit = _read_optional_int(arguments, "limit")
         limit = raw_limit if raw_limit is not None and raw_limit > 0 else None
         result = await asyncio.to_thread(
@@ -1219,6 +1291,8 @@ class BlackboardCourseCatalogSearchTool(_BlackboardFacadeToolBase):
             field=field,
             operator=operator,
             limit=limit,
+            fetch_mode=fetch_mode,
+            max_pages=max_pages,
         )
         return (
             _course_catalog_output(result),
@@ -1238,6 +1312,7 @@ class BlackboardCalendarRefreshTool(_BlackboardFacadeToolBase):
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
         feed_url = _read_required_text(arguments, "feedUrl")
+        refresh_mode = _read_choice(arguments, "refreshMode", choices=("auto", "force"), default="auto")
         db_path = _resolve_db_path(arguments, host)
         reset_schema = _read_bool(arguments, "resetSchema", default=False)
         result = await asyncio.to_thread(
@@ -1245,6 +1320,7 @@ class BlackboardCalendarRefreshTool(_BlackboardFacadeToolBase):
             feed_url,
             db_path=db_path,
             reset_schema=reset_schema,
+            refresh_mode=refresh_mode,
         )
         output = _calendar_refresh_output(result)
         metadata = {
