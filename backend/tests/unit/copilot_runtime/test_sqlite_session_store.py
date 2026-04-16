@@ -178,10 +178,24 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
         initial_replay = history_service.get_run_replay("run-1")
         delete_result = store.delete_thread("thread-1")
         hidden_threads = history_service.list_threads()
-        deleted_detail = history_service.get_thread_detail("thread-1")
-        purge_result = store.purge_thread("thread-1")
-        purged_thread = store.get_thread("thread-1")
-        purged_run = store.get_run("run-1")
+        deleted_thread = store.get_thread("thread-1")
+        deleted_run = store.get_run("run-1")
+
+        with pytest.raises(LookupError, match="Thread 'thread-1' does not exist."):
+            history_service.get_thread_detail("thread-1")
+        with pytest.raises(LookupError, match="Run 'run-1' does not exist."):
+            history_service.get_run_replay("run-1")
+
+        store.create_thread(bound_agent_id="default", thread_id="thread-2")
+        store.create_run(
+            thread_id="thread-2",
+            run_id="run-2",
+            request=_build_stored_run_input(user_text="purge this thread"),
+        )
+        store.mark_run_completed("run-2", assistant_text="purged reply")
+        purge_result = store.purge_thread("thread-2")
+        purged_thread = store.get_thread("thread-2")
+        purged_run = store.get_run("run-2")
         restore_result = store.restore_database(source_path=backup_result.backupPath)
         restored_threads = history_service.list_threads()
         restored_detail = history_service.get_thread_detail("thread-1")
@@ -198,10 +212,12 @@ def test_sqlite_session_store_supports_delete_purge_backup_and_restore(tmp_path:
         assert initial_replay.availabilityInterpretation["status"] == "not_evaluated"
         assert initial_replay.availabilityInterpretation["historicalModelId"] == "gpt-4.1"
         assert delete_result.threadId == "thread-1"
+        assert delete_result.deletedAt is not None
         assert [thread.threadId for thread in hidden_threads.threads] == []
-        assert deleted_detail.thread.threadId == "thread-1"
-        assert purge_result.threadId == "thread-1"
-        assert purge_result.deletedAt is not None
+        assert deleted_thread is None
+        assert deleted_run is None
+        assert purge_result.threadId == "thread-2"
+        assert purge_result.deletedAt is None
         assert purged_thread is None
         assert purged_run is None
         assert Path(backup_result.backupPath).is_file()

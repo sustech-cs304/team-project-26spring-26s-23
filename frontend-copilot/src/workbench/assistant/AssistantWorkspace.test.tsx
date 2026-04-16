@@ -226,7 +226,7 @@ describe('AssistantWorkspace render + interactions', () => {
     remounted.unmount()
   })
 
-  it('hides soft-deleted threads immediately and keeps them absent on remount', async () => {
+  it('hides permanently deleted threads immediately and keeps them absent on remount', async () => {
     mockCopilotChatPanel.mockClear()
 
     const directoryResponse = createDirectoryResponse()
