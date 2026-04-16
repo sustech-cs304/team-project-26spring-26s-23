@@ -12,7 +12,6 @@ import {
   createDeferred,
   createDirectoryResponse,
   createSessionResponse,
-  hoverElement,
   inputText,
   keyDownElement,
   openContextMenu,
@@ -25,11 +24,7 @@ import {
 import { runCreateSessionPendingScenario } from './test-support/assistant-workspace-creation-scenarios'
 import { ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY } from './assistant-workspace-shell-state'
 import { COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY } from './useAssistantWorkspaceState'
-import {
-  runSessionContextMenuScenario,
-  runSessionDeletionScenario,
-  runSessionRenameScenario,
-} from './test-support/assistant-workspace-session-scenarios'
+import { runSessionContextMenuScenario } from './test-support/assistant-workspace-session-scenarios'
 
 const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
   <div
@@ -108,16 +103,8 @@ describe('AssistantWorkspace render + interactions', () => {
     await runCreateSessionPendingScenario()
   })
 
-  it('opens a session context menu with secondary submenus for copy and export on right click', async () => {
+  it('opens a session context menu with only implemented session actions on right click', async () => {
     await runSessionContextMenuScenario()
-  })
-
-  it('renames sessions in place through Enter, Escape, and blur interactions', async () => {
-    await runSessionRenameScenario()
-  })
-
-  it('requires delete confirmation and returns the active session to the selected-agent empty state after deletion', async () => {
-    await runSessionDeletionScenario()
   })
 
   it('persists renamed thread titles across remount for restored history threads', async () => {
@@ -397,7 +384,6 @@ describe('AssistantWorkspace render + interactions', () => {
     ))
 
     await openContextMenu(rendered.getByTestId('assistant-session-card-thread-1'), 260, 160)
-    await hoverElement(rendered.getByTestId('assistant-session-context-submenu-copy'))
     await clickElement(rendered.getByTestId('assistant-session-context-action-copy-session'))
 
     await waitForAssistantWorkspaceCondition(() => duplicateHistoryThread.mock.calls.length === 1)

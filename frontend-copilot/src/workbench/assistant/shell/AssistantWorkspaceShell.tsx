@@ -84,7 +84,6 @@ export function AssistantWorkspaceShell({
     handleSessionPointerDown,
     handleSessionClick,
     handleSessionContextMenu,
-    dismissSessionContextMenu,
     requestSessionRename,
     duplicateSession,
     updateSessionRenameValue,
@@ -93,7 +92,6 @@ export function AssistantWorkspaceShell({
     requestSessionDelete,
     confirmSessionDelete,
     cancelSessionDelete,
-    selectSessionSubmenu,
   } = useAssistantWorkspaceState({
     bootstrap,
     listAgents: listAgentsImpl,
@@ -140,7 +138,6 @@ export function AssistantWorkspaceShell({
         onSessionPointerDown={handleSessionPointerDown}
         onSessionClick={handleSessionClick}
         onSessionContextMenu={handleSessionContextMenu}
-        onDismissContextMenu={dismissSessionContextMenu}
         onRequestRename={requestSessionRename}
         onDuplicateSession={duplicateSession}
         onRenameValueChange={updateSessionRenameValue}
@@ -149,7 +146,6 @@ export function AssistantWorkspaceShell({
         onRequestDelete={requestSessionDelete}
         onConfirmDelete={confirmSessionDelete}
         onCancelDelete={cancelSessionDelete}
-        onSelectSubmenu={selectSessionSubmenu}
       />
 
       <main className="workspace-main workspace-main--chat" aria-label="会话主内容区">

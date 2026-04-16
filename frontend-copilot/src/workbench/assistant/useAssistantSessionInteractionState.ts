@@ -14,7 +14,6 @@ import {
 import type { AssistantSessionShell } from '../types'
 import type {
   AssistantSessionContextMenuState,
-  AssistantSessionContextSubmenu,
   AssistantSessionDragState,
 } from './assistant-session-list-helpers'
 import type { AssistantSessionListState } from './assistant-workspace-controller'
@@ -45,7 +44,6 @@ interface UseAssistantSessionInteractionStateResult {
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   handleSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   dismissSessionContextMenu: () => void
-  selectSessionSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
 }
 
 export function useAssistantSessionInteractionState({
@@ -247,15 +245,6 @@ export function useAssistantSessionInteractionState({
     setSessionContextMenu(null)
   }, [])
 
-  const selectSessionSubmenu = useCallback((submenu: AssistantSessionContextSubmenu | null) => {
-    setSessionContextMenu((current) => current === null
-      ? current
-      : {
-          ...current,
-          activeSubmenu: submenu,
-        })
-  }, [])
-
   const renderedSessionState = useMemo(
     () => createAssistantRenderedSessionState({
       sessions: sessionListState.sessions,
@@ -276,6 +265,5 @@ export function useAssistantSessionInteractionState({
     handleSessionClick,
     handleSessionContextMenu,
     dismissSessionContextMenu,
-    selectSessionSubmenu,
   }
 }

@@ -49,7 +49,6 @@ describe('assistant-workspace-state-helpers', () => {
       sessionLabel: '通用智能体',
       x: 320,
       y: 240,
-      activeSubmenu: null,
     })
   })
 

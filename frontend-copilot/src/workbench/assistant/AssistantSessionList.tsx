@@ -13,7 +13,6 @@ import {
   getAssistantSessionDropGapTestId,
   resolveAssistantSessionActiveState,
   type AssistantSessionContextMenuState,
-  type AssistantSessionContextSubmenu,
   type AssistantSessionDragState,
 } from './assistant-session-list-helpers'
 
@@ -38,7 +37,6 @@ interface AssistantSessionListProps {
   onSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
   onSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   onSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
-  onDismissContextMenu: () => void
   onRequestRename: (sessionId: string) => void
   onDuplicateSession: (sessionId: string) => void
   onRenameValueChange: (value: string) => void
@@ -47,7 +45,6 @@ interface AssistantSessionListProps {
   onRequestDelete: (sessionId: string) => void
   onConfirmDelete: (sessionId: string) => void
   onCancelDelete: () => void
-  onSelectSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
 }
 
 export function AssistantSessionList({
@@ -71,7 +68,6 @@ export function AssistantSessionList({
   onSessionPointerDown,
   onSessionClick,
   onSessionContextMenu,
-  onDismissContextMenu,
   onRequestRename,
   onDuplicateSession,
   onRenameValueChange,
@@ -80,7 +76,6 @@ export function AssistantSessionList({
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
-  onSelectSubmenu,
 }: AssistantSessionListProps) {
   return (
     <aside className="workspace-panel topic-panel" aria-label="会话创建列">
@@ -148,13 +143,11 @@ export function AssistantSessionList({
       <AssistantSessionContextMenu
         sessionContextMenu={sessionContextMenu}
         deleteConfirmationSessionId={deleteConfirmationSessionId}
-        onDismissContextMenu={onDismissContextMenu}
         onRequestRename={onRequestRename}
         onDuplicateSession={onDuplicateSession}
         onRequestDelete={onRequestDelete}
         onConfirmDelete={onConfirmDelete}
         onCancelDelete={onCancelDelete}
-        onSelectSubmenu={onSelectSubmenu}
       />
 
       {sessionError !== null && (

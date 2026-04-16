@@ -35,7 +35,6 @@ import type { CopilotBootstrapController } from '../../features/copilot/types'
 import type { AgentType, AssistantSessionShell } from '../types'
 import type {
   AssistantSessionContextMenuState,
-  AssistantSessionContextSubmenu,
   AssistantSessionDragState,
 } from './assistant-session-list-helpers'
 import {
@@ -69,10 +68,6 @@ import {
   syncAssistantSessionShellBoundAgent,
   type AssistantSessionHistoryState,
 } from './assistant-history-state'
-import {
-  removeAssistantSessionShell,
-  renameAssistantSessionShell,
-} from './assistant-session-helpers'
 import {
   loadAssistantWorkspaceShellState,
   persistAssistantWorkspaceShellState,
@@ -142,7 +137,6 @@ interface UseAssistantWorkspaceStateResult {
   requestSessionDelete: (sessionId: string) => void
   confirmSessionDelete: (sessionId: string) => void
   cancelSessionDelete: () => void
-  selectSessionSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
 }
 
 function summarizeAssistantHistoryStateForLog(
@@ -436,11 +430,6 @@ export function useAssistantWorkspaceState({
     nextTitle: string,
     sessionEntry: AssistantSessionShell,
   ) => {
-    if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
-      setSessionListState((current) => renameAssistantSessionShell(current, sessionId, nextTitle))
-      return
-    }
-
     const result = await renameHistoryThreadImpl(sessionId, { title: nextTitle })
     if (!result.ok) {
       appendWorkspaceDebugLog('session-rename-failed', {
@@ -527,27 +516,6 @@ export function useAssistantWorkspaceState({
     sessionId: string,
     sessionEntry: AssistantSessionShell,
   ) => {
-    if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
-      setSessionListState((current) => removeAssistantSessionShell(current, sessionId))
-      setSessionHistoryById((current) => {
-        if (current[sessionId] === undefined) {
-          return current
-        }
-        const nextState = { ...current }
-        delete nextState[sessionId]
-        return nextState
-      })
-      setRuntimeControllerBySessionId((current) => {
-        if (current[sessionId] === undefined) {
-          return current
-        }
-        const nextState = { ...current }
-        delete nextState[sessionId]
-        return nextState
-      })
-      return
-    }
-
     const result = await deleteHistoryThreadImpl(sessionId)
     if (!result.ok) {
       appendWorkspaceDebugLog('session-delete-failed', {
@@ -607,7 +575,6 @@ export function useAssistantWorkspaceState({
     handleSessionClick,
     handleSessionContextMenu: showSessionContextMenu,
     dismissSessionContextMenu,
-    selectSessionSubmenu,
   } = useAssistantSessionInteractionState({
     sessionListState,
     setSessionListState,
@@ -629,7 +596,6 @@ export function useAssistantWorkspaceState({
     cancelSessionDelete,
   } = useAssistantSessionManagementState({
     sessionListState,
-    setSessionListState,
     setSelectedAgentId,
     dismissSessionContextMenu,
     showSessionContextMenu,
@@ -1518,7 +1484,6 @@ export function useAssistantWorkspaceState({
     requestSessionDelete,
     confirmSessionDelete,
     cancelSessionDelete,
-    selectSessionSubmenu,
   }
 }
 
