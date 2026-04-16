@@ -434,6 +434,46 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('data-testid="chat-history-drift-notice"')
   })
 
+  it('keeps restored history visible while the directory is still loading if a session is already active', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={{
+          ...createDirectoryState(),
+          status: 'loading',
+        }}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          selectedRunId: null,
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-startup',
+              sequenceStart: 1,
+              text: '启动恢复的历史消息应立即可见。',
+            },
+          ],
+          replayStatus: 'idle',
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('启动恢复的历史消息应立即可见。')
+    expect(html).not.toContain('正在加载助手列表')
+  })
+
   it('shows persisted capability hydration failures as a visible retryable notice and disables send', async () => {
     const retrySessionHistory = vi.fn()
     const rendered = renderWithRoot(
