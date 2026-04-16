@@ -329,7 +329,7 @@ class BlackboardCourseCatalogAPI:
                     show_all_response.raise_for_status()
                     _collect_from_page(show_all_response.text, str(show_all_response.url), "show-all")
                 except Exception:
-                    pass
+                    return results[:limit] if limit is not None and limit > 0 else results
 
         if limit is not None and limit > 0:
             return results[:limit]

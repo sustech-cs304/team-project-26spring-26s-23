@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import app.integrations.sustech.teaching_information_system.facade.tools as facade_tools
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+from app.integrations.sustech.teaching_information_system.facade import tools as facade_tools
 from app.integrations.sustech.teaching_information_system.api.dto import (
     TISCreditGPAQueryResult,
     TISCreditGPASummary,

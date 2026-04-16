@@ -755,7 +755,6 @@ def run_blackboard_snapshot_sync(
     )
     table_counts = db_manager.get_table_counts()
     expected_active_counts = calculate_expected_active_counts(payloads)
-    expected_active_counts["resources"] = int(table_counts.get("resources", {}).get("active", 0))
     integrity_ok = compare_active_counts(table_counts, expected_active_counts)
     logger.info(
         "💾 首次同步完成",

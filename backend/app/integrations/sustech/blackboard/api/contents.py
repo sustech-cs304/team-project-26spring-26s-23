@@ -233,16 +233,17 @@ class BlackboardContentAPI:
             download_url = str(resource.url or "").strip()
             ids = self.context.extract_ids(download_url)
             real_id = ids.get("xid") or ids.get("rid") or ids.get("content_id")
-            resource.resource_id = real_id
-            if old_id and real_id:
-                old_to_real_id[old_id] = real_id
+            if real_id:
+                resource.resource_id = real_id
+                if old_id:
+                    old_to_real_id[old_id] = real_id
 
         for resource in resources:
             parent_id = str(resource.parent_id or "").strip()
             if not parent_id:
                 resource.parent_id = None
                 continue
-            resource.parent_id = old_to_real_id.get(parent_id)
+            resource.parent_id = old_to_real_id.get(parent_id, parent_id)
 
         self.context.log(f"✅ [Blackboard] 资源抓取完成: 访问页面={len(visited)}, 资源数={len(resources)}")
         return resources

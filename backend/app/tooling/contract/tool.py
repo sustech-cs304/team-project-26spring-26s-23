@@ -16,7 +16,8 @@ class ToolContract(Protocol):
     """Minimal tool shape shared by runtime adapters and future transports."""
 
     @property
-    def metadata(self) -> ToolMetadata: ...
+    def metadata(self) -> ToolMetadata:
+        pass
 
     async def invoke(
         self,
@@ -24,7 +25,8 @@ class ToolContract(Protocol):
         arguments: Mapping[str, Any] | None,
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
-    ) -> ToolResultEnvelope: ...
+    ) -> ToolResultEnvelope:
+        pass
 
 
 __all__ = ["ToolContract"]

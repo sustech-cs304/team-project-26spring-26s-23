@@ -9,7 +9,6 @@ from typing import Any
 
 import httpx
 
-import app.integrations.sustech.blackboard.facade.tools as facade_tools
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.blackboard.api.dto import (
     AnnouncementDTO,
@@ -18,8 +17,8 @@ from app.integrations.sustech.blackboard.api.dto import (
     CourseCatalogResultDTO,
     CourseDTO,
     GradeDTO,
-    ResourceDTO,
 )
+from app.integrations.sustech.blackboard.facade import tools as facade_tools
 from app.integrations.sustech.blackboard.facade.tools import (
     BlackboardCalendarRefreshTool,
     BlackboardCourseCatalogSearchTool,

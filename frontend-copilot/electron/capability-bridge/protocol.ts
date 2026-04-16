@@ -159,7 +159,8 @@ function normalizeDesktopCapabilityBridgePayload(
         secretName: requireNonEmptyString(payload.secretName, 'secretName'),
       }
     case 'resolve_path': {
-      assertNoUnexpectedKeys(payload, ['relativePath'], 'workspace payload')
+      const payloadLabel = capability === 'database' ? 'database payload' : 'workspace payload'
+      assertNoUnexpectedKeys(payload, ['relativePath'], payloadLabel)
       const relativePath = payload.relativePath
       return relativePath === undefined
         ? {}

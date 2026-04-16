@@ -4,8 +4,6 @@ import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
-
 from app.tooling import (
     NormalizedToolError,
     ToolHostCapabilities,
