@@ -5,7 +5,7 @@ import {
   resolveProviderTypeLabel,
 } from './provider-profiles-helpers'
 
-export function filterProviderProfiles(providerProfiles: ProviderProfile[], providerQuery: string) {
+export function filterProviderProfiles(providerProfiles: ProviderProfile[], providerQuery: string, language = 'zh-CN') {
   const keyword = providerQuery.trim().toLowerCase()
 
   if (!keyword) {
@@ -13,11 +13,11 @@ export function filterProviderProfiles(providerProfiles: ProviderProfile[], prov
   }
 
   return providerProfiles.filter((profile) => {
-    const statusNotice = resolveProviderStatusNotice(profile)
+    const statusNotice = resolveProviderStatusNotice(profile, language)
 
     return (
       profile.name.toLowerCase().includes(keyword)
-      || resolveProviderTypeLabel(profile).toLowerCase().includes(keyword)
+      || resolveProviderTypeLabel(profile, language).toLowerCase().includes(keyword)
       || (profile.baseUrl ?? profile.endpoint).toLowerCase().includes(keyword)
       || (statusNotice?.title.toLowerCase().includes(keyword) ?? false)
       || (statusNotice?.description.toLowerCase().includes(keyword) ?? false)

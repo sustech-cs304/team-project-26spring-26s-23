@@ -1,5 +1,6 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 
+import { getProviderSecretsFeedbackCopy } from '../../../locale'
 import type { ProviderProfile } from '../../../types'
 import { omitProviderSecretValue } from './provider-profiles-helpers'
 import {
@@ -8,6 +9,7 @@ import {
 } from '../../workspace-state'
 
 interface UseSettingsWorkspaceProviderSecretsArgs {
+  language: string
   activeProviderId: string
   activeProvider: ProviderProfile | null
   hydratedProviderSecretValues: Record<string, string>
@@ -28,6 +30,7 @@ interface UseSettingsWorkspaceProviderSecretsResult {
 }
 
 export function useSettingsWorkspaceProviderSecrets({
+  language,
   activeProviderId,
   activeProvider,
   hydratedProviderSecretValues,
@@ -37,6 +40,7 @@ export function useSettingsWorkspaceProviderSecrets({
   const [providerSecretSavedValues, setProviderSecretSavedValues] = useState<Record<string, string>>({})
   const [apiKeyVisible, setApiKeyVisible] = useState(false)
   const [apiKeyFeedback, setApiKeyFeedback] = useState<string | null>(null)
+  const feedbackCopy = getProviderSecretsFeedbackCopy(language)
 
   useEffect(() => {
     setProviderSecretDrafts(hydratedProviderSecretValues)
@@ -105,12 +109,12 @@ export function useSettingsWorkspaceProviderSecrets({
       const result = await clearSettingsWorkspaceProfileApiKey({ profileId: providerId })
 
       if (!result.ok) {
-        setApiKeyFeedback('清除失败，请稍后重试')
+        setApiKeyFeedback(feedbackCopy.clearFailed)
         return
       }
 
       syncProviderApiKeyState(result.profileId, result.state.apiKey)
-      setApiKeyFeedback('已清除 API 密钥')
+      setApiKeyFeedback(feedbackCopy.cleared)
       return
     }
 
@@ -120,12 +124,12 @@ export function useSettingsWorkspaceProviderSecrets({
     })
 
     if (!result.ok) {
-      setApiKeyFeedback('保存失败，请稍后重试')
+      setApiKeyFeedback(feedbackCopy.saveFailed)
       return
     }
 
     syncProviderApiKeyState(result.profileId, result.state.apiKey)
-    setApiKeyFeedback('已自动保存 API 密钥')
+    setApiKeyFeedback(feedbackCopy.saved)
   }
 
   const handleToggleApiKeyVisibility = () => {
@@ -138,7 +142,7 @@ export function useSettingsWorkspaceProviderSecrets({
     }
 
     if (!activeProviderApiKeyDraft.trim()) {
-      setApiKeyFeedback('当前没有可复制的 API 密钥')
+      setApiKeyFeedback(feedbackCopy.nothingToCopy)
       return
     }
 
@@ -148,9 +152,9 @@ export function useSettingsWorkspaceProviderSecrets({
       }
 
       await navigator.clipboard.writeText(activeProviderApiKeyDraft)
-      setApiKeyFeedback('已复制 API 密钥')
+      setApiKeyFeedback(feedbackCopy.copied)
     } catch {
-      setApiKeyFeedback('复制失败，请手动复制')
+      setApiKeyFeedback(feedbackCopy.copyFailed)
     }
   }
 
@@ -169,7 +173,7 @@ export function useSettingsWorkspaceProviderSecrets({
     })
 
     if (!result.ok) {
-      setApiKeyFeedback('复制服务商后未能同步 API 密钥')
+      setApiKeyFeedback(feedbackCopy.syncFailedAfterDuplicate)
       return false
     }
 
@@ -190,7 +194,7 @@ export function useSettingsWorkspaceProviderSecrets({
     const result = await clearSettingsWorkspaceProfileApiKey({ profileId: providerId })
 
     if (!result.ok) {
-      setApiKeyFeedback('删除服务商后未能清除 API 密钥')
+      setApiKeyFeedback(feedbackCopy.clearFailedAfterDelete)
       return false
     }
 

@@ -48,18 +48,22 @@ type SettingsWorkspaceSectionDomains = Omit<SettingsWorkspaceSectionsProps, 'act
 type SectionRenderer = (domains: SettingsWorkspaceSectionDomains) => ReactElement
 
 const sectionRenderers: Record<SettingsSection, SectionRenderer> = {
-  'sustech-info': ({ sustech }) => <SustechInfoSection sustech={sustech} />,
-  'model-service': ({ provider }) => <ProviderProfilesSection provider={provider} />,
-  'default-model': ({ defaultModels }) => <DefaultModelRoutesSection defaultModels={defaultModels} />,
+  'sustech-info': ({ sustech, misc }) => <SustechInfoSection sustech={sustech} language={misc.general.language} />,
+  'model-service': ({ provider, misc }) => <ProviderProfilesSection provider={provider} language={misc.general.language} />,
+  'default-model': ({ defaultModels, misc }) => (
+    <DefaultModelRoutesSection defaultModels={defaultModels} language={misc.general.language} />
+  ),
   general: ({ misc }) => <GeneralSettingsSection {...misc.general} />,
   display: ({ misc }) => <DisplaySettingsSection {...misc.display} />,
-  data: ({ misc }) => <DataSettingsSection {...misc.data} />,
-  mcp: ({ misc }) => <McpSettingsSection {...misc.mcp} />,
-  search: ({ misc }) => <SearchSettingsSection {...misc.search} />,
-  memory: ({ misc }) => <MemorySettingsSection {...misc.memory} />,
-  api: ({ misc }) => <ApiSettingsSection {...misc.api} />,
-  docs: ({ misc }) => <DocsSettingsSection {...misc.docs} />,
-  'external-source': ({ externalSources }) => <ExternalSourcesSection externalSources={externalSources} />,
+  data: ({ misc }) => <DataSettingsSection {...misc.data} language={misc.general.language} />,
+  mcp: ({ misc }) => <McpSettingsSection {...misc.mcp} language={misc.general.language} />,
+  search: ({ misc }) => <SearchSettingsSection {...misc.search} language={misc.general.language} />,
+  memory: ({ misc }) => <MemorySettingsSection {...misc.memory} language={misc.general.language} />,
+  api: ({ misc }) => <ApiSettingsSection {...misc.api} language={misc.general.language} />,
+  docs: ({ misc }) => <DocsSettingsSection {...misc.docs} language={misc.general.language} />,
+  'external-source': ({ externalSources, misc }) => (
+    <ExternalSourcesSection externalSources={externalSources} language={misc.general.language} />
+  ),
 }
 
 export function SettingsWorkspaceSections({ activeSection, ...sectionDomains }: SettingsWorkspaceSectionsProps) {

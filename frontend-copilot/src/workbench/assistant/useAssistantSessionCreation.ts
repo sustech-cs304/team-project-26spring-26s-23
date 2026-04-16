@@ -26,6 +26,7 @@ import {
 
 interface UseAssistantSessionCreationInput {
   bootstrap: CopilotBootstrapController
+  language?: string
   selectedAgent: AgentType | null
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>
   createSession?: typeof createRuntimeThread
@@ -47,6 +48,7 @@ interface UseAssistantSessionCreationResult {
 
 export function useAssistantSessionCreation({
   bootstrap,
+  language = 'zh-CN',
   selectedAgent,
   setSelectedAgentId,
   createSession: createSessionImpl = createRuntimeThread,
@@ -64,8 +66,8 @@ export function useAssistantSessionCreation({
     [sessionListState],
   )
   const createSessionLabel = useMemo(
-    () => getAssistantCreateSessionLabel({ selectedAgent, sessionShell }),
-    [selectedAgent, sessionShell],
+    () => getAssistantCreateSessionLabel({ selectedAgent, sessionShell, language }),
+    [language, selectedAgent, sessionShell],
   )
   const createSessionButtonDisabled = isAssistantCreateSessionButtonDisabled({
     bootstrapState: bootstrap.state,

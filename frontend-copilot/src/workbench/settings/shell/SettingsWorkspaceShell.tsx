@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react'
 
 import type { CopilotBootstrapController } from '../../../features/copilot/types'
+import {
+  getSettingsSectionLabel,
+  getSettingsShellCopy,
+} from '../../locale'
 import { settingsItems } from '../../config'
 import type { SettingsSection, ThemeMode } from '../../types'
 import { useSettingsWorkspaceSectionsDomain } from '../domains/SettingsWorkspaceSectionsDomain'
@@ -10,6 +14,7 @@ export interface SettingsWorkspaceShellProps {
   bootstrap: CopilotBootstrapController
   themeMode: ThemeMode
   onThemeModeChange: (value: ThemeMode) => void
+  onLanguageChange?: (value: string) => void
   initialSection?: SettingsSection
 }
 
@@ -17,6 +22,7 @@ export function SettingsWorkspaceShell({
   bootstrap,
   themeMode,
   onThemeModeChange,
+  onLanguageChange,
   initialSection,
 }: SettingsWorkspaceShellProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? settingsItems[0]?.id ?? 'sustech-info')
@@ -24,7 +30,10 @@ export function SettingsWorkspaceShell({
     bootstrap,
     themeMode,
     onThemeModeChange,
+    onLanguageChange,
   })
+  const currentLanguage = sectionDomains.misc.general.language
+  const shellCopy = useMemo(() => getSettingsShellCopy(currentLanguage), [currentLanguage])
 
   const activeSettingsItem = useMemo(
     () => settingsItems.find((item) => item.id === activeSection) ?? settingsItems[0],
@@ -32,11 +41,11 @@ export function SettingsWorkspaceShell({
   )
 
   return (
-    <section className="workspace-stage settings-workspace" aria-label="设置工作区">
-      <aside className="workspace-panel settings-panel" aria-label="设置导航列">
+    <section className="workspace-stage settings-workspace" aria-label={shellCopy.workspaceAriaLabel}>
+      <aside className="workspace-panel settings-panel" aria-label={shellCopy.navAriaLabel}>
         <header className="panel-head">
-          <p className="panel-head__eyebrow">设置</p>
-          <h1 className="panel-head__title">全局设置目录</h1>
+          <p className="panel-head__eyebrow">{shellCopy.eyebrow}</p>
+          <h1 className="panel-head__title">{shellCopy.title}</h1>
         </header>
 
         <ul className="settings-nav-list">
@@ -53,7 +62,7 @@ export function SettingsWorkspaceShell({
                 >
                   <Icon size={16} className="settings-nav-item__icon" />
                   <span className="settings-nav-item__body">
-                    <span className="settings-nav-item__title">{item.label}</span>
+                    <span className="settings-nav-item__title">{getSettingsSectionLabel(currentLanguage, item.id)}</span>
                   </span>
                 </button>
               </li>
@@ -62,9 +71,9 @@ export function SettingsWorkspaceShell({
         </ul>
       </aside>
 
-      <main className="workspace-main" aria-label="设置主内容区">
+      <main className="workspace-main" aria-label={shellCopy.mainAriaLabel}>
         <header className="workspace-main__header">
-          <h2 className="workspace-main__title">{activeSettingsItem.label}</h2>
+          <h2 className="workspace-main__title">{getSettingsSectionLabel(currentLanguage, activeSettingsItem.id)}</h2>
         </header>
 
         <section className="workspace-main__content workspace-main__content--flush workspace-main__content--settings">

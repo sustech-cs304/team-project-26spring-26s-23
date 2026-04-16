@@ -1,11 +1,19 @@
+import { getConfigCenterPublicFieldCopy } from '../locale'
 import type { ConfigCenterPublicTextFieldDefinition } from './config-center-public-field-definitions'
 import { handleConfigCenterPublicTextFieldKeyDown } from './config-center-public-field-card-keydown'
 import { getConfigCenterPublicTextFieldStatusView } from './config-center-public-field-state'
 import { useConfigCenterPublicTextField } from './useConfigCenterPublicField'
 
-export function ConfigCenterPublicTextFieldCard({ definition }: { definition: ConfigCenterPublicTextFieldDefinition }) {
+export function ConfigCenterPublicTextFieldCard({
+  definition,
+  language = 'zh-CN',
+}: {
+  definition: ConfigCenterPublicTextFieldDefinition
+  language?: string
+}) {
   const { state, updateDraftValue, commitDraftValue } = useConfigCenterPublicTextField(definition)
-  const statusView = getConfigCenterPublicTextFieldStatusView(state)
+  const copy = getConfigCenterPublicFieldCopy(language)
+  const statusView = getConfigCenterPublicTextFieldStatusView(state, language)
   const canSave = state.status !== 'loading' && state.status !== 'saving' && state.dirty
 
   return (
@@ -46,7 +54,7 @@ export function ConfigCenterPublicTextFieldCard({ definition }: { definition: Co
               void commitDraftValue()
             }}
           >
-            保存
+            {copy.saveButton}
           </button>
         </div>
 

@@ -295,8 +295,10 @@ def _build_tool_execution_event(
 ) -> RuntimeExecutionEvent:
     event_type = {
         "started": "tool_started",
+        "waiting_approval": "tool_waiting_approval",
         "completed": "tool_completed",
         "failed": "tool_failed",
+        "cancelled": "tool_cancelled",
     }[tool_event.phase]
     return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
 

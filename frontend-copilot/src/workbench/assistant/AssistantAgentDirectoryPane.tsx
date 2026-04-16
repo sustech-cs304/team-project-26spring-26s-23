@@ -1,26 +1,31 @@
+import { getAssistantDirectoryCopy, type WorkbenchLanguage } from '../locale'
 import type { AgentType } from '../types'
 import type { AssistantAgentDirectoryState } from './assistant-workspace-controller'
 
 interface AssistantAgentDirectoryPaneProps {
   directoryState: AssistantAgentDirectoryState
   selectedAgent: AgentType | null
-  onSelectAgent: (agentId: string) => void
+  onSelectAgent: (agentId: string | null) => void
+  language?: WorkbenchLanguage
 }
 
 export function AssistantAgentDirectoryPane({
   directoryState,
   selectedAgent,
   onSelectAgent,
+  language = 'zh-CN',
 }: AssistantAgentDirectoryPaneProps) {
+  const copy = getAssistantDirectoryCopy(language)
+
   return (
-    <aside className="workspace-panel assistant-panel" aria-label="智能体目录列">
+    <aside className="workspace-panel assistant-panel" aria-label={copy.asideAriaLabel}>
       <header className="panel-head">
-        <p className="panel-head__eyebrow">助手</p>
-        <h1 className="panel-head__title">后端智能体目录</h1>
+        <p className="panel-head__eyebrow">{copy.eyebrow}</p>
+        <h1 className="panel-head__title">{copy.title}</h1>
       </header>
 
       {directoryState.status === 'loading' && (
-        <p className="panel-head__description">正在从后端拉取智能体目录…</p>
+        <p className="panel-head__description">{copy.loadingDescription}</p>
       )}
       {directoryState.status === 'error' && directoryState.error !== null && (
         <p className="panel-head__description">{directoryState.error}</p>

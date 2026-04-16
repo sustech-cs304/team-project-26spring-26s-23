@@ -3,6 +3,7 @@ import {
   getRuntimeCapabilities,
 } from '../../features/copilot/chat-contract'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
+import { getAssistantSessionCopy } from '../locale'
 import type { AgentType, AssistantSessionShell } from '../types'
 import {
   createAssistantSessionShell,
@@ -36,16 +37,19 @@ export async function createAssistantSessionShellForAgent(input: {
 export function getAssistantCreateSessionLabel(input: {
   selectedAgent: AgentType | null
   sessionShell: AssistantSessionShell | null
+  language?: string
 }): string {
+  const copy = getAssistantSessionCopy(input.language ?? 'zh-CN')
+
   if (input.selectedAgent === null) {
-    return '等待后端目录提供可用智能体'
+    return copy.createSession.waitingForAgent
   }
 
   if (input.sessionShell !== null && input.sessionShell.boundAgent.id !== input.selectedAgent.id) {
-    return `切换到 ${input.selectedAgent.label} 并新建会话`
+    return copy.createSession.switchAndCreate(input.selectedAgent.label)
   }
 
-  return `为 ${input.selectedAgent.label} 创建会话`
+  return copy.createSession.create(input.selectedAgent.label)
 }
 
 export function isAssistantCreateSessionButtonDisabled(input: {

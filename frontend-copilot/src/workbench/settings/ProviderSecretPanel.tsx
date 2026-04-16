@@ -1,7 +1,10 @@
 import { Copy, Eye, EyeOff } from 'lucide-react'
 
+import { getProviderSecretCopy } from '../locale'
+
 interface ProviderSecretPanelProps {
   providerId: string
+  language: string
   visible: boolean
   label: string
   description?: string
@@ -18,6 +21,7 @@ interface ProviderSecretPanelProps {
 
 export function ProviderSecretPanel({
   providerId,
+  language,
   visible,
   label,
   description,
@@ -35,6 +39,10 @@ export function ProviderSecretPanel({
     return null
   }
 
+  const copy = getProviderSecretCopy(language)
+  const isSuccessFeedback = apiKeyFeedback !== null
+    && copy.successPrefixes.some((prefix) => apiKeyFeedback.startsWith(prefix))
+
   return (
     <label className="form-field form-field--full" htmlFor="provider-api-key-input">
       <span className="form-field__meta">
@@ -48,7 +56,7 @@ export function ProviderSecretPanel({
           className="text-input text-input-shell__input"
           type={apiKeyVisible ? 'text' : 'password'}
           value={apiKeyDraft}
-          placeholder={placeholder || (hasApiKey ? '已配置，输入新密钥以替换' : '输入访问密钥')}
+          placeholder={placeholder || (hasApiKey ? copy.configuredPlaceholder : copy.emptyPlaceholder)}
           onChange={(event) => onApiKeyDraftChange(providerId, event.target.value)}
           onBlur={() => {
             void onPersistApiKeyDraft(providerId)
@@ -58,8 +66,8 @@ export function ProviderSecretPanel({
           <button
             type="button"
             className="icon-button icon-button--compact"
-            aria-label={apiKeyVisible ? '隐藏 API 密钥' : '查看 API 密钥原文'}
-            title={apiKeyVisible ? '隐藏 API 密钥' : '查看 API 密钥原文'}
+            aria-label={apiKeyVisible ? copy.hideApiKey : copy.showApiKey}
+            title={apiKeyVisible ? copy.hideApiKey : copy.showApiKey}
             data-testid="provider-api-key-visibility-toggle"
             onClick={onToggleApiKeyVisibility}
           >
@@ -68,8 +76,8 @@ export function ProviderSecretPanel({
           <button
             type="button"
             className="icon-button icon-button--compact"
-            aria-label="复制 API 密钥原文"
-            title="复制 API 密钥原文"
+            aria-label={copy.copyApiKey}
+            title={copy.copyApiKey}
             data-testid="provider-api-key-copy"
             onClick={() => {
               void onCopyApiKey()
@@ -81,7 +89,7 @@ export function ProviderSecretPanel({
       </span>
       {apiKeyFeedback ? (
         <span
-          className={`form-field__feedback${apiKeyFeedback.startsWith('已复制') || apiKeyFeedback.startsWith('已自动保存') || apiKeyFeedback.startsWith('已清除') ? ' form-field__feedback--success' : ' form-field__feedback--warning'}`}
+          className={`form-field__feedback${isSuccessFeedback ? ' form-field__feedback--success' : ' form-field__feedback--warning'}`}
           data-testid="provider-api-key-feedback"
           role="status"
         >

@@ -1,3 +1,4 @@
+import { getSustechInfoCopy } from '../locale'
 import { TextField, ToggleSwitch } from '../components/FormFields'
 
 export interface SustechInfoSectionDomain {
@@ -18,9 +19,10 @@ export interface SustechInfoSectionDomain {
 
 interface SustechInfoSectionProps {
   sustech: SustechInfoSectionDomain
+  language: string
 }
 
-export function SustechInfoSection({ sustech }: SustechInfoSectionProps) {
+export function SustechInfoSection({ sustech, language }: SustechInfoSectionProps) {
   const {
     studentId,
     displayedSustechEmail,
@@ -45,32 +47,34 @@ export function SustechInfoSection({ sustech }: SustechInfoSectionProps) {
     onBlackboardDownloadLimitMbChange(value === '' ? '' : String(Number.parseInt(value, 10) || 0))
   }
 
+  const copy = getSustechInfoCopy(language)
+
   return (
     <div className="settings-page settings-page--split settings-page--balanced">
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">基本信息</h3>
+            <h3 className="settings-card__title">{copy.basicInfoTitle}</h3>
           </div>
         </div>
 
         <div className="settings-stack">
           <div className="form-grid form-grid--two">
             <TextField
-              label="学号"
+              label={copy.studentIdLabel}
               value={studentId}
               onChange={onStudentIdChange}
-              placeholder="输入学号"
+              placeholder={copy.studentIdPlaceholder}
             />
             <label className="form-field">
               <span className="form-field__meta">
-                <span className="form-field__label">邮箱</span>
+                <span className="form-field__label">{copy.emailLabel}</span>
               </span>
               <input
                 className="text-input"
                 type="text"
                 value={displayedSustechEmail}
-                placeholder="输入邮箱"
+                placeholder={copy.emailPlaceholder}
                 onFocus={() => onSustechEmailFocusChange(true)}
                 onBlur={() => onSustechEmailFocusChange(false)}
                 onChange={(event) => onSustechEmailChange(event.target.value)}
@@ -78,7 +82,7 @@ export function SustechInfoSection({ sustech }: SustechInfoSectionProps) {
             </label>
             <label className="form-field form-field--full" htmlFor="sustech-cas-password-input">
               <span className="form-field__meta">
-                <span className="form-field__label">CAS 密码</span>
+                <span className="form-field__label">{copy.casPasswordLabel}</span>
               </span>
               <input
                 id="sustech-cas-password-input"
@@ -86,7 +90,7 @@ export function SustechInfoSection({ sustech }: SustechInfoSectionProps) {
                 className="text-input"
                 type="password"
                 value={casPasswordDraft}
-                placeholder="输入 CAS 密码"
+                placeholder={copy.casPasswordPlaceholder}
                 onChange={(event) => onCasPasswordDraftChange(event.target.value)}
                 onBlur={() => {
                   void onPersistCasPasswordDraft()
@@ -106,35 +110,35 @@ export function SustechInfoSection({ sustech }: SustechInfoSectionProps) {
         <section className="settings-card settings-card--form">
           <div className="settings-card__header">
             <div>
-              <h3 className="settings-card__title">Blackboard 信息</h3>
+              <h3 className="settings-card__title">{copy.blackboardInfoTitle}</h3>
             </div>
           </div>
 
           <div className="settings-stack">
             <ToggleSwitch
-              label="自动下载 Blackboard 文件"
+              label={copy.autoDownloadLabel}
               checked={blackboardAutoDownloadEnabled}
               onChange={onBlackboardAutoDownloadEnabledChange}
             />
             <TextField
-              label="下载文件大小限制（MB）"
+              label={copy.downloadLimitLabel}
               value={blackboardDownloadLimitMb}
               onChange={handleBlackboardDownloadLimitChange}
               placeholder="0"
             />
-            <p className="form-field__description">0为不限制</p>
+            <p className="form-field__description">{copy.downloadLimitDescription}</p>
           </div>
         </section>
 
         <section className="settings-card settings-card--form">
           <div className="settings-card__header">
             <div>
-              <h3 className="settings-card__title">TIS 信息</h3>
+              <h3 className="settings-card__title">{copy.tisInfoTitle}</h3>
             </div>
           </div>
 
           <div className="settings-stack">
-            <p className="settings-empty-hint">敬请期待</p>
+            <p className="settings-empty-hint">{copy.comingSoon}</p>
           </div>
         </section>
       </div>

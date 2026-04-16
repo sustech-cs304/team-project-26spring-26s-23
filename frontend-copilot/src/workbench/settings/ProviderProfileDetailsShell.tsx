@@ -5,15 +5,16 @@ import type { ProviderProfileDetailsShellDomain } from './ProviderProfilesSectio
 
 interface ProviderProfileDetailsShellProps {
   detailShell: ProviderProfileDetailsShellDomain
+  language: string
 }
 
-export function ProviderProfileDetailsShell({ detailShell }: ProviderProfileDetailsShellProps) {
+export function ProviderProfileDetailsShell({ detailShell, language }: ProviderProfileDetailsShellProps) {
   return (
-    <ProviderProfilesSectionShell hasActiveProvider={detailShell.hasActiveProvider}>
+    <ProviderProfilesSectionShell hasActiveProvider={detailShell.hasActiveProvider} language={language}>
       {detailShell.detail ? (
         <>
-          <ProviderProfileDetails detail={detailShell.detail} />
-          <ProviderModelEditorMount modelEditor={detailShell.modelEditor} />
+          <ProviderProfileDetails detail={detailShell.detail} language={language} />
+          <ProviderModelEditorMount modelEditor={detailShell.modelEditor} language={language} />
         </>
       ) : null}
     </ProviderProfilesSectionShell>

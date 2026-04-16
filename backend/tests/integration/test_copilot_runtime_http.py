@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -37,7 +37,7 @@ from app.copilot_runtime.contracts import (
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
 )
-from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
+from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventType
 from app.copilot_runtime.model_routes import (
     ResolvedRuntimeModelRoute,
     RuntimeModelRoute,
@@ -186,11 +186,16 @@ def _build_execution_events(
 ) -> list[RuntimeExecutionEvent]:
     events = [
         RuntimeExecutionEvent(
-            type={
-                "started": "tool_started",
-                "completed": "tool_completed",
-                "failed": "tool_failed",
-            }[tool_event.phase],
+            type=cast(
+                RuntimeExecutionEventType,
+                {
+                    "started": "tool_started",
+                    "waiting_approval": "tool_waiting_approval",
+                    "completed": "tool_completed",
+                    "failed": "tool_failed",
+                    "cancelled": "tool_cancelled",
+                }[tool_event.phase],
+            ),
             payload=tool_event.to_payload(),
         )
         for tool_event in tool_events
@@ -356,7 +361,7 @@ def test_post_root_run_start_unexpected_failure_with_origin_returns_json_and_cor
 
     app = create_app(
         session_store=_FailingRunStartSessionStore(),
-        agent_executor=CapturingStreamingExecutor(outputs=["unused reply"]),
+        agent_executor=CapturingStreamingExecutor(outputs=["unused reply"]),  # type: ignore[arg-type]
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
@@ -1640,7 +1645,7 @@ def _create_app(
     host_capability_bridge_client: DesktopCapabilityBridgeClient | None = None,
 ):
     return create_app(
-        agent_executor=executor,
+        agent_executor=executor,  # type: ignore[arg-type]
         model_route_resolver=_ResolvedRouteResolver(),
         host_capability_bridge_client=host_capability_bridge_client,
     )

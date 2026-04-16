@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
 
+import { getCopilotChatCopy } from '../../../workbench/locale'
 import {
   createEmptyCopilotModel,
   createFallbackCopilotModel,
@@ -12,6 +13,7 @@ import {
 } from '../model-picker'
 
 interface ModelPickerProps {
+  language?: string
   selectedModelId: string
   onSelectModel: (model: CopilotModelOption) => void
   disabled?: boolean
@@ -19,11 +21,13 @@ interface ModelPickerProps {
 }
 
 export function ModelPicker({
+  language = 'zh-CN',
   selectedModelId,
   onSelectModel,
   disabled = false,
   groups = [],
 }: ModelPickerProps) {
+  const copy = getCopilotChatCopy(language)
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTags, setActiveTags] = useState<string[]>([])
@@ -31,6 +35,7 @@ export function ModelPicker({
   const panelId = useId()
   const models = useMemo(() => groups.flatMap((group) => group.models), [groups])
   const hasAnyModels = models.length > 0
+  const hasSelectedModel = selectedModelId.trim() !== ''
 
   const resolvedSelectedModel = useMemo(() => getCopilotModelById(selectedModelId, models), [models, selectedModelId])
   const selectedModel = useMemo(
@@ -99,11 +104,15 @@ export function ModelPicker({
         data-testid="chat-model-picker-trigger"
       >
         <span className="copilot-model-picker__trigger-value" data-testid="chat-model-picker-trigger-value">
-          <ModelPickerIcon icon={selectedModel.icon} title={selectedModel.name} />
-          <span className="copilot-model-picker__trigger-label">{selectedModel.name}</span>
+          <ModelPickerIcon
+            icon={selectedModel.icon}
+            title={hasAnyModels && hasSelectedModel ? selectedModel.name : copy.modelPicker.notConfigured}
+            language={language}
+          />
+          <span className="copilot-model-picker__trigger-label">{hasAnyModels && hasSelectedModel ? selectedModel.name : copy.modelPicker.notConfigured}</span>
           {isSelectedModelInvalid && (
             <span className="copilot-model-picker__badge" data-testid="chat-model-picker-invalid-badge">
-              失效
+              {copy.modelPicker.invalidBadge}
             </span>
           )}
         </span>
@@ -117,14 +126,14 @@ export function ModelPicker({
           id={panelId}
           className="copilot-model-picker__panel"
           role="dialog"
-          aria-label="选择模型"
+          aria-label={copy.modelPicker.panelAriaLabel}
           data-testid="chat-model-picker-panel"
         >
           <div className="copilot-model-picker__search-shell">
             <input
               type="search"
               className="copilot-model-picker__search"
-              placeholder="搜索模型…"
+              placeholder={copy.modelPicker.searchPlaceholder}
               value={searchQuery}
               onChange={(event) => {
                 setSearchQuery(event.currentTarget.value)
@@ -133,7 +142,7 @@ export function ModelPicker({
             />
           </div>
 
-          <div className="copilot-model-picker__tags" aria-label="按标签筛选">
+          <div className="copilot-model-picker__tags" aria-label={copy.modelPicker.filterByTagAriaLabel}>
             <button
               type="button"
               className={`copilot-model-picker__tag copilot-model-picker__tag--all${activeTags.length === 0 ? ' copilot-model-picker__tag--active' : ''}`}
@@ -143,7 +152,7 @@ export function ModelPicker({
               }}
               data-testid="chat-model-picker-tag-all"
             >
-              全部
+              {copy.modelPicker.allTag}
             </button>
             {availableTags.map((tag) => (
               <button
@@ -158,7 +167,7 @@ export function ModelPicker({
                 }}
                 data-testid={`chat-model-picker-tag-${tag}`}
               >
-                {tag}
+                {formatModelTagLabel(tag, language)}
               </button>
             ))}
           </div>
@@ -166,12 +175,12 @@ export function ModelPicker({
           <div className="copilot-model-picker__groups">
             {!hasAnyGroups
               ? (
-                  <p className="copilot-model-picker__empty">暂无可用模型。</p>
+                  <p className="copilot-model-picker__empty">{copy.modelPicker.noModels}</p>
                 )
               : (
                   <>
                     {!hasVisibleModels && (searchQuery.trim() !== '' || activeTags.length > 0) && (
-                      <p className="copilot-model-picker__empty">未找到匹配的模型。</p>
+                      <p className="copilot-model-picker__empty">{copy.modelPicker.noMatchingModels}</p>
                     )}
                     {filteredModels.map((group) => (
                    <section key={group.key} className="copilot-model-picker__group">
@@ -180,7 +189,7 @@ export function ModelPicker({
                       {group.models.length === 0
                         ? (
                             <p className="copilot-model-picker__group-empty" data-testid={`chat-model-group-empty-${group.key}`}>
-                              暂无模型
+                              {copy.modelPicker.noModelsInGroup}
                             </p>
                           )
                         : group.models.map((model) => {
@@ -203,7 +212,7 @@ export function ModelPicker({
                                 }}
                                 data-testid={`chat-model-option-${group.key}-${model.id}`}
                               >
-                                <ModelPickerIcon icon={model.icon} title={model.name} />
+                                <ModelPickerIcon icon={model.icon} title={model.name} language={language} />
                                 <span className="copilot-model-picker__option-body">
                                   <span className="copilot-model-picker__option-name">{model.name}</span>
                                   {model.unavailableReason !== null && (
@@ -216,7 +225,7 @@ export function ModelPicker({
                                       key={`${group.key}:${model.id}:${tag}`}
                                       className={buildModelTagClassName(tag, false, 'chip')}
                                     >
-                                      {tag}
+                                      {formatModelTagLabel(tag, language)}
                                     </span>
                                   ))}
                                 </span>
@@ -238,14 +247,16 @@ export function ModelPicker({
 interface ModelPickerIconProps {
   icon: CopilotModelIconSpec
   title: string
+  language?: string
 }
 
-export function ModelPickerIcon({ icon, title }: ModelPickerIconProps) {
+export function ModelPickerIcon({ icon, title, language = 'zh-CN' }: ModelPickerIconProps) {
+  const copy = getCopilotChatCopy(language)
   return (
     <span
       className="copilot-model-picker__icon"
       style={{ '--model-icon-accent': icon.accent } as CSSProperties}
-      aria-label={`${title} 图标`}
+      aria-label={copy.modelPicker.iconAriaLabel(title)}
     >
       {icon.label}
     </span>
@@ -272,16 +283,45 @@ function buildModelTagClassName(
 function getModelTagTone(tag: string): 'reasoning' | 'tools' | 'search' | 'vision' | 'free' | 'neutral' {
   switch (tag) {
     case '推理':
+    case 'Reasoning':
       return 'reasoning'
     case '工具':
+    case 'Tools':
       return 'tools'
     case '联网':
+    case 'Search':
       return 'search'
     case '视觉':
+    case 'Vision':
       return 'vision'
     case '免费':
+    case 'Free':
       return 'free'
     default:
       return 'neutral'
+  }
+}
+
+function formatModelTagLabel(tag: string, language: string): string {
+  const locale = language === 'en-US' ? 'en-US' : 'zh-CN'
+
+  switch (tag) {
+    case '推理':
+    case 'Reasoning':
+      return locale === 'en-US' ? 'Reasoning' : '推理'
+    case '工具':
+    case 'Tools':
+      return locale === 'en-US' ? 'Tools' : '工具'
+    case '联网':
+    case 'Search':
+      return locale === 'en-US' ? 'Search' : '联网'
+    case '视觉':
+    case 'Vision':
+      return locale === 'en-US' ? 'Vision' : '视觉'
+    case '免费':
+    case 'Free':
+      return locale === 'en-US' ? 'Free' : '免费'
+    default:
+      return tag
   }
 }

@@ -20,6 +20,10 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 import type { RuntimeAgentDirectoryEntry } from '../features/copilot/chat-contract'
+import {
+  normalizeWorkbenchLanguage,
+  type WorkbenchLanguage,
+} from './locale'
 import type {
   AgentType,
   HubWorkspaceContent,
@@ -51,26 +55,48 @@ const agentIconsByHint: Record<string, LucideIcon> = {
   brain: Brain,
 }
 
-const agentPresentationOverridesById: Record<string, { label: string, hint: string | null }> = {
-  general: {
-    label: '通用智能体',
-    hint: '默认使用所有工具',
+const agentPresentationOverridesByLanguage: Record<WorkbenchLanguage, Record<string, { label: string, hint: string | null }>> = {
+  'zh-CN': {
+    general: {
+      label: '通用智能体',
+      hint: '默认使用所有工具',
+    },
+    default: {
+      label: '通用智能体',
+      hint: '默认使用所有工具',
+    },
   },
-  default: {
-    label: '通用智能体',
-    hint: '默认使用所有工具',
+  'en-US': {
+    general: {
+      label: 'General Agent',
+      hint: 'Uses all tools by default',
+    },
+    default: {
+      label: 'General Agent',
+      hint: 'Uses all tools by default',
+    },
   },
 }
 
-export function enhanceRuntimeAgents(agents: RuntimeAgentDirectoryEntry[]): AgentType[] {
+const missingAgentDescriptionByLanguage: Record<WorkbenchLanguage, string> = {
+  'zh-CN': '后端目录未提供该智能体的描述。',
+  'en-US': 'The runtime directory did not provide a description for this agent.',
+}
+
+export function enhanceRuntimeAgents(
+  agents: RuntimeAgentDirectoryEntry[],
+  language: string = 'zh-CN',
+): AgentType[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
   return agents.map((agent) => {
-    const presentation = resolveAgentPresentation(agent)
+    const presentation = resolveAgentPresentation(agent, locale)
 
     return {
       id: agent.agentId,
       label: presentation.label,
       shortLabel: presentation.shortLabel,
-      description: agent.description ?? '后端目录未提供该智能体的描述。',
+      description: agent.description ?? missingAgentDescriptionByLanguage[locale],
       hint: presentation.hint,
       status: agent.status,
       icon: resolveAgentIcon(agent),
@@ -107,13 +133,13 @@ function resolveAgentIcon(agent: RuntimeAgentDirectoryEntry): LucideIcon {
   return Sparkles
 }
 
-function resolveAgentPresentation(agent: RuntimeAgentDirectoryEntry): {
+function resolveAgentPresentation(agent: RuntimeAgentDirectoryEntry, language: WorkbenchLanguage): {
   label: string
   shortLabel: string
   hint: string | null
 } {
-  const override = agentPresentationOverridesById[agent.agentId]
-    ?? resolveAgentPresentationOverrideByDisplayName(agent.displayName)
+  const override = agentPresentationOverridesByLanguage[language][agent.agentId]
+    ?? resolveAgentPresentationOverrideByDisplayName(agent.displayName, language)
   const resolvedLabel = override?.label ?? agent.displayName ?? agent.agentId
 
   return {
@@ -125,9 +151,10 @@ function resolveAgentPresentation(agent: RuntimeAgentDirectoryEntry): {
 
 function resolveAgentPresentationOverrideByDisplayName(
   displayName: string | null,
+  language: WorkbenchLanguage,
 ): { label: string, hint: string | null } | null {
   if (displayName?.trim().toLowerCase() === 'default') {
-    return agentPresentationOverridesById.default
+    return agentPresentationOverridesByLanguage[language].default
   }
 
   return null
