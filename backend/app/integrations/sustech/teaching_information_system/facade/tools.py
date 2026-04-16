@@ -748,10 +748,46 @@ def _detail_export_requested(arguments: Mapping[str, Any]) -> bool:
 
 
 
+def _build_output_persistence(
+    *,
+    result_persistence: Mapping[str, Any] | None,
+    state_payload: Mapping[str, Any] | None = None,
+    artifacts: Sequence[ToolArtifactReference] = (),
+) -> dict[str, Any] | None:
+    persistence: dict[str, Any] = {}
+    if isinstance(result_persistence, Mapping):
+        persistence.update(_jsonable(result_persistence))
+    if isinstance(state_payload, Mapping):
+        state_namespace = state_payload.get("stateNamespace")
+        state_key = state_payload.get("stateKey")
+        if isinstance(state_namespace, str) and isinstance(state_key, str):
+            persistence["state"] = {
+                "namespace": state_namespace,
+                "key": state_key,
+            }
+    if artifacts:
+        persistence["artifacts"] = [artifact.to_dict() for artifact in artifacts]
+    return persistence or None
+
+
+
 def _personal_grades_output(result: TISGradeQueryResult) -> dict[str, Any]:
+    terms = sorted(
+        {
+            term.strip()
+            for term in (record.term for record in result.grade_records)
+            if isinstance(term, str) and term.strip() != ""
+        }
+    )
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
         "totalRecords": result.total_records,
+        "terms": terms,
+        "counts": {
+            "records": result.total_records,
+            "terms": len(terms),
+            "probes": len(result.probes),
+        },
         "resolvedRoleCode": result.resolved_role_code,
         "logSummary": _summarize_logs(result.logs),
     }
@@ -781,8 +817,15 @@ def _personal_grades_persisted_output(result: TISGradeQueryResult) -> dict[str, 
 def _credit_gpa_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
+        "pageUrl": result.page_url,
+        "apiUrl": result.api_url,
         "resolvedRoleCode": result.resolved_role_code,
         "summary": _jsonable(result.summary),
+        "counts": {
+            "terms": len(result.term_records),
+            "years": len(result.year_records),
+            "probes": len(result.probes),
+        },
         "logSummary": _summarize_logs(result.logs),
     }
     if result.persistence is not None:
@@ -814,6 +857,8 @@ def _credit_gpa_persisted_output(result: TISCreditGPAQueryResult) -> dict[str, A
 def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str, Any]:
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
+        "pageUrl": result.page_url,
+        "apiUrl": result.api_url,
         "semester": _jsonable(result.semester),
         "currentSemester": _jsonable(result.current_semester),
         "semesterSource": result.semester_source,
@@ -821,6 +866,10 @@ def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str,
         "resolvedPylx": result.resolved_pylx,
         "summary": _jsonable(result.summary),
         "courseCount": len(result.courses),
+        "counts": {
+            "courses": len(result.courses),
+            "probes": len(result.probes),
+        },
         "logSummary": _summarize_logs(result.logs),
     }
     if result.persistence is not None:
@@ -942,6 +991,8 @@ _PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
         properties={
             "sourceUrl": {"type": "string"},
             "totalRecords": {"type": "integer"},
+            "terms": {"type": "array"},
+            "counts": {"type": "object"},
             "resolvedRoleCode": {"type": ["string", "null"]},
             "logSummary": {"type": "object"},
             "persistence": {"type": ["object", "null"]},
@@ -949,6 +1000,8 @@ _PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
         required=(
             "sourceUrl",
             "totalRecords",
+            "terms",
+            "counts",
             "logSummary",
         ),
     ),
@@ -1006,14 +1059,20 @@ _CREDIT_GPA_FETCH_METADATA = ToolMetadata(
     output_schema=_schema(
         properties={
             "sourceUrl": {"type": "string"},
+            "pageUrl": {"type": "string"},
+            "apiUrl": {"type": "string"},
             "resolvedRoleCode": {"type": ["string", "null"]},
             "summary": {"type": "object"},
+            "counts": {"type": "object"},
             "logSummary": {"type": "object"},
             "persistence": {"type": ["object", "null"]},
         },
         required=(
             "sourceUrl",
+            "pageUrl",
+            "apiUrl",
             "summary",
+            "counts",
             "logSummary",
         ),
     ),
@@ -1074,6 +1133,8 @@ _SELECTED_COURSES_FETCH_METADATA = ToolMetadata(
     output_schema=_schema(
         properties={
             "sourceUrl": {"type": "string"},
+            "pageUrl": {"type": "string"},
+            "apiUrl": {"type": "string"},
             "semester": {"type": "object"},
             "currentSemester": {"type": ["object", "null"]},
             "semesterSource": {"type": ["string", "null"]},
@@ -1081,15 +1142,19 @@ _SELECTED_COURSES_FETCH_METADATA = ToolMetadata(
             "resolvedPylx": {"type": ["string", "null"]},
             "summary": {"type": "object"},
             "courseCount": {"type": "integer"},
+            "counts": {"type": "object"},
             "logSummary": {"type": "object"},
             "persistence": {"type": ["object", "null"]},
         },
         required=(
             "sourceUrl",
+            "pageUrl",
+            "apiUrl",
             "semester",
             "currentSemester",
             "summary",
             "courseCount",
+            "counts",
             "logSummary",
         ),
     ),
@@ -1167,21 +1232,27 @@ class TISPersonalGradesFetchTool(_TISFacadeToolBase):
             persist=persist,
             db_path_source=db_path_source,
         )
-        metadata.update(
-            await _persist_state_if_requested(
-                namespace=_STATE_NAMESPACE_PERSONAL_GRADES,
-                arguments=arguments,
-                context=context,
-                host=host,
-                output=persisted_output,
-            )
+        state_payload = await _persist_state_if_requested(
+            namespace=_STATE_NAMESPACE_PERSONAL_GRADES,
+            arguments=arguments,
+            context=context,
+            host=host,
+            output=persisted_output,
         )
+        metadata.update(state_payload)
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
             output=persisted_output,
         )
+        persistence_summary = _build_output_persistence(
+            result_persistence=result.persistence,
+            state_payload=state_payload,
+            artifacts=artifacts,
+        )
+        if persistence_summary is not None:
+            output["persistence"] = persistence_summary
         return output, artifacts, metadata
 
 
@@ -1226,21 +1297,27 @@ class TISCreditGPAFetchTool(_TISFacadeToolBase):
             persist=persist,
             db_path_source=db_path_source,
         )
-        metadata.update(
-            await _persist_state_if_requested(
-                namespace=_STATE_NAMESPACE_CREDIT_GPA,
-                arguments=arguments,
-                context=context,
-                host=host,
-                output=persisted_output,
-            )
+        state_payload = await _persist_state_if_requested(
+            namespace=_STATE_NAMESPACE_CREDIT_GPA,
+            arguments=arguments,
+            context=context,
+            host=host,
+            output=persisted_output,
         )
+        metadata.update(state_payload)
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
             output=persisted_output,
         )
+        persistence_summary = _build_output_persistence(
+            result_persistence=result.persistence,
+            state_payload=state_payload,
+            artifacts=artifacts,
+        )
+        if persistence_summary is not None:
+            output["persistence"] = persistence_summary
         return output, artifacts, metadata
 
 
@@ -1297,21 +1374,27 @@ class TISSelectedCoursesFetchTool(_TISFacadeToolBase):
             persist=persist,
             db_path_source=db_path_source,
         )
-        metadata.update(
-            await _persist_state_if_requested(
-                namespace=_STATE_NAMESPACE_SELECTED_COURSES,
-                arguments=arguments,
-                context=context,
-                host=host,
-                output=persisted_output,
-            )
+        state_payload = await _persist_state_if_requested(
+            namespace=_STATE_NAMESPACE_SELECTED_COURSES,
+            arguments=arguments,
+            context=context,
+            host=host,
+            output=persisted_output,
         )
+        metadata.update(state_payload)
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
             output=persisted_output,
         )
+        persistence_summary = _build_output_persistence(
+            result_persistence=result.persistence,
+            state_payload=state_payload,
+            artifacts=artifacts,
+        )
+        if persistence_summary is not None:
+            output["persistence"] = persistence_summary
         return output, artifacts, metadata
 
 

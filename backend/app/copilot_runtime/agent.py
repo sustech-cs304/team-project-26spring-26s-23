@@ -208,6 +208,13 @@ class RuntimeToolLifecycleEvent:
         return payload
 
 
+def _serialize_tool_result_for_display(result: Any) -> str:
+    try:
+        return json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
+    except TypeError:
+        return json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True, default=str)
+
+
 ToolLifecycleSink = Callable[[RuntimeToolLifecycleEvent], None]
 
 
@@ -1538,10 +1545,10 @@ class PydanticAIAgentExecutor:
                 return result
 
         result_summary = summarize_tool_result(result)
-        completed_title, completed_summary = self._build_completed_copy(
+        result_payload = _serialize_tool_result_for_display(result)
+        completed_title = self._build_completed_title(
             tool_id=tool_id,
             display_name=tool.descriptor.display_name or tool_id,
-            result_summary=result_summary,
         )
         self._emit_tool_event(
             ctx,
@@ -1550,7 +1557,7 @@ class PydanticAIAgentExecutor:
                 tool_id=tool_id,
                 phase="completed",
                 title=completed_title,
-                summary=completed_summary,
+                summary=result_payload,
                 input_summary=input_summary,
                 result_summary=result_summary,
             ),
@@ -1641,19 +1648,15 @@ class PydanticAIAgentExecutor:
             return ("调用天气工具", f"正在获取 {location} 的天气。")
         return (f"调用 {display_name}", f"正在执行 {display_name}。")
 
-    def _build_completed_copy(
+    def _build_completed_title(
         self,
         *,
         tool_id: str,
         display_name: str,
-        result_summary: str | None,
-    ) -> tuple[str, str]:
+    ) -> str:
         if tool_id == WEATHER_CURRENT_TOOL_ID:
-            return (
-                "天气工具已返回结果",
-                result_summary or "天气工具已返回占位天气结果。",
-            )
-        return (f"{display_name} 已返回结果", result_summary or f"{display_name} 已执行完成。")
+            return "天气工具已返回结果"
+        return f"{display_name} 已返回结果"
 
     def _resolved_explicit_model(self, model_override: Any | None = None) -> Any | None:
         candidate = self._model_override if model_override is None else model_override

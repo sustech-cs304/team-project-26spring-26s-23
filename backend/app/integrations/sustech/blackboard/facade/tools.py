@@ -729,18 +729,49 @@ def _snapshot_sync_output(
     report: BlackboardSnapshotSyncReport,
     *,
     progress_messages: Sequence[str],
+    persistence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _ = progress_messages
-    return {
+    output: dict[str, Any] = {
         "dbPath": report.db_path.as_posix(),
         "resourceCourseLimit": report.snapshot.resource_course_limit,
         "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
         "firstSyncStats": _compact_sync_stats_by_table(report.first_sync_stats),
+        "secondSyncStats": (
+            None
+            if report.second_sync_stats is None
+            else _compact_sync_stats_by_table(report.second_sync_stats)
+        ),
+        "tableCounts": _jsonable(report.table_counts),
+        "expectedActiveCounts": _jsonable(report.expected_active_counts),
         "integrityOk": report.integrity_ok,
         "secondSyncHasNoNewRecords": report.second_sync_has_no_new_records(),
         "secondSyncHasNoDeletedRecords": report.second_sync_has_no_deleted_records(),
         "logSummary": _jsonable(report.log_summary),
     }
+    if persistence:
+        output["persistence"] = _jsonable(persistence)
+    return output
+
+
+
+def _build_output_persistence_summary(
+    *,
+    state_payload: Mapping[str, Any] | None,
+    artifacts: Sequence[ToolArtifactReference],
+) -> dict[str, Any] | None:
+    summary: dict[str, Any] = {}
+    if isinstance(state_payload, Mapping):
+        state_namespace = state_payload.get("stateNamespace")
+        state_key = state_payload.get("stateKey")
+        if isinstance(state_namespace, str) and isinstance(state_key, str):
+            summary["state"] = {
+                "namespace": state_namespace,
+                "key": state_key,
+            }
+    if artifacts:
+        summary["artifacts"] = [artifact.to_dict() for artifact in artifacts]
+    return summary or None
 
 
 
@@ -961,15 +992,23 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
             "resourceCourseLimit": {"type": "integer"},
             "scrapedCounts": {"type": "object"},
             "firstSyncStats": {"type": "object"},
+            "secondSyncStats": {"type": ["object", "null"]},
+            "tableCounts": {"type": "object"},
+            "expectedActiveCounts": {"type": "object"},
             "integrityOk": {"type": "boolean"},
             "secondSyncHasNoNewRecords": {"type": "boolean"},
             "secondSyncHasNoDeletedRecords": {"type": "boolean"},
             "logSummary": {"type": "object"},
+            "persistence": {"type": ["object", "null"]},
         },
         required=(
             "dbPath",
+            "resourceCourseLimit",
             "scrapedCounts",
             "firstSyncStats",
+            "secondSyncStats",
+            "tableCounts",
+            "expectedActiveCounts",
             "integrityOk",
             "secondSyncHasNoNewRecords",
             "secondSyncHasNoDeletedRecords",
@@ -1123,21 +1162,30 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
             "credentialSource": credentials.source,
             "dbPathSource": _db_path_source(arguments),
         }
-        metadata.update(
-            await _persist_state_if_requested(
-                namespace=_STATE_NAMESPACE_SNAPSHOT_SYNC,
-                arguments=arguments,
-                context=context,
-                host=host,
-                output=persisted_output,
-            )
+        state_payload = await _persist_state_if_requested(
+            namespace=_STATE_NAMESPACE_SNAPSHOT_SYNC,
+            arguments=arguments,
+            context=context,
+            host=host,
+            output=persisted_output,
         )
+        metadata.update(state_payload)
         artifacts = await _persist_artifact_if_requested(
             arguments=arguments,
             context=context,
             host=host,
             output=persisted_output,
         )
+        persistence_summary = _build_output_persistence_summary(
+            state_payload=state_payload,
+            artifacts=artifacts,
+        )
+        if persistence_summary is not None:
+            output = _snapshot_sync_output(
+                report,
+                progress_messages=progress_messages,
+                persistence=persistence_summary,
+            )
         return output, artifacts, metadata
 
 
