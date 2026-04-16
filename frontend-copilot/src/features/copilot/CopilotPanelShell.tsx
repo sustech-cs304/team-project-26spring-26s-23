@@ -137,7 +137,10 @@ export function CopilotPanelShell(props: CopilotPanelShellProps) {
 function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   const hasAvailableModels = props.modelGroups.some((group) => group.models.length > 0)
 
-  if (props.directoryState.status === 'loading' || props.directoryState.status === 'idle') {
+  if (
+    props.sessionShell === null
+    && (props.directoryState.status === 'loading' || props.directoryState.status === 'idle')
+  ) {
     return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
         <p className="copilot-panel__eyebrow">Copilot</p>
