@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { createRef } from 'react'
+import { act, createRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { CopilotPanelShell } from './CopilotPanelShell'
@@ -17,6 +17,10 @@ import {
   createSessionShell,
   renderWithRoot,
 } from './CopilotChatPanel.test-support'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('CopilotPanelShell diagnostic visibility', () => {
   it('renders a concise persisted history retry prompt and triggers retry', async () => {
@@ -119,6 +123,180 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     expect(html).toContain('data-testid="chat-history-loading-skeleton"')
     expect(html).not.toContain('data-testid="chat-message-scroll-region"')
     expect(html).not.toContain('data-testid="chat-history-retry-button"')
+  })
+
+  it('does not show the skeleton when a thread switch finishes within 300ms', async () => {
+    vi.useFakeTimers()
+    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-1',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+    }))
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-2',
+      detailStatus: 'loading',
+    }))
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(299)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-2',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+    }))
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    rendered.unmount()
+  })
+
+  it('shows the skeleton only after 300ms when switching to another persisted thread', async () => {
+    vi.useFakeTimers()
+    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-1',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+    }))
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-2',
+      detailStatus: 'loading',
+    }))
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(299)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+    rendered.unmount()
+  })
+
+  it('keeps the skeleton visible for at least 500ms once it appears', async () => {
+    vi.useFakeTimers()
+    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-1',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+    }))
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-2',
+      detailStatus: 'loading',
+    }))
+
+    await act(async () => {
+      vi.advanceTimersByTime(300)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-2',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+    }))
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(499)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    rendered.unmount()
+  })
+
+  it('resets the loading gate when the user switches again before the previous minimum display ends', async () => {
+    vi.useFakeTimers()
+    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-1',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+    }))
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-2',
+      detailStatus: 'loading',
+    }))
+
+    await act(async () => {
+      vi.advanceTimersByTime(300)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-3',
+      detailStatus: 'loading',
+    }))
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(299)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+    rendered.unmount()
+  })
+
+  it('keeps startup restore on the existing immediate skeleton path and does not gate new blank sessions', async () => {
+    vi.useFakeTimers()
+    const startupRendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-startup',
+      detailStatus: 'loading',
+    }))
+
+    expect(startupRendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+
+    startupRendered.unmount()
+
+    const liveRendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-live',
+      detailStatus: 'loading',
+      isPersistedThread: false,
+    }))
+
+    expect(liveRendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(liveRendered.queryByTestId('chat-message-scroll-region')).not.toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(800)
+    })
+
+    expect(liveRendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(liveRendered.queryByTestId('chat-message-scroll-region')).not.toBeNull()
+    liveRendered.unmount()
   })
 
   it('prefers transient conversation content over persisted loading gating', () => {
@@ -652,6 +830,83 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       onComposerResizeStart={vi.fn()}
     />,
   )
+}
+
+function buildHistoryLoadingGateShell(input: {
+  sessionId?: string
+  detailStatus?: AssistantSessionHistoryState['detailStatus']
+  hasLoadedDetail?: boolean
+  isPersistedThread?: boolean
+} = {}) {
+  const sessionId = input.sessionId ?? 'thread-1'
+  const detailStatus = input.detailStatus ?? 'idle'
+  const isPersistedThread = input.isPersistedThread ?? true
+
+  return (
+    <CopilotPanelShell
+      state={createReadyState()}
+      retrying={false}
+      onRetry={vi.fn()}
+      selectedAgent={createSelectedAgent()}
+      sessionShell={createSessionShell({
+        sessionId,
+        ...(isPersistedThread
+          ? {
+              capabilities: {
+                capabilitiesVersion: 'history-shell',
+              },
+            }
+          : {}),
+      })}
+      directoryState={createDirectoryState()}
+      sessionStatus="idle"
+      sessionError={null}
+      sessionHistory={createPersistedSessionHistoryStateForThread(sessionId, {
+        isPersistedThread,
+        detailStatus,
+        hasLoadedDetail: input.hasLoadedDetail ?? (detailStatus === 'ready'),
+        selectedRunId: isPersistedThread ? 'run-1' : null,
+      })}
+      sendError={null}
+      modelGroups={[]}
+      thinkingCapability={null}
+      composerDraft={createEmptyComposerDraft()}
+      onComposerDraftChange={vi.fn()}
+      onSend={vi.fn()}
+      onCancelCurrentRun={vi.fn()}
+      sendStatus="idle"
+      canCancelSend={false}
+      sendDisabledReason={null}
+      historyDrift={null}
+      historyRebindAcknowledged={false}
+      onAcknowledgeHistoryRebind={vi.fn()}
+      conversation={[]}
+      assistantPlaceholder={{
+        shouldRender: false,
+        dismissReason: 'inactive',
+      }}
+      composerInputRef={createRef<HTMLTextAreaElement>()}
+      composerHeight={160}
+      onComposerResizeStart={vi.fn()}
+    />
+  )
+}
+
+function createPersistedSessionHistoryStateForThread(
+  sessionId: string,
+  overrides: Partial<AssistantSessionHistoryState> = {},
+): AssistantSessionHistoryState {
+  const { summary, ...restOverrides } = overrides
+  const baseState = createPersistedSessionHistoryState()
+
+  return createPersistedSessionHistoryState({
+    ...restOverrides,
+    summary: {
+      ...baseState.summary,
+      threadId: sessionId,
+      ...(summary ?? {}),
+    },
+  })
 }
 
 function createPersistedSessionHistoryState(
