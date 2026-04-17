@@ -12,6 +12,7 @@ import {
 import type { CopilotMessageDispatchInput } from './copilot-send-controller'
 import {
   createRuntimeMessageEventStream,
+  createRuntimeModelRoute,
   createRuntimeResolvedModelRoute,
   createRuntimeRunCancelResponse,
   createRuntimeToolEvent,
@@ -29,6 +30,10 @@ import {
   setFormControlValue,
   submitForm,
 } from './CopilotChatPanel.test-support'
+import {
+  createCopilotThreadRuntimeControllerState,
+  type CopilotThreadRuntimeControllerState,
+} from './thread-runtime-controller'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
@@ -647,6 +652,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
   it('keeps denied tools visible but disabled in the picker and strips them before send', async () => {
     const sendMessage = createResolvedSendMessageSpy()
+    const sessionShell = createSessionShell()
     const loadWorkspaceState = vi.fn(async () => ({
       ok: true as const,
       source: 'stored' as const,
@@ -669,7 +675,7 @@ describe('CopilotChatPanel composer interactions', () => {
         retrying={false}
         retry={() => {}}
         selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell()}
+        sessionShell={sessionShell}
         directoryState={createDirectoryState()}
         sessionStatus="idle"
         sessionError={null}
@@ -687,9 +693,16 @@ describe('CopilotChatPanel composer interactions', () => {
     const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
     const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
 
-    expect(deniedOption.disabled).toBe(false)
-    expect(deniedOption.className).not.toContain('copilot-tool-picker__option--disabled')
+    expect(deniedOption.disabled).toBe(true)
+    expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
+    expect(deniedOption.title).toContain('总是关闭')
     expect(allowedOption.disabled).toBe(false)
+
+    await clickElement(deniedOption)
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('false')
+
+    await clickElement(allowedOption)
+    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请在清洗 deny 后发送')
@@ -697,9 +710,115 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: [],
+      enabledTools: ['tool.file-convert'],
       message: {
         content: '请在清洗 deny 后发送',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('strips stale denied enabledTools from live composer state before dispatching the request', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const sessionShell = createSessionShell({ sessionId: 'session-stale-deny' })
+    const staleState = createCopilotThreadRuntimeControllerState(sessionShell)
+    const runtimeControllerBySessionId: Record<string, CopilotThreadRuntimeControllerState> = {
+      [sessionShell.sessionId]: {
+        ...staleState,
+        composerDraft: {
+          ...staleState.composerDraft,
+          messageText: '请清洗残留 deny 工具',
+          selectedModelId: 'provider-openai:openai/gpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'provider-openai',
+            modelId: 'openai/gpt-4.1',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'provider-openai',
+              modelId: 'openai/gpt-4.1',
+            },
+          }),
+          enabledTools: ['tool.remote-search', 'tool.file-convert'],
+        },
+      },
+    }
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'openai/gpt-4.1',
+        },
+        mcp: {
+          toolPermissionPolicy: {
+            version: 1,
+            defaultMode: 'ask',
+            toolPermissions: {
+              'tool.remote-search': { mode: 'deny' },
+            },
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(true)
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    expect(messageInput.value).toBe('请清洗残留 deny 工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      enabledTools: ['tool.file-convert'],
+      message: {
+        content: '请清洗残留 deny 工具',
       },
     })
 

@@ -107,6 +107,7 @@ export interface CopilotChatPanelState {
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
+  toolPermissionPolicy: Parameters<typeof buildRuntimeToolPermissionPolicy>[0]['policy']
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onCancelCurrentRun: () => void
@@ -1037,6 +1038,7 @@ export function useCopilotChatPanelState({
     modelGroups: modelCatalog.groups,
     thinkingCapability: effectiveThinkingCapability,
     composerDraft: effectiveComposerDraft,
+    toolPermissionPolicy: workspaceToolPermissionPolicy,
     onComposerDraftChange: setComposerDraft,
     onSend: handleSend,
     onCancelCurrentRun: handleCancelCurrentRun,
