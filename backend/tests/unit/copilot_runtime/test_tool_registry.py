@@ -21,6 +21,7 @@ from app.copilot_runtime.tool_registry import (
     WEATHER_CURRENT_TOOL_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_ID,
     execute_weather_current_tool,
+    normalize_tool_catalog_language,
     summarize_tool_arguments,
     summarize_tool_result,
 )
@@ -71,15 +72,41 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "toolId": FILE_CONVERT_TOOL_ID,
         "kind": "builtin",
         "availability": "available",
-        "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
-        "description": FILE_CONVERT_TOOL_DESCRIPTION,
+        "displayName": "文件转换",
+        "description": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
+        "prompt": "在分析前使用此工具将 DOCX、PDF 或 PPTX 文件转换为纯文本。",
+        "displayNameZh": "文件转换",
+        "displayNameEn": FILE_CONVERT_TOOL_DISPLAY_NAME,
+        "descriptionZh": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
+        "descriptionEn": FILE_CONVERT_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
     }
     assert catalog_by_id[WEATHER_CURRENT_TOOL_ID] == {
         "toolId": WEATHER_CURRENT_TOOL_ID,
         "kind": "builtin",
         "availability": "available",
-        "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
-        "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
+        "displayName": "当前天气",
+        "description": "返回指定地点的占位当前天气结果。",
+        "prompt": "使用此工具获取某个地点的简要当前天气摘要。",
+        "displayNameZh": "当前天气",
+        "displayNameEn": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+        "descriptionZh": "返回指定地点的占位当前天气结果。",
+        "descriptionEn": WEATHER_CURRENT_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
     }
     for tool_id in CONTRACT_TOOL_IDS:
         assert catalog_by_id[tool_id]["toolId"] == tool_id
@@ -104,6 +131,26 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
     assert tuple(
         tool["toolId"] for tool in diagnostics["toolset_summaries"][0]["tools"]
     ) == expected_tool_ids
+
+
+
+def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metadata_stable() -> None:
+    registry = build_default_tool_registry()
+
+    zh_catalog = {entry["toolId"]: entry for entry in registry.build_tool_catalog(language="zh-CN")}
+    en_catalog = {entry["toolId"]: entry for entry in registry.build_tool_catalog(language="en-US")}
+
+    assert zh_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == "文件转换"
+    assert en_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == FILE_CONVERT_TOOL_DISPLAY_NAME
+    assert zh_catalog[FILE_CONVERT_TOOL_ID]["prompt"] != en_catalog[FILE_CONVERT_TOOL_ID]["prompt"]
+    contract_tool_id = CONTRACT_TOOL_IDS[0]
+    assert zh_catalog[contract_tool_id]["displayName"] != en_catalog[contract_tool_id]["displayName"]
+    assert zh_catalog[contract_tool_id]["displayNameZh"] == zh_catalog[contract_tool_id]["displayName"]
+    assert en_catalog[contract_tool_id]["displayNameEn"] == en_catalog[contract_tool_id]["displayName"]
+    assert zh_catalog[contract_tool_id]["group"]["label"] == "Blackboard 工具"
+    assert en_catalog[contract_tool_id]["group"]["label"] == "Blackboard Tools"
+    assert normalize_tool_catalog_language("en-GB") == "en-US"
+    assert normalize_tool_catalog_language("zh-TW") == "zh-CN"
 
 
 

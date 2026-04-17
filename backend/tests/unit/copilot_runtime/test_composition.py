@@ -116,6 +116,7 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert executor_factory() is dependencies.agent_executor
 
     assert dependencies.scaffold.default_agent == default_agent.name
+    assert dependencies.scaffold.tool_registry is dependencies.tool_registry
     assert dependencies.scaffold.supported_methods == (
         "agents/list",
         "thread/create",
@@ -124,8 +125,28 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "run/stream",
         "run/cancel",
         "capabilities/get",
+        "tools/catalog/get",
         THINKING_CAPABILITY_GET_METHOD,
     )
+    global_tool_catalog = dependencies.scaffold.build_global_tool_catalog_response().to_dict()
+    assert global_tool_catalog["ok"] is True
+    assert global_tool_catalog["directoryVersion"] == "tools-v1"
+    assert global_tool_catalog["defaultToolset"] == "default"
+    assert isinstance(global_tool_catalog["tools"], list)
+    assert len(global_tool_catalog["tools"]) >= 1
+    assert global_tool_catalog["tools"][0]["toolId"] == "tool.file-convert"
+    assert global_tool_catalog["tools"][0]["kind"] == "builtin"
+    assert global_tool_catalog["tools"][0]["availability"] == "available"
+    assert global_tool_catalog["tools"][0]["displayNameZh"] == "文件转换"
+    assert global_tool_catalog["tools"][0]["displayNameEn"] == "File Convert"
+    assert global_tool_catalog["tools"][0]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
     assert dependencies.scaffold.diagnostics_summary()["available_agents"] == [DEFAULT_AGENT_NAME]
     assert dependencies.scaffold.diagnostics_summary()["available_toolsets"] == ["default"]
 

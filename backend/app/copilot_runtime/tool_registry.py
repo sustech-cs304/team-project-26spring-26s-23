@@ -22,14 +22,44 @@ DEFAULT_TOOLSET_DESCRIPTION = (
 DEFAULT_TOOL_DIRECTORY_VERSION = "tools-v1"
 DEFAULT_TOOL_KIND = "builtin"
 DEFAULT_TOOL_AVAILABILITY = "available"
+DEFAULT_TOOL_CATALOG_LANGUAGE = "zh-CN"
 FILE_CONVERT_TOOL_ID = "tool.file-convert"
 FILE_CONVERT_TOOL_DISPLAY_NAME = "File Convert"
 FILE_CONVERT_TOOL_DESCRIPTION = "Convert DOCX, PDF, and PPTX files into text."
+FILE_CONVERT_TOOL_PROMPT = "Use this tool to convert DOCX, PDF, or PPTX files into plain text before analysis."
 WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
     "Return a placeholder current-weather result for a requested location."
 )
+WEATHER_CURRENT_TOOL_PROMPT = "Use this tool to retrieve a simple current weather summary for a location."
+
+_BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
+    "zh-CN": {
+        FILE_CONVERT_TOOL_ID: {
+            "displayName": "文件转换",
+            "description": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
+            "prompt": "在分析前使用此工具将 DOCX、PDF 或 PPTX 文件转换为纯文本。",
+        },
+        WEATHER_CURRENT_TOOL_ID: {
+            "displayName": "当前天气",
+            "description": "返回指定地点的占位当前天气结果。",
+            "prompt": "使用此工具获取某个地点的简要当前天气摘要。",
+        },
+    },
+    "en-US": {
+        FILE_CONVERT_TOOL_ID: {
+            "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
+            "description": FILE_CONVERT_TOOL_DESCRIPTION,
+            "prompt": FILE_CONVERT_TOOL_PROMPT,
+        },
+        WEATHER_CURRENT_TOOL_ID: {
+            "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+            "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
+            "prompt": WEATHER_CURRENT_TOOL_PROMPT,
+        },
+    },
+}
 DEFAULT_WEATHER_LOCATION = "Shenzhen"
 _WEATHER_SAMPLE_RESULTS: tuple[dict[str, Any], ...] = (
     {
@@ -72,6 +102,52 @@ ToolExecutor = Callable[[Mapping[str, Any] | None], Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
+class ToolPresentationGroup:
+    group_id: str
+    label_zh: str
+    label_en: str
+    order: int
+    source_kind: str
+
+    def build_catalog_view(self, language: str | None = None) -> dict[str, Any]:
+        return {
+            "id": self.group_id,
+            "label": self.label_en if normalize_tool_catalog_language(language) == "en-US" else self.label_zh,
+            "labelZh": self.label_zh,
+            "labelEn": self.label_en,
+            "order": self.order,
+            "sourceKind": self.source_kind,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ToolPresentation:
+    display_name_zh: str | None = None
+    display_name_en: str | None = None
+    description_zh: str | None = None
+    description_en: str | None = None
+    group: ToolPresentationGroup | None = None
+
+    def build_catalog_view(self, language: str | None = None) -> dict[str, Any]:
+        normalized_language = normalize_tool_catalog_language(language)
+        display_name = self.display_name_en if normalized_language == "en-US" else self.display_name_zh
+        description = self.description_en if normalized_language == "en-US" else self.description_zh
+        entry: dict[str, Any] = {
+            "displayNameZh": self.display_name_zh,
+            "displayNameEn": self.display_name_en,
+            "descriptionZh": self.description_zh,
+            "descriptionEn": self.description_en,
+        }
+        if display_name is not None:
+            entry["displayName"] = display_name
+        if description is not None:
+            entry["description"] = description
+        if self.group is not None:
+            entry["group"] = self.group.build_catalog_view(language)
+        return entry
+
+
+@dataclass(frozen=True, slots=True)
 class ToolDescriptor:
     """Stable tool contract fields are centered on `tool_id`; display fields are hints only."""
 
@@ -80,6 +156,8 @@ class ToolDescriptor:
     display_name: str | None = None
     description: str | None = None
     availability: str = DEFAULT_TOOL_AVAILABILITY
+    prompt: str | None = None
+    presentation: ToolPresentation | None = None
 
     def build_catalog_entry(self) -> dict[str, Any]:
         entry: dict[str, Any] = {
@@ -91,6 +169,21 @@ class ToolDescriptor:
             entry["displayName"] = self.display_name
         if self.description is not None:
             entry["description"] = self.description
+        if self.prompt is not None:
+            entry["prompt"] = self.prompt
+        if self.presentation is not None:
+            entry.update(self.presentation.build_catalog_view())
+        return entry
+
+    def build_catalog_entry_for_language(self, language: str | None = None) -> dict[str, Any]:
+        entry = self.build_catalog_entry()
+        if self.kind == DEFAULT_TOOL_KIND:
+            localized_fields = _resolve_builtin_tool_locale(self.tool_id, language)
+            entry["displayName"] = localized_fields["displayName"]
+            entry["description"] = localized_fields["description"]
+            entry["prompt"] = localized_fields["prompt"]
+        elif self.presentation is not None:
+            entry.update(self.presentation.build_catalog_view(language))
         return entry
 
     def build_summary(self) -> dict[str, Any]:
@@ -100,6 +193,10 @@ class ToolDescriptor:
             "availability": self.availability,
             "displayName": self.display_name,
             "description": self.description,
+            "prompt": self.prompt,
+            "presentation": (
+                None if self.presentation is None else self.presentation.build_catalog_view()
+            ),
         }
 
 
@@ -116,6 +213,9 @@ class ExecutableTool:
 
     def build_catalog_entry(self) -> dict[str, Any]:
         return self.descriptor.build_catalog_entry()
+
+    def build_catalog_entry_for_language(self, language: str | None = None) -> dict[str, Any]:
+        return self.descriptor.build_catalog_entry_for_language(language)
 
     def build_summary(self) -> dict[str, Any]:
         return self.descriptor.build_summary()
@@ -195,11 +295,16 @@ class ToolRegistry:
             for name, descriptor in self._descriptors_by_name.items()
         }
 
-    def build_tool_catalog(self, toolset_name: str | None = None) -> tuple[dict[str, Any], ...]:
+    def build_tool_catalog(
+        self,
+        toolset_name: str | None = None,
+        *,
+        language: str | None = None,
+    ) -> tuple[dict[str, Any], ...]:
         descriptor = self.get_default() if toolset_name is None else self.get(toolset_name)
         if descriptor is None:
             raise LookupError(f"Unknown toolset '{toolset_name}'.")
-        return tuple(tool.build_catalog_entry() for tool in descriptor.tools)
+        return tuple(tool.build_catalog_entry_for_language(language) for tool in descriptor.tools)
 
     def list_tool_ids(self, toolset_name: str | None = None) -> tuple[str, ...]:
         descriptor = self.get_default() if toolset_name is None else self.get(toolset_name)
@@ -304,6 +409,124 @@ async def _execute_default_weather_tool(arguments: Mapping[str, Any] | None) -> 
     return await execute_weather_current_tool(arguments)
 
 
+_BUILTIN_TOOL_GROUP = ToolPresentationGroup(
+    group_id="builtin-core",
+    label_zh="内置基础工具",
+    label_en="Built-in Core Tools",
+    order=0,
+    source_kind="builtin",
+)
+_BLACKBOARD_TOOL_GROUP = ToolPresentationGroup(
+    group_id="blackboard",
+    label_zh="Blackboard 工具",
+    label_en="Blackboard Tools",
+    order=10,
+    source_kind="sustech-blackboard",
+)
+_TIS_TOOL_GROUP = ToolPresentationGroup(
+    group_id="tis",
+    label_zh="TIS 工具",
+    label_en="TIS Tools",
+    order=20,
+    source_kind="sustech-tis",
+)
+_MCP_TOOL_GROUP = ToolPresentationGroup(
+    group_id="mcp",
+    label_zh="MCP 工具",
+    label_en="MCP Tools",
+    order=100,
+    source_kind="mcp-server",
+)
+
+_TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
+    FILE_CONVERT_TOOL_ID: _BUILTIN_TOOL_GROUP,
+    WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
+    "blackboard.sql.query": _BLACKBOARD_TOOL_GROUP,
+    "blackboard.course_catalog.search": _BLACKBOARD_TOOL_GROUP,
+    "blackboard.calendar.refresh": _BLACKBOARD_TOOL_GROUP,
+    "blackboard.snapshot.sync": _BLACKBOARD_TOOL_GROUP,
+    "blackboard.course_resources.sync": _BLACKBOARD_TOOL_GROUP,
+    "tis.sql.query": _TIS_TOOL_GROUP,
+    "tis.personal_grades.fetch": _TIS_TOOL_GROUP,
+    "tis.credit_gpa.fetch": _TIS_TOOL_GROUP,
+    "tis.selected_courses.fetch": _TIS_TOOL_GROUP,
+}
+
+_TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
+    FILE_CONVERT_TOOL_ID: {
+        "display_name_zh": "文件转换",
+        "display_name_en": FILE_CONVERT_TOOL_DISPLAY_NAME,
+        "description_zh": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
+        "description_en": FILE_CONVERT_TOOL_DESCRIPTION,
+    },
+    WEATHER_CURRENT_TOOL_ID: {
+        "display_name_zh": "当前天气",
+        "display_name_en": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+        "description_zh": "返回指定地点的占位当前天气结果。",
+        "description_en": WEATHER_CURRENT_TOOL_DESCRIPTION,
+    },
+    "blackboard.sql.query": {
+        "display_name_zh": "Blackboard 数据查询",
+        "display_name_en": "Blackboard SQL Query",
+        "description_zh": "查询 Blackboard 本地数据。",
+        "description_en": "Query Blackboard local data.",
+    },
+    "blackboard.course_catalog.search": {
+        "display_name_zh": "课程目录搜索",
+        "display_name_en": "Course Catalog Search",
+        "description_zh": "搜索 Blackboard 课程目录。",
+        "description_en": "Search Blackboard course catalog.",
+    },
+    "blackboard.calendar.refresh": {
+        "display_name_zh": "日历刷新",
+        "display_name_en": "Calendar Refresh",
+        "description_zh": "刷新 Blackboard 课程日历。",
+        "description_en": "Refresh Blackboard course calendar.",
+    },
+    "blackboard.snapshot.sync": {
+        "display_name_zh": "快照同步",
+        "display_name_en": "Snapshot Sync",
+        "description_zh": "同步 Blackboard 基础快照。",
+        "description_en": "Sync Blackboard base snapshots.",
+    },
+    "blackboard.course_resources.sync": {
+        "display_name_zh": "课程资源同步",
+        "display_name_en": "Course Resources Sync",
+        "description_zh": "同步指定课程资源。",
+        "description_en": "Sync resources for a selected Blackboard course.",
+    },
+    "tis.sql.query": {
+        "display_name_zh": "TIS 数据查询",
+        "display_name_en": "TIS SQL Query",
+        "description_zh": "查询 TIS 本地数据。",
+        "description_en": "Query TIS local data.",
+    },
+    "tis.personal_grades.fetch": {
+        "display_name_zh": "成绩获取",
+        "display_name_en": "Personal Grades Fetch",
+        "description_zh": "获取个人成绩记录。",
+        "description_en": "Fetch personal grade records.",
+    },
+    "tis.credit_gpa.fetch": {
+        "display_name_zh": "绩点概览",
+        "display_name_en": "Credit GPA Overview",
+        "description_zh": "获取学分与绩点概览。",
+        "description_en": "Fetch credit and GPA overview.",
+    },
+    "tis.selected_courses.fetch": {
+        "display_name_zh": "已选课程",
+        "display_name_en": "Selected Courses",
+        "description_zh": "获取当前已选课程。",
+        "description_en": "Fetch currently selected courses.",
+    },
+}
+
+_TOOL_PRESENTATION_BY_ID: dict[str, ToolPresentation] = {
+    tool_id: ToolPresentation(group=_TOOL_PRESENTATION_GROUPS_BY_ID[tool_id], **copy)
+    for tool_id, copy in _TOOL_PRESENTATION_COPY_BY_ID.items()
+}
+
+
 def _build_contract_runtime_executable_tools(
     *,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
@@ -316,6 +539,7 @@ def _build_contract_runtime_executable_tools(
                 display_name=binding.display_name,
                 description=binding.description,
                 availability=binding.availability,
+                presentation=_TOOL_PRESENTATION_BY_ID.get(binding.tool_id),
             ),
             execute=binding.execute,
             function_name=binding.function_name,
@@ -347,6 +571,8 @@ def build_default_tool_registry(
                         display_name=FILE_CONVERT_TOOL_DISPLAY_NAME,
                         description=FILE_CONVERT_TOOL_DESCRIPTION,
                         availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=FILE_CONVERT_TOOL_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_CONVERT_TOOL_ID],
                     ),
                     execute=_execute_default_file_convert_tool,
                 ),
@@ -357,6 +583,8 @@ def build_default_tool_registry(
                         display_name=WEATHER_CURRENT_TOOL_DISPLAY_NAME,
                         description=WEATHER_CURRENT_TOOL_DESCRIPTION,
                         availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=WEATHER_CURRENT_TOOL_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[WEATHER_CURRENT_TOOL_ID],
                     ),
                     execute=_execute_default_weather_tool,
                 ),
@@ -367,6 +595,28 @@ def build_default_tool_registry(
         )
     )
     return registry
+
+
+def normalize_tool_catalog_language(language: str | None) -> str:
+    normalized = (language or "").strip().lower()
+    if normalized.startswith("en"):
+        return "en-US"
+    return DEFAULT_TOOL_CATALOG_LANGUAGE
+
+
+def _resolve_builtin_tool_locale(tool_id: str, language: str | None) -> dict[str, str]:
+    normalized_language = normalize_tool_catalog_language(language)
+    localized_tools = _BUILTIN_TOOL_LOCALES.get(normalized_language)
+    if localized_tools is None:
+        localized_tools = _BUILTIN_TOOL_LOCALES[DEFAULT_TOOL_CATALOG_LANGUAGE]
+    localized_fields = localized_tools.get(tool_id)
+    if localized_fields is None:
+        return {
+            "displayName": tool_id,
+            "description": "",
+            "prompt": "",
+        }
+    return dict(localized_fields)
 
 
 def summarize_tool_arguments(arguments: Mapping[str, Any] | None) -> str | None:
@@ -709,6 +959,8 @@ __all__ = [
     "FILE_CONVERT_TOOL_ID",
     "ToolDescriptor",
     "ToolExecutor",
+    "ToolPresentation",
+    "ToolPresentationGroup",
     "ToolRegistry",
     "ToolsetDescriptor",
     "WEATHER_CURRENT_TOOL_DESCRIPTION",
