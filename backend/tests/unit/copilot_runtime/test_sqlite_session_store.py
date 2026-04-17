@@ -249,9 +249,9 @@ def test_sqlite_session_store_logs_backup_and_restore_failures_with_actionable_c
     store = SQLiteSessionStore(db_path=db_path)
     try:
         with caplog.at_level("ERROR", logger="uvicorn.error"):
-            with pytest.raises(ValueError, match="live database file in place"):
+            with pytest.raises(ValueError, match="must be relative to the backups directory"):
                 store.backup_database(target_path=str(db_path))
-            with pytest.raises(ValueError, match="live database file in place"):
+            with pytest.raises(ValueError, match="must stay within the backups directory"):
                 store.restore_database(source_path=str(db_path))
     finally:
         store.dispose()
@@ -266,15 +266,33 @@ def test_sqlite_session_store_logs_backup_and_restore_failures_with_actionable_c
     assert "chat persistence backup failed" in persistence_logs[0]
     assert f"db_path={db_path}" in persistence_logs[0]
     assert f"requested_target_path={db_path}" in persistence_logs[0]
-    assert f"resolved_target_path={db_path}" in persistence_logs[0]
+    assert "resolved_target_path=None" in persistence_logs[0]
     assert "exception_type=ValueError" in persistence_logs[0]
-    assert "exception_message=Cannot backup the live database file in place." in persistence_logs[0]
+    assert "exception_message=Database backup and restore paths must be relative to the backups directory." in persistence_logs[0]
     assert "chat persistence restore failed" in persistence_logs[1]
     assert f"db_path={db_path}" in persistence_logs[1]
     assert f"requested_source_path={db_path}" in persistence_logs[1]
-    assert f"resolved_source_path={db_path}" in persistence_logs[1]
+    assert "resolved_source_path=None" in persistence_logs[1]
     assert "exception_type=ValueError" in persistence_logs[1]
-    assert "exception_message=Cannot restore the live database file in place." in persistence_logs[1]
+    assert "exception_message=Database backup and restore paths must stay within the backups directory." in persistence_logs[1]
+
+
+
+def test_sqlite_session_store_restricts_backup_restore_paths_to_backups_directory(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        backup_result = store.backup_database(target_path="named-backup.bak")
+        assert Path(backup_result.backupPath) == (tmp_path / "backups" / "named-backup.bak").resolve()
+
+        with pytest.raises(ValueError, match="must not traverse parent directories"):
+            store.backup_database(target_path="../escape.db")
+        with pytest.raises(ValueError, match="must use one of"):
+            store.backup_database(target_path="named-backup.txt")
+        restore_result = store.restore_database(source_path=str(tmp_path / "backups" / "named-backup.bak"))
+        assert restore_result.sourcePath == str((tmp_path / "backups" / "named-backup.bak").resolve())
+    finally:
+        store.dispose()
 
 
 

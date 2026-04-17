@@ -294,6 +294,56 @@ def test_projection_service_rebuilds_cached_rows_from_truth_tables(tmp_path: Pat
 
 
 
+def test_projection_service_prefers_last_run_pointer_then_activity_fallback(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    session_factory = create_session_factory(store.engine)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="First request"),
+        )
+        store.mark_run_completed("run-1", assistant_text="First reply")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-2",
+            request=_build_stored_run_input(user_text="Second request"),
+        )
+
+        with run_lifecycle_transaction(session_factory) as repositories:
+            run_one = repositories.runs.require("run-1")
+            run_two = repositories.runs.require("run-2")
+            thread = repositories.threads.require("thread-1")
+
+            run_one.ended_at = run_one.updated_at
+            run_two.updated_at = run_two.created_at
+            run_two.ended_at = None
+            thread.last_run_id = "run-1"
+            repositories.session.flush()
+
+            ProjectionService.refresh_thread_in_transaction(repositories, "thread-1")
+            thread_projection = repositories.projections.get_thread_projection("thread-1")
+            assert thread_projection is not None
+            assert thread_projection.last_run_status == "completed"
+            assert thread_projection.last_activity_at == run_one.ended_at
+
+            thread.last_run_id = None
+            run_two.updated_at = run_one.updated_at
+            run_two.ended_at = run_one.ended_at
+            repositories.session.flush()
+
+            ProjectionService.refresh_thread_in_transaction(repositories, "thread-1")
+            refreshed_projection = repositories.projections.get_thread_projection("thread-1")
+            assert refreshed_projection is not None
+            assert refreshed_projection.last_run_status == "pending"
+            assert refreshed_projection.last_activity_at == run_two.ended_at
+    finally:
+        store.dispose()
+
+
+
 def _build_stored_run_input(*, user_text: str) -> RuntimeStoredRunInput:
     return RuntimeStoredRunInput(
         message_role="user",

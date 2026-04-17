@@ -45,6 +45,8 @@ if TYPE_CHECKING:
 _PERSISTENCE_LOGGER = logging.getLogger("uvicorn.error")
 _MANUAL_THREAD_TITLE_SOURCE = "manual"
 _DUPLICATE_THREAD_TITLE_SUFFIX = "（副本）"
+_BACKUP_DIRECTORY_NAME = "backups"
+_ALLOWED_BACKUP_EXTENSIONS = frozenset({".db", ".sqlite3", ".bak"})
 
 
 class SQLiteSessionStore(RuntimeSessionStore):
@@ -431,7 +433,11 @@ class SQLiteSessionStore(RuntimeSessionStore):
         requested_source_path = str(source_path)
         resolved_source_path: Path | None = None
         try:
-            resolved_source_path = _resolve_database_operation_path(self.db_path, source_path)
+            resolved_source_path = _resolve_database_operation_path(
+                self.db_path,
+                source_path,
+                allow_absolute_within_backup_directory=True,
+            )
             if not resolved_source_path.is_file():
                 raise ValueError(f"Restore source '{resolved_source_path}' does not exist.")
             _ensure_distinct_database_path(self.db_path, resolved_source_path, operation_name="restore")
@@ -528,16 +534,60 @@ def _resolve_database_operation_path(
     path_value: str | Path | None,
     *,
     default_file_name: str | None = None,
+    allow_absolute_within_backup_directory: bool = False,
 ) -> Path:
+    backup_directory = _resolve_backup_directory(db_path)
     if path_value is None:
         if default_file_name is None:
             raise ValueError("A database operation path is required.")
-        candidate = db_path.parent / default_file_name
+        candidate = backup_directory / default_file_name
     else:
-        candidate = Path(path_value)
+        candidate = _normalize_backup_relative_path(
+            path_value,
+            allow_absolute_within_backup_directory=allow_absolute_within_backup_directory,
+            backup_directory=backup_directory,
+        )
         if not candidate.is_absolute():
-            candidate = db_path.parent / candidate
-    return candidate.resolve()
+            candidate = backup_directory / candidate
+    resolved_candidate = candidate.resolve()
+    try:
+        resolved_candidate.relative_to(backup_directory)
+    except ValueError as exc:
+        raise ValueError("Database backup and restore paths must stay within the backups directory.") from exc
+    if resolved_candidate.suffix.lower() not in _ALLOWED_BACKUP_EXTENSIONS:
+        raise ValueError(
+            "Database backup and restore paths must use one of: .db, .sqlite3, .bak."
+        )
+    return resolved_candidate
+
+
+
+def _resolve_backup_directory(db_path: Path) -> Path:
+    return (db_path.parent.parent / _BACKUP_DIRECTORY_NAME).resolve()
+
+
+
+def _normalize_backup_relative_path(
+    path_value: str | Path,
+    *,
+    allow_absolute_within_backup_directory: bool,
+    backup_directory: Path,
+) -> Path:
+    candidate = Path(path_value)
+    if candidate.is_absolute():
+        if not allow_absolute_within_backup_directory:
+            raise ValueError("Database backup and restore paths must be relative to the backups directory.")
+        resolved_candidate = candidate.resolve()
+        try:
+            resolved_candidate.relative_to(backup_directory)
+        except ValueError as exc:
+            raise ValueError("Database backup and restore paths must stay within the backups directory.") from exc
+        return resolved_candidate
+    if any(part == ".." for part in candidate.parts):
+        raise ValueError("Database backup and restore paths must not traverse parent directories.")
+    if any(part in {"", "."} for part in candidate.parts):
+        raise ValueError("Database backup and restore paths must be a normalized relative file path.")
+    return candidate
 
 
 

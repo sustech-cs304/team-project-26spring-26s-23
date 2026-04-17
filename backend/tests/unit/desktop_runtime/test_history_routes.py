@@ -309,7 +309,7 @@ def test_history_routes_support_delete_backup_and_restore(tmp_path: Path) -> Non
         backup_response = client.post(
             "/history/database/backup",
             headers=headers,
-            json={"targetPath": "backups/copilot-chat-backup.db"},
+            json={"targetPath": "copilot-chat-backup.db"},
         )
         delete_response = client.request("DELETE", "/history/threads/thread-1", headers=headers)
         hidden_threads_response = client.get("/history/threads", headers=headers)
@@ -373,15 +373,14 @@ def test_history_routes_reject_in_place_backup_and_restore_requests(tmp_path: Pa
         restore_response = client.post(
             "/history/database/restore",
             headers=headers,
-            json={"sourcePath": "copilot-chat.db"},
+            json={"sourcePath": "../copilot-chat.db"},
         )
 
-    assert backup_response.status_code == 400
+    assert backup_response.status_code == 200
     assert restore_response.status_code == 400
-    assert backup_response.json()["detail"]["code"] == "invalid_backup_request"
-    assert "Cannot backup the live database file in place." in backup_response.json()["detail"]["message"]
+    assert backup_response.json()["backupPath"].endswith("backups\\copilot-chat.db")
     assert restore_response.json()["detail"]["code"] == "invalid_restore_request"
-    assert "Cannot restore the live database file in place." in restore_response.json()["detail"]["message"]
+    assert "must not traverse parent directories" in restore_response.json()["detail"]["message"]
 
 
 

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import type { ReactNode } from 'react'
 
 import { enhanceRuntimeAgents } from '../config'
 import { createAssistantSessionShell } from './assistant-workspace-controller'

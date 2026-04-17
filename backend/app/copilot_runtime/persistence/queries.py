@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .drift import PersistedHistoryDriftEvaluator
 from .models.chat import RunEventModel, RunModel, RunProjectionModel, ThreadModel, ThreadProjectionModel
-from .projections import ProjectionService
+from .projections import ProjectionService, _resolve_latest_thread_run
 from .query_dtos import (
     PersistedDatabaseBackupResponse,
     PersistedDatabaseRestoreResponse,
@@ -194,18 +194,19 @@ def _build_thread_summary(
     drift_evaluator: PersistedHistoryDriftEvaluator | None = None,
 ) -> PersistedThreadSummaryDTO:
     thread_projection = _ensure_thread_projection(repositories, thread_model.id)
-    latest_run = None
+    run_models = repositories.runs.list_for_thread(thread_model.id)
+    latest_run = _resolve_latest_thread_run(
+        repositories,
+        thread_model.id,
+        runs=run_models,
+        last_run_id=thread_model.last_run_id,
+    )
     availability_drift = None
-    if drift_evaluator is not None:
-        if thread_model.last_run_id is not None:
-            latest_run = repositories.runs.get(thread_model.last_run_id)
-        if latest_run is None:
-            latest_run = repositories.runs.latest_for_thread(thread_model.id)
-        if latest_run is not None:
-            availability_drift = drift_evaluator.evaluate(
-                run=latest_run,
-                bound_agent_id=thread_model.bound_agent_id,
-            )
+    if drift_evaluator is not None and latest_run is not None:
+        availability_drift = drift_evaluator.evaluate(
+            run=latest_run,
+            bound_agent_id=thread_model.bound_agent_id,
+        )
     return PersistedThreadSummaryDTO(
         threadId=thread_model.id,
         boundAgentId=thread_model.bound_agent_id,

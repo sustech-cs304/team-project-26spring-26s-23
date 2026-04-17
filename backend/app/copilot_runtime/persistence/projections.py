@@ -89,7 +89,7 @@ class ProjectionService:
     ) -> None:
         thread = repositories.threads.require(thread_id)
         runs = repositories.runs.list_for_thread(thread_id)
-        latest_run = runs[-1] if runs else None
+        latest_run = _resolve_latest_thread_run(repositories, thread_id, runs=runs, last_run_id=thread.last_run_id)
         latest_projection = None
         if latest_run is not None:
             latest_projection = repositories.projections.get_run_projection(latest_run.id)
@@ -130,6 +130,32 @@ class ProjectionService:
             drift_summary_json=_build_drift_placeholder(latest_run),
             timeline_preview_json=_build_timeline_preview(latest_projection),
         )
+
+
+def _resolve_latest_thread_run(
+    repositories: PersistenceRepositories,
+    thread_id: str,
+    *,
+    runs: tuple[RunModel, ...],
+    last_run_id: str | None,
+) -> RunModel | None:
+    if last_run_id is not None:
+        pointed_run = repositories.runs.get(last_run_id)
+        if pointed_run is not None and pointed_run.thread_id == thread_id:
+            return pointed_run
+
+    if len(runs) == 0:
+        return None
+
+    return max(
+        runs,
+        key=lambda run: (
+            run.ended_at or run.updated_at or run.created_at,
+            run.updated_at,
+            run.created_at,
+            run.id,
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)

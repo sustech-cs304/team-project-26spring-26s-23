@@ -154,7 +154,8 @@ async function requestHistory<TResult extends { ok: boolean } | { ok: false; err
     }
 
     const runtimeUrl = new URL(input.path, normalizeRuntimeBaseUrl(runtimeBaseUrl)).toString()
-    const token = normalizeOptionalString(input.options.getLocalToken())
+    const token = normalizeOptionalString(service.getLocalToken())
+      ?? normalizeOptionalString(input.options.getLocalToken())
     const headers = new Headers()
     if (token !== null) {
       headers.set(LOCAL_RUNTIME_TOKEN_HEADER, token)

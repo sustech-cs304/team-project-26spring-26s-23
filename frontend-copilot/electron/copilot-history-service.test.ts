@@ -91,6 +91,35 @@ describe('createElectronCopilotHistoryService', () => {
     expect((init?.headers as Headers).get('X-Local-Token')).toBe('history-token')
   })
 
+  it('prefers the hosted backend local token and falls back only when it is unavailable', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify({ ok: true, version: 'chat-history-v1', threads: [] }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = createHostedBackendServiceStub({
+      runtimeBaseUrl: 'http://127.0.0.1:8765',
+      localToken: 'service-token',
+    })
+    const service = createElectronCopilotHistoryService({
+      ensureHostedBackendService: async () => hostedBackendService,
+      getLocalToken: () => 'fallback-token',
+      getDebugModeEnabled: () => debugModeEnabled,
+    })
+
+    await service.listThreads()
+    const firstHeaders = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    expect((firstHeaders?.headers as Headers).get('X-Local-Token')).toBe('service-token')
+
+    hostedBackendService.getLocalToken = vi.fn(() => null)
+    await service.listThreads()
+    const secondHeaders = fetchMock.mock.calls[1]?.[1] as RequestInit | undefined
+    expect((secondHeaders?.headers as Headers).get('X-Local-Token')).toBe('fallback-token')
+  })
+
   it('surfaces backend detail messages for failing history detail requests', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: false,
@@ -445,6 +474,7 @@ describe('createElectronCopilotHistoryService', () => {
 
 function createHostedBackendServiceStub(input: {
   runtimeBaseUrl: string | null
+  localToken?: string | null
 }): HostedBackendService {
   return {
     start: vi.fn(async () => ({ status: 'ready' } as never)),
@@ -452,6 +482,6 @@ function createHostedBackendServiceStub(input: {
     getState: vi.fn(() => ({ status: 'ready' } as never)),
     getLastFailure: vi.fn(() => null),
     getRuntimeBaseUrl: vi.fn(() => input.runtimeBaseUrl),
-    getLocalToken: vi.fn(() => 'history-token'),
+    getLocalToken: vi.fn(() => input.localToken ?? 'history-token'),
   }
 }
