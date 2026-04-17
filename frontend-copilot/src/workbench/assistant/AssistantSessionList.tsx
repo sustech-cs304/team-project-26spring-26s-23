@@ -86,12 +86,16 @@ export function AssistantSessionList({
 }: AssistantSessionListProps) {
   const copy = getAssistantSessionCopy(language)
 
+  const sessionListHeading = selectedAgent?.label
+    ?? sessionListState.sessions[0]?.boundAgent.label
+    ?? copy.waitingForAgent
+
   return (
     <aside className="workspace-panel topic-panel" aria-label={copy.sessionListAriaLabel}>
       <header className="panel-head">
         <p className="panel-head__eyebrow">{copy.sessionEyebrow}</p>
         <h2 className="panel-head__title">
-          {selectedAgent?.label ?? copy.waitingForAgent}
+          {sessionListHeading}
         </h2>
       </header>
 

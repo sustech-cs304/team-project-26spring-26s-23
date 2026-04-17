@@ -1802,6 +1802,9 @@ describe('AssistantWorkspace render + interactions', () => {
       />,
     )
 
+    await waitForAssistantWorkspaceCondition(() => rendered.queryByTestId('assistant-session-list') !== null)
+    expect(rendered.container.textContent).toContain(historyFixture.summary.title)
+
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === historyFixture.summary.threadId
       && getLastMockCopilotChatPanelProps().selectedAgent?.id === historyFixture.summary.boundAgentId
