@@ -80,6 +80,37 @@ def test_resolve_model_no_longer_falls_back_to_environment_keys() -> None:
 
 
 
+def test_open_event_stream_uses_route_scoped_stream_model_without_global_executor_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = PydanticAIAgentExecutor()
+    resolved_model_ids: list[str] = []
+
+    def fake_build_stream_model(model_route: ResolvedRuntimeModelRoute) -> TestModel:
+        resolved_model_ids.append(model_route.model_id)
+        return TestModel(custom_output_text="route-scoped model", seed=0)
+
+    monkeypatch.setattr(executor, "_build_stream_model", fake_build_stream_model)
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-request-model-only",
+                agent_name="default",
+                user_prompt="Use the resolved route model.",
+                message_history=[],
+                model_route=_build_resolved_route(model_id="provider-route-model"),
+                request_options={},
+            )
+        )
+    )
+
+    assert resolved_model_ids == ["provider-route-model"]
+    assert result["error"] is None
+    assert result["output"] == "route-scoped model"
+
+
+
 def test_run_raises_agent_execution_error_when_agent_returns_empty_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -329,7 +360,11 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
         )
         return SimpleNamespace(output="我先查一下。查到了。")
 
-    monkeypatch.setattr(executor, "_build_runtime_agent", lambda *, enabled_tools: executor._agent)
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -423,7 +458,11 @@ def test_open_event_stream_emits_failed_tool_event_when_completed_raw_tool_call_
         await event_stream_handler(SimpleNamespace(), runtime_events())
         return SimpleNamespace(output="我先查一下。")
 
-    monkeypatch.setattr(executor, "_build_runtime_agent", lambda *, enabled_tools: executor._agent)
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -1322,7 +1361,11 @@ def test_open_event_stream_propagates_cancelled_error_from_agent_run(
         _ = (user_prompt, kwargs)
         raise asyncio.CancelledError()
 
-    monkeypatch.setattr(executor, "_build_runtime_agent", lambda *, enabled_tools: executor._agent)
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     with pytest.raises(asyncio.CancelledError):
@@ -1400,12 +1443,12 @@ async def _collect_event_stream(stream) -> dict[str, object]:
     }
 
 
-def _build_resolved_route() -> ResolvedRuntimeModelRoute:
+def _build_resolved_route(*, model_id: str = "gpt-4.1") -> ResolvedRuntimeModelRoute:
     return ResolvedRuntimeModelRoute(
         provider_profile_id="provider-1",
         provider="openai",
         endpoint_type="openai-compatible",
         base_url="https://example.com/v1",
-        model_id="gpt-4.1",
+        model_id=model_id,
         api_key="test-api-key",
     )

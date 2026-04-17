@@ -390,7 +390,7 @@ class _PydanticAIEventStream:
         return self._run_task
 
     def _flush_pending_events_to_queue(self, *, reason: str) -> None:
-        pending_events = self._event_buffer.drain_pending_events(reason=reason)
+        pending_events = self._event_buffer.drain()
         for pending_event in pending_events:
             self._event_queue.put_nowait(pending_event)
 
@@ -477,7 +477,13 @@ class PydanticAIAgentExecutor:
         model_override: Any | None = None,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> _PydanticAIEventStream:
-        resolved_model = self._resolved_explicit_model(model_override) or self.resolve_model()
+        resolved_model = self._resolved_explicit_model(model_override)
+        if resolved_model is None:
+            resolved_model = (
+                self._build_stream_model(model_route)
+                if model_route.route_ref is not None
+                else self.resolve_model()
+            )
         enabled_tool_ids = tuple(dict.fromkeys(enabled_tools))
         event_buffer = RuntimeExecutionEventBuffer(
             event_factory=RuntimeExecutionEventFactory(run_id=run_id),
@@ -501,7 +507,10 @@ class PydanticAIAgentExecutor:
             run_id=run_id,
             debug_enabled=debug_enabled,
         )
-        agent = self._build_runtime_agent(enabled_tools=enabled_tool_ids)
+        agent = self._build_runtime_agent(
+            enabled_tools=enabled_tool_ids,
+            resolved_model=resolved_model,
+        )
         stream = _PydanticAIEventStream(
             run_id=run_id,
             agent=agent,
@@ -517,10 +526,25 @@ class PydanticAIAgentExecutor:
         )
         return stream
 
-    def _build_runtime_agent(self, *, enabled_tools: Sequence[str] | None) -> Agent[Any, Any]:
-        agent = Agent(self.resolve_model())
+    def _build_runtime_agent(
+        self,
+        *,
+        enabled_tools: Sequence[str] | None,
+        resolved_model: Any,
+    ) -> Agent[Any, Any]:
+        agent = Agent(resolved_model)
         self._register_weather_tool(agent, enabled_tools)
         return agent
+
+    def _build_stream_model(self, model_route: ResolvedRuntimeModelRoute) -> Any:
+        try:
+            return self.provider_adapter_registry.build_stream_model(model_route=model_route)
+        except RuntimeProviderAdapterError as exc:
+            raise ProviderAdapterExecutionError(
+                code=exc.code,
+                message=str(exc),
+                details=exc.details,
+            ) from exc
 
     def _register_weather_tool(self, agent: Agent[Any, Any], enabled_tools: Sequence[str] | None) -> None:
         try:
