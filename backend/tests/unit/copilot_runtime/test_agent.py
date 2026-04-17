@@ -26,6 +26,8 @@ from app.copilot_runtime.agent import (
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
 )
+from app.copilot_runtime.tool_approval_coordinator import RuntimeToolApprovalCoordinator
+from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
@@ -557,6 +559,163 @@ def test_execute_bound_tool_returns_tool_not_enabled_failure_without_raising() -
     assert emitted_tool_events[-1].error_summary == (
         "Tool 'tool.weather-current' is not enabled for this run."
     )
+
+
+
+def test_execute_bound_tool_allow_mode_skips_waiting_approval() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-allow",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-allow",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            arguments={"location": "Shenzhen"},
+        )
+    )
+
+    assert result["location"] == "Shenzhen"
+    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_ask_mode_waits_for_manual_approval_then_executes() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-approved",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-approved",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="ask"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_resolve() -> dict[str, Any]:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        phases_before_resolution = [event.phase for event in emitted_tool_events]
+        pending_request = approval_coordinator.get_request(
+            run_id="run-weather-approved",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-approved",
+        )
+        assert pending_request is not None
+        approval_coordinator.resolve(
+            run_id="run-weather-approved",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-approved",
+            decision="approved",
+        )
+        result = await task
+        return {
+            "result": result,
+            "phases_before_resolution": phases_before_resolution,
+        }
+
+    outcome = asyncio.run(run_and_resolve())
+
+    assert outcome["result"]["location"] == "Shenzhen"
+    assert outcome["phases_before_resolution"] == ["started", "waiting_approval"]
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_ask_mode_returns_failure_when_rejected() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-rejected",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-rejected",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="ask"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_reject() -> dict[str, Any]:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        phases_before_resolution = [event.phase for event in emitted_tool_events]
+        approval_coordinator.resolve(
+            run_id="run-weather-rejected",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-rejected",
+            decision="rejected",
+        )
+        result = await task
+        return {
+            "result": result,
+            "phases_before_resolution": phases_before_resolution,
+        }
+
+    outcome = asyncio.run(run_and_reject())
+
+    assert outcome["phases_before_resolution"] == ["started", "waiting_approval"]
+    assert outcome["result"] == {
+        "status": "error",
+        "error": {
+            "code": "tool_approval_rejected",
+            "message": "Tool call was rejected by the user.",
+            "retryable": False,
+            "details": {
+                "decision": "rejected",
+                "source": "manual",
+                "mode": "ask",
+            },
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": WEATHER_CURRENT_TOOL_ID,
+            "toolCallId": f"{WEATHER_CURRENT_TOOL_ID}:call-rejected",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "failed"]
+    assert emitted_tool_events[-1].error_summary == "Tool call was rejected by the user."
+    assert approval_coordinator.snapshot() == ()
 
 
 
