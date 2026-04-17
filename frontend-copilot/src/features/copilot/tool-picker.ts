@@ -1,3 +1,4 @@
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
 import type { RuntimeToolDirectoryEntry } from './thread-run-contract'
 import {
   resolveCopilotToolPlatformGroup,
@@ -8,6 +9,11 @@ export interface CopilotToolGroup {
   key: string
   title: string
   tools: RuntimeToolDirectoryEntry[]
+}
+
+export interface CopilotToolViewModel {
+  tool: RuntimeToolDirectoryEntry
+  disabled: boolean
 }
 
 export function filterCopilotTools(input: {
@@ -95,38 +101,83 @@ export function groupCopilotTools(input: {
     }))
 }
 
-export function selectAllToolIds(tools: RuntimeToolDirectoryEntry[]): string[] {
-  return tools
-    .map((tool) => tool.toolId.trim())
-    .filter((toolId, index, toolIds) => toolId !== '' && toolIds.indexOf(toolId) === index)
+export function buildCopilotToolViewModels(input: {
+  tools: RuntimeToolDirectoryEntry[]
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
+}): CopilotToolViewModel[] {
+  return input.tools.map((tool) => ({
+    tool,
+    disabled: isCopilotToolDenied(tool.toolId, input.policy),
+  }))
 }
 
-export function invertToolSelection(
-  tools: RuntimeToolDirectoryEntry[],
-  selectedToolIds: string[],
-): string[] {
-  const selectedToolIdSet = new Set(selectedToolIds)
+export function sanitizeEnabledToolIds(input: {
+  selectedToolIds: readonly string[]
+  tools: readonly RuntimeToolDirectoryEntry[]
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
+}): string[] {
+  const knownToolIdSet = new Set(input.tools.map((tool) => tool.toolId))
 
-  return tools
+  return dedupeToolIds(input.selectedToolIds).filter((toolId) => {
+    return knownToolIdSet.has(toolId) && !isCopilotToolDenied(toolId, input.policy)
+  })
+}
+
+export function selectAllToolIds(input: {
+  tools: RuntimeToolDirectoryEntry[]
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
+}): string[] {
+  return sanitizeEnabledToolIds({
+    selectedToolIds: input.tools.map((tool) => tool.toolId.trim()),
+    tools: input.tools,
+    policy: input.policy,
+  })
+}
+
+export function invertToolSelection(input: {
+  tools: RuntimeToolDirectoryEntry[]
+  selectedToolIds: string[]
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
+}): string[] {
+  const selectedToolIdSet = new Set(sanitizeEnabledToolIds({
+    selectedToolIds: input.selectedToolIds,
+    tools: input.tools,
+    policy: input.policy,
+  }))
+
+  return input.tools
     .map((tool) => tool.toolId)
-    .filter((toolId) => !selectedToolIdSet.has(toolId))
+    .filter((toolId) => !selectedToolIdSet.has(toolId) && !isCopilotToolDenied(toolId, input.policy))
 }
 
 export function pickRecommendedToolIds(input: {
   tools: RuntimeToolDirectoryEntry[]
   recommendedToolIds: string[]
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
 }): string[] {
   const recommendedToolIdSet = new Set(input.recommendedToolIds)
 
-  return input.tools
-    .map((tool) => tool.toolId)
-    .filter((toolId) => recommendedToolIdSet.has(toolId))
+  return sanitizeEnabledToolIds({
+    selectedToolIds: input.tools
+      .map((tool) => tool.toolId)
+      .filter((toolId) => recommendedToolIdSet.has(toolId)),
+    tools: input.tools,
+    policy: input.policy,
+  })
 }
 
-export function toggleToolIdInSelection(selectedToolIds: string[], toolId: string): string[] {
-  return selectedToolIds.includes(toolId)
-    ? selectedToolIds.filter((currentToolId) => currentToolId !== toolId)
-    : [...selectedToolIds, toolId]
+export function toggleToolIdInSelection(input: {
+  selectedToolIds: string[]
+  toolId: string
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
+}): string[] {
+  if (isCopilotToolDenied(input.toolId, input.policy)) {
+    return sanitizeSelectedToolIds(input.selectedToolIds)
+  }
+
+  return input.selectedToolIds.includes(input.toolId)
+    ? input.selectedToolIds.filter((currentToolId) => currentToolId !== input.toolId)
+    : [...sanitizeSelectedToolIds(input.selectedToolIds), input.toolId]
 }
 
 function compareGroupedTools(
@@ -168,4 +219,19 @@ function resolveAvailabilityOrder(availability: string): number {
 
 function resolveRecommendationOrder(toolId: string, recommendedToolIdSet: Set<string>): number {
   return recommendedToolIdSet.has(toolId) ? 0 : 1
+}
+
+function isCopilotToolDenied(toolId: string, policy: SettingsWorkspaceToolPermissionPolicyState | null): boolean {
+  const mode = policy?.toolPermissions[toolId]?.mode ?? policy?.defaultMode ?? null
+  return mode === 'deny'
+}
+
+function sanitizeSelectedToolIds(selectedToolIds: readonly string[]): string[] {
+  return dedupeToolIds(selectedToolIds)
+}
+
+function dedupeToolIds(toolIds: readonly string[]): string[] {
+  return toolIds
+    .map((toolId) => toolId.trim())
+    .filter((toolId, index, values) => toolId !== '' && values.indexOf(toolId) === index)
 }

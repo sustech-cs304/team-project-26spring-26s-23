@@ -50,6 +50,7 @@ export interface CopilotComposerShellProps {
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   draft: CopilotChatComposerDraft
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   onDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCancel: () => void
@@ -68,6 +69,7 @@ export function CopilotComposerShell({
   modelGroups,
   thinkingCapability,
   draft,
+  toolPermissionPolicy = null,
   onDraftChange,
   onSubmit,
   onCancel,
@@ -281,6 +283,7 @@ export function CopilotComposerShell({
           tools={capabilities.allAvailableTools}
           selectedToolIds={draft.enabledTools}
           recommendedToolIds={capabilities.recommendedToolsForAgent}
+          toolPermissionPolicy={toolPermissionPolicy}
           disabled={controlsDisabled}
           onChangeToolIds={(enabledTools: string[]) => {
             onDraftChange((current) => ({

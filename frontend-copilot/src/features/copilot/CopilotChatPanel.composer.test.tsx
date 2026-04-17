@@ -645,6 +645,67 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('keeps denied tools visible but disabled in the picker and strips them before send', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        mcp: {
+          toolPermissionPolicy: {
+            version: 1,
+            defaultMode: 'ask',
+            toolPermissions: {
+              'tool.remote-search': { mode: 'deny' },
+            },
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(false)
+    expect(deniedOption.className).not.toContain('copilot-tool-picker__option--disabled')
+    expect(allowedOption.disabled).toBe(false)
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请在清洗 deny 后发送')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      enabledTools: [],
+      message: {
+        content: '请在清洗 deny 后发送',
+      },
+    })
+
+    rendered.unmount()
+  })
+
   it('echoes user and assistant messages after a successful send with model icon and model name in the assistant header', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({

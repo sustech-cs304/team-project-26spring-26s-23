@@ -4,6 +4,7 @@ import type {
   ThinkingLevelIntent,
 } from '../../workbench/types'
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
+import { sanitizeEnabledToolIds } from './tool-picker'
 import {
   THINKING_BUDGET_DEFAULT_MAX_TOKENS,
   THINKING_BUDGET_DEFAULT_MIN_TOKENS,
@@ -154,7 +155,11 @@ export function buildRuntimeMessageSendInput(input: {
   }
 
   const thinkingSelection = cloneRuntimeThinkingSelection(input.draft.thinkingSelection)
-  const enabledTools = dedupeToolIds(input.draft.enabledTools)
+  const enabledTools = sanitizeEnabledToolIds({
+    selectedToolIds: input.draft.enabledTools,
+    tools: input.sessionShell.capabilities.allAvailableTools,
+    policy: input.toolPermissionPolicy ?? null,
+  })
   const toolPermissionPolicy = buildRuntimeToolPermissionPolicy({
     enabledTools,
     policy: input.toolPermissionPolicy ?? null,

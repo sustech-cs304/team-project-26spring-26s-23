@@ -23,6 +23,7 @@ import {
   upsertToolStepTurn,
   buildRuntimeToolPermissionPolicy,
 } from './copilot-chat-helpers'
+import { sanitizeEnabledToolIds } from './tool-picker'
 import { RuntimeRequestError } from './thread-run-contract'
 import {
   createRuntimeCanonicalThinkingSelection,
@@ -182,6 +183,35 @@ describe('copilot chat helpers', () => {
     expect(input).not.toHaveProperty('thinkingLevelIntent')
   })
 
+  it('drops denied tools from enabledTools before sending even when stale local selection still includes them', () => {
+    const input = buildRuntimeMessageSendInput({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionShell: createSessionShell(),
+      draft: {
+        ...createEmptyComposerDraft(),
+        messageText: 'deny cleanup',
+        selectedModelId: 'provider-openai:openai/gpt-4.1',
+        selectedModelRoute: createRuntimeModelRoute(),
+        enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
+      },
+      toolPermissionPolicy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.remote-search': { mode: 'deny' },
+        },
+      },
+      requestOptions: {},
+    })
+
+    expect(input.enabledTools).toEqual(['tool.file-convert'])
+    expect(input.toolPermissionPolicy).toEqual({
+      schemaVersion: 1,
+      defaultMode: 'ask',
+      toolModes: {},
+    })
+  })
+
   it('keeps budget selections structured without reviving compat intent aliases', () => {
     const budgetSelection = createRuntimeThinkingSelection({
       series: 'compat-budget-tokens-v1',
@@ -237,6 +267,23 @@ describe('copilot chat helpers', () => {
         'tool.remote-search': 'allow',
       },
     })
+  })
+
+  it('sanitizes denied and unknown tool ids while preserving allowed selectable tools', () => {
+    expect(sanitizeEnabledToolIds({
+      selectedToolIds: ['tool.remote-search', 'tool.file-convert', 'tool.unknown', 'tool.file-convert'],
+      tools: [
+        { toolId: 'tool.remote-search', kind: 'builtin', availability: 'available', displayName: '远程搜索', description: '联网搜索' },
+        { toolId: 'tool.file-convert', kind: 'builtin', availability: 'available', displayName: '文件转换', description: '文件格式转换' },
+      ],
+      policy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.remote-search': { mode: 'deny' },
+        },
+      },
+    })).toEqual(['tool.file-convert'])
   })
 
   it('remembers structured selections per model and normalizes them against the current capability shape', () => {

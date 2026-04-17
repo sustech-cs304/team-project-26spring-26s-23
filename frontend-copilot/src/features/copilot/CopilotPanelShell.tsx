@@ -11,6 +11,7 @@ import {
   type SetStateAction,
 } from 'react'
 
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
 import { getCopilotChatCopy } from '../../workbench/locale'
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
@@ -70,6 +71,7 @@ export interface CopilotPanelShellProps {
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onCancelCurrentRun: () => void
@@ -301,6 +303,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           modelGroups={props.modelGroups}
           thinkingCapability={props.thinkingCapability}
           draft={props.composerDraft}
+          toolPermissionPolicy={props.toolPermissionPolicy}
           onDraftChange={props.onComposerDraftChange}
           onSubmit={props.onSend}
           onCancel={props.onCancelCurrentRun}
