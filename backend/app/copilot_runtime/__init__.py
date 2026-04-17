@@ -27,6 +27,8 @@ from .contracts import (
     RuntimeRunCancelRequest,
     RuntimeRunCancelResponse,
     RuntimeRunStartRequest,
+    RuntimeToolApprovalResolveRequest,
+    RuntimeToolApprovalResolveResponse,
     RuntimeRunStartResponse,
     RuntimeRunStreamRequest,
     RuntimeRunView,
@@ -41,7 +43,14 @@ from .contracts import (
 from .persistence import SQLiteSessionStore
 from .router import build_router
 from .runtime_session_store import RuntimeSessionStore
-from .tool_permissions import RuntimeToolPermissionResolver
+from .tool_approval_coordinator import (
+    RuntimeToolApprovalCoordinator,
+    RuntimeToolApprovalRequest,
+    RuntimeToolApprovalResolution,
+    ToolApprovalConflictError,
+    ToolApprovalNotFoundError,
+)
+from .tool_permissions import RuntimeToolPermissionResolver, parse_tool_timeout_seconds
 from .tool_registry import (
     ToolDescriptor,
     ToolRegistry,
@@ -74,6 +83,8 @@ __all__ = [
     "RuntimeMessageExecutionPolicy",
     "RuntimeMessagePayload",
     "RuntimeRunCancelRequest",
+    "RuntimeToolApprovalResolveRequest",
+    "RuntimeToolApprovalResolveResponse",
     "RuntimeToolPermissionPolicy",
     "RuntimeRunCancelResponse",
     "RuntimeRunStartRequest",
@@ -94,7 +105,13 @@ __all__ = [
     "ToolRegistry",
     "ToolsetDescriptor",
     "normalize_tool_catalog_language",
+    "RuntimeToolApprovalCoordinator",
+    "RuntimeToolApprovalRequest",
+    "RuntimeToolApprovalResolution",
     "RuntimeToolPermissionResolver",
+    "ToolApprovalConflictError",
+    "ToolApprovalNotFoundError",
+    "parse_tool_timeout_seconds",
     "build_default_agent_registry",
     "build_default_runtime_dependencies",
     "build_default_tool_registry",

@@ -268,7 +268,10 @@ class RuntimeMessagePayload(RuntimeContract):
     content: str
 
 
-RuntimeToolPermissionMode = Literal["allow", "ask", "deny"]
+RuntimeToolPermissionMode = Literal["allow", "ask", "delay", "deny"]
+RuntimeToolApprovalDecision = Literal["approved", "rejected"]
+RuntimeToolApprovalStatus = Literal["pending", "approved", "rejected", "timed_out"]
+RuntimeToolTimeoutAction = Literal["approve", "deny"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +279,8 @@ class RuntimeToolPermissionPolicy(RuntimeContract):
     schemaVersion: int
     defaultMode: RuntimeToolPermissionMode
     toolModes: dict[str, RuntimeToolPermissionMode] = field(default_factory=dict)
+    toolTimeoutSeconds: dict[str, int | str] = field(default_factory=dict)
+    toolTimeoutActions: dict[str, RuntimeToolTimeoutAction] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,6 +317,24 @@ class RuntimeRunStreamRequest(RuntimeContract):
 @dataclass(frozen=True, slots=True)
 class RuntimeRunCancelRequest(RuntimeContract):
     run_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeToolApprovalResolveRequest(RuntimeContract):
+    run_id: str
+    tool_call_id: str
+    decision: RuntimeToolApprovalDecision
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeToolApprovalResolveResponse(RuntimeContract):
+    ok: bool
+    runId: str
+    toolCallId: str
+    decision: RuntimeToolApprovalDecision
+    status: RuntimeToolApprovalStatus
+    resolvedAt: datetime
+    source: str
 
 
 @dataclass(frozen=True, slots=True)

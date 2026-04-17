@@ -351,6 +351,8 @@ def test_extract_run_start_request_reads_tool_permission_policy() -> None:
         "toolModes": {
             "tool.file-convert": "allow",
         },
+        "toolTimeoutSeconds": {},
+        "toolTimeoutActions": {},
     }
 
 

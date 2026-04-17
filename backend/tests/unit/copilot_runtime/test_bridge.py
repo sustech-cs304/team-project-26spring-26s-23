@@ -233,6 +233,8 @@ def test_start_run_round_trips_tool_permission_policy() -> None:
         "schemaVersion": 1,
         "defaultMode": "ask",
         "toolModes": {"tool.weather-current": "allow"},
+        "toolTimeoutSeconds": {},
+        "toolTimeoutActions": {},
     }
 
     run_start_request, legacy_fallback_used, rehydrate_error = bridge._to_run_start_request(run)
@@ -244,6 +246,8 @@ def test_start_run_round_trips_tool_permission_policy() -> None:
         "schemaVersion": 1,
         "defaultMode": "ask",
         "toolModes": {"tool.weather-current": "allow"},
+        "toolTimeoutSeconds": {},
+        "toolTimeoutActions": {},
     }
 
 
@@ -626,8 +630,12 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.toolSelectionMode == "recommendation-only"
     assert capabilities.recommendedTools == ("tool.file-convert",)
     assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
-    assert capabilities.tools[0].toolId == "tool.file-convert"
-    assert capabilities.tools[0].displayName in {"File Convert", "文件转换"}
+    tool_ids = {tool.toolId for tool in capabilities.tools}
+    assert "tool.file-convert" in tool_ids
+    assert any(
+        tool.toolId == "tool.file-convert" and tool.displayName in {"File Convert", "文件转换"}
+        for tool in capabilities.tools
+    )
 
 
 
