@@ -17,6 +17,8 @@ from app.copilot_runtime.tool_registry import (
     FILE_CONVERT_TOOL_DESCRIPTION,
     FILE_CONVERT_TOOL_DISPLAY_NAME,
     FILE_CONVERT_TOOL_ID,
+    FILE_TOOL_READ_DESCRIPTION,
+    FILE_TOOL_READ_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
     WEATHER_CURRENT_TOOL_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_ID,
@@ -25,6 +27,7 @@ from app.copilot_runtime.tool_registry import (
     summarize_tool_arguments,
     summarize_tool_result,
 )
+from app.tooling.file_tools import FILE_TOOL_READ_FUNCTION_NAME, FILE_TOOL_READ_ID
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
@@ -57,7 +60,7 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
 
 def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
-    expected_tool_ids = (FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID, *CONTRACT_TOOL_IDS)
+    expected_tool_ids = (FILE_TOOL_READ_ID, FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID, *CONTRACT_TOOL_IDS)
     catalog = registry.build_tool_catalog()
     catalog_by_id = {entry["toolId"]: entry for entry in catalog}
 
@@ -67,6 +70,26 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
             "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
             "toolCount": len(expected_tool_ids),
         }
+    }
+    assert catalog_by_id[FILE_TOOL_READ_ID] == {
+        "toolId": FILE_TOOL_READ_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "文件读取",
+        "description": "按行分页读取工作区内 UTF-8 文本文件。",
+        "prompt": "使用此工具先读取工作区文本文件，再继续分析或修改。",
+        "displayNameZh": "文件读取",
+        "displayNameEn": FILE_TOOL_READ_DISPLAY_NAME,
+        "descriptionZh": "按行分页读取工作区内 UTF-8 文本文件。",
+        "descriptionEn": FILE_TOOL_READ_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
     }
     assert catalog_by_id[FILE_CONVERT_TOOL_ID] == {
         "toolId": FILE_CONVERT_TOOL_ID,
@@ -140,6 +163,8 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
     zh_catalog = {entry["toolId"]: entry for entry in registry.build_tool_catalog(language="zh-CN")}
     en_catalog = {entry["toolId"]: entry for entry in registry.build_tool_catalog(language="en-US")}
 
+    assert zh_catalog[FILE_TOOL_READ_ID]["displayName"] == "文件读取"
+    assert en_catalog[FILE_TOOL_READ_ID]["displayName"] == FILE_TOOL_READ_DISPLAY_NAME
     assert zh_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == "文件转换"
     assert en_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == FILE_CONVERT_TOOL_DISPLAY_NAME
     assert zh_catalog[FILE_CONVERT_TOOL_ID]["prompt"] != en_catalog[FILE_CONVERT_TOOL_ID]["prompt"]
@@ -191,6 +216,23 @@ def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() 
         },
         "required": ["keyword"],
     }
+
+
+
+def test_default_tool_registry_exposes_file_read_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
+    registry = build_default_tool_registry(workspace_root=tmp_path)
+    target = tmp_path / "readme.txt"
+    target.write_text("first\nsecond\n", encoding="utf-8")
+
+    resolved_tool = registry.resolve_tool(FILE_TOOL_READ_ID)
+    result = asyncio.run(resolved_tool.execute({"path": "readme.txt", "offset": 2, "limit": 1}))
+
+    assert resolved_tool.descriptor.kind == "builtin"
+    assert resolved_tool.function_name == FILE_TOOL_READ_FUNCTION_NAME
+    assert resolved_tool.parameters_json_schema is not None
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert result["output"]["data"]["content"] == {"text": "second"}
 
 
 

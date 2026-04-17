@@ -8,7 +8,10 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from pathlib import Path
+
 from app.tools.file_convert import convert_file_to_str
+from app.tooling.file_tools import FILE_TOOL_READ_ID, build_file_tool_read_runtime_binding
 from app.tooling.runtime_adapter.copilot_runtime import (
     ToolHostCapabilitiesFactory,
     build_default_contract_runtime_bindings,
@@ -28,6 +31,9 @@ FILE_CONVERT_TOOL_DISPLAY_NAME = "File Convert"
 FILE_CONVERT_TOOL_DESCRIPTION = "Convert DOCX, PDF, and PPTX files into text."
 FILE_CONVERT_TOOL_PROMPT = "Use this tool to convert DOCX, PDF, or PPTX files into plain text before analysis."
 WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
+FILE_TOOL_READ_DISPLAY_NAME = "File Read"
+FILE_TOOL_READ_DESCRIPTION = "Read UTF-8 text files from the workspace with line-based pagination."
+FILE_TOOL_READ_PROMPT = "Use this tool to inspect workspace text files in paginated line ranges before making edits."
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
     "Return a placeholder current-weather result for a requested location."
@@ -41,6 +47,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
             "prompt": "在分析前使用此工具将 DOCX、PDF 或 PPTX 文件转换为纯文本。",
         },
+        FILE_TOOL_READ_ID: {
+            "displayName": "文件读取",
+            "description": "按行分页读取工作区内 UTF-8 文本文件。",
+            "prompt": "使用此工具先读取工作区文本文件，再继续分析或修改。",
+        },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": "当前天气",
             "description": "返回指定地点的占位当前天气结果。",
@@ -52,6 +63,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
             "description": FILE_CONVERT_TOOL_DESCRIPTION,
             "prompt": FILE_CONVERT_TOOL_PROMPT,
+        },
+        FILE_TOOL_READ_ID: {
+            "displayName": FILE_TOOL_READ_DISPLAY_NAME,
+            "description": FILE_TOOL_READ_DESCRIPTION,
+            "prompt": FILE_TOOL_READ_PROMPT,
         },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
@@ -440,6 +456,7 @@ _MCP_TOOL_GROUP = ToolPresentationGroup(
 
 _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_CONVERT_TOOL_ID: _BUILTIN_TOOL_GROUP,
+    FILE_TOOL_READ_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     "blackboard.sql.query": _BLACKBOARD_TOOL_GROUP,
     "blackboard.course_catalog.search": _BLACKBOARD_TOOL_GROUP,
@@ -458,6 +475,12 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": FILE_CONVERT_TOOL_DISPLAY_NAME,
         "description_zh": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
         "description_en": FILE_CONVERT_TOOL_DESCRIPTION,
+    },
+    FILE_TOOL_READ_ID: {
+        "display_name_zh": "文件读取",
+        "display_name_en": FILE_TOOL_READ_DISPLAY_NAME,
+        "description_zh": "按行分页读取工作区内 UTF-8 文本文件。",
+        "description_en": FILE_TOOL_READ_DESCRIPTION,
     },
     WEATHER_CURRENT_TOOL_ID: {
         "display_name_zh": "当前天气",
@@ -555,7 +578,12 @@ def _build_contract_runtime_executable_tools(
 def build_default_tool_registry(
     *,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
+    workspace_root: Path | None = None,
 ) -> ToolRegistry:
+    resolved_workspace_root = (workspace_root or Path.cwd()).resolve(strict=False)
+    file_read_binding = build_file_tool_read_runtime_binding(
+        workspace_root=resolved_workspace_root,
+    )
     registry = ToolRegistry()
     registry.register(
         ToolsetDescriptor(
@@ -564,6 +592,20 @@ def build_default_tool_registry(
             description=DEFAULT_TOOLSET_DESCRIPTION,
             default=True,
             tools=(
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=FILE_TOOL_READ_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=FILE_TOOL_READ_DISPLAY_NAME,
+                        description=FILE_TOOL_READ_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=FILE_TOOL_READ_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_TOOL_READ_ID],
+                    ),
+                    execute=file_read_binding.execute,
+                    function_name=file_read_binding.function_name,
+                    parameters_json_schema=file_read_binding.parameters_json_schema,
+                ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(
                         tool_id=FILE_CONVERT_TOOL_ID,

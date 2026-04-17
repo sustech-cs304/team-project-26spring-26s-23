@@ -65,6 +65,7 @@ def build_default_runtime_dependencies(
     resolved_model_route_resolver = model_route_resolver or _UnavailableRuntimeModelRouteResolver()
     tool_registry = build_default_tool_registry(
         host_capabilities_factory=host_capabilities_factory,
+        workspace_root=(runtime_config.backend_dir.parent if runtime_config is not None else None),
     )
     resolved_agent_executor = agent_executor or PydanticAIAgentExecutor(
         tool_registry=tool_registry,

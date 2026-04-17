@@ -134,11 +134,11 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert global_tool_catalog["defaultToolset"] == "default"
     assert isinstance(global_tool_catalog["tools"], list)
     assert len(global_tool_catalog["tools"]) >= 1
-    assert global_tool_catalog["tools"][0]["toolId"] == "tool.file-convert"
+    assert global_tool_catalog["tools"][0]["toolId"] == "tool.fs.read"
     assert global_tool_catalog["tools"][0]["kind"] == "builtin"
     assert global_tool_catalog["tools"][0]["availability"] == "available"
-    assert global_tool_catalog["tools"][0]["displayNameZh"] == "文件转换"
-    assert global_tool_catalog["tools"][0]["displayNameEn"] == "File Convert"
+    assert global_tool_catalog["tools"][0]["displayNameZh"] == "文件读取"
+    assert global_tool_catalog["tools"][0]["displayNameEn"] == "File Read"
     assert global_tool_catalog["tools"][0]["group"] == {
         "id": "builtin-core",
         "label": "内置基础工具",
