@@ -1,4 +1,4 @@
-"""Workspace-scoped glob discovery for staged file tools."""
+"""Glob discovery for file tools with workspace defaults and absolute overrides."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 from .errors import FileToolError
-from .path_policy import PathResolution, ensure_within_workspace, is_hidden_path
+from .path_policy import PathResolution, is_hidden_path
 from .protocol import GlobMatch, GlobRequest, PathMetadata
 
 _DEFAULT_MAX_RESULTS = 500
@@ -36,7 +36,7 @@ class GlobSearchPayload:
 
 
 class FileToolGlobSearcher:
-    """Discover workspace paths using glob-like patterns without reading file contents."""
+    """Discover paths using glob-like patterns without reading file contents."""
 
     def search(self, *, request: GlobRequest, resolution: PathResolution) -> GlobSearchPayload:
         base_path = resolution.resolved_path
@@ -59,27 +59,26 @@ class FileToolGlobSearcher:
         truncated = False
 
         for candidate in _iter_workspace_entries(base_path):
-            ensure_within_workspace(
-                resolved_path=candidate.resolve(strict=False),
-                workspace_root=resolution.workspace_root,
-            )
             relative_candidate = candidate.relative_to(base_path)
-            if not request.include_hidden and is_hidden_path(candidate, workspace_root=resolution.workspace_root):
+            if not request.include_hidden and is_hidden_path(candidate, workspace_root=resolution.effective_root):
                 continue
             if not _matches_candidate(matcher, relative_candidate):
                 continue
 
             stat = candidate.stat()
+            match_path = _build_match_path(candidate=candidate, resolution=resolution)
             match = GlobMatch(
                 path=PathMetadata(
-                    path=_to_posix_path(candidate.relative_to(resolution.workspace_root)),
+                    path=match_path,
                     resolved_path=candidate.as_posix(),
-                    path_kind="relative",
+                    path_kind=resolution.path_kind,
+                    effective_root=resolution.effective_root.as_posix(),
+                    root_source=resolution.root_source,
                     root_policy=resolution.root_policy,
                     symlink_policy=resolution.symlink_policy,
                 ),
                 is_directory=candidate.is_dir(),
-                is_hidden=is_hidden_path(candidate, workspace_root=resolution.workspace_root),
+                is_hidden=is_hidden_path(candidate, workspace_root=resolution.effective_root),
                 size_bytes=None if candidate.is_dir() else stat.st_size,
                 modified_time_ms=int(stat.st_mtime * 1000),
             )
@@ -128,6 +127,12 @@ def _iter_workspace_entries(base_path: Path):
     for candidate in base_path.rglob("*"):
         yield candidate
     yield base_path
+
+
+def _build_match_path(*, candidate: Path, resolution: PathResolution) -> str:
+    if resolution.root_source == "absolute_override":
+        return candidate.as_posix()
+    return _to_posix_path(candidate.relative_to(resolution.workspace_root))
 
 
 def _to_posix_path(path: Path) -> str:

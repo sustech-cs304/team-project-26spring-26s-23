@@ -11,13 +11,15 @@ from .errors import FileToolError
 
 ToolName = Literal["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"]
 PathKind = Literal["relative", "absolute"]
-RootPolicy = Literal["workspace_only"]
+RootPolicy = Literal["workspace_root"]
+RootSource = Literal["workspace_root", "absolute_override"]
 SymlinkPolicy = Literal["deny_escape"]
 ReadKind = Literal["text", "image", "pdf", "notebook", "binary"]
 
 _TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit")
 _PATH_KINDS: tuple[PathKind, ...] = ("relative", "absolute")
-_ROOT_POLICIES: tuple[RootPolicy, ...] = ("workspace_only",)
+_ROOT_POLICIES: tuple[RootPolicy, ...] = ("workspace_root",)
+_ROOT_SOURCES: tuple[RootSource, ...] = ("workspace_root", "absolute_override")
 _SYMLINK_POLICIES: tuple[SymlinkPolicy, ...] = ("deny_escape",)
 _READ_KINDS: tuple[ReadKind, ...] = ("text", "image", "pdf", "notebook", "binary")
 
@@ -105,7 +107,9 @@ class PathMetadata:
     path: str
     resolved_path: str
     path_kind: PathKind
-    root_policy: RootPolicy = "workspace_only"
+    effective_root: str
+    root_source: RootSource
+    root_policy: RootPolicy = "workspace_root"
     symlink_policy: SymlinkPolicy = "deny_escape"
 
     def __post_init__(self) -> None:
@@ -124,6 +128,23 @@ class PathMetadata:
                     self.path_kind,
                     field_name="path_kind",
                     allowed=_PATH_KINDS,
+                ),
+            ),
+        )
+        object.__setattr__(
+            self,
+            "effective_root",
+            _require_non_empty_text(self.effective_root, field_name="effective_root"),
+        )
+        object.__setattr__(
+            self,
+            "root_source",
+            cast(
+                RootSource,
+                _normalize_literal(
+                    self.root_source,
+                    field_name="root_source",
+                    allowed=_ROOT_SOURCES,
                 ),
             ),
         )
@@ -157,6 +178,8 @@ class PathMetadata:
             "path": self.path,
             "resolvedPath": self.resolved_path,
             "pathKind": self.path_kind,
+            "effectiveRoot": self.effective_root,
+            "rootSource": self.root_source,
             "rootPolicy": self.root_policy,
             "symlinkPolicy": self.symlink_policy,
         }
@@ -777,6 +800,7 @@ __all__ = [
     "PathKind",
     "PathMetadata",
     "ReadRequest",
+    "RootSource",
     "ReadResult",
     "RootPolicy",
     "SymlinkPolicy",

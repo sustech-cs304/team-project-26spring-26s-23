@@ -22,7 +22,9 @@ def test_resolve_path_accepts_relative_path_under_workspace(workspace_root: Path
 
     assert resolution.path_kind == "relative"
     assert resolution.resolved_path == (workspace_root / "src/main.py").resolve(strict=False)
-    assert resolution.root_policy == "workspace_only"
+    assert resolution.effective_root == workspace_root.resolve(strict=False)
+    assert resolution.root_source == "workspace_root"
+    assert resolution.root_policy == "workspace_root"
     assert resolution.symlink_policy == "deny_escape"
 
 
@@ -34,6 +36,8 @@ def test_resolve_path_accepts_absolute_path_inside_workspace(workspace_root: Pat
 
     assert resolution.path_kind == "absolute"
     assert resolution.resolved_path == absolute_path.resolve(strict=False)
+    assert resolution.effective_root == absolute_path.parent.resolve(strict=False)
+    assert resolution.root_source == "absolute_override"
 
 
 def test_resolve_path_blocks_parent_directory_escape(workspace_root: Path) -> None:
@@ -61,6 +65,19 @@ def test_resolve_path_blocks_symlink_escape(workspace_root: Path) -> None:
 
     assert exc_info.value.code == "path_out_of_bounds"
     assert exc_info.value.details["resolvedPath"] == secret.resolve(strict=False).as_posix()
+
+
+def test_resolve_path_accepts_absolute_path_outside_workspace(workspace_root: Path) -> None:
+    policy = FileToolPathPolicy(workspace_root=workspace_root)
+    outside = workspace_root.parent / "outside" / "shared.txt"
+
+    resolution = policy.resolve_path(str(outside))
+
+    assert resolution.path_kind == "absolute"
+    assert resolution.resolved_path == outside.resolve(strict=False)
+    assert resolution.effective_root == outside.parent.resolve(strict=False)
+    assert resolution.root_source == "absolute_override"
+    assert resolution.root_policy == "workspace_root"
 
 
 def test_resolve_path_rejects_blank_path(workspace_root: Path) -> None:

@@ -187,3 +187,33 @@ def test_runtime_binding_uses_runtime_model_vision_flag(tmp_path: Path) -> None:
 
     assert vision_result["status"] == "success"
     assert vision_result["output"]["data"]["kind"] == "image"
+
+
+def test_media_readers_allow_absolute_paths_outside_workspace(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+    image_path = outside_root / "pixel.png"
+    pdf_path = outside_root / "sample.pdf"
+    image_path.write_bytes(base64.b64decode(_MINIMAL_PNG_BASE64))
+    pdf_path.write_bytes(_MINIMAL_PDF)
+
+    image_resolution = FileToolPathPolicy(workspace_root=workspace_root).resolve_path(str(image_path))
+    pdf_resolution = FileToolPathPolicy(workspace_root=workspace_root).resolve_path(str(pdf_path))
+
+    image_result = FileToolImageReader().read_image(
+        request=ReadRequest(path=str(image_path), vision_enabled=True),
+        resolution=image_resolution,
+    ).result.to_dict()
+    pdf_result = FileToolPdfReader().read_pdf(
+        request=ReadRequest(path=str(pdf_path)),
+        resolution=pdf_resolution,
+    ).result.to_dict()
+
+    assert image_result["resolvedPath"] == image_path.resolve(strict=False).as_posix()
+    assert image_result["effectiveRoot"] == outside_root.resolve(strict=False).as_posix()
+    assert image_result["rootSource"] == "absolute_override"
+    assert pdf_result["resolvedPath"] == pdf_path.resolve(strict=False).as_posix()
+    assert pdf_result["effectiveRoot"] == outside_root.resolve(strict=False).as_posix()
+    assert pdf_result["rootSource"] == "absolute_override"

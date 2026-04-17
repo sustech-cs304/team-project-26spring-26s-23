@@ -1,4 +1,4 @@
-"""Workspace-only path resolution and escape prevention for file tools."""
+"""General path resolution with workspace-root defaults and absolute overrides."""
 
 from __future__ import annotations
 
@@ -6,28 +6,30 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import FileToolError
-from .protocol import PathKind, RootPolicy, SymlinkPolicy
+from .protocol import PathKind, RootPolicy, RootSource, SymlinkPolicy
 
 
 @dataclass(frozen=True, slots=True)
 class PathResolution:
-    """Normalized file tool path resolved under workspace-only policy."""
+    """Normalized file tool path with explicit effective-root metadata."""
 
     original_path: str
     requested_path: Path
     resolved_path: Path
     workspace_root: Path
+    effective_root: Path
     path_kind: PathKind
-    root_policy: RootPolicy = "workspace_only"
+    root_source: RootSource
+    root_policy: RootPolicy = "workspace_root"
     symlink_policy: SymlinkPolicy = "deny_escape"
 
 
 @dataclass(frozen=True, slots=True)
 class FileToolPathPolicy:
-    """Resolve user-supplied paths while enforcing workspace-only access."""
+    """Resolve user-supplied paths with workspace-root defaults and absolute overrides."""
 
     workspace_root: Path
-    root_policy: RootPolicy = "workspace_only"
+    root_policy: RootPolicy = "workspace_root"
     symlink_policy: SymlinkPolicy = "deny_escape"
 
     def __post_init__(self) -> None:
@@ -40,15 +42,26 @@ class FileToolPathPolicy:
 
         requested = Path(normalized)
         path_kind: PathKind = "absolute" if requested.is_absolute() else "relative"
-        candidate = requested if requested.is_absolute() else self.workspace_root / requested
+        if requested.is_absolute():
+            effective_root = requested.parent if requested.name else requested
+            root_source: RootSource = "absolute_override"
+            candidate = requested
+        else:
+            effective_root = self.workspace_root
+            root_source = "workspace_root"
+            candidate = effective_root / requested
+
         resolved = candidate.resolve(strict=False)
-        ensure_within_workspace(resolved_path=resolved, workspace_root=self.workspace_root)
+        if path_kind == "relative":
+            ensure_within_workspace(resolved_path=resolved, workspace_root=self.workspace_root)
         return PathResolution(
             original_path=normalized,
             requested_path=requested,
             resolved_path=resolved,
             workspace_root=self.workspace_root,
+            effective_root=effective_root.resolve(strict=False),
             path_kind=path_kind,
+            root_source=root_source,
             root_policy=self.root_policy,
             symlink_policy=self.symlink_policy,
         )
@@ -87,6 +100,7 @@ __all__ = [
     "FileToolPathPolicy",
     "PathResolution",
     "RootPolicy",
+    "RootSource",
     "SymlinkPolicy",
     "ensure_within_workspace",
     "is_hidden_path",

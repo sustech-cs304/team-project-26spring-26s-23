@@ -220,6 +220,48 @@ def test_runtime_bindings_expose_notebook_read_and_edit_schemas(tmp_path: Path) 
     assert edit_result["output"]["data"]["appliedOperations"] == 1
 
 
+def test_notebook_tools_allow_absolute_paths_outside_workspace(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+    target = outside_root / "sample.ipynb"
+    _write_notebook(
+        target,
+        {
+            "nbformat": 4,
+            "nbformat_minor": 5,
+            "metadata": {},
+            "cells": [{"id": "cell-a", "cell_type": "markdown", "metadata": {}, "source": ["hello\n"]}],
+        },
+    )
+    read_service = FileToolReadService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_reader=FileToolTextReader(),
+        notebook_reader=FileToolNotebookReader(),
+    )
+    edit_service = FileToolNotebookEditService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        notebook_editor=FileToolNotebookEditor(),
+    )
+
+    read_result = read_service.read(ReadRequest(path=str(target))).to_dict()
+    edit_result = edit_service.edit_notebook(
+        NotebookEditRequest(
+            path=str(target),
+            operations=(NotebookEditOperation(kind="replace", cell_id="cell-a", source="updated\n"),),
+        )
+    ).to_dict()
+
+    assert read_result["ok"] is True
+    assert read_result["data"]["resolvedPath"] == target.resolve(strict=False).as_posix()
+    assert read_result["data"]["effectiveRoot"] == outside_root.resolve(strict=False).as_posix()
+    assert read_result["data"]["rootSource"] == "absolute_override"
+    assert edit_result["ok"] is True
+    assert edit_result["data"]["resolvedPath"] == target.resolve(strict=False).as_posix()
+    assert json.loads(target.read_text(encoding="utf-8"))["cells"][0]["source"] == ["updated\n"]
+
+
 def test_default_tool_registry_exposes_notebook_edit_tool(tmp_path: Path) -> None:
     registry = build_default_tool_registry(workspace_root=tmp_path)
     tool_ids = registry.list_tool_ids()

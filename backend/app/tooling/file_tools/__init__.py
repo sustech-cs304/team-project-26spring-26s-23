@@ -1,4 +1,4 @@
-"""File tool protocol scaffolding and workspace-only path policy helpers."""
+"""File tool protocol scaffolding and generalized path policy helpers."""
 
 from .errors import FILE_TOOL_ERROR_CODES, FileToolError, FileToolErrorCode
 from .editor import FileToolTextEditor, TextEditPayload
@@ -11,6 +11,7 @@ from .path_policy import (
     FileToolPathPolicy,
     PathResolution,
     RootPolicy,
+    RootSource,
     SymlinkPolicy,
     ensure_within_workspace,
     is_hidden_path,
@@ -34,6 +35,7 @@ from .protocol import (
     PathKind,
     PathMetadata,
     ReadRequest,
+    RootSource,
     ReadResult,
     ToolName,
     ToolResultEnvelope,
@@ -134,6 +136,7 @@ __all__ = [
     "ReadRequest",
     "ReadResult",
     "RootPolicy",
+    "RootSource",
     "RuntimeFileToolEditContract",
     "RuntimeFileToolGlobContract",
     "RuntimeFileToolGrepContract",

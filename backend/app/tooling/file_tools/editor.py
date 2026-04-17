@@ -117,6 +117,8 @@ class FileToolTextEditor:
             path=request.path,
             resolved_path=target_path.as_posix(),
             path_kind=resolution.path_kind,
+            effective_root=resolution.effective_root.as_posix(),
+            root_source=resolution.root_source,
             root_policy=resolution.root_policy,
             symlink_policy=resolution.symlink_policy,
         )

@@ -32,6 +32,8 @@ def test_read_request_and_result_serialize_to_stable_protocol_shape() -> None:
         path="docs/spec.md",
         resolved_path="C:/workspace/docs/spec.md",
         path_kind="relative",
+        effective_root="C:/workspace",
+        root_source="workspace_root",
     )
     result = ReadResult(
         kind="text",
@@ -60,7 +62,9 @@ def test_read_request_and_result_serialize_to_stable_protocol_shape() -> None:
         "path": "docs/spec.md",
         "resolvedPath": "C:/workspace/docs/spec.md",
         "pathKind": "relative",
-        "rootPolicy": "workspace_only",
+        "effectiveRoot": "C:/workspace",
+        "rootSource": "workspace_root",
+        "rootPolicy": "workspace_root",
         "symlinkPolicy": "deny_escape",
         "encoding": "utf-8",
         "truncated": True,
@@ -75,6 +79,8 @@ def test_notebook_protocol_shapes_serialize_to_stable_payloads() -> None:
         path="analysis/demo.ipynb",
         resolved_path="C:/workspace/analysis/demo.ipynb",
         path_kind="relative",
+        effective_root="C:/workspace",
+        root_source="workspace_root",
     )
     read_result = NotebookReadResult(
         path=path,
@@ -145,7 +151,9 @@ def test_notebook_protocol_shapes_serialize_to_stable_payloads() -> None:
         "path": "analysis/demo.ipynb",
         "resolvedPath": "C:/workspace/analysis/demo.ipynb",
         "pathKind": "relative",
-        "rootPolicy": "workspace_only",
+        "effectiveRoot": "C:/workspace",
+        "rootSource": "workspace_root",
+        "rootPolicy": "workspace_root",
         "symlinkPolicy": "deny_escape",
         "appliedOperations": 1,
         "cellCount": 1,
@@ -166,6 +174,8 @@ def test_write_request_and_result_serialize_to_stable_protocol_shape() -> None:
         path="docs/spec.md",
         resolved_path="C:/workspace/docs/spec.md",
         path_kind="relative",
+        effective_root="C:/workspace",
+        root_source="workspace_root",
     )
     result = WriteResult(
         path=path,
@@ -192,7 +202,9 @@ def test_write_request_and_result_serialize_to_stable_protocol_shape() -> None:
         "path": "docs/spec.md",
         "resolvedPath": "C:/workspace/docs/spec.md",
         "pathKind": "relative",
-        "rootPolicy": "workspace_only",
+        "effectiveRoot": "C:/workspace",
+        "rootSource": "workspace_root",
+        "rootPolicy": "workspace_root",
         "symlinkPolicy": "deny_escape",
         "encoding": "utf-8",
         "created": False,
@@ -206,6 +218,8 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
         path="src/app.py",
         resolved_path="C:/workspace/src/app.py",
         path_kind="relative",
+        effective_root="C:/workspace",
+        root_source="workspace_root",
     )
     glob_request = GlobRequest(base_path="src", pattern="**/*.py", include_hidden=True, max_results=20)
     glob_match = GlobMatch(
@@ -242,7 +256,9 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
         "path": "src/app.py",
         "resolvedPath": "C:/workspace/src/app.py",
         "pathKind": "relative",
-        "rootPolicy": "workspace_only",
+        "effectiveRoot": "C:/workspace",
+        "rootSource": "workspace_root",
+        "rootPolicy": "workspace_root",
         "symlinkPolicy": "deny_escape",
         "isDirectory": False,
         "isHidden": False,
@@ -263,7 +279,9 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
         "path": "src/app.py",
         "resolvedPath": "C:/workspace/src/app.py",
         "pathKind": "relative",
-        "rootPolicy": "workspace_only",
+        "effectiveRoot": "C:/workspace",
+        "rootSource": "workspace_root",
+        "rootPolicy": "workspace_root",
         "symlinkPolicy": "deny_escape",
         "lineNumber": 12,
         "columnNumber": 3,

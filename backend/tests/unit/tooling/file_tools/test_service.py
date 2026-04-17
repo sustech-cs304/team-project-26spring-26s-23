@@ -219,3 +219,40 @@ def test_file_tool_grep_service_returns_structured_matches_and_invalid_regex_fai
     assert result.to_dict()["data"]["matches"][0]["after"] == ["omega"]
     assert invalid_result.to_dict()["ok"] is False
     assert invalid_result.to_dict()["error"]["code"] == "invalid_regex"
+
+
+def test_file_tools_allow_absolute_paths_outside_workspace(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+    target = outside_root / "notes.txt"
+    target.write_text("alpha\nTODO item\nomega\n", encoding="utf-8")
+
+    read_service = FileToolReadService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_reader=FileToolTextReader(),
+    )
+    glob_service = FileToolGlobService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        glob_searcher=FileToolGlobSearcher(),
+    )
+    grep_service = FileToolGrepService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        grep_searcher=FileToolGrepSearcher(),
+    )
+
+    read_result = read_service.read(ReadRequest(path=str(target)))
+    glob_result = glob_service.glob(GlobRequest(base_path=str(outside_root), pattern="*.txt"))
+    grep_result = grep_service.grep(
+        GrepRequest(base_path=str(outside_root), pattern="TODO", file_glob="*.txt", context_lines=1)
+    )
+
+    assert read_result.to_dict()["ok"] is True
+    assert read_result.to_dict()["data"]["resolvedPath"] == target.resolve(strict=False).as_posix()
+    assert read_result.to_dict()["data"]["effectiveRoot"] == outside_root.resolve(strict=False).as_posix()
+    assert read_result.to_dict()["data"]["rootSource"] == "absolute_override"
+    assert glob_result.to_dict()["ok"] is True
+    assert [match["path"] for match in glob_result.to_dict()["data"]["matches"]] == [target.resolve(strict=False).as_posix()]
+    assert grep_result.to_dict()["ok"] is True
+    assert [match["path"] for match in grep_result.to_dict()["data"]["matches"]] == [target.resolve(strict=False).as_posix()]

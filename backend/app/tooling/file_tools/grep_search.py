@@ -1,4 +1,4 @@
-"""Workspace-scoped text grep with bounded context for staged file tools."""
+"""Text grep with bounded context for workspace defaults and absolute overrides."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from .errors import FileToolError
-from .path_policy import PathResolution, ensure_within_workspace, is_hidden_path
+from .path_policy import PathResolution, is_hidden_path
 from .protocol import GrepMatch, GrepRequest, PathMetadata
 from .text_reader import _looks_binary
 
@@ -45,7 +45,7 @@ class GrepSearchPayload:
 
 
 class FileToolGrepSearcher:
-    """Search workspace text files and return structured line matches with context."""
+    """Search text files and return structured line matches with context."""
 
     def search(self, *, request: GrepRequest, resolution: PathResolution) -> GrepSearchPayload:
         base_path = resolution.resolved_path
@@ -125,13 +125,15 @@ def _search_file(
 
         line_number = index + 1
         after = tuple(lines[index + 1 : index + 1 + request.context_lines])
-        relative_path = _to_posix_path(candidate.relative_to(resolution.workspace_root))
+        match_path = _build_match_path(candidate=candidate, resolution=resolution)
         results.append(
             GrepMatch(
                 path=PathMetadata(
-                    path=relative_path,
+                    path=match_path,
                     resolved_path=candidate.as_posix(),
-                    path_kind="relative",
+                    path_kind=resolution.path_kind,
+                    effective_root=resolution.effective_root.as_posix(),
+                    root_source=resolution.root_source,
                     root_policy=resolution.root_policy,
                     symlink_policy=resolution.symlink_policy,
                 ),
@@ -162,11 +164,7 @@ def _iter_matching_files(
         (path for path in base_path.rglob("*") if path.is_file()),
         key=lambda path: _to_posix_path(path.relative_to(base_path)),
     ):
-        ensure_within_workspace(
-            resolved_path=candidate.resolve(strict=False),
-            workspace_root=resolution.workspace_root,
-        )
-        if not request.include_hidden and is_hidden_path(candidate, workspace_root=resolution.workspace_root):
+        if not request.include_hidden and is_hidden_path(candidate, workspace_root=resolution.effective_root):
             continue
         if not _matches_file_glob(file_matcher, candidate.relative_to(base_path)):
             continue
@@ -205,6 +203,12 @@ def _compile_search_pattern(*, pattern: str, is_regex: bool, case_sensitive: boo
 def _matches_file_glob(matcher: re.Pattern[str], relative_candidate: Path) -> bool:
     candidate_text = _to_posix_path(relative_candidate)
     return matcher.fullmatch(candidate_text) is not None
+
+
+def _build_match_path(*, candidate: Path, resolution: PathResolution) -> str:
+    if resolution.root_source == "absolute_override":
+        return candidate.as_posix()
+    return _to_posix_path(candidate.relative_to(resolution.workspace_root))
 
 
 def _to_posix_path(path: Path) -> str:
