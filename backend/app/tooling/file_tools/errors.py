@@ -19,6 +19,8 @@ FileToolErrorCode = Literal[
     "too_large",
     "encoding_error",
     "permission_denied",
+    "already_exists",
+    "hash_mismatch",
 ]
 
 FILE_TOOL_ERROR_CODES: tuple[FileToolErrorCode, ...] = (
@@ -33,6 +35,8 @@ FILE_TOOL_ERROR_CODES: tuple[FileToolErrorCode, ...] = (
     "too_large",
     "encoding_error",
     "permission_denied",
+    "already_exists",
+    "hash_mismatch",
 )
 
 _RETRYABLE_FILE_TOOL_ERROR_CODES = frozenset[FileToolErrorCode]()

@@ -132,9 +132,10 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert global_tool_catalog["directoryVersion"] == "tools-v1"
     assert global_tool_catalog["defaultToolset"] == "default"
     assert isinstance(global_tool_catalog["tools"], list)
-    assert len(global_tool_catalog["tools"]) >= 3
-    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:3]] == [
+    assert len(global_tool_catalog["tools"]) >= 4
+    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:4]] == [
         "tool.fs.read",
+        "tool.fs.write",
         "tool.fs.glob",
         "tool.fs.grep",
     ]
@@ -150,7 +151,7 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "order": 0,
         "sourceKind": "builtin",
     }
-    assert global_tool_catalog["tools"][1]["displayNameZh"] == "文件发现"
+    assert global_tool_catalog["tools"][1]["displayNameZh"] == "文件写入"
     assert global_tool_catalog["tools"][1]["group"] == {
         "id": "builtin-core",
         "label": "内置基础工具",
@@ -159,8 +160,17 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "order": 0,
         "sourceKind": "builtin",
     }
-    assert global_tool_catalog["tools"][2]["displayNameZh"] == "文件搜索"
+    assert global_tool_catalog["tools"][2]["displayNameZh"] == "文件发现"
     assert global_tool_catalog["tools"][2]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
+    assert global_tool_catalog["tools"][3]["displayNameZh"] == "文件搜索"
+    assert global_tool_catalog["tools"][3]["group"] == {
         "id": "builtin-core",
         "label": "内置基础工具",
         "labelZh": "内置基础工具",
@@ -262,24 +272,30 @@ def _build_run_request(*, thread_id: str) -> RuntimeRunStartRequest:
 def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
+    config_dir = runtime_root_dir / "config"
+    logs_dir = runtime_root_dir / "logs"
+    database_dir = runtime_root_dir / "database"
+    state_dir = runtime_root_dir / "state"
+    user_data_dir.mkdir()
+    runtime_root_dir.mkdir()
     return DesktopRuntimeConfig(
         host="127.0.0.1",
-        port=0,
+        port=8765,
         local_token=None,
         paths=DesktopRuntimePaths(
             user_data_dir=user_data_dir,
             runtime_root_dir=runtime_root_dir,
-            config_dir=runtime_root_dir / "config",
-            logs_dir=runtime_root_dir / "logs",
-            database_dir=runtime_root_dir / "database",
-            state_dir=runtime_root_dir / "state",
-            copilot_settings_file=runtime_root_dir / "config" / "copilot-settings.json",
-            host_log_file=runtime_root_dir / "logs" / "electron-host.log",
-            backend_stdout_log_file=runtime_root_dir / "logs" / "backend.stdout.log",
-            backend_stderr_log_file=runtime_root_dir / "logs" / "backend.stderr.log",
-            runtime_snapshot_file=runtime_root_dir / "state" / "runtime-snapshot.json",
-            last_failure_file=runtime_root_dir / "state" / "last-failure.json",
+            config_dir=config_dir,
+            logs_dir=logs_dir,
+            database_dir=database_dir,
+            state_dir=state_dir,
+            copilot_settings_file=config_dir / "copilot-settings.json",
+            host_log_file=logs_dir / "electron-host.log",
+            backend_stdout_log_file=logs_dir / "backend.stdout.log",
+            backend_stderr_log_file=logs_dir / "backend.stderr.log",
+            runtime_snapshot_file=state_dir / "runtime-snapshot.json",
+            last_failure_file=state_dir / "last-failure.json",
         ),
         app_mode="desktop",
-        environment="test",
+        environment="development",
     )

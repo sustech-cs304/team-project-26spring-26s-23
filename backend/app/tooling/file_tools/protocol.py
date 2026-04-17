@@ -9,13 +9,13 @@ from typing import Any, Literal, cast
 
 from .errors import FileToolError
 
-ToolName = Literal["Read", "Glob", "Grep"]
+ToolName = Literal["Read", "Write", "Glob", "Grep"]
 PathKind = Literal["relative", "absolute"]
 RootPolicy = Literal["workspace_only"]
 SymlinkPolicy = Literal["deny_escape"]
 ReadKind = Literal["text", "image", "pdf", "notebook", "binary"]
 
-_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Glob", "Grep")
+_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Glob", "Grep")
 _PATH_KINDS: tuple[PathKind, ...] = ("relative", "absolute")
 _ROOT_POLICIES: tuple[RootPolicy, ...] = ("workspace_only",)
 _SYMLINK_POLICIES: tuple[SymlinkPolicy, ...] = ("deny_escape",)
@@ -262,6 +262,66 @@ class ReadResult:
 
 
 @dataclass(frozen=True, slots=True)
+class WriteRequest:
+    """Request contract for staged Write implementation."""
+
+    path: str
+    content: str
+    encoding: str = "utf-8"
+    overwrite: bool = True
+    expected_hash: str | None = None
+    atomic: bool = True
+    audit: AuditMetadata | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", _require_non_empty_text(self.path, field_name="path"))
+        object.__setattr__(self, "encoding", _require_non_empty_text(self.encoding, field_name="encoding").lower())
+        if self.encoding != "utf-8":
+            raise ValueError("encoding must be utf-8 for the staged text writer.")
+        object.__setattr__(self, "expected_hash", _normalize_optional_text(self.expected_hash))
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "path": self.path,
+            "content": self.content,
+            "encoding": self.encoding,
+            "overwrite": self.overwrite,
+            "atomic": self.atomic,
+        }
+        if self.expected_hash is not None:
+            payload["expectedHash"] = self.expected_hash
+        if self.audit is not None:
+            payload["audit"] = self.audit.to_dict()
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class WriteResult:
+    """Stable payload for staged Write results."""
+
+    path: PathMetadata
+    encoding: str
+    created: bool
+    overwritten: bool
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "encoding", _require_non_empty_text(self.encoding, field_name="encoding").lower())
+        object.__setattr__(self, "metadata", _normalize_mapping(self.metadata))
+        if self.created and self.overwritten:
+            raise ValueError("Write results cannot be both created and overwritten.")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self.path.to_dict(),
+            "encoding": self.encoding,
+            "created": self.created,
+            "overwritten": self.overwritten,
+            "metadata": _normalize_mapping(self.metadata),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class GlobRequest:
     """Request contract for staged Glob implementation."""
 
@@ -474,4 +534,6 @@ __all__ = [
     "SymlinkPolicy",
     "ToolName",
     "ToolResultEnvelope",
+    "WriteRequest",
+    "WriteResult",
 ]

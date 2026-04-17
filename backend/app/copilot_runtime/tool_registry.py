@@ -15,9 +15,11 @@ from app.tooling.file_tools import (
     FILE_TOOL_GLOB_ID,
     FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_ID,
+    FILE_TOOL_WRITE_ID,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
     build_file_tool_read_runtime_binding,
+    build_file_tool_write_runtime_binding,
 )
 from app.tooling.runtime_adapter.copilot_runtime import (
     ToolHostCapabilitiesFactory,
@@ -41,6 +43,9 @@ WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 FILE_TOOL_READ_DISPLAY_NAME = "File Read"
 FILE_TOOL_READ_DESCRIPTION = "Read UTF-8 text files from the workspace with line-based pagination."
 FILE_TOOL_READ_PROMPT = "Use this tool to inspect workspace text files in paginated line ranges before making edits."
+FILE_TOOL_WRITE_DISPLAY_NAME = "File Write"
+FILE_TOOL_WRITE_DESCRIPTION = "Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics."
+FILE_TOOL_WRITE_PROMPT = "Use this tool to create or replace a workspace text file when you know the full target content."
 FILE_TOOL_GLOB_DISPLAY_NAME = "File Glob"
 FILE_TOOL_GLOB_DESCRIPTION = "Discover workspace files and directories by glob pattern without reading contents."
 FILE_TOOL_GLOB_PROMPT = "Use this tool to discover workspace files or folders by glob pattern before reading them."
@@ -64,6 +69,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": "文件读取",
             "description": "按行分页读取工作区内 UTF-8 文本文件。",
             "prompt": "使用此工具先读取工作区文本文件，再继续分析或修改。",
+        },
+        FILE_TOOL_WRITE_ID: {
+            "displayName": "文件写入",
+            "description": "在工作区内创建或覆写 UTF-8 文本文件，并带有保护性覆写语义。",
+            "prompt": "使用此工具在已知完整目标内容时创建或整体覆写工作区文本文件。",
         },
         FILE_TOOL_GLOB_ID: {
             "displayName": "文件发现",
@@ -91,6 +101,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": FILE_TOOL_READ_DISPLAY_NAME,
             "description": FILE_TOOL_READ_DESCRIPTION,
             "prompt": FILE_TOOL_READ_PROMPT,
+        },
+        FILE_TOOL_WRITE_ID: {
+            "displayName": FILE_TOOL_WRITE_DISPLAY_NAME,
+            "description": FILE_TOOL_WRITE_DESCRIPTION,
+            "prompt": FILE_TOOL_WRITE_PROMPT,
         },
         FILE_TOOL_GLOB_ID: {
             "displayName": FILE_TOOL_GLOB_DISPLAY_NAME,
@@ -260,88 +275,74 @@ class ExecutableTool:
     def tool_id(self) -> str:
         return self.descriptor.tool_id
 
-    def build_catalog_entry(self) -> dict[str, Any]:
-        return self.descriptor.build_catalog_entry()
-
-    def build_catalog_entry_for_language(self, language: str | None = None) -> dict[str, Any]:
-        return self.descriptor.build_catalog_entry_for_language(language)
-
-    def build_summary(self) -> dict[str, Any]:
-        return self.descriptor.build_summary()
-
 
 @dataclass(frozen=True, slots=True)
 class ToolsetDescriptor:
     name: str
     label: str
     description: str
+    tools: tuple[ExecutableTool, ...]
     default: bool = False
-    tools: tuple[ToolDescriptor | ExecutableTool, ...] = ()
 
-    def build_view(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "toolCount": len(self.tools),
-        }
-
-    def build_diagnostics_summary(self) -> dict[str, Any]:
+    def build_summary(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "label": self.label,
             "description": self.description,
             "default": self.default,
             "toolCount": len(self.tools),
-            "tools": [tool.build_summary() for tool in self.tools],
+            "tools": [tool.descriptor.build_summary() for tool in self.tools],
         }
 
 
 class ToolRegistry:
-    def __init__(self, descriptors: Iterable[ToolsetDescriptor] = ()) -> None:
-        self._descriptors_by_name: dict[str, ToolsetDescriptor] = {}
-        self._default_toolset_name: str | None = None
-        self._tools_by_id_by_toolset: dict[str, dict[str, ExecutableTool]] = {}
-        for descriptor in descriptors:
-            self.register(descriptor)
+    def __init__(self, toolsets: Iterable[ToolsetDescriptor] | None = None) -> None:
+        self._toolsets: dict[str, ToolsetDescriptor] = {}
+        self._default_name: str | None = None
+        if toolsets is not None:
+            for toolset in toolsets:
+                self.register(toolset)
 
     @property
     def directory_version(self) -> str:
         return DEFAULT_TOOL_DIRECTORY_VERSION
 
-    def register(self, descriptor: ToolsetDescriptor) -> ToolsetDescriptor:
-        if descriptor.name.strip() == "":
-            raise ValueError("Toolset name must be a non-empty string.")
-        if descriptor.name in self._descriptors_by_name:
-            raise ValueError(f"Toolset '{descriptor.name}' is already registered.")
-        self._validate_tools(descriptor)
-        if descriptor.default:
-            if self._default_toolset_name is not None:
-                raise ValueError(
-                    f"Default toolset is already registered as '{self._default_toolset_name}'."
-                )
-            self._default_toolset_name = descriptor.name
-
-        self._descriptors_by_name[descriptor.name] = descriptor
-        self._tools_by_id_by_toolset[descriptor.name] = {
-            tool.tool_id: self._as_executable_tool(tool) for tool in descriptor.tools
-        }
-        return descriptor
-
-    def get(self, name: str) -> ToolsetDescriptor | None:
-        return self._descriptors_by_name.get(name)
-
-    def get_default(self) -> ToolsetDescriptor:
-        if self._default_toolset_name is None:
-            raise LookupError("No default toolset is registered.")
-        return self._descriptors_by_name[self._default_toolset_name]
+    def register(self, toolset: ToolsetDescriptor) -> None:
+        if toolset.name in self._toolsets:
+            raise ValueError(f"Toolset '{toolset.name}' is already registered.")
+        if toolset.default:
+            if self._default_name is not None:
+                raise ValueError("Only one toolset can be marked as default.")
+            self._default_name = toolset.name
+        self._toolsets[toolset.name] = toolset
 
     def supports(self, name: str) -> bool:
-        return name in self._descriptors_by_name
+        return name in self._toolsets
+
+    def get_default(self) -> ToolsetDescriptor:
+        if self._default_name is None:
+            raise LookupError("No default toolset is registered.")
+        return self._toolsets[self._default_name]
+
+    def resolve_tool(self, tool_id: str, *, toolset_name: str | None = None) -> ExecutableTool:
+        toolset = self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        for tool in toolset.tools:
+            if tool.tool_id == tool_id:
+                return tool
+        raise LookupError(f"Tool '{tool_id}' is not registered in toolset '{toolset.name}'.")
+
+    def list_tool_ids(self, *, toolset_name: str | None = None) -> tuple[str, ...]:
+        toolset = self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        return tuple(tool.tool_id for tool in toolset.tools)
 
     def build_view(self) -> dict[str, dict[str, Any]]:
         return {
-            name: descriptor.build_view()
-            for name, descriptor in self._descriptors_by_name.items()
+            toolset.name: {
+                "name": toolset.name,
+                "description": toolset.description,
+                "toolCount": len(toolset.tools),
+            }
+            for toolset in self._toolsets.values()
         }
 
     def build_tool_catalog(
@@ -349,86 +350,36 @@ class ToolRegistry:
         toolset_name: str | None = None,
         *,
         language: str | None = None,
-    ) -> tuple[dict[str, Any], ...]:
-        descriptor = self.get_default() if toolset_name is None else self.get(toolset_name)
-        if descriptor is None:
-            raise LookupError(f"Unknown toolset '{toolset_name}'.")
-        return tuple(tool.build_catalog_entry_for_language(language) for tool in descriptor.tools)
-
-    def list_tool_ids(self, toolset_name: str | None = None) -> tuple[str, ...]:
-        descriptor = self.get_default() if toolset_name is None else self.get(toolset_name)
-        if descriptor is None:
-            raise LookupError(f"Unknown toolset '{toolset_name}'.")
-        return tuple(tool.tool_id for tool in descriptor.tools)
-
-    def resolve_tool(self, tool_id: str, toolset_name: str | None = None) -> ExecutableTool:
-        resolved_toolset_name = self.get_default().name if toolset_name is None else toolset_name
-        try:
-            return self._tools_by_id_by_toolset[resolved_toolset_name][tool_id]
-        except KeyError as exc:
-            raise LookupError(f"Unknown tool '{tool_id}'.") from exc
+    ) -> list[dict[str, Any]]:
+        toolset = self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        catalog: list[dict[str, Any]] = []
+        for tool in toolset.tools:
+            catalog.append(tool.descriptor.build_catalog_entry_for_language(language))
+        return catalog
 
     def build_diagnostics_summary(self) -> dict[str, Any]:
         return {
-            "available_toolsets": [
-                descriptor.name for descriptor in self._descriptors_by_name.values()
-            ],
-            "default_toolset": self._default_toolset_name,
-            "tool_directory_version": self.directory_version,
-            "toolset_summaries": [
-                descriptor.build_diagnostics_summary()
-                for descriptor in self._descriptors_by_name.values()
-            ],
+            "available_toolsets": list(self._toolsets.keys()),
+            "default_toolset": self._default_name,
+            "tool_directory_version": DEFAULT_TOOL_DIRECTORY_VERSION,
+            "toolset_summaries": [toolset.build_summary() for toolset in self._toolsets.values()],
         }
 
-    def _validate_tools(self, descriptor: ToolsetDescriptor) -> None:
-        tool_ids: set[str] = set()
-        for tool in descriptor.tools:
-            if tool.tool_id.strip() == "":
-                raise ValueError(
-                    f"Toolset '{descriptor.name}' contains a tool with an empty tool_id."
-                )
-            if tool.tool_id in tool_ids:
-                raise ValueError(
-                    f"Toolset '{descriptor.name}' contains duplicate tool id '{tool.tool_id}'."
-                )
-            tool_ids.add(tool.tool_id)
 
-    def _as_executable_tool(self, tool: ToolDescriptor | ExecutableTool) -> ExecutableTool:
-        if isinstance(tool, ExecutableTool):
-            return tool
-        return ExecutableTool(
-            descriptor=tool,
-            execute=_execute_unimplemented_tool,
-        )
-
-
-async def _execute_unimplemented_tool(_arguments: Mapping[str, Any] | None) -> dict[str, Any]:
-    raise RuntimeError("Tool execution is not implemented for this tool.")
-
-
-async def _execute_default_file_convert_tool(
-    arguments: Mapping[str, Any] | None,
-) -> dict[str, Any]:
+async def _execute_default_file_convert_tool(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     payload = dict(arguments or {})
-    raw_path = payload.get("path")
-    if not isinstance(raw_path, str) or raw_path.strip() == "":
-        raise ValueError("File Convert tool requires a non-empty 'path' string argument.")
-
-    path = raw_path.strip()
-    raw_suffix = payload.get("suffix")
-    suffix = (
-        raw_suffix.strip()
-        if isinstance(raw_suffix, str) and raw_suffix.strip() != ""
-        else None
-    )
-    result: dict[str, Any] = {
-        "path": path,
-        "text": convert_file_to_str(path, suffix=suffix),
+    file_path = payload.get("path")
+    if not isinstance(file_path, str) or file_path.strip() == "":
+        raise ValueError("path must be a non-empty string")
+    result = convert_file_to_str(file_path)
+    normalized = {
+        "path": result["path"],
+        "suffix": result["suffix"],
+        "content": result["content"],
     }
-    if suffix is not None:
-        result["suffix"] = suffix
-    return result
+    if "notice" in result:
+        normalized["notice"] = result["notice"]
+    return normalized
 
 
 async def execute_weather_current_tool(
@@ -490,6 +441,7 @@ _MCP_TOOL_GROUP = ToolPresentationGroup(
 _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_CONVERT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_READ_ID: _BUILTIN_TOOL_GROUP,
+    FILE_TOOL_WRITE_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_GLOB_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_GREP_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
@@ -516,6 +468,12 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": FILE_TOOL_READ_DISPLAY_NAME,
         "description_zh": "按行分页读取工作区内 UTF-8 文本文件。",
         "description_en": FILE_TOOL_READ_DESCRIPTION,
+    },
+    FILE_TOOL_WRITE_ID: {
+        "display_name_zh": "文件写入",
+        "display_name_en": FILE_TOOL_WRITE_DISPLAY_NAME,
+        "description_zh": "在工作区内创建或覆写 UTF-8 文本文件，并带有保护性覆写语义。",
+        "description_en": FILE_TOOL_WRITE_DESCRIPTION,
     },
     FILE_TOOL_GLOB_ID: {
         "display_name_zh": "文件发现",
@@ -630,6 +588,9 @@ def build_default_tool_registry(
     file_read_binding = build_file_tool_read_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
+    file_write_binding = build_file_tool_write_runtime_binding(
+        workspace_root=resolved_workspace_root,
+    )
     file_glob_binding = build_file_tool_glob_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
@@ -657,6 +618,20 @@ def build_default_tool_registry(
                     execute=file_read_binding.execute,
                     function_name=file_read_binding.function_name,
                     parameters_json_schema=file_read_binding.parameters_json_schema,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=FILE_TOOL_WRITE_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=FILE_TOOL_WRITE_DISPLAY_NAME,
+                        description=FILE_TOOL_WRITE_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=FILE_TOOL_WRITE_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_TOOL_WRITE_ID],
+                    ),
+                    execute=file_write_binding.execute,
+                    function_name=file_write_binding.function_name,
+                    parameters_json_schema=file_write_binding.parameters_json_schema,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(
@@ -809,6 +784,8 @@ __all__ = [
     "FILE_TOOL_GLOB_DISPLAY_NAME",
     "FILE_TOOL_READ_DESCRIPTION",
     "FILE_TOOL_READ_DISPLAY_NAME",
+    "FILE_TOOL_WRITE_DESCRIPTION",
+    "FILE_TOOL_WRITE_DISPLAY_NAME",
     "ToolDescriptor",
     "ToolPresentation",
     "ToolPresentationGroup",

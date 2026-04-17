@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import os
 import time
 
-from app.tooling.file_tools import FileToolPathPolicy, GlobRequest, GrepRequest, ReadRequest
+from app.tooling.file_tools import FileToolPathPolicy, GlobRequest, GrepRequest, ReadRequest, WriteRequest
 from app.tooling.file_tools.glob_search import FileToolGlobSearcher
 from app.tooling.file_tools.grep_search import FileToolGrepSearcher
-from app.tooling.file_tools.service import FileToolGlobService, FileToolGrepService, FileToolReadService
+from app.tooling.file_tools.service import (
+    FileToolGlobService,
+    FileToolGrepService,
+    FileToolReadService,
+    FileToolWriteService,
+)
 from app.tooling.file_tools.text_reader import FileToolTextReader
+from app.tooling.file_tools.writer import FileToolTextWriter
 
 
 def test_file_tool_read_service_returns_success_envelope(tmp_path: Path) -> None:
@@ -43,6 +51,97 @@ def test_file_tool_read_service_maps_file_errors_into_failure_envelope(tmp_path:
     assert result.to_dict()["error"]["code"] == "file_not_found"
 
 
+def test_file_tool_write_service_creates_new_file(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    service = FileToolWriteService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_writer=FileToolTextWriter(),
+    )
+
+    result = service.write(WriteRequest(path="nested/output.txt", content="hello write"))
+
+    created = workspace_root / "nested" / "output.txt"
+    assert created.read_text(encoding="utf-8") == "hello write"
+    assert result.to_dict()["ok"] is True
+    assert result.to_dict()["tool"] == "Write"
+    assert result.to_dict()["data"]["created"] is True
+    assert result.to_dict()["data"]["overwritten"] is False
+    assert result.to_dict()["data"]["metadata"]["fileSize"] == len("hello write".encode("utf-8"))
+
+
+def test_file_tool_write_service_overwrites_existing_file(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "notes.txt"
+    target.write_text("before", encoding="utf-8")
+    service = FileToolWriteService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_writer=FileToolTextWriter(),
+    )
+
+    result = service.write(WriteRequest(path="notes.txt", content="after"))
+
+    assert target.read_text(encoding="utf-8") == "after"
+    assert result.to_dict()["data"]["created"] is False
+    assert result.to_dict()["data"]["overwritten"] is True
+    assert result.to_dict()["data"]["metadata"]["writeMode"] == "overwrite"
+
+
+def test_file_tool_write_service_rejects_existing_file_when_overwrite_disabled(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "notes.txt"
+    target.write_text("before", encoding="utf-8")
+    service = FileToolWriteService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_writer=FileToolTextWriter(),
+    )
+
+    result = service.write(WriteRequest(path="notes.txt", content="after", overwrite=False))
+
+    assert target.read_text(encoding="utf-8") == "before"
+    assert result.to_dict()["ok"] is False
+    assert result.to_dict()["error"]["code"] == "already_exists"
+
+
+def test_file_tool_write_service_checks_expected_hash(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "notes.txt"
+    target.write_text("before", encoding="utf-8")
+    current_hash = f"sha256:{hashlib.sha256(b'before').hexdigest()}"
+    service = FileToolWriteService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_writer=FileToolTextWriter(),
+    )
+
+    ok_result = service.write(WriteRequest(path="notes.txt", content="after", expected_hash=current_hash))
+    fail_result = service.write(
+        WriteRequest(path="notes.txt", content="again", expected_hash="sha256:deadbeef")
+    )
+
+    assert ok_result.to_dict()["ok"] is True
+    assert ok_result.to_dict()["data"]["metadata"]["sha256"].startswith("sha256:")
+    assert fail_result.to_dict()["ok"] is False
+    assert fail_result.to_dict()["error"]["code"] == "hash_mismatch"
+
+
+def test_file_tool_write_service_rejects_directory_target(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    target_dir = workspace_root / "notes"
+    target_dir.mkdir(parents=True)
+    service = FileToolWriteService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_writer=FileToolTextWriter(),
+    )
+
+    result = service.write(WriteRequest(path="notes", content="after"))
+
+    assert result.to_dict()["ok"] is False
+    assert result.to_dict()["error"]["code"] == "not_a_file"
+
+
 def test_file_tool_glob_service_returns_sorted_matches_and_truncation(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     docs_dir = workspace_root / "docs"
@@ -58,7 +157,6 @@ def test_file_tool_glob_service_returns_sorted_matches_and_truncation(tmp_path: 
     newer.touch()
     older_ts = (older_mtime, older_mtime)
     newer_ts = (newer_mtime, newer_mtime)
-    import os
     os.utime(older, older_ts)
     os.utime(newer, newer_ts)
 

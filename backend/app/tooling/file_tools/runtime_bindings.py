@@ -1,4 +1,4 @@
-"""Copilot runtime bindings for staged file tool Read, Glob, and Grep support."""
+"""Copilot runtime bindings for staged file tool Read, Write, Glob, and Grep support."""
 
 from __future__ import annotations
 
@@ -18,12 +18,15 @@ from app.tooling.runtime_adapter.copilot_runtime import RuntimeExecutableToolBin
 from .glob_search import FileToolGlobSearcher
 from .grep_search import FileToolGrepSearcher
 from .path_policy import FileToolPathPolicy
-from .protocol import AuditMetadata, GlobRequest, GrepRequest, ReadRequest
-from .service import FileToolGlobService, FileToolGrepService, FileToolReadService
+from .protocol import AuditMetadata, GlobRequest, GrepRequest, ReadRequest, WriteRequest
+from .service import FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
 from .text_reader import FileToolTextReader
+from .writer import FileToolTextWriter
 
 FILE_TOOL_READ_ID = "tool.fs.read"
 FILE_TOOL_READ_FUNCTION_NAME = "tool_fs_read"
+FILE_TOOL_WRITE_ID = "tool.fs.write"
+FILE_TOOL_WRITE_FUNCTION_NAME = "tool_fs_write"
 FILE_TOOL_GLOB_ID = "tool.fs.glob"
 FILE_TOOL_GLOB_FUNCTION_NAME = "tool_fs_glob"
 FILE_TOOL_GREP_ID = "tool.fs.grep"
@@ -51,6 +54,32 @@ _FILE_TOOL_READ_INPUT_SCHEMA = ToolSchema(
             },
         },
         "required": ["path"],
+    }
+)
+_FILE_TOOL_WRITE_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "content": {"type": "string"},
+            "encoding": {"type": "string", "enum": ["utf-8"], "default": "utf-8"},
+            "overwrite": {"type": "boolean", "default": True},
+            "expectedHash": {"type": "string", "minLength": 1},
+            "atomic": {"type": "boolean", "default": True},
+            "audit": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "actor": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "sessionId": {"type": "string"},
+                    "traceId": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+        },
+        "required": ["path", "content"],
     }
 )
 _FILE_TOOL_GLOB_INPUT_SCHEMA = ToolSchema(
@@ -139,6 +168,50 @@ class RuntimeFileToolReadContract(ToolContract):
             )
 
         result = self.service.read(request)
+        if result.ok:
+            return ContractToolResultEnvelope.success(
+                output=result.to_dict(),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+        return ContractToolResultEnvelope.failure(
+            error=_map_file_tool_error(result.error),
+            output=result.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeFileToolWriteContract(ToolContract):
+    """Runtime-agnostic contract wrapper for the staged file text Write tool."""
+
+    service: FileToolWriteService
+    metadata: ToolMetadata = ToolMetadata(
+        tool_id=FILE_TOOL_WRITE_ID,
+        display_name="File Write",
+        description="Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics.",
+        kind="operation",
+        input_schema=_FILE_TOOL_WRITE_INPUT_SCHEMA,
+        idempotent=False,
+        annotations={"stage": "phase2-write"},
+    )
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ContractToolResultEnvelope:
+        _ = (context, host)
+        try:
+            request = _build_write_request(arguments)
+        except ValueError as exc:
+            return ContractToolResultEnvelope.failure(
+                error=NormalizedToolError(code="invalid_input", message=str(exc)),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+
+        result = self.service.write(request)
         if result.ok:
             return ContractToolResultEnvelope.success(
                 output=result.to_dict(),
@@ -248,6 +321,15 @@ def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_READ_FUNCTION_NAME)
 
 
+def build_file_tool_write_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+    service = FileToolWriteService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_writer=FileToolTextWriter(),
+    )
+    contract = RuntimeFileToolWriteContract(service=service)
+    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_WRITE_FUNCTION_NAME)
+
+
 def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
     service = FileToolGlobService(
         path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -276,6 +358,21 @@ def _build_read_request(arguments: Mapping[str, Any] | None) -> ReadRequest:
         limit=_coerce_int(payload.get("limit", 2000), field_name="limit"),
         include_metadata=_coerce_bool(payload.get("includeMetadata", True), field_name="includeMetadata"),
         parser_hint=_optional_string(payload.get("parserHint"), field_name="parserHint"),
+        audit=audit,
+    )
+
+
+def _build_write_request(arguments: Mapping[str, Any] | None) -> WriteRequest:
+    payload = dict(arguments or {})
+    audit_payload = payload.get("audit")
+    audit = _build_audit_metadata(audit_payload)
+    return WriteRequest(
+        path=_require_string(payload.get("path"), field_name="path"),
+        content=_require_plain_string(payload.get("content"), field_name="content"),
+        encoding=_require_string(payload.get("encoding", "utf-8"), field_name="encoding"),
+        overwrite=_coerce_bool(payload.get("overwrite", True), field_name="overwrite"),
+        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        atomic=_coerce_bool(payload.get("atomic", True), field_name="atomic"),
         audit=audit,
     )
 
@@ -337,6 +434,12 @@ def _require_string(value: Any, *, field_name: str) -> str:
     return value
 
 
+def _require_plain_string(value: Any, *, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string.")
+    return value
+
+
 def _optional_string(value: Any, *, field_name: str) -> str | None:
     if value is None:
         return None
@@ -386,6 +489,8 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
         "too_large": "invalid_input",
         "encoding_error": "invalid_input",
         "permission_denied": "permission_denied",
+        "already_exists": "conflict",
+        "hash_mismatch": "conflict",
     }
     normalized_code = code_map.get(error.code, "execution_failed")
     return NormalizedToolError(
@@ -403,10 +508,14 @@ __all__ = [
     "FILE_TOOL_GREP_ID",
     "FILE_TOOL_READ_FUNCTION_NAME",
     "FILE_TOOL_READ_ID",
+    "FILE_TOOL_WRITE_FUNCTION_NAME",
+    "FILE_TOOL_WRITE_ID",
     "RuntimeFileToolGlobContract",
     "RuntimeFileToolGrepContract",
     "RuntimeFileToolReadContract",
+    "RuntimeFileToolWriteContract",
     "build_file_tool_glob_runtime_binding",
     "build_file_tool_grep_runtime_binding",
     "build_file_tool_read_runtime_binding",
+    "build_file_tool_write_runtime_binding",
 ]

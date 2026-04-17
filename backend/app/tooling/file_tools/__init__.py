@@ -24,6 +24,8 @@ from .protocol import (
     ReadResult,
     ToolName,
     ToolResultEnvelope,
+    WriteRequest,
+    WriteResult,
 )
 from .runtime_bindings import (
     FILE_TOOL_GLOB_FUNCTION_NAME,
@@ -32,15 +34,20 @@ from .runtime_bindings import (
     FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
+    FILE_TOOL_WRITE_FUNCTION_NAME,
+    FILE_TOOL_WRITE_ID,
     RuntimeFileToolGlobContract,
     RuntimeFileToolGrepContract,
     RuntimeFileToolReadContract,
+    RuntimeFileToolWriteContract,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
     build_file_tool_read_runtime_binding,
+    build_file_tool_write_runtime_binding,
 )
-from .service import FileToolGlobService, FileToolGrepService, FileToolReadService
+from .service import FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
 from .text_reader import FileToolTextReader, TextReadPayload
+from .writer import FileToolTextWriter, TextWritePayload
 
 __all__ = [
     "AuditMetadata",
@@ -51,6 +58,8 @@ __all__ = [
     "FILE_TOOL_GREP_ID",
     "FILE_TOOL_READ_FUNCTION_NAME",
     "FILE_TOOL_READ_ID",
+    "FILE_TOOL_WRITE_FUNCTION_NAME",
+    "FILE_TOOL_WRITE_ID",
     "FileToolCallMetadata",
     "FileToolError",
     "FileToolErrorCode",
@@ -61,6 +70,8 @@ __all__ = [
     "FileToolPathPolicy",
     "FileToolReadService",
     "FileToolTextReader",
+    "FileToolTextWriter",
+    "FileToolWriteService",
     "GlobMatch",
     "GlobRequest",
     "GlobSearchPayload",
@@ -76,13 +87,18 @@ __all__ = [
     "RuntimeFileToolGlobContract",
     "RuntimeFileToolGrepContract",
     "RuntimeFileToolReadContract",
+    "RuntimeFileToolWriteContract",
     "SymlinkPolicy",
     "TextReadPayload",
+    "TextWritePayload",
     "ToolName",
     "ToolResultEnvelope",
+    "WriteRequest",
+    "WriteResult",
     "build_file_tool_glob_runtime_binding",
     "build_file_tool_grep_runtime_binding",
     "build_file_tool_read_runtime_binding",
+    "build_file_tool_write_runtime_binding",
     "ensure_within_workspace",
     "is_hidden_path",
 ]

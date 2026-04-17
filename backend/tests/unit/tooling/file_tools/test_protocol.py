@@ -14,6 +14,8 @@ from app.tooling.file_tools import (
     ReadRequest,
     ReadResult,
     ToolResultEnvelope,
+    WriteRequest,
+    WriteResult,
 )
 
 
@@ -59,6 +61,54 @@ def test_read_request_and_result_serialize_to_stable_protocol_shape() -> None:
         "nextOffset": 43,
         "content": {"text": "line 3\nline 4"},
         "metadata": {"lineStart": 3, "lineCount": 2},
+    }
+
+
+def test_write_request_and_result_serialize_to_stable_protocol_shape() -> None:
+    audit = AuditMetadata(actor="agent", intent="write_file", session_id="session-2")
+    request = WriteRequest(
+        path="docs/spec.md",
+        content="updated text",
+        overwrite=False,
+        expected_hash="sha256:abcd",
+        audit=audit,
+    )
+    path = PathMetadata(
+        path="docs/spec.md",
+        resolved_path="C:/workspace/docs/spec.md",
+        path_kind="relative",
+    )
+    result = WriteResult(
+        path=path,
+        encoding="utf-8",
+        created=False,
+        overwritten=True,
+        metadata={"fileSize": 12, "sha256": "sha256:efgh", "writeMode": "overwrite"},
+    )
+
+    assert request.to_dict() == {
+        "path": "docs/spec.md",
+        "content": "updated text",
+        "encoding": "utf-8",
+        "overwrite": False,
+        "atomic": True,
+        "expectedHash": "sha256:abcd",
+        "audit": {
+            "actor": "agent",
+            "intent": "write_file",
+            "sessionId": "session-2",
+        },
+    }
+    assert result.to_dict() == {
+        "path": "docs/spec.md",
+        "resolvedPath": "C:/workspace/docs/spec.md",
+        "pathKind": "relative",
+        "rootPolicy": "workspace_only",
+        "symlinkPolicy": "deny_escape",
+        "encoding": "utf-8",
+        "created": False,
+        "overwritten": True,
+        "metadata": {"fileSize": 12, "sha256": "sha256:efgh", "writeMode": "overwrite"},
     }
 
 

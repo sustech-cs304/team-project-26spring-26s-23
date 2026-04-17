@@ -1,4 +1,4 @@
-"""Service orchestration for staged file tool Read, Glob, and Grep support."""
+"""Service orchestration for staged file tool Read, Write, Glob, and Grep support."""
 
 from __future__ import annotations
 
@@ -9,8 +9,16 @@ from .errors import FileToolError
 from .glob_search import FileToolGlobSearcher
 from .grep_search import FileToolGrepSearcher
 from .path_policy import FileToolPathPolicy
-from .protocol import FileToolCallMetadata, GlobRequest, GrepRequest, ReadRequest, ToolResultEnvelope
+from .protocol import (
+    FileToolCallMetadata,
+    GlobRequest,
+    GrepRequest,
+    ReadRequest,
+    ToolResultEnvelope,
+    WriteRequest,
+)
 from .text_reader import FileToolTextReader
+from .writer import FileToolTextWriter
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +46,39 @@ class FileToolReadService:
             return ToolResultEnvelope(
                 ok=False,
                 tool="Read",
+                error=exc,
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class FileToolWriteService:
+    """Compose path policy and text writer into the staged Write service."""
+
+    path_policy: FileToolPathPolicy
+    text_writer: FileToolTextWriter
+
+    def write(self, request: WriteRequest) -> ToolResultEnvelope:
+        started = perf_counter()
+        try:
+            resolution = self.path_policy.resolve_path(request.path)
+            payload = self.text_writer.write_text(request=request, resolution=resolution)
+            return ToolResultEnvelope(
+                ok=True,
+                tool="Write",
+                data=payload.result.to_dict(),
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+        except FileToolError as exc:
+            return ToolResultEnvelope(
+                ok=False,
+                tool="Write",
                 error=exc,
                 metadata=FileToolCallMetadata(
                     duration_ms=max(0, int((perf_counter() - started) * 1000)),
@@ -112,4 +153,4 @@ class FileToolGrepService:
             )
 
 
-__all__ = ["FileToolGlobService", "FileToolGrepService", "FileToolReadService"]
+__all__ = ["FileToolGlobService", "FileToolGrepService", "FileToolReadService", "FileToolWriteService"]

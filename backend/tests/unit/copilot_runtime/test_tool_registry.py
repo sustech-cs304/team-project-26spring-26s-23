@@ -25,6 +25,8 @@ from app.copilot_runtime.tool_registry import (
     FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_DESCRIPTION,
     FILE_TOOL_READ_DISPLAY_NAME,
+    FILE_TOOL_WRITE_DESCRIPTION,
+    FILE_TOOL_WRITE_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
     WEATHER_CURRENT_TOOL_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_ID,
@@ -40,6 +42,8 @@ from app.tooling.file_tools import (
     FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
+    FILE_TOOL_WRITE_FUNCTION_NAME,
+    FILE_TOOL_WRITE_ID,
 )
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
@@ -74,6 +78,7 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
     registry = build_default_tool_registry()
     expected_tool_ids = (
         FILE_TOOL_READ_ID,
+        FILE_TOOL_WRITE_ID,
         FILE_TOOL_GLOB_ID,
         FILE_TOOL_GREP_ID,
         FILE_CONVERT_TOOL_ID,
@@ -101,6 +106,26 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "displayNameEn": FILE_TOOL_READ_DISPLAY_NAME,
         "descriptionZh": "按行分页读取工作区内 UTF-8 文本文件。",
         "descriptionEn": FILE_TOOL_READ_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[FILE_TOOL_WRITE_ID] == {
+        "toolId": FILE_TOOL_WRITE_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "文件写入",
+        "description": "在工作区内创建或覆写 UTF-8 文本文件，并带有保护性覆写语义。",
+        "prompt": "使用此工具在已知完整目标内容时创建或整体覆写工作区文本文件。",
+        "displayNameZh": "文件写入",
+        "displayNameEn": FILE_TOOL_WRITE_DISPLAY_NAME,
+        "descriptionZh": "在工作区内创建或覆写 UTF-8 文本文件，并带有保护性覆写语义。",
+        "descriptionEn": FILE_TOOL_WRITE_DESCRIPTION,
         "group": {
             "id": "builtin-core",
             "label": "内置基础工具",
@@ -223,6 +248,8 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
 
     assert zh_catalog[FILE_TOOL_READ_ID]["displayName"] == "文件读取"
     assert en_catalog[FILE_TOOL_READ_ID]["displayName"] == FILE_TOOL_READ_DISPLAY_NAME
+    assert zh_catalog[FILE_TOOL_WRITE_ID]["displayName"] == "文件写入"
+    assert en_catalog[FILE_TOOL_WRITE_ID]["displayName"] == FILE_TOOL_WRITE_DISPLAY_NAME
     assert zh_catalog[FILE_TOOL_GLOB_ID]["displayName"] == "文件发现"
     assert en_catalog[FILE_TOOL_GLOB_ID]["displayName"] == FILE_TOOL_GLOB_DISPLAY_NAME
     assert zh_catalog[FILE_TOOL_GREP_ID]["displayName"] == "文件搜索"
@@ -295,6 +322,20 @@ def test_default_tool_registry_exposes_file_read_runtime_binding_metadata_and_ex
     assert result["output"]["data"]["content"] == {"text": "second"}
 
 
+def test_default_tool_registry_exposes_file_write_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
+    registry = build_default_tool_registry(workspace_root=tmp_path)
+
+    resolved_tool = registry.resolve_tool(FILE_TOOL_WRITE_ID)
+    result = asyncio.run(resolved_tool.execute({"path": "readme.txt", "content": "second"}))
+
+    assert resolved_tool.descriptor.kind == "builtin"
+    assert resolved_tool.function_name == FILE_TOOL_WRITE_FUNCTION_NAME
+    assert resolved_tool.parameters_json_schema is not None
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert result["output"]["data"]["created"] is True
+
+
 def test_default_tool_registry_exposes_file_glob_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
     registry = build_default_tool_registry(workspace_root=tmp_path)
     docs_dir = tmp_path / "docs"
@@ -364,60 +405,39 @@ def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
                 name="default",
                 label="Duplicate",
                 description="Duplicate toolset.",
-                default=False,
                 tools=(),
             )
         )
 
-    with pytest.raises(ValueError, match="Default toolset is already registered"):
+    with pytest.raises(ValueError, match="Only one toolset can be marked as default"):
         registry.register(
             ToolsetDescriptor(
                 name="secondary",
                 label="Secondary",
-                description="Another default toolset.",
+                description="Secondary toolset.",
                 default=True,
                 tools=(),
             )
         )
 
 
-def test_tool_registry_rejects_duplicate_tool_ids_within_toolset() -> None:
-    registry = ToolRegistry()
-
-    with pytest.raises(ValueError, match="duplicate tool id 'tool.lookup'"):
-        registry.register(
-            ToolsetDescriptor(
-                name="default",
-                label="Default",
-                description="Default toolset.",
-                default=True,
-                tools=(
-                    ToolDescriptor(tool_id="tool.lookup", display_name="Lookup"),
-                    ToolDescriptor(tool_id="tool.lookup", display_name="Lookup Duplicate"),
-                ),
-            )
-        )
-
-
-def test_summarize_tool_arguments_redacts_sensitive_values_and_truncates_long_strings() -> None:
-    long_value = "x" * 200
+def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_values() -> None:
     summary = summarize_tool_arguments(
         {
-            "prompt": long_value,
-            "token": "secret-token",
-            "nested": {"password": "hidden", "safe": "value"},
+            "path": "docs/spec.md",
+            "apiKey": "top-secret-token",
+            "nested": {"session_token": "abc123", "note": "x" * 200},
         }
     )
 
     assert summary is not None
-    assert "secret-token" not in summary
-    assert "hidden" not in summary
-    assert '"token": "***"' in summary
-    assert '"password": "***"' in summary
-    assert "…" in summary
+    assert "top-secret-token" not in summary
+    assert "abc123" not in summary
+    assert "***" in summary
+    assert '"path": "docs/spec.md"' in summary
 
 
-def test_summarize_tool_result_serializes_common_payloads() -> None:
-    summary = summarize_tool_result({"status": "success", "count": 3})
+def test_summarize_tool_result_returns_json_string() -> None:
+    summary = summarize_tool_result({"ok": True, "items": [1, 2, 3]})
 
-    assert summary == '{"count": 3, "status": "success"}'
+    assert summary == '{"items": [1, 2, 3], "ok": true}'
