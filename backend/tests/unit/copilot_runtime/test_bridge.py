@@ -5,12 +5,14 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
+from app.copilot_runtime import RuntimeToolApprovalCoordinator
 from app.copilot_runtime.agent_registry import AgentRegistry, build_default_agent_registry
 from app.copilot_runtime.bridge import AgentNotFoundError, RuntimeBridge, SessionNotFoundError
 from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
     RuntimeRunStartRequest,
+    RuntimeToolApprovalResolveRequest,
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
     RuntimeToolPermissionPolicy,
@@ -249,6 +251,49 @@ def test_start_run_round_trips_tool_permission_policy() -> None:
         "toolTimeoutSeconds": {},
         "toolTimeoutActions": {},
     }
+
+
+
+def test_resolve_tool_approval_calls_coordinator_and_builds_response() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        approval_coordinator=approval_coordinator,
+    )
+    approval_coordinator.create_request(
+        run_id="run-approve",
+        tool_call_id="call-approve",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    response = bridge.resolve_tool_approval(
+        request=RuntimeToolApprovalResolveRequest(
+            run_id="run-approve",
+            tool_call_id="call-approve",
+            decision="approved",
+        )
+    )
+
+    payload = response.to_dict()
+    assert payload["ok"] is True
+    assert payload["runId"] == "run-approve"
+    assert payload["toolCallId"] == "call-approve"
+    assert payload["decision"] == "approved"
+    assert payload["status"] == "approved"
+    assert payload["source"] == "manual"
+    assert payload["details"] == {
+        "toolId": "tool.file-convert",
+        "mode": "ask",
+    }
+    assert payload["resolvedAt"]
 
 
 

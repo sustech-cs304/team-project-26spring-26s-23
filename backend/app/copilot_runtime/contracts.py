@@ -21,6 +21,7 @@ RUN_CANCEL_METHOD = "run/cancel"
 CAPABILITIES_GET_METHOD = "capabilities/get"
 GLOBAL_TOOL_CATALOG_GET_METHOD = "tools/catalog/get"
 THINKING_CAPABILITY_GET_METHOD = "thinking/capability/get"
+TOOL_APPROVAL_RESOLVE_METHOD = "tool-approval/resolve"
 THINKING_CAPABILITY_SCHEMA_VERSION = "canonical-thinking-capability-v2"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
 DEFAULT_RUNTIME_STAGE = "phase3-run-bridge"
@@ -335,6 +336,7 @@ class RuntimeToolApprovalResolveResponse(RuntimeContract):
     status: RuntimeToolApprovalStatus
     resolvedAt: datetime
     source: str
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -590,6 +592,32 @@ class RuntimeScaffold(RuntimeContract):
             cancelAccepted=cancel_accepted,
         )
 
+    def build_tool_approval_resolve_response(
+        self,
+        *,
+        resolution_payload: dict[str, Any],
+    ) -> RuntimeToolApprovalResolveResponse:
+        details: dict[str, Any] = {}
+        tool_id = resolution_payload.get("toolId")
+        if tool_id is not None:
+            details["toolId"] = str(tool_id)
+        mode = resolution_payload.get("mode")
+        if mode is not None:
+            details["mode"] = cast(RuntimeToolPermissionMode, mode)
+        timeout_action = resolution_payload.get("timeoutAction")
+        if timeout_action is not None:
+            details["timeoutAction"] = cast(RuntimeToolTimeoutAction, timeout_action)
+        return RuntimeToolApprovalResolveResponse(
+            ok=True,
+            runId=str(resolution_payload["runId"]),
+            toolCallId=str(resolution_payload["toolCallId"]),
+            decision=cast(RuntimeToolApprovalDecision, resolution_payload["decision"]),
+            status=cast(RuntimeToolApprovalStatus, resolution_payload["status"]),
+            resolvedAt=datetime.fromisoformat(str(resolution_payload["resolvedAt"])),
+            source=str(resolution_payload["source"]),
+            details=details,
+        )
+
     def supports_agent(self, agent_name: str) -> bool:
         return agent_name in self.bound_agent_views
 
@@ -708,6 +736,7 @@ def build_runtime_scaffold(
             CAPABILITIES_GET_METHOD,
             GLOBAL_TOOL_CATALOG_GET_METHOD,
             THINKING_CAPABILITY_GET_METHOD,
+            TOOL_APPROVAL_RESOLVE_METHOD,
         ),
         default_agent=resolved_agent_registry.get_default().name,
         agent_directory_version=resolved_agent_registry.directory_version,

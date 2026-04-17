@@ -330,4 +330,5 @@ def test_approval_contracts_serialize_status_fields() -> None:
         "status": "approved",
         "resolvedAt": "2026-04-17T15:00:00+00:00",
         "source": "manual",
+        "details": {},
     }

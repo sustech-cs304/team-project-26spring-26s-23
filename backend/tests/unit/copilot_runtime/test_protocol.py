@@ -431,6 +431,51 @@ def test_extract_run_cancel_request_reads_run_id() -> None:
 
 
 
+def test_extract_tool_approval_resolve_request_reads_payload() -> None:
+    parser = _build_parser()
+
+    request = parser.extract_tool_approval_resolve_request(
+        {
+            "method": "tool-approval/resolve",
+            "body": {
+                "runId": "run-123",
+                "toolCallId": "call-123",
+                "decision": "approved",
+            },
+        }
+    )
+
+    assert request.to_dict() == {
+        "run_id": "run-123",
+        "tool_call_id": "call-123",
+        "decision": "approved",
+    }
+
+
+
+def test_extract_tool_approval_resolve_request_rejects_invalid_decision() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_tool_approval_resolve_request(
+            {
+                "method": "tool-approval/resolve",
+                "body": {
+                    "runId": "run-123",
+                    "toolCallId": "call-123",
+                    "decision": "maybe",
+                },
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_request"
+    assert exc.error.error.requestedMethod == "tool-approval/resolve"
+    assert exc.error.error.details == {"field": "decision"}
+
+
+
 def test_extract_run_start_request_requires_explicit_body_wrapper() -> None:
     parser = _build_parser()
 

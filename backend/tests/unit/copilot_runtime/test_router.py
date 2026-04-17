@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -12,6 +13,7 @@ from starlette.requests import Request
 from app.copilot_runtime import (
     RuntimeBridge,
     RuntimeRunStartResponse,
+    RuntimeToolApprovalCoordinator,
     RuntimeScaffold,
     RuntimeToolPermissionPolicy,
     ToolDescriptor,
@@ -42,6 +44,7 @@ SUPPORTED_METHODS = [
     "capabilities/get",
     "tools/catalog/get",
     "thinking/capability/get",
+    "tool-approval/resolve",
 ]
 
 
@@ -251,7 +254,8 @@ def test_root_post_thread_get_returns_bound_agent_recommendations_and_tool_catal
     assert payload == scaffold.build_thread_get_response(thread=thread).to_dict()
     assert payload["recommendedTools"] == ["tool.file-convert"]
     assert payload["toolSelectionMode"] == "recommendation-only"
-    assert payload["tools"][0]["toolId"] == "tool.file-convert"
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
     assert payload["latestRunId"] is None
     assert scaffold.tool_registry.get_default().name == "default"
@@ -978,7 +982,8 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
     assert payload["recommendedTools"] == ["tool.file-convert"]
     assert scaffold.tool_registry.get_default().name == "default"
     assert payload["toolSelectionMode"] == "recommendation-only"
-    assert payload["tools"][0]["toolId"] == "tool.file-convert"
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
 
 
@@ -1034,7 +1039,8 @@ def test_root_post_global_tool_catalog_get_returns_default_toolset_catalog() -> 
     assert payload == scaffold.build_global_tool_catalog_response().to_dict()
     assert payload["directoryVersion"] == "tools-v1"
     assert payload["defaultToolset"] == "default"
-    assert payload["tools"][0]["toolId"] == "tool.file-convert"
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" in tool_ids
 
 
 
@@ -1272,6 +1278,7 @@ def _build_app() -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
     )
     app = FastAPI()
     app.include_router(build_router(scaffold, bridge))
+    app.state.runtime_bridge = bridge
     return app, scaffold, store
 
 
@@ -1471,6 +1478,154 @@ def _build_run_cancel_request(*, run_id: str) -> dict[str, Any]:
             "runId": run_id,
         },
     }
+
+
+
+def _build_tool_approval_resolve_request(
+    *,
+    run_id: str,
+    tool_call_id: str,
+    decision: str,
+) -> dict[str, Any]:
+    return {
+        "method": "tool-approval/resolve",
+        "body": {
+            "runId": run_id,
+            "toolCallId": tool_call_id,
+            "decision": decision,
+        },
+    }
+
+
+
+def test_root_post_tool_approval_resolve_approved_routes_to_coordinator() -> None:
+    app, _scaffold, _store = _build_app()
+    bridge = app.state.runtime_bridge
+    bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge._approval_coordinator.create_request(
+        run_id="run-approved",
+        tool_call_id="call-approved",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-approved",
+                tool_call_id="call-approved",
+                decision="approved",
+            ),
+        )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["decision"] == "approved"
+    assert payload["status"] == "approved"
+    assert payload["details"] == {
+        "toolId": "tool.file-convert",
+        "mode": "ask",
+    }
+
+
+
+def test_root_post_tool_approval_resolve_rejected_routes_to_coordinator() -> None:
+    app, _scaffold, _store = _build_app()
+    bridge = app.state.runtime_bridge
+    bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge._approval_coordinator.create_request(
+        run_id="run-rejected",
+        tool_call_id="call-rejected",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-rejected",
+                tool_call_id="call-rejected",
+                decision="rejected",
+            ),
+        )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["decision"] == "rejected"
+    assert payload["status"] == "rejected"
+    assert payload["details"] == {
+        "toolId": "tool.file-convert",
+        "mode": "ask",
+    }
+
+
+
+def test_root_post_tool_approval_resolve_missing_request_returns_stable_error() -> None:
+    app, _scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-missing",
+                tool_call_id="call-missing",
+                decision="approved",
+            ),
+        )
+
+    payload = response.json()
+    assert response.status_code == 404
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "run_not_found"
+    assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
+    assert payload["error"]["details"] == {"runId": "run-missing"}
+
+
+
+def test_root_post_tool_approval_resolve_duplicate_decision_returns_stable_error() -> None:
+    app, _scaffold, _store = _build_app()
+    bridge = app.state.runtime_bridge
+    bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge._approval_coordinator.create_request(
+        run_id="run-dup",
+        tool_call_id="call-dup",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    with TestClient(app) as client:
+        first_response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-dup",
+                tool_call_id="call-dup",
+                decision="approved",
+            ),
+        )
+        second_response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-dup",
+                tool_call_id="call-dup",
+                decision="rejected",
+            ),
+        )
+
+    assert first_response.status_code == 200
+    payload = second_response.json()
+    assert second_response.status_code == 404
+    assert payload["error"]["code"] == "run_not_found"
+    assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
 
 
 

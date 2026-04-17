@@ -10,6 +10,7 @@ from .transport.http_handlers import (
     _handle_thinking_capability_get_request,
     _handle_thread_create_request,
     _handle_thread_get_request,
+    _handle_tool_approval_resolve_request,
     build_router,
 )
 from .transport.request_mappers import (

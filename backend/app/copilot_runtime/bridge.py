@@ -12,6 +12,9 @@ from .contracts import (
     RuntimeCapabilitiesResponse,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
+    RuntimeToolApprovalDecision,
+    RuntimeToolApprovalResolveRequest,
+    RuntimeToolApprovalResolveResponse,
     RuntimeToolPermissionPolicy,
     RuntimeRunStartRequest,
     RuntimeScaffold,
@@ -60,6 +63,7 @@ from .session_store import (
 
 
 from .thinking_adapter import adapt_thinking_selection, resolve_canonical_thinking_capability
+from .tool_approval_coordinator import RuntimeToolApprovalCoordinator
 from .tool_permissions import RuntimeToolPermissionResolver
 
 
@@ -78,6 +82,7 @@ class RuntimeBridge:
         message_run_orchestrator: RuntimeMessageRunOrchestrator | None = None,
         model_route_resolver: RuntimeModelRouteResolver | None = None,
         provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
+        approval_coordinator: RuntimeToolApprovalCoordinator | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
@@ -87,6 +92,7 @@ class RuntimeBridge:
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
+        self._approval_coordinator = approval_coordinator or RuntimeToolApprovalCoordinator()
 
     def create_thread(self, *, agent_id: str) -> RuntimeThreadRecord:
         self._resolve_agent(agent_id)
@@ -200,6 +206,22 @@ class RuntimeBridge:
         if run is None:
             raise RunNotFoundError(run_id)
         return run
+
+    def resolve_tool_approval(
+        self,
+        *,
+        request: RuntimeToolApprovalResolveRequest,
+    ) -> RuntimeToolApprovalResolveResponse:
+        resolution = self._approval_coordinator.resolve(
+            run_id=request.run_id,
+            tool_call_id=request.tool_call_id,
+            decision=cast(RuntimeToolApprovalDecision, request.decision),
+        )
+        if self._scaffold is None:
+            raise RuntimeError("Runtime scaffold is required for tool approval resolution.")
+        return self._scaffold.build_tool_approval_resolve_response(
+            resolution_payload=resolution.to_payload()
+        )
 
     async def prime_run_metadata(
         self,

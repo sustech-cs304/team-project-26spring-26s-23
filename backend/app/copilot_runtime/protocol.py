@@ -14,6 +14,7 @@ from .contracts import (
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
     THINKING_CAPABILITY_GET_METHOD,
+    TOOL_APPROVAL_RESOLVE_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
     THINKING_LEVEL_INTENTS,
@@ -29,6 +30,7 @@ from .contracts import (
     RuntimeThinkingCapabilityGetRequest,
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
+    RuntimeToolApprovalResolveRequest,
     RuntimeThreadCreateRequest,
     RuntimeThreadGetRequest,
     normalize_thinking_level_intent,
@@ -229,6 +231,47 @@ class RuntimeProtocolParser:
             field_name="runId",
         )
         return RuntimeRunCancelRequest(run_id=run_id)
+
+    def extract_tool_approval_resolve_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> RuntimeToolApprovalResolveRequest:
+        request_body = self._require_payload_body(
+            payload,
+            requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
+        )
+        run_id = self._require_non_empty_string(
+            request_body.get("runId"),
+            field_name="runId",
+            requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
+        )
+        tool_call_id = self._require_non_empty_string(
+            request_body.get("toolCallId"),
+            field_name="toolCallId",
+            requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
+        )
+        decision = self._require_non_empty_string(
+            request_body.get("decision"),
+            field_name="decision",
+            requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
+        )
+        if decision not in {"approved", "rejected"}:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=(
+                        "Runtime request field 'decision' must be one of: approved, rejected."
+                    ),
+                    scaffold=self._scaffold,
+                    requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
+                    details={"field": "decision"},
+                ),
+            )
+        return RuntimeToolApprovalResolveRequest(
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            decision=decision,
+        )
 
     def _extract_agent_id_request(
         self,
