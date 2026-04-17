@@ -2,6 +2,7 @@
 
 from .errors import FILE_TOOL_ERROR_CODES, FileToolError, FileToolErrorCode
 from .glob_search import FileToolGlobSearcher, GlobSearchPayload
+from .grep_search import FileToolGrepSearcher, GrepSearchPayload
 from .path_policy import (
     FileToolPathPolicy,
     PathResolution,
@@ -27,14 +28,18 @@ from .protocol import (
 from .runtime_bindings import (
     FILE_TOOL_GLOB_FUNCTION_NAME,
     FILE_TOOL_GLOB_ID,
+    FILE_TOOL_GREP_FUNCTION_NAME,
+    FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
     RuntimeFileToolGlobContract,
+    RuntimeFileToolGrepContract,
     RuntimeFileToolReadContract,
     build_file_tool_glob_runtime_binding,
+    build_file_tool_grep_runtime_binding,
     build_file_tool_read_runtime_binding,
 )
-from .service import FileToolGlobService, FileToolReadService
+from .service import FileToolGlobService, FileToolGrepService, FileToolReadService
 from .text_reader import FileToolTextReader, TextReadPayload
 
 __all__ = [
@@ -42,6 +47,8 @@ __all__ = [
     "FILE_TOOL_ERROR_CODES",
     "FILE_TOOL_GLOB_FUNCTION_NAME",
     "FILE_TOOL_GLOB_ID",
+    "FILE_TOOL_GREP_FUNCTION_NAME",
+    "FILE_TOOL_GREP_ID",
     "FILE_TOOL_READ_FUNCTION_NAME",
     "FILE_TOOL_READ_ID",
     "FileToolCallMetadata",
@@ -49,6 +56,8 @@ __all__ = [
     "FileToolErrorCode",
     "FileToolGlobSearcher",
     "FileToolGlobService",
+    "FileToolGrepSearcher",
+    "FileToolGrepService",
     "FileToolPathPolicy",
     "FileToolReadService",
     "FileToolTextReader",
@@ -57,6 +66,7 @@ __all__ = [
     "GlobSearchPayload",
     "GrepMatch",
     "GrepRequest",
+    "GrepSearchPayload",
     "PathKind",
     "PathMetadata",
     "PathResolution",
@@ -64,12 +74,14 @@ __all__ = [
     "ReadResult",
     "RootPolicy",
     "RuntimeFileToolGlobContract",
+    "RuntimeFileToolGrepContract",
     "RuntimeFileToolReadContract",
     "SymlinkPolicy",
     "TextReadPayload",
     "ToolName",
     "ToolResultEnvelope",
     "build_file_tool_glob_runtime_binding",
+    "build_file_tool_grep_runtime_binding",
     "build_file_tool_read_runtime_binding",
     "ensure_within_workspace",
     "is_hidden_path",

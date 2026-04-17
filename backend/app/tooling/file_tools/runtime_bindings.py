@@ -1,4 +1,4 @@
-"""Copilot runtime bindings for staged file tool Read and Glob support."""
+"""Copilot runtime bindings for staged file tool Read, Glob, and Grep support."""
 
 from __future__ import annotations
 
@@ -16,15 +16,18 @@ from app.tooling.host_capabilities import ToolHostCapabilities
 from app.tooling.runtime_adapter.copilot_runtime import RuntimeExecutableToolBinding, build_contract_runtime_binding
 
 from .glob_search import FileToolGlobSearcher
+from .grep_search import FileToolGrepSearcher
 from .path_policy import FileToolPathPolicy
-from .protocol import AuditMetadata, GlobRequest, ReadRequest
-from .service import FileToolGlobService, FileToolReadService
+from .protocol import AuditMetadata, GlobRequest, GrepRequest, ReadRequest
+from .service import FileToolGlobService, FileToolGrepService, FileToolReadService
 from .text_reader import FileToolTextReader
 
 FILE_TOOL_READ_ID = "tool.fs.read"
 FILE_TOOL_READ_FUNCTION_NAME = "tool_fs_read"
 FILE_TOOL_GLOB_ID = "tool.fs.glob"
 FILE_TOOL_GLOB_FUNCTION_NAME = "tool_fs_glob"
+FILE_TOOL_GREP_ID = "tool.fs.grep"
+FILE_TOOL_GREP_FUNCTION_NAME = "tool_fs_grep"
 _FILE_TOOL_READ_INPUT_SCHEMA = ToolSchema(
     schema={
         "type": "object",
@@ -59,6 +62,34 @@ _FILE_TOOL_GLOB_INPUT_SCHEMA = ToolSchema(
             "basePath": {"type": "string", "minLength": 1, "default": "."},
             "includeHidden": {"type": "boolean", "default": False},
             "maxResults": {"type": "integer", "minimum": 1, "default": 500},
+            "audit": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "actor": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "sessionId": {"type": "string"},
+                    "traceId": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+        },
+        "required": ["pattern"],
+    }
+)
+_FILE_TOOL_GREP_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "pattern": {"type": "string", "minLength": 1},
+            "basePath": {"type": "string", "minLength": 1, "default": "."},
+            "fileGlob": {"type": "string", "minLength": 1, "default": "**/*"},
+            "isRegex": {"type": "boolean", "default": False},
+            "caseSensitive": {"type": "boolean", "default": False},
+            "contextLines": {"type": "integer", "minimum": 0, "default": 0},
+            "includeHidden": {"type": "boolean", "default": False},
+            "maxResults": {"type": "integer", "minimum": 1, "default": 100},
             "audit": {
                 "type": "object",
                 "additionalProperties": True,
@@ -164,6 +195,50 @@ class RuntimeFileToolGlobContract(ToolContract):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeFileToolGrepContract(ToolContract):
+    """Runtime-agnostic contract wrapper for the staged file grep tool."""
+
+    service: FileToolGrepService
+    metadata: ToolMetadata = ToolMetadata(
+        tool_id=FILE_TOOL_GREP_ID,
+        display_name="File Grep",
+        description="Search workspace text files by literal or regex pattern with bounded line context.",
+        kind="operation",
+        input_schema=_FILE_TOOL_GREP_INPUT_SCHEMA,
+        idempotent=True,
+        annotations={"stage": "phase1-grep"},
+    )
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ContractToolResultEnvelope:
+        _ = (context, host)
+        try:
+            request = _build_grep_request(arguments)
+        except ValueError as exc:
+            return ContractToolResultEnvelope.failure(
+                error=NormalizedToolError(code="invalid_input", message=str(exc)),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+
+        result = self.service.grep(request)
+        if result.ok:
+            return ContractToolResultEnvelope.success(
+                output=result.to_dict(),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+        return ContractToolResultEnvelope.failure(
+            error=_map_file_tool_error(result.error),
+            output=result.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
 def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
     service = FileToolReadService(
         path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -171,7 +246,6 @@ def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
     contract = RuntimeFileToolReadContract(service=service)
     return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_READ_FUNCTION_NAME)
-
 
 
 def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
@@ -182,6 +256,14 @@ def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     contract = RuntimeFileToolGlobContract(service=service)
     return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_GLOB_FUNCTION_NAME)
 
+
+def build_file_tool_grep_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+    service = FileToolGrepService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        grep_searcher=FileToolGrepSearcher(),
+    )
+    contract = RuntimeFileToolGrepContract(service=service)
+    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_GREP_FUNCTION_NAME)
 
 
 def _build_read_request(arguments: Mapping[str, Any] | None) -> ReadRequest:
@@ -198,7 +280,6 @@ def _build_read_request(arguments: Mapping[str, Any] | None) -> ReadRequest:
     )
 
 
-
 def _build_glob_request(arguments: Mapping[str, Any] | None) -> GlobRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
@@ -211,6 +292,22 @@ def _build_glob_request(arguments: Mapping[str, Any] | None) -> GlobRequest:
         audit=audit,
     )
 
+
+def _build_grep_request(arguments: Mapping[str, Any] | None) -> GrepRequest:
+    payload = dict(arguments or {})
+    audit_payload = payload.get("audit")
+    audit = _build_audit_metadata(audit_payload)
+    return GrepRequest(
+        base_path=_require_string(payload.get("basePath", "."), field_name="basePath"),
+        pattern=_require_string(payload.get("pattern"), field_name="pattern"),
+        file_glob=_require_string(payload.get("fileGlob", "**/*"), field_name="fileGlob"),
+        is_regex=_coerce_bool(payload.get("isRegex", False), field_name="isRegex"),
+        case_sensitive=_coerce_bool(payload.get("caseSensitive", False), field_name="caseSensitive"),
+        context_lines=_coerce_non_negative_int(payload.get("contextLines", 0), field_name="contextLines"),
+        include_hidden=_coerce_bool(payload.get("includeHidden", False), field_name="includeHidden"),
+        max_results=_coerce_optional_int(payload.get("maxResults"), field_name="maxResults"),
+        audit=audit,
+    )
 
 
 def _build_audit_metadata(value: Any) -> AuditMetadata | None:
@@ -234,12 +331,10 @@ def _build_audit_metadata(value: Any) -> AuditMetadata | None:
     )
 
 
-
 def _require_string(value: Any, *, field_name: str) -> str:
     if not isinstance(value, str) or value.strip() == "":
         raise ValueError(f"{field_name} must be a non-empty string.")
     return value
-
 
 
 def _optional_string(value: Any, *, field_name: str) -> str | None:
@@ -251,12 +346,17 @@ def _optional_string(value: Any, *, field_name: str) -> str | None:
     return normalized or None
 
 
-
 def _coerce_int(value: Any, *, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{field_name} must be an integer.")
     return value
 
+
+def _coerce_non_negative_int(value: Any, *, field_name: str) -> int:
+    coerced = _coerce_int(value, field_name=field_name)
+    if coerced < 0:
+        raise ValueError(f"{field_name} must be greater than or equal to 0.")
+    return coerced
 
 
 def _coerce_optional_int(value: Any, *, field_name: str) -> int | None:
@@ -265,12 +365,10 @@ def _coerce_optional_int(value: Any, *, field_name: str) -> int | None:
     return _coerce_int(value, field_name=field_name)
 
 
-
 def _coerce_bool(value: Any, *, field_name: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{field_name} must be a boolean.")
     return value
-
 
 
 def _map_file_tool_error(error: Any) -> NormalizedToolError:
@@ -284,6 +382,7 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
         "not_a_directory": "invalid_input",
         "binary_unsupported": "invalid_input",
         "invalid_pattern": "invalid_input",
+        "invalid_regex": "invalid_input",
         "too_large": "invalid_input",
         "encoding_error": "invalid_input",
         "permission_denied": "permission_denied",
@@ -300,10 +399,14 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
 __all__ = [
     "FILE_TOOL_GLOB_FUNCTION_NAME",
     "FILE_TOOL_GLOB_ID",
+    "FILE_TOOL_GREP_FUNCTION_NAME",
+    "FILE_TOOL_GREP_ID",
     "FILE_TOOL_READ_FUNCTION_NAME",
     "FILE_TOOL_READ_ID",
     "RuntimeFileToolGlobContract",
+    "RuntimeFileToolGrepContract",
     "RuntimeFileToolReadContract",
     "build_file_tool_glob_runtime_binding",
+    "build_file_tool_grep_runtime_binding",
     "build_file_tool_read_runtime_binding",
 ]

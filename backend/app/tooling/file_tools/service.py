@@ -1,4 +1,4 @@
-"""Service orchestration for staged file tool Read and Glob support."""
+"""Service orchestration for staged file tool Read, Glob, and Grep support."""
 
 from __future__ import annotations
 
@@ -7,8 +7,9 @@ from time import perf_counter
 
 from .errors import FileToolError
 from .glob_search import FileToolGlobSearcher
+from .grep_search import FileToolGrepSearcher
 from .path_policy import FileToolPathPolicy
-from .protocol import FileToolCallMetadata, GlobRequest, ReadRequest, ToolResultEnvelope
+from .protocol import FileToolCallMetadata, GlobRequest, GrepRequest, ReadRequest, ToolResultEnvelope
 from .text_reader import FileToolTextReader
 
 
@@ -78,4 +79,37 @@ class FileToolGlobService:
             )
 
 
-__all__ = ["FileToolGlobService", "FileToolReadService"]
+@dataclass(frozen=True, slots=True)
+class FileToolGrepService:
+    """Compose path policy and text grep into the staged Grep service."""
+
+    path_policy: FileToolPathPolicy
+    grep_searcher: FileToolGrepSearcher
+
+    def grep(self, request: GrepRequest) -> ToolResultEnvelope:
+        started = perf_counter()
+        try:
+            resolution = self.path_policy.resolve_path(request.base_path)
+            payload = self.grep_searcher.search(request=request, resolution=resolution)
+            return ToolResultEnvelope(
+                ok=True,
+                tool="Grep",
+                data=payload.to_dict(),
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+        except FileToolError as exc:
+            return ToolResultEnvelope(
+                ok=False,
+                tool="Grep",
+                error=exc,
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+
+
+__all__ = ["FileToolGlobService", "FileToolGrepService", "FileToolReadService"]

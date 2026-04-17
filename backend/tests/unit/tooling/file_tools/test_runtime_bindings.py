@@ -8,9 +8,12 @@ import time
 from app.tooling.file_tools.runtime_bindings import (
     FILE_TOOL_GLOB_FUNCTION_NAME,
     FILE_TOOL_GLOB_ID,
+    FILE_TOOL_GREP_FUNCTION_NAME,
+    FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
     build_file_tool_glob_runtime_binding,
+    build_file_tool_grep_runtime_binding,
     build_file_tool_read_runtime_binding,
 )
 
@@ -55,7 +58,6 @@ def test_file_tool_read_runtime_binding_exposes_schema_and_executes(tmp_path: Pa
     assert result["output"]["data"]["content"] == {"text": "beta"}
 
 
-
 def test_file_tool_read_runtime_binding_returns_structured_failure_for_binary(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -68,7 +70,6 @@ def test_file_tool_read_runtime_binding_returns_structured_failure_for_binary(tm
     assert result["status"] == "error"
     assert result["error"]["code"] == "invalid_input"
     assert result["output"]["error"]["code"] == "binary_unsupported"
-
 
 
 def test_file_tool_glob_runtime_binding_exposes_schema_and_executes(tmp_path: Path) -> None:
@@ -115,3 +116,76 @@ def test_file_tool_glob_runtime_binding_exposes_schema_and_executes(tmp_path: Pa
     assert result["output"]["ok"] is True
     assert result["output"]["data"]["truncated"] is True
     assert [match["path"] for match in result["output"]["data"]["matches"]] == ["docs/newer.md"]
+
+
+def test_file_tool_grep_runtime_binding_exposes_schema_and_executes(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "sample.txt"
+    target.write_text("alpha\nTODO item\nomega\n", encoding="utf-8")
+
+    binding = build_file_tool_grep_runtime_binding(workspace_root=workspace_root)
+    result = asyncio.run(
+        binding.execute({
+            "basePath": ".",
+            "pattern": "TODO",
+            "fileGlob": "*.txt",
+            "contextLines": 1,
+            "maxResults": 5,
+        })
+    )
+
+    assert binding.tool_id == FILE_TOOL_GREP_ID
+    assert binding.kind == "builtin"
+    assert binding.function_name == FILE_TOOL_GREP_FUNCTION_NAME
+    assert binding.parameters_json_schema == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "pattern": {"type": "string", "minLength": 1},
+            "basePath": {"type": "string", "minLength": 1, "default": "."},
+            "fileGlob": {"type": "string", "minLength": 1, "default": "**/*"},
+            "isRegex": {"type": "boolean", "default": False},
+            "caseSensitive": {"type": "boolean", "default": False},
+            "contextLines": {"type": "integer", "minimum": 0, "default": 0},
+            "includeHidden": {"type": "boolean", "default": False},
+            "maxResults": {"type": "integer", "minimum": 1, "default": 100},
+            "audit": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "actor": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "sessionId": {"type": "string"},
+                    "traceId": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+        },
+        "required": ["pattern"],
+    }
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert result["output"]["data"]["matches"][0]["matchText"] == "TODO"
+    assert result["output"]["data"]["matches"][0]["before"] == ["alpha"]
+    assert result["output"]["data"]["matches"][0]["after"] == ["omega"]
+
+
+def test_file_tool_grep_runtime_binding_maps_invalid_regex_to_invalid_input(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "sample.txt").write_text("TODO\n", encoding="utf-8")
+
+    binding = build_file_tool_grep_runtime_binding(workspace_root=workspace_root)
+    result = asyncio.run(
+        binding.execute({
+            "basePath": ".",
+            "pattern": "(",
+            "fileGlob": "*.txt",
+            "isRegex": True,
+        })
+    )
+
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "invalid_input"
+    assert result["output"]["error"]["code"] == "invalid_regex"

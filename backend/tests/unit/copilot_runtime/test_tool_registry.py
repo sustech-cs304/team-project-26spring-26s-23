@@ -19,6 +19,10 @@ from app.copilot_runtime.tool_registry import (
     FILE_CONVERT_TOOL_ID,
     FILE_TOOL_GLOB_DESCRIPTION,
     FILE_TOOL_GLOB_DISPLAY_NAME,
+    FILE_TOOL_GLOB_ID,
+    FILE_TOOL_GREP_DESCRIPTION,
+    FILE_TOOL_GREP_DISPLAY_NAME,
+    FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_DESCRIPTION,
     FILE_TOOL_READ_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
@@ -32,6 +36,8 @@ from app.copilot_runtime.tool_registry import (
 from app.tooling.file_tools import (
     FILE_TOOL_GLOB_FUNCTION_NAME,
     FILE_TOOL_GLOB_ID,
+    FILE_TOOL_GREP_FUNCTION_NAME,
+    FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
 )
@@ -64,12 +70,12 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
     assert registry.supports("default") is True
 
 
-
 def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
     expected_tool_ids = (
         FILE_TOOL_READ_ID,
         FILE_TOOL_GLOB_ID,
+        FILE_TOOL_GREP_ID,
         FILE_CONVERT_TOOL_ID,
         WEATHER_CURRENT_TOOL_ID,
         *CONTRACT_TOOL_IDS,
@@ -115,6 +121,26 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "displayNameEn": FILE_TOOL_GLOB_DISPLAY_NAME,
         "descriptionZh": "按 glob 模式发现工作区内文件与目录，不读取内容。",
         "descriptionEn": FILE_TOOL_GLOB_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[FILE_TOOL_GREP_ID] == {
+        "toolId": FILE_TOOL_GREP_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "文件搜索",
+        "description": "按字面量或正则搜索工作区文本文件，并返回有限行上下文。",
+        "prompt": "使用此工具在读取前先搜索工作区文本内容，并查看匹配附近的上下文。",
+        "displayNameZh": "文件搜索",
+        "displayNameEn": FILE_TOOL_GREP_DISPLAY_NAME,
+        "descriptionZh": "按字面量或正则搜索工作区文本文件，并返回有限行上下文。",
+        "descriptionEn": FILE_TOOL_GREP_DESCRIPTION,
         "group": {
             "id": "builtin-core",
             "label": "内置基础工具",
@@ -189,7 +215,6 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
     ) == expected_tool_ids
 
 
-
 def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metadata_stable() -> None:
     registry = build_default_tool_registry()
 
@@ -200,6 +225,8 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
     assert en_catalog[FILE_TOOL_READ_ID]["displayName"] == FILE_TOOL_READ_DISPLAY_NAME
     assert zh_catalog[FILE_TOOL_GLOB_ID]["displayName"] == "文件发现"
     assert en_catalog[FILE_TOOL_GLOB_ID]["displayName"] == FILE_TOOL_GLOB_DISPLAY_NAME
+    assert zh_catalog[FILE_TOOL_GREP_ID]["displayName"] == "文件搜索"
+    assert en_catalog[FILE_TOOL_GREP_ID]["displayName"] == FILE_TOOL_GREP_DISPLAY_NAME
     assert zh_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == "文件转换"
     assert en_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == FILE_CONVERT_TOOL_DISPLAY_NAME
     assert zh_catalog[FILE_CONVERT_TOOL_ID]["prompt"] != en_catalog[FILE_CONVERT_TOOL_ID]["prompt"]
@@ -211,7 +238,6 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
     assert en_catalog[contract_tool_id]["group"]["label"] == "Blackboard Tools"
     assert normalize_tool_catalog_language("en-GB") == "en-US"
     assert normalize_tool_catalog_language("zh-TW") == "zh-CN"
-
 
 
 def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() -> None:
@@ -253,7 +279,6 @@ def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() 
     }
 
 
-
 def test_default_tool_registry_exposes_file_read_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
     registry = build_default_tool_registry(workspace_root=tmp_path)
     target = tmp_path / "readme.txt"
@@ -268,7 +293,6 @@ def test_default_tool_registry_exposes_file_read_runtime_binding_metadata_and_ex
     assert result["status"] == "success"
     assert result["output"]["ok"] is True
     assert result["output"]["data"]["content"] == {"text": "second"}
-
 
 
 def test_default_tool_registry_exposes_file_glob_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
@@ -288,6 +312,28 @@ def test_default_tool_registry_exposes_file_glob_runtime_binding_metadata_and_ex
     assert [match["path"] for match in result["output"]["data"]["matches"]] == ["docs/readme.md"]
 
 
+def test_default_tool_registry_exposes_file_grep_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
+    registry = build_default_tool_registry(workspace_root=tmp_path)
+    target = tmp_path / "readme.txt"
+    target.write_text("alpha\nTODO item\nomega\n", encoding="utf-8")
+
+    resolved_tool = registry.resolve_tool(FILE_TOOL_GREP_ID)
+    result = asyncio.run(
+        resolved_tool.execute({
+            "basePath": ".",
+            "pattern": "TODO",
+            "fileGlob": "*.txt",
+            "contextLines": 1,
+        })
+    )
+
+    assert resolved_tool.descriptor.kind == "builtin"
+    assert resolved_tool.function_name == FILE_TOOL_GREP_FUNCTION_NAME
+    assert resolved_tool.parameters_json_schema is not None
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert result["output"]["data"]["matches"][0]["matchText"] == "TODO"
+
 
 def test_weather_tool_execution_uses_default_location_and_random_sample() -> None:
     result = asyncio.run(execute_weather_current_tool(None, rng=random.Random(0)))
@@ -298,7 +344,6 @@ def test_weather_tool_execution_uses_default_location_and_random_sample() -> Non
     assert isinstance(result["humidity"], int)
     assert isinstance(result["summary"], str)
     assert result["summary"] != ""
-
 
 
 def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
@@ -336,7 +381,6 @@ def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
         )
 
 
-
 def test_tool_registry_rejects_duplicate_tool_ids_within_toolset() -> None:
     registry = ToolRegistry()
 
@@ -355,7 +399,6 @@ def test_tool_registry_rejects_duplicate_tool_ids_within_toolset() -> None:
         )
 
 
-
 def test_summarize_tool_arguments_redacts_sensitive_values_and_truncates_long_strings() -> None:
     long_value = "x" * 200
     summary = summarize_tool_arguments(
@@ -372,7 +415,6 @@ def test_summarize_tool_arguments_redacts_sensitive_values_and_truncates_long_st
     assert '"token": "***"' in summary
     assert '"password": "***"' in summary
     assert "…" in summary
-
 
 
 def test_summarize_tool_result_serializes_common_payloads() -> None:

@@ -3,10 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 import time
 
-from app.tooling.file_tools import FileToolPathPolicy, GlobRequest, ReadRequest
-from app.tooling.file_tools.service import FileToolGlobService, FileToolReadService
-from app.tooling.file_tools.text_reader import FileToolTextReader
+from app.tooling.file_tools import FileToolPathPolicy, GlobRequest, GrepRequest, ReadRequest
 from app.tooling.file_tools.glob_search import FileToolGlobSearcher
+from app.tooling.file_tools.grep_search import FileToolGrepSearcher
+from app.tooling.file_tools.service import FileToolGlobService, FileToolGrepService, FileToolReadService
+from app.tooling.file_tools.text_reader import FileToolTextReader
 
 
 def test_file_tool_read_service_returns_success_envelope(tmp_path: Path) -> None:
@@ -27,7 +28,6 @@ def test_file_tool_read_service_returns_success_envelope(tmp_path: Path) -> None
     assert result.to_dict()["data"]["nextOffset"] == 3
 
 
-
 def test_file_tool_read_service_maps_file_errors_into_failure_envelope(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -41,7 +41,6 @@ def test_file_tool_read_service_maps_file_errors_into_failure_envelope(tmp_path:
     assert result.to_dict()["ok"] is False
     assert result.to_dict()["tool"] == "Read"
     assert result.to_dict()["error"]["code"] == "file_not_found"
-
 
 
 def test_file_tool_glob_service_returns_sorted_matches_and_truncation(tmp_path: Path) -> None:
@@ -76,7 +75,6 @@ def test_file_tool_glob_service_returns_sorted_matches_and_truncation(tmp_path: 
     assert [match["path"] for match in result.to_dict()["data"]["matches"]] == ["docs/newer.md"]
 
 
-
 def test_file_tool_glob_service_excludes_hidden_entries_by_default_and_blocks_escape(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -96,3 +94,30 @@ def test_file_tool_glob_service_excludes_hidden_entries_by_default_and_blocks_es
     assert [match["path"] for match in included_result.to_dict()["data"]["matches"]] == [".secret.txt"]
     assert escape_result.to_dict()["ok"] is False
     assert escape_result.to_dict()["error"]["code"] == "path_out_of_bounds"
+
+
+def test_file_tool_grep_service_returns_structured_matches_and_invalid_regex_failure(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "notes.txt"
+    target.write_text("alpha\nTODO item\nomega\n", encoding="utf-8")
+
+    service = FileToolGrepService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        grep_searcher=FileToolGrepSearcher(),
+    )
+
+    result = service.grep(
+        GrepRequest(base_path=".", pattern="TODO", file_glob="*.txt", context_lines=1, max_results=5)
+    )
+    invalid_result = service.grep(
+        GrepRequest(base_path=".", pattern="(", file_glob="*.txt", is_regex=True)
+    )
+
+    assert result.to_dict()["ok"] is True
+    assert result.to_dict()["tool"] == "Grep"
+    assert result.to_dict()["data"]["matches"][0]["matchText"] == "TODO"
+    assert result.to_dict()["data"]["matches"][0]["before"] == ["alpha"]
+    assert result.to_dict()["data"]["matches"][0]["after"] == ["omega"]
+    assert invalid_result.to_dict()["ok"] is False
+    assert invalid_result.to_dict()["error"]["code"] == "invalid_regex"

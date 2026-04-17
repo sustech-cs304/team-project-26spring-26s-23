@@ -100,7 +100,6 @@ class _ResolvedRouteResolver:
         )
 
 
-
 def test_build_default_runtime_dependencies_returns_complete_default_graph() -> None:
     dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
 
@@ -133,8 +132,12 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert global_tool_catalog["directoryVersion"] == "tools-v1"
     assert global_tool_catalog["defaultToolset"] == "default"
     assert isinstance(global_tool_catalog["tools"], list)
-    assert len(global_tool_catalog["tools"]) >= 2
-    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:2]] == ["tool.fs.read", "tool.fs.glob"]
+    assert len(global_tool_catalog["tools"]) >= 3
+    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:3]] == [
+        "tool.fs.read",
+        "tool.fs.glob",
+        "tool.fs.grep",
+    ]
     assert global_tool_catalog["tools"][0]["kind"] == "builtin"
     assert global_tool_catalog["tools"][0]["availability"] == "available"
     assert global_tool_catalog["tools"][0]["displayNameZh"] == "文件读取"
@@ -156,9 +159,17 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "order": 0,
         "sourceKind": "builtin",
     }
+    assert global_tool_catalog["tools"][2]["displayNameZh"] == "文件搜索"
+    assert global_tool_catalog["tools"][2]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
     assert dependencies.scaffold.diagnostics_summary()["available_agents"] == [DEFAULT_AGENT_NAME]
     assert dependencies.scaffold.diagnostics_summary()["available_toolsets"] == ["default"]
-
 
 
 def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -> None:
@@ -188,7 +199,6 @@ def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -
     ]
 
 
-
 def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor() -> None:
     session_store = InMemorySessionStore()
     agent_executor = _build_test_agent_executor()
@@ -204,7 +214,6 @@ def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor()
     executor_factory = dependencies.agent_registry.get_default().executor_factory
     assert executor_factory is not None
     assert executor_factory() is agent_executor
-
 
 
 def test_build_default_runtime_dependencies_default_executor_is_unconfigured_without_explicit_model(
@@ -226,10 +235,8 @@ async def _collect_events(events):
     return [event async for event in events]
 
 
-
 def _build_test_agent_executor() -> PydanticAIAgentExecutor:
     return PydanticAIAgentExecutor(model=TestModel(custom_output_text=TEST_MODEL_REPLY))
-
 
 
 def _build_run_request(*, thread_id: str) -> RuntimeRunStartRequest:
@@ -252,13 +259,12 @@ def _build_run_request(*, thread_id: str) -> RuntimeRunStartRequest:
     )
 
 
-
 def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
     return DesktopRuntimeConfig(
         host="127.0.0.1",
-        port=8765,
+        port=0,
         local_token=None,
         paths=DesktopRuntimePaths(
             user_data_dir=user_data_dir,

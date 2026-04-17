@@ -325,24 +325,24 @@ class GlobMatch:
 
 @dataclass(frozen=True, slots=True)
 class GrepRequest:
-    """Request contract for future staged Grep implementation."""
+    """Request contract for staged Grep implementation."""
 
-    path: str
-    pattern: str
-    include_hidden: bool = False
+    base_path: str = "."
+    pattern: str = ""
+    file_glob: str = "**/*"
+    is_regex: bool = False
     case_sensitive: bool = False
-    before_context: int = 0
-    after_context: int = 0
+    context_lines: int = 0
+    include_hidden: bool = False
     max_results: int | None = None
     audit: AuditMetadata | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "path", _require_non_empty_text(self.path, field_name="path"))
+        object.__setattr__(self, "base_path", _require_non_empty_text(self.base_path, field_name="base_path"))
         object.__setattr__(self, "pattern", _require_non_empty_text(self.pattern, field_name="pattern"))
-        if self.before_context < 0:
-            raise ValueError("before_context must be greater than or equal to 0.")
-        if self.after_context < 0:
-            raise ValueError("after_context must be greater than or equal to 0.")
+        object.__setattr__(self, "file_glob", _require_non_empty_text(self.file_glob, field_name="file_glob"))
+        if self.context_lines < 0:
+            raise ValueError("context_lines must be greater than or equal to 0.")
         if self.max_results is not None:
             object.__setattr__(
                 self,
@@ -352,12 +352,13 @@ class GrepRequest:
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "path": self.path,
+            "basePath": self.base_path,
             "pattern": self.pattern,
-            "includeHidden": self.include_hidden,
+            "fileGlob": self.file_glob,
+            "isRegex": self.is_regex,
             "caseSensitive": self.case_sensitive,
-            "beforeContext": self.before_context,
-            "afterContext": self.after_context,
+            "contextLines": self.context_lines,
+            "includeHidden": self.include_hidden,
         }
         if self.max_results is not None:
             payload["maxResults"] = self.max_results
@@ -368,12 +369,13 @@ class GrepRequest:
 
 @dataclass(frozen=True, slots=True)
 class GrepMatch:
-    """Resolved content hit returned by future Grep."""
+    """Resolved content hit returned by staged Grep."""
 
     path: PathMetadata
     line_number: int
+    column_number: int
     line_text: str
-    submatches: tuple[str, ...] = ()
+    match_text: str
     before: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
 
@@ -385,10 +387,19 @@ class GrepMatch:
         )
         object.__setattr__(
             self,
+            "column_number",
+            _normalize_positive_int(self.column_number, field_name="column_number"),
+        )
+        object.__setattr__(
+            self,
             "line_text",
             _require_non_empty_text(self.line_text, field_name="line_text"),
         )
-        object.__setattr__(self, "submatches", _normalize_string_sequence(self.submatches))
+        object.__setattr__(
+            self,
+            "match_text",
+            _require_non_empty_text(self.match_text, field_name="match_text"),
+        )
         object.__setattr__(self, "before", _normalize_string_sequence(self.before))
         object.__setattr__(self, "after", _normalize_string_sequence(self.after))
 
@@ -396,8 +407,9 @@ class GrepMatch:
         return {
             **self.path.to_dict(),
             "lineNumber": self.line_number,
+            "columnNumber": self.column_number,
             "lineText": self.line_text,
-            "submatches": list(self.submatches),
+            "matchText": self.match_text,
             "before": list(self.before),
             "after": list(self.after),
         }

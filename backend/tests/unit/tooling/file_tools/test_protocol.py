@@ -62,7 +62,6 @@ def test_read_request_and_result_serialize_to_stable_protocol_shape() -> None:
     }
 
 
-
 def test_glob_and_grep_shapes_share_path_metadata() -> None:
     path = PathMetadata(
         path="src/app.py",
@@ -78,17 +77,18 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
         modified_time_ms=1700000000000,
     )
     grep_request = GrepRequest(
-        path="src",
+        base_path="src",
         pattern="TODO",
-        before_context=1,
-        after_context=2,
+        file_glob="**/*.py",
+        context_lines=2,
         max_results=10,
     )
     grep_match = GrepMatch(
         path=path,
         line_number=12,
+        column_number=3,
         line_text="TODO: refine",
-        submatches=("TODO",),
+        match_text="TODO",
         before=("# note",),
         after=("pass",),
     )
@@ -111,12 +111,13 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
         "modifiedTimeMs": 1700000000000,
     }
     assert grep_request.to_dict() == {
-        "path": "src",
+        "basePath": "src",
         "pattern": "TODO",
-        "includeHidden": False,
+        "fileGlob": "**/*.py",
+        "isRegex": False,
         "caseSensitive": False,
-        "beforeContext": 1,
-        "afterContext": 2,
+        "contextLines": 2,
+        "includeHidden": False,
         "maxResults": 10,
     }
     assert grep_match.to_dict() == {
@@ -126,12 +127,12 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
         "rootPolicy": "workspace_only",
         "symlinkPolicy": "deny_escape",
         "lineNumber": 12,
+        "columnNumber": 3,
         "lineText": "TODO: refine",
-        "submatches": ["TODO"],
+        "matchText": "TODO",
         "before": ["# note"],
         "after": ["pass"],
     }
-
 
 
 def test_result_envelope_enforces_success_and_failure_invariants() -> None:
