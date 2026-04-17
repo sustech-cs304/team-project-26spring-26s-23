@@ -151,6 +151,14 @@ function createToolCatalogLoadResult(overrides: Partial<ToolCatalogLoadResult> =
         availability: 'available',
         displayName: '读取文件',
         description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
+        group: {
+          id: 'builtin-core',
+          label: '内置基础工具',
+          labelZh: '内置基础工具',
+          labelEn: 'Built-in Core Tools',
+          order: 0,
+          sourceKind: 'builtin',
+        },
       },
       {
         toolId: 'functions.execute_command',
@@ -158,6 +166,14 @@ function createToolCatalogLoadResult(overrides: Partial<ToolCatalogLoadResult> =
         availability: 'available',
         displayName: '执行命令',
         description: '运行本地终端命令，适合构建、检查与资源处理。',
+        group: {
+          id: 'builtin-core',
+          label: '内置基础工具',
+          labelZh: '内置基础工具',
+          labelEn: 'Built-in Core Tools',
+          order: 0,
+          sourceKind: 'builtin',
+        },
       },
       {
         toolId: 'functions.write_to_file',
@@ -165,6 +181,14 @@ function createToolCatalogLoadResult(overrides: Partial<ToolCatalogLoadResult> =
         availability: 'available',
         displayName: '写入文件',
         description: '创建或重写文件，适用于页面搭建、样式输出与配置修改。',
+        group: {
+          id: 'builtin-core',
+          label: '内置基础工具',
+          labelZh: '内置基础工具',
+          labelEn: 'Built-in Core Tools',
+          order: 0,
+          sourceKind: 'builtin',
+        },
       },
       {
         toolId: 'mcp--fetch--fetch',
@@ -172,6 +196,14 @@ function createToolCatalogLoadResult(overrides: Partial<ToolCatalogLoadResult> =
         availability: 'available',
         displayName: '联网抓取',
         description: '抓取网页内容，用于补充外部说明与页面上下文。',
+        group: {
+          id: 'mcp',
+          label: 'MCP 工具',
+          labelZh: 'MCP 工具',
+          labelEn: 'MCP Tools',
+          order: 100,
+          sourceKind: 'mcp-server',
+        },
       },
       {
         toolId: 'mcp--puppeteer--puppeteer_navigate',
@@ -179,6 +211,14 @@ function createToolCatalogLoadResult(overrides: Partial<ToolCatalogLoadResult> =
         availability: 'available',
         displayName: '浏览器自动化',
         description: '驱动浏览器执行界面级操作，用于录制流程或验证可见交互。',
+        group: {
+          id: 'mcp',
+          label: 'MCP 工具',
+          labelZh: 'MCP 工具',
+          labelEn: 'MCP Tools',
+          order: 100,
+          sourceKind: 'mcp-server',
+        },
       },
     ],
     ...overrides,
@@ -195,6 +235,14 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
         availability: 'available',
         displayName: '文件转换',
         description: '将常见文档转换为运行时可消费内容。',
+        group: {
+          id: 'builtin-core',
+          label: '内置基础工具',
+          labelZh: '内置基础工具',
+          labelEn: 'Built-in Core Tools',
+          order: 0,
+          sourceKind: 'builtin',
+        },
       },
       {
         toolId: 'blackboard.course_catalog.search',
@@ -202,6 +250,14 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
         availability: 'available',
         displayName: '课程目录搜索',
         description: '搜索 Blackboard 课程目录。',
+        group: {
+          id: 'blackboard',
+          label: 'Blackboard 工具',
+          labelZh: 'Blackboard 工具',
+          labelEn: 'Blackboard Tools',
+          order: 10,
+          sourceKind: 'sustech-blackboard',
+        },
       },
       {
         toolId: 'tis.personal_grades.fetch',
@@ -209,6 +265,14 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
         availability: 'available',
         displayName: '成绩查询',
         description: '读取教学系统个人成绩。',
+        group: {
+          id: 'tis',
+          label: 'TIS 工具',
+          labelZh: 'TIS 工具',
+          labelEn: 'TIS Tools',
+          order: 20,
+          sourceKind: 'sustech-tis',
+        },
       },
       {
         toolId: 'campus.events.list',
@@ -216,6 +280,14 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
         availability: 'available',
         displayName: '校园活动',
         description: '读取校园活动。',
+        group: {
+          id: 'mcp',
+          label: 'MCP 工具',
+          labelZh: 'MCP 工具',
+          labelEn: 'MCP Tools',
+          order: 100,
+          sourceKind: 'mcp-server',
+        },
       },
     ],
   }
@@ -238,7 +310,9 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.querySelector('.capabilities-main')).toBeTruthy()
     expect(rendered.container.querySelector('.capabilities-main__content')).toBeTruthy()
     expect(rendered.container.querySelector('[aria-label="工具权限列表"]')).toBeTruthy()
-    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(1)
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(2)
+    expect(rendered.container.textContent).toContain('内置基础工具')
+    expect(rendered.container.textContent).toContain('MCP 工具')
     expect(rendered.container.textContent).toContain('能力中心')
     expect(rendered.container.textContent).toContain('工具权限')
     expect(rendered.container.textContent).toContain('读取文件')
@@ -283,9 +357,11 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).toContain('成绩查询')
     expect(rendered.container.textContent).toContain('校园活动')
     expect(rendered.container.textContent).not.toContain('尚未从运行时获取到可展示的工具目录。')
-    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(1)
-    expect(rendered.container.textContent).toContain('项目内工具')
-    expect(rendered.container.textContent).not.toContain('外部访问')
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(4)
+    expect(rendered.container.textContent).toContain('内置基础工具')
+    expect(rendered.container.textContent).toContain('Blackboard 工具')
+    expect(rendered.container.textContent).toContain('TIS 工具')
+    expect(rendered.container.textContent).toContain('MCP 工具')
 
     rendered.unmount()
   })
@@ -305,7 +381,10 @@ describe('CapabilitiesWorkspace', () => {
     await waitForNextFrame()
 
     expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(5)
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(2)
     expect(rendered.container.textContent).toContain('Hosted backend runtime tool catalog is temporarily unavailable. Using built-in fallback catalog.')
+    expect(rendered.container.textContent).toContain('内置基础工具')
+    expect(rendered.container.textContent).toContain('MCP 工具')
     expect(rendered.container.textContent).toContain('读取文件')
     expect(rendered.container.textContent).toContain('联网抓取')
 
@@ -342,8 +421,10 @@ describe('CapabilitiesWorkspace', () => {
     await waitForNextFrame()
 
     expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(5)
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(2)
     expect(rendered.container.textContent).toContain('Hosted backend returned an incomplete tool catalog. Using built-in fallback catalog.')
     expect(rendered.container.textContent).toContain('浏览器自动化')
+    expect(rendered.container.textContent).toContain('MCP 工具')
 
     rendered.unmount()
   })

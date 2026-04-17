@@ -6,8 +6,7 @@ import type {
   ToolPermissionPolicyMode,
   ToolPermissionPolicySource,
 } from '../../../electron/settings-workspace/schema'
-import type { RuntimeToolDirectoryEntry } from '../../features/copilot/chat-contract'
-import { resolveCopilotToolPlatformGroup } from '../../features/copilot/tool-presentation'
+import type { RuntimeToolDirectoryEntry, RuntimeToolPresentationGroup } from '../../features/copilot/chat-contract'
 import {
   loadSettingsWorkspaceState,
   saveSettingsWorkspaceState,
@@ -299,9 +298,27 @@ function buildToolPermissionRecords(
 }
 
 function resolveToolGroupId(tool: RuntimeToolDirectoryEntry): ToolPermissionRecord['groupId'] {
-  return tool.group?.id === 'remote' || resolveCopilotToolPlatformGroup(tool).sourceKind === 'mcp-server'
-    ? 'remote'
-    : 'workspace'
+  const group = tool.group
+  if (group !== undefined && group !== null && group.id.trim() !== '') {
+    return group.id
+  }
+
+  return resolveFallbackToolGroup(tool)
+}
+
+function resolveFallbackToolGroup(tool: RuntimeToolDirectoryEntry): ToolPermissionRecord['groupId'] {
+  if (tool.kind === 'builtin') {
+    return 'builtin-core'
+  }
+
+  const namespace = tool.toolId.split(/[.-]/, 1)[0]?.toLowerCase()
+  if (namespace === 'blackboard') {
+    return 'blackboard'
+  }
+  if (namespace === 'tis') {
+    return 'tis'
+  }
+  return 'mcp'
 }
 
 function buildPolicyStateFromTools(
@@ -429,6 +446,42 @@ function resolveToolLabel(tool: RuntimeToolDirectoryEntry): string {
   return tool.displayNameZh ?? tool.displayName ?? tool.displayNameEn ?? tool.toolId
 }
 
+// Keep fallback catalog grouping aligned with the runtime tool catalog contract.
+const FALLBACK_TOOL_GROUPS: Record<string, RuntimeToolPresentationGroup> = {
+  'builtin-core': {
+    id: 'builtin-core',
+    label: '内置基础工具',
+    labelZh: '内置基础工具',
+    labelEn: 'Built-in Core Tools',
+    order: 0,
+    sourceKind: 'builtin',
+  },
+  blackboard: {
+    id: 'blackboard',
+    label: 'Blackboard 工具',
+    labelZh: 'Blackboard 工具',
+    labelEn: 'Blackboard Tools',
+    order: 10,
+    sourceKind: 'sustech-blackboard',
+  },
+  tis: {
+    id: 'tis',
+    label: 'TIS 工具',
+    labelZh: 'TIS 工具',
+    labelEn: 'TIS Tools',
+    order: 20,
+    sourceKind: 'sustech-tis',
+  },
+  mcp: {
+    id: 'mcp',
+    label: 'MCP 工具',
+    labelZh: 'MCP 工具',
+    labelEn: 'MCP Tools',
+    order: 100,
+    sourceKind: 'mcp-server',
+  },
+}
+
 function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
   return [
     {
@@ -437,14 +490,7 @@ function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
       availability: 'available',
       displayName: '读取文件',
       description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
-      group: {
-        id: 'workspace',
-        label: '项目内工具',
-        labelZh: '项目内工具',
-        labelEn: 'Workspace Tools',
-        order: 0,
-        sourceKind: 'workspace',
-      },
+      group: FALLBACK_TOOL_GROUPS['builtin-core'],
     },
     {
       toolId: 'functions.execute_command',
@@ -452,14 +498,7 @@ function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
       availability: 'available',
       displayName: '执行命令',
       description: '运行本地终端命令，适合构建、检查与资源处理。',
-      group: {
-        id: 'workspace',
-        label: '项目内工具',
-        labelZh: '项目内工具',
-        labelEn: 'Workspace Tools',
-        order: 0,
-        sourceKind: 'workspace',
-      },
+      group: FALLBACK_TOOL_GROUPS['builtin-core'],
     },
     {
       toolId: 'functions.write_to_file',
@@ -467,14 +506,7 @@ function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
       availability: 'available',
       displayName: '写入文件',
       description: '创建或重写文件，适用于页面搭建、样式输出与配置修改。',
-      group: {
-        id: 'workspace',
-        label: '项目内工具',
-        labelZh: '项目内工具',
-        labelEn: 'Workspace Tools',
-        order: 0,
-        sourceKind: 'workspace',
-      },
+      group: FALLBACK_TOOL_GROUPS['builtin-core'],
     },
     {
       toolId: 'mcp--fetch--fetch',
@@ -482,14 +514,7 @@ function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
       availability: 'available',
       displayName: '联网抓取',
       description: '抓取网页内容，用于补充外部说明与页面上下文。',
-      group: {
-        id: 'remote',
-        label: '外部访问',
-        labelZh: '外部访问',
-        labelEn: 'Remote Access',
-        order: 10,
-        sourceKind: 'remote',
-      },
+      group: FALLBACK_TOOL_GROUPS.mcp,
     },
     {
       toolId: 'mcp--puppeteer--puppeteer_navigate',
@@ -497,14 +522,7 @@ function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
       availability: 'available',
       displayName: '浏览器自动化',
       description: '驱动浏览器执行界面级操作，用于录制流程或验证可见交互。',
-      group: {
-        id: 'remote',
-        label: '外部访问',
-        labelZh: '外部访问',
-        labelEn: 'Remote Access',
-        order: 10,
-        sourceKind: 'remote',
-      },
+      group: FALLBACK_TOOL_GROUPS.mcp,
     },
   ]
 }

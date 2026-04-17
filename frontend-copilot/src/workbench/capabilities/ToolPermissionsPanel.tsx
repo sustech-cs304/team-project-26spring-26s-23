@@ -18,10 +18,7 @@ interface ToolPermissionsPanelProps {
   onDelaySecondsChange: (toolId: string, seconds: number) => void
 }
 
-const initialCollapsedGroups: Record<ToolPermissionGroupId, boolean> = {
-  workspace: false,
-  remote: false,
-}
+const initialCollapsedGroups: Record<ToolPermissionGroupId, boolean> = {}
 
 export function ToolPermissionsPanel({
   tools,

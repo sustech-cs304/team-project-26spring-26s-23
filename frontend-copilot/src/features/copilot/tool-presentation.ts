@@ -1,9 +1,16 @@
-export interface CopilotToolPresentationSource {
-  toolId: string
-  displayName: string | null
-  description: string | null
-  kind: string
-}
+import type { RuntimeToolDirectoryEntry } from './thread-run-contract'
+
+export interface CopilotToolPresentationSource extends Pick<RuntimeToolDirectoryEntry,
+  'toolId'
+  | 'displayName'
+  | 'description'
+  | 'kind'
+  | 'displayNameZh'
+  | 'displayNameEn'
+  | 'descriptionZh'
+  | 'descriptionEn'
+  | 'group'
+> {}
 
 export interface CopilotToolPresentation {
   name: string
@@ -20,53 +27,9 @@ export interface CopilotToolPlatformGroup {
 }
 
 const TOOL_PRESENTATION_OVERRIDES: Record<string, { name: string, description: string }> = {
-  'tool.file-convert': {
-    name: '文件转换',
-    description: '转换常见办公文档',
-  },
-  'tool.weather-current': {
-    name: '天气查询',
-    description: '获取当前天气情况',
-  },
   'tool.remote-search': {
     name: '联网搜索',
     description: '搜索外部公开信息',
-  },
-  'blackboard.sql.query': {
-    name: 'Blackboard 数据查询',
-    description: '查询 Blackboard 本地数据',
-  },
-  'blackboard.course_catalog.search': {
-    name: '课程目录搜索',
-    description: '搜索 Blackboard 课程目录',
-  },
-  'blackboard.calendar.refresh': {
-    name: '日历刷新',
-    description: '刷新 Blackboard 课程日历',
-  },
-  'blackboard.snapshot.sync': {
-    name: '快照同步',
-    description: '同步 Blackboard 基础快照',
-  },
-  'blackboard.course_resources.sync': {
-    name: '课程资源同步',
-    description: '同步指定课程资源',
-  },
-  'tis.sql.query': {
-    name: 'TIS 数据查询',
-    description: '查询 TIS 本地数据',
-  },
-  'tis.personal_grades.fetch': {
-    name: '成绩获取',
-    description: '获取个人成绩记录',
-  },
-  'tis.credit_gpa.fetch': {
-    name: '绩点概览',
-    description: '获取学分与绩点概览',
-  },
-  'tis.selected_courses.fetch': {
-    name: '已选课程',
-    description: '获取当前已选课程',
   },
 }
 
@@ -142,8 +105,8 @@ const FALLBACK_GROUP_ORDER = 200
 export function resolveCopilotToolPresentation(tool: CopilotToolPresentationSource): CopilotToolPresentation {
   const override = TOOL_PRESENTATION_OVERRIDES[tool.toolId]
   const platformGroup = resolveCopilotToolPlatformGroup(tool)
-  const name = override?.name ?? buildFallbackToolName(tool)
-  const description = override?.description ?? buildFallbackToolDescription(tool)
+  const name = override?.name ?? resolveCanonicalName(tool) ?? buildFallbackToolName(tool)
+  const description = override?.description ?? resolveCanonicalDescription(tool) ?? buildFallbackToolDescription(tool)
 
   return {
     name,
@@ -164,6 +127,16 @@ export function resolveCopilotToolPresentation(tool: CopilotToolPresentationSour
 }
 
 export function resolveCopilotToolPlatformGroup(tool: CopilotToolPresentationSource): CopilotToolPlatformGroup {
+  const explicitGroup = tool.group
+  if (explicitGroup !== undefined && explicitGroup !== null) {
+    return attachPlatformSearchKeywords({
+      key: explicitGroup.id,
+      title: explicitGroup.label,
+      order: explicitGroup.order,
+      sourceKind: mapSourceKind(explicitGroup.sourceKind),
+    }, [explicitGroup.labelZh, explicitGroup.labelEn, explicitGroup.sourceKind])
+  }
+
   const namespace = extractToolNamespace(tool.toolId)
   if (namespace !== null) {
     const staticGroup = STATIC_TOOL_PLATFORM_GROUPS[namespace]
@@ -202,6 +175,35 @@ export function resolveCopilotToolPlatformGroup(tool: CopilotToolPresentationSou
     order: FALLBACK_GROUP_ORDER,
     sourceKind: 'fallback',
   }, ['其他工具', tool.kind])
+}
+
+function resolveCanonicalName(tool: CopilotToolPresentationSource): string | null {
+  return normalizeText(tool.displayNameZh)
+    ?? normalizeText(tool.displayName)
+    ?? normalizeText(tool.displayNameEn)
+}
+
+function resolveCanonicalDescription(tool: CopilotToolPresentationSource): string | null {
+  return normalizeText(tool.descriptionZh)
+    ?? normalizeText(tool.description)
+    ?? normalizeText(tool.descriptionEn)
+}
+
+function mapSourceKind(sourceKind: string): CopilotToolPlatformGroup['sourceKind'] {
+  switch (sourceKind) {
+    case 'workspace':
+    case 'builtin':
+      return 'builtin'
+    case 'remote':
+    case 'mcp-server':
+      return 'mcp-server'
+    case 'sustech-blackboard':
+    case 'sustech-tis':
+    case 'fallback':
+      return sourceKind
+    default:
+      return 'fallback'
+  }
 }
 
 function buildFallbackToolName(tool: CopilotToolPresentationSource): string {
