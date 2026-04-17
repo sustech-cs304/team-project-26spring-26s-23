@@ -40,6 +40,7 @@ export function registerMainProcessIpcHandlers(
     deleteCopilotHistoryThread: services.deleteCopilotHistoryThread,
     backupCopilotHistoryDatabase: services.backupCopilotHistoryDatabase,
     restoreCopilotHistoryDatabase: services.restoreCopilotHistoryDatabase,
+    loadToolCatalog: services.loadToolCatalog,
     loadCopilotRuntime,
     retryCopilotRuntime,
     notifyDesktopNotification,

@@ -17,6 +17,7 @@ from ..bridge import (
 from ..contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
+    GLOBAL_TOOL_CATALOG_GET_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
@@ -108,6 +109,12 @@ def build_router(
 
         if requested_method == CAPABILITIES_GET_METHOD:
             return _handle_capabilities_get_request(
+                dependencies=dependencies,
+                payload=payload,
+            )
+
+        if requested_method == GLOBAL_TOOL_CATALOG_GET_METHOD:
+            return _handle_global_tool_catalog_get_request(
                 dependencies=dependencies,
                 payload=payload,
             )
@@ -327,6 +334,22 @@ def _handle_capabilities_get_request(
         )
 
     return JSONResponse(content=capabilities.to_dict())
+
+
+
+def _handle_global_tool_catalog_get_request(
+    *,
+    dependencies: RuntimeTransportDependencies,
+    payload: dict[str, Any] | None = None,
+) -> JSONResponse:
+    try:
+        language = dependencies.parser.extract_global_tool_catalog_get_request(payload)
+    except RuntimeProtocolError as exc:
+        return protocol_error_response(exc)
+
+    return JSONResponse(
+        content=dependencies.scaffold.build_global_tool_catalog_response(language=language).to_dict()
+    )
 
 
 

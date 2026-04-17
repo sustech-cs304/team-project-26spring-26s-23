@@ -79,6 +79,7 @@ const mainRuntimeLogger = createMainRuntimeLogger({
 
 const mainProcessServices = createMainProcessServices({
   prepareRuntimePaths: prepareApplicationRuntimePaths,
+  ensureHostedBackendService,
   appendMainRuntimeLog(level, message, context) {
     return mainRuntimeLogger.appendMainRuntimeLog(level, message, context)
   },

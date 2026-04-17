@@ -14,6 +14,7 @@ import {
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
+import { TOOL_CATALOG_LOAD_CHANNEL } from './tool-catalog/ipc'
 import { DESKTOP_NOTIFICATION_SHOW_CHANNEL } from './desktop-notification'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
 import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
@@ -45,6 +46,7 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
       COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
       COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+      TOOL_CATALOG_LOAD_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
@@ -69,6 +71,7 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
       COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
       COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+      TOOL_CATALOG_LOAD_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
@@ -87,6 +90,7 @@ describe('registerRendererIpcHandlers', () => {
     const deleteThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DELETE_THREAD_CHANNEL)
     const backupDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL)
     const restoreDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL)
+    const loadToolCatalogHandler = getRegisteredHandler(registeredHandlers, TOOL_CATALOG_LOAD_CHANNEL)
     const loadRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)
     const retryRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)
     const notifyDesktopNotificationHandler = getRegisteredHandler(registeredHandlers, DESKTOP_NOTIFICATION_SHOW_CHANNEL)
@@ -127,6 +131,9 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(restoreDatabaseHandler(undefined, { sourcePath: 'backups/history.db' })).resolves.toEqual(
       await handlers.restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' }),
+    )
+    await expect(loadToolCatalogHandler(undefined, { language: 'en-US' })).resolves.toEqual(
+      await handlers.loadToolCatalog({ language: 'en-US' }),
     )
     await expect(loadRuntimeHandler()).resolves.toEqual(await handlers.loadCopilotRuntime())
     await expect(retryRuntimeHandler()).resolves.toEqual(await handlers.retryCopilotRuntime())

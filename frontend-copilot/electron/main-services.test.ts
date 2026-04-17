@@ -4,9 +4,11 @@ const hoisted = vi.hoisted(() => {
   const createElectronUnifiedConfigService = vi.fn()
   const createElectronSettingsWorkspaceService = vi.fn()
   const createElectronDesktopCapabilityBridgeService = vi.fn()
+  const createElectronToolCatalogService = vi.fn()
   const unifiedConfigService = {
     loadPublicSnapshot: vi.fn(),
     applyPublicPatch: vi.fn(),
+    getHostedBackendService: vi.fn(),
   }
   const settingsWorkspaceService = {
     loadState: vi.fn(),
@@ -21,6 +23,9 @@ const hoisted = vi.hoisted(() => {
   }
   const capabilityBridgeService = {
     handleRequest: vi.fn(),
+  }
+  const toolCatalogService = {
+    load: vi.fn(),
   }
   const copilotHistoryService = {
     listThreads: vi.fn(),
@@ -37,9 +42,11 @@ const hoisted = vi.hoisted(() => {
     createElectronUnifiedConfigService,
     createElectronSettingsWorkspaceService,
     createElectronDesktopCapabilityBridgeService,
+    createElectronToolCatalogService,
     unifiedConfigService,
     settingsWorkspaceService,
     capabilityBridgeService,
+    toolCatalogService,
     copilotHistoryService,
   }
 })
@@ -54,6 +61,10 @@ vi.mock('./settings-workspace/main-process', () => ({
 
 vi.mock('./capability-bridge/main-process', () => ({
   createElectronDesktopCapabilityBridgeService: hoisted.createElectronDesktopCapabilityBridgeService,
+}))
+
+vi.mock('./tool-catalog/service', () => ({
+  createElectronToolCatalogService: hoisted.createElectronToolCatalogService,
 }))
 
 import {
@@ -85,6 +96,18 @@ describe('createMainProcessServices', () => {
     } as const
     const settingsState = createSettingsWorkspaceStateFixture()
     const saveInput = normalizeSettingsWorkspaceStateValues(settingsState)
+    const loadToolCatalogResult = {
+      ok: true,
+      tools: [
+        {
+          toolId: 'functions.read_file',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: '读取文件',
+          description: '读取项目内文件内容。',
+        },
+      ],
+    } as const
     const loadStateResult = {
       ok: true,
       source: 'stored',
@@ -247,6 +270,7 @@ describe('createMainProcessServices', () => {
     hoisted.settingsWorkspaceService.clearSustechCasSecret.mockResolvedValue(clearSustechCasSecretResult)
     hoisted.settingsWorkspaceService.resolveProviderRoute.mockResolvedValue(resolveProviderRouteResult)
     hoisted.capabilityBridgeService.handleRequest.mockResolvedValue(capabilityResponse)
+    hoisted.toolCatalogService.load.mockResolvedValue(loadToolCatalogResult)
     hoisted.copilotHistoryService.listThreads.mockResolvedValue(listHistoryThreadsResult)
     hoisted.copilotHistoryService.getThreadDetail.mockResolvedValue(getHistoryThreadDetailResult)
     hoisted.copilotHistoryService.getRunReplay.mockResolvedValue(getHistoryRunReplayResult)
@@ -259,13 +283,19 @@ describe('createMainProcessServices', () => {
     hoisted.createElectronUnifiedConfigService.mockReturnValue(hoisted.unifiedConfigService)
     hoisted.createElectronSettingsWorkspaceService.mockReturnValue(hoisted.settingsWorkspaceService)
     hoisted.createElectronDesktopCapabilityBridgeService.mockReturnValue(hoisted.capabilityBridgeService)
+    hoisted.createElectronToolCatalogService.mockReturnValue(hoisted.toolCatalogService)
+
+    const hostedBackendService = { getLocalToken: vi.fn(() => 'runtime-token') }
+    hoisted.unifiedConfigService.getHostedBackendService.mockResolvedValue(hostedBackendService)
 
     const prepareRuntimePaths = vi.fn(async () => ({ runtimeRootDir: 'runtime-root' } as never))
+    const ensureHostedBackendService = vi.fn(async () => hostedBackendService as never)
     const appendMainRuntimeLog = vi.fn()
     const publishConfigCenterPublicSnapshotUpdate = vi.fn()
     const createCopilotHistoryService = vi.fn(() => hoisted.copilotHistoryService)
     const services = createMainProcessServices({
       prepareRuntimePaths,
+      ensureHostedBackendService,
       appendMainRuntimeLog,
       publishConfigCenterPublicSnapshotUpdate,
       createCopilotHistoryService,
@@ -274,6 +304,7 @@ describe('createMainProcessServices', () => {
     expect(hoisted.createElectronUnifiedConfigService).not.toHaveBeenCalled()
     expect(hoisted.createElectronSettingsWorkspaceService).not.toHaveBeenCalled()
     expect(hoisted.createElectronDesktopCapabilityBridgeService).not.toHaveBeenCalled()
+    expect(hoisted.createElectronToolCatalogService).not.toHaveBeenCalled()
 
     const patch = {
       domains: {
@@ -285,6 +316,7 @@ describe('createMainProcessServices', () => {
 
     await expect(services.loadConfigCenterPublicSnapshot()).resolves.toEqual(loadPublicSnapshotResult)
     await expect(services.applyConfigCenterPublicPatch(patch)).resolves.toEqual(applyPublicPatchResult)
+    await expect(services.loadToolCatalog()).resolves.toEqual(loadToolCatalogResult)
     await expect(services.loadSettingsWorkspaceState()).resolves.toEqual(loadStateResult)
     await expect(services.saveSettingsWorkspaceState(saveInput)).resolves.toEqual(saveStateResult)
     await expect(services.loadSettingsWorkspaceSecretStates({ profileIds: ['openrouter'] })).resolves.toEqual(loadSecretStatesResult)
@@ -318,6 +350,7 @@ describe('createMainProcessServices', () => {
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronDesktopCapabilityBridgeService).toHaveBeenCalledTimes(1)
+    expect(hoisted.createElectronToolCatalogService).toHaveBeenCalledTimes(1)
     expect(createCopilotHistoryService).toHaveBeenCalledTimes(1)
     expect(hoisted.unifiedConfigService.loadPublicSnapshot).toHaveBeenCalledOnce()
     expect(hoisted.unifiedConfigService.applyPublicPatch).toHaveBeenCalledWith(patch)
@@ -338,6 +371,7 @@ describe('createMainProcessServices', () => {
     expect(hoisted.settingsWorkspaceService.clearSustechCasSecret).toHaveBeenCalledOnce()
     expect(hoisted.settingsWorkspaceService.resolveProviderRoute).toHaveBeenCalledWith(resolveProviderRouteRequest)
     expect(hoisted.capabilityBridgeService.handleRequest).toHaveBeenCalledWith(capabilityRequest)
+    expect(hoisted.toolCatalogService.load).toHaveBeenCalledOnce()
     expect(hoisted.copilotHistoryService.listThreads).toHaveBeenCalledOnce()
     expect(hoisted.copilotHistoryService.getThreadDetail).toHaveBeenCalledWith('thread-1')
     expect(hoisted.copilotHistoryService.getRunReplay).toHaveBeenCalledWith('run-1')
@@ -352,6 +386,7 @@ describe('createMainProcessServices', () => {
     const capabilityBridgeOptions = hoisted.createElectronDesktopCapabilityBridgeService.mock.calls[0]?.[0]
 
     expect(unifiedConfigOptions?.prepareRuntimePaths).toBe(prepareRuntimePaths)
+    expect(unifiedConfigOptions?.ensureHostedBackendService).toBe(ensureHostedBackendService)
     expect(settingsWorkspaceOptions?.prepareRuntimePaths).toBe(prepareRuntimePaths)
     expect(capabilityBridgeOptions?.prepareRuntimePaths).toBe(prepareRuntimePaths)
 

@@ -13,6 +13,7 @@ from .composition import RuntimeDependencies, build_default_runtime_dependencies
 from .contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
+    GLOBAL_TOOL_CATALOG_GET_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
@@ -44,11 +45,13 @@ from .tool_registry import (
     ToolRegistry,
     ToolsetDescriptor,
     build_default_tool_registry,
+    normalize_tool_catalog_language,
 )
 
 __all__ = [
     "AGENTS_LIST_METHOD",
     "CAPABILITIES_GET_METHOD",
+    "GLOBAL_TOOL_CATALOG_GET_METHOD",
     "RUN_CANCEL_METHOD",
     "RUN_START_METHOD",
     "RUN_STREAM_METHOD",
@@ -87,6 +90,7 @@ __all__ = [
     "ToolDescriptor",
     "ToolRegistry",
     "ToolsetDescriptor",
+    "normalize_tool_catalog_language",
     "build_default_agent_registry",
     "build_default_runtime_dependencies",
     "build_default_tool_registry",

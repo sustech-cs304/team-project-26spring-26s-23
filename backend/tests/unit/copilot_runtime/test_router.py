@@ -38,6 +38,7 @@ SUPPORTED_METHODS = [
     "run/stream",
     "run/cancel",
     "capabilities/get",
+    "tools/catalog/get",
     "thinking/capability/get",
 ]
 
@@ -251,6 +252,7 @@ def test_root_post_thread_get_returns_bound_agent_recommendations_and_tool_catal
     assert payload["tools"][0]["toolId"] == "tool.file-convert"
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
     assert payload["latestRunId"] is None
+    assert scaffold.tool_registry.get_default().name == "default"
 
 
 
@@ -268,6 +270,34 @@ def test_root_post_thread_get_unknown_thread_returns_structured_error() -> None:
     assert payload["error"]["requestedMethod"] == "thread/get"
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"threadId": "missing-thread"}
+
+
+
+def test_root_post_global_tool_catalog_returns_default_toolset_catalog() -> None:
+    app, scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "tools/catalog/get", "body": {}})
+
+    assert response.status_code == 200
+    assert response.json() == scaffold.build_global_tool_catalog_response().to_dict()
+    assert scaffold.tool_registry.get_default().name == "default"
+
+
+
+def test_root_post_global_tool_catalog_requires_explicit_body_wrapper() -> None:
+    app, _scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "tools/catalog/get"})
+
+    payload = response.json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_request"
+    assert payload["error"]["requestedMethod"] == "tools/catalog/get"
+    assert payload["error"]["details"] == {"field": "body"}
 
 
 
@@ -944,6 +974,7 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
     assert response.status_code == 200
     assert payload == scaffold.build_capabilities_response(thread=thread).to_dict()
     assert payload["recommendedTools"] == ["tool.file-convert"]
+    assert scaffold.tool_registry.get_default().name == "default"
     assert payload["toolSelectionMode"] == "recommendation-only"
     assert payload["tools"][0]["toolId"] == "tool.file-convert"
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
@@ -964,6 +995,22 @@ def test_root_post_capabilities_get_unknown_session_returns_structured_error() -
     assert payload["error"]["requestedMethod"] == "capabilities/get"
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"sessionId": "missing-session"}
+
+
+
+def test_root_post_global_tool_catalog_get_returns_default_toolset_catalog() -> None:
+    app, scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "tools/catalog/get", "body": {}})
+
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload == scaffold.build_global_tool_catalog_response().to_dict()
+    assert payload["directoryVersion"] == "tools-v1"
+    assert payload["defaultToolset"] == "default"
+    assert payload["tools"][0]["toolId"] == "tool.file-convert"
 
 
 

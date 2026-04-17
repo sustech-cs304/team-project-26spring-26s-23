@@ -61,6 +61,11 @@ import {
   type DesktopNotificationRequest,
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from '../bootstrap-window'
+import {
+  TOOL_CATALOG_LOAD_CHANNEL,
+  type ToolCatalogLoadRequest,
+  type ToolCatalogLoadResult,
+} from '../tool-catalog/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
 export type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -84,6 +89,7 @@ const RENDERER_IPC_CHANNELS = [
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+  TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
@@ -237,6 +243,10 @@ export function registerRendererIpcHandlers(
       return await handlers.restoreCopilotHistoryDatabase(request)
     },
   )
+
+  ipcMain.handle(TOOL_CATALOG_LOAD_CHANNEL, async (_event, request?: ToolCatalogLoadRequest): Promise<ToolCatalogLoadResult> => {
+    return await handlers.loadToolCatalog(request)
+  })
 
   ipcMain.handle(COPILOT_RUNTIME_LOAD_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.loadCopilotRuntime()

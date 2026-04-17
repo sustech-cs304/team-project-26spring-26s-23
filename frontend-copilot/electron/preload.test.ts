@@ -16,6 +16,7 @@ describe('preload renderer bridge', () => {
       'configCenterPublicPatch',
       'settingsWorkspaceState',
       'settingsWorkspaceSecrets',
+      'toolCatalog',
       'desktopNotification',
       'bootstrapWindow',
     ])
