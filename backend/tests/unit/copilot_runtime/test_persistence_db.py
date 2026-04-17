@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from sqlalchemy import inspect
@@ -20,6 +21,17 @@ def test_resolve_chat_database_path_prefers_runtime_database_dir(tmp_path: Path)
 
     assert resolved == runtime_config.database_dir / DEFAULT_CHAT_DATABASE_FILE_NAME
     assert resolved.parent == runtime_config.database_dir
+
+
+
+def test_resolve_chat_database_path_respects_explicit_empty_env_mapping(tmp_path: Path) -> None:
+    resolved = resolve_chat_database_path(
+        db_path=tmp_path / 'database' / 'chat.db',
+        env={},
+    )
+
+    assert resolved == (tmp_path / 'database' / 'chat.db').resolve()
+    assert str(resolved) != os.environ.get('COPILOT_RUNTIME_CHAT_DATABASE_PATH', '')
 
 
 

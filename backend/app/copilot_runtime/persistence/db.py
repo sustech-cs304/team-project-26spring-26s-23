@@ -34,7 +34,7 @@ def resolve_chat_database_path(
 ) -> Path:
     """Resolve the SQLite database path for chat persistence."""
 
-    env_map = env or os.environ
+    env_map = os.environ if env is None else env
     if db_path is not None:
         candidate = Path(db_path)
     else:

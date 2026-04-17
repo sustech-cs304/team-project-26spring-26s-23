@@ -30,7 +30,7 @@ export function createCopilotThreadRuntimeControllerState(
 ): CopilotThreadRuntimeControllerState {
   return {
     sessionId: sessionShell?.sessionId ?? '',
-    composerDraft: createComposerDraftFromSession(sessionShell as AssistantSessionShell | undefined),
+    composerDraft: createComposerDraftFromSession(sessionShell),
     conversation: [],
     runState: createIdleCopilotRunState(),
     sendError: null,

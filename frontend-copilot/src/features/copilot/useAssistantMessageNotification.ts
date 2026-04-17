@@ -117,11 +117,7 @@ function isAssistantRunTerminalPhase(phase: CopilotRunState['phase']): phase is 
 }
 
 function resolveAssistantNotificationPhase(runState: CopilotRunState): 'completed' | 'failed' {
-  if (runState.phase !== 'completed') {
-    return 'failed'
-  }
-
-  return hasFailedToolSegment(runState) ? 'failed' : 'completed'
+  return runState.phase === 'completed' ? 'completed' : 'failed'
 }
 
 function resolveAssistantSuccessBody(
@@ -159,10 +155,6 @@ function getLatestAssistantSegment(runState: CopilotRunState): CopilotAssistantS
   }
 
   return null
-}
-
-function hasFailedToolSegment(runState: CopilotRunState): boolean {
-  return runState.segments.some((segment) => segment.kind === 'tool' && segment.status === 'failed')
 }
 
 function getLatestFailedToolMessage(runState: CopilotRunState): string | null {

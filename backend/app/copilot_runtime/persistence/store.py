@@ -441,6 +441,7 @@ class SQLiteSessionStore(RuntimeSessionStore):
             with _open_sqlite_connection(resolved_source_path) as source_connection:
                 with _open_sqlite_connection(self.db_path) as destination_connection:
                     source_connection.backup(destination_connection)
+            upgrade_database(db_path=self.db_path)
             initialize_database(self.engine)
             return PersistedDatabaseRestoreResponse(
                 ok=True,

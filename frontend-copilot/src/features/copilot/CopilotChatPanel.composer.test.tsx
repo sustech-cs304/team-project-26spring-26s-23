@@ -845,9 +845,9 @@ describe('CopilotChatPanel composer interactions', () => {
     await waitForCondition(() => notification.records.length === 1, 'assistant failure notification emitted')
 
     expect(notification.records[0]).toEqual({
-      title: '助手执行失败',
-      body: 'Tool failed: boom',
-      tag: 'run-tool-failed:failed',
+      title: '助手消息已完成',
+      body: '我可以解释工具失败并继续',
+      tag: 'run-tool-failed:completed',
     })
 
     rendered.unmount()

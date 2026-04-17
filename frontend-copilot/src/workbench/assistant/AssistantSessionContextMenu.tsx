@@ -1,4 +1,6 @@
 
+import type { ReactNode } from 'react'
+
 import { getAssistantSessionCopy, type WorkbenchLanguage } from '../locale'
 import {
   getAssistantSessionCopyActions,
@@ -173,7 +175,7 @@ interface AssistantSessionSubmenuProps {
   triggerTestId: string
   label: string
   ariaLabel: string
-  children: React.ReactNode
+  children: ReactNode
   onOpen: () => void
   onClose: () => void
 }
@@ -198,6 +200,7 @@ function AssistantSessionSubmenu({
         type="button"
         className="session-context-menu__item session-context-menu__item--submenu"
         data-testid={triggerTestId}
+        role="menuitem"
         aria-haspopup="menu"
         aria-expanded={active ? 'true' : 'false'}
         aria-label={ariaLabel}
