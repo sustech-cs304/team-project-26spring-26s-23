@@ -162,7 +162,7 @@ def test_build_contract_runtime_binding_maps_success_and_runtime_context() -> No
     assert invocation_context.actor == "agent"
     assert invocation_context.requested_at == datetime(2026, 4, 13, 18, 0, tzinfo=UTC)
     assert invocation_context.trace == {"source": "runtime"}
-    assert invocation_context.metadata == {"requestId": "request-1"}
+    assert invocation_context.metadata == {"runtimeContext": {"requestId": "request-1"}}
     assert captured_invocation_contexts[0] == invocation_context
 
 

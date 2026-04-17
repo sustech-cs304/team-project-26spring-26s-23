@@ -325,6 +325,7 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
         )
         return SimpleNamespace(output="我先查一下。查到了。")
 
+    monkeypatch.setattr(executor, "_build_runtime_agent", lambda *, enabled_tools: executor._agent)
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -418,6 +419,7 @@ def test_open_event_stream_emits_failed_tool_event_when_completed_raw_tool_call_
         await event_stream_handler(SimpleNamespace(), runtime_events())
         return SimpleNamespace(output="我先查一下。")
 
+    monkeypatch.setattr(executor, "_build_runtime_agent", lambda *, enabled_tools: executor._agent)
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -841,6 +843,45 @@ def test_execute_bound_tool_returns_contract_integrity_failure_without_raising(
 
 
 
+def test_build_contract_agent_tools_limits_registered_tools_to_enabled_set() -> None:
+    executor = PydanticAIAgentExecutor(model="test-model")
+
+    filtered_tools = executor._build_contract_agent_tools(enabled_tools=("tool.fs.glob",))
+    filtered_tool_names = tuple(tool.name for tool in filtered_tools)
+
+    assert filtered_tool_names == ("tool_fs_glob",)
+
+
+
+def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="tool.fs.glob:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"tool.fs.glob"}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-file-tool",
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="tool.fs.glob",
+            arguments={"basePath": ".", "pattern": "*.py"},
+        )
+    )
+
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+
+
+
 def test_open_event_stream_propagates_cancelled_error_from_agent_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -850,6 +891,7 @@ def test_open_event_stream_propagates_cancelled_error_from_agent_run(
         _ = (user_prompt, kwargs)
         raise asyncio.CancelledError()
 
+    monkeypatch.setattr(executor, "_build_runtime_agent", lambda *, enabled_tools: executor._agent)
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     with pytest.raises(asyncio.CancelledError):

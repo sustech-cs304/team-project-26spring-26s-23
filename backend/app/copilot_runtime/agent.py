@@ -1077,15 +1077,8 @@ class PydanticAIAgentExecutor:
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
-        self._agent = Agent(
-            name=agent_name,
-            output_type=str,
-            system_prompt=DEFAULT_AGENT_SYSTEM_PROMPT,
-            deps_type=_PydanticAIAgentRunDeps,
-            tools=self._build_contract_agent_tools(),
-            defer_model_check=True,
-        )
-        self._register_weather_tool()
+        self._tool_name_to_id = self._build_tool_name_to_id_map()
+        self._agent = self._build_runtime_agent(enabled_tools=None)
 
     @property
     def model_configured(self) -> bool:
@@ -1118,13 +1111,17 @@ class PydanticAIAgentExecutor:
             "message_history": message_history,
             "model": resolved_model,
         }
-        if tuple(enabled_tools):
+        normalized_enabled_tools = self._normalize_enabled_tools(enabled_tools)
+        if tuple(normalized_enabled_tools):
             run_kwargs["deps"] = self._build_runtime_deps(
-                enabled_tools=enabled_tools,
+                enabled_tools=normalized_enabled_tools,
                 emit_tool_event=lambda _event: None,
             )
+        runtime_agent = self._agent
+        if tuple(normalized_enabled_tools):
+            runtime_agent = self._build_runtime_agent(enabled_tools=normalized_enabled_tools)
         try:
-            result = await self._agent.run(
+            result = await runtime_agent.run(
                 user_prompt,
                 **run_kwargs,
             )
@@ -1160,6 +1157,7 @@ class PydanticAIAgentExecutor:
             raise AgentExecutionError(f"Unsupported agent '{agent_name}'.")
 
         _ = dict(request_options or {})
+        enabled_tool_ids = self._normalize_enabled_tools(enabled_tools)
         stream_model = self._resolved_explicit_model()
         if stream_model is None:
             stream_model = self._build_stream_model(model_route)
@@ -1186,14 +1184,17 @@ class PydanticAIAgentExecutor:
             stream.record_tool_lifecycle_event(tool_event)
 
         deps = self._build_runtime_deps(
-            enabled_tools=enabled_tools,
+            enabled_tools=enabled_tool_ids,
             emit_tool_event=emit_tool_event,
             run_id=run_id,
             debug_enabled=debug_enabled,
         )
+        runtime_agent = self._agent
+        if tuple(enabled_tool_ids):
+            runtime_agent = self._build_runtime_agent(enabled_tools=enabled_tool_ids)
         stream = _PydanticAIEventStream(
             run_id=run_id,
-            agent=self._agent,
+            agent=runtime_agent,
             user_prompt=user_prompt,
             message_history=message_history,
             resolved_model=resolved_model,
@@ -1252,9 +1253,31 @@ class PydanticAIAgentExecutor:
             normalized.append(tool_id)
         return tuple(normalized)
 
-    def _build_contract_agent_tools(self) -> tuple[Tool[Any], ...]:
+    def _build_tool_name_to_id_map(self) -> dict[str, str]:
+        name_to_id: dict[str, str] = {}
+        for tool_id in self._tool_registry.list_tool_ids():
+            executable_tool = self._tool_registry.resolve_tool(tool_id)
+            function_name = executable_tool.function_name
+            if function_name is None:
+                continue
+            name_to_id[function_name] = tool_id
+        name_to_id["weather_current"] = WEATHER_CURRENT_TOOL_ID
+        return name_to_id
+
+    def _build_contract_agent_tools(
+        self,
+        *,
+        enabled_tools: Sequence[str] | None,
+    ) -> tuple[Tool[Any], ...]:
+        allowed_tool_ids = (
+            None
+            if enabled_tools is None
+            else frozenset(self._normalize_enabled_tools(enabled_tools))
+        )
         tools: list[Tool[Any]] = []
         for tool_id in self._tool_registry.list_tool_ids():
+            if allowed_tool_ids is not None and tool_id not in allowed_tool_ids:
+                continue
             executable_tool = self._tool_registry.resolve_tool(tool_id)
             if executable_tool.function_name is None:
                 continue
@@ -1272,6 +1295,18 @@ class PydanticAIAgentExecutor:
                 )
             )
         return tuple(tools)
+
+    def _build_runtime_agent(self, *, enabled_tools: Sequence[str] | None) -> Agent[Any, Any]:
+        agent = Agent(
+            name=self.agent_name,
+            output_type=str,
+            system_prompt=DEFAULT_AGENT_SYSTEM_PROMPT,
+            deps_type=_PydanticAIAgentRunDeps,
+            tools=self._build_contract_agent_tools(enabled_tools=enabled_tools),
+            defer_model_check=True,
+        )
+        self._register_weather_tool(agent, enabled_tools=enabled_tools)
+        return agent
 
     def _build_contract_agent_tool(
         self,
@@ -1301,13 +1336,20 @@ class PydanticAIAgentExecutor:
         tool.max_retries = 0
         return tool
 
-    def _register_weather_tool(self) -> None:
+    def _register_weather_tool(
+        self,
+        agent: Agent[Any, Any],
+        *,
+        enabled_tools: Sequence[str] | None,
+    ) -> None:
         try:
             tool = self._tool_registry.resolve_tool(WEATHER_CURRENT_TOOL_ID)
         except LookupError:
             return
+        if enabled_tools is not None and WEATHER_CURRENT_TOOL_ID not in frozenset(enabled_tools):
+            return
 
-        @self._agent.tool(
+        @agent.tool(
             name="weather_current",
             description=tool.descriptor.description or WEATHER_CURRENT_TOOL_DESCRIPTION,
             retries=0,
@@ -1412,7 +1454,6 @@ class PydanticAIAgentExecutor:
             metadata={
                 "displayName": tool.descriptor.display_name or tool_id,
                 "enabledToolIds": sorted(ctx.deps.enabled_tool_ids),
-                "resolvedModelRoute": dict(self._model_route_summary),
             },
         )
         try:
