@@ -25,6 +25,7 @@ export function createAssistantSessionContextMenuState(input: {
     sessionLabel: resolveAssistantSessionTitle(input.sessionEntry),
     x: input.x,
     y: input.y,
+    activeSubmenu: null,
   }
 }
 

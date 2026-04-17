@@ -22,6 +22,16 @@ const hoisted = vi.hoisted(() => {
   const capabilityBridgeService = {
     handleRequest: vi.fn(),
   }
+  const copilotHistoryService = {
+    listThreads: vi.fn(),
+    getThreadDetail: vi.fn(),
+    getRunReplay: vi.fn(),
+    renameThread: vi.fn(),
+    duplicateThread: vi.fn(),
+    deleteThread: vi.fn(),
+    backupDatabase: vi.fn(),
+    restoreDatabase: vi.fn(),
+  }
 
   return {
     createElectronUnifiedConfigService,
@@ -30,6 +40,7 @@ const hoisted = vi.hoisted(() => {
     unifiedConfigService,
     settingsWorkspaceService,
     capabilityBridgeService,
+    copilotHistoryService,
   }
 })
 
@@ -181,6 +192,49 @@ describe('createMainProcessServices', () => {
       },
     }
 
+    const listHistoryThreadsResult = {
+      ok: true,
+      threads: [],
+    } as const
+    const getHistoryThreadDetailResult = {
+      ok: true,
+      thread: null,
+      runSummaries: [],
+      timelineItems: [],
+    } as const
+    const getHistoryRunReplayResult = {
+      ok: true,
+      run: null,
+      orderedEvents: [],
+      toolCallBlocks: [],
+      diagnosticBlocks: [],
+    } as const
+    const renameHistoryThreadResult = {
+      ok: true,
+      thread: {
+        threadId: 'thread-1',
+        title: '已重命名线程',
+      },
+    } as const
+    const duplicateHistoryThreadResult = {
+      ok: true,
+      thread: {
+        threadId: 'thread-copy',
+        title: '历史线程（副本）',
+      },
+    } as const
+    const deleteHistoryThreadResult = {
+      ok: true,
+    } as const
+    const backupHistoryDatabaseResult = {
+      ok: true,
+      backupPath: 'backups/history.db',
+    } as const
+    const restoreHistoryDatabaseResult = {
+      ok: true,
+      restoredThreadCount: 3,
+    } as const
+
     hoisted.unifiedConfigService.loadPublicSnapshot.mockResolvedValue(loadPublicSnapshotResult)
     hoisted.unifiedConfigService.applyPublicPatch.mockResolvedValue(applyPublicPatchResult)
     hoisted.settingsWorkspaceService.loadState.mockResolvedValue(loadStateResult)
@@ -193,6 +247,14 @@ describe('createMainProcessServices', () => {
     hoisted.settingsWorkspaceService.clearSustechCasSecret.mockResolvedValue(clearSustechCasSecretResult)
     hoisted.settingsWorkspaceService.resolveProviderRoute.mockResolvedValue(resolveProviderRouteResult)
     hoisted.capabilityBridgeService.handleRequest.mockResolvedValue(capabilityResponse)
+    hoisted.copilotHistoryService.listThreads.mockResolvedValue(listHistoryThreadsResult)
+    hoisted.copilotHistoryService.getThreadDetail.mockResolvedValue(getHistoryThreadDetailResult)
+    hoisted.copilotHistoryService.getRunReplay.mockResolvedValue(getHistoryRunReplayResult)
+    hoisted.copilotHistoryService.renameThread.mockResolvedValue(renameHistoryThreadResult)
+    hoisted.copilotHistoryService.duplicateThread.mockResolvedValue(duplicateHistoryThreadResult)
+    hoisted.copilotHistoryService.deleteThread.mockResolvedValue(deleteHistoryThreadResult)
+    hoisted.copilotHistoryService.backupDatabase.mockResolvedValue(backupHistoryDatabaseResult)
+    hoisted.copilotHistoryService.restoreDatabase.mockResolvedValue(restoreHistoryDatabaseResult)
 
     hoisted.createElectronUnifiedConfigService.mockReturnValue(hoisted.unifiedConfigService)
     hoisted.createElectronSettingsWorkspaceService.mockReturnValue(hoisted.settingsWorkspaceService)
@@ -201,10 +263,12 @@ describe('createMainProcessServices', () => {
     const prepareRuntimePaths = vi.fn(async () => ({ runtimeRootDir: 'runtime-root' } as never))
     const appendMainRuntimeLog = vi.fn()
     const publishConfigCenterPublicSnapshotUpdate = vi.fn()
+    const createCopilotHistoryService = vi.fn(() => hoisted.copilotHistoryService)
     const services = createMainProcessServices({
       prepareRuntimePaths,
       appendMainRuntimeLog,
       publishConfigCenterPublicSnapshotUpdate,
+      createCopilotHistoryService,
     })
 
     expect(hoisted.createElectronUnifiedConfigService).not.toHaveBeenCalled()
@@ -236,6 +300,14 @@ describe('createMainProcessServices', () => {
       password: 'cas-secret',
     })).resolves.toEqual(saveSustechCasSecretResult)
     await expect(services.clearSettingsWorkspaceSustechCasSecret()).resolves.toEqual(clearSustechCasSecretResult)
+    await expect(services.listCopilotHistoryThreads()).resolves.toEqual(listHistoryThreadsResult)
+    await expect(services.getCopilotHistoryThreadDetail('thread-1')).resolves.toEqual(getHistoryThreadDetailResult)
+    await expect(services.getCopilotHistoryRunReplay('run-1')).resolves.toEqual(getHistoryRunReplayResult)
+    await expect(services.renameCopilotHistoryThread('thread-1', { title: '已重命名线程' })).resolves.toEqual(renameHistoryThreadResult)
+    await expect(services.duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' })).resolves.toEqual(duplicateHistoryThreadResult)
+    await expect(services.deleteCopilotHistoryThread('thread-1')).resolves.toEqual(deleteHistoryThreadResult)
+    await expect(services.backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' })).resolves.toEqual(backupHistoryDatabaseResult)
+    await expect(services.restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' })).resolves.toEqual(restoreHistoryDatabaseResult)
     await expect(services.resolveSettingsWorkspaceProviderRoute(resolveProviderRouteRequest)).resolves.toEqual(
       resolveProviderRouteResult,
     )
@@ -246,6 +318,7 @@ describe('createMainProcessServices', () => {
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronDesktopCapabilityBridgeService).toHaveBeenCalledTimes(1)
+    expect(createCopilotHistoryService).toHaveBeenCalledTimes(1)
     expect(hoisted.unifiedConfigService.loadPublicSnapshot).toHaveBeenCalledOnce()
     expect(hoisted.unifiedConfigService.applyPublicPatch).toHaveBeenCalledWith(patch)
     expect(hoisted.settingsWorkspaceService.loadState).toHaveBeenCalledOnce()
@@ -265,6 +338,14 @@ describe('createMainProcessServices', () => {
     expect(hoisted.settingsWorkspaceService.clearSustechCasSecret).toHaveBeenCalledOnce()
     expect(hoisted.settingsWorkspaceService.resolveProviderRoute).toHaveBeenCalledWith(resolveProviderRouteRequest)
     expect(hoisted.capabilityBridgeService.handleRequest).toHaveBeenCalledWith(capabilityRequest)
+    expect(hoisted.copilotHistoryService.listThreads).toHaveBeenCalledOnce()
+    expect(hoisted.copilotHistoryService.getThreadDetail).toHaveBeenCalledWith('thread-1')
+    expect(hoisted.copilotHistoryService.getRunReplay).toHaveBeenCalledWith('run-1')
+    expect(hoisted.copilotHistoryService.renameThread).toHaveBeenCalledWith('thread-1', { title: '已重命名线程' })
+    expect(hoisted.copilotHistoryService.duplicateThread).toHaveBeenCalledWith('thread-1', { title: '历史线程（副本）' })
+    expect(hoisted.copilotHistoryService.deleteThread).toHaveBeenCalledWith('thread-1')
+    expect(hoisted.copilotHistoryService.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })
+    expect(hoisted.copilotHistoryService.restoreDatabase).toHaveBeenCalledWith({ sourcePath: 'backups/history.db' })
 
     const unifiedConfigOptions = hoisted.createElectronUnifiedConfigService.mock.calls[0]?.[0]
     const settingsWorkspaceOptions = hoisted.createElectronSettingsWorkspaceService.mock.calls[0]?.[0]

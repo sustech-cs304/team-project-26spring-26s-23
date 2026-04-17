@@ -47,6 +47,8 @@ interface AssistantSessionListProps {
   onRequestDelete: (sessionId: string) => void
   onConfirmDelete: (sessionId: string) => void
   onCancelDelete: () => void
+  onDismissContextMenu: () => void
+  onSelectSubmenu: (submenu: 'copy' | 'export' | null) => void
 }
 
 export function AssistantSessionList({
@@ -79,6 +81,8 @@ export function AssistantSessionList({
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
+  onDismissContextMenu,
+  onSelectSubmenu,
 }: AssistantSessionListProps) {
   const copy = getAssistantSessionCopy(language)
 
@@ -155,6 +159,8 @@ export function AssistantSessionList({
         onRequestDelete={onRequestDelete}
         onConfirmDelete={onConfirmDelete}
         onCancelDelete={onCancelDelete}
+        onDismissContextMenu={onDismissContextMenu}
+        onSelectSubmenu={onSelectSubmenu}
       />
 
       {sessionError !== null && (

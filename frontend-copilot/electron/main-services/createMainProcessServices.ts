@@ -8,6 +8,7 @@ export function createMainProcessServices(
   options: CreateMainProcessServicesOptions,
 ): MainProcessServices {
   const accessors = createMainProcessServiceAccessors(options)
+  const copilotHistoryService = options.createCopilotHistoryService()
 
   return {
     async loadConfigCenterPublicSnapshot() {
@@ -39,6 +40,30 @@ export function createMainProcessServices(
     },
     async clearSettingsWorkspaceSustechCasSecret() {
       return await accessors.getSettingsWorkspaceService().clearSustechCasSecret()
+    },
+    async listCopilotHistoryThreads() {
+      return await copilotHistoryService.listThreads()
+    },
+    async getCopilotHistoryThreadDetail(threadId) {
+      return await copilotHistoryService.getThreadDetail(threadId)
+    },
+    async getCopilotHistoryRunReplay(runId) {
+      return await copilotHistoryService.getRunReplay(runId)
+    },
+    async renameCopilotHistoryThread(threadId, request) {
+      return await copilotHistoryService.renameThread(threadId, request)
+    },
+    async duplicateCopilotHistoryThread(threadId, request) {
+      return await copilotHistoryService.duplicateThread(threadId, request)
+    },
+    async deleteCopilotHistoryThread(threadId) {
+      return await copilotHistoryService.deleteThread(threadId)
+    },
+    async backupCopilotHistoryDatabase(request) {
+      return await copilotHistoryService.backupDatabase(request)
+    },
+    async restoreCopilotHistoryDatabase(request) {
+      return await copilotHistoryService.restoreDatabase(request)
     },
     async resolveSettingsWorkspaceProviderRoute(request) {
       return await accessors.getSettingsWorkspaceService().resolveProviderRoute(request)
