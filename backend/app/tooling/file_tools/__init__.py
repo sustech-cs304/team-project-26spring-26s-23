@@ -1,6 +1,7 @@
 """File tool protocol scaffolding and workspace-only path policy helpers."""
 
 from .errors import FILE_TOOL_ERROR_CODES, FileToolError, FileToolErrorCode
+from .editor import FileToolTextEditor, TextEditPayload
 from .glob_search import FileToolGlobSearcher, GlobSearchPayload
 from .grep_search import FileToolGrepSearcher, GrepSearchPayload
 from .path_policy import (
@@ -13,6 +14,8 @@ from .path_policy import (
 )
 from .protocol import (
     AuditMetadata,
+    EditRequest,
+    EditResult,
     FileToolCallMetadata,
     GlobMatch,
     GlobRequest,
@@ -28,6 +31,8 @@ from .protocol import (
     WriteResult,
 )
 from .runtime_bindings import (
+    FILE_TOOL_EDIT_FUNCTION_NAME,
+    FILE_TOOL_EDIT_ID,
     FILE_TOOL_GLOB_FUNCTION_NAME,
     FILE_TOOL_GLOB_ID,
     FILE_TOOL_GREP_FUNCTION_NAME,
@@ -36,21 +41,27 @@ from .runtime_bindings import (
     FILE_TOOL_READ_ID,
     FILE_TOOL_WRITE_FUNCTION_NAME,
     FILE_TOOL_WRITE_ID,
+    RuntimeFileToolEditContract,
     RuntimeFileToolGlobContract,
     RuntimeFileToolGrepContract,
     RuntimeFileToolReadContract,
     RuntimeFileToolWriteContract,
+    build_file_tool_edit_runtime_binding,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
     build_file_tool_read_runtime_binding,
     build_file_tool_write_runtime_binding,
 )
-from .service import FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
+from .service import FileToolEditService, FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
 from .text_reader import FileToolTextReader, TextReadPayload
 from .writer import FileToolTextWriter, TextWritePayload
 
 __all__ = [
     "AuditMetadata",
+    "EditRequest",
+    "EditResult",
+    "FILE_TOOL_EDIT_FUNCTION_NAME",
+    "FILE_TOOL_EDIT_ID",
     "FILE_TOOL_ERROR_CODES",
     "FILE_TOOL_GLOB_FUNCTION_NAME",
     "FILE_TOOL_GLOB_ID",
@@ -63,12 +74,14 @@ __all__ = [
     "FileToolCallMetadata",
     "FileToolError",
     "FileToolErrorCode",
+    "FileToolEditService",
     "FileToolGlobSearcher",
     "FileToolGlobService",
     "FileToolGrepSearcher",
     "FileToolGrepService",
     "FileToolPathPolicy",
     "FileToolReadService",
+    "FileToolTextEditor",
     "FileToolTextReader",
     "FileToolTextWriter",
     "FileToolWriteService",
@@ -84,17 +97,20 @@ __all__ = [
     "ReadRequest",
     "ReadResult",
     "RootPolicy",
+    "RuntimeFileToolEditContract",
     "RuntimeFileToolGlobContract",
     "RuntimeFileToolGrepContract",
     "RuntimeFileToolReadContract",
     "RuntimeFileToolWriteContract",
     "SymlinkPolicy",
+    "TextEditPayload",
     "TextReadPayload",
     "TextWritePayload",
     "ToolName",
     "ToolResultEnvelope",
     "WriteRequest",
     "WriteResult",
+    "build_file_tool_edit_runtime_binding",
     "build_file_tool_glob_runtime_binding",
     "build_file_tool_grep_runtime_binding",
     "build_file_tool_read_runtime_binding",

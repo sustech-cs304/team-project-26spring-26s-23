@@ -1,4 +1,4 @@
-"""Copilot runtime bindings for staged file tool Read, Write, Glob, and Grep support."""
+"""Copilot runtime bindings for staged file tool Read, Write, Edit, Glob, and Grep support."""
 
 from __future__ import annotations
 
@@ -15,11 +15,12 @@ from app.tooling.contract.schema import ToolSchema
 from app.tooling.host_capabilities import ToolHostCapabilities
 from app.tooling.runtime_adapter.copilot_runtime import RuntimeExecutableToolBinding, build_contract_runtime_binding
 
+from .editor import FileToolTextEditor
 from .glob_search import FileToolGlobSearcher
 from .grep_search import FileToolGrepSearcher
 from .path_policy import FileToolPathPolicy
-from .protocol import AuditMetadata, GlobRequest, GrepRequest, ReadRequest, WriteRequest
-from .service import FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
+from .protocol import AuditMetadata, EditRequest, GlobRequest, GrepRequest, ReadRequest, WriteRequest
+from .service import FileToolEditService, FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
 from .text_reader import FileToolTextReader
 from .writer import FileToolTextWriter
 
@@ -27,6 +28,8 @@ FILE_TOOL_READ_ID = "tool.fs.read"
 FILE_TOOL_READ_FUNCTION_NAME = "tool_fs_read"
 FILE_TOOL_WRITE_ID = "tool.fs.write"
 FILE_TOOL_WRITE_FUNCTION_NAME = "tool_fs_write"
+FILE_TOOL_EDIT_ID = "tool.fs.edit"
+FILE_TOOL_EDIT_FUNCTION_NAME = "tool_fs_edit"
 FILE_TOOL_GLOB_ID = "tool.fs.glob"
 FILE_TOOL_GLOB_FUNCTION_NAME = "tool_fs_glob"
 FILE_TOOL_GREP_ID = "tool.fs.grep"
@@ -80,6 +83,32 @@ _FILE_TOOL_WRITE_INPUT_SCHEMA = ToolSchema(
             },
         },
         "required": ["path", "content"],
+    }
+)
+_FILE_TOOL_EDIT_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "oldString": {"type": "string", "minLength": 1},
+            "newString": {"type": "string"},
+            "replaceAll": {"type": "boolean", "default": False},
+            "expectedOccurrences": {"type": "integer", "minimum": 1},
+            "expectedHash": {"type": "string", "minLength": 1},
+            "audit": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "actor": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "sessionId": {"type": "string"},
+                    "traceId": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+        },
+        "required": ["path", "oldString", "newString"],
     }
 )
 _FILE_TOOL_GLOB_INPUT_SCHEMA = ToolSchema(
@@ -225,6 +254,50 @@ class RuntimeFileToolWriteContract(ToolContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeFileToolEditContract(ToolContract):
+    """Runtime-agnostic contract wrapper for the staged file text Edit tool."""
+
+    service: FileToolEditService
+    metadata: ToolMetadata = ToolMetadata(
+        tool_id=FILE_TOOL_EDIT_ID,
+        display_name="File Edit",
+        description="Edit UTF-8 text files in the workspace using exact replacement semantics.",
+        kind="operation",
+        input_schema=_FILE_TOOL_EDIT_INPUT_SCHEMA,
+        idempotent=False,
+        annotations={"stage": "phase2-edit"},
+    )
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ContractToolResultEnvelope:
+        _ = (context, host)
+        try:
+            request = _build_edit_request(arguments)
+        except ValueError as exc:
+            return ContractToolResultEnvelope.failure(
+                error=NormalizedToolError(code="invalid_input", message=str(exc)),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+
+        result = self.service.edit(request)
+        if result.ok:
+            return ContractToolResultEnvelope.success(
+                output=result.to_dict(),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+        return ContractToolResultEnvelope.failure(
+            error=_map_file_tool_error(result.error),
+            output=result.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeFileToolGlobContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file discovery Glob tool."""
 
@@ -330,6 +403,15 @@ def build_file_tool_write_runtime_binding(*, workspace_root: Path) -> RuntimeExe
     return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_WRITE_FUNCTION_NAME)
 
 
+def build_file_tool_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+    service = FileToolEditService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_editor=FileToolTextEditor(),
+    )
+    contract = RuntimeFileToolEditContract(service=service)
+    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_EDIT_FUNCTION_NAME)
+
+
 def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
     service = FileToolGlobService(
         path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -373,6 +455,21 @@ def _build_write_request(arguments: Mapping[str, Any] | None) -> WriteRequest:
         overwrite=_coerce_bool(payload.get("overwrite", True), field_name="overwrite"),
         expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
         atomic=_coerce_bool(payload.get("atomic", True), field_name="atomic"),
+        audit=audit,
+    )
+
+
+def _build_edit_request(arguments: Mapping[str, Any] | None) -> EditRequest:
+    payload = dict(arguments or {})
+    audit_payload = payload.get("audit")
+    audit = _build_audit_metadata(audit_payload)
+    return EditRequest(
+        path=_require_string(payload.get("path"), field_name="path"),
+        old_string=_require_string(payload.get("oldString"), field_name="oldString"),
+        new_string=_require_plain_string(payload.get("newString"), field_name="newString"),
+        replace_all=_coerce_bool(payload.get("replaceAll", False), field_name="replaceAll"),
+        expected_occurrences=_coerce_optional_int(payload.get("expectedOccurrences"), field_name="expectedOccurrences"),
+        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
         audit=audit,
     )
 
@@ -481,6 +578,9 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
         "invalid_request": "invalid_input",
         "path_out_of_bounds": "permission_denied",
         "file_not_found": "not_found",
+        "not_found": "not_found",
+        "not_unique": "conflict",
+        "occurrence_mismatch": "conflict",
         "not_a_file": "invalid_input",
         "not_a_directory": "invalid_input",
         "binary_unsupported": "invalid_input",
@@ -502,6 +602,8 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
 
 
 __all__ = [
+    "FILE_TOOL_EDIT_FUNCTION_NAME",
+    "FILE_TOOL_EDIT_ID",
     "FILE_TOOL_GLOB_FUNCTION_NAME",
     "FILE_TOOL_GLOB_ID",
     "FILE_TOOL_GREP_FUNCTION_NAME",
@@ -510,10 +612,12 @@ __all__ = [
     "FILE_TOOL_READ_ID",
     "FILE_TOOL_WRITE_FUNCTION_NAME",
     "FILE_TOOL_WRITE_ID",
+    "RuntimeFileToolEditContract",
     "RuntimeFileToolGlobContract",
     "RuntimeFileToolGrepContract",
     "RuntimeFileToolReadContract",
     "RuntimeFileToolWriteContract",
+    "build_file_tool_edit_runtime_binding",
     "build_file_tool_glob_runtime_binding",
     "build_file_tool_grep_runtime_binding",
     "build_file_tool_read_runtime_binding",

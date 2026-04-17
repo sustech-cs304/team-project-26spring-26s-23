@@ -133,9 +133,10 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert global_tool_catalog["defaultToolset"] == "default"
     assert isinstance(global_tool_catalog["tools"], list)
     assert len(global_tool_catalog["tools"]) >= 4
-    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:4]] == [
+    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:5]] == [
         "tool.fs.read",
         "tool.fs.write",
+        "tool.fs.edit",
         "tool.fs.glob",
         "tool.fs.grep",
     ]
@@ -160,7 +161,7 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "order": 0,
         "sourceKind": "builtin",
     }
-    assert global_tool_catalog["tools"][2]["displayNameZh"] == "文件发现"
+    assert global_tool_catalog["tools"][2]["displayNameZh"] == "文件编辑"
     assert global_tool_catalog["tools"][2]["group"] == {
         "id": "builtin-core",
         "label": "内置基础工具",
@@ -169,8 +170,17 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "order": 0,
         "sourceKind": "builtin",
     }
-    assert global_tool_catalog["tools"][3]["displayNameZh"] == "文件搜索"
+    assert global_tool_catalog["tools"][3]["displayNameZh"] == "文件发现"
     assert global_tool_catalog["tools"][3]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
+    assert global_tool_catalog["tools"][4]["displayNameZh"] == "文件搜索"
+    assert global_tool_catalog["tools"][4]["group"] == {
         "id": "builtin-core",
         "label": "内置基础工具",
         "labelZh": "内置基础工具",

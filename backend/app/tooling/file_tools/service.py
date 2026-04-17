@@ -1,4 +1,4 @@
-"""Service orchestration for staged file tool Read, Write, Glob, and Grep support."""
+"""Service orchestration for staged file tool Read, Write, Edit, Glob, and Grep support."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from time import perf_counter
 
 from .errors import FileToolError
+from .editor import FileToolTextEditor
 from .glob_search import FileToolGlobSearcher
 from .grep_search import FileToolGrepSearcher
 from .path_policy import FileToolPathPolicy
 from .protocol import (
+    EditRequest,
     FileToolCallMetadata,
     GlobRequest,
     GrepRequest,
@@ -88,6 +90,39 @@ class FileToolWriteService:
 
 
 @dataclass(frozen=True, slots=True)
+class FileToolEditService:
+    """Compose path policy and text editor into the staged Edit service."""
+
+    path_policy: FileToolPathPolicy
+    text_editor: FileToolTextEditor
+
+    def edit(self, request: EditRequest) -> ToolResultEnvelope:
+        started = perf_counter()
+        try:
+            resolution = self.path_policy.resolve_path(request.path)
+            payload = self.text_editor.edit_text(request=request, resolution=resolution)
+            return ToolResultEnvelope(
+                ok=True,
+                tool="Edit",
+                data=payload.result.to_dict(),
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+        except FileToolError as exc:
+            return ToolResultEnvelope(
+                ok=False,
+                tool="Edit",
+                error=exc,
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class FileToolGlobService:
     """Compose path policy and glob search into the staged Glob service."""
 
@@ -153,4 +188,10 @@ class FileToolGrepService:
             )
 
 
-__all__ = ["FileToolGlobService", "FileToolGrepService", "FileToolReadService", "FileToolWriteService"]
+__all__ = [
+    "FileToolEditService",
+    "FileToolGlobService",
+    "FileToolGrepService",
+    "FileToolReadService",
+    "FileToolWriteService",
+]

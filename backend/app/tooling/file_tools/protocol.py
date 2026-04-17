@@ -9,13 +9,13 @@ from typing import Any, Literal, cast
 
 from .errors import FileToolError
 
-ToolName = Literal["Read", "Write", "Glob", "Grep"]
+ToolName = Literal["Read", "Write", "Edit", "Glob", "Grep"]
 PathKind = Literal["relative", "absolute"]
 RootPolicy = Literal["workspace_only"]
 SymlinkPolicy = Literal["deny_escape"]
 ReadKind = Literal["text", "image", "pdf", "notebook", "binary"]
 
-_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Glob", "Grep")
+_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Edit", "Glob", "Grep")
 _PATH_KINDS: tuple[PathKind, ...] = ("relative", "absolute")
 _ROOT_POLICIES: tuple[RootPolicy, ...] = ("workspace_only",)
 _SYMLINK_POLICIES: tuple[SymlinkPolicy, ...] = ("deny_escape",)
@@ -322,6 +322,74 @@ class WriteResult:
 
 
 @dataclass(frozen=True, slots=True)
+class EditRequest:
+    """Request contract for staged Edit implementation."""
+
+    path: str
+    old_string: str
+    new_string: str
+    replace_all: bool = False
+    expected_occurrences: int | None = None
+    expected_hash: str | None = None
+    audit: AuditMetadata | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", _require_non_empty_text(self.path, field_name="path"))
+        object.__setattr__(self, "old_string", _require_non_empty_text(self.old_string, field_name="old_string"))
+        object.__setattr__(self, "expected_hash", _normalize_optional_text(self.expected_hash))
+        if self.expected_occurrences is not None:
+            object.__setattr__(
+                self,
+                "expected_occurrences",
+                _normalize_positive_int(self.expected_occurrences, field_name="expected_occurrences"),
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "path": self.path,
+            "oldString": self.old_string,
+            "newString": self.new_string,
+            "replaceAll": self.replace_all,
+        }
+        if self.expected_occurrences is not None:
+            payload["expectedOccurrences"] = self.expected_occurrences
+        if self.expected_hash is not None:
+            payload["expectedHash"] = self.expected_hash
+        if self.audit is not None:
+            payload["audit"] = self.audit.to_dict()
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class EditResult:
+    """Stable payload for staged Edit results."""
+
+    path: PathMetadata
+    encoding: str
+    replaced_count: int
+    modified: bool
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "encoding", _require_non_empty_text(self.encoding, field_name="encoding").lower())
+        object.__setattr__(
+            self,
+            "replaced_count",
+            _normalize_positive_int(self.replaced_count, field_name="replaced_count"),
+        )
+        object.__setattr__(self, "metadata", _normalize_mapping(self.metadata))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self.path.to_dict(),
+            "encoding": self.encoding,
+            "replacedCount": self.replaced_count,
+            "modified": self.modified,
+            "metadata": _normalize_mapping(self.metadata),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class GlobRequest:
     """Request contract for staged Glob implementation."""
 
@@ -521,6 +589,8 @@ class ToolResultEnvelope:
 
 __all__ = [
     "AuditMetadata",
+    "EditRequest",
+    "EditResult",
     "FileToolCallMetadata",
     "GlobMatch",
     "GlobRequest",

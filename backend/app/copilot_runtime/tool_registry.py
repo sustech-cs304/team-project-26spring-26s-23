@@ -12,10 +12,12 @@ from pathlib import Path
 
 from app.tools.file_convert import convert_file_to_str
 from app.tooling.file_tools import (
+    FILE_TOOL_EDIT_ID,
     FILE_TOOL_GLOB_ID,
     FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_ID,
     FILE_TOOL_WRITE_ID,
+    build_file_tool_edit_runtime_binding,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
     build_file_tool_read_runtime_binding,
@@ -46,6 +48,9 @@ FILE_TOOL_READ_PROMPT = "Use this tool to inspect workspace text files in pagina
 FILE_TOOL_WRITE_DISPLAY_NAME = "File Write"
 FILE_TOOL_WRITE_DESCRIPTION = "Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics."
 FILE_TOOL_WRITE_PROMPT = "Use this tool to create or replace a workspace text file when you know the full target content."
+FILE_TOOL_EDIT_DISPLAY_NAME = "File Edit"
+FILE_TOOL_EDIT_DESCRIPTION = "Edit UTF-8 text files in the workspace using exact replacement semantics."
+FILE_TOOL_EDIT_PROMPT = "Use this tool to replace exact text in a workspace UTF-8 file when you know the current snippet to match."
 FILE_TOOL_GLOB_DISPLAY_NAME = "File Glob"
 FILE_TOOL_GLOB_DESCRIPTION = "Discover workspace files and directories by glob pattern without reading contents."
 FILE_TOOL_GLOB_PROMPT = "Use this tool to discover workspace files or folders by glob pattern before reading them."
@@ -74,6 +79,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": "文件写入",
             "description": "在工作区内创建或覆写 UTF-8 文本文件，并带有保护性覆写语义。",
             "prompt": "使用此工具在已知完整目标内容时创建或整体覆写工作区文本文件。",
+        },
+        FILE_TOOL_EDIT_ID: {
+            "displayName": "文件编辑",
+            "description": "按精确字符串替换语义编辑工作区内 UTF-8 文本文件。",
+            "prompt": "使用此工具基于 oldString/newString 对工作区文本文件执行精确替换，并可携带哈希与匹配次数保护。",
         },
         FILE_TOOL_GLOB_ID: {
             "displayName": "文件发现",
@@ -106,6 +116,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": FILE_TOOL_WRITE_DISPLAY_NAME,
             "description": FILE_TOOL_WRITE_DESCRIPTION,
             "prompt": FILE_TOOL_WRITE_PROMPT,
+        },
+        FILE_TOOL_EDIT_ID: {
+            "displayName": FILE_TOOL_EDIT_DISPLAY_NAME,
+            "description": FILE_TOOL_EDIT_DESCRIPTION,
+            "prompt": FILE_TOOL_EDIT_PROMPT,
         },
         FILE_TOOL_GLOB_ID: {
             "displayName": FILE_TOOL_GLOB_DISPLAY_NAME,
@@ -442,6 +457,7 @@ _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_CONVERT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_READ_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_WRITE_ID: _BUILTIN_TOOL_GROUP,
+    FILE_TOOL_EDIT_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_GLOB_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_GREP_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
@@ -474,6 +490,12 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": FILE_TOOL_WRITE_DISPLAY_NAME,
         "description_zh": "在工作区内创建或覆写 UTF-8 文本文件，并带有保护性覆写语义。",
         "description_en": FILE_TOOL_WRITE_DESCRIPTION,
+    },
+    FILE_TOOL_EDIT_ID: {
+        "display_name_zh": "文件编辑",
+        "display_name_en": FILE_TOOL_EDIT_DISPLAY_NAME,
+        "description_zh": "按精确字符串替换语义编辑工作区内 UTF-8 文本文件。",
+        "description_en": FILE_TOOL_EDIT_DESCRIPTION,
     },
     FILE_TOOL_GLOB_ID: {
         "display_name_zh": "文件发现",
@@ -591,6 +613,9 @@ def build_default_tool_registry(
     file_write_binding = build_file_tool_write_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
+    file_edit_binding = build_file_tool_edit_runtime_binding(
+        workspace_root=resolved_workspace_root,
+    )
     file_glob_binding = build_file_tool_glob_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
@@ -632,6 +657,20 @@ def build_default_tool_registry(
                     execute=file_write_binding.execute,
                     function_name=file_write_binding.function_name,
                     parameters_json_schema=file_write_binding.parameters_json_schema,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=FILE_TOOL_EDIT_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=FILE_TOOL_EDIT_DISPLAY_NAME,
+                        description=FILE_TOOL_EDIT_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=FILE_TOOL_EDIT_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_TOOL_EDIT_ID],
+                    ),
+                    execute=file_edit_binding.execute,
+                    function_name=file_edit_binding.function_name,
+                    parameters_json_schema=file_edit_binding.parameters_json_schema,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(
@@ -780,6 +819,8 @@ __all__ = [
     "FILE_CONVERT_TOOL_DESCRIPTION",
     "FILE_CONVERT_TOOL_DISPLAY_NAME",
     "FILE_CONVERT_TOOL_ID",
+    "FILE_TOOL_EDIT_DESCRIPTION",
+    "FILE_TOOL_EDIT_DISPLAY_NAME",
     "FILE_TOOL_GLOB_DESCRIPTION",
     "FILE_TOOL_GLOB_DISPLAY_NAME",
     "FILE_TOOL_READ_DESCRIPTION",

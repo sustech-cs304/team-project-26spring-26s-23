@@ -79,6 +79,7 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
     expected_tool_ids = (
         FILE_TOOL_READ_ID,
         FILE_TOOL_WRITE_ID,
+        "tool.fs.edit",
         FILE_TOOL_GLOB_ID,
         FILE_TOOL_GREP_ID,
         FILE_CONVERT_TOOL_ID,
