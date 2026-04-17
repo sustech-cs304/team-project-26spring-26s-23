@@ -306,8 +306,12 @@ export function ToolPicker({
                                       ✓
                                     </span>
                                     <span className="copilot-model-picker__option-body">
-                                      <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                      <span className="copilot-tool-picker__option-name-row">
+                                        <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                        {disabledByPolicy ? <span className="copilot-tool-picker__option-status copilot-tool-picker__option-status--disabled">{copy.toolPicker.disabledBadge}</span> : null}
+                                      </span>
                                       <span className="copilot-tool-picker__option-description">{presentation.description}</span>
+                                      {disabledByPolicy ? <span className="copilot-tool-picker__option-policy-hint">{copy.toolPicker.disabledHint}</span> : null}
                                     </span>
                                   </button>
                                 )
@@ -332,8 +336,12 @@ export function ToolPicker({
                                       +
                                     </span>
                                     <span className="copilot-model-picker__option-body">
-                                      <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                      <span className="copilot-tool-picker__option-name-row">
+                                        <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                        {disabledByPolicy ? <span className="copilot-tool-picker__option-status copilot-tool-picker__option-status--disabled">{copy.toolPicker.disabledBadge}</span> : null}
+                                      </span>
                                       <span className="copilot-tool-picker__option-description">{presentation.description}</span>
+                                      {disabledByPolicy ? <span className="copilot-tool-picker__option-policy-hint">{copy.toolPicker.disabledHint}</span> : null}
                                     </span>
                                   </button>
                                 )

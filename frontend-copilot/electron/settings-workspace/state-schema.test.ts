@@ -281,4 +281,39 @@ describe('settings workspace state schema migration', () => {
       },
     })
   })
+
+  it('keeps delay tool permission entries including timeout settings', () => {
+    const values = normalizeSettingsWorkspaceStateValues({
+      mcp: {
+        mcpAutoDiscoveryEnabled: true,
+        toolPermissionMode: 'manual',
+        toolPermissionPolicy: {
+          version: 1,
+          defaultMode: 'ask',
+          toolPermissions: {
+            'functions.read_file': {
+              mode: 'delay',
+              timeoutAction: 'deny',
+              timeoutSeconds: 27,
+              source: 'user',
+            },
+          },
+        },
+      },
+    })
+
+    expect(values.mcp.toolPermissionPolicy).toEqual({
+      version: 1,
+      migrationSourceMode: undefined,
+      defaultMode: 'ask',
+      toolPermissions: {
+        'functions.read_file': {
+          mode: 'delay',
+          timeoutAction: 'deny',
+          timeoutSeconds: 27,
+          source: 'user',
+        },
+      },
+    })
+  })
 })

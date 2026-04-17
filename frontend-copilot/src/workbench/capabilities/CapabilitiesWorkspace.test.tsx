@@ -515,6 +515,16 @@ describe('CapabilitiesWorkspace', () => {
 
     expect((getToolRow(rendered.container, '读取文件').querySelector('input[aria-label="超时秒数"]') as HTMLInputElement).value).toBe('27')
 
+    expect(mockedSaveSettingsWorkspaceState).toHaveBeenCalled()
+    const saveInput = mockedSaveSettingsWorkspaceState.mock.calls.at(-1)?.[0] as SettingsWorkspaceStateSaveInput
+    expect(saveInput.mcp.toolPermissionPolicy.toolPermissions['functions.read_file']).toEqual({
+      mode: 'delay',
+      timeoutAction: 'deny',
+      timeoutSeconds: 27,
+      source: 'user',
+      updatedAt: '2026-04-17T00:00:00.000Z',
+    })
+
     await clickElement(getExactButton(getToolRow(rendered.container, '读取文件'), '总是关闭'))
 
     const collapsedRow = getToolRow(rendered.container, '读取文件')

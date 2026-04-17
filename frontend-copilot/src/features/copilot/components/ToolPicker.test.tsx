@@ -213,6 +213,8 @@ describe('ToolPicker', () => {
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
     expect(deniedOption.title).toContain('总是关闭')
     expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.textContent).toContain('已禁用')
+    expect(deniedOption.textContent).toContain('当前策略：总是关闭')
     expect(normalOption.disabled).toBe(false)
 
     await clickElement(normalOption)

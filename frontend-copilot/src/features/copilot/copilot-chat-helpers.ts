@@ -45,12 +45,14 @@ export interface CopilotChatComposerDraft {
   requestOptionsText: string
 }
 
-export type RuntimeToolPermissionMode = 'allow' | 'ask' | 'deny'
+export type RuntimeToolPermissionMode = 'allow' | 'ask' | 'deny' | 'delay'
 
 export interface RuntimeToolPermissionPolicy {
   schemaVersion: number
   defaultMode: RuntimeToolPermissionMode
   toolModes: Record<string, RuntimeToolPermissionMode>
+  toolTimeoutSeconds?: Record<string, number>
+  toolTimeoutActions?: Record<string, 'approve' | 'deny'>
 }
 
 export interface RuntimeMessageSendInput {
@@ -204,16 +206,30 @@ export function buildRuntimeToolPermissionPolicy(input: {
     }
     return [[toolId, mode]]
   }))
+  const toolTimeoutSeconds = Object.fromEntries(enabledTools.flatMap((toolId) => {
+    const entry = input.policy?.toolPermissions[toolId]
+    return entry?.mode === 'delay' && typeof entry.timeoutSeconds === 'number'
+      ? [[toolId, entry.timeoutSeconds]]
+      : []
+  }))
+  const toolTimeoutActions = Object.fromEntries(enabledTools.flatMap((toolId) => {
+    const entry = input.policy?.toolPermissions[toolId]
+    return entry?.mode === 'delay' && (entry.timeoutAction === 'approve' || entry.timeoutAction === 'deny')
+      ? [[toolId, entry.timeoutAction]]
+      : []
+  }))
 
   return {
     schemaVersion: input.policy.version,
     defaultMode: normalizeRuntimeToolPermissionMode(input.policy.defaultMode) ?? 'ask',
     toolModes,
+    ...(Object.keys(toolTimeoutSeconds).length === 0 ? {} : { toolTimeoutSeconds }),
+    ...(Object.keys(toolTimeoutActions).length === 0 ? {} : { toolTimeoutActions }),
   }
 }
 
 function normalizeRuntimeToolPermissionMode(value: unknown): RuntimeToolPermissionMode | null {
-  return value === 'allow' || value === 'ask' || value === 'deny' ? value : null
+  return value === 'allow' || value === 'ask' || value === 'deny' || value === 'delay' ? value : null
 }
 
 export function buildThinkingSessionMemoryKey(route: RuntimeModelRoute): string {

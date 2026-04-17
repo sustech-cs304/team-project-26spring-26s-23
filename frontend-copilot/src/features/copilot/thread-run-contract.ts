@@ -277,6 +277,8 @@ export interface RuntimeToolPermissionPolicy {
   schemaVersion: number
   defaultMode: RuntimeToolPermissionMode
   toolModes: Record<string, RuntimeToolPermissionMode>
+  toolTimeoutSeconds?: Record<string, number>
+  toolTimeoutActions?: Record<string, 'approve' | 'deny'>
 }
 
 export interface RuntimeRunView extends RuntimeRunThinkingMetadata {

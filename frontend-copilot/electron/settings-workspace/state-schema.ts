@@ -15,11 +15,13 @@ import { asRecord, normalizeBooleanStringGroup, normalizeNonEmptyString, normali
 export const SETTINGS_WORKSPACE_STATE_DOCUMENT_VERSION = 2 as const
 
 export type LegacyToolPermissionMode = 'manual' | 'trusted' | 'strict'
-export type ToolPermissionPolicyMode = 'allow' | 'ask' | 'deny'
+export type ToolPermissionPolicyMode = 'allow' | 'ask' | 'deny' | 'delay'
 export type ToolPermissionPolicySource = 'user' | 'migrated'
 
 export interface SettingsWorkspaceToolPermissionPolicyEntry {
   mode: ToolPermissionPolicyMode
+  timeoutAction?: 'approve' | 'deny'
+  timeoutSeconds?: number
   source?: ToolPermissionPolicySource
   updatedAt?: string
 }
@@ -403,7 +405,7 @@ function normalizeToolPermissionPolicyState(
   if (version === 1 && defaultMode !== null) {
     return {
       version: 1,
-      migrationSourceMode: normalizeLegacyToolPermissionModeOptional(record.migrationSourceMode),
+      migrationSourceMode: normalizeLegacyToolPermissionModeOptional(record.migrationSourceMode) ?? undefined,
       defaultMode,
       toolPermissions: normalizeToolPermissionPolicyEntries(record.toolPermissions),
     }
@@ -429,9 +431,17 @@ function normalizeToolPermissionPolicyEntries(
     }
 
     const normalizedEntry: SettingsWorkspaceToolPermissionPolicyEntry = { mode }
+    const timeoutAction = normalizeToolPermissionTimeoutAction(entryRecord.timeoutAction)
+    const timeoutSeconds = normalizeToolPermissionTimeoutSeconds(entryRecord.timeoutSeconds)
     const source = normalizeToolPermissionPolicySource(entryRecord.source)
     const updatedAt = normalizeNonEmptyString(entryRecord.updatedAt, '')
 
+    if (timeoutAction !== null) {
+      normalizedEntry.timeoutAction = timeoutAction
+    }
+    if (timeoutSeconds !== null) {
+      normalizedEntry.timeoutSeconds = timeoutSeconds
+    }
     if (source !== null) {
       normalizedEntry.source = source
     }
@@ -465,10 +475,29 @@ function normalizeToolPermissionPolicyMode(input: unknown): ToolPermissionPolicy
     case 'allow':
     case 'ask':
     case 'deny':
+    case 'delay':
       return input as ToolPermissionPolicyMode
     default:
       return null
   }
+}
+
+function normalizeToolPermissionTimeoutAction(input: unknown): 'approve' | 'deny' | null {
+  switch (normalizeNonEmptyString(input, '')) {
+    case 'approve':
+    case 'deny':
+      return input as 'approve' | 'deny'
+    default:
+      return null
+  }
+}
+
+function normalizeToolPermissionTimeoutSeconds(input: unknown): number | null {
+  if (typeof input !== 'number' || !Number.isFinite(input)) {
+    return null
+  }
+  const normalized = Math.trunc(input)
+  return normalized > 0 ? normalized : null
 }
 
 function normalizeToolPermissionPolicySource(input: unknown): ToolPermissionPolicySource | null {
@@ -498,6 +527,7 @@ function legacyModeToStoredValue(mode: ToolPermissionPolicyMode): LegacyToolPerm
     case 'allow':
       return 'trusted'
     case 'deny':
+    case 'delay':
       return 'strict'
     case 'ask':
     default:

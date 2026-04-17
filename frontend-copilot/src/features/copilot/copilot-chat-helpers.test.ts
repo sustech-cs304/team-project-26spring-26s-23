@@ -257,7 +257,7 @@ describe('copilot chat helpers', () => {
         toolPermissions: {
           'tool.remote-search': { mode: 'allow' },
           'tool.hidden': { mode: 'deny' },
-          'tool.file-convert': { mode: 'ask' },
+          'tool.file-convert': { mode: 'delay', timeoutAction: 'approve', timeoutSeconds: 27 },
         },
       },
     })).toEqual({
@@ -265,6 +265,13 @@ describe('copilot chat helpers', () => {
       defaultMode: 'ask',
       toolModes: {
         'tool.remote-search': 'allow',
+        'tool.file-convert': 'delay',
+      },
+      toolTimeoutSeconds: {
+        'tool.file-convert': 27,
+      },
+      toolTimeoutActions: {
+        'tool.file-convert': 'approve',
       },
     })
   })

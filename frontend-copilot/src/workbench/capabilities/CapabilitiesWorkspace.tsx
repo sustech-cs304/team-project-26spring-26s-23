@@ -291,8 +291,12 @@ function buildToolPermissionRecords(
       description: tool.descriptionZh ?? tool.description ?? tool.descriptionEn ?? '该工具尚未提供详细说明。',
       toolId: tool.toolId,
       mode: resolvedMode,
-      delayAction: FALLBACK_DELAY_ACTION,
-      delaySeconds: FALLBACK_DELAY_SECONDS + index,
+      delayAction: persisted?.mode === 'delay' && (persisted.timeoutAction === 'approve' || persisted.timeoutAction === 'deny')
+        ? persisted.timeoutAction
+        : FALLBACK_DELAY_ACTION,
+      delaySeconds: persisted?.mode === 'delay' && typeof persisted.timeoutSeconds === 'number'
+        ? Math.max(3, Math.min(300, persisted.timeoutSeconds))
+        : FALLBACK_DELAY_SECONDS + index,
     }
   })
 }
@@ -331,12 +335,18 @@ function buildPolicyStateFromTools(
     ...Object.fromEntries(tools.flatMap((tool) => {
       const normalizedMode = tool.mode === 'delay' ? 'ask' : tool.mode
 
-      if (normalizedMode === defaultMode) {
+      if (normalizedMode === defaultMode && tool.mode !== 'delay') {
         return []
       }
 
       const nextEntry = {
-        mode: normalizedMode,
+        mode: tool.mode,
+        ...(tool.mode === 'delay'
+          ? {
+              timeoutAction: tool.delayAction,
+              timeoutSeconds: tool.delaySeconds,
+            }
+          : {}),
         source: 'user' as ToolPermissionPolicySource,
         updatedAt: TOOL_PERMISSION_UPDATED_AT,
       }

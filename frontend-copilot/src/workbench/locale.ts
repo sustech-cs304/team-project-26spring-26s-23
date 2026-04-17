@@ -892,6 +892,8 @@ const copilotChatCopy: Record<WorkbenchLanguage, {
     noToolsEnabled: string
     enabledToolsSummary: (count: number) => string
     triggerLabel: (summary: string) => string
+    disabledBadge: string
+    disabledHint: string
     availabilityLabels: {
       available: string
       disabledByGlobalSetting: string
@@ -958,6 +960,8 @@ const copilotChatCopy: Record<WorkbenchLanguage, {
       noToolsEnabled: '未启用工具',
       enabledToolsSummary: (count) => `启用 ${count} 项工具`,
       triggerLabel: (summary) => `工具：${summary}`,
+      disabledBadge: '已禁用',
+      disabledHint: '当前策略：总是关闭',
       availabilityLabels: {
         available: '可用',
         disabledByGlobalSetting: '全局关闭',
@@ -1024,6 +1028,8 @@ const copilotChatCopy: Record<WorkbenchLanguage, {
       noToolsEnabled: 'No tools enabled',
       enabledToolsSummary: (count) => `${count} tools enabled`,
       triggerLabel: (summary) => `Tools: ${summary}`,
+      disabledBadge: 'Disabled',
+      disabledHint: 'Current policy: always off',
       availabilityLabels: {
         available: 'Available',
         disabledByGlobalSetting: 'Globally Disabled',
