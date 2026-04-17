@@ -9,9 +9,11 @@ from .errors import FileToolError
 from .editor import FileToolTextEditor
 from .glob_search import FileToolGlobSearcher
 from .grep_search import FileToolGrepSearcher
+from .image_reader import FileToolImageReader, is_supported_image_path
 from .notebook_editor import FileToolNotebookEditor
 from .notebook_reader import FileToolNotebookReader
 from .path_policy import FileToolPathPolicy
+from .pdf_reader import FileToolPdfReader
 from .protocol import (
     EditRequest,
     FileToolCallMetadata,
@@ -33,14 +35,23 @@ class FileToolReadService:
     path_policy: FileToolPathPolicy
     text_reader: FileToolTextReader
     notebook_reader: FileToolNotebookReader | None = None
+    image_reader: FileToolImageReader | None = None
+    pdf_reader: FileToolPdfReader | None = None
 
     def read(self, request: ReadRequest) -> ToolResultEnvelope:
         started = perf_counter()
         try:
             resolution = self.path_policy.resolve_path(request.path)
-            if resolution.resolved_path.suffix.lower() == ".ipynb":
+            suffix = resolution.resolved_path.suffix.lower()
+            if suffix == ".ipynb":
                 reader = self.notebook_reader or FileToolNotebookReader()
                 payload = reader.read_notebook(request=request, resolution=resolution)
+            elif suffix == ".pdf":
+                reader = self.pdf_reader or FileToolPdfReader()
+                payload = reader.read_pdf(request=request, resolution=resolution)
+            elif is_supported_image_path(resolution.resolved_path):
+                reader = self.image_reader or FileToolImageReader()
+                payload = reader.read_image(request=request, resolution=resolution)
             else:
                 payload = self.text_reader.read_text(request=request, resolution=resolution)
             return ToolResultEnvelope(

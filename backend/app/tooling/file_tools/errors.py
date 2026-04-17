@@ -24,6 +24,9 @@ FileToolErrorCode = Literal[
     "permission_denied",
     "already_exists",
     "hash_mismatch",
+    "vision_required",
+    "invalid_pages",
+    "page_range_required",
 ]
 
 FILE_TOOL_ERROR_CODES: tuple[FileToolErrorCode, ...] = (
@@ -43,6 +46,9 @@ FILE_TOOL_ERROR_CODES: tuple[FileToolErrorCode, ...] = (
     "permission_denied",
     "already_exists",
     "hash_mismatch",
+    "vision_required",
+    "invalid_pages",
+    "page_range_required",
 )
 
 _RETRYABLE_FILE_TOOL_ERROR_CODES = frozenset[FileToolErrorCode]()

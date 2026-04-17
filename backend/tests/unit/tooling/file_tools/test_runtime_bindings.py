@@ -42,6 +42,12 @@ def test_file_tool_read_runtime_binding_exposes_schema_and_executes(tmp_path: Pa
             "limit": {"type": "integer", "minimum": 1, "default": 2000},
             "includeMetadata": {"type": "boolean", "default": True},
             "parserHint": {"type": "string"},
+            "pages": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {"type": "integer", "minimum": 1},
+            },
             "audit": {
                 "type": "object",
                 "additionalProperties": True,

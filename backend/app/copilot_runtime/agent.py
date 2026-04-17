@@ -1412,6 +1412,7 @@ class PydanticAIAgentExecutor:
             metadata={
                 "displayName": tool.descriptor.display_name or tool_id,
                 "enabledToolIds": sorted(ctx.deps.enabled_tool_ids),
+                "resolvedModelRoute": dict(self._model_route_summary),
             },
         )
         try:

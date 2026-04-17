@@ -4,6 +4,7 @@ from .errors import FILE_TOOL_ERROR_CODES, FileToolError, FileToolErrorCode
 from .editor import FileToolTextEditor, TextEditPayload
 from .glob_search import FileToolGlobSearcher, GlobSearchPayload
 from .grep_search import FileToolGrepSearcher, GrepSearchPayload
+from .image_reader import FileToolImageReader, ImageReadPayload
 from .notebook_editor import FileToolNotebookEditor, NotebookEditPayload
 from .notebook_reader import FileToolNotebookReader, NotebookReadPayload
 from .path_policy import (
@@ -14,6 +15,7 @@ from .path_policy import (
     ensure_within_workspace,
     is_hidden_path,
 )
+from .pdf_reader import FileToolPdfReader, PdfReadPayload
 from .protocol import (
     AuditMetadata,
     EditRequest,
@@ -100,10 +102,12 @@ __all__ = [
     "FileToolGlobService",
     "FileToolGrepSearcher",
     "FileToolGrepService",
+    "FileToolImageReader",
     "FileToolNotebookEditor",
     "FileToolNotebookEditService",
     "FileToolNotebookReader",
     "FileToolPathPolicy",
+    "FileToolPdfReader",
     "FileToolReadService",
     "FileToolTextEditor",
     "FileToolTextReader",
@@ -121,6 +125,7 @@ __all__ = [
     "NotebookEditRequest",
     "NotebookEditResult",
     "NotebookOutputSummary",
+    "ImageReadPayload",
     "NotebookReadPayload",
     "NotebookReadResult",
     "PathKind",
@@ -135,6 +140,7 @@ __all__ = [
     "RuntimeFileToolNotebookEditContract",
     "RuntimeFileToolReadContract",
     "RuntimeFileToolWriteContract",
+    "PdfReadPayload",
     "SymlinkPolicy",
     "TextEditPayload",
     "TextReadPayload",

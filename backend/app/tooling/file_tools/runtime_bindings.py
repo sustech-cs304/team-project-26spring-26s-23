@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.tooling.contract import ToolContract, ToolInvocationContext
 from app.tooling.contract.errors import NormalizedToolError
@@ -64,6 +64,12 @@ _FILE_TOOL_READ_INPUT_SCHEMA = ToolSchema(
             "limit": {"type": "integer", "minimum": 1, "default": 2000},
             "includeMetadata": {"type": "boolean", "default": True},
             "parserHint": {"type": "string"},
+            "pages": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {"type": "integer", "minimum": 1},
+            },
             "audit": {
                 "type": "object",
                 "additionalProperties": True,
@@ -245,9 +251,10 @@ class RuntimeFileToolReadContract(ToolContract):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> ContractToolResultEnvelope:
-        _ = (context, host)
+        vision_enabled = _runtime_context_supports_vision(context)
+        _ = host
         try:
-            request = _build_read_request(arguments)
+            request = _build_read_request(arguments, vision_enabled=vision_enabled)
         except ValueError as exc:
             return ContractToolResultEnvelope.failure(
                 error=NormalizedToolError(code="invalid_input", message=str(exc)),
@@ -546,7 +553,7 @@ def build_file_tool_notebook_edit_runtime_binding(*, workspace_root: Path) -> Ru
     )
 
 
-def _build_read_request(arguments: Mapping[str, Any] | None) -> ReadRequest:
+def _build_read_request(arguments: Mapping[str, Any] | None, *, vision_enabled: bool = False) -> ReadRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
     audit = _build_audit_metadata(audit_payload)
@@ -556,6 +563,8 @@ def _build_read_request(arguments: Mapping[str, Any] | None) -> ReadRequest:
         limit=_coerce_int(payload.get("limit", 2000), field_name="limit"),
         include_metadata=_coerce_bool(payload.get("includeMetadata", True), field_name="includeMetadata"),
         parser_hint=_optional_string(payload.get("parserHint"), field_name="parserHint"),
+        pages=_coerce_optional_pages(payload.get("pages"), field_name="pages"),
+        vision_enabled=vision_enabled,
         audit=audit,
     )
 
@@ -718,10 +727,50 @@ def _coerce_optional_int(value: Any, *, field_name: str) -> int | None:
     return _coerce_int(value, field_name=field_name)
 
 
+def _coerce_optional_pages(value: Any, *, field_name: str) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError(f"{field_name} must be an array of exactly two integers when provided.")
+    return (
+        _coerce_int(value[0], field_name=f"{field_name}[0]"),
+        _coerce_int(value[1], field_name=f"{field_name}[1]"),
+    )
+
+
 def _coerce_bool(value: Any, *, field_name: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{field_name} must be a boolean.")
     return value
+
+
+def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
+    metadata = getattr(context, "metadata", None)
+    if not isinstance(metadata, Mapping):
+        return False
+    runtime_context = metadata.get("runtimeContext")
+    if not isinstance(runtime_context, Mapping):
+        return False
+    resolved_model_route = runtime_context.get("resolvedModelRoute")
+    if not isinstance(resolved_model_route, Mapping):
+        return False
+    capability_hints = resolved_model_route.get("capabilityHints")
+    if isinstance(capability_hints, Mapping):
+        vision = capability_hints.get("vision")
+        if isinstance(vision, bool):
+            return vision
+    tags = resolved_model_route.get("tags")
+    if isinstance(tags, list):
+        normalized_tags = {str(item).strip().lower() for item in tags}
+        if "vision" in normalized_tags or "multimodal" in normalized_tags:
+            return True
+    model_id = str(resolved_model_route.get("modelId") or "").lower()
+    provider = str(resolved_model_route.get("providerId") or resolved_model_route.get("provider") or "").lower()
+    if provider == "openai" and any(token in model_id for token in ("gpt-4.1", "gpt-4o", "o4")):
+        return True
+    if provider == "google" and "gemini" in model_id:
+        return True
+    return False
 
 
 def _map_file_tool_error(error: Any) -> NormalizedToolError:
@@ -744,6 +793,9 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
         "permission_denied": "permission_denied",
         "already_exists": "conflict",
         "hash_mismatch": "conflict",
+        "vision_required": "unsupported_operation",
+        "invalid_pages": "invalid_input",
+        "page_range_required": "invalid_input",
     }
     normalized_code = code_map.get(error.code, "execution_failed")
     return NormalizedToolError(

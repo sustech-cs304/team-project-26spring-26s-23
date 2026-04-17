@@ -193,6 +193,8 @@ class ReadRequest:
     limit: int = 2000
     include_metadata: bool = True
     parser_hint: str | None = None
+    pages: tuple[int, int] | None = None
+    vision_enabled: bool = False
     audit: AuditMetadata | None = None
 
     def __post_init__(self) -> None:
@@ -200,6 +202,17 @@ class ReadRequest:
         object.__setattr__(self, "offset", _normalize_positive_int(self.offset, field_name="offset"))
         object.__setattr__(self, "limit", _normalize_positive_int(self.limit, field_name="limit"))
         object.__setattr__(self, "parser_hint", _normalize_optional_text(self.parser_hint))
+        if self.pages is not None:
+            if len(self.pages) != 2:
+                raise ValueError("pages must contain exactly two integers when provided.")
+            object.__setattr__(
+                self,
+                "pages",
+                (
+                    _normalize_positive_int(self.pages[0], field_name="pages[0]"),
+                    _normalize_positive_int(self.pages[1], field_name="pages[1]"),
+                ),
+            )
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -210,6 +223,8 @@ class ReadRequest:
         }
         if self.parser_hint is not None:
             payload["parserHint"] = self.parser_hint
+        if self.pages is not None:
+            payload["pages"] = [self.pages[0], self.pages[1]]
         if self.audit is not None:
             payload["audit"] = self.audit.to_dict()
         return payload

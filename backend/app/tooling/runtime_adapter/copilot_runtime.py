@@ -263,6 +263,7 @@ def _build_invocation_context(
         if runtime_context is not None and runtime_context.tool_call_id is not None
         else f"{tool_id}:direct"
     )
+    metadata = {} if runtime_context is None else deepcopy(dict(runtime_context.metadata))
     return ToolInvocationContext(
         invocation_id=invocation_id,
         tool_id=tool_id,
@@ -274,7 +275,7 @@ def _build_invocation_context(
             else runtime_context.requested_at
         ),
         trace={} if runtime_context is None else runtime_context.trace,
-        metadata={} if runtime_context is None else runtime_context.metadata,
+        metadata={"runtimeContext": metadata} if metadata else {},
     )
 
 
