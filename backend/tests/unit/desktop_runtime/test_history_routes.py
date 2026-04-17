@@ -378,7 +378,8 @@ def test_history_routes_reject_in_place_backup_and_restore_requests(tmp_path: Pa
 
     assert backup_response.status_code == 200
     assert restore_response.status_code == 400
-    assert backup_response.json()["backupPath"].endswith("backups\\copilot-chat.db")
+    assert Path(backup_response.json()["backupPath"]).name == "copilot-chat.db"
+    assert Path(backup_response.json()["backupPath"]).parent.name == "backups"
     assert restore_response.json()["detail"]["code"] == "invalid_restore_request"
     assert "must not traverse parent directories" in restore_response.json()["detail"]["message"]
 
