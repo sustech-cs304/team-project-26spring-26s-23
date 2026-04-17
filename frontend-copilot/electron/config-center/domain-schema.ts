@@ -5,6 +5,7 @@ export const UNIFIED_CONFIG_DOMAIN_KEYS = {
   ASSISTANT_BEHAVIOR: 'assistant-behavior',
   HOST_CONFIG: 'host-config',
   BACKEND_EXPOSED: 'backend-exposed',
+  GENERAL: 'general',
 } as const
 
 export type UnifiedConfigDomainKey = typeof UNIFIED_CONFIG_DOMAIN_KEYS[keyof typeof UNIFIED_CONFIG_DOMAIN_KEYS]
@@ -14,6 +15,7 @@ export const UNIFIED_CONFIG_DOMAIN_LIST = [
   UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR,
   UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG,
   UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED,
+  UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL,
 ] as const satisfies readonly UnifiedConfigDomainKey[]
 
 export type UnifiedConfigTheme = 'light' | 'dark'
@@ -36,11 +38,16 @@ export interface BackendExposedConfigValues {
   model: string | null
 }
 
+export interface GeneralConfigValues {
+  language: string
+}
+
 export interface UnifiedConfigDomainValueMap {
   'frontend-preferences': FrontendPreferencesConfigValues
   'assistant-behavior': AssistantBehaviorConfigValues
   'host-config': HostConfigValues
   'backend-exposed': BackendExposedConfigValues
+  'general': GeneralConfigValues
 }
 
 export interface UnifiedConfigDomainDocument<TDomain extends UnifiedConfigDomainKey = UnifiedConfigDomainKey> {
@@ -81,6 +88,10 @@ export const UNIFIED_CONFIG_DOMAIN_DEFINITIONS: {
   [UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED]: {
     key: UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED,
     fileName: 'backend-exposed.json',
+  },
+  [UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL]: {
+    key: UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL,
+    fileName: 'general.json',
   },
 }
 

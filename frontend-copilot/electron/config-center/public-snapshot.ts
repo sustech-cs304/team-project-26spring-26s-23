@@ -24,6 +24,9 @@ export interface ConfigCenterPublicSnapshot {
     backendExposed: {
       model: string | null
     }
+    general: {
+      language: string
+    }
   }
 }
 
@@ -71,6 +74,9 @@ export function projectConfigCenterPublicSnapshot(
       },
       backendExposed: {
         model: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].values.model,
+      },
+      general: {
+        language: snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL].values.language,
       },
     },
   }

@@ -1,3 +1,4 @@
+import type { HostedBackendService } from '../../runtime/hosted-backend-service'
 import type { HostedRuntimePaths } from '../../runtime/runtime-paths'
 import { createUnifiedConfigCenterPaths } from '../paths'
 import type {
@@ -30,6 +31,7 @@ export interface ElectronUnifiedConfigLogger {
 
 export interface CreateElectronUnifiedConfigServiceOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
+  ensureHostedBackendService?: () => Promise<HostedBackendService>
   appendLog?: ElectronUnifiedConfigLogger
   publishPublicSnapshotUpdate?: ConfigCenterPublicSnapshotPublisher
 }
@@ -39,6 +41,7 @@ export interface ElectronUnifiedConfigService {
   applyFieldPatch: (patch: UnifiedConfigFieldPatch) => Promise<UnifiedConfigUpdateResult>
   loadPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
   applyPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
+  getHostedBackendService: () => Promise<HostedBackendService>
 }
 
 export function createElectronUnifiedConfigService(
@@ -91,11 +94,20 @@ export function createElectronUnifiedConfigService(
     }
   }
 
+  const getHostedBackendService = async (): Promise<HostedBackendService> => {
+    if (options.ensureHostedBackendService === undefined) {
+      throw new Error('Hosted backend service accessor is unavailable.')
+    }
+
+    return await options.ensureHostedBackendService()
+  }
+
   return {
     loadSnapshot,
     applyFieldPatch,
     loadPublicSnapshot,
     applyPublicPatch,
+    getHostedBackendService,
   }
 }
 

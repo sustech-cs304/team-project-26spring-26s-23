@@ -45,6 +45,14 @@ export function createDefaultUnifiedConfigDomainDocument<TDomain extends Unified
           model: UNIFIED_CONFIG_FIELD_REGISTRY.model.defaultValue,
         },
       ) as UnifiedConfigDomainDocument<TDomain>
+
+    case UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL:
+      return createUnifiedConfigDomainDocument(
+        UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL,
+        {
+          language: 'zh-CN',
+        },
+      ) as UnifiedConfigDomainDocument<TDomain>
   }
 
   throw new Error(`Unsupported unified config domain: ${String(domain)}`)
@@ -65,6 +73,9 @@ export function createDefaultUnifiedConfigSnapshot(): UnifiedConfigSnapshot {
       ),
       [UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED]: createDefaultUnifiedConfigDomainDocument(
         UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED,
+      ),
+      [UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL]: createDefaultUnifiedConfigDomainDocument(
+        UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL,
       ),
     },
   }
