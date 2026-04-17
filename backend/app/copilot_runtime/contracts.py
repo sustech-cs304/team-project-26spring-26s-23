@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .model_routes import RuntimeModelRoute
 from .session_store import RuntimeRunRecord, RuntimeThreadRecord
+from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
 AGENTS_LIST_METHOD = "agents/list"
@@ -415,6 +416,7 @@ class RuntimeScaffold(RuntimeContract):
         self,
         *,
         thread: RuntimeThreadRecord,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> RuntimeThreadGetResponse:
         entry = self._get_agent_directory_entry(thread.bound_agent_id)
         toolset_name = self._get_agent_toolset_name(thread.bound_agent_id)
@@ -425,8 +427,15 @@ class RuntimeScaffold(RuntimeContract):
             createdAt=thread.created_at,
             updatedAt=thread.updated_at,
             capabilitiesVersion=self.build_capabilities_version(),
-            tools=self._get_tool_catalog(toolset_name),
-            recommendedTools=entry.recommendedTools,
+            tools=self._get_tool_catalog(
+                toolset_name,
+                tool_permission_resolver=tool_permission_resolver,
+            ),
+            recommendedTools=tuple(
+                tool_id
+                for tool_id in entry.recommendedTools
+                if tool_permission_resolver is None or tool_permission_resolver.is_visible(tool_id)
+            ),
             toolSelectionMode="recommendation-only",
             latestRunId=thread.last_run_id,
         )
@@ -435,8 +444,12 @@ class RuntimeScaffold(RuntimeContract):
         self,
         *,
         thread: RuntimeThreadRecord,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> RuntimeCapabilitiesResponse:
-        thread_response = self.build_thread_get_response(thread=thread)
+        thread_response = self.build_thread_get_response(
+            thread=thread,
+            tool_permission_resolver=tool_permission_resolver,
+        )
         return RuntimeCapabilitiesResponse(
             ok=thread_response.ok,
             sessionId=thread_response.threadId,
@@ -464,8 +477,13 @@ class RuntimeScaffold(RuntimeContract):
         self,
         *,
         language: str | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> tuple[RuntimeToolDirectoryEntry, ...]:
-        return self._get_tool_catalog(self.default_toolset, language=language)
+        return self._get_tool_catalog(
+            self.default_toolset,
+            language=language,
+            tool_permission_resolver=tool_permission_resolver,
+        )
 
     def build_thinking_capability_response(
         self,
@@ -557,8 +575,12 @@ class RuntimeScaffold(RuntimeContract):
         *,
         agent_id: str,
         enabled_tools: tuple[str, ...],
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> tuple[str, ...]:
-        tool_catalog = self._get_tool_catalog(self._get_agent_toolset_name(agent_id))
+        tool_catalog = self._get_tool_catalog(
+            self._get_agent_toolset_name(agent_id),
+            tool_permission_resolver=tool_permission_resolver,
+        )
         tools_by_id = {entry.toolId: entry for entry in tool_catalog}
 
         normalized_requested: list[str] = []
@@ -620,11 +642,17 @@ class RuntimeScaffold(RuntimeContract):
         toolset_name: str,
         *,
         language: str | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> tuple[RuntimeToolDirectoryEntry, ...]:
         try:
-            return tuple(
+            catalog = tuple(
                 RuntimeToolDirectoryEntry(**tool_view)
                 for tool_view in self.tool_registry.build_tool_catalog(toolset_name, language=language)
+            )
+            if tool_permission_resolver is None:
+                return catalog
+            return tuple(
+                entry for entry in catalog if tool_permission_resolver.is_visible(entry.toolId)
             )
         except LookupError as exc:  # pragma: no cover - defensive guard
             raise LookupError(f"Unknown toolset '{toolset_name}'.") from exc

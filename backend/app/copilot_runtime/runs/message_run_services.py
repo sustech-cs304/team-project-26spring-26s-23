@@ -60,6 +60,7 @@ from ..run_events import RuntimeRunEvent
 from ..runtime_session_store import RuntimeSessionStore
 from ..session_store import BoundAgentMismatchError
 from ..thinking_adapter import adapt_thinking_selection
+from ..tool_permissions import RuntimeToolPermissionResolver
 
 
 class RuntimeMessageRunOrchestrator:
@@ -101,9 +102,13 @@ class RuntimeMessageRunOrchestrator:
         try:
             thread = self._require_thread(request)
             agent_descriptor = self._resolve_agent(thread.bound_agent_id)
+            tool_permission_resolver = RuntimeToolPermissionResolver.from_policy(
+                request.policy.toolPermissionPolicy
+            )
             resolved_tool_ids = self._resolve_enabled_tools(
                 agent_id=thread.bound_agent_id,
                 enabled_tools=request.policy.enabledTools,
+                tool_permission_resolver=tool_permission_resolver,
             )
             message_history = build_message_history(
                 self._session_store.list_messages(thread.thread_id)
@@ -579,11 +584,13 @@ class RuntimeMessageRunOrchestrator:
         *,
         agent_id: str,
         enabled_tools: tuple[str, ...],
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> tuple[str, ...]:
         try:
             return self._scaffold.resolve_enabled_tool_ids(
                 agent_id=agent_id,
                 enabled_tools=enabled_tools,
+                tool_permission_resolver=tool_permission_resolver,
             )
         except LookupError as exc:
             raise ToolNotFoundError(extract_unknown_tool_id(exc)) from exc

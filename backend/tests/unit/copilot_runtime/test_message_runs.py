@@ -21,6 +21,7 @@ from app.copilot_runtime.contracts import (
     RuntimeRunStartRequest,
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
+    RuntimeToolPermissionPolicy,
     build_runtime_scaffold,
 )
 from app.copilot_runtime.agent_registry import build_default_agent_registry
@@ -404,6 +405,40 @@ def test_stream_events_emits_tool_started_completed_before_terminal_success() ->
     assert events[3].payload["phase"] == "completed"
     assert events[3].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
     assert events[-1].payload["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
+
+
+
+def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _StreamingExecutor(deltas=["Hello world"], output="Hello world")
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    request = _build_request(
+        thread_id="thread-1",
+        enabled_tools=("tool.file-convert",),
+        tool_permission_policy=RuntimeToolPermissionPolicy(
+            schemaVersion=1,
+            defaultMode="allow",
+            toolModes={WEATHER_CURRENT_TOOL_ID: "deny"},
+        ),
+    )
+    events = asyncio.run(_collect_events(orchestrator, request))
+
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
+    assert executor.calls[0]["enabled_tools"] == ["tool.file-convert"]
+    assert not any(WEATHER_CURRENT_TOOL_ID in call["enabled_tools"] for call in executor.calls)
 
 
 
@@ -1998,6 +2033,7 @@ def _build_request(
     thinking_level_intent: str | None = None,
     thinking_selection: RuntimeThinkingSelection | None = None,
     thinking_capability_override: dict[str, object] | None = None,
+    tool_permission_policy: RuntimeToolPermissionPolicy | None = None,
 ) -> RuntimeRunStartRequest:
     resolved_thinking_selection = thinking_selection
     if resolved_thinking_selection is None and thinking_level_intent is not None:
@@ -2018,6 +2054,7 @@ def _build_request(
             thinkingSelection=resolved_thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
+            toolPermissionPolicy=tool_permission_policy,
             debugModeEnabled=debug_mode_enabled,
             requestOptions={},
         ),

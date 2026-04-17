@@ -13,6 +13,7 @@ from app.copilot_runtime import (
     RuntimeBridge,
     RuntimeRunStartResponse,
     RuntimeScaffold,
+    RuntimeToolPermissionPolicy,
     ToolDescriptor,
     ToolRegistry,
     ToolsetDescriptor,
@@ -23,6 +24,7 @@ from app.copilot_runtime import (
 )
 from app.copilot_runtime.agent import ModelNotConfiguredError
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
+from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
@@ -978,6 +980,28 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
     assert payload["toolSelectionMode"] == "recommendation-only"
     assert payload["tools"][0]["toolId"] == "tool.file-convert"
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
+
+
+
+def test_scaffold_capabilities_response_filters_denied_tools_from_catalog() -> None:
+    _app, scaffold, store = _build_app()
+    thread = store.create_thread(bound_agent_id="default", thread_id="session-deny")
+
+    payload = scaffold.build_capabilities_response(
+        thread=thread,
+        tool_permission_resolver=RuntimeToolPermissionResolver.from_policy(
+            RuntimeToolPermissionPolicy(
+                schemaVersion=1,
+                defaultMode="allow",
+                toolModes={"tool.file-convert": "deny"},
+            )
+        ),
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" not in tool_ids
+    assert "tool.weather-current" in tool_ids
+    assert payload["recommendedTools"] == []
 
 
 

@@ -60,6 +60,7 @@ from .session_store import (
 
 
 from .thinking_adapter import adapt_thinking_selection, resolve_canonical_thinking_capability
+from .tool_permissions import RuntimeToolPermissionResolver
 
 
 _RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
@@ -144,14 +145,23 @@ class RuntimeBridge:
         except LookupError as exc:
             raise RunNotFoundError(run_id) from exc
 
-    def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
+    def get_capabilities(
+        self,
+        *,
+        session_id: str,
+        tool_permission_policy: RuntimeToolPermissionPolicy | None = None,
+    ) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:
             raise RuntimeError("Runtime scaffold is required for capabilities queries.")
         thread = self._session_store.get_thread(session_id)
         if thread is None:
             raise SessionNotFoundError(session_id)
         self._resolve_agent(thread.bound_agent_id)
-        return self._scaffold.build_capabilities_response(thread=thread)
+        tool_permission_resolver = RuntimeToolPermissionResolver.from_policy(tool_permission_policy)
+        return self._scaffold.build_capabilities_response(
+            thread=thread,
+            tool_permission_resolver=tool_permission_resolver,
+        )
 
     async def get_thinking_capability(
         self,

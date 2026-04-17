@@ -23,6 +23,7 @@ from .contracts import (
     RuntimeCapabilitiesResponse,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
+    RuntimeToolPermissionPolicy,
     RuntimeRunCancelRequest,
     RuntimeRunCancelResponse,
     RuntimeRunStartRequest,
@@ -40,6 +41,7 @@ from .contracts import (
 from .persistence import SQLiteSessionStore
 from .router import build_router
 from .runtime_session_store import RuntimeSessionStore
+from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import (
     ToolDescriptor,
     ToolRegistry,
@@ -72,6 +74,7 @@ __all__ = [
     "RuntimeMessageExecutionPolicy",
     "RuntimeMessagePayload",
     "RuntimeRunCancelRequest",
+    "RuntimeToolPermissionPolicy",
     "RuntimeRunCancelResponse",
     "RuntimeRunStartRequest",
     "RuntimeRunStartResponse",
@@ -91,6 +94,7 @@ __all__ = [
     "ToolRegistry",
     "ToolsetDescriptor",
     "normalize_tool_catalog_language",
+    "RuntimeToolPermissionResolver",
     "build_default_agent_registry",
     "build_default_runtime_dependencies",
     "build_default_tool_registry",
