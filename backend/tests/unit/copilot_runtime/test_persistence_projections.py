@@ -338,7 +338,8 @@ def test_projection_service_prefers_last_run_pointer_then_activity_fallback(tmp_
             refreshed_projection = repositories.projections.get_thread_projection("thread-1")
             assert refreshed_projection is not None
             assert refreshed_projection.last_run_status == "pending"
-            assert refreshed_projection.last_activity_at == run_two.ended_at
+            assert refreshed_projection.last_activity_at is not None
+            assert refreshed_projection.last_activity_at.replace(tzinfo=None) == run_two.ended_at
     finally:
         store.dispose()
 
