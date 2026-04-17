@@ -7,6 +7,7 @@ import json
 from collections.abc import AsyncIterable, AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 from datetime import UTC, datetime
@@ -235,6 +236,8 @@ class _PydanticAIAgentRunDeps:
     tool_registry: ToolRegistry
     enabled_tool_ids: frozenset[str]
     emit_tool_event: ToolLifecycleSink
+    workspace_root: str
+    default_root: str
     run_id: str | None = None
     debug_enabled: bool = False
 
@@ -1074,6 +1077,7 @@ class PydanticAIAgentExecutor:
         self.agent_name = agent_name
         self._model_override = model
         self._tool_registry = tool_registry or build_default_tool_registry()
+        self._workspace_root = self._resolve_workspace_root(self._tool_registry).as_posix()
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
@@ -1227,6 +1231,17 @@ class PydanticAIAgentExecutor:
                 details=exc.details,
             ) from exc
 
+    def _resolve_workspace_root(self, tool_registry: ToolRegistry) -> Path:
+        try:
+            file_read_tool = tool_registry.resolve_tool("tool.fs.read")
+            result = asyncio.run(file_read_tool.execute({"path": ".", "includeMetadata": False}))
+        except Exception:
+            return Path.cwd().resolve(strict=False)
+        effective_root = result.get("output", {}).get("data", {}).get("effectiveRoot")
+        if isinstance(effective_root, str) and effective_root.strip() != "":
+            return Path(effective_root.strip()).resolve(strict=False)
+        return Path.cwd().resolve(strict=False)
+
     def _build_runtime_deps(
         self,
         *,
@@ -1239,6 +1254,8 @@ class PydanticAIAgentExecutor:
             tool_registry=self._tool_registry,
             enabled_tool_ids=frozenset(self._normalize_enabled_tools(enabled_tools)),
             emit_tool_event=emit_tool_event,
+            workspace_root=self._workspace_root,
+            default_root=self._workspace_root,
             run_id=run_id,
             debug_enabled=debug_enabled,
         )
@@ -1454,6 +1471,10 @@ class PydanticAIAgentExecutor:
             metadata={
                 "displayName": tool.descriptor.display_name or tool_id,
                 "enabledToolIds": sorted(ctx.deps.enabled_tool_ids),
+                "fileSystemState": {
+                    "workspaceRoot": ctx.deps.workspace_root,
+                    "defaultRoot": ctx.deps.default_root,
+                },
             },
         )
         try:
@@ -1588,6 +1609,11 @@ class PydanticAIAgentExecutor:
                     error_summary=normalized_error_message,
                 )
                 return result
+
+        if tool_id == "tool.fs.switch_root":
+            current_root = result.get("output", {}).get("data", {}).get("currentRoot")
+            if isinstance(current_root, str) and current_root.strip() != "":
+                ctx.deps.default_root = current_root.strip()
 
         result_summary = summarize_tool_result(result)
         result_payload = _serialize_tool_result_for_display(result)

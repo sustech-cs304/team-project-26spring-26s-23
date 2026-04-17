@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -27,6 +28,7 @@ from app.copilot_runtime.agent import (
 )
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
 
 
@@ -863,6 +865,8 @@ def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -
             tool_registry=registry,
             enabled_tool_ids=frozenset({"tool.fs.glob"}),
             emit_tool_event=emitted_tool_events.append,
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
             run_id="run-file-tool",
             debug_enabled=False,
         ),
@@ -879,6 +883,106 @@ def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -
     assert result["status"] == "success"
     assert result["output"]["ok"] is True
     assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+
+
+
+def test_build_runtime_deps_initializes_file_roots_to_workspace_root() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+
+    deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-init",
+    )
+
+    expected_workspace_root = Path.cwd().resolve(strict=False).as_posix()
+    assert deps.workspace_root == expected_workspace_root
+    assert deps.default_root == expected_workspace_root
+
+
+
+def test_execute_bound_tool_persists_switched_default_root_within_same_run(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    switched_root = tmp_path / "switched-root"
+    workspace_root.mkdir()
+    switched_root.mkdir()
+    (switched_root / "sample.txt").write_text("alpha\n", encoding="utf-8")
+
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    deps = SimpleNamespace(
+        tool_registry=registry,
+        enabled_tool_ids=frozenset({"tool.fs.switch_root", "tool.fs.glob", "tool.fs.read"}),
+        emit_tool_event=emitted_tool_events.append,
+        workspace_root=workspace_root.resolve(strict=False).as_posix(),
+        default_root=workspace_root.resolve(strict=False).as_posix(),
+        run_id="run-switch-root",
+        debug_enabled=False,
+    )
+
+    switch_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id=f"{FILE_TOOL_SWITCH_ROOT_ID}:call-1", deps=deps),
+            tool_id=FILE_TOOL_SWITCH_ROOT_ID,
+            arguments={"path": str(switched_root)},
+        )
+    )
+    glob_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id="tool.fs.glob:call-2", deps=deps),
+            tool_id="tool.fs.glob",
+            arguments={"basePath": ".", "pattern": "*.txt"},
+        )
+    )
+    read_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id="tool.fs.read:call-3", deps=deps),
+            tool_id="tool.fs.read",
+            arguments={"path": "sample.txt"},
+        )
+    )
+    absolute_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id="tool.fs.read:call-4", deps=deps),
+            tool_id="tool.fs.read",
+            arguments={"path": str(workspace_root / "missing.txt")},
+        )
+    )
+
+    assert switch_result["status"] == "success"
+    assert deps.default_root == switched_root.resolve(strict=False).as_posix()
+    assert glob_result["status"] == "success"
+    assert glob_result["output"]["data"]["matches"][0]["path"] == "sample.txt"
+    assert glob_result["output"]["data"]["matches"][0]["effectiveRoot"] == switched_root.resolve(strict=False).as_posix()
+    assert read_result["status"] == "success"
+    assert read_result["output"]["data"]["effectiveRoot"] == switched_root.resolve(strict=False).as_posix()
+    assert absolute_result["status"] == "error"
+    assert absolute_result["output"]["error"]["code"] == "file_not_found"
+
+
+
+def test_build_runtime_deps_does_not_inherit_switched_root_between_runs(tmp_path: Path) -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+
+    first_run_deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.switch_root",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-1",
+    )
+    second_run_deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.switch_root",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-2",
+    )
+
+    first_run_deps.default_root = (tmp_path / "other-root").resolve(strict=False).as_posix()
+
+    expected_workspace_root = Path.cwd().resolve(strict=False).as_posix()
+    assert second_run_deps.default_root == second_run_deps.workspace_root
+    assert second_run_deps.workspace_root == expected_workspace_root
 
 
 
