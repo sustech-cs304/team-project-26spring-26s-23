@@ -13,6 +13,7 @@ from app.copilot_runtime.contracts import (
     RuntimeRunStartRequest,
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
+    RuntimeToolPermissionPolicy,
     build_runtime_scaffold,
 )
 from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteRef
@@ -203,6 +204,47 @@ def test_start_run_stores_provider_specific_thinking_selection_value_payload_and
     assert legacy_fallback_used is False
     assert rehydrate_error is None
     assert run_start_request.policy.resolve_thinking_selection() == thinking_selection
+
+
+
+def test_start_run_round_trips_tool_permission_policy() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+
+    run = bridge.start_run(
+        request=_build_run_start_request(
+            thread_id="thread-1",
+            tool_permission_policy={
+                "schemaVersion": 1,
+                "defaultMode": "ask",
+                "toolModes": {"tool.weather-current": "allow"},
+            },
+        )
+    )
+
+    assert run.request.policy.tool_permission_policy == {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {"tool.weather-current": "allow"},
+    }
+
+    run_start_request, legacy_fallback_used, rehydrate_error = bridge._to_run_start_request(run)
+
+    assert legacy_fallback_used is False
+    assert rehydrate_error is None
+    assert run_start_request.policy.toolPermissionPolicy is not None
+    assert run_start_request.policy.toolPermissionPolicy.to_dict() == {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {"tool.weather-current": "allow"},
+    }
 
 
 
@@ -585,7 +627,7 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.recommendedTools == ("tool.file-convert",)
     assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
     assert capabilities.tools[0].toolId == "tool.file-convert"
-    assert capabilities.tools[0].displayName == "File Convert"
+    assert capabilities.tools[0].displayName in {"File Convert", "文件转换"}
 
 
 
@@ -640,6 +682,7 @@ def _build_run_start_request(
     model_route: RuntimeModelRoute | None = None,
     thinking_selection: RuntimeThinkingSelection | None = None,
     thinking_capability_override: dict[str, object] | None = None,
+    tool_permission_policy: dict[str, object] | None = None,
 ) -> RuntimeRunStartRequest:
     return RuntimeRunStartRequest(
         thread_id=thread_id,
@@ -657,6 +700,13 @@ def _build_run_start_request(
             thinkingSelection=thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=(),
+            toolPermissionPolicy=None
+            if tool_permission_policy is None
+            else RuntimeToolPermissionPolicy(
+                schemaVersion=int(tool_permission_policy.get("schemaVersion", 1)),
+                defaultMode=str(tool_permission_policy.get("defaultMode", "ask")),
+                toolModes=dict(tool_permission_policy.get("toolModes", {})),
+            ),
             requestOptions={},
         ),
         agent_id="default",

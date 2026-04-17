@@ -114,6 +114,48 @@ def test_extract_capabilities_get_request_requires_session_id() -> None:
 
 
 
+def test_extract_global_tool_catalog_get_request_accepts_empty_body_object() -> None:
+    parser = _build_parser()
+
+    assert parser.extract_global_tool_catalog_get_request(
+        {
+            "method": "tools/catalog/get",
+            "body": {},
+        }
+    ) is None
+
+
+
+def test_extract_global_tool_catalog_get_request_reads_optional_language() -> None:
+    parser = _build_parser()
+
+    assert parser.extract_global_tool_catalog_get_request(
+        {
+            "method": "tools/catalog/get",
+            "body": {"language": "en-US"},
+        }
+    ) == "en-US"
+
+
+
+def test_extract_global_tool_catalog_get_request_requires_explicit_body_wrapper() -> None:
+    parser = _build_parser()
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_global_tool_catalog_get_request(
+            {
+                "method": "tools/catalog/get",
+            }
+        )
+
+    exc = exc_info.value
+    assert exc.status_code == 400
+    assert exc.error.error.code == "invalid_request"
+    assert exc.error.error.requestedMethod == "tools/catalog/get"
+    assert exc.error.error.details == {"field": "body"}
+
+
+
 def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> None:
     parser = _build_parser()
 
@@ -151,6 +193,7 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
         },
     }
     assert request.policy.enabledTools == ("tool.file-convert",)
+    assert request.policy.toolPermissionPolicy is None
     assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
 
@@ -276,6 +319,39 @@ def test_extract_run_start_request_leaves_debug_mode_unset_when_field_omitted() 
     )
 
     assert request.policy.debugModeEnabled is None
+
+
+
+def test_extract_run_start_request_reads_tool_permission_policy() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["toolPermissionPolicy"] = {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {
+            "tool.file-convert": "allow",
+        },
+    }
+
+    request = parser.extract_run_start_request(
+        {
+            "method": "run/start",
+            "body": {
+                "threadId": "thread-123",
+                "message": {"role": "user", "content": "Hello"},
+                "policy": policy,
+            },
+        }
+    )
+
+    assert request.policy.toolPermissionPolicy is not None
+    assert request.policy.toolPermissionPolicy.to_dict() == {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {
+            "tool.file-convert": "allow",
+        },
+    }
 
 
 

@@ -20,6 +20,7 @@ import {
   type CopilotChatComposerDraft,
   type CopilotTransientErrorState,
   type RuntimeMessageSendInput,
+  type RuntimeToolPermissionPolicy,
 } from './copilot-chat-helpers'
 import { createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 import {
@@ -66,6 +67,7 @@ export async function* dispatchCopilotMessage(
     thinkingSelection: input.thinkingSelection,
     thinkingCapabilityOverride: input.thinkingCapabilityOverride,
     enabledTools: input.enabledTools,
+    toolPermissionPolicy: input.toolPermissionPolicy,
     debugModeEnabled: input.debugModeEnabled,
     requestOptions: input.requestOptions,
     fetchFn: input.fetchFn,
@@ -262,6 +264,7 @@ export async function orchestrateCopilotSend(input: {
   setConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>>
   signal?: AbortSignal
   thinkingCapabilityOverride?: Record<string, unknown> | null
+  toolPermissionPolicy?: RuntimeToolPermissionPolicy | null
 }) {
   if (!isCopilotConnectableState(input.state) || input.sessionShell === null) {
     return
@@ -393,6 +396,7 @@ export async function orchestrateCopilotSend(input: {
         messageText: trimmedMessage,
       },
       requestOptions,
+      toolPermissionPolicy: input.toolPermissionPolicy,
       thinkingCapabilityOverride: input.thinkingCapabilityOverride,
     })
   } catch (error) {

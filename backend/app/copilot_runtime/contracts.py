@@ -18,6 +18,7 @@ RUN_START_METHOD = "run/start"
 RUN_STREAM_METHOD = "run/stream"
 RUN_CANCEL_METHOD = "run/cancel"
 CAPABILITIES_GET_METHOD = "capabilities/get"
+GLOBAL_TOOL_CATALOG_GET_METHOD = "tools/catalog/get"
 THINKING_CAPABILITY_GET_METHOD = "thinking/capability/get"
 THINKING_CAPABILITY_SCHEMA_VERSION = "canonical-thinking-capability-v2"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
@@ -183,12 +184,28 @@ class RuntimeThinkingCapabilityGetRequest(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeToolPresentationGroup(RuntimeContract):
+    id: str
+    label: str
+    labelZh: str
+    labelEn: str
+    order: int
+    sourceKind: str
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeToolDirectoryEntry(RuntimeContract):
     toolId: str
     kind: str
     availability: str
     displayName: str | None = None
     description: str | None = None
+    prompt: str | None = None
+    displayNameZh: str | None = None
+    displayNameEn: str | None = None
+    descriptionZh: str | None = None
+    descriptionEn: str | None = None
+    group: RuntimeToolPresentationGroup | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +245,15 @@ class RuntimeCapabilitiesResponse(RuntimeContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeGlobalToolCatalogResponse(RuntimeContract):
+    ok: bool
+    directoryVersion: str
+    defaultToolset: str
+    language: str | None = None
+    tools: tuple[RuntimeToolDirectoryEntry, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeThinkingCapabilityResponse(RuntimeContract):
     ok: bool
     sessionId: str
@@ -241,12 +267,23 @@ class RuntimeMessagePayload(RuntimeContract):
     content: str
 
 
+RuntimeToolPermissionMode = Literal["allow", "ask", "deny"]
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeToolPermissionPolicy(RuntimeContract):
+    schemaVersion: int
+    defaultMode: RuntimeToolPermissionMode
+    toolModes: dict[str, RuntimeToolPermissionMode] = field(default_factory=dict)
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeMessageExecutionPolicy(RuntimeContract):
     modelRoute: RuntimeModelRoute
     thinkingSelection: RuntimeThinkingSelection | None = None
     thinkingCapabilityOverride: dict[str, Any] | None = None
     enabledTools: tuple[str, ...] = ()
+    toolPermissionPolicy: RuntimeToolPermissionPolicy | None = None
     debugModeEnabled: bool | None = None
     requestOptions: dict[str, Any] = field(default_factory=dict)
 
@@ -334,6 +371,7 @@ class RuntimeScaffold(RuntimeContract):
     agent_toolsets: dict[str, str]
     tool_directory_version: str
     tool_catalog_by_toolset: dict[str, tuple[RuntimeToolDirectoryEntry, ...]]
+    tool_registry: ToolRegistry
     agent_diagnostics_summary: dict[str, Any]
     tool_diagnostics_summary: dict[str, Any]
     session_store_type: str
@@ -408,6 +446,26 @@ class RuntimeScaffold(RuntimeContract):
             recommendedTools=thread_response.recommendedTools,
             toolSelectionMode=thread_response.toolSelectionMode,
         )
+
+    def build_global_tool_catalog_response(
+        self,
+        *,
+        language: str | None = None,
+    ) -> RuntimeGlobalToolCatalogResponse:
+        return RuntimeGlobalToolCatalogResponse(
+            ok=True,
+            directoryVersion=self.tool_directory_version,
+            defaultToolset=self.default_toolset,
+            language=language,
+            tools=self.get_global_tool_catalog(language=language),
+        )
+
+    def get_global_tool_catalog(
+        self,
+        *,
+        language: str | None = None,
+    ) -> tuple[RuntimeToolDirectoryEntry, ...]:
+        return self._get_tool_catalog(self.default_toolset, language=language)
 
     def build_thinking_capability_response(
         self,
@@ -557,10 +615,18 @@ class RuntimeScaffold(RuntimeContract):
     def _get_agent_toolset_name(self, agent_id: str) -> str:
         return self.agent_toolsets.get(agent_id, self.default_toolset)
 
-    def _get_tool_catalog(self, toolset_name: str) -> tuple[RuntimeToolDirectoryEntry, ...]:
+    def _get_tool_catalog(
+        self,
+        toolset_name: str,
+        *,
+        language: str | None = None,
+    ) -> tuple[RuntimeToolDirectoryEntry, ...]:
         try:
-            return self.tool_catalog_by_toolset[toolset_name]
-        except KeyError as exc:  # pragma: no cover - defensive guard
+            return tuple(
+                RuntimeToolDirectoryEntry(**tool_view)
+                for tool_view in self.tool_registry.build_tool_catalog(toolset_name, language=language)
+            )
+        except LookupError as exc:  # pragma: no cover - defensive guard
             raise LookupError(f"Unknown toolset '{toolset_name}'.") from exc
 
 
@@ -589,6 +655,7 @@ def build_runtime_scaffold(
             RUN_STREAM_METHOD,
             RUN_CANCEL_METHOD,
             CAPABILITIES_GET_METHOD,
+            GLOBAL_TOOL_CATALOG_GET_METHOD,
             THINKING_CAPABILITY_GET_METHOD,
         ),
         default_agent=resolved_agent_registry.get_default().name,
@@ -599,6 +666,7 @@ def build_runtime_scaffold(
         agent_toolsets=_build_runtime_agent_toolsets(resolved_agent_registry, resolved_tool_registry),
         tool_directory_version=resolved_tool_registry.directory_version,
         tool_catalog_by_toolset=_build_runtime_tool_catalogs(resolved_tool_registry),
+        tool_registry=resolved_tool_registry,
         agent_diagnostics_summary=resolved_agent_registry.build_diagnostics_summary(),
         tool_diagnostics_summary=resolved_tool_registry.build_diagnostics_summary(),
         session_store_type=session_store_type,

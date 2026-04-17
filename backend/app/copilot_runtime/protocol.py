@@ -9,6 +9,7 @@ from fastapi import Request, status
 
 from .contracts import (
     CAPABILITIES_GET_METHOD,
+    GLOBAL_TOOL_CATALOG_GET_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
@@ -19,6 +20,7 @@ from .contracts import (
     RuntimeCapabilitiesGetRequest,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
+    RuntimeToolPermissionPolicy,
     ThinkingLevelIntent,
     RuntimeRunCancelRequest,
     RuntimeRunStartRequest,
@@ -151,6 +153,20 @@ class RuntimeProtocolParser:
             field_name="sessionId",
         )
         return RuntimeCapabilitiesGetRequest(session_id=session_id)
+
+    def extract_global_tool_catalog_get_request(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> str | None:
+        request_body = self._require_payload_body(
+            payload,
+            requested_method=GLOBAL_TOOL_CATALOG_GET_METHOD,
+        )
+        return self._optional_string(
+            request_body.get("language"),
+            field_name="language",
+            requested_method=GLOBAL_TOOL_CATALOG_GET_METHOD,
+        )
 
     def extract_thinking_capability_get_request(
         self,
@@ -645,6 +661,11 @@ class RuntimeProtocolParser:
             field_name="policy.enabledTools",
             requested_method=requested_method,
         )
+        tool_permission_policy = self._optional_tool_permission_policy(
+            policy.get("toolPermissionPolicy"),
+            field_name="policy.toolPermissionPolicy",
+            requested_method=requested_method,
+        )
         debug_mode_enabled = self._optional_boolean(
             policy.get("debugModeEnabled"),
             field_name="policy.debugModeEnabled",
@@ -660,9 +681,84 @@ class RuntimeProtocolParser:
             thinkingSelection=thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
+            toolPermissionPolicy=tool_permission_policy,
             debugModeEnabled=debug_mode_enabled,
             requestOptions=request_options,
         )
+
+    def _optional_tool_permission_policy(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeToolPermissionPolicy | None:
+        if value is None:
+            return None
+        policy = self._require_object(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+        schema_version = policy.get("schemaVersion")
+        if not isinstance(schema_version, int) or isinstance(schema_version, bool):
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}.schemaVersion' must be an integer.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": f"{field_name}.schemaVersion"},
+                ),
+            )
+        default_mode = self._require_tool_permission_mode(
+            policy.get("defaultMode"),
+            field_name=f"{field_name}.defaultMode",
+            requested_method=requested_method,
+        )
+        raw_tool_modes = self._require_object(
+            policy.get("toolModes") if policy.get("toolModes") is not None else {},
+            field_name=f"{field_name}.toolModes",
+            requested_method=requested_method,
+        )
+        tool_modes = {
+            tool_id: self._require_tool_permission_mode(
+                mode,
+                field_name=f"{field_name}.toolModes.{tool_id}",
+                requested_method=requested_method,
+            )
+            for tool_id, mode in raw_tool_modes.items()
+            if isinstance(tool_id, str) and tool_id.strip() != ""
+        }
+        return RuntimeToolPermissionPolicy(
+            schemaVersion=schema_version,
+            defaultMode=default_mode,
+            toolModes=tool_modes,
+        )
+
+    def _require_tool_permission_mode(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> str:
+        normalized = self._require_non_empty_string(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+        if normalized not in {"allow", "ask", "deny"}:
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=f"Runtime request field '{field_name}' must be one of: allow, ask, deny.",
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": field_name},
+                ),
+            )
+        return normalized
 
     def _optional_thinking_selection(
         self,

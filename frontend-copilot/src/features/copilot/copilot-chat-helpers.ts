@@ -3,6 +3,7 @@ import type {
   AssistantSessionShell,
   ThinkingLevelIntent,
 } from '../../workbench/types'
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
 import {
   THINKING_BUDGET_DEFAULT_MAX_TOKENS,
   THINKING_BUDGET_DEFAULT_MIN_TOKENS,
@@ -43,6 +44,14 @@ export interface CopilotChatComposerDraft {
   requestOptionsText: string
 }
 
+export type RuntimeToolPermissionMode = 'allow' | 'ask' | 'deny'
+
+export interface RuntimeToolPermissionPolicy {
+  schemaVersion: number
+  defaultMode: RuntimeToolPermissionMode
+  toolModes: Record<string, RuntimeToolPermissionMode>
+}
+
 export interface RuntimeMessageSendInput {
   runtimeUrl: string
   sessionId: string
@@ -55,6 +64,7 @@ export interface RuntimeMessageSendInput {
   thinkingSelection: RuntimeThinkingSelection | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
+  toolPermissionPolicy?: RuntimeToolPermissionPolicy | null
   requestOptions: Record<string, unknown>
 }
 
@@ -136,6 +146,7 @@ export function buildRuntimeMessageSendInput(input: {
   sessionShell: AssistantSessionShell
   draft: CopilotChatComposerDraft
   requestOptions: Record<string, unknown>
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
 }): RuntimeMessageSendInput {
   if (input.draft.selectedModelRoute === null) {
@@ -143,6 +154,11 @@ export function buildRuntimeMessageSendInput(input: {
   }
 
   const thinkingSelection = cloneRuntimeThinkingSelection(input.draft.thinkingSelection)
+  const enabledTools = dedupeToolIds(input.draft.enabledTools)
+  const toolPermissionPolicy = buildRuntimeToolPermissionPolicy({
+    enabledTools,
+    policy: input.toolPermissionPolicy ?? null,
+  })
 
   return {
     runtimeUrl: input.runtimeUrl,
@@ -161,9 +177,38 @@ export function buildRuntimeMessageSendInput(input: {
             ? null
             : { ...input.thinkingCapabilityOverride },
         }),
-    enabledTools: dedupeToolIds(input.draft.enabledTools),
+    enabledTools,
+    ...(toolPermissionPolicy === null ? {} : { toolPermissionPolicy }),
     requestOptions: { ...input.requestOptions },
   }
+}
+
+export function buildRuntimeToolPermissionPolicy(input: {
+  enabledTools: readonly string[]
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
+}): RuntimeToolPermissionPolicy | null {
+  if (input.policy === null) {
+    return null
+  }
+
+  const enabledTools = dedupeToolIds(input.enabledTools)
+  const toolModes = Object.fromEntries(enabledTools.flatMap((toolId) => {
+    const mode = normalizeRuntimeToolPermissionMode(input.policy?.toolPermissions[toolId]?.mode)
+    if (mode === null || mode === input.policy.defaultMode) {
+      return []
+    }
+    return [[toolId, mode]]
+  }))
+
+  return {
+    schemaVersion: input.policy.version,
+    defaultMode: normalizeRuntimeToolPermissionMode(input.policy.defaultMode) ?? 'ask',
+    toolModes,
+  }
+}
+
+function normalizeRuntimeToolPermissionMode(value: unknown): RuntimeToolPermissionMode | null {
+  return value === 'allow' || value === 'ask' || value === 'deny' ? value : null
 }
 
 export function buildThinkingSessionMemoryKey(route: RuntimeModelRoute): string {

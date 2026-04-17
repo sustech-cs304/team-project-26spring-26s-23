@@ -12,6 +12,7 @@ from .contracts import (
     RuntimeCapabilitiesResponse,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
+    RuntimeToolPermissionPolicy,
     RuntimeRunStartRequest,
     RuntimeScaffold,
     RuntimeThinkingCapabilityResponse,
@@ -433,6 +434,9 @@ class RuntimeBridge:
                 if request.policy.thinkingCapabilityOverride is None
                 else dict(request.policy.thinkingCapabilityOverride),
                 enabled_tools=tuple(request.policy.enabledTools),
+                tool_permission_policy=None
+                if request.policy.toolPermissionPolicy is None
+                else request.policy.toolPermissionPolicy.to_dict(),
                 debug_mode_enabled=request.policy.debugModeEnabled,
                 request_options=dict(request.policy.requestOptions),
             ),
@@ -467,6 +471,13 @@ class RuntimeBridge:
                     if stored_policy.thinking_capability_override is None
                     else dict(stored_policy.thinking_capability_override),
                     enabledTools=tuple(stored_policy.enabled_tools),
+                    toolPermissionPolicy=None
+                    if stored_policy.tool_permission_policy is None
+                    else RuntimeToolPermissionPolicy(
+                        schemaVersion=stored_policy.tool_permission_policy.get("schemaVersion", 1),
+                        defaultMode=stored_policy.tool_permission_policy.get("defaultMode", "ask"),
+                        toolModes=dict(stored_policy.tool_permission_policy.get("toolModes", {})),
+                    ),
                     debugModeEnabled=stored_policy.debug_mode_enabled,
                     requestOptions=dict(stored_policy.request_options),
                 ),

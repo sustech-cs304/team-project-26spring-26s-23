@@ -21,6 +21,7 @@ import {
   parseRequestOptionsText,
   syncComposerDraftThinkingSelection,
   upsertToolStepTurn,
+  buildRuntimeToolPermissionPolicy,
 } from './copilot-chat-helpers'
 import { RuntimeRequestError } from './thread-run-contract'
 import {
@@ -125,6 +126,15 @@ describe('copilot chat helpers', () => {
         enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
       },
+      toolPermissionPolicy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.remote-search': { mode: 'allow' },
+          'tool.file-convert': { mode: 'ask' },
+          'tool.hidden': { mode: 'deny' },
+        },
+      },
       requestOptions: {
         trace: true,
       },
@@ -158,6 +168,13 @@ describe('copilot chat helpers', () => {
         budgetTokens: null,
       },
       enabledTools: ['tool.remote-search', 'tool.file-convert'],
+      toolPermissionPolicy: {
+        schemaVersion: 1,
+        defaultMode: 'ask',
+        toolModes: {
+          'tool.remote-search': 'allow',
+        },
+      },
       requestOptions: {
         trace: true,
       },
@@ -199,6 +216,27 @@ describe('copilot chat helpers', () => {
 
     expect(input.thinkingSelection).toEqual(budgetSelection)
     expect(input).not.toHaveProperty('thinkingLevelIntent')
+  })
+
+  it('reduces persisted settings policy to request-scoped runtime tool permission policy', () => {
+    expect(buildRuntimeToolPermissionPolicy({
+      enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
+      policy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.remote-search': { mode: 'allow' },
+          'tool.hidden': { mode: 'deny' },
+          'tool.file-convert': { mode: 'ask' },
+        },
+      },
+    })).toEqual({
+      schemaVersion: 1,
+      defaultMode: 'ask',
+      toolModes: {
+        'tool.remote-search': 'allow',
+      },
+    })
   })
 
   it('remembers structured selections per model and normalizes them against the current capability shape', () => {

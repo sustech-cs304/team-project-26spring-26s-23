@@ -39,12 +39,27 @@ export interface RuntimeThreadCreateResponse {
   capabilities: Record<string, unknown>
 }
 
+export interface RuntimeToolPresentationGroup {
+  id: string
+  label: string
+  labelZh: string
+  labelEn: string
+  order: number
+  sourceKind: string
+}
+
 export interface RuntimeToolDirectoryEntry {
   toolId: string
   kind: string
   availability: string
   displayName: string | null
   description: string | null
+  prompt?: string | null
+  displayNameZh?: string | null
+  displayNameEn?: string | null
+  descriptionZh?: string | null
+  descriptionEn?: string | null
+  group?: RuntimeToolPresentationGroup | null
 }
 
 export interface RuntimeThreadGetResponse {
@@ -254,6 +269,14 @@ export interface RuntimeThinkingSelection {
   mode?: string | null
   level?: string | null
   budgetTokens?: number | null
+}
+
+export type RuntimeToolPermissionMode = 'allow' | 'ask' | 'deny'
+
+export interface RuntimeToolPermissionPolicy {
+  schemaVersion: number
+  defaultMode: RuntimeToolPermissionMode
+  toolModes: Record<string, RuntimeToolPermissionMode>
 }
 
 export interface RuntimeRunView extends RuntimeRunThinkingMetadata {
@@ -517,6 +540,7 @@ export async function startRuntimeRun(input: {
   thinkingSelection?: RuntimeThinkingSelection | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
+  toolPermissionPolicy?: RuntimeToolPermissionPolicy | null
   debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
   fetchFn?: FetchLike
@@ -540,6 +564,9 @@ export async function startRuntimeRun(input: {
           ? {}
           : { thinkingCapabilityOverride: input.thinkingCapabilityOverride }),
         enabledTools: input.enabledTools,
+        ...(input.toolPermissionPolicy === undefined || input.toolPermissionPolicy === null
+          ? {}
+          : { toolPermissionPolicy: input.toolPermissionPolicy }),
         ...(input.debugModeEnabled === undefined
           ? {}
           : { debugModeEnabled: input.debugModeEnabled }),

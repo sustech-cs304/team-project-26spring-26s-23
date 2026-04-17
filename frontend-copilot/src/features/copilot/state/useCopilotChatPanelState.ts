@@ -28,6 +28,7 @@ import {
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../debug-mode-log'
 import {
   applyModelSelectionToComposerDraft,
+  buildRuntimeToolPermissionPolicy,
   buildRuntimeDebugSummary,
   buildRuntimeThinkingCapabilityFromError,
   buildSessionDebugSummary,
@@ -147,6 +148,7 @@ export function useCopilotChatPanelState({
   const [workspaceProviderProfiles, setWorkspaceProviderProfiles] = useState<Parameters<typeof createCopilotModelCatalog>[0]>([])
   const [workspacePrimaryModel, setWorkspacePrimaryModel] = useState('')
   const [workspacePrimaryModelRoute, setWorkspacePrimaryModelRoute] = useState<ModelRouteRef | null>(null)
+  const [workspaceToolPermissionPolicy, setWorkspaceToolPermissionPolicy] = useState<Parameters<typeof buildRuntimeToolPermissionPolicy>[0]['policy']>(null)
   const [workspaceStateLoaded, setWorkspaceStateLoaded] = useState(false)
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const { composerHeight, onComposerResizeStart } = useCopilotComposerResize()
@@ -577,6 +579,7 @@ export function useCopilotChatPanelState({
         setWorkspacePrimaryModel(result.state.defaultModelRouting.primaryAssistantModel)
         setWorkspacePrimaryModelRoute(result.state.defaultModelRouting.primaryAssistantModelRoute ?? null)
         setAssistantNotificationsEnabled(result.state.general.assistantNotificationsEnabled)
+        setWorkspaceToolPermissionPolicy(result.state.mcp.toolPermissionPolicy)
         setWorkspaceStateLoaded(true)
         return
       }
@@ -585,6 +588,7 @@ export function useCopilotChatPanelState({
       setWorkspacePrimaryModel('')
       setWorkspacePrimaryModelRoute(null)
       setAssistantNotificationsEnabled(false)
+      setWorkspaceToolPermissionPolicy(null)
       setWorkspaceStateLoaded(true)
     })()
 
@@ -975,6 +979,7 @@ export function useCopilotChatPanelState({
         setConversation: setBoundConversation,
         signal: abortController.signal,
         thinkingCapabilityOverride: (selectedModelOption?.thinkingCapabilityOverride ?? null) as Record<string, unknown> | null,
+        toolPermissionPolicy: workspaceToolPermissionPolicy,
       })
     } finally {
       updateSessionTransientStateById(boundSessionId, (sessionState) => (
