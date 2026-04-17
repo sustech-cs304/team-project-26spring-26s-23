@@ -1459,6 +1459,14 @@ class PydanticAIAgentExecutor:
                 message=error_message,
             )
 
+        workspace_root = getattr(ctx.deps, "workspace_root", None)
+        default_root = getattr(ctx.deps, "default_root", workspace_root)
+        file_system_state: dict[str, Any] = {}
+        if isinstance(workspace_root, str) and workspace_root.strip() != "":
+            file_system_state["workspaceRoot"] = workspace_root
+        if isinstance(default_root, str) and default_root.strip() != "":
+            file_system_state["defaultRoot"] = default_root
+
         execution_context = RuntimeToolExecutionContext(
             tool_call_id=tool_call_id,
             run_id=ctx.deps.run_id,
@@ -1471,10 +1479,7 @@ class PydanticAIAgentExecutor:
             metadata={
                 "displayName": tool.descriptor.display_name or tool_id,
                 "enabledToolIds": sorted(ctx.deps.enabled_tool_ids),
-                "fileSystemState": {
-                    "workspaceRoot": ctx.deps.workspace_root,
-                    "defaultRoot": ctx.deps.default_root,
-                },
+                "fileSystemState": file_system_state,
             },
         )
         try:

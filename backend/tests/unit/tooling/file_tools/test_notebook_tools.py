@@ -17,11 +17,20 @@ from app.tooling.file_tools.runtime_bindings import (
     build_file_tool_notebook_edit_runtime_binding,
     build_file_tool_read_runtime_binding,
 )
+from app.tooling.runtime_adapter.copilot_runtime import RuntimeToolExecutionContext, runtime_tool_execution_scope
 from app.tooling.file_tools.service import FileToolNotebookEditService, FileToolReadService
 from app.tooling.file_tools.text_reader import FileToolTextReader
 from app.tooling.file_tools.writer import _build_sha256
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+
+def _runtime_context(default_root: Path) -> RuntimeToolExecutionContext:
+    return RuntimeToolExecutionContext(
+        tool_call_id="call-1",
+        metadata={"fileSystemState": {"defaultRoot": str(default_root)}},
+    )
 
 
 def test_notebook_read_service_parses_structured_cells(tmp_path: Path) -> None:
@@ -412,6 +421,47 @@ def test_notebook_tools_allow_absolute_paths_outside_workspace(tmp_path: Path) -
     assert edit_result["ok"] is True
     assert edit_result["data"]["resolvedPath"] == target.resolve(strict=False).as_posix()
     assert json.loads(target.read_text(encoding="utf-8"))["cells"][0]["source"] == ["updated\n"]
+
+
+def test_notebook_runtime_bindings_allow_absolute_paths_and_runtime_default_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    runtime_root = tmp_path / "runtime-root"
+    runtime_root.mkdir()
+    target = runtime_root / "sample.ipynb"
+    _write_notebook(
+        target,
+        {
+            "nbformat": 4,
+            "nbformat_minor": 5,
+            "metadata": {},
+            "cells": [{"id": "cell-a", "cell_type": "markdown", "metadata": {}, "source": ["hello\n"]}],
+        },
+    )
+
+    read_binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
+    edit_binding = build_file_tool_notebook_edit_runtime_binding(workspace_root=workspace_root)
+    absolute_result = asyncio.run(read_binding.execute({"path": str(target)}))
+    with runtime_tool_execution_scope(_runtime_context(runtime_root)):
+        relative_read_result = asyncio.run(read_binding.execute({"path": "sample.ipynb"}))
+        relative_edit_result = asyncio.run(
+            edit_binding.execute(
+                {
+                    "path": "sample.ipynb",
+                    "operations": [{"kind": "replace", "cellId": "cell-a", "source": "updated\n"}],
+                }
+            )
+        )
+
+    assert absolute_result["status"] == "success"
+    assert absolute_result["output"]["data"]["resolvedPath"] == target.resolve(strict=False).as_posix()
+    assert absolute_result["output"]["data"]["rootSource"] == "absolute_override"
+    assert relative_read_result["status"] == "success"
+    assert relative_read_result["output"]["data"]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
+    assert relative_edit_result["status"] == "success"
+    assert relative_edit_result["output"]["data"]["resolvedPath"] == target.resolve(strict=False).as_posix()
+    assert json.loads(target.read_text(encoding="utf-8"))["cells"][0]["source"] == ["updated\n"]
+
 
 
 def test_default_tool_registry_exposes_notebook_edit_tool(tmp_path: Path) -> None:

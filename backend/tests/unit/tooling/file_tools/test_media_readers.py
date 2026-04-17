@@ -189,6 +189,44 @@ def test_runtime_binding_uses_runtime_model_vision_flag(tmp_path: Path) -> None:
     assert vision_result["output"]["data"]["kind"] == "image"
 
 
+
+def test_media_runtime_binding_allows_absolute_image_and_pdf_paths(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+    image_path = outside_root / "pixel.png"
+    pdf_path = outside_root / "sample.pdf"
+    image_path.write_bytes(base64.b64decode(_MINIMAL_PNG_BASE64))
+    pdf_path.write_bytes(_MINIMAL_PDF)
+    binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
+
+    with runtime_tool_execution_scope(
+        RuntimeToolExecutionContext(
+            tool_call_id="call-1",
+            run_id="run-1",
+            metadata={
+                "resolvedModelRoute": {
+                    "capabilityHints": {"vision": True},
+                    "modelId": "gpt-4.1",
+                    "providerId": "openai",
+                }
+            },
+        )
+    ):
+        image_result = asyncio.run(binding.execute({"path": str(image_path)}))
+    pdf_result = asyncio.run(binding.execute({"path": str(pdf_path)}))
+
+    assert image_result["status"] == "success"
+    assert image_result["output"]["data"]["resolvedPath"] == image_path.resolve(strict=False).as_posix()
+    assert image_result["output"]["data"]["effectiveRoot"] == outside_root.resolve(strict=False).as_posix()
+    assert image_result["output"]["data"]["rootSource"] == "absolute_override"
+    assert pdf_result["status"] == "success"
+    assert pdf_result["output"]["data"]["resolvedPath"] == pdf_path.resolve(strict=False).as_posix()
+    assert pdf_result["output"]["data"]["effectiveRoot"] == outside_root.resolve(strict=False).as_posix()
+    assert pdf_result["output"]["data"]["rootSource"] == "absolute_override"
+
+
 def test_media_readers_allow_absolute_paths_outside_workspace(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()

@@ -25,6 +25,13 @@ from app.tooling.file_tools.runtime_bindings import (
 from app.tooling.runtime_adapter.copilot_runtime import RuntimeToolExecutionContext, runtime_tool_execution_scope
 
 
+def _runtime_context(default_root: Path) -> RuntimeToolExecutionContext:
+    return RuntimeToolExecutionContext(
+        tool_call_id="call-1",
+        metadata={"fileSystemState": {"defaultRoot": str(default_root)}},
+    )
+
+
 def test_file_tool_read_runtime_binding_exposes_schema_and_executes(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -267,17 +274,57 @@ def test_file_tool_read_runtime_binding_uses_runtime_default_root(tmp_path: Path
     (runtime_root / "sample.txt").write_text("runtime\nvalue\n", encoding="utf-8")
 
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
-    with runtime_tool_execution_scope(
-        RuntimeToolExecutionContext(
-            tool_call_id="call-1",
-            metadata={"fileSystemState": {"defaultRoot": str(runtime_root)}},
-        )
-    ):
+    with runtime_tool_execution_scope(_runtime_context(runtime_root)):
         result = asyncio.run(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1}))
 
     assert result["status"] == "success"
     assert result["output"]["data"]["content"] == {"text": "value"}
     assert result["output"]["data"]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
+
+
+
+def test_file_tool_runtime_binding_switch_root_then_glob_then_read_uses_runtime_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    runtime_root = tmp_path / "runtime-root"
+    workspace_root.mkdir()
+    runtime_root.mkdir()
+    (runtime_root / "nested").mkdir()
+    (runtime_root / "nested" / "sample.txt").write_text("hello\nworld\n", encoding="utf-8")
+
+    glob_binding = build_file_tool_glob_runtime_binding(workspace_root=workspace_root)
+    read_binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
+    with runtime_tool_execution_scope(_runtime_context(runtime_root)):
+        glob_result = asyncio.run(glob_binding.execute({"basePath": "nested", "pattern": "*.txt"}))
+        read_result = asyncio.run(read_binding.execute({"path": "nested/sample.txt", "offset": 2, "limit": 1}))
+
+    assert glob_result["status"] == "success"
+    assert glob_result["output"]["data"]["matches"][0]["path"] == "nested/sample.txt"
+    assert glob_result["output"]["data"]["matches"][0]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
+    assert read_result["status"] == "success"
+    assert read_result["output"]["data"]["content"] == {"text": "world"}
+    assert read_result["output"]["data"]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
+
+
+
+def test_file_tool_read_runtime_binding_absolute_path_overrides_runtime_default_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    runtime_root = tmp_path / "runtime-root"
+    override_root = tmp_path / "override-root"
+    workspace_root.mkdir()
+    runtime_root.mkdir()
+    override_root.mkdir()
+    target = override_root / "absolute.txt"
+    target.write_text("absolute\nvalue\n", encoding="utf-8")
+
+    binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
+    with runtime_tool_execution_scope(_runtime_context(runtime_root)):
+        result = asyncio.run(binding.execute({"path": str(target), "offset": 2, "limit": 1}))
+
+    assert result["status"] == "success"
+    assert result["output"]["data"]["content"] == {"text": "value"}
+    assert result["output"]["data"]["resolvedPath"] == target.resolve(strict=False).as_posix()
+    assert result["output"]["data"]["effectiveRoot"] == override_root.resolve(strict=False).as_posix()
+    assert result["output"]["data"]["rootSource"] == "absolute_override"
 
 
 
