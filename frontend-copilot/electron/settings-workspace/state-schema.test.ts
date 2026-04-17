@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeSettingsWorkspaceStateValues, projectSettingsWorkspaceEditableState } from './state-schema'
+import {
+  normalizeSettingsWorkspaceStateValues,
+  projectSettingsWorkspaceEditableState,
+} from './state-schema'
 
 describe('settings workspace state schema migration', () => {
   it('migrates legacy provider profiles and unique default model strings into stable route refs', () => {
@@ -207,6 +210,75 @@ describe('settings workspace state schema migration', () => {
       providerId: 'openai',
       endpoint: '',
       baseUrl: '',
+    })
+  })
+  it('creates default MCP tool permission policy state when no MCP settings are stored', () => {
+    const values = normalizeSettingsWorkspaceStateValues({})
+
+    expect(values.mcp).toEqual({
+      mcpAutoDiscoveryEnabled: true,
+      toolPermissionMode: 'manual',
+      toolPermissionPolicy: {
+        version: 1,
+        migrationSourceMode: 'manual',
+        defaultMode: 'ask',
+        toolPermissions: {},
+      },
+    })
+  })
+
+  it('migrates legacy toolPermissionMode into the new MCP tool permission policy state', () => {
+    const values = normalizeSettingsWorkspaceStateValues({
+      mcp: {
+        mcpAutoDiscoveryEnabled: false,
+        toolPermissionMode: 'trusted',
+      },
+    })
+
+    expect(values.mcp).toEqual({
+      mcpAutoDiscoveryEnabled: false,
+      toolPermissionMode: 'trusted',
+      toolPermissionPolicy: {
+        version: 1,
+        migrationSourceMode: 'trusted',
+        defaultMode: 'allow',
+        toolPermissions: {},
+      },
+    })
+  })
+
+  it('keeps explicit MCP tool permission policy and mirrors its default mode back to toolPermissionMode', () => {
+    const values = normalizeSettingsWorkspaceStateValues({
+      mcp: {
+        mcpAutoDiscoveryEnabled: true,
+        toolPermissionMode: 'manual',
+        toolPermissionPolicy: {
+          version: 1,
+          migrationSourceMode: 'manual',
+          defaultMode: 'deny',
+          toolPermissions: {
+            'functions.read_file': {
+              mode: 'allow',
+              source: 'user',
+              updatedAt: '2026-04-17T04:00:00.000Z',
+            },
+          },
+        },
+      },
+    })
+
+    expect(values.mcp.toolPermissionMode).toBe('strict')
+    expect(values.mcp.toolPermissionPolicy).toEqual({
+      version: 1,
+      migrationSourceMode: 'manual',
+      defaultMode: 'deny',
+      toolPermissions: {
+        'functions.read_file': {
+          mode: 'allow',
+          source: 'user',
+          updatedAt: '2026-04-17T04:00:00.000Z',
+        },
+      },
     })
   })
 })

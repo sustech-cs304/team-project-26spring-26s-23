@@ -1,14 +1,28 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import {
   clickElement,
   renderWithRoot,
   setFormControlValue,
   waitForNextFrame,
-} from '../settings/SettingsWorkspace.test-support'
+} from '../settings/test-support/SettingsWorkspaceTestSupport'
+import {
+  loadSettingsWorkspaceState,
+  saveSettingsWorkspaceState,
+} from '../settings/workspace-state'
+import { createPersistedWorkspaceState } from '../settings/test-support/SettingsWorkspaceTestSupport'
 import { CapabilitiesWorkspace } from './CapabilitiesWorkspace'
+
+vi.mock('../settings/workspace-state', () => ({
+  loadSettingsWorkspaceState: vi.fn(),
+  saveSettingsWorkspaceState: vi.fn(),
+}))
+
+const mockedLoadSettingsWorkspaceState = vi.mocked(loadSettingsWorkspaceState)
+const mockedSaveSettingsWorkspaceState = vi.mocked(saveSettingsWorkspaceState)
 
 function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | 'mcp-servers'): HTMLButtonElement {
   const button = container.querySelector(`#capabilities-tab-${sectionId}`)
@@ -74,9 +88,57 @@ function getDialog(container: ParentNode): HTMLElement {
   return dialog
 }
 
+function createLoadResult() {
+  return {
+    ok: true as const,
+    source: 'stored' as const,
+    state: createPersistedWorkspaceState({
+      providerProfiles: [
+        {
+          ...createPersistedWorkspaceState().providerProfiles[0],
+          id: 'openrouter',
+          profileId: 'openrouter',
+          name: 'Persisted Router',
+          displayName: 'Persisted Router',
+        },
+      ],
+      general: {
+        language: 'en-US',
+      },
+      mcp: {
+        toolPermissionMode: 'manual',
+        toolPermissionPolicy: {
+          version: 1,
+          migrationSourceMode: 'manual',
+          defaultMode: 'ask',
+          toolPermissions: {
+            'functions.read_file': {
+              mode: 'allow',
+              source: 'user',
+              updatedAt: '2026-04-17T04:00:00.000Z',
+            },
+            'mcp--fetch--fetch': {
+              mode: 'deny',
+              source: 'user',
+              updatedAt: '2026-04-17T04:05:00.000Z',
+            },
+          },
+        },
+      },
+    }),
+  }
+}
+
 describe('CapabilitiesWorkspace', () => {
-  it('renders the dedicated capabilities shell, placeholder tool data, and secondary navigation switch', async () => {
+  it('renders persisted tool permissions and secondary navigation switch with real tool ids', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
     const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
 
     expect(rendered.container.querySelector('.capabilities-workspace')).toBeTruthy()
     expect(rendered.container.querySelector('.capabilities-panel')).toBeTruthy()
@@ -87,8 +149,15 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).toContain('能力中心')
     expect(rendered.container.textContent).toContain('工具权限')
     expect(rendered.container.textContent).toContain('读取文件')
-    expect(rendered.container.textContent).toContain('execute_command')
+    expect(rendered.container.textContent).toContain('执行命令')
     expect(rendered.container.textContent).toContain('浏览器自动化')
+    expect(getToolRow(rendered.container, '读取文件').textContent).toContain('functions.read_file')
+    expect(getExactButton(getToolRow(rendered.container, '读取文件'), '自动批准').className).toContain(
+      'tool-permission-segmented__item--active',
+    )
+    expect(getExactButton(getToolRow(rendered.container, '联网抓取'), '总是关闭').className).toContain(
+      'tool-permission-segmented__item--active',
+    )
 
     await clickElement(getNavButton(rendered.container, 'mcp-servers'))
 
@@ -104,8 +173,60 @@ describe('CapabilitiesWorkspace', () => {
     rendered.unmount()
   })
 
-  it('switches segmented approval modes and expands then collapses the delay settings shell', async () => {
+  it('merges and saves tool permission policy updates without dropping unrelated settings fields', async () => {
+    const loadResult = createLoadResult()
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(loadResult)
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: loadResult.state,
+    })
+
     const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    await clickElement(getExactButton(getToolRow(rendered.container, '执行命令'), '总是关闭'))
+
+    expect(mockedSaveSettingsWorkspaceState).toHaveBeenCalledTimes(1)
+    const saveInput = mockedSaveSettingsWorkspaceState.mock.calls[0]?.[0] as SettingsWorkspaceStateSaveInput
+
+    expect(saveInput.providerProfiles).toHaveLength(loadResult.state.providerProfiles.length)
+    expect(saveInput.providerProfiles[0]?.profileId).toBe('openrouter')
+    expect(saveInput.general.language).toBe('en-US')
+    expect(saveInput.mcp.toolPermissionMode).toBe('strict')
+    expect(saveInput.mcp.toolPermissionPolicy).toEqual({
+      version: 1,
+      defaultMode: 'deny',
+      toolPermissions: {
+        'functions.read_file': {
+          mode: 'allow',
+          source: 'user',
+          updatedAt: '2026-04-17T00:00:00.000Z',
+        },
+        'functions.write_to_file': {
+          mode: 'ask',
+          source: 'user',
+          updatedAt: '2026-04-17T00:00:00.000Z',
+        },
+        'mcp--puppeteer--puppeteer_navigate': {
+          mode: 'ask',
+          source: 'user',
+          updatedAt: '2026-04-17T00:00:00.000Z',
+        },
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('switches segmented approval modes and expands then collapses the delay settings shell', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
 
     expect(getToolRow(rendered.container, '读取文件').className).not.toContain('tool-permission-row--expanded')
 
@@ -155,8 +276,16 @@ describe('CapabilitiesWorkspace', () => {
   })
 
   it('opens edit and add MCP dialogs with seeded json and closes them through cancel, close, and backdrop actions', async () => {
-    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
 
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    expect(rendered.container.innerHTML).toContain('capabilities-tab-mcp-servers')
     await clickElement(getNavButton(rendered.container, 'mcp-servers'))
     await clickElement(getExactButton(rendered.container, '编辑'))
     await waitForNextFrame()
@@ -211,8 +340,16 @@ describe('CapabilitiesWorkspace', () => {
   })
 
   it('toggles and deletes placeholder MCP server rows from the panel', async () => {
-    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
 
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    expect(rendered.container.innerHTML).toContain('capabilities-tab-mcp-servers')
     await clickElement(getNavButton(rendered.container, 'mcp-servers'))
 
     const fetchToggle = rendered.container.querySelector('button[aria-label="开启 fetch-server"]')

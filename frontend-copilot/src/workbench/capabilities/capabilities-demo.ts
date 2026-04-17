@@ -1,7 +1,7 @@
 import { Server, Shield, type LucideIcon } from 'lucide-react'
 
 export type CapabilitiesSection = 'tool-permissions' | 'mcp-servers'
-export type ToolPermissionMode = 'auto' | 'deny' | 'manual' | 'delay'
+export type ToolPermissionMode = 'allow' | 'deny' | 'ask' | 'delay'
 export type ToolPermissionDelayAction = 'approve' | 'deny'
 export type ToolPermissionGroupId = 'workspace' | 'remote'
 export type McpServerStatus = 'connected' | 'local' | 'draft'
@@ -68,9 +68,9 @@ export const toolPermissionGroups: readonly ToolPermissionGroup[] = [
 ]
 
 export const toolPermissionModes: ReadonlyArray<{ value: ToolPermissionMode, label: string }> = [
-  { value: 'auto', label: '自动批准' },
+  { value: 'allow', label: '自动批准' },
   { value: 'deny', label: '总是关闭' },
-  { value: 'manual', label: '手动批准' },
+  { value: 'ask', label: '手动批准' },
   { value: 'delay', label: '延迟处理' },
 ]
 
@@ -81,7 +81,7 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
     name: '读取文件',
     description: '允许模型读取项目内文件内容，用于理解上下文与定位实现细节。',
     toolId: 'read_file',
-    mode: 'auto',
+    mode: 'allow',
     delayAction: 'approve',
     delaySeconds: 12,
   },
@@ -91,7 +91,7 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
     name: '执行命令',
     description: '允许运行本地终端命令；适合构建、检查与前端资源处理等操作。',
     toolId: 'execute_command',
-    mode: 'manual',
+    mode: 'ask',
     delayAction: 'deny',
     delaySeconds: 15,
   },
