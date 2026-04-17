@@ -45,10 +45,11 @@ export async function runSessionContextMenuScenario() {
   expect(contextMenu.textContent).toContain('重命名会话')
   expect(contextMenu.textContent).toContain('删除会话')
   expect(contextMenu.textContent).toContain('复制为新会话')
+  expect(contextMenu.textContent).toContain('复制会话')
+  expect(contextMenu.textContent).toContain('导出会话')
   expect(contextMenu.textContent).not.toContain('生成会话名')
-  expect(contextMenu.textContent).not.toContain('导出会话')
-  expect(rendered.queryByTestId('assistant-session-context-submenu-copy')).toBeNull()
-  expect(rendered.queryByTestId('assistant-session-context-submenu-export')).toBeNull()
+  expect(rendered.queryByTestId('assistant-session-context-submenu-copy')).not.toBeNull()
+  expect(rendered.queryByTestId('assistant-session-context-submenu-export')).not.toBeNull()
 
   rendered.unmount()
 }
