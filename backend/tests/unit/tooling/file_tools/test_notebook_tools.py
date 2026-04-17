@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from pathlib import Path
 
 from app.copilot_runtime import build_default_tool_registry
@@ -18,6 +19,9 @@ from app.tooling.file_tools.runtime_bindings import (
 )
 from app.tooling.file_tools.service import FileToolNotebookEditService, FileToolReadService
 from app.tooling.file_tools.text_reader import FileToolTextReader
+from app.tooling.file_tools.writer import _build_sha256
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
 def test_notebook_read_service_parses_structured_cells(tmp_path: Path) -> None:
@@ -95,6 +99,58 @@ def test_notebook_read_service_returns_stable_failure_for_invalid_notebook(tmp_p
     assert result.to_dict()["error"]["message"] == "Notebook file is not valid UTF-8 JSON."
 
 
+def test_notebook_read_identifiers_round_trip_on_fixture_notebook(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = _copy_fixture_notebook(workspace_root, "realistic_missing_ids.ipynb")
+    read_service = FileToolReadService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        text_reader=FileToolTextReader(),
+        notebook_reader=FileToolNotebookReader(),
+    )
+    edit_service = FileToolNotebookEditService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        notebook_editor=FileToolNotebookEditor(),
+    )
+
+    read_result = read_service.read(ReadRequest(path=target.name)).to_dict()
+    cells = read_result["data"]["content"]["cells"]
+    markdown_cell_id = cells[0]["cellId"]
+    code_cell_id = cells[1]["cellId"]
+    anchor_cell_id = cells[2]["cellId"]
+
+    edit_result = edit_service.edit_notebook(
+        NotebookEditRequest(
+            path=target.name,
+            expected_hash=read_result["data"]["metadata"]["sha256"],
+            operations=(
+                NotebookEditOperation(kind="replace", cell_id=code_cell_id, source="print('fresh output')\n"),
+                NotebookEditOperation(kind="delete", cell_id=markdown_cell_id),
+                NotebookEditOperation(
+                    kind="insert",
+                    after_cell_id=anchor_cell_id,
+                    cell_type="markdown",
+                    source="Inserted after anchor.\n",
+                ),
+            ),
+        )
+    ).to_dict()
+
+    updated = json.loads(target.read_text(encoding="utf-8"))
+    assert read_result["ok"] is True
+    assert edit_result["ok"] is True
+    assert edit_result["data"]["appliedOperations"] == 3
+    assert len(updated["cells"]) == 3
+    assert all(isinstance(cell.get("id"), str) and cell["id"].strip() for cell in updated["cells"])
+    assert updated["cells"][0]["cell_type"] == "code"
+    assert updated["cells"][0]["source"] == ["print('fresh output')\n"]
+    assert updated["cells"][0]["outputs"] == []
+    assert updated["cells"][0]["execution_count"] is None
+    assert updated["cells"][1]["id"] == "cell-existing-markdown"
+    assert updated["cells"][2]["cell_type"] == "markdown"
+    assert updated["cells"][2]["source"] == ["Inserted after anchor.\n"]
+
+
 def test_notebook_edit_service_replace_insert_delete(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -111,9 +167,9 @@ def test_notebook_edit_service_replace_insert_delete(tmp_path: Path) -> None:
                     "id": "cell-b",
                     "cell_type": "code",
                     "metadata": {},
-                    "execution_count": None,
+                    "execution_count": 3,
                     "source": ["print('old')\n"],
-                    "outputs": [],
+                    "outputs": [{"output_type": "stream", "name": "stdout", "text": ["old\n"]}],
                 },
             ],
         },
@@ -138,8 +194,104 @@ def test_notebook_edit_service_replace_insert_delete(tmp_path: Path) -> None:
     assert result.to_dict()["ok"] is True
     assert result.to_dict()["data"]["appliedOperations"] == 3
     assert [cell["cell_type"] for cell in updated["cells"]] == ["markdown", "code"]
+    assert "id" in updated["cells"][0]
+    assert "id" in updated["cells"][1]
     assert "".join(updated["cells"][0]["source"]) == "inserted\n"
     assert "".join(updated["cells"][1]["source"]) == "print('new')\n"
+    assert updated["cells"][1]["outputs"] == []
+    assert updated["cells"][1]["execution_count"] is None
+
+
+def test_notebook_edit_service_rejects_stale_expected_hash(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = _copy_fixture_notebook(workspace_root, "realistic_missing_ids.ipynb")
+    service = FileToolNotebookEditService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        notebook_editor=FileToolNotebookEditor(),
+    )
+
+    original_raw = target.read_bytes()
+    stale_hash = _build_sha256(original_raw)
+    _write_notebook(
+        target,
+        {
+            "nbformat": 4,
+            "nbformat_minor": 5,
+            "metadata": {},
+            "cells": [{"id": "cell-new", "cell_type": "markdown", "metadata": {}, "source": ["changed\n"]}],
+        },
+    )
+
+    result = service.edit_notebook(
+        NotebookEditRequest(
+            path=target.name,
+            expected_hash=stale_hash,
+            operations=(NotebookEditOperation(kind="replace", cell_id="cell-new", source="updated\n"),),
+        )
+    ).to_dict()
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "hash_mismatch"
+    assert target.read_bytes() != original_raw
+
+
+def test_notebook_edit_service_detects_commit_time_hash_conflict(tmp_path: Path, monkeypatch) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "sample.ipynb"
+    _write_notebook(
+        target,
+        {
+            "nbformat": 4,
+            "nbformat_minor": 5,
+            "metadata": {},
+            "cells": [{"id": "cell-a", "cell_type": "markdown", "metadata": {}, "source": ["before\n"]}],
+        },
+    )
+    service = FileToolNotebookEditService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        notebook_editor=FileToolNotebookEditor(),
+    )
+    expected_hash = _build_sha256(target.read_bytes())
+    original_read_bytes = Path.read_bytes
+    original_replace = Path.replace
+    conflict_injected = False
+
+    def read_bytes_with_race(self: Path) -> bytes:
+        nonlocal conflict_injected
+        raw = original_read_bytes(self)
+        if self == target and not conflict_injected:
+            conflict_injected = True
+            _write_notebook(
+                target,
+                {
+                    "nbformat": 4,
+                    "nbformat_minor": 5,
+                    "metadata": {},
+                    "cells": [{"id": "cell-a", "cell_type": "markdown", "metadata": {}, "source": ["raced\n"]}],
+                },
+            )
+        return raw
+
+    def replace_passthrough(self: Path, target_path: Path) -> Path:
+        return original_replace(self, target_path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes_with_race)
+    monkeypatch.setattr(Path, "replace", replace_passthrough)
+
+    result = service.edit_notebook(
+        NotebookEditRequest(
+            path="sample.ipynb",
+            expected_hash=expected_hash,
+            operations=(NotebookEditOperation(kind="replace", cell_id="cell-a", source="updated\n"),),
+        )
+    ).to_dict()
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "hash_mismatch"
+    updated = json.loads(target.read_text(encoding="utf-8"))
+    assert updated["cells"][0]["source"] == ["raced\n"]
 
 
 def test_notebook_edit_service_is_transactional_on_invalid_operation(tmp_path: Path) -> None:
@@ -270,6 +422,12 @@ def test_default_tool_registry_exposes_notebook_edit_tool(tmp_path: Path) -> Non
     assert FILE_TOOL_NOTEBOOK_EDIT_ID in tool_ids
     assert catalog_by_id[FILE_TOOL_NOTEBOOK_EDIT_ID]["displayName"] == "Notebook 编辑"
     assert catalog_by_id[FILE_TOOL_NOTEBOOK_EDIT_ID]["group"]["id"] == "builtin-core"
+
+
+def _copy_fixture_notebook(workspace_root: Path, fixture_name: str) -> Path:
+    target = workspace_root / fixture_name
+    shutil.copyfile(FIXTURE_DIR / fixture_name, target)
+    return target
 
 
 def _write_notebook(path: Path, payload: dict[str, object]) -> None:

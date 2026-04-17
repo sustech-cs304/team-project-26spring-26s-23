@@ -56,8 +56,15 @@ class FileToolNotebookReader:
                 details={"path": request.path, "resolvedPath": target_path.as_posix()},
             )
 
+        cells = notebook["cells"]
+        _normalize_missing_cell_ids(cells)
+        if _notebook_needs_persisted_ids(raw=raw, notebook=notebook):
+            target_path.write_text(json.dumps(notebook, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            raw = target_path.read_bytes()
+            file_size = len(raw)
+
         cells_payload: list[dict[str, Any]] = []
-        for index, cell in enumerate(notebook["cells"]):
+        for index, cell in enumerate(cells):
             cells_payload.append(_build_cell_payload(cell=cell, index=index))
 
         path_metadata = PathMetadata(
@@ -125,6 +132,41 @@ def _build_cell_payload(*, cell: Any, index: int) -> dict[str, Any]:
         "source": source,
         "outputs": outputs,
     }
+
+
+def _normalize_missing_cell_ids(cells: list[Any]) -> None:
+    next_generated_index = 1
+    for cell in cells:
+        if not isinstance(cell, dict):
+            raise FileToolError(code="invalid_request", message="Notebook cell entries must be objects.")
+        raw_cell_id = cell.get("id")
+        if isinstance(raw_cell_id, str) and raw_cell_id.strip() != "":
+            continue
+        while True:
+            candidate = f"cell-{next_generated_index}"
+            next_generated_index += 1
+            if candidate not in {existing.get("id") for existing in cells if isinstance(existing, dict)}:
+                cell["id"] = candidate
+                break
+
+
+def _notebook_needs_persisted_ids(*, raw: bytes, notebook: dict[str, Any]) -> bool:
+    try:
+        original = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    original_cells = original.get("cells")
+    current_cells = notebook.get("cells")
+    if not isinstance(original_cells, list) or not isinstance(current_cells, list):
+        return False
+    for original_cell, current_cell in zip(original_cells, current_cells, strict=False):
+        if not isinstance(original_cell, dict) or not isinstance(current_cell, dict):
+            continue
+        original_id = original_cell.get("id")
+        current_id = current_cell.get("id")
+        if (not isinstance(original_id, str) or original_id.strip() == "") and isinstance(current_id, str) and current_id.strip() != "":
+            return True
+    return False
 
 
 def _resolve_cell_id(*, cell: dict[str, Any], index: int) -> str:

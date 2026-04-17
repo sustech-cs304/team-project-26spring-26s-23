@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import uuid
 from pathlib import Path
+import tempfile
 from typing import Any
+import uuid
 
 from .errors import FileToolError
 from .path_policy import PathResolution
@@ -16,7 +17,7 @@ from .protocol import (
     NotebookEditResult,
     PathMetadata,
 )
-from .writer import _atomic_write_text, _build_sha256
+from .writer import _build_sha256
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,8 +32,7 @@ class FileToolNotebookEditor:
 
     def edit_notebook(self, *, request: NotebookEditRequest, resolution: PathResolution) -> NotebookEditPayload:
         target_path = resolution.resolved_path
-        notebook = _load_notebook(target_path=target_path, request_path=request.path)
-        existing_raw = target_path.read_bytes()
+        notebook, existing_raw = _load_notebook(target_path=target_path, request_path=request.path)
         current_hash = _build_sha256(existing_raw)
         if request.expected_hash is not None and current_hash != request.expected_hash:
             raise FileToolError(
@@ -47,11 +47,17 @@ class FileToolNotebookEditor:
             )
 
         cells = notebook["cells"]
+        _normalize_missing_cell_ids(cells)
         for operation_index, operation in enumerate(request.operations):
             _apply_operation(cells=cells, operation=operation, operation_index=operation_index)
 
         updated_raw = json.dumps(notebook, ensure_ascii=False, indent=1).encode("utf-8") + b"\n"
-        _atomic_write_text(target_path=target_path, raw=updated_raw)
+        _write_notebook_if_hash_matches(
+            target_path=target_path,
+            raw=updated_raw,
+            request_path=request.path,
+            expected_hash=request.expected_hash,
+        )
         path_metadata = PathMetadata(
             path=request.path,
             resolved_path=target_path.as_posix(),
@@ -74,7 +80,7 @@ class FileToolNotebookEditor:
         )
 
 
-def _load_notebook(*, target_path: Path, request_path: str) -> dict[str, Any]:
+def _load_notebook(*, target_path: Path, request_path: str) -> tuple[dict[str, Any], bytes]:
     if not target_path.exists():
         raise FileToolError(
             code="file_not_found",
@@ -87,8 +93,9 @@ def _load_notebook(*, target_path: Path, request_path: str) -> dict[str, Any]:
             message="Target path is not a regular file.",
             details={"path": request_path, "resolvedPath": target_path.as_posix()},
         )
+    raw = target_path.read_bytes()
     try:
-        notebook = json.loads(target_path.read_text(encoding="utf-8"))
+        notebook = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise FileToolError(
             code="invalid_request",
@@ -101,13 +108,25 @@ def _load_notebook(*, target_path: Path, request_path: str) -> dict[str, Any]:
             message="Notebook file must be a JSON object with a cells array.",
             details={"path": request_path, "resolvedPath": target_path.as_posix()},
         )
-    return notebook
+    return notebook, raw
+
+
+def _normalize_missing_cell_ids(cells: list[dict[str, Any]]) -> None:
+    for cell in cells:
+        if not isinstance(cell, dict):
+            raise FileToolError(code="invalid_request", message="Notebook cell entries must be objects.")
+        if not _has_real_cell_id(cell):
+            cell["id"] = _new_cell_id()
 
 
 def _apply_operation(*, cells: list[dict[str, Any]], operation: NotebookEditOperation, operation_index: int) -> None:
     if operation.kind == "replace":
         cell_index = _find_cell_index(cells=cells, cell_id=operation.cell_id, operation_index=operation_index)
-        cells[cell_index]["source"] = _split_source(operation.source)
+        target_cell = cells[cell_index]
+        target_cell["source"] = _split_source(operation.source or "")
+        if target_cell.get("cell_type") == "code":
+            target_cell["execution_count"] = None
+            target_cell["outputs"] = []
         return
     if operation.kind == "delete":
         cell_index = _find_cell_index(cells=cells, cell_id=operation.cell_id, operation_index=operation_index)
@@ -138,7 +157,7 @@ def _find_cell_index(*, cells: list[dict[str, Any]], cell_id: str | None, operat
             details={"operationIndex": operation_index},
         )
     for index, cell in enumerate(cells):
-        if cell.get("id") == cell_id:
+        if _resolve_cell_id(cell=cell, index=index) == cell_id:
             return index
     raise FileToolError(
         code="not_found",
@@ -156,7 +175,7 @@ def _build_inserted_cell(*, operation: NotebookEditOperation) -> dict[str, Any]:
             details={"cellType": cell_type},
         )
     cell: dict[str, Any] = {
-        "id": f"cell-{uuid.uuid4().hex[:12]}",
+        "id": _new_cell_id(),
         "cell_type": cell_type,
         "metadata": {},
         "source": _split_source(operation.source or ""),
@@ -165,6 +184,61 @@ def _build_inserted_cell(*, operation: NotebookEditOperation) -> dict[str, Any]:
         cell["execution_count"] = None
         cell["outputs"] = []
     return cell
+
+
+def _write_notebook_if_hash_matches(
+    *,
+    target_path: Path,
+    raw: bytes,
+    request_path: str,
+    expected_hash: str | None,
+) -> None:
+    temp_fd, temp_name = tempfile.mkstemp(prefix=f".{target_path.name}.", suffix=".tmp", dir=target_path.parent)
+    temp_path = Path(temp_name)
+    try:
+        with open(temp_fd, "wb", closefd=True) as handle:
+            handle.write(raw)
+            handle.flush()
+        if expected_hash is not None:
+            latest_raw = target_path.read_bytes()
+            latest_hash = _build_sha256(latest_raw)
+            if latest_hash != expected_hash:
+                raise FileToolError(
+                    code="hash_mismatch",
+                    message="Target notebook content hash does not match expected_hash.",
+                    details={
+                        "path": request_path,
+                        "resolvedPath": target_path.as_posix(),
+                        "expectedHash": expected_hash,
+                        "actualHash": latest_hash,
+                    },
+                )
+        temp_path.replace(target_path)
+    except OSError as exc:
+        raise FileToolError(
+            code="permission_denied",
+            message="Atomic notebook write failed.",
+            details={"path": request_path, "resolvedPath": target_path.as_posix()},
+        ) from exc
+    finally:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
+def _resolve_cell_id(*, cell: dict[str, Any], index: int) -> str:
+    raw_cell_id = cell.get("id")
+    if isinstance(raw_cell_id, str) and raw_cell_id.strip() != "":
+        return raw_cell_id
+    return f"cell-{index + 1}"
+
+
+def _has_real_cell_id(cell: dict[str, Any]) -> bool:
+    raw_cell_id = cell.get("id")
+    return isinstance(raw_cell_id, str) and raw_cell_id.strip() != ""
+
+
+def _new_cell_id() -> str:
+    return f"cell-{uuid.uuid4().hex[:12]}"
 
 
 def _split_source(source: str) -> list[str]:
