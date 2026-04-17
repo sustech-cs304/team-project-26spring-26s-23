@@ -25,6 +25,7 @@ import {
   RuntimeRequestError,
   type RuntimeThinkingCapability,
 } from '../chat-contract'
+import { resolveRuntimeToolApproval } from '../tool-approval'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../debug-mode-log'
 import {
   applyModelSelectionToComposerDraft,
@@ -109,6 +110,11 @@ export interface CopilotChatPanelState {
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onCancelCurrentRun: () => void
+  onResolveToolApproval: (input: {
+    runId: string
+    toolCallId: string
+    decision: 'approved' | 'rejected'
+  }) => Promise<void>
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
@@ -120,6 +126,7 @@ export interface CopilotChatPanelState {
   hasTransientConversation: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
+  runtimeUrl: string | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -1012,6 +1019,19 @@ export function useCopilotChatPanelState({
     abortController.abort()
   }
 
+  const handleResolveToolApproval: CopilotChatPanelState['onResolveToolApproval'] = async (input) => {
+    if (!isCopilotConnectableState(state)) {
+      throw new Error('runtime_unavailable')
+    }
+
+    await resolveRuntimeToolApproval({
+      runtimeUrl: state.runtimeUrl,
+      runId: input.runId,
+      toolCallId: input.toolCallId,
+      decision: input.decision,
+    })
+  }
+
   return {
     sendError,
     modelGroups: modelCatalog.groups,
@@ -1020,6 +1040,7 @@ export function useCopilotChatPanelState({
     onComposerDraftChange: setComposerDraft,
     onSend: handleSend,
     onCancelCurrentRun: handleCancelCurrentRun,
+    onResolveToolApproval: handleResolveToolApproval,
     sendStatus,
     canCancelSend,
     sendDisabledReason,
@@ -1033,6 +1054,7 @@ export function useCopilotChatPanelState({
     hasTransientConversation,
     conversation: projectedConversation,
     assistantPlaceholder,
+    runtimeUrl: isCopilotConnectableState(state) ? state.runtimeUrl : null,
     composerInputRef,
     composerHeight,
     onComposerResizeStart,

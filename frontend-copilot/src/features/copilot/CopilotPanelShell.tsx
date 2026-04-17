@@ -73,6 +73,12 @@ export interface CopilotPanelShellProps {
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onCancelCurrentRun: () => void
+  onResolveToolApproval: (input: {
+    runId: string
+    toolCallId: string
+    decision: 'approved' | 'rejected'
+  }) => Promise<void>
+  runtimeUrl: string | null
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
@@ -278,6 +284,8 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
                   assistantPlaceholder={props.assistantPlaceholder}
                   models={props.modelGroups.flatMap((group) => group.models)}
                   transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
+                  runtimeUrl={props.runtimeUrl}
+                  onResolveToolApproval={props.onResolveToolApproval}
                   onOpenErrorDetail={props.onOpenErrorDetail}
                   emptyState={hasAvailableModels
                     ? null

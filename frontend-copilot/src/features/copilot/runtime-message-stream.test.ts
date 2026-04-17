@@ -186,6 +186,12 @@ describe('parseRuntimeRunEventStream', () => {
             riskLevel: 'high',
             approvalMethod: 'accept_reject',
           },
+          approval: {
+            mode: 'delay',
+            timeoutAt: '2026-04-17T16:00:30Z',
+            timeoutSeconds: 30,
+            timeoutAction: 'deny',
+          },
         },
       },
       {
@@ -213,6 +219,12 @@ describe('parseRuntimeRunEventStream', () => {
       expect(event0.payload.security).toEqual({
         riskLevel: 'high',
         approvalMethod: 'accept_reject',
+      })
+      expect(event0.payload.approval).toEqual({
+        mode: 'delay',
+        timeoutAt: '2026-04-17T16:00:30Z',
+        timeoutSeconds: 30,
+        timeoutAction: 'deny',
       })
     }
 

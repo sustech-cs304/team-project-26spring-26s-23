@@ -271,7 +271,7 @@ export interface RuntimeThinkingSelection {
   budgetTokens?: number | null
 }
 
-export type RuntimeToolPermissionMode = 'allow' | 'ask' | 'deny'
+export type RuntimeToolPermissionMode = 'allow' | 'ask' | 'delay' | 'deny'
 
 export interface RuntimeToolPermissionPolicy {
   schemaVersion: number
@@ -371,6 +371,13 @@ export interface RuntimeToolEventSecurity {
   approvalMethod?: 'accept_reject' | 'password'
 }
 
+export interface RuntimeToolEventApproval {
+  mode: RuntimeToolPermissionMode
+  timeoutAt?: string
+  timeoutSeconds?: number | null
+  timeoutAction?: 'approve' | 'deny' | null
+}
+
 export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
   toolCallId: string
   toolId: string
@@ -381,6 +388,7 @@ export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
   resultSummary?: string
   errorSummary?: string
   security?: RuntimeToolEventSecurity
+  approval?: RuntimeToolEventApproval
 }>
 
 export type RuntimeRunEvent =

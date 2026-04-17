@@ -1630,6 +1630,47 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('renders a waiting approval tool bubble with delay countdown actions', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => (rendered.container.textContent ?? '').includes('后自动拒绝'),
+      'delay approval timeout copy rendered',
+    )
+    expect(rendered.container.textContent).toContain('等待批准')
+    expect(rendered.container.textContent).toContain('批准（30s)')
+    expect(rendered.container.textContent).toContain('拒绝')
+
+    rendered.unmount()
+  })
+
   it('does not keep the assistant placeholder after cancelling before any assistant text arrives', async () => {
     const sendMessage = createStartOnlyPendingSendMessageSpy()
     const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
@@ -2735,6 +2776,50 @@ function createToolFailureThenFatalSendMessageSpy() {
       },
     },
   ]))
+}
+
+function createToolWaitingApprovalSendMessageSpy(control: DeferredSignal) {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-tool-approval',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-approval:assistant',
+      },
+    }
+
+    await control.wait()
+
+    yield createRuntimeToolEvent({
+      runId: 'run-tool-approval',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-approve',
+        toolId: 'tool.weather-current',
+        phase: 'waiting_approval',
+        title: '工具等待审批',
+        summary: '工具调用正在等待审批决议。',
+        inputSummary: '{"location":"Shenzhen"}',
+        security: {
+          riskLevel: 'high',
+          approvalMethod: 'accept_reject',
+        },
+        approval: {
+          mode: 'delay',
+          timeoutAt: new Date(Date.now() + 30_000).toISOString(),
+          timeoutSeconds: 30,
+          timeoutAction: 'deny',
+        },
+      },
+    })
+
+    await waitForAbort(input.signal)
+  })
 }
 
 function createPersistedWorkspaceStateLoader() {

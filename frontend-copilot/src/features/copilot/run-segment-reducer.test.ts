@@ -591,6 +591,50 @@ describe('run segment reducer', () => {
     expect(suppressedReasoningState.segments).toEqual([])
   })
 
+  it('stores waiting approval metadata on tool segments', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const nextState = applyRuntimeRunEventToCopilotRunState(initialState, createRuntimeToolEvent({
+      runId: 'run-approval',
+      sessionId: 'session-1',
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-approval',
+        toolId: 'tool.weather-current',
+        phase: 'waiting_approval',
+        title: '等待批准',
+        summary: '需要人工批准。',
+        security: {
+          riskLevel: 'high',
+          approvalMethod: 'accept_reject',
+        },
+        approval: {
+          mode: 'delay',
+          timeoutAt: '2026-04-17T16:00:30Z',
+          timeoutSeconds: 30,
+          timeoutAction: 'deny',
+        },
+      },
+    }))
+
+    expect(nextState.segments[0]).toMatchObject({
+      kind: 'tool',
+      toolPhase: 'waiting_approval',
+      approval: {
+        mode: 'delay',
+        approvalMethod: 'accept_reject',
+        riskLevel: 'high',
+        timeoutAt: '2026-04-17T16:00:30Z',
+        timeoutSeconds: 30,
+        timeoutAction: 'deny',
+      },
+    })
+  })
+
   it('marks streaming segments cancelled when transport abort happens before terminal event', () => {
     const streamingState = applyRuntimeRunEventToCopilotRunState(
       applyRuntimeRunEventToCopilotRunState(createIdleCopilotRunState(), {

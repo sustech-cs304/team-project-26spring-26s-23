@@ -493,6 +493,7 @@ function upsertToolSegment(
     inputSummary: event.payload.inputSummary ?? null,
     resultSummary: event.payload.resultSummary ?? null,
     errorSummary: event.payload.errorSummary ?? null,
+    approval: buildToolSegmentApproval(event),
   }
 
   if (existingIndex >= 0) {
@@ -650,6 +651,21 @@ function failStreamingSegments(segments: CopilotRunSegment[], observedAt: number
 
     return segment
   })
+}
+
+function buildToolSegmentApproval(event: RuntimeToolEvent): CopilotToolSegment['approval'] {
+  if (event.payload.phase !== 'waiting_approval') {
+    return null
+  }
+
+  return {
+    mode: event.payload.approval?.mode ?? null,
+    approvalMethod: event.payload.security?.approvalMethod ?? null,
+    riskLevel: event.payload.security?.riskLevel ?? null,
+    timeoutAt: event.payload.approval?.timeoutAt ?? null,
+    timeoutSeconds: event.payload.approval?.timeoutSeconds ?? null,
+    timeoutAction: event.payload.approval?.timeoutAction ?? null,
+  }
 }
 
 function appendTerminalSegment(
