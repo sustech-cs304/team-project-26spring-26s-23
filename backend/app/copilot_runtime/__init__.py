@@ -36,7 +36,9 @@ from .contracts import (
     RuntimeToolDirectoryEntry,
     build_runtime_scaffold,
 )
+from .persistence import SQLiteSessionStore
 from .router import build_router
+from .runtime_session_store import RuntimeSessionStore
 from .tool_registry import (
     ToolDescriptor,
     ToolRegistry,
@@ -80,6 +82,8 @@ __all__ = [
     "RuntimeToolDirectoryEntry",
     "SessionNotFoundError",
     "ThreadNotFoundError",
+    "SQLiteSessionStore",
+    "RuntimeSessionStore",
     "ToolDescriptor",
     "ToolRegistry",
     "ToolsetDescriptor",

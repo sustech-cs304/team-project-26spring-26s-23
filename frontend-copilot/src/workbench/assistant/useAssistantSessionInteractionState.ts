@@ -14,7 +14,6 @@ import {
 import type { AssistantSessionShell } from '../types'
 import type {
   AssistantSessionContextMenuState,
-  AssistantSessionContextSubmenu,
   AssistantSessionDragState,
 } from './assistant-session-list-helpers'
 import type { AssistantSessionListState } from './assistant-workspace-controller'
@@ -45,7 +44,7 @@ interface UseAssistantSessionInteractionStateResult {
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   handleSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   dismissSessionContextMenu: () => void
-  selectSessionSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
+  selectSessionContextSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
 }
 
 export function useAssistantSessionInteractionState({
@@ -247,13 +246,21 @@ export function useAssistantSessionInteractionState({
     setSessionContextMenu(null)
   }, [])
 
-  const selectSessionSubmenu = useCallback((submenu: AssistantSessionContextSubmenu | null) => {
-    setSessionContextMenu((current) => current === null
-      ? current
-      : {
-          ...current,
-          activeSubmenu: submenu,
-        })
+  const selectSessionContextSubmenu = useCallback((sessionId: string, submenu: 'copy' | 'export' | null) => {
+    setSessionContextMenu((current) => {
+      if (current === null || current.sessionId !== sessionId) {
+        return current
+      }
+
+      if (current.activeSubmenu === submenu) {
+        return current
+      }
+
+      return {
+        ...current,
+        activeSubmenu: submenu,
+      }
+    })
   }, [])
 
   const renderedSessionState = useMemo(
@@ -276,6 +283,6 @@ export function useAssistantSessionInteractionState({
     handleSessionClick,
     handleSessionContextMenu,
     dismissSessionContextMenu,
-    selectSessionSubmenu,
+    selectSessionContextSubmenu,
   }
 }

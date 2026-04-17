@@ -14,7 +14,6 @@ import {
   getAssistantSessionDropGapTestId,
   resolveAssistantSessionActiveState,
   type AssistantSessionContextMenuState,
-  type AssistantSessionContextSubmenu,
   type AssistantSessionDragState,
 } from './assistant-session-list-helpers'
 
@@ -40,15 +39,16 @@ interface AssistantSessionListProps {
   onSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
   onSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   onSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
-  onDismissContextMenu: () => void
   onRequestRename: (sessionId: string) => void
+  onDuplicateSession: (sessionId: string) => void
   onRenameValueChange: (value: string) => void
   onCommitRename: () => void
   onCancelRename: () => void
   onRequestDelete: (sessionId: string) => void
   onConfirmDelete: (sessionId: string) => void
   onCancelDelete: () => void
-  onSelectSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
+  onDismissContextMenu: () => void
+  onSelectSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
 }
 
 export function AssistantSessionList({
@@ -73,24 +73,29 @@ export function AssistantSessionList({
   onSessionPointerDown,
   onSessionClick,
   onSessionContextMenu,
-  onDismissContextMenu,
   onRequestRename,
+  onDuplicateSession,
   onRenameValueChange,
   onCommitRename,
   onCancelRename,
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
+  onDismissContextMenu,
   onSelectSubmenu,
 }: AssistantSessionListProps) {
   const copy = getAssistantSessionCopy(language)
+
+  const sessionListHeading = selectedAgent?.label
+    ?? sessionListState.sessions[0]?.boundAgent.label
+    ?? copy.waitingForAgent
 
   return (
     <aside className="workspace-panel topic-panel" aria-label={copy.sessionListAriaLabel}>
       <header className="panel-head">
         <p className="panel-head__eyebrow">{copy.sessionEyebrow}</p>
         <h2 className="panel-head__title">
-          {selectedAgent?.label ?? copy.waitingForAgent}
+          {sessionListHeading}
         </h2>
       </header>
 
@@ -153,11 +158,12 @@ export function AssistantSessionList({
         language={language}
         sessionContextMenu={sessionContextMenu}
         deleteConfirmationSessionId={deleteConfirmationSessionId}
-        onDismissContextMenu={onDismissContextMenu}
         onRequestRename={onRequestRename}
+        onDuplicateSession={onDuplicateSession}
         onRequestDelete={onRequestDelete}
         onConfirmDelete={onConfirmDelete}
         onCancelDelete={onCancelDelete}
+        onDismissContextMenu={onDismissContextMenu}
         onSelectSubmenu={onSelectSubmenu}
       />
 

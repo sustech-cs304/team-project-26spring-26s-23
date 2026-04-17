@@ -15,9 +15,13 @@ export function renderWithRoot(element: ReactElement): RenderedCopilotChatPanel 
   document.body.appendChild(container)
   const root = createRoot(container)
 
-  act(() => {
-    root.render(element)
-  })
+  const render = (nextElement: ReactElement) => {
+    act(() => {
+      root.render(nextElement)
+    })
+  }
+
+  render(element)
 
   return {
     container,
@@ -33,9 +37,7 @@ export function renderWithRoot(element: ReactElement): RenderedCopilotChatPanel 
       return container.querySelector(`[data-testid="${testId}"]`)
     },
     rerender(nextElement: ReactElement) {
-      act(() => {
-        root.render(nextElement)
-      })
+      render(nextElement)
     },
     unmount() {
       act(() => {

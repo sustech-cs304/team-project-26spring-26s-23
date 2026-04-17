@@ -57,7 +57,8 @@ from ..provider_adapter_registry import (
     build_default_provider_adapter_registry,
 )
 from ..run_events import RuntimeRunEvent
-from ..session_store import BoundAgentMismatchError, InMemorySessionStore
+from ..runtime_session_store import RuntimeSessionStore
+from ..session_store import BoundAgentMismatchError
 from ..thinking_adapter import adapt_thinking_selection
 
 
@@ -67,7 +68,7 @@ class RuntimeMessageRunOrchestrator:
     def __init__(
         self,
         *,
-        session_store: InMemorySessionStore,
+        session_store: RuntimeSessionStore,
         agent_registry: AgentRegistry,
         scaffold: RuntimeScaffold,
         model_route_resolver: RuntimeModelRouteResolver,

@@ -9,6 +9,28 @@ import {
   type ConfigCenterPublicSnapshotLoadResult,
 } from '../config-center/public-snapshot'
 import {
+  COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+  COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+  COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+  COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+  COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+  COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+  type CopilotHistoryBackupDatabaseRequest,
+  type CopilotHistoryDatabaseBackupResult,
+  type CopilotHistoryDatabaseRestoreResult,
+  type CopilotHistoryDuplicateThreadRequest,
+  type CopilotHistoryListThreadsResult,
+  type CopilotHistoryRenameThreadRequest,
+  type CopilotHistoryRestoreDatabaseRequest,
+  type CopilotHistoryRunReplayResult,
+  type CopilotHistoryThreadDeleteResult,
+  type CopilotHistoryThreadDetailResult,
+  type CopilotHistoryThreadDuplicateResult,
+  type CopilotHistoryThreadRenameResult,
+} from '../copilot-history'
+import {
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL,
@@ -54,6 +76,14 @@ const RENDERER_IPC_CHANNELS = [
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+  COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+  COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+  COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
@@ -138,6 +168,73 @@ export function registerRendererIpcHandlers(
     SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
     async (): Promise<SettingsWorkspaceSustechCasSecretMutationResult> => {
       return await handlers.clearSettingsWorkspaceSustechCasSecret()
+    },
+  )
+
+  ipcMain.handle(COPILOT_HISTORY_LIST_THREADS_CHANNEL, async (): Promise<CopilotHistoryListThreadsResult> => {
+    return await handlers.listCopilotHistoryThreads()
+  })
+
+  ipcMain.handle(
+    COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+    async (_event, threadId: string): Promise<CopilotHistoryThreadDetailResult> => {
+      return await handlers.getCopilotHistoryThreadDetail(threadId)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+    async (_event, runId: string): Promise<CopilotHistoryRunReplayResult> => {
+      return await handlers.getCopilotHistoryRunReplay(runId)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+    async (
+      _event,
+      threadId: string,
+      request: CopilotHistoryRenameThreadRequest,
+    ): Promise<CopilotHistoryThreadRenameResult> => {
+      return await handlers.renameCopilotHistoryThread(threadId, request)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+    async (
+      _event,
+      threadId: string,
+      request?: CopilotHistoryDuplicateThreadRequest,
+    ): Promise<CopilotHistoryThreadDuplicateResult> => {
+      return await handlers.duplicateCopilotHistoryThread(threadId, request)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+    async (_event, threadId: string): Promise<CopilotHistoryThreadDeleteResult> => {
+      return await handlers.deleteCopilotHistoryThread(threadId)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+    async (
+      _event,
+      request?: CopilotHistoryBackupDatabaseRequest,
+    ): Promise<CopilotHistoryDatabaseBackupResult> => {
+      return await handlers.backupCopilotHistoryDatabase(request)
+    },
+  )
+
+  ipcMain.handle(
+    COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+    async (
+      _event,
+      request: CopilotHistoryRestoreDatabaseRequest,
+    ): Promise<CopilotHistoryDatabaseRestoreResult> => {
+      return await handlers.restoreCopilotHistoryDatabase(request)
     },
   )
 

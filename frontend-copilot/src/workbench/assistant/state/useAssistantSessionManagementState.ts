@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
@@ -9,21 +10,29 @@ import {
 
 import type { AssistantSessionShell } from '../../types'
 import type { AssistantSessionListState } from '../assistant-workspace-controller'
-import {
-  removeAssistantSessionShell,
-  renameAssistantSessionShell,
-  resolveAssistantSessionTitle,
-} from '../assistant-session-helpers'
+import { resolveAssistantSessionTitle } from '../assistant-session-helpers'
 
 interface UseAssistantSessionManagementStateInput {
   sessionListState: AssistantSessionListState
-  setSessionListState: Dispatch<SetStateAction<AssistantSessionListState>>
   setSelectedAgentId: Dispatch<SetStateAction<string | null>>
   dismissSessionContextMenu: () => void
   showSessionContextMenu: (
     sessionEntry: AssistantSessionShell,
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => void
+  onRenameSession: (
+    sessionId: string,
+    nextTitle: string,
+    sessionEntry: AssistantSessionShell,
+  ) => Promise<void> | void
+  onDeleteSession: (
+    sessionId: string,
+    sessionEntry: AssistantSessionShell,
+  ) => Promise<void> | void
+  onDuplicateSession: (
+    sessionId: string,
+    sessionEntry: AssistantSessionShell,
+  ) => Promise<void> | void
 }
 
 interface UseAssistantSessionManagementStateResult {
@@ -36,6 +45,7 @@ interface UseAssistantSessionManagementStateResult {
   updateSessionRenameValue: (value: string) => void
   commitSessionRename: () => void
   cancelSessionRename: () => void
+  duplicateSession: (sessionId: string) => void
   requestSessionDelete: (sessionId: string) => void
   confirmSessionDelete: (sessionId: string) => void
   cancelSessionDelete: () => void
@@ -43,14 +53,19 @@ interface UseAssistantSessionManagementStateResult {
 
 export function useAssistantSessionManagementState({
   sessionListState,
-  setSessionListState,
   setSelectedAgentId,
   dismissSessionContextMenu,
   showSessionContextMenu,
+  onRenameSession,
+  onDeleteSession,
+  onDuplicateSession,
 }: UseAssistantSessionManagementStateInput): UseAssistantSessionManagementStateResult {
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null)
   const [renamingValue, setRenamingValue] = useState('')
   const [deleteConfirmationSessionId, setDeleteConfirmationSessionId] = useState<string | null>(null)
+  const renamingCommitInFlightSessionIdRef = useRef<string | null>(null)
+  const deleteInFlightSessionIdRef = useRef<string | null>(null)
+  const duplicateInFlightSessionIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (renamingSessionId !== null && !sessionListState.sessions.some((sessionEntry) => sessionEntry.sessionId === renamingSessionId)) {
@@ -108,12 +123,53 @@ export function useAssistantSessionManagementState({
       return
     }
 
+    if (renamingCommitInFlightSessionIdRef.current === renamingSessionId) {
+      return
+    }
+
     const normalizedTitle = renamingValue.trim()
     const nextTitle = normalizedTitle.length > 0 ? normalizedTitle : resolveAssistantSessionTitle(sessionEntry)
+    renamingCommitInFlightSessionIdRef.current = renamingSessionId
 
-    setSessionListState((current) => renameAssistantSessionShell(current, renamingSessionId, nextTitle))
-    cancelSessionRename()
-  }, [cancelSessionRename, renamingSessionId, renamingValue, sessionListState.sessions, setSessionListState])
+    void (async () => {
+      try {
+        await onRenameSession(renamingSessionId, nextTitle, sessionEntry)
+        cancelSessionRename()
+      } catch {
+        // Keep the rename editor open so the caller can retry after surfacing the error elsewhere.
+      } finally {
+        if (renamingCommitInFlightSessionIdRef.current === renamingSessionId) {
+          renamingCommitInFlightSessionIdRef.current = null
+        }
+      }
+    })()
+  }, [cancelSessionRename, onRenameSession, renamingSessionId, renamingValue, sessionListState.sessions])
+
+  const duplicateSession = useCallback((sessionId: string) => {
+    const sessionEntry = sessionListState.sessions.find((sessionItem) => sessionItem.sessionId === sessionId)
+    if (sessionEntry === undefined) {
+      return
+    }
+
+    if (duplicateInFlightSessionIdRef.current === sessionId) {
+      return
+    }
+
+    duplicateInFlightSessionIdRef.current = sessionId
+    void (async () => {
+      try {
+        await onDuplicateSession(sessionId, sessionEntry)
+        setDeleteConfirmationSessionId(null)
+        dismissSessionContextMenu()
+      } catch {
+        // Mutation errors are surfaced by the caller.
+      } finally {
+        if (duplicateInFlightSessionIdRef.current === sessionId) {
+          duplicateInFlightSessionIdRef.current = null
+        }
+      }
+    })()
+  }, [dismissSessionContextMenu, onDuplicateSession, sessionListState.sessions])
 
   const requestSessionDelete = useCallback((sessionId: string) => {
     setDeleteConfirmationSessionId(sessionId)
@@ -125,18 +181,29 @@ export function useAssistantSessionManagementState({
 
   const confirmSessionDelete = useCallback((sessionId: string) => {
     const sessionEntry = sessionListState.sessions.find((sessionItem) => sessionItem.sessionId === sessionId)
-    if (sessionEntry === undefined) {
+    if (sessionEntry === undefined || deleteInFlightSessionIdRef.current === sessionId) {
       return
     }
 
-    setSelectedAgentId(sessionEntry.boundAgent.id)
-    setSessionListState((current) => removeAssistantSessionShell(current, sessionId))
-    setDeleteConfirmationSessionId(null)
-    if (renamingSessionId === sessionId) {
-      cancelSessionRename()
-    }
-    dismissSessionContextMenu()
-  }, [cancelSessionRename, dismissSessionContextMenu, renamingSessionId, sessionListState.sessions, setSelectedAgentId, setSessionListState])
+    deleteInFlightSessionIdRef.current = sessionId
+    void (async () => {
+      try {
+        await onDeleteSession(sessionId, sessionEntry)
+        setSelectedAgentId(sessionEntry.boundAgent.id)
+        setDeleteConfirmationSessionId(null)
+        if (renamingSessionId === sessionId) {
+          cancelSessionRename()
+        }
+        dismissSessionContextMenu()
+      } catch {
+        // Mutation errors are surfaced by the caller.
+      } finally {
+        if (deleteInFlightSessionIdRef.current === sessionId) {
+          deleteInFlightSessionIdRef.current = null
+        }
+      }
+    })()
+  }, [cancelSessionRename, dismissSessionContextMenu, onDeleteSession, renamingSessionId, sessionListState.sessions, setSelectedAgentId])
 
   return {
     renamingSessionId,
@@ -148,6 +215,7 @@ export function useAssistantSessionManagementState({
     updateSessionRenameValue,
     commitSessionRename,
     cancelSessionRename,
+    duplicateSession,
     requestSessionDelete,
     confirmSessionDelete,
     cancelSessionDelete,

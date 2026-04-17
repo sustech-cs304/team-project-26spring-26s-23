@@ -158,6 +158,10 @@ export class PythonRuntimeManager {
     return this.launchConfig?.baseUrl ?? this.state.baseUrl
   }
 
+  getLocalToken(): string | null {
+    return this.launchConfig?.localToken ?? null
+  }
+
   isReady(): boolean {
     return this.state.status === 'ready'
   }

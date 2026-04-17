@@ -78,15 +78,16 @@ function createAssistantMessageNotificationRequest(
   runState: CopilotRunState,
 ): DesktopNotificationRequest {
   const copy = getAssistantMessageNotificationCopy(language)
-  const title = runState.phase === 'completed' ? copy.successTitle : copy.failureTitle
-  const body = runState.phase === 'completed'
+  const effectivePhase = resolveAssistantNotificationPhase(runState)
+  const title = effectivePhase === 'completed' ? copy.successTitle : copy.failureTitle
+  const body = effectivePhase === 'completed'
     ? resolveAssistantSuccessBody(runState, copy)
     : resolveAssistantFailureBody(runState, copy)
 
   return {
     title,
     body,
-    tag: `${runState.runId}:${runState.phase}`,
+    tag: `${runState.runId}:${effectivePhase}`,
   }
 }
 
@@ -115,6 +116,10 @@ function isAssistantRunTerminalPhase(phase: CopilotRunState['phase']): phase is 
   return phase === 'completed' || phase === 'failed'
 }
 
+function resolveAssistantNotificationPhase(runState: CopilotRunState): 'completed' | 'failed' {
+  return runState.phase === 'completed' ? 'completed' : 'failed'
+}
+
 function resolveAssistantSuccessBody(
   runState: CopilotRunState,
   copy: AssistantMessageNotificationCopy,
@@ -127,6 +132,16 @@ function resolveAssistantFailureBody(
   runState: CopilotRunState,
   copy: AssistantMessageNotificationCopy,
 ): string {
+  const toolFailureMessage = getLatestFailedToolMessage(runState)
+  if (toolFailureMessage !== null) {
+    return toolFailureMessage
+  }
+
+  const rawMessage = readFailureDetailString(runState.failure?.details, '__copilotMeta_rawMessage')
+  if (rawMessage !== null) {
+    return rawMessage
+  }
+
   const message = runState.failure?.message?.trim() ?? ''
   return message.length > 0 ? message : copy.failureBodyFallback
 }
@@ -140,6 +155,30 @@ function getLatestAssistantSegment(runState: CopilotRunState): CopilotAssistantS
   }
 
   return null
+}
+
+function getLatestFailedToolMessage(runState: CopilotRunState): string | null {
+  for (let index = runState.segments.length - 1; index >= 0; index -= 1) {
+    const segment = runState.segments[index]
+    if (segment?.kind !== 'tool' || segment.status !== 'failed') {
+      continue
+    }
+
+    const errorSummary = segment.errorSummary?.trim() ?? ''
+    if (errorSummary.length > 0) {
+      return `Tool failed: ${errorSummary}`
+    }
+  }
+
+  return null
+}
+
+function readFailureDetailString(
+  details: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const value = details?.[key]
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
 }
 
 function getAssistantMessageNotificationCopy(language: string): AssistantMessageNotificationCopy {

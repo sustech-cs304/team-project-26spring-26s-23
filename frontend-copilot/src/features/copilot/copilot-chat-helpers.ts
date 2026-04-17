@@ -117,7 +117,7 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
 }
 
 export function createComposerDraftFromSession(
-  sessionShell?: AssistantSessionShell,
+  sessionShell?: Pick<AssistantSessionShell, 'sessionId'> | null,
 ): CopilotChatComposerDraft {
   void sessionShell
   return {

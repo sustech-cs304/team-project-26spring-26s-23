@@ -29,6 +29,7 @@ import {
   setFormControlValue,
   submitForm,
 } from './CopilotChatPanel.test-support'
+import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
 declare global {
@@ -844,9 +845,9 @@ describe('CopilotChatPanel composer interactions', () => {
     await waitForCondition(() => notification.records.length === 1, 'assistant failure notification emitted')
 
     expect(notification.records[0]).toEqual({
-      title: '助手执行失败',
-      body: 'Tool failed: boom',
-      tag: 'run-tool-failed:failed',
+      title: '助手消息已完成',
+      body: '我可以解释工具失败并继续',
+      tag: 'run-tool-failed:completed',
     })
 
     rendered.unmount()
@@ -1011,6 +1012,484 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.getByTestId('chat-assistant-placeholder-spinner')).not.toBeNull()
     expect(placeholder.textContent).toContain('助手正在准备响应')
     expect(rendered.container.textContent).toContain('请先准备响应')
+
+    rendered.unmount()
+  })
+
+  it('prefers transient send feedback over persisted history loading gating', async () => {
+    const sendMessage = createStartOnlyPendingSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLoadingPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '历史恢复前先显示即时反馈')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'assistant placeholder visible while persisted detail still loading',
+    )
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-history-loading-skeleton') === null,
+      'persisted loading skeleton hidden when transient content exists',
+    )
+
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('历史恢复前先显示即时反馈')
+    expect(rendered.getByTestId('chat-assistant-placeholder').textContent).toContain('助手正在准备响应')
+
+    rendered.unmount()
+  })
+
+  it('keeps transient conversation visible after history detail refresh if the selected persisted run is still empty', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const sessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '你好')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('你好')
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('这是助手回显')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'session-1',
+              status: 'completed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '这是助手回显',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollRegion = rendered.getByTestId('chat-message-scroll-region')
+    expect(scrollRegion.textContent).toContain('你好')
+    expect(scrollRegion.textContent).toContain('这是助手回显')
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.queryByTestId('chat-empty-state')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('keeps a late-settling run bound to its original session without polluting the current session view', async () => {
+    const settleOldRun = createDeferredSignal()
+    const onSessionRunSettled = vi.fn()
+    const sendMessage = createDeferredResolvedSendMessageSpy(settleOldRun, {
+      assistantText: '旧话题回复',
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const firstSessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        onSessionRunSettled={onSessionRunSettled}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '旧话题问题')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      'old session placeholder visible before switching topics',
+    )
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({ sessionId: 'session-2' })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        onSessionRunSettled={onSessionRunSettled}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).not.toContain('旧话题问题')
+    expect(rendered.container.textContent).not.toContain('旧话题回复')
+
+    settleOldRun.release()
+    await waitForCondition(
+      () => onSessionRunSettled.mock.calls.length === 1,
+      'late-settling run reported after switching to a new session',
+    )
+
+    expect(onSessionRunSettled).toHaveBeenCalledWith('run-1', 'session-1')
+    expect(rendered.container.textContent).not.toContain('旧话题问题')
+    expect(rendered.container.textContent).not.toContain('旧话题回复')
+    expect(rendered.queryByTestId('chat-assistant-placeholder')).toBeNull()
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        onSessionRunSettled={onSessionRunSettled}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await waitForText(rendered.container, '旧话题问题')
+    expect(rendered.container.textContent).toContain('旧话题回复')
+
+    rendered.unmount()
+  })
+
+  it('keeps session-scoped transient conversation after switching away and back before persisted replay becomes renderable', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const firstSessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '你好')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('你好')
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('这是助手回显')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({ sessionId: 'session-2' })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'session-1',
+              status: 'completed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '这是助手回显',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('你好')
+    expect(rendered.container.textContent).toContain('这是助手回显')
+    expect(rendered.queryByTestId('chat-empty-state')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('emits debug handoff logs when retained transient state waits for persisted replay across a topic switch', async () => {
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const firstSessionShell = createSessionShell()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '你好')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '这是助手回显')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({ sessionId: 'session-2' })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'session-1',
+              status: 'completed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '这是助手回显',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const emittedDebugEntries = debugSpy.mock.calls
+      .filter((call) => call[0] === '[copilot-debug]' && typeof call[1] === 'object' && call[1] !== null)
+      .map((call) => call[1] as Record<string, unknown>)
+
+    const matchingSettledLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'run-settled-pending-history-sync'
+      && entry.sessionId === 'session-1'
+      && entry.transientSessionId === 'session-1'
+      && entry.runId === 'run-1'
+    ))
+    const matchingForwardSwitchLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'session-switch-retained-transient'
+      && entry.previousSessionId === 'session-1'
+      && entry.nextSessionId === 'session-2'
+      && entry.previousTransientConversationLength === 1
+    ))
+    const matchingCommittedSyncLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'pending-history-sync-committed'
+      && entry.sessionId === 'session-1'
+      && entry.pendingRunId === 'run-1'
+      && entry.persistedConversationSource === 'summary'
+    ))
+    const matchingReturnSwitchLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'session-switch-retained-transient'
+      && entry.previousSessionId === 'session-2'
+      && entry.nextSessionId === 'session-1'
+      && entry.nextTransientConversationLength === 1
+    ))
+    const matchingWaitingLog = emittedDebugEntries.find((entry) => (
+      entry.scope === 'copilot-chat-panel'
+      && entry.event === 'pending-history-sync-waiting'
+      && entry.sessionId === 'session-1'
+      && entry.pendingRunId === 'run-1'
+      && entry.waitReason === 'handoff-run-missing-from-detail'
+    ))
+ 
+    expect(matchingSettledLog).toBeDefined()
+    expect(matchingForwardSwitchLog).toBeDefined()
+    expect(matchingCommittedSyncLog).toBeDefined()
+    expect(matchingReturnSwitchLog).toBeDefined()
+    expect(matchingWaitingLog).toBeDefined()
 
     rendered.unmount()
   })
@@ -1499,6 +1978,130 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('requires explicit rebinding before continuing a drifted persisted thread', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const sessionHistory = createHistoryStateWithProviderDrift()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={sessionHistory}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    await setFormControlValue(messageInput, '继续这个历史线程')
+
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('当前配置与历史线程存在差异')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史模型')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('legacy-model')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史工具')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('tool.file-convert')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史思考')
+    expect(rendered.getByTestId('chat-history-drift-warning-list').textContent).toContain('历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。')
+    expect(sendButton.disabled).toBe(true)
+    expect(sendButton.title).toBe('历史线程依赖已变化，请先显式重新绑定当前配置后再继续。')
+
+    await submitForm(composer)
+    expect(sendMessage).toHaveBeenCalledTimes(0)
+
+    await clickElement(rendered.getByTestId('chat-history-rebind-button'))
+
+    expect(sendButton.disabled).toBe(false)
+    expect(sendButton.title).toBe('发送消息')
+
+    await submitForm(composer)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
+      modelRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'openrouter',
+          modelId: 'openai/gpt-4.1',
+        },
+      },
+      message: {
+        content: '继续这个历史线程',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('allows continuing a restored history thread immediately when no run browse is selected', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const sessionHistory = {
+      ...createHistoryStateWithProviderDrift(),
+      selectedRunId: null,
+      replayStatus: 'idle' as const,
+      replayError: null,
+      replay: null,
+    }
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={sessionHistory}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    await setFormControlValue(messageInput, '恢复后直接继续聊天')
+
+    expect(rendered.queryByTestId('chat-history-drift-notice')).toBeNull()
+    expect(rendered.queryByTestId('chat-history-run-selector-label')).toBeNull()
+    expect(sendButton.disabled).toBe(false)
+    expect(sendButton.title).toBe('发送消息')
+
+    await submitForm(composer)
+    await waitForText(rendered.container, '这是助手回显')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
+      message: {
+        content: '恢复后直接继续聊天',
+      },
+    })
+
+    rendered.unmount()
+  })
+
   it('allows a subsequent successful send after a legacy-provider validation failure and clears the stale error message', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
@@ -1845,6 +2448,73 @@ function createResolvedSendMessageSpy() {
   })
 }
 
+function createDeferredResolvedSendMessageSpy(
+  control: DeferredSignal,
+  overrides: {
+    runId?: string
+    assistantText?: string
+  } = {},
+) {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    const routeRef = input.modelRoute.routeRef ?? {
+      routeKind: 'provider-model' as const,
+      profileId: 'unknown-profile',
+      modelId: 'unknown-model',
+    }
+    const runId = overrides.runId ?? 'run-1'
+    const assistantText = overrides.assistantText ?? '这是助手回显'
+
+    yield {
+      type: 'run_started',
+      runId,
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: `${runId}:assistant`,
+      },
+    }
+
+    await control.wait()
+    yield {
+      type: 'text_delta',
+      runId,
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        assistantMessageId: `${runId}:assistant`,
+        delta: assistantText,
+      },
+    }
+    yield {
+      type: 'run_completed',
+      runId,
+      sessionId: input.sessionId,
+      sequence: 3,
+      payload: {
+        assistantMessageId: `${runId}:assistant`,
+        assistantText,
+        resolvedModelId: routeRef.modelId,
+        resolvedModelRoute: createRuntimeResolvedModelRoute({
+          routeRef,
+          providerProfileId: routeRef.profileId,
+          provider: 'openai',
+          providerId: 'openai',
+          adapterId: 'openai',
+          endpointFamily: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: routeRef.modelId,
+          catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+        }),
+        resolvedToolIds: input.enabledTools,
+        requestOptions: input.requestOptions ?? {},
+      },
+    }
+  })
+}
+
 function createToolLifecycleSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => {
     const routeRef = input.modelRoute.routeRef ?? {
@@ -2073,6 +2743,187 @@ function createPersistedWorkspaceStateLoader() {
     source: 'stored' as const,
     state: createPersistedWorkspaceState(),
   }))
+}
+
+function createLoadingPersistedHistoryState(): AssistantSessionHistoryState {
+  return {
+    summary: {
+      threadId: 'session-loading',
+      boundAgentId: 'general',
+      title: '加载中的历史线程',
+      titleSource: 'deterministic',
+      summary: '历史摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      lastActivityAt: '2026-04-13T15:05:00Z',
+      lastRunId: 'run-loading-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '历史摘要',
+      driftSummary: {
+        status: 'not_evaluated',
+      },
+    },
+    isPersistedThread: true,
+    hasLoadedDetail: false,
+    detailStatus: 'loading',
+    detailError: null,
+    timelineItems: [],
+    runSummaries: [],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: null,
+    selectedRunId: 'run-loading-1',
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+    replayByRunId: {},
+  }
+}
+
+function createLiveReadyButEmptyPersistedHistoryState(
+  overrides: Partial<AssistantSessionHistoryState> = {},
+): AssistantSessionHistoryState {
+  return {
+    summary: {
+      threadId: 'session-1',
+      boundAgentId: 'general',
+      title: '新建会话',
+      titleSource: 'deterministic',
+      summary: '最新摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-14T08:00:00Z',
+      updatedAt: '2026-04-14T08:00:03Z',
+      lastActivityAt: '2026-04-14T08:00:03Z',
+      lastRunId: 'run-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '这是助手回显',
+      driftSummary: {
+        status: 'not_evaluated',
+      },
+    },
+    isPersistedThread: true,
+    hasLoadedDetail: true,
+    detailStatus: 'ready',
+    detailError: null,
+    timelineItems: [],
+    runSummaries: [],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: null,
+    selectedRunId: 'run-1',
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+    replayByRunId: {},
+    ...overrides,
+  }
+}
+
+function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
+  const driftPayload = {
+    status: 'historical_provider_removed',
+    historicalModelId: 'legacy-model',
+    historicalToolIds: ['tool.file-convert'],
+    historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
+    warnings: [{
+      code: 'historical_provider_removed',
+      message: '历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。',
+    }],
+    requiresExplicitRebind: true,
+  }
+
+  return {
+    summary: {
+      threadId: 'session-1',
+      boundAgentId: 'general',
+      title: '历史线程',
+      titleSource: 'deterministic',
+      summary: '历史摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      lastActivityAt: '2026-04-13T15:05:00Z',
+      lastRunId: 'run-history-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '历史摘要',
+      driftSummary: driftPayload,
+    },
+    isPersistedThread: true,
+    detailStatus: 'ready',
+    detailError: null,
+    timelineItems: [
+      {
+        kind: 'assistant_message',
+        runId: 'run-history-1',
+        sequenceStart: 1,
+        sequenceEnd: 1,
+        text: '历史摘要',
+      },
+    ],
+    runSummaries: [
+      {
+        runId: 'run-history-1',
+        threadId: 'session-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'legacy-model',
+        requestedMessageText: '你好',
+        assistantText: '历史摘要',
+      },
+    ],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: driftPayload,
+    selectedRunId: 'run-history-1',
+    replayStatus: 'ready',
+    replayError: null,
+    replay: {
+      ok: true,
+      version: 'chat-history-v1',
+      run: {
+        runId: 'run-history-1',
+        threadId: 'session-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'legacy-model',
+        requestedMessageText: '你好',
+        assistantText: '历史摘要',
+      },
+      historicalSnapshot: {
+        resolvedModelId: 'legacy-model',
+        resolvedModelRoute: {
+          routeRef: {
+            routeKind: 'provider-model',
+            profileId: 'provider-legacy',
+            modelId: 'legacy-model',
+          },
+        },
+        resolvedToolIds: ['tool.file-convert'],
+        appliedThinkingSelection: {
+          series: 'unified-4-level-v1',
+          mode: 'preset',
+          level: 'medium',
+          value: {
+            valueType: 'code',
+            code: 'medium',
+            labelZh: '中',
+          },
+        },
+      },
+      orderedEvents: [],
+      toolCallBlocks: [],
+      diagnosticBlocks: [],
+      terminalState: null,
+      availabilityInterpretation: driftPayload,
+    },
+  }
 }
 
 function createAbortableSendMessageSpy() {

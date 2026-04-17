@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..copilot_runtime import PydanticAIAgentExecutor, build_default_runtime_dependencies, build_router
 from ..copilot_runtime.model_routes import RuntimeModelRouteResolver
-from ..copilot_runtime.session_store import InMemorySessionStore
+from ..copilot_runtime.runtime_session_store import RuntimeSessionStore
 from .capability_bridge_client import DesktopCapabilityBridgeClient
 from .capability_bridge_host_capabilities import build_desktop_bridge_host_capabilities_factory
 from .config import BACKEND_DIR, DesktopRuntimeConfig, get_backend_version, parse_runtime_config
@@ -23,6 +23,7 @@ from .health import DESKTOP_RUNTIME_SERVICE_NAME
 from .lifecycle import RuntimeLifecycleManager
 from .middlewares import DesktopNullOriginMiddleware, DesktopRuntimeFailureEnvelopeMiddleware
 from .routes.diagnostics import build_diagnostics_router
+from .routes.history import build_history_router
 
 _DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
 _RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
@@ -31,7 +32,7 @@ _RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
 def create_app(
     config: DesktopRuntimeConfig | None = None,
     *,
-    session_store: InMemorySessionStore | None = None,
+    session_store: RuntimeSessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
     model_route_resolver: RuntimeModelRouteResolver | None = None,
     host_capability_bridge_client: DesktopCapabilityBridgeClient | None = None,
@@ -66,6 +67,15 @@ def create_app(
     runtime_scaffold = runtime_dependencies.scaffold
     runtime_agent_registry = runtime_dependencies.agent_registry
     runtime_tool_registry = runtime_dependencies.tool_registry
+    history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
+    runtime_history_query_service = (
+        history_query_service_factory(
+            agent_registry=runtime_agent_registry,
+            tool_registry=runtime_tool_registry,
+            model_route_resolver=model_route_resolver or host_model_route_bridge_client,
+            provider_adapter_registry=runtime_agent_executor.provider_adapter_registry,
+        ) if callable(history_query_service_factory) else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -81,6 +91,7 @@ def create_app(
         app.state.copilot_runtime_tool_registry = runtime_tool_registry
         app.state.copilot_runtime_agent_executor = runtime_agent_executor
         app.state.copilot_runtime_bridge = runtime_bridge
+        app.state.copilot_runtime_history_query_service = runtime_history_query_service
         lifecycle_manager.startup()
         try:
             yield
@@ -97,6 +108,9 @@ def create_app(
                         resource_name,
                     )
             try:
+                dispose = getattr(runtime_session_store, "dispose", None)
+                if callable(dispose):
+                    dispose()
                 lifecycle_manager.shutdown()
             except Exception:  # pragma: no cover - defensive shutdown path
                 _RUNTIME_LOGGER.exception("desktop-runtime lifecycle shutdown failed")
@@ -122,6 +136,7 @@ def create_app(
 
     app.include_router(build_router(runtime_scaffold, runtime_bridge))
     app.include_router(build_diagnostics_router())
+    app.include_router(build_history_router())
     return app
 
 

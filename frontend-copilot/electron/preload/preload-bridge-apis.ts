@@ -10,6 +10,17 @@ import {
 } from '../config-center/public-snapshot'
 import { createConfigCenterPublicSnapshotSubscriptionApi } from '../config-center/public-snapshot-subscription'
 import {
+  COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+  COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+  COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+  COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+  COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+  COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+  type CopilotHistoryApi,
+} from '../copilot-history'
+import {
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL,
@@ -34,6 +45,7 @@ import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../boot
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
+  copilotHistory: CopilotHistoryApi
   configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
   configCenterPublicSnapshotSubscription: ConfigCenterPublicSnapshotSubscriptionApi
   configCenterPublicPatch: ConfigCenterPublicPatchApi
@@ -53,6 +65,32 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       retry() {
         return ipcRenderer.invoke(COPILOT_RUNTIME_RETRY_CHANNEL)
+      },
+    },
+    copilotHistory: {
+      listThreads() {
+        return ipcRenderer.invoke(COPILOT_HISTORY_LIST_THREADS_CHANNEL)
+      },
+      getThreadDetail(threadId) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL, threadId)
+      },
+      getRunReplay(runId) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL, runId)
+      },
+      renameThread(threadId, request) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_RENAME_THREAD_CHANNEL, threadId, request)
+      },
+      duplicateThread(threadId, request) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL, threadId, request)
+      },
+      deleteThread(threadId) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_DELETE_THREAD_CHANNEL, threadId)
+      },
+      backupDatabase(request) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL, request)
+      },
+      restoreDatabase(request) {
+        return ipcRenderer.invoke(COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL, request)
       },
     },
     configCenterPublicSnapshot: {

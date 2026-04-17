@@ -34,8 +34,8 @@ export function getAssistantSessionPrimaryActions(language: string): AssistantSe
       testId: 'assistant-session-context-action-delete',
     },
     {
-      label: copy.contextMenu.generateSessionTitle,
-      testId: 'assistant-session-context-action-generate-title',
+      label: copy.contextMenu.copyAsNewSession,
+      testId: 'assistant-session-context-action-copy-session',
     },
   ]
 }
@@ -44,10 +44,6 @@ export function getAssistantSessionCopyActions(language: string): AssistantSessi
   const copy = getAssistantSessionCopy(language)
 
   return [
-    {
-      label: copy.contextMenu.copyAsNewSession,
-      testId: 'assistant-session-context-action-copy-session',
-    },
     {
       label: copy.contextMenu.copyAsMarkdown,
       testId: 'assistant-session-context-action-copy-markdown',

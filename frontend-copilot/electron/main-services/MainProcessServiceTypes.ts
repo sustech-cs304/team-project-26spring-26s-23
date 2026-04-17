@@ -3,6 +3,21 @@ import type {
   DesktopCapabilityBridgeResponse,
 } from '../capability-bridge/protocol'
 import type {
+  CopilotHistoryBackupDatabaseRequest,
+  CopilotHistoryDatabaseBackupResult,
+  CopilotHistoryDatabaseRestoreResult,
+  CopilotHistoryDuplicateThreadRequest,
+  CopilotHistoryListThreadsResult,
+  CopilotHistoryRenameThreadRequest,
+  CopilotHistoryRestoreDatabaseRequest,
+  CopilotHistoryRunReplayResult,
+  CopilotHistoryThreadDeleteResult,
+  CopilotHistoryThreadDetailResult,
+  CopilotHistoryThreadDuplicateResult,
+  CopilotHistoryThreadRenameResult,
+} from '../copilot-history'
+import type { ElectronCopilotHistoryService } from '../copilot-history-service'
+import type {
   ConfigCenterPublicPatch,
   ConfigCenterPublicPatchResult,
 } from '../config-center/public-patch'
@@ -10,6 +25,7 @@ import type {
   ConfigCenterPublicSnapshot,
   ConfigCenterPublicSnapshotLoadResult,
 } from '../config-center/public-snapshot'
+import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 import type {
   SettingsWorkspaceClearProfileApiKeyRequest,
   SettingsWorkspaceProfileSecretMutationResult,
@@ -27,7 +43,6 @@ import type {
   SettingsWorkspaceProviderRouteResolveResult,
 } from '../settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
-import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
@@ -46,6 +61,7 @@ export interface CreateMainProcessServicesOptions {
   publishConfigCenterPublicSnapshotUpdate: (
     snapshot: ConfigCenterPublicSnapshot,
   ) => void | Promise<void>
+  createCopilotHistoryService: () => ElectronCopilotHistoryService
 }
 
 export interface MainProcessServices {
@@ -67,6 +83,24 @@ export interface MainProcessServices {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
+  getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
+  getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
+  renameCopilotHistoryThread: (
+    threadId: string,
+    request: CopilotHistoryRenameThreadRequest,
+  ) => Promise<CopilotHistoryThreadRenameResult>
+  duplicateCopilotHistoryThread: (
+    threadId: string,
+    request?: CopilotHistoryDuplicateThreadRequest,
+  ) => Promise<CopilotHistoryThreadDuplicateResult>
+  deleteCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
+  backupCopilotHistoryDatabase: (
+    request?: CopilotHistoryBackupDatabaseRequest,
+  ) => Promise<CopilotHistoryDatabaseBackupResult>
+  restoreCopilotHistoryDatabase: (
+    request: CopilotHistoryRestoreDatabaseRequest,
+  ) => Promise<CopilotHistoryDatabaseRestoreResult>
   resolveSettingsWorkspaceProviderRoute: (
     request: SettingsWorkspaceProviderRouteResolveRequest,
   ) => Promise<SettingsWorkspaceProviderRouteResolveResult>

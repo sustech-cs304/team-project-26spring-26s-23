@@ -5,6 +5,14 @@ import {
   getRuntimeCapabilities,
   listRuntimeAgents,
 } from '../../../features/copilot/chat-contract'
+import {
+  deleteCopilotHistoryThread,
+  duplicateCopilotHistoryThread,
+  getCopilotHistoryRunReplay,
+  getCopilotHistoryThreadDetail,
+  listCopilotHistoryThreads,
+  renameCopilotHistoryThread,
+} from '../../../features/copilot/history'
 import { CopilotChatPanel } from '../../../features/copilot/CopilotChatPanel'
 import type { CopilotBootstrapController } from '../../../features/copilot/types'
 import type { WorkbenchLanguage } from '../../locale'
@@ -23,6 +31,12 @@ export interface AssistantWorkspaceShellProps {
   listAgents?: typeof listRuntimeAgents
   createSession?: typeof createRuntimeThread
   getCapabilities?: typeof getRuntimeCapabilities
+  listHistoryThreads?: typeof listCopilotHistoryThreads
+  getHistoryThreadDetail?: typeof getCopilotHistoryThreadDetail
+  getHistoryRunReplay?: typeof getCopilotHistoryRunReplay
+  renameHistoryThread?: typeof renameCopilotHistoryThread
+  duplicateHistoryThread?: typeof duplicateCopilotHistoryThread
+  deleteHistoryThread?: typeof deleteCopilotHistoryThread
   initialDirectoryState?: AssistantAgentDirectoryState
   initialSessionShell?: AssistantSessionShell | null
 }
@@ -33,6 +47,12 @@ export function AssistantWorkspaceShell({
   listAgents: listAgentsImpl = listRuntimeAgents,
   createSession: createSessionImpl = createRuntimeThread,
   getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
+  listHistoryThreads: listHistoryThreadsImpl = listCopilotHistoryThreads,
+  getHistoryThreadDetail: getHistoryThreadDetailImpl = getCopilotHistoryThreadDetail,
+  getHistoryRunReplay: getHistoryRunReplayImpl = getCopilotHistoryRunReplay,
+  renameHistoryThread: renameHistoryThreadImpl = renameCopilotHistoryThread,
+  duplicateHistoryThread: duplicateHistoryThreadImpl = duplicateCopilotHistoryThread,
+  deleteHistoryThread: deleteHistoryThreadImpl = deleteCopilotHistoryThread,
   initialDirectoryState = emptyAssistantAgentDirectoryState,
   initialSessionShell = null,
 }: AssistantWorkspaceShellProps) {
@@ -40,9 +60,13 @@ export function AssistantWorkspaceShell({
     directoryState,
     selectedAgent,
     sessionShell,
+    activeSessionHistory,
+    runtimeControllerBySessionId,
+    setRuntimeControllerBySessionId,
     sessionListState,
     sessionStatus,
     sessionError,
+    historyRestoreError,
     createSessionLabel,
     createSessionButtonDisabled,
     renderedSessions,
@@ -55,26 +79,36 @@ export function AssistantWorkspaceShell({
     sessionDragState,
     sessionListRef,
     sessionDragGhostRef,
+    dismissSessionContextMenu,
+    selectSessionContextSubmenu,
     selectAgent,
     handleCreateSession,
+    retryActiveSessionHistoryLoad,
+    selectActiveSessionHistoryRun,
+    handleActiveSessionRunSettled,
     handleSessionPointerDown,
     handleSessionClick,
     handleSessionContextMenu,
-    dismissSessionContextMenu,
     requestSessionRename,
+    duplicateSession,
     updateSessionRenameValue,
     commitSessionRename,
     cancelSessionRename,
     requestSessionDelete,
     confirmSessionDelete,
     cancelSessionDelete,
-    selectSessionSubmenu,
   } = useAssistantWorkspaceState({
     bootstrap,
     language,
     listAgents: listAgentsImpl,
     createSession: createSessionImpl,
     getCapabilities: getCapabilitiesImpl,
+    listHistoryThreads: listHistoryThreadsImpl,
+    getHistoryThreadDetail: getHistoryThreadDetailImpl,
+    getHistoryRunReplay: getHistoryRunReplayImpl,
+    renameHistoryThread: renameHistoryThreadImpl,
+    duplicateHistoryThread: duplicateHistoryThreadImpl,
+    deleteHistoryThread: deleteHistoryThreadImpl,
     initialDirectoryState,
     initialSessionShell,
   })
@@ -112,15 +146,16 @@ export function AssistantWorkspaceShell({
         onSessionPointerDown={handleSessionPointerDown}
         onSessionClick={handleSessionClick}
         onSessionContextMenu={handleSessionContextMenu}
-        onDismissContextMenu={dismissSessionContextMenu}
         onRequestRename={requestSessionRename}
+        onDuplicateSession={duplicateSession}
         onRenameValueChange={updateSessionRenameValue}
         onCommitRename={commitSessionRename}
         onCancelRename={cancelSessionRename}
         onRequestDelete={requestSessionDelete}
         onConfirmDelete={confirmSessionDelete}
         onCancelDelete={cancelSessionDelete}
-        onSelectSubmenu={selectSessionSubmenu}
+        onDismissContextMenu={dismissSessionContextMenu}
+        onSelectSubmenu={selectSessionContextSubmenu}
       />
 
       <main className="workspace-main workspace-main--chat" aria-label="会话主内容区">
@@ -135,6 +170,13 @@ export function AssistantWorkspaceShell({
             directoryState={directoryState}
             sessionStatus={sessionStatus}
             sessionError={sessionError}
+            historyRestoreError={historyRestoreError}
+            sessionHistory={activeSessionHistory}
+            retrySessionHistory={retryActiveSessionHistoryLoad}
+            selectSessionHistoryRun={selectActiveSessionHistoryRun}
+            onSessionRunSettled={handleActiveSessionRunSettled}
+            runtimeControllerBySessionId={runtimeControllerBySessionId}
+            setRuntimeControllerBySessionId={setRuntimeControllerBySessionId}
           />
         </div>
       </main>
