@@ -12,6 +12,7 @@ import { ToolPermissionRow } from './ToolPermissionRow'
 
 interface ToolPermissionsPanelProps {
   tools: readonly ToolPermissionRecord[]
+  statusMessage?: string | null
   onModeChange: (toolId: string, mode: ToolPermissionMode) => void
   onDelayActionChange: (toolId: string, action: ToolPermissionDelayAction) => void
   onDelaySecondsChange: (toolId: string, seconds: number) => void
@@ -24,6 +25,7 @@ const initialCollapsedGroups: Record<ToolPermissionGroupId, boolean> = {
 
 export function ToolPermissionsPanel({
   tools,
+  statusMessage = null,
   onModeChange,
   onDelayActionChange,
   onDelaySecondsChange,
@@ -44,8 +46,21 @@ export function ToolPermissionsPanel({
     }))
   }
 
+  if (groupedTools.length === 0) {
+    return (
+      <div className="tool-permission-groups" aria-label="工具权限列表">
+        <div className="tool-permission-empty-state" role="status">
+          {statusMessage ?? '尚未从运行时获取到可展示的工具目录。'}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="tool-permission-groups" aria-label="工具权限列表">
+      {statusMessage ? (
+        <div className="tool-permission-empty-state" role="status">{statusMessage}</div>
+      ) : null}
       {groupedTools.map((group) => {
         const collapsed = collapsedGroups[group.id] ?? false
 

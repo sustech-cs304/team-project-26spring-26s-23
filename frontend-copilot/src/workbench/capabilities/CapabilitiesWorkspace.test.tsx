@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
 
 import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import {
@@ -15,14 +17,24 @@ import {
 } from '../settings/workspace-state'
 import { createPersistedWorkspaceState } from '../settings/test-support/SettingsWorkspaceTestSupport'
 import { CapabilitiesWorkspace } from './CapabilitiesWorkspace'
+import { loadToolCatalog } from './tool-catalog'
 
 vi.mock('../settings/workspace-state', () => ({
   loadSettingsWorkspaceState: vi.fn(),
   saveSettingsWorkspaceState: vi.fn(),
 }))
 
+vi.mock('./tool-catalog', () => ({
+  loadToolCatalog: vi.fn(),
+}))
+
 const mockedLoadSettingsWorkspaceState = vi.mocked(loadSettingsWorkspaceState)
 const mockedSaveSettingsWorkspaceState = vi.mocked(saveSettingsWorkspaceState)
+const mockedLoadToolCatalog = vi.mocked(loadToolCatalog)
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | 'mcp-servers'): HTMLButtonElement {
   const button = container.querySelector(`#capabilities-tab-${sectionId}`)
@@ -129,9 +141,90 @@ function createLoadResult() {
   }
 }
 
+function createToolCatalogLoadResult(overrides: Partial<ToolCatalogLoadResult> = {}): ToolCatalogLoadResult {
+  return {
+    ok: true,
+    tools: [
+      {
+        toolId: 'functions.read_file',
+        kind: 'builtin',
+        availability: 'available',
+        displayName: '读取文件',
+        description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
+      },
+      {
+        toolId: 'functions.execute_command',
+        kind: 'builtin',
+        availability: 'available',
+        displayName: '执行命令',
+        description: '运行本地终端命令，适合构建、检查与资源处理。',
+      },
+      {
+        toolId: 'functions.write_to_file',
+        kind: 'builtin',
+        availability: 'available',
+        displayName: '写入文件',
+        description: '创建或重写文件，适用于页面搭建、样式输出与配置修改。',
+      },
+      {
+        toolId: 'mcp--fetch--fetch',
+        kind: 'external',
+        availability: 'available',
+        displayName: '联网抓取',
+        description: '抓取网页内容，用于补充外部说明与页面上下文。',
+      },
+      {
+        toolId: 'mcp--puppeteer--puppeteer_navigate',
+        kind: 'external',
+        availability: 'available',
+        displayName: '浏览器自动化',
+        description: '驱动浏览器执行界面级操作，用于录制流程或验证可见交互。',
+      },
+    ],
+    ...overrides,
+  }
+}
+
+function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
+  return {
+    ok: true,
+    tools: [
+      {
+        toolId: 'tool.file-convert',
+        kind: 'builtin',
+        availability: 'available',
+        displayName: '文件转换',
+        description: '将常见文档转换为运行时可消费内容。',
+      },
+      {
+        toolId: 'blackboard.course_catalog.search',
+        kind: 'contract',
+        availability: 'available',
+        displayName: '课程目录搜索',
+        description: '搜索 Blackboard 课程目录。',
+      },
+      {
+        toolId: 'tis.personal_grades.fetch',
+        kind: 'contract',
+        availability: 'available',
+        displayName: '成绩查询',
+        description: '读取教学系统个人成绩。',
+      },
+      {
+        toolId: 'campus.events.list',
+        kind: 'external',
+        availability: 'available',
+        displayName: '校园活动',
+        description: '读取校园活动。',
+      },
+    ],
+  }
+}
+
 describe('CapabilitiesWorkspace', () => {
   it('renders persisted tool permissions and secondary navigation switch with real tool ids', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: createLoadResult().state,
@@ -145,7 +238,7 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.querySelector('.capabilities-main')).toBeTruthy()
     expect(rendered.container.querySelector('.capabilities-main__content')).toBeTruthy()
     expect(rendered.container.querySelector('[aria-label="工具权限列表"]')).toBeTruthy()
-    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(2)
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(1)
     expect(rendered.container.textContent).toContain('能力中心')
     expect(rendered.container.textContent).toContain('工具权限')
     expect(rendered.container.textContent).toContain('读取文件')
@@ -173,9 +266,92 @@ describe('CapabilitiesWorkspace', () => {
     rendered.unmount()
   })
 
+  it('renders hosted backend builtin and contract tools instead of collapsing to the empty state', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createHostedCatalogOnlyLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(4)
+    expect(rendered.container.textContent).toContain('文件转换')
+    expect(rendered.container.textContent).toContain('课程目录搜索')
+    expect(rendered.container.textContent).toContain('成绩查询')
+    expect(rendered.container.textContent).toContain('校园活动')
+    expect(rendered.container.textContent).not.toContain('尚未从运行时获取到可展示的工具目录。')
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(1)
+    expect(rendered.container.textContent).toContain('项目内工具')
+    expect(rendered.container.textContent).not.toContain('外部访问')
+
+    rendered.unmount()
+  })
+
+  it('falls back to a built-in catalog with an explicit status message when loading the runtime tool catalog fails', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue({
+      ok: false,
+      error: 'Hosted backend runtime URL is unavailable.',
+    })
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(5)
+    expect(rendered.container.textContent).toContain('Hosted backend runtime tool catalog is temporarily unavailable. Using built-in fallback catalog.')
+    expect(rendered.container.textContent).toContain('读取文件')
+    expect(rendered.container.textContent).toContain('联网抓取')
+
+    rendered.unmount()
+  })
+
+  it('falls back when the runtime tool catalog returns an incomplete directory', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue({
+      ok: true,
+      tools: [
+        {
+          toolId: 'functions.read_file',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: '读取文件',
+          description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
+        },
+        {
+          toolId: '',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: null,
+          description: '无效工具项。',
+        },
+      ],
+    })
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(5)
+    expect(rendered.container.textContent).toContain('Hosted backend returned an incomplete tool catalog. Using built-in fallback catalog.')
+    expect(rendered.container.textContent).toContain('浏览器自动化')
+
+    rendered.unmount()
+  })
+
   it('merges and saves tool permission policy updates without dropping unrelated settings fields', async () => {
     const loadResult = createLoadResult()
     mockedLoadSettingsWorkspaceState.mockResolvedValue(loadResult)
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: loadResult.state,
@@ -220,6 +396,7 @@ describe('CapabilitiesWorkspace', () => {
 
   it('switches segmented approval modes and expands then collapses the delay settings shell', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: createLoadResult().state,
@@ -277,6 +454,7 @@ describe('CapabilitiesWorkspace', () => {
 
   it('opens edit and add MCP dialogs with seeded json and closes them through cancel, close, and backdrop actions', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: createLoadResult().state,
@@ -285,8 +463,8 @@ describe('CapabilitiesWorkspace', () => {
     const rendered = renderWithRoot(<CapabilitiesWorkspace />)
     await waitForNextFrame()
 
-    expect(rendered.container.innerHTML).toContain('capabilities-tab-mcp-servers')
-    await clickElement(getNavButton(rendered.container, 'mcp-servers'))
+    const mcpNavButton = getNavButton(document.body, 'mcp-servers')
+    await clickElement(mcpNavButton)
     await clickElement(getExactButton(rendered.container, '编辑'))
     await waitForNextFrame()
 
@@ -341,6 +519,7 @@ describe('CapabilitiesWorkspace', () => {
 
   it('toggles and deletes placeholder MCP server rows from the panel', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: createLoadResult().state,
@@ -349,8 +528,8 @@ describe('CapabilitiesWorkspace', () => {
     const rendered = renderWithRoot(<CapabilitiesWorkspace />)
     await waitForNextFrame()
 
-    expect(rendered.container.innerHTML).toContain('capabilities-tab-mcp-servers')
-    await clickElement(getNavButton(rendered.container, 'mcp-servers'))
+    const mcpNavButton = getNavButton(document.body, 'mcp-servers')
+    await clickElement(mcpNavButton)
 
     const fetchToggle = rendered.container.querySelector('button[aria-label="开启 fetch-server"]')
 
@@ -372,4 +551,5 @@ describe('CapabilitiesWorkspace', () => {
 
     rendered.unmount()
   })
+
 })

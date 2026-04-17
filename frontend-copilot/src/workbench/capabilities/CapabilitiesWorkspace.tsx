@@ -4,13 +4,19 @@ import type {
   SettingsWorkspaceStateSaveInput,
   SettingsWorkspaceToolPermissionPolicyState,
   ToolPermissionPolicyMode,
+  ToolPermissionPolicySource,
 } from '../../../electron/settings-workspace/schema'
 import type { RuntimeToolDirectoryEntry } from '../../features/copilot/chat-contract'
+import { resolveCopilotToolPlatformGroup } from '../../features/copilot/tool-presentation'
 import {
   loadSettingsWorkspaceState,
   saveSettingsWorkspaceState,
 } from '../settings/workspace-state'
+import { appendCopilotDebugLog } from '../../features/copilot/debug-mode-log'
+import { loadConfigCenterPublicSnapshot } from '../../features/copilot/config-center'
+import { loadToolCatalog } from './tool-catalog'
 import { CapabilitiesSecondaryNav } from './CapabilitiesSecondaryNav'
+import { projectDebugModeEnabledFromConfigCenterPublicSnapshot } from '../../features/copilot/config-center'
 import {
   capabilitiesNavItems,
   mockMcpServers,
@@ -31,47 +37,19 @@ interface McpServerEditorState {
   value: string
 }
 
+interface ToolCatalogLoadState {
+  status: 'idle' | 'ready' | 'fallback' | 'error'
+  error: string | null
+  source: 'runtime' | 'fallback' | null
+}
+
 const FALLBACK_DELAY_ACTION: ToolPermissionDelayAction = 'approve'
 const FALLBACK_DELAY_SECONDS = 15
 const TOOL_PERMISSION_UPDATED_AT = '2026-04-17T00:00:00.000Z'
+const FALLBACK_TOOL_CATALOG_ERROR = 'Hosted backend runtime tool catalog is temporarily unavailable. Using built-in fallback catalog.'
+const EMPTY_TOOL_CATALOG_ERROR = 'Hosted backend returned an empty tool catalog. Using built-in fallback catalog.'
+const INCOMPLETE_TOOL_CATALOG_ERROR = 'Hosted backend returned an incomplete tool catalog. Using built-in fallback catalog.'
 
-const DEFAULT_TOOL_CATALOG: RuntimeToolDirectoryEntry[] = [
-  {
-    toolId: 'functions.read_file',
-    kind: 'builtin',
-    availability: 'available',
-    displayName: '读取文件',
-    description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
-  },
-  {
-    toolId: 'functions.execute_command',
-    kind: 'builtin',
-    availability: 'available',
-    displayName: '执行命令',
-    description: '运行本地终端命令，适合构建、检查与资源处理。',
-  },
-  {
-    toolId: 'functions.write_to_file',
-    kind: 'builtin',
-    availability: 'available',
-    displayName: '写入文件',
-    description: '创建或重写文件，适用于页面搭建、样式输出与配置修改。',
-  },
-  {
-    toolId: 'mcp--fetch--fetch',
-    kind: 'external',
-    availability: 'available',
-    displayName: '联网抓取',
-    description: '抓取网页内容，用于补充外部说明与页面上下文。',
-  },
-  {
-    toolId: 'mcp--puppeteer--puppeteer_navigate',
-    kind: 'external',
-    availability: 'available',
-    displayName: '浏览器自动化',
-    description: '驱动浏览器执行界面级操作，用于录制流程或验证可见交互。',
-  },
-]
 
 export function CapabilitiesWorkspace() {
   const [activeSection, setActiveSection] = useState<CapabilitiesSection>('tool-permissions')
@@ -81,28 +59,58 @@ export function CapabilitiesWorkspace() {
   ))
   const [editorState, setEditorState] = useState<McpServerEditorState | null>(null)
   const [settingsState, setSettingsState] = useState<SettingsWorkspaceStateSaveInput | null>(null)
+  const [toolCatalogLoadState, setToolCatalogLoadState] = useState<ToolCatalogLoadState>({
+    status: 'idle',
+    error: null,
+    source: null,
+  })
 
   useEffect(() => {
     let cancelled = false
 
     void (async () => {
-      const settingsResult = await loadSettingsWorkspaceState()
+      const snapshotResult = await loadConfigCenterPublicSnapshot()
+      const debugModeEnabled = snapshotResult.ok
+        && projectDebugModeEnabledFromConfigCenterPublicSnapshot(snapshotResult.snapshot)
+      const preferredLanguage = snapshotResult.ok ? snapshotResult.snapshot.domains.general.language : null
+      const [settingsResult, toolCatalogResult] = await Promise.all([
+        loadSettingsWorkspaceState(),
+        loadToolCatalog(preferredLanguage),
+      ])
 
       if (cancelled) {
         return
       }
 
+      appendCopilotDebugLog(debugModeEnabled, 'capabilities-workspace', 'tool-catalog-load-result', toolCatalogResult.ok
+        ? {
+            ok: true,
+            toolCount: toolCatalogResult.tools.length,
+            toolIds: toolCatalogResult.tools.map((tool) => tool.toolId),
+          }
+        : {
+            ok: false,
+            error: toolCatalogResult.error,
+          })
+
+      const resolvedCatalog = resolveRenderableToolCatalog(toolCatalogResult)
+      setToolCatalogLoadState({
+        status: resolvedCatalog.status,
+        error: resolvedCatalog.error,
+        source: resolvedCatalog.source,
+      })
+
       if (!settingsResult.ok) {
         setSettingsState(null)
-        setToolPermissions(buildToolPermissionRecords(DEFAULT_TOOL_CATALOG, createDefaultPolicyState()))
+        setToolPermissions([])
         return
       }
 
-      const nextSettingsState = settingsResult.state
+      const nextSettingsState = settingsResult.state as unknown as SettingsWorkspaceStateSaveInput
       const policy = nextSettingsState.mcp.toolPermissionPolicy
 
       setSettingsState(nextSettingsState)
-      setToolPermissions(buildToolPermissionRecords(DEFAULT_TOOL_CATALOG, policy))
+      setToolPermissions(buildToolPermissionRecords(resolvedCatalog.tools, policy))
     })()
 
     return () => {
@@ -118,24 +126,22 @@ export function CapabilitiesWorkspace() {
   const persistToolPermissions = (nextTools: ToolPermissionRecord[]) => {
     setToolPermissions(nextTools)
 
-    setSettingsState((previous) => {
-      if (previous === null) {
-        return previous
-      }
+    if (settingsState === null) {
+      return
+    }
 
-      const nextPolicy = buildPolicyStateFromTools(nextTools)
-      const nextState: SettingsWorkspaceStateSaveInput = {
-        ...previous,
-        mcp: {
-          ...previous.mcp,
-          toolPermissionMode: mapDefaultModeToLegacyMode(nextPolicy.defaultMode),
-          toolPermissionPolicy: nextPolicy,
-        },
-      }
+    const nextPolicy = buildPolicyStateFromTools(nextTools, settingsState.mcp.toolPermissionPolicy)
+    const nextState: SettingsWorkspaceStateSaveInput = {
+      ...settingsState,
+      mcp: {
+        ...settingsState.mcp,
+        toolPermissionMode: mapDefaultModeToLegacyMode(nextPolicy.defaultMode),
+        toolPermissionPolicy: nextPolicy,
+      },
+    }
 
-      void saveSettingsWorkspaceState(nextState)
-      return nextState
-    })
+    void saveSettingsWorkspaceState(nextState)
+    setSettingsState(nextState)
   }
 
   const handleModeChange = (toolId: string, mode: ToolPermissionMode) => {
@@ -237,6 +243,7 @@ export function CapabilitiesWorkspace() {
             {activeSection === 'tool-permissions' ? (
               <ToolPermissionsPanel
                 tools={toolPermissions}
+                statusMessage={resolveToolPermissionStatusMessage(toolCatalogLoadState)}
                 onModeChange={handleModeChange}
                 onDelayActionChange={handleDelayActionChange}
                 onDelaySecondsChange={handleDelaySecondsChange}
@@ -281,8 +288,8 @@ function buildToolPermissionRecords(
     return {
       id: tool.toolId,
       groupId: resolveToolGroupId(tool),
-      name: tool.displayName ?? tool.toolId,
-      description: tool.description ?? '该工具尚未提供详细说明。',
+      name: tool.displayNameZh ?? tool.displayName ?? tool.displayNameEn ?? tool.toolId,
+      description: tool.descriptionZh ?? tool.description ?? tool.descriptionEn ?? '该工具尚未提供详细说明。',
       toolId: tool.toolId,
       mode: resolvedMode,
       delayAction: FALLBACK_DELAY_ACTION,
@@ -292,26 +299,34 @@ function buildToolPermissionRecords(
 }
 
 function resolveToolGroupId(tool: RuntimeToolDirectoryEntry): ToolPermissionRecord['groupId'] {
-  return tool.kind === 'external' || tool.toolId.startsWith('mcp--') ? 'remote' : 'workspace'
+  return tool.group?.id === 'remote' || resolveCopilotToolPlatformGroup(tool).sourceKind === 'mcp-server'
+    ? 'remote'
+    : 'workspace'
 }
 
 function buildPolicyStateFromTools(
   tools: ToolPermissionRecord[],
+  previousPolicy: SettingsWorkspaceToolPermissionPolicyState,
 ): SettingsWorkspaceToolPermissionPolicyState {
-  const defaultMode = resolveDefaultMode(tools)
-  const toolPermissions = Object.fromEntries(tools.flatMap((tool) => {
-    const normalizedMode = tool.mode === 'delay' ? 'ask' : tool.mode
+  const defaultMode = resolveDefaultMode(tools, previousPolicy.defaultMode)
+  const toolPermissions = {
+    ...collectPersistedOrphanPolicies(previousPolicy, tools),
+    ...Object.fromEntries(tools.flatMap((tool) => {
+      const normalizedMode = tool.mode === 'delay' ? 'ask' : tool.mode
 
-    if (normalizedMode === defaultMode) {
-      return []
-    }
+      if (normalizedMode === defaultMode) {
+        return []
+      }
 
-    return [[tool.toolId, {
-      mode: normalizedMode,
-      source: 'user',
-      updatedAt: TOOL_PERMISSION_UPDATED_AT,
-    }]]
-  }))
+      const nextEntry = {
+        mode: normalizedMode,
+        source: 'user' as ToolPermissionPolicySource,
+        updatedAt: TOOL_PERMISSION_UPDATED_AT,
+      }
+
+      return [[tool.toolId, nextEntry]]
+    })),
+  }
 
   return {
     version: 1,
@@ -320,11 +335,18 @@ function buildPolicyStateFromTools(
   }
 }
 
-function resolveDefaultMode(tools: ToolPermissionRecord[]): ToolPermissionPolicyMode {
+function resolveDefaultMode(
+  tools: ToolPermissionRecord[],
+  fallbackMode: ToolPermissionPolicyMode,
+): ToolPermissionPolicyMode {
   const counts = {
     allow: 0,
     ask: 0,
     deny: 0,
+  }
+
+  if (tools.length === 0) {
+    return fallbackMode
   }
 
   for (const tool of tools) {
@@ -341,12 +363,158 @@ function resolveDefaultMode(tools: ToolPermissionRecord[]): ToolPermissionPolicy
   return 'ask'
 }
 
-function createDefaultPolicyState(): SettingsWorkspaceToolPermissionPolicyState {
-  return {
-    version: 1,
-    defaultMode: 'ask',
-    toolPermissions: {},
+function collectPersistedOrphanPolicies(
+  previousPolicy: SettingsWorkspaceToolPermissionPolicyState,
+  tools: ToolPermissionRecord[],
+): Record<string, SettingsWorkspaceToolPermissionPolicyState['toolPermissions'][string]> {
+  const knownToolIds = new Set(tools.map((tool) => tool.toolId))
+
+  return Object.fromEntries(Object.entries(previousPolicy.toolPermissions).flatMap(([toolId, policyEntry]) => {
+    return knownToolIds.has(toolId) ? [] : [[toolId, policyEntry]]
+  }))
+}
+
+function resolveRenderableToolCatalog(
+  result: { ok: true, tools: RuntimeToolDirectoryEntry[] } | { ok: false, error: string },
+): {
+  status: ToolCatalogLoadState['status']
+  error: string | null
+  source: ToolCatalogLoadState['source']
+  tools: RuntimeToolDirectoryEntry[]
+} {
+  if (!result.ok) {
+    return {
+      status: 'fallback',
+      error: FALLBACK_TOOL_CATALOG_ERROR,
+      source: 'fallback',
+      tools: createStaticFallbackToolCatalog(),
+    }
   }
+
+  const completeTools = result.tools.filter(isRenderableToolCatalogEntry)
+  if (completeTools.length === 0) {
+    return {
+      status: 'fallback',
+      error: EMPTY_TOOL_CATALOG_ERROR,
+      source: 'fallback',
+      tools: createStaticFallbackToolCatalog(),
+    }
+  }
+
+  if (completeTools.length !== result.tools.length) {
+    return {
+      status: 'fallback',
+      error: INCOMPLETE_TOOL_CATALOG_ERROR,
+      source: 'fallback',
+      tools: createStaticFallbackToolCatalog(),
+    }
+  }
+
+  return {
+    status: 'ready',
+    error: null,
+    source: 'runtime',
+    tools: completeTools,
+  }
+}
+
+function isRenderableToolCatalogEntry(tool: RuntimeToolDirectoryEntry): boolean {
+  return typeof tool.toolId === 'string'
+    && tool.toolId.trim() !== ''
+    && typeof resolveToolLabel(tool) === 'string'
+    && resolveToolLabel(tool).trim() !== ''
+}
+
+function resolveToolLabel(tool: RuntimeToolDirectoryEntry): string {
+  return tool.displayNameZh ?? tool.displayName ?? tool.displayNameEn ?? tool.toolId
+}
+
+function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
+  return [
+    {
+      toolId: 'functions.read_file',
+      kind: 'builtin',
+      availability: 'available',
+      displayName: '读取文件',
+      description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
+      group: {
+        id: 'workspace',
+        label: '项目内工具',
+        labelZh: '项目内工具',
+        labelEn: 'Workspace Tools',
+        order: 0,
+        sourceKind: 'workspace',
+      },
+    },
+    {
+      toolId: 'functions.execute_command',
+      kind: 'builtin',
+      availability: 'available',
+      displayName: '执行命令',
+      description: '运行本地终端命令，适合构建、检查与资源处理。',
+      group: {
+        id: 'workspace',
+        label: '项目内工具',
+        labelZh: '项目内工具',
+        labelEn: 'Workspace Tools',
+        order: 0,
+        sourceKind: 'workspace',
+      },
+    },
+    {
+      toolId: 'functions.write_to_file',
+      kind: 'builtin',
+      availability: 'available',
+      displayName: '写入文件',
+      description: '创建或重写文件，适用于页面搭建、样式输出与配置修改。',
+      group: {
+        id: 'workspace',
+        label: '项目内工具',
+        labelZh: '项目内工具',
+        labelEn: 'Workspace Tools',
+        order: 0,
+        sourceKind: 'workspace',
+      },
+    },
+    {
+      toolId: 'mcp--fetch--fetch',
+      kind: 'external',
+      availability: 'available',
+      displayName: '联网抓取',
+      description: '抓取网页内容，用于补充外部说明与页面上下文。',
+      group: {
+        id: 'remote',
+        label: '外部访问',
+        labelZh: '外部访问',
+        labelEn: 'Remote Access',
+        order: 10,
+        sourceKind: 'remote',
+      },
+    },
+    {
+      toolId: 'mcp--puppeteer--puppeteer_navigate',
+      kind: 'external',
+      availability: 'available',
+      displayName: '浏览器自动化',
+      description: '驱动浏览器执行界面级操作，用于录制流程或验证可见交互。',
+      group: {
+        id: 'remote',
+        label: '外部访问',
+        labelZh: '外部访问',
+        labelEn: 'Remote Access',
+        order: 10,
+        sourceKind: 'remote',
+      },
+    },
+  ]
+}
+
+function resolveToolPermissionStatusMessage(state: ToolCatalogLoadState): string | null {
+  if (state.status === 'fallback' || state.status === 'error') {
+    return state.error ?? '工具目录暂时不可用，当前显示内建降级目录。'
+  }
+
+  return null
 }
 
 function mapDefaultModeToLegacyMode(mode: ToolPermissionPolicyMode): string {
