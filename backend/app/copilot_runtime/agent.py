@@ -247,6 +247,16 @@ class _PydanticAIAgentRunDeps:
     debug_enabled: bool = False
 
 
+@dataclass(slots=True)
+class _ObservedToolCall:
+    part_index: int
+    tool_name: str | None = None
+    tool_call_id: str | None = None
+    args: str | dict[str, Any] | None = None
+    observation_emitted: bool = False
+    arguments_completed_emitted: bool = False
+
+
 class _PydanticAIEventStream:
     def __init__(
         self,
@@ -276,10 +286,16 @@ class _PydanticAIEventStream:
         self._event_buffer = event_buffer
         self._model_route_summary = dict(model_route_summary or {})
         self._debug_enabled = debug_enabled
+        self._text_delta_index = 0
+        self._reasoning_delta_index = 0
         self._cached_output: str | None = None
+        self._observed_tool_calls: dict[int, _ObservedToolCall] = {}
+        self._raw_tool_call_observation_count = 0
+        self._raw_tool_call_arguments_completed_count = 0
         self._event_queue: asyncio.Queue[RuntimeExecutionEvent | object] = asyncio.Queue()
         self._run_task: asyncio.Task[None] | None = None
         self._run_exception: BaseException | None = None
+        self._tool_lifecycle_emitted_ids: set[str] = set()
 
     async def __aenter__(self) -> "_PydanticAIEventStream":
         if self._run_task is None:
@@ -313,6 +329,7 @@ class _PydanticAIEventStream:
             raise self._run_exception
 
     def record_tool_lifecycle_event(self, tool_event: RuntimeToolLifecycleEvent) -> None:
+        self._tool_lifecycle_emitted_ids.add(tool_event.tool_call_id)
         self._event_buffer.record_event(tool_lifecycle_event_to_execution_event(tool_event))
         self._flush_pending_events_to_queue(reason=f"tool_lifecycle_{tool_event.phase}")
 
@@ -333,9 +350,13 @@ class _PydanticAIEventStream:
             if normalized_output == "":
                 raise AgentExecutionError("Runtime agent returned empty text response.")
             self._cached_output = normalized_output
+            self._raise_if_raw_tool_call_left_unexecuted()
         except BaseException as exc:
             self._run_exception = exc
         finally:
+            self._event_buffer.finish_assistant_segment()
+            self._event_buffer.finish_reasoning_segment()
+            self._flush_pending_events_to_queue(reason="run_finished")
             await self._event_queue.put(_EVENT_STREAM_DONE)
 
     async def _handle_runtime_events(
@@ -344,36 +365,221 @@ class _PydanticAIEventStream:
         events: AsyncIterable[AgentStreamEvent],
     ) -> None:
         async for event in events:
-            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
-                segment_id = self._event_buffer.event_factory.next_assistant_segment_id()
-                self._event_buffer.record_event(
-                    self._event_buffer.event_factory.build_assistant_segment_started(segment_id=segment_id)
+            if isinstance(event, PartStartEvent):
+                part = event.part
+                if isinstance(part, TextPart):
+                    self._record_text_delta(part.content)
+                    self._flush_pending_events_to_queue(reason="assistant_part")
+                elif isinstance(part, ThinkingPart):
+                    self._record_reasoning_delta(part.content)
+                    self._flush_pending_events_to_queue(reason="reasoning_part")
+                elif isinstance(part, ToolCallPart):
+                    state = self._observed_tool_calls.get(event.index)
+                    if state is None:
+                        state = _ObservedToolCall(part_index=event.index)
+                    state.tool_name = part.tool_name or state.tool_name
+                    state.tool_call_id = part.tool_call_id or state.tool_call_id
+                    if part.args is not None:
+                        state.args = part.args
+                    self._observed_tool_calls[event.index] = state
+                    self._emit_tool_call_observation_if_needed(state=state)
+                    self._flush_pending_events_to_queue(reason="tool_call_part")
+            elif isinstance(event, PartDeltaEvent):
+                delta = event.delta
+                if isinstance(delta, TextPartDelta):
+                    self._record_text_delta(delta.content_delta)
+                    self._flush_pending_events_to_queue(reason="assistant_delta")
+                elif isinstance(delta, ThinkingPartDelta):
+                    self._record_reasoning_delta(delta.content_delta)
+                    self._flush_pending_events_to_queue(reason="reasoning_delta")
+                elif isinstance(delta, ToolCallPartDelta):
+                    state = self._observed_tool_calls.get(event.index)
+                    if state is None:
+                        state = _ObservedToolCall(part_index=event.index)
+                    if delta.tool_name_delta:
+                        state.tool_name = f"{state.tool_name or ''}{delta.tool_name_delta}"
+                    if delta.tool_call_id is not None:
+                        state.tool_call_id = delta.tool_call_id
+                    if delta.args_delta is not None:
+                        state.args = self._merge_tool_call_arguments(
+                            current=state.args,
+                            update=delta.args_delta,
+                        )
+                    self._observed_tool_calls[event.index] = state
+                    self._emit_tool_call_observation_if_needed(state=state)
+                    self._flush_pending_events_to_queue(reason="tool_call_delta")
+
+    def _record_text_delta(self, delta: str) -> None:
+        if delta == "":
+            return
+        self._text_delta_index += 1
+        self._event_buffer.record_assistant_delta(delta)
+
+    def _record_reasoning_delta(self, delta: str | None) -> None:
+        if delta in (None, ""):
+            return
+        self._reasoning_delta_index += 1
+        self._event_buffer.record_reasoning_delta(delta)
+
+    def _merge_tool_call_arguments(
+        self,
+        *,
+        current: str | dict[str, Any] | None,
+        update: str | dict[str, Any] | None,
+    ) -> str | dict[str, Any] | None:
+        if update is None:
+            return current
+        if current is None:
+            return update
+        if isinstance(current, str) and isinstance(update, str):
+            return current + update
+        if isinstance(current, dict) and isinstance(update, dict):
+            merged = dict(current)
+            merged.update(update)
+            return merged
+        return update
+
+    def _parse_tool_call_arguments(
+        self,
+        value: str | dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return dict(value)
+        normalized_value = value.strip()
+        if normalized_value == "":
+            return None
+        try:
+            parsed = json.loads(normalized_value)
+        except json.JSONDecodeError:
+            return None
+        return dict(parsed) if isinstance(parsed, dict) else None
+
+    def _is_tool_call_identified(self, state: _ObservedToolCall) -> bool:
+        return bool(state.tool_name) and bool(state.tool_call_id)
+
+    def _emit_tool_call_observation_if_needed(self, *, state: _ObservedToolCall) -> None:
+        parsed_arguments = self._parse_tool_call_arguments(state.args)
+        arguments_complete = parsed_arguments is not None or isinstance(state.args, dict)
+        if not state.observation_emitted and self._is_tool_call_identified(state):
+            self._event_buffer.record_event(
+                self._event_buffer.event_factory.build_diagnostic(
+                    code="raw_tool_call_observed",
+                    message="Observed provider tool call in raw collector.",
+                    details=self._build_tool_call_diagnostic_details(
+                        state=state,
+                        observation_kind="observed",
+                        parsed_arguments=parsed_arguments,
+                    ),
+                    stage="collect_raw_stream",
                 )
-                self._event_buffer.record_event(
-                    self._event_buffer.event_factory.build_assistant_segment_delta(
-                        segment_id=segment_id,
-                        delta=event.part.content,
-                    )
+            )
+            state.observation_emitted = True
+            self._raw_tool_call_observation_count += 1
+            if arguments_complete:
+                state.arguments_completed_emitted = True
+                self._raw_tool_call_arguments_completed_count += 1
+            return
+        if state.observation_emitted and not state.arguments_completed_emitted and arguments_complete:
+            self._event_buffer.record_event(
+                self._event_buffer.event_factory.build_diagnostic(
+                    code="raw_tool_call_arguments_completed",
+                    message="Provider tool call arguments became complete in raw collector.",
+                    details=self._build_tool_call_diagnostic_details(
+                        state=state,
+                        observation_kind="arguments_completed",
+                        parsed_arguments=parsed_arguments,
+                    ),
+                    stage="collect_raw_stream",
                 )
-                self._event_buffer.record_event(
-                    self._event_buffer.event_factory.build_assistant_segment_completed(segment_id=segment_id)
+            )
+            state.arguments_completed_emitted = True
+            self._raw_tool_call_arguments_completed_count += 1
+
+    def _build_tool_call_diagnostic_details(
+        self,
+        *,
+        state: _ObservedToolCall,
+        observation_kind: str,
+        parsed_arguments: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        details: dict[str, Any] = {
+            "source": "pydantic_raw_stream",
+            "providerEndpointType": self._model_route_summary.get("endpointType"),
+            "observationKind": observation_kind,
+            "partIndex": state.part_index,
+            "toolCallId": state.tool_call_id,
+            "toolName": state.tool_name,
+            "argumentsComplete": parsed_arguments is not None or isinstance(state.args, dict),
+        }
+        if parsed_arguments is not None:
+            details["toolArguments"] = parsed_arguments
+        elif isinstance(state.args, dict):
+            details["toolArguments"] = dict(state.args)
+        elif isinstance(state.args, str) and state.args.strip() != "":
+            details["toolArgumentsJson"] = state.args
+        return details
+
+    def _raise_if_raw_tool_call_left_unexecuted(self) -> None:
+        pending_states = [
+            state
+            for state in self._observed_tool_calls.values()
+            if state.arguments_completed_emitted
+            and state.tool_call_id is not None
+            and state.tool_call_id not in self._tool_lifecycle_emitted_ids
+        ]
+        for state in pending_states:
+            tool_call_id = state.tool_call_id
+            if tool_call_id is None:
+                continue
+            parsed_arguments = self._parse_tool_call_arguments(state.args)
+            details = self._build_tool_call_diagnostic_details(
+                state=state,
+                observation_kind="execution_missing",
+                parsed_arguments=parsed_arguments,
+            )
+            self._event_buffer.record_event(
+                self._event_buffer.event_factory.build_diagnostic(
+                    code="raw_tool_call_unexecuted",
+                    message="Provider tool call arguments became complete, but no actual tool execution followed.",
+                    details=details,
+                    stage="drive_raw_tool_call",
                 )
-                self._flush_pending_events_to_queue(reason="assistant_part")
-            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-                segment_id = self._event_buffer.event_factory.next_assistant_segment_id()
-                self._event_buffer.record_event(
-                    self._event_buffer.event_factory.build_assistant_segment_started(segment_id=segment_id)
+            )
+            raw_tool_input = (
+                parsed_arguments
+                if parsed_arguments is not None
+                else dict(state.args)
+                if isinstance(state.args, dict)
+                else None
+            )
+            self.record_tool_lifecycle_event(
+                RuntimeToolLifecycleEvent(
+                    tool_call_id=tool_call_id,
+                    tool_id=self._resolve_tool_id_from_tool_name(state.tool_name),
+                    phase="failed",
+                    title="工具调用失败",
+                    summary="模型产生了工具调用，但运行时未真正执行该调用。",
+                    input_summary=(None if raw_tool_input is None else summarize_tool_arguments(raw_tool_input)),
+                    error_summary="Provider tool call arguments became complete, but no actual tool execution followed.",
                 )
-                self._event_buffer.record_event(
-                    self._event_buffer.event_factory.build_assistant_segment_delta(
-                        segment_id=segment_id,
-                        delta=event.delta.content_delta,
-                    )
-                )
-                self._event_buffer.record_event(
-                    self._event_buffer.event_factory.build_assistant_segment_completed(segment_id=segment_id)
-                )
-                self._flush_pending_events_to_queue(reason="assistant_delta")
+            )
+
+    def _resolve_tool_id_from_tool_name(self, tool_name: str | None) -> str:
+        normalized_tool_name = None if tool_name is None else tool_name.strip()
+        if not normalized_tool_name:
+            return "tool.unknown"
+        if normalized_tool_name == "weather_current":
+            return WEATHER_CURRENT_TOOL_ID
+        for registered_tool_id in self._deps.tool_registry.list_tool_ids():
+            try:
+                executable_tool = self._deps.tool_registry.resolve_tool(registered_tool_id)
+            except LookupError:
+                continue
+            if executable_tool.function_name == normalized_tool_name:
+                return registered_tool_id
+        return normalized_tool_name
 
     async def get_output(self) -> str:
         run_task = self._require_run_task()
@@ -407,6 +613,7 @@ class PydanticAIAgentExecutor:
         provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
         approval_coordinator: RuntimeToolApprovalCoordinator | None = None,
     ) -> None:
+        self.agent_name = DEFAULT_AGENT_NAME
         self._model_override = model
         self._env = dict(env or {})
         self._tool_registry = tool_registry or build_default_tool_registry()
@@ -414,7 +621,10 @@ class PydanticAIAgentExecutor:
         self._default_root = str(default_root or self._workspace_root)
         self.provider_adapter_registry = provider_adapter_registry or build_default_provider_adapter_registry()
         self._approval_coordinator = approval_coordinator or RuntimeToolApprovalCoordinator()
-        self._agent = Agent("test")
+        self._agent = self._build_runtime_agent(
+            enabled_tools=None,
+            resolved_model=self._resolved_explicit_model(),
+        )
 
     @property
     def model_configured(self) -> bool:
@@ -425,9 +635,10 @@ class PydanticAIAgentExecutor:
         return ()
 
     def resolve_model(self) -> Any:
-        if self._model_override is None:
+        candidate = self._resolved_explicit_model()
+        if candidate is None:
             raise ModelNotConfiguredError("Provide an explicit executor model")
-        return self._model_override
+        return candidate
 
     async def run(
         self,
@@ -496,18 +707,14 @@ class PydanticAIAgentExecutor:
                 raise RuntimeError("PydanticAI event stream is not initialized.")
             stream.record_tool_lifecycle_event(tool_event)
 
-        deps = _PydanticAIAgentRunDeps(
-            tool_registry=self._tool_registry,
-            enabled_tool_ids=frozenset(enabled_tool_ids),
+        deps = self._build_runtime_deps(
+            enabled_tools=enabled_tool_ids,
             emit_tool_event=emit_tool_event,
-            workspace_root=self._workspace_root,
-            default_root=self._default_root,
-            tool_permission_resolver=tool_permission_resolver or RuntimeToolPermissionResolver(),
-            approval_coordinator=self._approval_coordinator,
             run_id=run_id,
             debug_enabled=debug_enabled,
+            tool_permission_resolver=tool_permission_resolver,
         )
-        agent = self._build_runtime_agent(
+        agent = self._agent if len(enabled_tool_ids) == 0 else self._build_runtime_agent(
             enabled_tools=enabled_tool_ids,
             resolved_model=resolved_model,
         )
@@ -532,9 +739,101 @@ class PydanticAIAgentExecutor:
         enabled_tools: Sequence[str] | None,
         resolved_model: Any,
     ) -> Agent[Any, Any]:
-        agent = Agent(resolved_model)
+        _ = resolved_model
+        agent = Agent(
+            output_type=str,
+            system_prompt=DEFAULT_AGENT_SYSTEM_PROMPT,
+            deps_type=_PydanticAIAgentRunDeps,
+            name=self.agent_name,
+            tools=self._build_contract_agent_tools(enabled_tools=enabled_tools),
+            defer_model_check=True,
+        )
         self._register_weather_tool(agent, enabled_tools)
         return agent
+
+    def _build_runtime_deps(
+        self,
+        *,
+        enabled_tools: Sequence[str],
+        emit_tool_event: ToolLifecycleSink,
+        run_id: str | None = None,
+        debug_enabled: bool = False,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
+    ) -> _PydanticAIAgentRunDeps:
+        return _PydanticAIAgentRunDeps(
+            tool_registry=self._tool_registry,
+            enabled_tool_ids=frozenset(self._normalize_enabled_tools(enabled_tools)),
+            emit_tool_event=emit_tool_event,
+            workspace_root=self._workspace_root,
+            default_root=self._default_root,
+            tool_permission_resolver=tool_permission_resolver or RuntimeToolPermissionResolver(),
+            approval_coordinator=self._approval_coordinator,
+            run_id=run_id,
+            debug_enabled=debug_enabled,
+        )
+
+    def _normalize_enabled_tools(self, enabled_tools: Sequence[str]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for tool_id in enabled_tools:
+            if tool_id in seen:
+                continue
+            seen.add(tool_id)
+            normalized.append(tool_id)
+        return tuple(normalized)
+
+    def _build_contract_agent_tools(
+        self,
+        *,
+        enabled_tools: Sequence[str] | None,
+    ) -> tuple[Tool[Any], ...]:
+        allowed_tool_ids = None if enabled_tools is None else frozenset(self._normalize_enabled_tools(enabled_tools))
+        tools: list[Tool[Any]] = []
+        for tool_id in self._tool_registry.list_tool_ids():
+            if allowed_tool_ids is not None and tool_id not in allowed_tool_ids:
+                continue
+            executable_tool = self._tool_registry.resolve_tool(tool_id)
+            if executable_tool.function_name is None or executable_tool.parameters_json_schema is None:
+                continue
+            if tool_id == WEATHER_CURRENT_TOOL_ID:
+                continue
+            tools.append(
+                self._build_contract_agent_tool(
+                    tool_id=tool_id,
+                    function_name=executable_tool.function_name,
+                    description=executable_tool.descriptor.description,
+                    parameters_json_schema=executable_tool.parameters_json_schema,
+                )
+            )
+        return tuple(tools)
+
+    def _build_contract_agent_tool(
+        self,
+        *,
+        tool_id: str,
+        function_name: str,
+        description: str | None,
+        parameters_json_schema: Mapping[str, Any],
+    ) -> Tool[Any]:
+        async def runtime_contract_tool(
+            ctx: RunContext[_PydanticAIAgentRunDeps],
+            **arguments: Any,
+        ) -> dict[str, Any]:
+            return await self._execute_bound_tool(
+                ctx,
+                tool_id=tool_id,
+                arguments=arguments,
+            )
+
+        tool = Tool.from_schema(
+            runtime_contract_tool,
+            name=function_name,
+            description=description,
+            json_schema=dict(parameters_json_schema),
+            takes_ctx=True,
+        )
+        tool.max_retries = 0
+        return tool
 
     def _build_stream_model(self, model_route: ResolvedRuntimeModelRoute) -> Any:
         try:
@@ -910,4 +1209,9 @@ class PydanticAIAgentExecutor:
 
     def _resolved_explicit_model(self, model_override: Any | None = None) -> Any | None:
         candidate = self._model_override if model_override is None else model_override
+        if candidate is None:
+            return None
+        if isinstance(candidate, str):
+            normalized = candidate.strip()
+            return normalized or None
         return candidate

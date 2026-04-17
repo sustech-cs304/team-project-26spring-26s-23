@@ -356,6 +356,50 @@ def test_extract_run_start_request_reads_tool_permission_policy() -> None:
     }
 
 
+def test_extract_run_start_request_reads_delay_tool_permission_policy_timeout_fields() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["toolPermissionPolicy"] = {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {
+            "tool.file-convert": "delay",
+        },
+        "toolTimeoutSeconds": {
+            "tool.file-convert": 27,
+        },
+        "toolTimeoutActions": {
+            "tool.file-convert": "deny",
+        },
+    }
+
+    request = parser.extract_run_start_request(
+        {
+            "method": "run/start",
+            "body": {
+                "threadId": "thread-123",
+                "message": {"role": "user", "content": "Hello"},
+                "policy": policy,
+            },
+        }
+    )
+
+    assert request.policy.toolPermissionPolicy is not None
+    assert request.policy.toolPermissionPolicy.to_dict() == {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {
+            "tool.file-convert": "delay",
+        },
+        "toolTimeoutSeconds": {
+            "tool.file-convert": 27,
+        },
+        "toolTimeoutActions": {
+            "tool.file-convert": "deny",
+        },
+    }
+
+
 
 def test_extract_run_start_request_requires_model_route_policy_object() -> None:
     parser = _build_parser()

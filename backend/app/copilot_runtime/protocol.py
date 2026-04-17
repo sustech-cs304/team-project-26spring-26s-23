@@ -773,10 +773,42 @@ class RuntimeProtocolParser:
             for tool_id, mode in raw_tool_modes.items()
             if isinstance(tool_id, str) and tool_id.strip() != ""
         }
+        raw_tool_timeout_seconds = self._require_object(
+            policy.get("toolTimeoutSeconds") if policy.get("toolTimeoutSeconds") is not None else {},
+            field_name=f"{field_name}.toolTimeoutSeconds",
+            requested_method=requested_method,
+        )
+        tool_timeout_seconds = {
+            tool_id: timeout_seconds
+            for tool_id, timeout_seconds in raw_tool_timeout_seconds.items()
+            if isinstance(tool_id, str)
+            and tool_id.strip() != ""
+            and (
+                isinstance(timeout_seconds, int)
+                or (
+                    isinstance(timeout_seconds, str)
+                    and timeout_seconds.strip() != ""
+                )
+            )
+        }
+        raw_tool_timeout_actions = self._require_object(
+            policy.get("toolTimeoutActions") if policy.get("toolTimeoutActions") is not None else {},
+            field_name=f"{field_name}.toolTimeoutActions",
+            requested_method=requested_method,
+        )
+        tool_timeout_actions = {
+            tool_id: timeout_action
+            for tool_id, timeout_action in raw_tool_timeout_actions.items()
+            if isinstance(tool_id, str)
+            and tool_id.strip() != ""
+            and timeout_action in {"approve", "deny"}
+        }
         return RuntimeToolPermissionPolicy(
             schemaVersion=schema_version,
             defaultMode=default_mode,
             toolModes=tool_modes,
+            toolTimeoutSeconds=tool_timeout_seconds,
+            toolTimeoutActions=tool_timeout_actions,
         )
 
     def _require_tool_permission_mode(
@@ -791,11 +823,11 @@ class RuntimeProtocolParser:
             field_name=field_name,
             requested_method=requested_method,
         )
-        if normalized not in {"allow", "ask", "deny"}:
+        if normalized not in {"allow", "ask", "delay", "deny"}:
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(
-                    message=f"Runtime request field '{field_name}' must be one of: allow, ask, deny.",
+                    message=f"Runtime request field '{field_name}' must be one of: allow, ask, delay, deny.",
                     scaffold=self._scaffold,
                     requested_method=requested_method,
                     details={"field": field_name},

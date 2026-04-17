@@ -11,6 +11,8 @@ from pydantic_ai.messages import (
     ModelRequest,
     PartDeltaEvent,
     PartStartEvent,
+    ThinkingPart,
+    ThinkingPartDelta,
     TextPart,
     ToolCallPart,
     ToolCallPartDelta,
@@ -108,6 +110,59 @@ def test_open_event_stream_uses_route_scoped_stream_model_without_global_executo
     assert resolved_model_ids == ["provider-route-model"]
     assert result["error"] is None
     assert result["output"] == "route-scoped model"
+
+
+def test_open_event_stream_projects_reasoning_parts_into_reasoning_segments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = PydanticAIAgentExecutor(model="test-model")
+
+    async def fake_run(user_prompt: str, **kwargs) -> SimpleNamespace:
+        _ = user_prompt
+        event_stream_handler = kwargs["event_stream_handler"]
+
+        async def runtime_events() -> AsyncIterator[object]:
+            yield PartStartEvent(index=0, part=ThinkingPart(content="先分析。"))
+            yield PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta="再补充。"))
+            yield PartStartEvent(index=1, part=TextPart(content="最终答复。"))
+
+        await event_stream_handler(SimpleNamespace(), runtime_events())
+        return SimpleNamespace(output="最终答复。")
+
+    monkeypatch.setattr(executor._agent, "run", fake_run)
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-reasoning-visible",
+                agent_name="default",
+                user_prompt="请先思考再作答。",
+                message_history=[],
+                model_route=_build_resolved_route(),
+                request_options={},
+            )
+        )
+    )
+
+    assert result["error"] is None
+    assert result["output"] == "最终答复。"
+    assert [event.type for event in result["events"]] == [
+        "reasoning_segment_started",
+        "reasoning_segment_delta",
+        "reasoning_segment_delta",
+        "reasoning_segment_completed",
+        "assistant_segment_started",
+        "assistant_segment_delta",
+        "assistant_segment_completed",
+    ]
+    assert result["events"][1].payload == {
+        "segmentId": "run-reasoning-visible:reasoning-segment-1",
+        "delta": "先分析。",
+    }
+    assert result["events"][2].payload == {
+        "segmentId": "run-reasoning-visible:reasoning-segment-1",
+        "delta": "再补充。",
+    }
 
 
 
