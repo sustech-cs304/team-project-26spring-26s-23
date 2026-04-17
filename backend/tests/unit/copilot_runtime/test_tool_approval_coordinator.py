@@ -255,6 +255,38 @@ def test_delay_timeout_auto_approves_when_configured(fake_loop: _FakeLoop) -> No
     assert resolution.timeout_action == "approve"
 
 
+
+def test_manual_resolution_wins_over_later_timeout(fake_loop: _FakeLoop) -> None:
+    clock = _Clock()
+    loop = fake_loop
+    coordinator = RuntimeToolApprovalCoordinator(
+        _time_provider=clock.now,
+        _loop_provider=lambda: loop,
+    )
+    _, future = coordinator.create_request(
+        run_id="run-6",
+        tool_call_id="call-6",
+        tool_id="tool.file-convert",
+        mode="delay",
+        timeout_seconds=9,
+        timeout_action="deny",
+    )
+
+    resolution = coordinator.resolve(
+        run_id="run-6",
+        tool_call_id="call-6",
+        decision="approved",
+    )
+    handle = loop.handles[0]
+    handle.callback(*handle.args)
+
+    assert resolution.status == "approved"
+    assert resolution.source == "manual"
+    assert future.result() == resolution
+    assert coordinator.snapshot() == ()
+    assert handle.cancelled is True
+
+
 @pytest.mark.parametrize(
     ("raw_value", "expected"),
     [

@@ -719,6 +719,174 @@ def test_execute_bound_tool_ask_mode_returns_failure_when_rejected() -> None:
 
 
 
+def test_execute_bound_tool_delay_mode_auto_approves_after_timeout() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-approve",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-delay-approve",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(
+                default_mode="delay",
+                tool_timeout_seconds={WEATHER_CURRENT_TOOL_ID: 1},
+                tool_timeout_actions={WEATHER_CURRENT_TOOL_ID: "approve"},
+            ),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        asyncio.wait_for(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            ),
+            timeout=1.5,
+        )
+    )
+
+    assert result["location"] == "Shenzhen"
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
+    waiting_event = emitted_tool_events[1]
+    assert waiting_event.approval == {
+        "mode": "delay",
+        "timeoutAt": waiting_event.approval["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "approve",
+    }
+    assert isinstance(waiting_event.approval["timeoutAt"], str)
+    assert waiting_event.approval["timeoutAt"]
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_delay_mode_auto_rejects_after_timeout_without_crashing_run() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-deny",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-delay-deny",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(
+                default_mode="delay",
+                tool_timeout_seconds={WEATHER_CURRENT_TOOL_ID: 1},
+                tool_timeout_actions={WEATHER_CURRENT_TOOL_ID: "deny"},
+            ),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        asyncio.wait_for(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            ),
+            timeout=1.5,
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_approval_rejected",
+            "message": "Tool approval timed out and was automatically rejected.",
+            "retryable": False,
+            "details": {
+                "decision": "rejected",
+                "source": "timeout",
+                "mode": "delay",
+            },
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": WEATHER_CURRENT_TOOL_ID,
+            "toolCallId": f"{WEATHER_CURRENT_TOOL_ID}:call-delay-deny",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "failed"]
+    assert emitted_tool_events[-1].error_summary == "Tool approval timed out and was automatically rejected."
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_delay_mode_manual_resolution_wins_before_timeout() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-manual",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-delay-manual",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(
+                default_mode="delay",
+                tool_timeout_seconds={WEATHER_CURRENT_TOOL_ID: 30},
+                tool_timeout_actions={WEATHER_CURRENT_TOOL_ID: "deny"},
+            ),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_resolve() -> dict[str, Any]:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        pending_request = approval_coordinator.get_request(
+            run_id="run-weather-delay-manual",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-manual",
+        )
+        assert pending_request is not None
+        approval_coordinator.resolve(
+            run_id="run-weather-delay-manual",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-manual",
+            decision="approved",
+        )
+        result = await task
+        return {
+            "result": result,
+            "pending_request": pending_request,
+        }
+
+    outcome = asyncio.run(run_and_resolve())
+
+    assert outcome["result"]["location"] == "Shenzhen"
+    assert outcome["pending_request"].timeout_seconds == 30
+    assert outcome["pending_request"].timeout_action == "deny"
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
+    assert approval_coordinator.snapshot() == ()
+
+
+
 def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
