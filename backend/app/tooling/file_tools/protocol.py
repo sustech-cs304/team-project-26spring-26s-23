@@ -9,13 +9,13 @@ from typing import Any, Literal, cast
 
 from .errors import FileToolError
 
-ToolName = Literal["Read", "Write", "Edit", "Glob", "Grep"]
+ToolName = Literal["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"]
 PathKind = Literal["relative", "absolute"]
 RootPolicy = Literal["workspace_only"]
 SymlinkPolicy = Literal["deny_escape"]
 ReadKind = Literal["text", "image", "pdf", "notebook", "binary"]
 
-_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Edit", "Glob", "Grep")
+_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit")
 _PATH_KINDS: tuple[PathKind, ...] = ("relative", "absolute")
 _ROOT_POLICIES: tuple[RootPolicy, ...] = ("workspace_only",)
 _SYMLINK_POLICIES: tuple[SymlinkPolicy, ...] = ("deny_escape",)
@@ -389,6 +389,162 @@ class EditResult:
         }
 
 
+NotebookEditOperationKind = Literal["replace", "insert", "delete"]
+_NOTEBOOK_EDIT_OPERATION_KINDS: tuple[NotebookEditOperationKind, ...] = ("replace", "insert", "delete")
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookOutputSummary:
+    output_type: str
+    text: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "output_type", _require_non_empty_text(self.output_type, field_name="output_type"))
+        object.__setattr__(self, "text", _normalize_optional_text(self.text))
+        object.__setattr__(self, "data", _normalize_mapping(self.data))
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = {"outputType": self.output_type, "data": _normalize_mapping(self.data)}
+        if self.text is not None:
+            payload["text"] = self.text
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookCell:
+    cell_id: str
+    cell_type: str
+    source: str
+    outputs: tuple[NotebookOutputSummary, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cell_id", _require_non_empty_text(self.cell_id, field_name="cell_id"))
+        object.__setattr__(self, "cell_type", _require_non_empty_text(self.cell_type, field_name="cell_type"))
+        object.__setattr__(self, "source", self.source)
+        object.__setattr__(self, "outputs", tuple(self.outputs))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cellId": self.cell_id,
+            "cellType": self.cell_type,
+            "source": self.source,
+            "outputs": [output.to_dict() for output in self.outputs],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookReadResult:
+    path: PathMetadata
+    notebook_format: int | None = None
+    notebook_format_minor: int | None = None
+    cell_count: int = 0
+    cells: tuple[NotebookCell, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.notebook_format is not None and self.notebook_format < 0:
+            raise ValueError("notebook_format must be greater than or equal to 0.")
+        if self.notebook_format_minor is not None and self.notebook_format_minor < 0:
+            raise ValueError("notebook_format_minor must be greater than or equal to 0.")
+        if self.cell_count < 0:
+            raise ValueError("cell_count must be greater than or equal to 0.")
+        object.__setattr__(self, "cells", tuple(self.cells))
+        object.__setattr__(self, "metadata", _normalize_mapping(self.metadata))
+
+    def to_content_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "notebookFormat": self.notebook_format,
+            "notebookFormatMinor": self.notebook_format_minor,
+            "cellCount": self.cell_count,
+            "cells": [cell.to_dict() for cell in self.cells],
+        }
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookEditOperation:
+    kind: NotebookEditOperationKind
+    cell_id: str | None = None
+    source: str | None = None
+    after_cell_id: str | None = None
+    cell_type: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "kind",
+            cast(
+                NotebookEditOperationKind,
+                _normalize_literal(self.kind, field_name="kind", allowed=_NOTEBOOK_EDIT_OPERATION_KINDS),
+            ),
+        )
+        object.__setattr__(self, "cell_id", _normalize_optional_text(self.cell_id))
+        object.__setattr__(self, "source", self.source)
+        object.__setattr__(self, "after_cell_id", _normalize_optional_text(self.after_cell_id))
+        object.__setattr__(self, "cell_type", _normalize_optional_text(self.cell_type))
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"kind": self.kind}
+        if self.cell_id is not None:
+            payload["cellId"] = self.cell_id
+        if self.source is not None:
+            payload["source"] = self.source
+        if self.after_cell_id is not None:
+            payload["afterCellId"] = self.after_cell_id
+        if self.cell_type is not None:
+            payload["cellType"] = self.cell_type
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookEditRequest:
+    path: str
+    operations: tuple[NotebookEditOperation, ...]
+    expected_hash: str | None = None
+    audit: AuditMetadata | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", _require_non_empty_text(self.path, field_name="path"))
+        object.__setattr__(self, "operations", tuple(self.operations))
+        object.__setattr__(self, "expected_hash", _normalize_optional_text(self.expected_hash))
+        if not self.operations:
+            raise ValueError("operations must contain at least one notebook operation.")
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "path": self.path,
+            "operations": [operation.to_dict() for operation in self.operations],
+        }
+        if self.expected_hash is not None:
+            payload["expectedHash"] = self.expected_hash
+        if self.audit is not None:
+            payload["audit"] = self.audit.to_dict()
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookEditResult:
+    path: PathMetadata
+    applied_operations: int
+    cell_count: int
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "applied_operations", _normalize_positive_int(self.applied_operations, field_name="applied_operations"))
+        if self.cell_count < 0:
+            raise ValueError("cell_count must be greater than or equal to 0.")
+        object.__setattr__(self, "metadata", _normalize_mapping(self.metadata))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self.path.to_dict(),
+            "appliedOperations": self.applied_operations,
+            "cellCount": self.cell_count,
+            "metadata": _normalize_mapping(self.metadata),
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class GlobRequest:
     """Request contract for staged Glob implementation."""
@@ -596,6 +752,13 @@ __all__ = [
     "GlobRequest",
     "GrepMatch",
     "GrepRequest",
+    "NotebookCell",
+    "NotebookEditOperation",
+    "NotebookEditOperationKind",
+    "NotebookEditRequest",
+    "NotebookEditResult",
+    "NotebookOutputSummary",
+    "NotebookReadResult",
     "PathKind",
     "PathMetadata",
     "ReadRequest",

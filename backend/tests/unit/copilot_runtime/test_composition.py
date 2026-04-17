@@ -133,12 +133,13 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     assert global_tool_catalog["defaultToolset"] == "default"
     assert isinstance(global_tool_catalog["tools"], list)
     assert len(global_tool_catalog["tools"]) >= 4
-    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:5]] == [
+    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:6]] == [
         "tool.fs.read",
         "tool.fs.write",
         "tool.fs.edit",
         "tool.fs.glob",
         "tool.fs.grep",
+        "tool.fs.notebook_edit",
     ]
     assert global_tool_catalog["tools"][0]["kind"] == "builtin"
     assert global_tool_catalog["tools"][0]["availability"] == "available"

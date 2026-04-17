@@ -82,6 +82,7 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "tool.fs.edit",
         FILE_TOOL_GLOB_ID,
         FILE_TOOL_GREP_ID,
+        "tool.fs.notebook_edit",
         FILE_CONVERT_TOOL_ID,
         WEATHER_CURRENT_TOOL_ID,
         *CONTRACT_TOOL_IDS,

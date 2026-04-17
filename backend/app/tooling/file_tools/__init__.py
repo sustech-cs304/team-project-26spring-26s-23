@@ -4,6 +4,8 @@ from .errors import FILE_TOOL_ERROR_CODES, FileToolError, FileToolErrorCode
 from .editor import FileToolTextEditor, TextEditPayload
 from .glob_search import FileToolGlobSearcher, GlobSearchPayload
 from .grep_search import FileToolGrepSearcher, GrepSearchPayload
+from .notebook_editor import FileToolNotebookEditor, NotebookEditPayload
+from .notebook_reader import FileToolNotebookReader, NotebookReadPayload
 from .path_policy import (
     FileToolPathPolicy,
     PathResolution,
@@ -21,6 +23,12 @@ from .protocol import (
     GlobRequest,
     GrepMatch,
     GrepRequest,
+    NotebookCell,
+    NotebookEditOperation,
+    NotebookEditRequest,
+    NotebookEditResult,
+    NotebookOutputSummary,
+    NotebookReadResult,
     PathKind,
     PathMetadata,
     ReadRequest,
@@ -37,6 +45,8 @@ from .runtime_bindings import (
     FILE_TOOL_GLOB_ID,
     FILE_TOOL_GREP_FUNCTION_NAME,
     FILE_TOOL_GREP_ID,
+    FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME,
+    FILE_TOOL_NOTEBOOK_EDIT_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
     FILE_TOOL_WRITE_FUNCTION_NAME,
@@ -44,15 +54,24 @@ from .runtime_bindings import (
     RuntimeFileToolEditContract,
     RuntimeFileToolGlobContract,
     RuntimeFileToolGrepContract,
+    RuntimeFileToolNotebookEditContract,
     RuntimeFileToolReadContract,
     RuntimeFileToolWriteContract,
     build_file_tool_edit_runtime_binding,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
+    build_file_tool_notebook_edit_runtime_binding,
     build_file_tool_read_runtime_binding,
     build_file_tool_write_runtime_binding,
 )
-from .service import FileToolEditService, FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
+from .service import (
+    FileToolEditService,
+    FileToolGlobService,
+    FileToolGrepService,
+    FileToolNotebookEditService,
+    FileToolReadService,
+    FileToolWriteService,
+)
 from .text_reader import FileToolTextReader, TextReadPayload
 from .writer import FileToolTextWriter, TextWritePayload
 
@@ -67,6 +86,8 @@ __all__ = [
     "FILE_TOOL_GLOB_ID",
     "FILE_TOOL_GREP_FUNCTION_NAME",
     "FILE_TOOL_GREP_ID",
+    "FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME",
+    "FILE_TOOL_NOTEBOOK_EDIT_ID",
     "FILE_TOOL_READ_FUNCTION_NAME",
     "FILE_TOOL_READ_ID",
     "FILE_TOOL_WRITE_FUNCTION_NAME",
@@ -79,6 +100,9 @@ __all__ = [
     "FileToolGlobService",
     "FileToolGrepSearcher",
     "FileToolGrepService",
+    "FileToolNotebookEditor",
+    "FileToolNotebookEditService",
+    "FileToolNotebookReader",
     "FileToolPathPolicy",
     "FileToolReadService",
     "FileToolTextEditor",
@@ -91,6 +115,14 @@ __all__ = [
     "GrepMatch",
     "GrepRequest",
     "GrepSearchPayload",
+    "NotebookCell",
+    "NotebookEditOperation",
+    "NotebookEditPayload",
+    "NotebookEditRequest",
+    "NotebookEditResult",
+    "NotebookOutputSummary",
+    "NotebookReadPayload",
+    "NotebookReadResult",
     "PathKind",
     "PathMetadata",
     "PathResolution",
@@ -100,6 +132,7 @@ __all__ = [
     "RuntimeFileToolEditContract",
     "RuntimeFileToolGlobContract",
     "RuntimeFileToolGrepContract",
+    "RuntimeFileToolNotebookEditContract",
     "RuntimeFileToolReadContract",
     "RuntimeFileToolWriteContract",
     "SymlinkPolicy",
@@ -113,6 +146,7 @@ __all__ = [
     "build_file_tool_edit_runtime_binding",
     "build_file_tool_glob_runtime_binding",
     "build_file_tool_grep_runtime_binding",
+    "build_file_tool_notebook_edit_runtime_binding",
     "build_file_tool_read_runtime_binding",
     "build_file_tool_write_runtime_binding",
     "ensure_within_workspace",

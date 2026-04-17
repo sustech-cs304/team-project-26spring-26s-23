@@ -1,4 +1,4 @@
-"""Copilot runtime bindings for staged file tool Read, Write, Edit, Glob, and Grep support."""
+"""Copilot runtime bindings for staged file tools, including notebook-aware read and edit."""
 
 from __future__ import annotations
 
@@ -18,9 +18,27 @@ from app.tooling.runtime_adapter.copilot_runtime import RuntimeExecutableToolBin
 from .editor import FileToolTextEditor
 from .glob_search import FileToolGlobSearcher
 from .grep_search import FileToolGrepSearcher
+from .notebook_editor import FileToolNotebookEditor
+from .notebook_reader import FileToolNotebookReader
 from .path_policy import FileToolPathPolicy
-from .protocol import AuditMetadata, EditRequest, GlobRequest, GrepRequest, ReadRequest, WriteRequest
-from .service import FileToolEditService, FileToolGlobService, FileToolGrepService, FileToolReadService, FileToolWriteService
+from .protocol import (
+    AuditMetadata,
+    EditRequest,
+    GlobRequest,
+    GrepRequest,
+    NotebookEditOperation,
+    NotebookEditRequest,
+    ReadRequest,
+    WriteRequest,
+)
+from .service import (
+    FileToolEditService,
+    FileToolGlobService,
+    FileToolGrepService,
+    FileToolNotebookEditService,
+    FileToolReadService,
+    FileToolWriteService,
+)
 from .text_reader import FileToolTextReader
 from .writer import FileToolTextWriter
 
@@ -34,6 +52,8 @@ FILE_TOOL_GLOB_ID = "tool.fs.glob"
 FILE_TOOL_GLOB_FUNCTION_NAME = "tool_fs_glob"
 FILE_TOOL_GREP_ID = "tool.fs.grep"
 FILE_TOOL_GREP_FUNCTION_NAME = "tool_fs_grep"
+FILE_TOOL_NOTEBOOK_EDIT_ID = "tool.fs.notebook_edit"
+FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME = "tool_fs_notebook_edit"
 _FILE_TOOL_READ_INPUT_SCHEMA = ToolSchema(
     schema={
         "type": "object",
@@ -161,6 +181,44 @@ _FILE_TOOL_GREP_INPUT_SCHEMA = ToolSchema(
             },
         },
         "required": ["pattern"],
+    }
+)
+_FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "expectedHash": {"type": "string", "minLength": 1},
+            "operations": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {"type": "string", "enum": ["replace", "insert", "delete"]},
+                        "cellId": {"type": "string", "minLength": 1},
+                        "source": {"type": "string"},
+                        "afterCellId": {"type": "string", "minLength": 1},
+                        "cellType": {"type": "string", "enum": ["code", "markdown", "raw"]},
+                    },
+                    "required": ["kind"],
+                },
+            },
+            "audit": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "actor": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "sessionId": {"type": "string"},
+                    "traceId": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+        },
+        "required": ["path", "operations"],
     }
 )
 
@@ -385,10 +443,55 @@ class RuntimeFileToolGrepContract(ToolContract):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeFileToolNotebookEditContract(ToolContract):
+    """Runtime-agnostic contract wrapper for staged notebook cell editing."""
+
+    service: FileToolNotebookEditService
+    metadata: ToolMetadata = ToolMetadata(
+        tool_id=FILE_TOOL_NOTEBOOK_EDIT_ID,
+        display_name="Notebook Edit",
+        description="Edit workspace notebooks with transactional cell operations.",
+        kind="operation",
+        input_schema=_FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA,
+        idempotent=False,
+        annotations={"stage": "phase3-notebook-edit"},
+    )
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ContractToolResultEnvelope:
+        _ = (context, host)
+        try:
+            request = _build_notebook_edit_request(arguments)
+        except ValueError as exc:
+            return ContractToolResultEnvelope.failure(
+                error=NormalizedToolError(code="invalid_input", message=str(exc)),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+
+        result = self.service.edit_notebook(request)
+        if result.ok:
+            return ContractToolResultEnvelope.success(
+                output=result.to_dict(),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+        return ContractToolResultEnvelope.failure(
+            error=_map_file_tool_error(result.error),
+            output=result.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
 def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
     service = FileToolReadService(
         path_policy=FileToolPathPolicy(workspace_root=workspace_root),
         text_reader=FileToolTextReader(),
+        notebook_reader=FileToolNotebookReader(),
     )
     contract = RuntimeFileToolReadContract(service=service)
     return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_READ_FUNCTION_NAME)
@@ -428,6 +531,19 @@ def build_file_tool_grep_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
     contract = RuntimeFileToolGrepContract(service=service)
     return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_GREP_FUNCTION_NAME)
+
+
+def build_file_tool_notebook_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+    service = FileToolNotebookEditService(
+        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        notebook_editor=FileToolNotebookEditor(),
+    )
+    contract = RuntimeFileToolNotebookEditContract(service=service)
+    return build_contract_runtime_binding(
+        contract,
+        kind="builtin",
+        function_name=FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME,
+    )
 
 
 def _build_read_request(arguments: Mapping[str, Any] | None) -> ReadRequest:
@@ -504,6 +620,35 @@ def _build_grep_request(arguments: Mapping[str, Any] | None) -> GrepRequest:
     )
 
 
+def _build_notebook_edit_request(arguments: Mapping[str, Any] | None) -> NotebookEditRequest:
+    payload = dict(arguments or {})
+    audit_payload = payload.get("audit")
+    audit = _build_audit_metadata(audit_payload)
+    operations_payload = payload.get("operations")
+    if not isinstance(operations_payload, list):
+        raise ValueError("operations must be an array.")
+    operations = tuple(_build_notebook_edit_operation(item) for item in operations_payload)
+    return NotebookEditRequest(
+        path=_require_string(payload.get("path"), field_name="path"),
+        operations=operations,
+        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        audit=audit,
+    )
+
+
+def _build_notebook_edit_operation(value: Any) -> NotebookEditOperation:
+    if not isinstance(value, Mapping):
+        raise ValueError("operations entries must be objects.")
+    payload = dict(value)
+    return NotebookEditOperation(
+        kind=_require_string(payload.get("kind"), field_name="operations.kind"),
+        cell_id=_optional_string(payload.get("cellId"), field_name="operations.cellId"),
+        source=_optional_plain_string(payload.get("source"), field_name="operations.source"),
+        after_cell_id=_optional_string(payload.get("afterCellId"), field_name="operations.afterCellId"),
+        cell_type=_optional_string(payload.get("cellType"), field_name="operations.cellType"),
+    )
+
+
 def _build_audit_metadata(value: Any) -> AuditMetadata | None:
     if value is None:
         return None
@@ -544,6 +689,14 @@ def _optional_string(value: Any, *, field_name: str) -> str | None:
         raise ValueError(f"{field_name} must be a string when provided.")
     normalized = value.strip()
     return normalized or None
+
+
+def _optional_plain_string(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string when provided.")
+    return value
 
 
 def _coerce_int(value: Any, *, field_name: str) -> int:
@@ -608,6 +761,8 @@ __all__ = [
     "FILE_TOOL_GLOB_ID",
     "FILE_TOOL_GREP_FUNCTION_NAME",
     "FILE_TOOL_GREP_ID",
+    "FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME",
+    "FILE_TOOL_NOTEBOOK_EDIT_ID",
     "FILE_TOOL_READ_FUNCTION_NAME",
     "FILE_TOOL_READ_ID",
     "FILE_TOOL_WRITE_FUNCTION_NAME",
@@ -615,11 +770,13 @@ __all__ = [
     "RuntimeFileToolEditContract",
     "RuntimeFileToolGlobContract",
     "RuntimeFileToolGrepContract",
+    "RuntimeFileToolNotebookEditContract",
     "RuntimeFileToolReadContract",
     "RuntimeFileToolWriteContract",
     "build_file_tool_edit_runtime_binding",
     "build_file_tool_glob_runtime_binding",
     "build_file_tool_grep_runtime_binding",
+    "build_file_tool_notebook_edit_runtime_binding",
     "build_file_tool_read_runtime_binding",
     "build_file_tool_write_runtime_binding",
 ]

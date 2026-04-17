@@ -1,4 +1,4 @@
-"""Service orchestration for staged file tool Read, Write, Edit, Glob, and Grep support."""
+"""Service orchestration for staged file tools, including notebook-aware read and edit."""
 
 from __future__ import annotations
 
@@ -9,12 +9,15 @@ from .errors import FileToolError
 from .editor import FileToolTextEditor
 from .glob_search import FileToolGlobSearcher
 from .grep_search import FileToolGrepSearcher
+from .notebook_editor import FileToolNotebookEditor
+from .notebook_reader import FileToolNotebookReader
 from .path_policy import FileToolPathPolicy
 from .protocol import (
     EditRequest,
     FileToolCallMetadata,
     GlobRequest,
     GrepRequest,
+    NotebookEditRequest,
     ReadRequest,
     ToolResultEnvelope,
     WriteRequest,
@@ -29,12 +32,17 @@ class FileToolReadService:
 
     path_policy: FileToolPathPolicy
     text_reader: FileToolTextReader
+    notebook_reader: FileToolNotebookReader | None = None
 
     def read(self, request: ReadRequest) -> ToolResultEnvelope:
         started = perf_counter()
         try:
             resolution = self.path_policy.resolve_path(request.path)
-            payload = self.text_reader.read_text(request=request, resolution=resolution)
+            if resolution.resolved_path.suffix.lower() == ".ipynb":
+                reader = self.notebook_reader or FileToolNotebookReader()
+                payload = reader.read_notebook(request=request, resolution=resolution)
+            else:
+                payload = self.text_reader.read_text(request=request, resolution=resolution)
             return ToolResultEnvelope(
                 ok=True,
                 tool="Read",
@@ -123,6 +131,39 @@ class FileToolEditService:
 
 
 @dataclass(frozen=True, slots=True)
+class FileToolNotebookEditService:
+    """Compose path policy and notebook editor into the staged NotebookEdit service."""
+
+    path_policy: FileToolPathPolicy
+    notebook_editor: FileToolNotebookEditor
+
+    def edit_notebook(self, request: NotebookEditRequest) -> ToolResultEnvelope:
+        started = perf_counter()
+        try:
+            resolution = self.path_policy.resolve_path(request.path)
+            payload = self.notebook_editor.edit_notebook(request=request, resolution=resolution)
+            return ToolResultEnvelope(
+                ok=True,
+                tool="NotebookEdit",
+                data=payload.result.to_dict(),
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+        except FileToolError as exc:
+            return ToolResultEnvelope(
+                ok=False,
+                tool="NotebookEdit",
+                error=exc,
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class FileToolGlobService:
     """Compose path policy and glob search into the staged Glob service."""
 
@@ -192,6 +233,7 @@ __all__ = [
     "FileToolEditService",
     "FileToolGlobService",
     "FileToolGrepService",
+    "FileToolNotebookEditService",
     "FileToolReadService",
     "FileToolWriteService",
 ]

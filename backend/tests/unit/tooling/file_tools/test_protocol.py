@@ -10,6 +10,12 @@ from app.tooling.file_tools import (
     GlobRequest,
     GrepMatch,
     GrepRequest,
+    NotebookCell,
+    NotebookEditOperation,
+    NotebookEditRequest,
+    NotebookEditResult,
+    NotebookOutputSummary,
+    NotebookReadResult,
     PathMetadata,
     ReadRequest,
     ReadResult,
@@ -61,6 +67,89 @@ def test_read_request_and_result_serialize_to_stable_protocol_shape() -> None:
         "nextOffset": 43,
         "content": {"text": "line 3\nline 4"},
         "metadata": {"lineStart": 3, "lineCount": 2},
+    }
+
+
+def test_notebook_protocol_shapes_serialize_to_stable_payloads() -> None:
+    path = PathMetadata(
+        path="analysis/demo.ipynb",
+        resolved_path="C:/workspace/analysis/demo.ipynb",
+        path_kind="relative",
+    )
+    read_result = NotebookReadResult(
+        path=path,
+        notebook_format=4,
+        notebook_format_minor=5,
+        cell_count=1,
+        cells=(
+            NotebookCell(
+                cell_id="cell-a",
+                cell_type="code",
+                source="print('hi')\n",
+                outputs=(
+                    NotebookOutputSummary(
+                        output_type="stream",
+                        text="hi",
+                        data={"name": "stdout"},
+                    ),
+                ),
+            ),
+        ),
+        metadata={"mimeType": "application/x-ipynb+json"},
+    )
+    edit_request = NotebookEditRequest(
+        path="analysis/demo.ipynb",
+        expected_hash="sha256:abcd",
+        operations=(
+            NotebookEditOperation(kind="replace", cell_id="cell-a", source="print('bye')\n"),
+        ),
+    )
+    edit_result = NotebookEditResult(
+        path=path,
+        applied_operations=1,
+        cell_count=1,
+        metadata={"sha256": "sha256:efgh"},
+    )
+
+    assert read_result.to_content_dict() == {
+        "notebookFormat": 4,
+        "notebookFormatMinor": 5,
+        "cellCount": 1,
+        "cells": [
+            {
+                "cellId": "cell-a",
+                "cellType": "code",
+                "source": "print('hi')\n",
+                "outputs": [
+                    {
+                        "outputType": "stream",
+                        "text": "hi",
+                        "data": {"name": "stdout"},
+                    }
+                ],
+            }
+        ],
+    }
+    assert edit_request.to_dict() == {
+        "path": "analysis/demo.ipynb",
+        "expectedHash": "sha256:abcd",
+        "operations": [
+            {
+                "kind": "replace",
+                "cellId": "cell-a",
+                "source": "print('bye')\n",
+            }
+        ],
+    }
+    assert edit_result.to_dict() == {
+        "path": "analysis/demo.ipynb",
+        "resolvedPath": "C:/workspace/analysis/demo.ipynb",
+        "pathKind": "relative",
+        "rootPolicy": "workspace_only",
+        "symlinkPolicy": "deny_escape",
+        "appliedOperations": 1,
+        "cellCount": 1,
+        "metadata": {"sha256": "sha256:efgh"},
     }
 
 

@@ -15,11 +15,13 @@ from app.tooling.file_tools import (
     FILE_TOOL_EDIT_ID,
     FILE_TOOL_GLOB_ID,
     FILE_TOOL_GREP_ID,
+    FILE_TOOL_NOTEBOOK_EDIT_ID,
     FILE_TOOL_READ_ID,
     FILE_TOOL_WRITE_ID,
     build_file_tool_edit_runtime_binding,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
+    build_file_tool_notebook_edit_runtime_binding,
     build_file_tool_read_runtime_binding,
     build_file_tool_write_runtime_binding,
 )
@@ -57,6 +59,9 @@ FILE_TOOL_GLOB_PROMPT = "Use this tool to discover workspace files or folders by
 FILE_TOOL_GREP_DISPLAY_NAME = "File Grep"
 FILE_TOOL_GREP_DESCRIPTION = "Search workspace text files by literal or regex pattern with bounded line context."
 FILE_TOOL_GREP_PROMPT = "Use this tool to search workspace text files and inspect nearby lines before reading or editing."
+FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME = "Notebook Edit"
+FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION = "Edit workspace notebooks with transactional cell operations."
+FILE_TOOL_NOTEBOOK_EDIT_PROMPT = "Use this tool to replace, insert, or delete notebook cells transactionally after inspecting notebook structure."
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
     "Return a placeholder current-weather result for a requested location."
@@ -95,6 +100,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "按字面量或正则搜索工作区文本文件，并返回有限行上下文。",
             "prompt": "使用此工具在读取前先搜索工作区文本内容，并查看匹配附近的上下文。",
         },
+        FILE_TOOL_NOTEBOOK_EDIT_ID: {
+            "displayName": "Notebook 编辑",
+            "description": "按 cell 级事务语义编辑工作区 notebook。",
+            "prompt": "使用此工具对 notebook 执行 replace、insert、delete 等 cell 级事务编辑。",
+        },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": "当前天气",
             "description": "返回指定地点的占位当前天气结果。",
@@ -131,6 +141,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": FILE_TOOL_GREP_DISPLAY_NAME,
             "description": FILE_TOOL_GREP_DESCRIPTION,
             "prompt": FILE_TOOL_GREP_PROMPT,
+        },
+        FILE_TOOL_NOTEBOOK_EDIT_ID: {
+            "displayName": FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME,
+            "description": FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
+            "prompt": FILE_TOOL_NOTEBOOK_EDIT_PROMPT,
         },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
@@ -460,6 +475,7 @@ _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_EDIT_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_GLOB_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_GREP_ID: _BUILTIN_TOOL_GROUP,
+    FILE_TOOL_NOTEBOOK_EDIT_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     "blackboard.sql.query": _BLACKBOARD_TOOL_GROUP,
     "blackboard.course_catalog.search": _BLACKBOARD_TOOL_GROUP,
@@ -508,6 +524,12 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": FILE_TOOL_GREP_DISPLAY_NAME,
         "description_zh": "按字面量或正则搜索工作区文本文件，并返回有限行上下文。",
         "description_en": FILE_TOOL_GREP_DESCRIPTION,
+    },
+    FILE_TOOL_NOTEBOOK_EDIT_ID: {
+        "display_name_zh": "Notebook 编辑",
+        "display_name_en": FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME,
+        "description_zh": "按 cell 级事务语义编辑工作区 notebook。",
+        "description_en": FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
     },
     WEATHER_CURRENT_TOOL_ID: {
         "display_name_zh": "当前天气",
@@ -622,6 +644,9 @@ def build_default_tool_registry(
     file_grep_binding = build_file_tool_grep_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
+    file_notebook_edit_binding = build_file_tool_notebook_edit_runtime_binding(
+        workspace_root=resolved_workspace_root,
+    )
     registry = ToolRegistry()
     registry.register(
         ToolsetDescriptor(
@@ -699,6 +724,20 @@ def build_default_tool_registry(
                     execute=file_grep_binding.execute,
                     function_name=file_grep_binding.function_name,
                     parameters_json_schema=file_grep_binding.parameters_json_schema,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=FILE_TOOL_NOTEBOOK_EDIT_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME,
+                        description=FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=FILE_TOOL_NOTEBOOK_EDIT_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_TOOL_NOTEBOOK_EDIT_ID],
+                    ),
+                    execute=file_notebook_edit_binding.execute,
+                    function_name=file_notebook_edit_binding.function_name,
+                    parameters_json_schema=file_notebook_edit_binding.parameters_json_schema,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(
@@ -823,6 +862,8 @@ __all__ = [
     "FILE_TOOL_EDIT_DISPLAY_NAME",
     "FILE_TOOL_GLOB_DESCRIPTION",
     "FILE_TOOL_GLOB_DISPLAY_NAME",
+    "FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION",
+    "FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME",
     "FILE_TOOL_READ_DESCRIPTION",
     "FILE_TOOL_READ_DISPLAY_NAME",
     "FILE_TOOL_WRITE_DESCRIPTION",
