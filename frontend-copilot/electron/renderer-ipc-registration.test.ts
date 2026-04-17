@@ -14,6 +14,7 @@ import {
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
+import { DESKTOP_NOTIFICATION_SHOW_CHANNEL } from './desktop-notification'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
 import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
@@ -46,6 +47,7 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
+      DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
     ])
     expect([...registeredHandlers.keys()]).toEqual([
@@ -69,6 +71,7 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
+      DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
     ])
     expect(registeredHandlers.has('copilot-settings:load')).toBe(false)
@@ -86,6 +89,7 @@ describe('registerRendererIpcHandlers', () => {
     const restoreDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL)
     const loadRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)
     const retryRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)
+    const notifyDesktopNotificationHandler = getRegisteredHandler(registeredHandlers, DESKTOP_NOTIFICATION_SHOW_CHANNEL)
     const notifyBootstrapWindowReadyHandler = getRegisteredHandler(registeredHandlers, BOOTSTRAP_WINDOW_READY_CHANNEL)
 
     await expect(loadSnapshotHandler()).resolves.toEqual(await handlers.loadConfigCenterPublicSnapshot())
@@ -126,6 +130,16 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(loadRuntimeHandler()).resolves.toEqual(await handlers.loadCopilotRuntime())
     await expect(retryRuntimeHandler()).resolves.toEqual(await handlers.retryCopilotRuntime())
+    await expect(notifyDesktopNotificationHandler(undefined, {
+      title: '助手消息已完成',
+      body: '这是助手回显',
+      tag: 'run-1:completed',
+    })).resolves.toBeUndefined()
+    expect(handlers.notifyDesktopNotification).toHaveBeenCalledWith({
+      title: '助手消息已完成',
+      body: '这是助手回显',
+      tag: 'run-1:completed',
+    })
     await expect(notifyBootstrapWindowReadyHandler()).resolves.toBeUndefined()
     expect(handlers.notifyBootstrapWindowReady).toHaveBeenCalledOnce()
   })

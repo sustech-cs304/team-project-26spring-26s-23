@@ -25,6 +25,8 @@ from app.desktop_runtime.config import (
     ENV_DATABASE_DIR,
     ENV_ENVIRONMENT,
     ENV_HOST,
+    ENV_HOST_CAPABILITY_BRIDGE_TOKEN,
+    ENV_HOST_CAPABILITY_BRIDGE_URL,
     ENV_LOCAL_TOKEN,
     ENV_LOGS_DIR,
     ENV_PORT,
@@ -44,6 +46,8 @@ def test_parse_runtime_config_defaults_to_loopback_and_backend_data_dir() -> Non
     assert config.local_token is None
     assert config.host_model_route_bridge_url is None
     assert config.host_model_route_bridge_token is None
+    assert config.host_capability_bridge_url is None
+    assert config.host_capability_bridge_token is None
     assert config.app_mode == DEFAULT_APP_MODE
     assert config.environment == DEFAULT_ENVIRONMENT
     assert config.user_data_dir == DEFAULT_USER_DATA_DIR.resolve()
@@ -58,6 +62,7 @@ def test_parse_runtime_config_defaults_to_loopback_and_backend_data_dir() -> Non
     assert config.backend_stderr_log_file == config.logs_dir / DEFAULT_BACKEND_STDERR_LOG_FILE_NAME
     assert config.runtime_snapshot_file == config.state_dir / DEFAULT_RUNTIME_SNAPSHOT_FILE_NAME
     assert config.last_failure_file == config.state_dir / DEFAULT_LAST_FAILURE_FILE_NAME
+    assert config.sanitized_summary()["host_capability_bridge_configured"] is False
     assert "model" not in config.sanitized_summary()
 
 
@@ -72,6 +77,8 @@ def test_parse_runtime_config_reads_environment_values() -> None:
         ENV_DATABASE_DIR: "runtime-state/db-custom",
         ENV_APP_MODE: "desktop-bundled",
         ENV_ENVIRONMENT: "production",
+        ENV_HOST_CAPABILITY_BRIDGE_URL: "http://127.0.0.1:45678/host/private/capability-bridge",
+        ENV_HOST_CAPABILITY_BRIDGE_TOKEN: "capability-token-123",
     }
 
     config = parse_runtime_config([], env=env, cwd=BACKEND_DIR)
@@ -87,6 +94,9 @@ def test_parse_runtime_config_reads_environment_values() -> None:
     assert config.state_dir == config.runtime_root_dir / DEFAULT_STATE_DIR_NAME
     assert config.app_mode == "desktop-bundled"
     assert config.environment == "production"
+    assert config.host_capability_bridge_url == "http://127.0.0.1:45678/host/private/capability-bridge"
+    assert config.host_capability_bridge_token == "capability-token-123"
+    assert config.sanitized_summary()["host_capability_bridge_configured"] is True
     assert "model" not in config.sanitized_summary()
 
 
@@ -154,6 +164,10 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
             "http://127.0.0.1:45678/host/private/provider-routes/resolve",
             "--host-model-route-bridge-token",
             "bridge-token-123",
+            "--host-capability-bridge-url",
+            "http://127.0.0.1:45678/host/private/capability-bridge",
+            "--host-capability-bridge-token",
+            "capability-token-456",
             "--local-token",
             "cli-secret",
         ],
@@ -166,6 +180,8 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
     assert config.local_token == "cli-secret"
     assert config.host_model_route_bridge_url == "http://127.0.0.1:45678/host/private/provider-routes/resolve"
     assert config.host_model_route_bridge_token == "bridge-token-123"
+    assert config.host_capability_bridge_url == "http://127.0.0.1:45678/host/private/capability-bridge"
+    assert config.host_capability_bridge_token == "capability-token-456"
     assert config.user_data_dir == (tmp_path / "cli-data").resolve()
     assert config.runtime_root_dir == (tmp_path / "cli-root").resolve()
     assert config.config_dir == (tmp_path / "cli-config").resolve()

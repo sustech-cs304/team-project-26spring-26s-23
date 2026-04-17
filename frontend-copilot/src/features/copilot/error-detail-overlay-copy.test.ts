@@ -54,6 +54,38 @@ describe('error detail overlay copy helpers', () => {
     ].join('\n'))
   })
 
+  it('includes traceback text in full and group copy output for tool failures', () => {
+    const traceback = [
+      'Traceback (most recent call last):',
+      '  File "/workspace/backend/tool.py", line 42, in invoke',
+      '    raise RuntimeError("blackboard search exploded")',
+      'RuntimeError: blackboard search exploded',
+    ].join('\n')
+    const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '发送失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'blackboard search exploded',
+      code: 'execution_failed',
+      stage: 'streaming',
+      requestedMethod: 'run/stream',
+      details: {
+        toolId: 'blackboard.course_catalog.search',
+        exceptionType: 'RuntimeError',
+        exceptionMessage: 'blackboard search exploded',
+        traceback,
+      },
+      resolvedToolIds: ['blackboard.course_catalog.search'],
+    }))
+
+    const rawDetailsGroup = viewModel.groups.find((group) => group.key === 'raw-details')
+    expect(rawDetailsGroup).not.toBeUndefined()
+    expect(formatErrorDetailOverlayCopyText(viewModel)).toContain('Traceback (most recent call last):')
+    expect(formatErrorDetailOverlayCopyText(viewModel)).toContain('RuntimeError: blackboard search exploded')
+    expect(formatErrorDetailOverlayGroupCopyText(rawDetailsGroup!)).toContain('Traceback (most recent call last):')
+    expect(formatErrorDetailOverlayGroupCopyText(rawDetailsGroup!)).toContain('RuntimeError: blackboard search exploded')
+  })
+
   it('formats a single group copy with only that group content', () => {
     const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',

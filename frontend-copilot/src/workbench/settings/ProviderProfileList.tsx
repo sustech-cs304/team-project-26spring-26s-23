@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react'
 import { useMemo } from 'react'
 
+import { getProviderListCopy } from '../locale'
 import type { ProviderProfile } from '../types'
 import { ProviderProfileContextMenu } from './ProviderProfileContextMenu'
 import { ProviderProfileDragOverlay } from './ProviderProfileDragOverlay'
@@ -10,6 +11,7 @@ import { useProviderProfileContextMenu } from './useProviderProfileContextMenu'
 import { useProviderProfileListDrag } from './useProviderProfileListDrag'
 
 interface ProviderProfileListProps {
+  language?: string
   providerProfiles: ProviderProfile[]
   activeProviderId: string
   providerQuery: string
@@ -22,6 +24,7 @@ interface ProviderProfileListProps {
 }
 
 export function ProviderProfileList({
+  language = 'zh-CN',
   providerProfiles,
   activeProviderId,
   providerQuery,
@@ -37,8 +40,8 @@ export function ProviderProfileList({
     [activeProviderId, providerProfiles],
   )
   const filteredProviderProfiles = useMemo(
-    () => filterProviderProfiles(providerProfiles, providerQuery),
-    [providerProfiles, providerQuery],
+    () => filterProviderProfiles(providerProfiles, providerQuery, language),
+    [providerProfiles, providerQuery, language],
   )
   const providerListDrag = useProviderProfileListDrag({
     providerProfiles,
@@ -55,11 +58,13 @@ export function ProviderProfileList({
     },
   })
 
+  const copy = getProviderListCopy(language)
+
   return (
     <section className="settings-card">
       <div className="settings-card__header settings-card__header--spaced">
         <div>
-          <h3 className="settings-card__title">模型服务</h3>
+          <h3 className="settings-card__title">{copy.title}</h3>
         </div>
       </div>
 
@@ -67,7 +72,7 @@ export function ProviderProfileList({
         <div className="settings-provider-add-row">
           <button type="button" className="secondary-button" onClick={onAddProvider}>
             <Plus size={14} />
-            <span>添加</span>
+            <span>{copy.addButton}</span>
           </button>
         </div>
       </div>
@@ -77,7 +82,7 @@ export function ProviderProfileList({
           type="text"
           className="search-box__input"
           value={providerQuery}
-          placeholder="搜索服务、地址或模型..."
+          placeholder={copy.searchPlaceholder}
           onChange={(event) => onProviderQueryChange(event.target.value)}
         />
       </div>
@@ -94,6 +99,7 @@ export function ProviderProfileList({
             <ProviderProfileListItem
               key={profile.id}
               profile={profile}
+              language={language}
               active={active}
               visualIndex={visualIndex}
               showDropGapBefore={providerListDrag.providerDragPreviewIndex === visualIndex}
@@ -127,11 +133,13 @@ export function ProviderProfileList({
       <ProviderProfileDragOverlay
         provider={providerListDrag.draggingProvider}
         dragGhostRef={providerListDrag.providerDragGhostRef}
+        language={language}
       />
 
       {providerContextMenu !== null ? (
         <ProviderProfileContextMenu
           contextMenu={providerContextMenu}
+          language={language}
           onDismissContextMenu={closeProviderContextMenu}
           onCopyProvider={onCopyProvider}
           onDeleteProvider={onDeleteProvider}

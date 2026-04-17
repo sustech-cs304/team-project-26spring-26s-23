@@ -43,29 +43,8 @@ export function createMainProcessServices(
     async resolveSettingsWorkspaceProviderRoute(request) {
       return await accessors.getSettingsWorkspaceService().resolveProviderRoute(request)
     },
-    async listCopilotHistoryThreads() {
-      return await accessors.getCopilotHistoryService().listThreads()
-    },
-    async getCopilotHistoryThreadDetail(threadId) {
-      return await accessors.getCopilotHistoryService().getThreadDetail(threadId)
-    },
-    async getCopilotHistoryRunReplay(runId) {
-      return await accessors.getCopilotHistoryService().getRunReplay(runId)
-    },
-    async renameCopilotHistoryThread(threadId, request) {
-      return await accessors.getCopilotHistoryService().renameThread(threadId, request)
-    },
-    async duplicateCopilotHistoryThread(threadId, request) {
-      return await accessors.getCopilotHistoryService().duplicateThread(threadId, request)
-    },
-    async deleteCopilotHistoryThread(threadId) {
-      return await accessors.getCopilotHistoryService().deleteThread(threadId)
-    },
-    async backupCopilotHistoryDatabase(request) {
-      return await accessors.getCopilotHistoryService().backupDatabase(request)
-    },
-    async restoreCopilotHistoryDatabase(request) {
-      return await accessors.getCopilotHistoryService().restoreDatabase(request)
+    async handleDesktopCapabilityBridgeRequest(request) {
+      return await accessors.getDesktopCapabilityBridgeService().handleRequest(request)
     },
   }
 }

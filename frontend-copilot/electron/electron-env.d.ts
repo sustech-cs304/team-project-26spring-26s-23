@@ -8,6 +8,7 @@ import type {
 import type { CopilotHistoryApi } from './copilot-history'
 import type { BootstrapWindowApi } from './bootstrap-window'
 import type { CopilotRuntimeApi } from './copilot-runtime'
+import type { DesktopNotificationApi } from './desktop-notification'
 import type { SettingsWorkspaceSecretsApi, SettingsWorkspaceStateApi } from './settings-workspace/ipc'
 
 declare namespace NodeJS {
@@ -41,6 +42,7 @@ declare global {
     configCenterPublicPatch: ConfigCenterPublicPatchApi
     settingsWorkspaceState: SettingsWorkspaceStateApi
     settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
+    desktopNotification: DesktopNotificationApi
     bootstrapWindow: BootstrapWindowApi
   }
 }

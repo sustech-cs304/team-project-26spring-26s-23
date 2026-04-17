@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.tooling.runtime_adapter.copilot_runtime import ToolHostCapabilitiesFactory
+
 from .agent import PydanticAIAgentExecutor
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .bridge import RuntimeBridge
@@ -35,6 +37,7 @@ class RuntimeDependencies:
     message_run_orchestrator: RuntimeMessageRunOrchestrator
     runtime_bridge: RuntimeBridge
     scaffold: RuntimeScaffold
+    host_capabilities_factory: ToolHostCapabilitiesFactory | None = None
 
 
 class _UnavailableRuntimeModelRouteResolver(RuntimeModelRouteResolver):
@@ -50,6 +53,7 @@ def build_default_runtime_dependencies(
     session_store: RuntimeSessionStore | None = None,
     agent_executor: PydanticAIAgentExecutor | None = None,
     model_route_resolver: RuntimeModelRouteResolver | None = None,
+    host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
 ) -> RuntimeDependencies:
     """Create the default runtime object graph without adding protocol logic."""
 
@@ -58,9 +62,13 @@ def build_default_runtime_dependencies(
         if runtime_config is not None
         else InMemorySessionStore()
     )
-    resolved_agent_executor = agent_executor or PydanticAIAgentExecutor()
     resolved_model_route_resolver = model_route_resolver or _UnavailableRuntimeModelRouteResolver()
-    tool_registry = build_default_tool_registry()
+    tool_registry = build_default_tool_registry(
+        host_capabilities_factory=host_capabilities_factory,
+    )
+    resolved_agent_executor = agent_executor or PydanticAIAgentExecutor(
+        tool_registry=tool_registry,
+    )
     agent_registry = build_default_agent_registry(
         executor_factory=lambda: resolved_agent_executor,
         toolset_name=tool_registry.get_default().name,
@@ -95,6 +103,7 @@ def build_default_runtime_dependencies(
         message_run_orchestrator=message_run_orchestrator,
         runtime_bridge=runtime_bridge,
         scaffold=scaffold,
+        host_capabilities_factory=host_capabilities_factory,
     )
 
 

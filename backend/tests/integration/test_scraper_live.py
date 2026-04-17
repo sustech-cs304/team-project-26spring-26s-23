@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from app.blackboard.api import BlackboardAPIContext, BlackboardContentAPI, BlackboardCourseAPI
-from app.core.auth.cas_client import CASClient
+from app.integrations.sustech.blackboard.api import BlackboardAPIContext, BlackboardContentAPI, BlackboardCourseAPI
+from app.shared_integrations.sustech_auth.cas_client import CASClient
 from tests.helpers import require_live_credentials
 
 pytestmark = pytest.mark.live

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.teaching_information_system import fetch_credit_gpa_with_credentials
+from app.integrations.sustech.teaching_information_system import fetch_credit_gpa_with_credentials
 from tests.helpers import require_live_credentials
 from tests.integration.live_support.reporting import write_json_report
 from tests.integration.live_support.tis_common import build_report_path, build_tis_service_config

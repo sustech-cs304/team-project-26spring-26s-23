@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
 
+import type { DesktopNotificationRequest } from './desktop-notification'
+
 import type { ConfigCenterPublicPatchResult } from './config-center/public-patch'
 import type { ConfigCenterPublicSnapshotLoadResult } from './config-center/public-snapshot'
 import type {
@@ -224,6 +226,7 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('starting', null),
     })),
+    notifyDesktopNotification: vi.fn(async (_request: DesktopNotificationRequest) => undefined),
     notifyBootstrapWindowReady: vi.fn(async () => undefined),
   }
 }

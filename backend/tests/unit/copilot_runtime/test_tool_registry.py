@@ -22,6 +22,14 @@ from app.copilot_runtime.tool_registry import (
     WEATHER_CURRENT_TOOL_ID,
     execute_weather_current_tool,
     summarize_tool_arguments,
+    summarize_tool_result,
+)
+from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+
+CONTRACT_TOOL_IDS = tuple(
+    contract.metadata.tool_id
+    for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
 )
 
 
@@ -48,60 +56,93 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
 
 def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
+    expected_tool_ids = (FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID, *CONTRACT_TOOL_IDS)
+    catalog = registry.build_tool_catalog()
+    catalog_by_id = {entry["toolId"]: entry for entry in catalog}
 
     assert registry.build_view() == {
         "default": {
             "name": "default",
             "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
-            "toolCount": 2,
+            "toolCount": len(expected_tool_ids),
         }
     }
-    assert registry.build_tool_catalog() == (
-        {
-            "toolId": FILE_CONVERT_TOOL_ID,
-            "kind": "builtin",
-            "availability": "available",
-            "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
-            "description": FILE_CONVERT_TOOL_DESCRIPTION,
-        },
-        {
-            "toolId": WEATHER_CURRENT_TOOL_ID,
-            "kind": "builtin",
-            "availability": "available",
-            "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
-            "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
-        },
+    assert catalog_by_id[FILE_CONVERT_TOOL_ID] == {
+        "toolId": FILE_CONVERT_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
+        "description": FILE_CONVERT_TOOL_DESCRIPTION,
+    }
+    assert catalog_by_id[WEATHER_CURRENT_TOOL_ID] == {
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+        "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
+    }
+    for tool_id in CONTRACT_TOOL_IDS:
+        assert catalog_by_id[tool_id]["toolId"] == tool_id
+        assert catalog_by_id[tool_id]["kind"] == "contract"
+        assert catalog_by_id[tool_id]["availability"] == "available"
+        assert catalog_by_id[tool_id]["displayName"]
+        assert catalog_by_id[tool_id]["description"]
+
+    assert registry.list_tool_ids() == expected_tool_ids
+
+    diagnostics = registry.build_diagnostics_summary()
+    assert diagnostics["available_toolsets"] == ["default"]
+    assert diagnostics["default_toolset"] == "default"
+    assert diagnostics["tool_directory_version"] == "tools-v1"
+    assert diagnostics["toolset_summaries"][0]["name"] == "default"
+    assert diagnostics["toolset_summaries"][0]["label"] == "Default"
+    assert diagnostics["toolset_summaries"][0]["description"] == (
+        "Builtin Copilot runtime tools exposed as the default toolset directory."
     )
-    assert registry.list_tool_ids() == (FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID)
-    assert registry.build_diagnostics_summary() == {
-        "available_toolsets": ["default"],
-        "default_toolset": "default",
-        "tool_directory_version": "tools-v1",
-        "toolset_summaries": [
-            {
-                "name": "default",
-                "label": "Default",
-                "description": "Builtin Copilot runtime tools exposed as the default toolset directory.",
-                "default": True,
-                "toolCount": 2,
-                "tools": [
-                    {
-                        "toolId": FILE_CONVERT_TOOL_ID,
-                        "kind": "builtin",
-                        "availability": "available",
-                        "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
-                        "description": FILE_CONVERT_TOOL_DESCRIPTION,
-                    },
-                    {
-                        "toolId": WEATHER_CURRENT_TOOL_ID,
-                        "kind": "builtin",
-                        "availability": "available",
-                        "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
-                        "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
-                    },
-                ],
-            }
-        ],
+    assert diagnostics["toolset_summaries"][0]["default"] is True
+    assert diagnostics["toolset_summaries"][0]["toolCount"] == len(expected_tool_ids)
+    assert tuple(
+        tool["toolId"] for tool in diagnostics["toolset_summaries"][0]["tools"]
+    ) == expected_tool_ids
+
+
+
+def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() -> None:
+    registry = build_default_tool_registry()
+
+    resolved_tool = registry.resolve_tool("blackboard.course_catalog.search")
+
+    assert resolved_tool.descriptor.kind == "contract"
+    assert resolved_tool.function_name == "blackboard_course_catalog_search"
+    assert resolved_tool.parameters_json_schema == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "keyword": {"type": "string", "minLength": 1},
+            "field": {"type": "string"},
+            "operator": {"type": "string"},
+            "fetchMode": {
+                "type": "string",
+                "enum": ["quick", "full"],
+                "default": "full",
+                "description": (
+                    "quick searches only the initial result pages without following show-all; "
+                    "full also follows show-all pagination for more complete results."
+                ),
+            },
+            "maxPages": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 30,
+                "description": "Maximum number of result pages to continue fetching before stopping.",
+            },
+            "limit": {"type": "integer"},
+            "username": {"type": "string"},
+            "password": {"type": "string"},
+            "usernameSecretName": {"type": "string"},
+            "passwordSecretName": {"type": "string"},
+        },
+        "required": ["keyword"],
     }
 
 
@@ -275,3 +316,112 @@ def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_large_tex
     assert "hidden" not in summary
     assert len(summary) <= 512
     assert "…" in summary
+
+
+@pytest.mark.parametrize(
+    ("result", "expected_summary"),
+    [
+        (
+            {
+                "status": "success",
+                "output": {
+                    "dbPath": "database-root/blackboard/snapshot.db",
+                    "scrapedCounts": {
+                        "courses": 1,
+                        "assignments": 1,
+                        "resources": 1,
+                        "grades": 1,
+                        "announcements": 1,
+                    },
+                    "integrityOk": True,
+                    "secondSyncHasNoNewRecords": True,
+                    "secondSyncHasNoDeletedRecords": True,
+                },
+                "artifacts": [
+                    {
+                        "artifactId": "artifact-1",
+                        "uri": "artifact://blackboard/snapshot.json",
+                    }
+                ],
+                "metadata": {
+                    "toolId": "blackboard.snapshot.sync",
+                    "stateKey": "snapshot-latest",
+                },
+            },
+            (
+                "Blackboard snapshot 同步完成；db=database-root/blackboard/snapshot.db；"
+                "courses 1、assignments 1、resources 1、grades 1、announcements 1；"
+                "完整性校验通过；二次同步无新增且无删除"
+            ),
+        ),
+        (
+            {
+                "status": "success",
+                "output": {
+                    "sourceUrl": "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx",
+                    "totalRecords": 1,
+                    "resolvedRoleCode": "01",
+                },
+                "artifacts": [{"artifactId": "artifact-1"}],
+                "metadata": {
+                    "toolId": "tis.personal_grades.fetch",
+                    "stateKey": "grades-latest",
+                },
+            },
+            "TIS 成绩抓取完成；1 条记录；role=01",
+        ),
+        (
+            {
+                "status": "success",
+                "output": {
+                    "sourceUrl": "https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
+                    "resolvedRoleCode": "01",
+                    "summary": {
+                        "average_credit_gpa": 3.82,
+                        "rank": "5/100",
+                    },
+                    "persistence": {
+                        "enabled": True,
+                        "owner_key": "student_a",
+                    },
+                },
+                "artifacts": [{"artifactId": "artifact-1"}],
+                "metadata": {
+                    "toolId": "tis.credit_gpa.fetch",
+                    "stateKey": "credit-gpa-latest",
+                },
+            },
+            "TIS 绩点摘要抓取完成；均绩 3.82；排名 5/100；role=01；含持久化摘要",
+        ),
+        (
+            {
+                "status": "success",
+                "output": {
+                    "sourceUrl": "https://tis.sustech.edu.cn/Xsxk/queryYxkc",
+                    "semester": {
+                        "label": "2025秋季",
+                    },
+                    "courseCount": 1,
+                    "resolvedRoleCode": "01",
+                },
+                "artifacts": [{"artifactId": "artifact-1"}],
+                "metadata": {
+                    "toolId": "tis.selected_courses.fetch",
+                    "stateKey": "selected-courses-latest",
+                },
+            },
+            "TIS 选课抓取完成；2025秋季；1 门课程；role=01",
+        ),
+    ],
+)
+def test_summarize_tool_result_prefers_compact_contract_output_over_envelope(
+    result: dict[str, object],
+    expected_summary: str,
+) -> None:
+    summary = summarize_tool_result(result)
+
+    assert summary == expected_summary
+    assert summary is not None
+    assert '"status"' not in summary
+    assert '"metadata"' not in summary
+    assert not summary.startswith("{")

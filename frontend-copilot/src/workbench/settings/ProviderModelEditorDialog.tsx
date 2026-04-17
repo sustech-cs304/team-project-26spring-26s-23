@@ -1,6 +1,11 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import {
+  getModelCapabilityOptions,
+  getProviderModelEditorCopy,
+  normalizeWorkbenchLanguage,
+} from '../locale'
+import {
   ThinkingBudgetSlider,
   ThinkingPillGroup,
   type ThinkingPillOption,
@@ -29,13 +34,12 @@ import {
   setThinkingCapabilityDeclarationDefaultCodeValue,
   setThinkingCapabilityDeclarationMode,
   setThinkingCapabilityDeclarationSeries,
-  THINKING_DECLARATION_MODE_OPTIONS,
 } from '../thinking-capabilities'
-import { currencyOptions, modelCapabilityOptions } from './config'
 import type { ModelEditorState } from './provider-profiles'
 import { resolveThinkingCompatibilityWarning } from './thinking-compatibility-warning'
 
 interface ProviderModelEditorDialogProps {
+  language?: string
   modelEditorState: ModelEditorState | null
   providerProfile?: ProviderProfile | null
   modelEditorError: string | null
@@ -102,6 +106,7 @@ function normalizeBudgetDeclaration(declaration: ModelEditorState['thinkingCapab
 }
 
 export function ProviderModelEditorDialog({
+  language = 'zh-CN',
   modelEditorState,
   providerProfile = null,
   modelEditorError,
@@ -158,6 +163,29 @@ export function ProviderModelEditorDialog({
     return null
   }
 
+  const locale = normalizeWorkbenchLanguage(language)
+  const copy = getProviderModelEditorCopy(language)
+  const modelCapabilityOptions = getModelCapabilityOptions(language)
+  const thinkingDeclarationModeOptions = locale === 'en-US'
+    ? [
+        { value: 'inherit', label: 'Follow Built-in Rules' },
+        { value: 'unsupported', label: 'Explicitly Unsupported' },
+        { value: 'supported', label: 'Explicitly Supported' },
+      ]
+    : [
+        { value: 'inherit', label: '跟随内置规则' },
+        { value: 'unsupported', label: '显式不支持' },
+        { value: 'supported', label: '显式支持' },
+      ]
+  const currencyOptions = locale === 'en-US'
+    ? [
+        { value: 'usd', label: 'USD' },
+        { value: 'cny', label: 'CNY' },
+      ]
+    : [
+        { value: 'usd', label: '美元（USD）' },
+        { value: 'cny', label: '人民币（CNY）' },
+      ]
   const thinkingDeclarationMode = getThinkingCapabilityDeclarationMode(modelEditorState.thinkingCapability)
   const normalizedThinkingCapability = modelEditorState.thinkingCapability?.supported === true
     ? initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
@@ -257,7 +285,7 @@ export function ProviderModelEditorDialog({
         ...(presetBudgetValues.some((value) => value.mode === 'off')
           ? [{
               key: 'budget-off',
-              labelZh: '关闭',
+              labelZh: copy.budgetModes.off,
               code: 'off',
               selected: budgetDefaultMode === 'off',
               testId: 'settings-thinking-budget-mode-off',
@@ -274,7 +302,7 @@ export function ProviderModelEditorDialog({
         ...(presetBudgetValues.some((value) => value.mode === 'dynamic')
           ? [{
               key: 'budget-dynamic',
-              labelZh: '动态',
+              labelZh: copy.budgetModes.dynamic,
               code: 'dynamic',
               selected: budgetDefaultMode === 'dynamic',
               testId: 'settings-thinking-budget-mode-dynamic',
@@ -290,7 +318,7 @@ export function ProviderModelEditorDialog({
           : []),
         {
           key: 'budget-budget',
-          labelZh: '预算',
+          labelZh: copy.budgetModes.budget,
           code: 'budget_tokens',
           selected: budgetDefaultMode === 'budget',
           testId: 'settings-thinking-budget-mode-budget',
@@ -312,19 +340,19 @@ export function ProviderModelEditorDialog({
         className="model-editor-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={modelEditorState.isNew ? '添加模型' : '编辑模型'}
+        aria-label={modelEditorState.isNew ? copy.addTitle : copy.editTitle}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         <div className="model-editor-modal__header">
           <div>
-            <h3 className="settings-card__title">{modelEditorState.isNew ? '添加模型' : '编辑模型'}</h3>
+            <h3 className="settings-card__title">{modelEditorState.isNew ? copy.addTitle : copy.editTitle}</h3>
           </div>
           <button
             type="button"
             className="model-editor-modal__close"
-            aria-label="关闭模型编辑弹层"
+            aria-label={copy.closeAriaLabel}
             onClick={onClose}
           >
             ×
@@ -334,20 +362,20 @@ export function ProviderModelEditorDialog({
         <div className="model-editor-modal__body">
           <div className="form-grid form-grid--two">
             <TextField
-              label="模型 ID"
+              label={copy.modelIdLabel}
               value={modelEditorState.modelId}
               onChange={(value) => {
                 onClearError()
                 onStateChange({ modelId: value })
               }}
-              placeholder="例如 google/gemini-2.5-pro"
+              placeholder={copy.modelIdPlaceholder}
               inputRef={initialFocusRef}
             />
             <TextField
-              label="模型名称"
+              label={copy.modelNameLabel}
               value={modelEditorState.displayName}
               onChange={(value) => onStateChange({ displayName: value })}
-              placeholder="例如 Gemini 2.5 Pro"
+              placeholder={copy.modelNamePlaceholder}
             />
           </div>
 
@@ -359,7 +387,7 @@ export function ProviderModelEditorDialog({
 
           <div className="model-editor-section">
             <div className="model-editor-section__header">
-              <span className="form-field__label">模型类型</span>
+              <span className="form-field__label">{copy.modelTypeLabel}</span>
             </div>
 
             <div className="model-capability-picker">
@@ -385,9 +413,9 @@ export function ProviderModelEditorDialog({
           <div className="model-editor-section">
             <div className="form-grid form-grid--two">
               <SelectField
-                label="思考能力"
+                label={copy.thinkingCapabilityLabel}
                 value={thinkingDeclarationMode}
-                options={THINKING_DECLARATION_MODE_OPTIONS}
+                options={thinkingDeclarationModeOptions}
                 onChange={(value) => {
                   updateThinkingCapability(
                     setThinkingCapabilityDeclarationMode(
@@ -399,7 +427,7 @@ export function ProviderModelEditorDialog({
               />
               {thinkingDeclarationMode === 'supported' && normalizedThinkingCapability !== null ? (
                 <SelectField
-                  label="推理系列"
+                  label={copy.thinkingSeriesLabel}
                   value={normalizedThinkingCapability.series}
                   options={thinkingSeriesOptions}
                   onChange={(value) => {
@@ -428,9 +456,9 @@ export function ProviderModelEditorDialog({
 
                 {currentAllowedCodeValues.length > 0 ? (
                   <div className="model-editor-thinking-panel__section">
-                    <span className="form-field__label">默认值</span>
+                    <span className="form-field__label">{copy.defaultValueLabel}</span>
                     <ThinkingPillGroup
-                      ariaLabel="默认值"
+                      ariaLabel={copy.defaultValueAriaLabel}
                       options={currentValueOptions}
                       className="model-editor-thinking-panel__pill-group"
                     />
@@ -439,9 +467,9 @@ export function ProviderModelEditorDialog({
 
                 {budgetModeOptions.length > 0 ? (
                   <div className="model-editor-thinking-panel__section">
-                    <span className="form-field__label">默认模式</span>
+                    <span className="form-field__label">{copy.defaultModeLabel}</span>
                     <ThinkingPillGroup
-                      ariaLabel="预算默认模式"
+                      ariaLabel={copy.defaultModeAriaLabel}
                       options={budgetModeOptions}
                       className="model-editor-thinking-panel__pill-group"
                     />
@@ -450,10 +478,10 @@ export function ProviderModelEditorDialog({
 
                 {supportsBudgetDefaultModes && budgetDefaultMode === 'budget' ? (
                   <div className="model-editor-thinking-panel__section">
-                    <span className="form-field__label">预算</span>
+                    <span className="form-field__label">{copy.budgetLabel}</span>
                     <ThinkingBudgetSlider
-                      label="思考预算"
-                      ariaLabel="默认预算"
+                      label={copy.budgetInputLabel}
+                      ariaLabel={copy.budgetInputAriaLabel}
                       budgetTokens={budgetDefaultTokens}
                       inputTestId="settings-thinking-budget-input"
                       valueTestId="settings-thinking-budget-value"
@@ -490,7 +518,7 @@ export function ProviderModelEditorDialog({
               aria-controls={modelEditorAdvancedSectionId}
               onClick={() => onStateChange({ advancedOpen: !modelEditorState.advancedOpen })}
             >
-              {modelEditorState.advancedOpen ? '收起更多设置' : '更多设置'}
+              {modelEditorState.advancedOpen ? copy.hideAdvanced : copy.showAdvanced}
             </button>
 
             <div id={modelEditorAdvancedSectionId}>
@@ -498,19 +526,19 @@ export function ProviderModelEditorDialog({
                 <div className="model-editor-section">
                   <div className="form-grid form-grid--pricing">
                     <SelectField
-                      label="币种"
+                      label={copy.currencyLabel}
                       value={modelEditorState.currency}
                       options={currencyOptions}
                       onChange={(value) => onStateChange({ currency: value })}
                     />
                     <TextField
-                      label="输入价格"
+                      label={copy.inputPriceLabel}
                       value={modelEditorState.inputPrice}
                       onChange={(value) => onStateChange({ inputPrice: value })}
                       placeholder="0.50"
                     />
                     <TextField
-                      label="输出价格"
+                      label={copy.outputPriceLabel}
                       value={modelEditorState.outputPrice}
                       onChange={(value) => onStateChange({ outputPrice: value })}
                       placeholder="3.00"
@@ -524,7 +552,7 @@ export function ProviderModelEditorDialog({
 
         <div className="model-editor-modal__footer">
           <button type="button" className="secondary-button" onClick={onClose}>
-            取消
+            {copy.cancelButton}
           </button>
           <button
             type="button"
@@ -532,7 +560,7 @@ export function ProviderModelEditorDialog({
             onClick={onSave}
             disabled={!modelEditorState.modelId.trim()}
           >
-            保存
+            {copy.saveButton}
           </button>
         </div>
       </section>

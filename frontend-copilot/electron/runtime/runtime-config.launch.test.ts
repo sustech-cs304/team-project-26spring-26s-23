@@ -68,6 +68,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
       environment: 'development',
       localTokenConfigured: true,
       hostModelRouteBridgeConfigured: false,
+      hostCapabilityBridgeConfigured: false,
       paths: {
         userDataDir: paths.userDataDir,
         runtimeRootDir: paths.runtimeRootDir,
@@ -116,6 +117,23 @@ describe('createHostedRuntimeLaunchConfig', () => {
       '--host-model-route-bridge-token', 'bridge-token-123',
     ]))
     expect(sanitizeHostedRuntimeLaunchConfig(config).hostModelRouteBridgeConfigured).toBe(true)
+  })
+
+  it('passes host capability bridge bootstrap through runtime args without leaking it into sanitized output', () => {
+    const config = createHostedRuntimeLaunchConfig({
+      userDataPath: path.resolve('.tmp-userdata-capability-bridge'),
+      processEnv: {},
+      port: 43210,
+      localToken: 'token-capability-bridge',
+      hostCapabilityBridgeUrl: 'http://127.0.0.1:45679/host/private/capability-bridge',
+      hostCapabilityBridgeToken: 'capability-bridge-token-123',
+    })
+
+    expect(config.args).toEqual(expect.arrayContaining([
+      '--host-capability-bridge-url', 'http://127.0.0.1:45679/host/private/capability-bridge',
+      '--host-capability-bridge-token', 'capability-bridge-token-123',
+    ]))
+    expect(sanitizeHostedRuntimeLaunchConfig(config).hostCapabilityBridgeConfigured).toBe(true)
   })
 
   it('brackets IPv6 loopback hosts when composing runtime urls', () => {

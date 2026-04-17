@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable
 
-from app.teaching_information_system import DEFAULT_TIS_SERVICE_CONFIG, TISServiceConfig
+from app.integrations.sustech.teaching_information_system import DEFAULT_TIS_SERVICE_CONFIG, TISServiceConfig
 
 from .reporting import ensure_report_dir
 

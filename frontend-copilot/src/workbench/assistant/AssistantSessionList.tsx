@@ -4,6 +4,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react'
 
+import { getAssistantSessionCopy, type WorkbenchLanguage } from '../locale'
 import type { AgentType, AssistantSessionShell } from '../types'
 import type { AssistantSessionListState } from './assistant-workspace-controller'
 import { AssistantSessionContextMenu } from './AssistantSessionContextMenu'
@@ -17,6 +18,7 @@ import {
 } from './assistant-session-list-helpers'
 
 interface AssistantSessionListProps {
+  language?: WorkbenchLanguage
   selectedAgent: AgentType | null
   sessionListState: AssistantSessionListState
   sessionStatus: 'idle' | 'creating' | 'error'
@@ -48,6 +50,7 @@ interface AssistantSessionListProps {
 }
 
 export function AssistantSessionList({
+  language = 'zh-CN',
   selectedAgent,
   sessionListState,
   sessionStatus,
@@ -77,12 +80,14 @@ export function AssistantSessionList({
   onConfirmDelete,
   onCancelDelete,
 }: AssistantSessionListProps) {
+  const copy = getAssistantSessionCopy(language)
+
   return (
-    <aside className="workspace-panel topic-panel" aria-label="会话创建列">
+    <aside className="workspace-panel topic-panel" aria-label={copy.sessionListAriaLabel}>
       <header className="panel-head">
-        <p className="panel-head__eyebrow">会话</p>
+        <p className="panel-head__eyebrow">{copy.sessionEyebrow}</p>
         <h2 className="panel-head__title">
-          {selectedAgent?.label ?? '等待选择智能体'}
+          {selectedAgent?.label ?? copy.waitingForAgent}
         </h2>
       </header>
 
@@ -110,6 +115,7 @@ export function AssistantSessionList({
           {renderedSessions.map((sessionEntry, visualIndex) => (
             <AssistantSessionListItem
               key={sessionEntry.sessionId}
+              language={language}
               sessionEntry={sessionEntry}
               active={resolveAssistantSessionActiveState(sessionEntry, sessionListState.activeSessionId)}
               visualIndex={visualIndex}
@@ -141,6 +147,7 @@ export function AssistantSessionList({
       />
 
       <AssistantSessionContextMenu
+        language={language}
         sessionContextMenu={sessionContextMenu}
         deleteConfirmationSessionId={deleteConfirmationSessionId}
         onRequestRename={onRequestRename}

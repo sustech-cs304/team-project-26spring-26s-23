@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.blackboard.provider.use_cases.snapshot_sync import run_blackboard_snapshot_sync
+from app.integrations.sustech.blackboard.provider.use_cases.snapshot_sync import run_blackboard_snapshot_sync
 from tests.helpers import require_live_credentials
 
 pytestmark = [pytest.mark.live, pytest.mark.e2e]

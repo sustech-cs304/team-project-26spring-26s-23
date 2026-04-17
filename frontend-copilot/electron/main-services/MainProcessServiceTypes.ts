@@ -1,4 +1,8 @@
 import type {
+  DesktopCapabilityBridgeRequest,
+  DesktopCapabilityBridgeResponse,
+} from '../capability-bridge/protocol'
+import type {
   ConfigCenterPublicPatch,
   ConfigCenterPublicPatchResult,
 } from '../config-center/public-patch'
@@ -6,21 +10,6 @@ import type {
   ConfigCenterPublicSnapshot,
   ConfigCenterPublicSnapshotLoadResult,
 } from '../config-center/public-snapshot'
-import type {
-  CopilotHistoryBackupDatabaseRequest,
-  CopilotHistoryDatabaseBackupResult,
-  CopilotHistoryDatabaseRestoreResult,
-  CopilotHistoryDuplicateThreadRequest,
-  CopilotHistoryListThreadsResult,
-  CopilotHistoryRenameThreadRequest,
-  CopilotHistoryRestoreDatabaseRequest,
-  CopilotHistoryRunReplayResult,
-  CopilotHistoryThreadDeleteResult,
-  CopilotHistoryThreadDetailResult,
-  CopilotHistoryThreadDuplicateResult,
-  CopilotHistoryThreadRenameResult,
-} from '../copilot-history'
-import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type {
   SettingsWorkspaceClearProfileApiKeyRequest,
   SettingsWorkspaceProfileSecretMutationResult,
@@ -42,17 +31,21 @@ import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
+export interface MainProcessServiceLogOptions {
+  relayToRenderer?: boolean
+}
+
 export interface CreateMainProcessServicesOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
   appendMainRuntimeLog: (
     level: MainProcessServiceLogLevel,
     message: string,
     context: Record<string, unknown> | null,
+    options?: MainProcessServiceLogOptions,
   ) => void | Promise<void>
   publishConfigCenterPublicSnapshotUpdate: (
     snapshot: ConfigCenterPublicSnapshot,
   ) => void | Promise<void>
-  createCopilotHistoryService: () => ElectronCopilotHistoryService
 }
 
 export interface MainProcessServices {
@@ -77,22 +70,7 @@ export interface MainProcessServices {
   resolveSettingsWorkspaceProviderRoute: (
     request: SettingsWorkspaceProviderRouteResolveRequest,
   ) => Promise<SettingsWorkspaceProviderRouteResolveResult>
-  listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
-  getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
-  getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
-  renameCopilotHistoryThread: (
-    threadId: string,
-    request: CopilotHistoryRenameThreadRequest,
-  ) => Promise<CopilotHistoryThreadRenameResult>
-  duplicateCopilotHistoryThread: (
-    threadId: string,
-    request?: CopilotHistoryDuplicateThreadRequest,
-  ) => Promise<CopilotHistoryThreadDuplicateResult>
-  deleteCopilotHistoryThread: (threadId: string) => Promise<CopilotHistoryThreadDeleteResult>
-  backupCopilotHistoryDatabase: (
-    request?: CopilotHistoryBackupDatabaseRequest,
-  ) => Promise<CopilotHistoryDatabaseBackupResult>
-  restoreCopilotHistoryDatabase: (
-    request: CopilotHistoryRestoreDatabaseRequest,
-  ) => Promise<CopilotHistoryDatabaseRestoreResult>
+  handleDesktopCapabilityBridgeRequest: (
+    request: DesktopCapabilityBridgeRequest,
+  ) => Promise<DesktopCapabilityBridgeResponse>
 }

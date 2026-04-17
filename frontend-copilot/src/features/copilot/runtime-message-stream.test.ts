@@ -169,6 +169,60 @@ describe('parseRuntimeRunEventStream', () => {
     ])
   })
 
+  it('parses waiting_approval and cancelled phases with security payloads', async () => {
+    const stream = createSseEventStream([
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'waiting_approval',
+          title: '等待批准',
+          summary: '等待批准',
+          security: {
+            riskLevel: 'high',
+            approvalMethod: 'accept_reject',
+          },
+        },
+      },
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.weather-current:call-2',
+          toolId: 'tool.weather-current',
+          phase: 'cancelled',
+          title: '已取消',
+          summary: '已取消',
+        },
+      },
+    ])
+
+    const events = await collectEvents(stream)
+    expect(events).toHaveLength(2)
+
+    const event0 = events[0]
+    expect(event0.type).toBe('tool_event')
+    if (event0.type === 'tool_event') {
+      expect(event0.payload.phase).toBe('waiting_approval')
+      expect(event0.payload.security).toEqual({
+        riskLevel: 'high',
+        approvalMethod: 'accept_reject',
+      })
+    }
+
+    const event1 = events[1]
+    expect(event1.type).toBe('tool_event')
+    if (event1.type === 'tool_event') {
+      expect(event1.payload.phase).toBe('cancelled')
+    }
+  })
+
   it('rejects unsupported tool_event phases', async () => {
     const stream = createSseEventStream([
       {
@@ -179,14 +233,35 @@ describe('parseRuntimeRunEventStream', () => {
         payload: {
           toolCallId: 'tool.weather-current:call-1',
           toolId: 'tool.weather-current',
-          phase: 'cancelled',
+          phase: 'unknown_phase_xyz',
           title: '天气工具已取消',
           summary: '已取消',
         },
       },
     ])
 
-    await expect(collectEvents(stream)).rejects.toThrow('Unsupported runtime tool event phase: cancelled')
+    await expect(collectEvents(stream)).rejects.toThrow('Unsupported runtime tool event phase: unknown_phase_xyz')
+  })
+
+  it('rejects invalid security payloads', async () => {
+    const stream = createSseEventStream([
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'waiting_approval',
+          title: '等待批准',
+          summary: '等待批准',
+          security: 'not_an_object',
+        },
+      },
+    ])
+
+    await expect(collectEvents(stream)).rejects.toThrow('runtime event payload.security must be an object')
   })
 })
 

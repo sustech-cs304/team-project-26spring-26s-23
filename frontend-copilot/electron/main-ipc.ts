@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
+import type { DesktopNotificationRequest } from './desktop-notification'
 import type { MainProcessServices } from './main-services'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
 
@@ -8,6 +9,7 @@ type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
 export interface MainProcessRuntimeIpcHandlers {
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
+  notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
   notifyBootstrapWindowReady: () => Promise<void>
 }
 
@@ -17,7 +19,7 @@ export function registerMainProcessIpcHandlers(
     services: MainProcessServices
   } & MainProcessRuntimeIpcHandlers,
 ): void {
-  const { services, loadCopilotRuntime, retryCopilotRuntime, notifyBootstrapWindowReady } = options
+  const { services, loadCopilotRuntime, retryCopilotRuntime, notifyDesktopNotification, notifyBootstrapWindowReady } = options
 
   registerRendererIpcHandlers(ipcMain, {
     loadConfigCenterPublicSnapshot: services.loadConfigCenterPublicSnapshot,
@@ -40,6 +42,7 @@ export function registerMainProcessIpcHandlers(
     restoreCopilotHistoryDatabase: services.restoreCopilotHistoryDatabase,
     loadCopilotRuntime,
     retryCopilotRuntime,
+    notifyDesktopNotification,
     notifyBootstrapWindowReady,
   })
 }

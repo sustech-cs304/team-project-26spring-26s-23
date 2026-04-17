@@ -8,6 +8,8 @@ export interface DesktopRuntimeArgumentInput {
   localToken: string
   hostModelRouteBridgeUrl: string | null
   hostModelRouteBridgeToken: string | null
+  hostCapabilityBridgeUrl: string | null
+  hostCapabilityBridgeToken: string | null
   appMode: string
   environment: string
   paths: HostedRuntimePaths
@@ -41,6 +43,16 @@ export function buildDesktopRuntimeArguments(input: DesktopRuntimeArgumentInput)
     args,
     DESKTOP_RUNTIME_ARGUMENT_NAMES.HOST_MODEL_ROUTE_BRIDGE_TOKEN,
     input.hostModelRouteBridgeToken,
+  )
+  appendCommandLineArgument(
+    args,
+    DESKTOP_RUNTIME_ARGUMENT_NAMES.HOST_CAPABILITY_BRIDGE_URL,
+    input.hostCapabilityBridgeUrl,
+  )
+  appendCommandLineArgument(
+    args,
+    DESKTOP_RUNTIME_ARGUMENT_NAMES.HOST_CAPABILITY_BRIDGE_TOKEN,
+    input.hostCapabilityBridgeToken,
   )
   appendCommandLineArgument(args, DESKTOP_RUNTIME_ARGUMENT_NAMES.LOCAL_TOKEN, input.localToken)
 

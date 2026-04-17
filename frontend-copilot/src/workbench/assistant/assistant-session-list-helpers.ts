@@ -1,10 +1,14 @@
+import { getAssistantSessionCopy } from '../locale'
 import type { AssistantSessionShell } from '../types'
+
+export type AssistantSessionContextSubmenu = 'copy' | 'export'
 
 export interface AssistantSessionContextMenuState {
   sessionId: string
   sessionLabel: string
   x: number
   y: number
+  activeSubmenu: AssistantSessionContextSubmenu | null
 }
 
 export interface AssistantSessionDragState {
@@ -17,20 +21,58 @@ export interface AssistantSessionMenuAction {
   testId: string
 }
 
-export const assistantSessionPrimaryActions: AssistantSessionMenuAction[] = [
-  {
-    label: '重命名会话',
-    testId: 'assistant-session-context-action-rename',
-  },
-  {
-    label: '删除会话',
-    testId: 'assistant-session-context-action-delete',
-  },
-  {
-    label: '复制为新会话',
-    testId: 'assistant-session-context-action-copy-session',
-  },
-]
+export function getAssistantSessionPrimaryActions(language: string): AssistantSessionMenuAction[] {
+  const copy = getAssistantSessionCopy(language)
+
+  return [
+    {
+      label: copy.contextMenu.renameSession,
+      testId: 'assistant-session-context-action-rename',
+    },
+    {
+      label: copy.contextMenu.deleteSession,
+      testId: 'assistant-session-context-action-delete',
+    },
+    {
+      label: copy.contextMenu.copyAsNewSession,
+      testId: 'assistant-session-context-action-copy-session',
+    },
+  ]
+}
+
+export function getAssistantSessionCopyActions(language: string): AssistantSessionMenuAction[] {
+  const copy = getAssistantSessionCopy(language)
+
+  return [
+    {
+      label: copy.contextMenu.copyAsMarkdown,
+      testId: 'assistant-session-context-action-copy-markdown',
+    },
+    {
+      label: copy.contextMenu.copyAsPlainText,
+      testId: 'assistant-session-context-action-copy-text',
+    },
+  ]
+}
+
+export function getAssistantSessionExportActions(language: string): AssistantSessionMenuAction[] {
+  const copy = getAssistantSessionCopy(language)
+
+  return [
+    {
+      label: copy.contextMenu.exportToMarkdown,
+      testId: 'assistant-session-context-action-export-markdown',
+    },
+    {
+      label: copy.contextMenu.exportToJson,
+      testId: 'assistant-session-context-action-export-json',
+    },
+    {
+      label: copy.contextMenu.exportAsPlainText,
+      testId: 'assistant-session-context-action-export-text',
+    },
+  ]
+}
 
 export function getAssistantSessionDropGapTestId(index: number): string {
   return `assistant-session-drop-gap-${index}`

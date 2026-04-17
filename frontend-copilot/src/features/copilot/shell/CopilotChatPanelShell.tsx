@@ -13,6 +13,7 @@ export function CopilotChatPanelShell(props: CopilotChatPanelShellProps) {
   return (
     <section className="copilot-panel" data-testid="copilot-chat-panel">
       <CopilotPanelShell
+        language={props.language}
         state={props.state}
         retrying={props.retrying}
         onRetry={props.retry}

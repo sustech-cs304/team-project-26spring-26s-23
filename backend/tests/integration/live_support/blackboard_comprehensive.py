@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.blackboard.api import (
+from app.integrations.sustech.blackboard.api import (
     BlackboardAnnouncementAPI,
     BlackboardAssignmentAPI,
     BlackboardContentAPI,

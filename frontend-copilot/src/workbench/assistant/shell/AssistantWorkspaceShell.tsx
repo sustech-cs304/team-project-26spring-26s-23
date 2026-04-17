@@ -15,6 +15,7 @@ import {
 } from '../../../features/copilot/history'
 import { CopilotChatPanel } from '../../../features/copilot/CopilotChatPanel'
 import type { CopilotBootstrapController } from '../../../features/copilot/types'
+import type { WorkbenchLanguage } from '../../locale'
 import type { AssistantSessionShell } from '../../types'
 import { AssistantAgentDirectoryPane } from '../AssistantAgentDirectoryPane'
 import { AssistantSessionList } from '../AssistantSessionList'
@@ -26,6 +27,7 @@ import { useAssistantWorkspaceState } from '../useAssistantWorkspaceState'
 
 export interface AssistantWorkspaceShellProps {
   bootstrap: CopilotBootstrapController
+  language?: WorkbenchLanguage
   listAgents?: typeof listRuntimeAgents
   createSession?: typeof createRuntimeThread
   getCapabilities?: typeof getRuntimeCapabilities
@@ -41,6 +43,7 @@ export interface AssistantWorkspaceShellProps {
 
 export function AssistantWorkspaceShell({
   bootstrap,
+  language = 'zh-CN',
   listAgents: listAgentsImpl = listRuntimeAgents,
   createSession: createSessionImpl = createRuntimeThread,
   getCapabilities: getCapabilitiesImpl = getRuntimeCapabilities,
@@ -94,6 +97,7 @@ export function AssistantWorkspaceShell({
     cancelSessionDelete,
   } = useAssistantWorkspaceState({
     bootstrap,
+    language,
     listAgents: listAgentsImpl,
     createSession: createSessionImpl,
     getCapabilities: getCapabilitiesImpl,
@@ -113,9 +117,11 @@ export function AssistantWorkspaceShell({
         directoryState={directoryState}
         selectedAgent={selectedAgent}
         onSelectAgent={selectAgent}
+        language={language}
       />
 
       <AssistantSessionList
+        language={language}
         selectedAgent={selectedAgent}
         sessionListState={sessionListState}
         sessionStatus={sessionStatus}
@@ -151,6 +157,7 @@ export function AssistantWorkspaceShell({
       <main className="workspace-main workspace-main--chat" aria-label="会话主内容区">
         <div className="workspace-chat-layout" data-testid="assistant-chat-workspace">
           <CopilotChatPanel
+            language={language}
             state={bootstrap.state}
             retrying={bootstrap.retrying}
             retry={bootstrap.retry}

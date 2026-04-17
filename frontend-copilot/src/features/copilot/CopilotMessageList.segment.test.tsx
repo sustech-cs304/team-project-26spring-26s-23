@@ -299,6 +299,65 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
   })
 
+  it('renders explicit CAS credential guidance for authentication failures', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'failed',
+      runId: 'run-auth-failed',
+      threadId: 'session-1',
+      failure: {
+        code: 'authentication_required',
+        message: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+        details: {
+          toolId: 'blackboard.snapshot.sync',
+        },
+      },
+      segments: [
+        {
+          id: 'assistant:run-auth-failed:1',
+          kind: 'assistant',
+          runId: 'run-auth-failed',
+          assistantMessageId: 'run-auth-failed:assistant',
+          text: '已生成的第一段',
+          firstContentSequence: 1,
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'completed',
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+        {
+          id: 'terminal:run-auth-failed:failed',
+          kind: 'terminal',
+          runId: 'run-auth-failed',
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'failed',
+          terminalPhase: 'failed',
+          assistantMessageId: null,
+          cancelReason: null,
+          failure: {
+            code: 'authentication_required',
+            message: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+            details: {
+              toolId: 'blackboard.snapshot.sync',
+            },
+          },
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).toContain('发送失败')
+    expect(html).toContain('CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。')
+    expect(html).not.toContain('工具执行失败，请重试。')
+  })
+
   it('renders a detail button for transient failed cards without leaking raw diagnostics into the card body', () => {
     const html = renderToStaticMarkup(
       <CopilotMessageList

@@ -37,6 +37,10 @@ import {
   COPILOT_RUNTIME_RETRY_CHANNEL,
   type CopilotRuntimeApi,
 } from '../copilot-runtime'
+import {
+  DESKTOP_NOTIFICATION_SHOW_CHANNEL,
+  type DesktopNotificationApi,
+} from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
 
 export interface PreloadBridgeApis {
@@ -47,6 +51,7 @@ export interface PreloadBridgeApis {
   configCenterPublicPatch: ConfigCenterPublicPatchApi
   settingsWorkspaceState: SettingsWorkspaceStateApi
   settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
+  desktopNotification: DesktopNotificationApi
   bootstrapWindow: BootstrapWindowApi
 }
 
@@ -125,6 +130,11 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       clearSustechCasPassword() {
         return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
+      },
+    },
+    desktopNotification: {
+      show(request) {
+        return ipcRenderer.invoke(DESKTOP_NOTIFICATION_SHOW_CHANNEL, request)
       },
     },
     bootstrapWindow: {
