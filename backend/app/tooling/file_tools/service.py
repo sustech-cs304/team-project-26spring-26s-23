@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import perf_counter
+from typing import cast
 
 from .errors import FileToolError
 from .editor import FileToolTextEditor
@@ -21,6 +22,8 @@ from .protocol import (
     GrepRequest,
     NotebookEditRequest,
     ReadRequest,
+    SwitchRootRequest,
+    SwitchRootResult,
     ToolResultEnvelope,
     WriteRequest,
 )
@@ -240,11 +243,76 @@ class FileToolGrepService:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class FileToolSwitchRootService:
+    """Validate and describe a requested file-tool default root switch."""
+
+    path_policy: FileToolPathPolicy
+
+    def switch_root(self, request: SwitchRootRequest) -> ToolResultEnvelope:
+        started = perf_counter()
+        try:
+            resolution = self.path_policy.resolve_path(request.path)
+            if not resolution.resolved_path.exists():
+                raise FileToolError(
+                    code="not_found",
+                    message="Target root does not exist.",
+                    details={"path": resolution.resolved_path.as_posix()},
+                )
+            if not resolution.resolved_path.is_dir():
+                raise FileToolError(
+                    code="not_a_directory",
+                    message="Target root must be an existing directory.",
+                    details={"path": resolution.resolved_path.as_posix()},
+                )
+            payload = SwitchRootResult(
+                path=_build_path_metadata(resolution),
+                previous_root=resolution.workspace_root.as_posix(),
+                current_root=resolution.resolved_path.as_posix(),
+            )
+            return ToolResultEnvelope(
+                ok=True,
+                tool="SwitchRoot",
+                data=payload.to_dict(),
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+        except FileToolError as exc:
+            return ToolResultEnvelope(
+                ok=False,
+                tool="SwitchRoot",
+                error=exc,
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+
+
+def _build_path_metadata(resolution: object) -> object:
+    from .path_policy import PathResolution
+    from .protocol import PathMetadata
+
+    normalized_resolution = cast(PathResolution, resolution)
+    return PathMetadata(
+        path=normalized_resolution.original_path,
+        resolved_path=normalized_resolution.resolved_path.as_posix(),
+        path_kind=normalized_resolution.path_kind,
+        effective_root=normalized_resolution.effective_root.as_posix(),
+        root_source=normalized_resolution.root_source,
+        root_policy=normalized_resolution.root_policy,
+        symlink_policy=normalized_resolution.symlink_policy,
+    )
+
+
 __all__ = [
     "FileToolEditService",
     "FileToolGlobService",
     "FileToolGrepService",
     "FileToolNotebookEditService",
     "FileToolReadService",
+    "FileToolSwitchRootService",
     "FileToolWriteService",
 ]

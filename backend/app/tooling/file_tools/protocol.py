@@ -9,14 +9,14 @@ from typing import Any, Literal, cast
 
 from .errors import FileToolError
 
-ToolName = Literal["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"]
+ToolName = Literal["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit", "SwitchRoot"]
 PathKind = Literal["relative", "absolute"]
 RootPolicy = Literal["workspace_root"]
 RootSource = Literal["workspace_root", "absolute_override"]
 SymlinkPolicy = Literal["deny_escape"]
 ReadKind = Literal["text", "image", "pdf", "notebook", "binary"]
 
-_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit")
+_TOOL_NAMES: tuple[ToolName, ...] = ("Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit", "SwitchRoot")
 _PATH_KINDS: tuple[PathKind, ...] = ("relative", "absolute")
 _ROOT_POLICIES: tuple[RootPolicy, ...] = ("workspace_root",)
 _ROOT_SOURCES: tuple[RootSource, ...] = ("workspace_root", "absolute_override")
@@ -584,6 +584,39 @@ class NotebookEditResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SwitchRootRequest:
+    path: str
+    audit: AuditMetadata | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", _require_non_empty_text(self.path, field_name="path"))
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"path": self.path}
+        if self.audit is not None:
+            payload["audit"] = self.audit.to_dict()
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class SwitchRootResult:
+    path: PathMetadata
+    previous_root: str
+    current_root: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "previous_root", _require_non_empty_text(self.previous_root, field_name="previous_root"))
+        object.__setattr__(self, "current_root", _require_non_empty_text(self.current_root, field_name="current_root"))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self.path.to_dict(),
+            "previousRoot": self.previous_root,
+            "currentRoot": self.current_root,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class GlobRequest:
     """Request contract for staged Glob implementation."""
 
@@ -800,9 +833,11 @@ __all__ = [
     "PathKind",
     "PathMetadata",
     "ReadRequest",
-    "RootSource",
     "ReadResult",
     "RootPolicy",
+    "RootSource",
+    "SwitchRootRequest",
+    "SwitchRootResult",
     "SymlinkPolicy",
     "ToolName",
     "ToolResultEnvelope",

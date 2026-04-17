@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 import os
 import time
+from pathlib import Path
 
 from app.tooling.file_tools.runtime_bindings import (
     FILE_TOOL_GLOB_FUNCTION_NAME,
@@ -12,13 +12,17 @@ from app.tooling.file_tools.runtime_bindings import (
     FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
+    FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME,
+    FILE_TOOL_SWITCH_ROOT_ID,
     FILE_TOOL_WRITE_FUNCTION_NAME,
     FILE_TOOL_WRITE_ID,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
     build_file_tool_read_runtime_binding,
+    build_file_tool_switch_root_runtime_binding,
     build_file_tool_write_runtime_binding,
 )
+from app.tooling.runtime_adapter.copilot_runtime import RuntimeToolExecutionContext, runtime_tool_execution_scope
 
 
 def test_file_tool_read_runtime_binding_exposes_schema_and_executes(tmp_path: Path) -> None:
@@ -252,3 +256,71 @@ def test_file_tool_grep_runtime_binding_maps_invalid_regex_to_invalid_input(tmp_
     assert result["status"] == "error"
     assert result["error"]["code"] == "invalid_input"
     assert result["output"]["error"]["code"] == "invalid_regex"
+
+
+
+def test_file_tool_read_runtime_binding_uses_runtime_default_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    runtime_root = tmp_path / "runtime-root"
+    workspace_root.mkdir()
+    runtime_root.mkdir()
+    (runtime_root / "sample.txt").write_text("runtime\nvalue\n", encoding="utf-8")
+
+    binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
+    with runtime_tool_execution_scope(
+        RuntimeToolExecutionContext(
+            tool_call_id="call-1",
+            metadata={"fileSystemState": {"defaultRoot": str(runtime_root)}},
+        )
+    ):
+        result = asyncio.run(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1}))
+
+    assert result["status"] == "success"
+    assert result["output"]["data"]["content"] == {"text": "value"}
+    assert result["output"]["data"]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
+
+
+
+def test_file_tool_read_runtime_binding_falls_back_to_workspace_root_without_runtime_default_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "sample.txt").write_text("workspace\nvalue\n", encoding="utf-8")
+
+    binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
+    result = asyncio.run(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1}))
+
+    assert result["status"] == "success"
+    assert result["output"]["data"]["content"] == {"text": "value"}
+    assert result["output"]["data"]["effectiveRoot"] == workspace_root.resolve(strict=False).as_posix()
+
+
+
+def test_file_tool_switch_root_runtime_binding_succeeds_for_directory(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    target_root = tmp_path / "target-root"
+    workspace_root.mkdir()
+    target_root.mkdir()
+
+    binding = build_file_tool_switch_root_runtime_binding(workspace_root=workspace_root)
+    result = asyncio.run(binding.execute({"path": str(target_root)}))
+
+    assert binding.tool_id == FILE_TOOL_SWITCH_ROOT_ID
+    assert binding.function_name == FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME
+    assert result["status"] == "success"
+    assert result["output"]["data"]["currentRoot"] == target_root.resolve(strict=False).as_posix()
+    assert result["output"]["data"]["previousRoot"] == workspace_root.resolve(strict=False).as_posix()
+
+
+
+def test_file_tool_switch_root_runtime_binding_rejects_file_target(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    target_file = tmp_path / "target.txt"
+    workspace_root.mkdir()
+    target_file.write_text("hello", encoding="utf-8")
+
+    binding = build_file_tool_switch_root_runtime_binding(workspace_root=workspace_root)
+    result = asyncio.run(binding.execute({"path": str(target_file)}))
+
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "invalid_input"
+    assert result["output"]["error"]["code"] == "not_a_directory"

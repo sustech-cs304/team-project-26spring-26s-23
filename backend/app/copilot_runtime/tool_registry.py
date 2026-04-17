@@ -17,12 +17,14 @@ from app.tooling.file_tools import (
     FILE_TOOL_GREP_ID,
     FILE_TOOL_NOTEBOOK_EDIT_ID,
     FILE_TOOL_READ_ID,
+    FILE_TOOL_SWITCH_ROOT_ID,
     FILE_TOOL_WRITE_ID,
     build_file_tool_edit_runtime_binding,
     build_file_tool_glob_runtime_binding,
     build_file_tool_grep_runtime_binding,
     build_file_tool_notebook_edit_runtime_binding,
     build_file_tool_read_runtime_binding,
+    build_file_tool_switch_root_runtime_binding,
     build_file_tool_write_runtime_binding,
 )
 from app.tooling.runtime_adapter.copilot_runtime import (
@@ -62,6 +64,9 @@ FILE_TOOL_GREP_PROMPT = "Use this tool to search workspace text files and inspec
 FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME = "Notebook Edit"
 FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION = "Edit workspace notebooks with transactional cell operations."
 FILE_TOOL_NOTEBOOK_EDIT_PROMPT = "Use this tool to replace, insert, or delete notebook cells transactionally after inspecting notebook structure."
+FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME = "File Switch Root"
+FILE_TOOL_SWITCH_ROOT_DESCRIPTION = "Validate and resolve a new default file root directory for later tool calls."
+FILE_TOOL_SWITCH_ROOT_PROMPT = "Use this tool to validate a directory as the next default root for subsequent file tool calls."
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
     "Return a placeholder current-weather result for a requested location."
@@ -105,6 +110,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "按 cell 级事务语义编辑工作区 notebook。",
             "prompt": "使用此工具对 notebook 执行 replace、insert、delete 等 cell 级事务编辑。",
         },
+        FILE_TOOL_SWITCH_ROOT_ID: {
+            "displayName": "文件根切换",
+            "description": "验证并解析后续文件工具可使用的新默认根目录。",
+            "prompt": "使用此工具校验某个目录能否作为后续文件工具调用的默认根。",
+        },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": "当前天气",
             "description": "返回指定地点的占位当前天气结果。",
@@ -146,6 +156,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME,
             "description": FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
             "prompt": FILE_TOOL_NOTEBOOK_EDIT_PROMPT,
+        },
+        FILE_TOOL_SWITCH_ROOT_ID: {
+            "displayName": FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME,
+            "description": FILE_TOOL_SWITCH_ROOT_DESCRIPTION,
+            "prompt": FILE_TOOL_SWITCH_ROOT_PROMPT,
         },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
@@ -476,6 +491,7 @@ _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_GLOB_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_GREP_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_NOTEBOOK_EDIT_ID: _BUILTIN_TOOL_GROUP,
+    FILE_TOOL_SWITCH_ROOT_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     "blackboard.sql.query": _BLACKBOARD_TOOL_GROUP,
     "blackboard.course_catalog.search": _BLACKBOARD_TOOL_GROUP,
@@ -530,6 +546,12 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME,
         "description_zh": "按 cell 级事务语义编辑工作区 notebook。",
         "description_en": FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
+    },
+    FILE_TOOL_SWITCH_ROOT_ID: {
+        "display_name_zh": "文件根切换",
+        "display_name_en": FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME,
+        "description_zh": "验证并解析后续文件工具可使用的新默认根目录。",
+        "description_en": FILE_TOOL_SWITCH_ROOT_DESCRIPTION,
     },
     WEATHER_CURRENT_TOOL_ID: {
         "display_name_zh": "当前天气",
@@ -647,6 +669,9 @@ def build_default_tool_registry(
     file_notebook_edit_binding = build_file_tool_notebook_edit_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
+    file_switch_root_binding = build_file_tool_switch_root_runtime_binding(
+        workspace_root=resolved_workspace_root,
+    )
     registry = ToolRegistry()
     registry.register(
         ToolsetDescriptor(
@@ -738,6 +763,20 @@ def build_default_tool_registry(
                     execute=file_notebook_edit_binding.execute,
                     function_name=file_notebook_edit_binding.function_name,
                     parameters_json_schema=file_notebook_edit_binding.parameters_json_schema,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=FILE_TOOL_SWITCH_ROOT_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME,
+                        description=FILE_TOOL_SWITCH_ROOT_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=FILE_TOOL_SWITCH_ROOT_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_TOOL_SWITCH_ROOT_ID],
+                    ),
+                    execute=file_switch_root_binding.execute,
+                    function_name=file_switch_root_binding.function_name,
+                    parameters_json_schema=file_switch_root_binding.parameters_json_schema,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(

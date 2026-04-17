@@ -13,7 +13,11 @@ from app.tooling.contract.metadata import ToolMetadata
 from app.tooling.contract.results import ToolResultEnvelope as ContractToolResultEnvelope
 from app.tooling.contract.schema import ToolSchema
 from app.tooling.host_capabilities import ToolHostCapabilities
-from app.tooling.runtime_adapter.copilot_runtime import RuntimeExecutableToolBinding, build_contract_runtime_binding
+from app.tooling.runtime_adapter.copilot_runtime import (
+    RuntimeExecutableToolBinding,
+    build_contract_runtime_binding,
+    get_runtime_context_metadata_value,
+)
 
 from .editor import FileToolTextEditor
 from .glob_search import FileToolGlobSearcher
@@ -29,6 +33,7 @@ from .protocol import (
     NotebookEditOperation,
     NotebookEditRequest,
     ReadRequest,
+    SwitchRootRequest,
     WriteRequest,
 )
 from .service import (
@@ -37,6 +42,7 @@ from .service import (
     FileToolGrepService,
     FileToolNotebookEditService,
     FileToolReadService,
+    FileToolSwitchRootService,
     FileToolWriteService,
 )
 from .text_reader import FileToolTextReader
@@ -54,6 +60,8 @@ FILE_TOOL_GREP_ID = "tool.fs.grep"
 FILE_TOOL_GREP_FUNCTION_NAME = "tool_fs_grep"
 FILE_TOOL_NOTEBOOK_EDIT_ID = "tool.fs.notebook_edit"
 FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME = "tool_fs_notebook_edit"
+FILE_TOOL_SWITCH_ROOT_ID = "tool.fs.switch_root"
+FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME = "tool_fs_switch_root"
 _FILE_TOOL_READ_INPUT_SCHEMA = ToolSchema(
     schema={
         "type": "object",
@@ -225,6 +233,27 @@ _FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA = ToolSchema(
             },
         },
         "required": ["path", "operations"],
+    }
+)
+_FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "audit": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "actor": {"type": "string"},
+                    "intent": {"type": "string"},
+                    "sessionId": {"type": "string"},
+                    "traceId": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
+        },
+        "required": ["path"],
     }
 )
 
@@ -451,6 +480,50 @@ class RuntimeFileToolGrepContract(ToolContract):
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeFileToolSwitchRootContract(ToolContract):
+    """Runtime-agnostic contract wrapper for switching the file-tool default root."""
+
+    service: FileToolSwitchRootService
+    metadata: ToolMetadata = ToolMetadata(
+        tool_id=FILE_TOOL_SWITCH_ROOT_ID,
+        display_name="File Switch Root",
+        description="Validate and resolve a new default file root directory for later tool calls.",
+        kind="operation",
+        input_schema=_FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA,
+        idempotent=True,
+        annotations={"stage": "phase1-switch-root"},
+    )
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ContractToolResultEnvelope:
+        _ = (context, host)
+        try:
+            request = _build_switch_root_request(arguments)
+        except ValueError as exc:
+            return ContractToolResultEnvelope.failure(
+                error=NormalizedToolError(code="invalid_input", message=str(exc)),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+
+        result = self.service.switch_root(request)
+        if result.ok:
+            return ContractToolResultEnvelope.success(
+                output=result.to_dict(),
+                metadata={"toolId": self.metadata.tool_id},
+            )
+        return ContractToolResultEnvelope.failure(
+            error=_map_file_tool_error(result.error),
+            output=result.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeFileToolNotebookEditContract(ToolContract):
     """Runtime-agnostic contract wrapper for staged notebook cell editing."""
 
@@ -495,61 +568,100 @@ class RuntimeFileToolNotebookEditContract(ToolContract):
 
 
 def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
-    service = FileToolReadService(
-        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
-        text_reader=FileToolTextReader(),
-        notebook_reader=FileToolNotebookReader(),
+    contract = RuntimeFileToolReadContract(
+        service=FileToolReadService(
+            path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+            text_reader=FileToolTextReader(),
+            notebook_reader=FileToolNotebookReader(),
+        )
     )
-    contract = RuntimeFileToolReadContract(service=service)
-    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_READ_FUNCTION_NAME)
+    return _build_runtime_aware_binding(
+        contract=contract,
+        workspace_root=workspace_root,
+        function_name=FILE_TOOL_READ_FUNCTION_NAME,
+    )
 
 
 def build_file_tool_write_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
-    service = FileToolWriteService(
-        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
-        text_writer=FileToolTextWriter(),
+    contract = RuntimeFileToolWriteContract(
+        service=FileToolWriteService(
+            path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+            text_writer=FileToolTextWriter(),
+        )
     )
-    contract = RuntimeFileToolWriteContract(service=service)
-    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_WRITE_FUNCTION_NAME)
+    return _build_runtime_aware_binding(
+        contract=contract,
+        workspace_root=workspace_root,
+        function_name=FILE_TOOL_WRITE_FUNCTION_NAME,
+    )
 
 
 def build_file_tool_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
-    service = FileToolEditService(
-        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
-        text_editor=FileToolTextEditor(),
+    contract = RuntimeFileToolEditContract(
+        service=FileToolEditService(
+            path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+            text_editor=FileToolTextEditor(),
+        )
     )
-    contract = RuntimeFileToolEditContract(service=service)
-    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_EDIT_FUNCTION_NAME)
+    return _build_runtime_aware_binding(
+        contract=contract,
+        workspace_root=workspace_root,
+        function_name=FILE_TOOL_EDIT_FUNCTION_NAME,
+    )
 
 
 def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
-    service = FileToolGlobService(
-        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
-        glob_searcher=FileToolGlobSearcher(),
+    contract = RuntimeFileToolGlobContract(
+        service=FileToolGlobService(
+            path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+            glob_searcher=FileToolGlobSearcher(),
+        )
     )
-    contract = RuntimeFileToolGlobContract(service=service)
-    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_GLOB_FUNCTION_NAME)
+    return _build_runtime_aware_binding(
+        contract=contract,
+        workspace_root=workspace_root,
+        function_name=FILE_TOOL_GLOB_FUNCTION_NAME,
+    )
 
 
 def build_file_tool_grep_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
-    service = FileToolGrepService(
-        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
-        grep_searcher=FileToolGrepSearcher(),
+    contract = RuntimeFileToolGrepContract(
+        service=FileToolGrepService(
+            path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+            grep_searcher=FileToolGrepSearcher(),
+        )
     )
-    contract = RuntimeFileToolGrepContract(service=service)
-    return build_contract_runtime_binding(contract, kind="builtin", function_name=FILE_TOOL_GREP_FUNCTION_NAME)
+    return _build_runtime_aware_binding(
+        contract=contract,
+        workspace_root=workspace_root,
+        function_name=FILE_TOOL_GREP_FUNCTION_NAME,
+    )
 
 
 def build_file_tool_notebook_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
-    service = FileToolNotebookEditService(
-        path_policy=FileToolPathPolicy(workspace_root=workspace_root),
-        notebook_editor=FileToolNotebookEditor(),
+    contract = RuntimeFileToolNotebookEditContract(
+        service=FileToolNotebookEditService(
+            path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+            notebook_editor=FileToolNotebookEditor(),
+        )
     )
-    contract = RuntimeFileToolNotebookEditContract(service=service)
-    return build_contract_runtime_binding(
-        contract,
-        kind="builtin",
+    return _build_runtime_aware_binding(
+        contract=contract,
+        workspace_root=workspace_root,
         function_name=FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME,
+    )
+
+
+def build_file_tool_switch_root_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+    contract = RuntimeFileToolSwitchRootContract(
+        service=FileToolSwitchRootService(
+            path_policy=FileToolPathPolicy(workspace_root=workspace_root),
+        )
+    )
+    return _build_runtime_aware_binding(
+        contract=contract,
+        workspace_root=workspace_root,
+        function_name=FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME,
     )
 
 
@@ -643,6 +755,17 @@ def _build_notebook_edit_request(arguments: Mapping[str, Any] | None) -> Noteboo
         expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
         audit=audit,
     )
+
+
+def _build_switch_root_request(arguments: Mapping[str, Any] | None) -> SwitchRootRequest:
+    payload = dict(arguments or {})
+    audit_payload = payload.get("audit")
+    audit = _build_audit_metadata(audit_payload)
+    return SwitchRootRequest(
+        path=_require_string(payload.get("path"), field_name="path"),
+        audit=audit,
+    )
+
 
 
 def _build_notebook_edit_operation(value: Any) -> NotebookEditOperation:
@@ -744,6 +867,52 @@ def _coerce_bool(value: Any, *, field_name: str) -> bool:
     return value
 
 
+def _build_runtime_aware_binding(
+    *,
+    contract: ToolContract,
+    workspace_root: Path,
+    function_name: str,
+) -> RuntimeExecutableToolBinding:
+    binding = build_contract_runtime_binding(contract, kind="builtin", function_name=function_name)
+    base_execute = binding.execute
+
+    async def execute(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
+        default_root = _get_runtime_default_root()
+        if default_root is None:
+            return await base_execute(arguments)
+        previous_root = contract.service.path_policy.workspace_root
+        object.__setattr__(contract.service.path_policy, "workspace_root", default_root.resolve(strict=False))
+        try:
+            return await base_execute(arguments)
+        finally:
+            object.__setattr__(contract.service.path_policy, "workspace_root", previous_root)
+
+    return RuntimeExecutableToolBinding(
+        tool_id=binding.tool_id,
+        kind=binding.kind,
+        display_name=binding.display_name,
+        description=binding.description,
+        availability=binding.availability,
+        function_name=binding.function_name,
+        parameters_json_schema=binding.parameters_json_schema,
+        execute=execute,
+    )
+
+
+
+def _get_runtime_default_root() -> Path | None:
+    default_root_value = get_runtime_context_metadata_value(("fileSystemState", "defaultRoot"))
+    if not isinstance(default_root_value, str):
+        default_root_value = get_runtime_context_metadata_value("defaultRoot")
+    if not isinstance(default_root_value, str):
+        return None
+    normalized = default_root_value.strip()
+    if normalized == "":
+        return None
+    return Path(normalized).resolve(strict=False)
+
+
+
 def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
     metadata = getattr(context, "metadata", None)
     if not isinstance(metadata, Mapping):
@@ -817,6 +986,8 @@ __all__ = [
     "FILE_TOOL_NOTEBOOK_EDIT_ID",
     "FILE_TOOL_READ_FUNCTION_NAME",
     "FILE_TOOL_READ_ID",
+    "FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME",
+    "FILE_TOOL_SWITCH_ROOT_ID",
     "FILE_TOOL_WRITE_FUNCTION_NAME",
     "FILE_TOOL_WRITE_ID",
     "RuntimeFileToolEditContract",
@@ -824,11 +995,13 @@ __all__ = [
     "RuntimeFileToolGrepContract",
     "RuntimeFileToolNotebookEditContract",
     "RuntimeFileToolReadContract",
+    "RuntimeFileToolSwitchRootContract",
     "RuntimeFileToolWriteContract",
     "build_file_tool_edit_runtime_binding",
     "build_file_tool_glob_runtime_binding",
     "build_file_tool_grep_runtime_binding",
     "build_file_tool_notebook_edit_runtime_binding",
     "build_file_tool_read_runtime_binding",
+    "build_file_tool_switch_root_runtime_binding",
     "build_file_tool_write_runtime_binding",
 ]

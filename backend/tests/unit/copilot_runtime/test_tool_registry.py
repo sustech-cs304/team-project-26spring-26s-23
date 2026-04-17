@@ -42,6 +42,8 @@ from app.tooling.file_tools import (
     FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
+    FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME,
+    FILE_TOOL_SWITCH_ROOT_ID,
     FILE_TOOL_WRITE_FUNCTION_NAME,
     FILE_TOOL_WRITE_ID,
 )
@@ -83,6 +85,7 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         FILE_TOOL_GLOB_ID,
         FILE_TOOL_GREP_ID,
         "tool.fs.notebook_edit",
+        FILE_TOOL_SWITCH_ROOT_ID,
         FILE_CONVERT_TOOL_ID,
         WEATHER_CURRENT_TOOL_ID,
         *CONTRACT_TOOL_IDS,
@@ -376,6 +379,23 @@ def test_default_tool_registry_exposes_file_grep_runtime_binding_metadata_and_ex
     assert result["status"] == "success"
     assert result["output"]["ok"] is True
     assert result["output"]["data"]["matches"][0]["matchText"] == "TODO"
+
+
+
+def test_default_tool_registry_exposes_file_switch_root_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
+    registry = build_default_tool_registry(workspace_root=tmp_path)
+    target_root = tmp_path / "docs"
+    target_root.mkdir()
+
+    resolved_tool = registry.resolve_tool(FILE_TOOL_SWITCH_ROOT_ID)
+    result = asyncio.run(resolved_tool.execute({"path": str(target_root)}))
+
+    assert resolved_tool.descriptor.kind == "builtin"
+    assert resolved_tool.function_name == FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME
+    assert resolved_tool.parameters_json_schema is not None
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert result["output"]["data"]["currentRoot"] == target_root.resolve(strict=False).as_posix()
 
 
 def test_weather_tool_execution_uses_default_location_and_random_sample() -> None:
