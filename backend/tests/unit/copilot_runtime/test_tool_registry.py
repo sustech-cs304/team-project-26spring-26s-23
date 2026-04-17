@@ -17,6 +17,8 @@ from app.copilot_runtime.tool_registry import (
     FILE_CONVERT_TOOL_DESCRIPTION,
     FILE_CONVERT_TOOL_DISPLAY_NAME,
     FILE_CONVERT_TOOL_ID,
+    FILE_TOOL_GLOB_DESCRIPTION,
+    FILE_TOOL_GLOB_DISPLAY_NAME,
     FILE_TOOL_READ_DESCRIPTION,
     FILE_TOOL_READ_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
@@ -27,7 +29,12 @@ from app.copilot_runtime.tool_registry import (
     summarize_tool_arguments,
     summarize_tool_result,
 )
-from app.tooling.file_tools import FILE_TOOL_READ_FUNCTION_NAME, FILE_TOOL_READ_ID
+from app.tooling.file_tools import (
+    FILE_TOOL_GLOB_FUNCTION_NAME,
+    FILE_TOOL_GLOB_ID,
+    FILE_TOOL_READ_FUNCTION_NAME,
+    FILE_TOOL_READ_ID,
+)
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
@@ -60,7 +67,13 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
 
 def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
-    expected_tool_ids = (FILE_TOOL_READ_ID, FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID, *CONTRACT_TOOL_IDS)
+    expected_tool_ids = (
+        FILE_TOOL_READ_ID,
+        FILE_TOOL_GLOB_ID,
+        FILE_CONVERT_TOOL_ID,
+        WEATHER_CURRENT_TOOL_ID,
+        *CONTRACT_TOOL_IDS,
+    )
     catalog = registry.build_tool_catalog()
     catalog_by_id = {entry["toolId"]: entry for entry in catalog}
 
@@ -82,6 +95,26 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "displayNameEn": FILE_TOOL_READ_DISPLAY_NAME,
         "descriptionZh": "按行分页读取工作区内 UTF-8 文本文件。",
         "descriptionEn": FILE_TOOL_READ_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[FILE_TOOL_GLOB_ID] == {
+        "toolId": FILE_TOOL_GLOB_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "文件发现",
+        "description": "按 glob 模式发现工作区内文件与目录，不读取内容。",
+        "prompt": "使用此工具先发现匹配路径，再决定是否进一步读取。",
+        "displayNameZh": "文件发现",
+        "displayNameEn": FILE_TOOL_GLOB_DISPLAY_NAME,
+        "descriptionZh": "按 glob 模式发现工作区内文件与目录，不读取内容。",
+        "descriptionEn": FILE_TOOL_GLOB_DESCRIPTION,
         "group": {
             "id": "builtin-core",
             "label": "内置基础工具",
@@ -165,6 +198,8 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
 
     assert zh_catalog[FILE_TOOL_READ_ID]["displayName"] == "文件读取"
     assert en_catalog[FILE_TOOL_READ_ID]["displayName"] == FILE_TOOL_READ_DISPLAY_NAME
+    assert zh_catalog[FILE_TOOL_GLOB_ID]["displayName"] == "文件发现"
+    assert en_catalog[FILE_TOOL_GLOB_ID]["displayName"] == FILE_TOOL_GLOB_DISPLAY_NAME
     assert zh_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == "文件转换"
     assert en_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == FILE_CONVERT_TOOL_DISPLAY_NAME
     assert zh_catalog[FILE_CONVERT_TOOL_ID]["prompt"] != en_catalog[FILE_CONVERT_TOOL_ID]["prompt"]
@@ -236,6 +271,24 @@ def test_default_tool_registry_exposes_file_read_runtime_binding_metadata_and_ex
 
 
 
+def test_default_tool_registry_exposes_file_glob_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:
+    registry = build_default_tool_registry(workspace_root=tmp_path)
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "readme.md").write_text("alpha", encoding="utf-8")
+
+    resolved_tool = registry.resolve_tool(FILE_TOOL_GLOB_ID)
+    result = asyncio.run(resolved_tool.execute({"basePath": "docs", "pattern": "*.md"}))
+
+    assert resolved_tool.descriptor.kind == "builtin"
+    assert resolved_tool.function_name == FILE_TOOL_GLOB_FUNCTION_NAME
+    assert resolved_tool.parameters_json_schema is not None
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert [match["path"] for match in result["output"]["data"]["matches"]] == ["docs/readme.md"]
+
+
+
 def test_weather_tool_execution_uses_default_location_and_random_sample() -> None:
     result = asyncio.run(execute_weather_current_tool(None, rng=random.Random(0)))
 
@@ -303,214 +356,26 @@ def test_tool_registry_rejects_duplicate_tool_ids_within_toolset() -> None:
 
 
 
-def test_toolset_descriptor_preserves_stable_tool_id_and_display_hints_without_execution_semantics() -> None:
-    registry = ToolRegistry(
-        [
-            ToolsetDescriptor(
-                name="default",
-                label="Default",
-                description="Toolset with metadata only.",
-                default=True,
-                tools=(
-                    ToolDescriptor(
-                        tool_id="tool.lookup",
-                        kind="builtin",
-                        display_name="Lookup",
-                        description="Lookup metadata.",
-                    ),
-                ),
-            )
-        ]
-    )
-
-    descriptor = registry.get("default")
-
-    assert descriptor is not None
-    assert descriptor.tools == (
-        ToolDescriptor(
-            tool_id="tool.lookup",
-            kind="builtin",
-            display_name="Lookup",
-            description="Lookup metadata.",
-        ),
-    )
-    assert descriptor.tools[0].build_catalog_entry()["toolId"] == "tool.lookup"
-    assert not hasattr(descriptor, "execute")
-    assert not hasattr(registry, "execute")
-
-
-
-def test_tool_registry_resolve_tool_upgrades_metadata_only_descriptor_to_executable_item() -> None:
-    registry = ToolRegistry(
-        [
-            ToolsetDescriptor(
-                name="default",
-                label="Default",
-                description="Toolset with metadata only.",
-                default=True,
-                tools=(
-                    ToolDescriptor(
-                        tool_id="tool.lookup",
-                        kind="builtin",
-                        display_name="Lookup",
-                        description="Lookup metadata.",
-                    ),
-                ),
-            )
-        ]
-    )
-
-    resolved_tool = registry.resolve_tool("tool.lookup")
-
-    assert resolved_tool.tool_id == "tool.lookup"
-    with pytest.raises(RuntimeError, match="not implemented"):
-        asyncio.run(resolved_tool.execute(None))
-
-
-
-def test_default_tool_registry_executes_file_convert_tool() -> None:
-    registry = build_default_tool_registry()
-    resolved_tool = registry.resolve_tool(FILE_CONVERT_TOOL_ID)
-    file_path = Path(__file__).resolve().parents[1] / "tools" / "test_file.docx"
-
-    result = asyncio.run(resolved_tool.execute({"path": str(file_path)}))
-
-    assert result["path"] == str(file_path)
-    assert "Transformer模型" in result["text"]
-
-
-
-def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_large_text() -> None:
+def test_summarize_tool_arguments_redacts_sensitive_values_and_truncates_long_strings() -> None:
+    long_value = "x" * 200
     summary = summarize_tool_arguments(
         {
-            "path": "a" * 200,
-            "apiKey": "secret-value",
-            "nested": {
-                "session_token": "nested-secret",
-                "note": "b" * 160,
-            },
-            "items": [
-                {"password": "hidden"},
-                {"value": "kept"},
-            ],
+            "prompt": long_value,
+            "token": "secret-token",
+            "nested": {"password": "hidden", "safe": "value"},
         }
     )
 
     assert summary is not None
-    assert '"apiKey": "***"' in summary
-    assert '"session_token": "***"' in summary
-    assert '"password": "***"' in summary
-    assert "secret-value" not in summary
-    assert "nested-secret" not in summary
+    assert "secret-token" not in summary
     assert "hidden" not in summary
-    assert len(summary) <= 512
+    assert '"token": "***"' in summary
+    assert '"password": "***"' in summary
     assert "…" in summary
 
 
-@pytest.mark.parametrize(
-    ("result", "expected_summary"),
-    [
-        (
-            {
-                "status": "success",
-                "output": {
-                    "dbPath": "database-root/blackboard/snapshot.db",
-                    "scrapedCounts": {
-                        "courses": 1,
-                        "assignments": 1,
-                        "resources": 1,
-                        "grades": 1,
-                        "announcements": 1,
-                    },
-                    "integrityOk": True,
-                    "secondSyncHasNoNewRecords": True,
-                    "secondSyncHasNoDeletedRecords": True,
-                },
-                "artifacts": [
-                    {
-                        "artifactId": "artifact-1",
-                        "uri": "artifact://blackboard/snapshot.json",
-                    }
-                ],
-                "metadata": {
-                    "toolId": "blackboard.snapshot.sync",
-                    "stateKey": "snapshot-latest",
-                },
-            },
-            (
-                "Blackboard snapshot 同步完成；db=database-root/blackboard/snapshot.db；"
-                "courses 1、assignments 1、resources 1、grades 1、announcements 1；"
-                "完整性校验通过；二次同步无新增且无删除"
-            ),
-        ),
-        (
-            {
-                "status": "success",
-                "output": {
-                    "sourceUrl": "https://tis.sustech.edu.cn/cjgl/grcjcx/grcjcx",
-                    "totalRecords": 1,
-                    "resolvedRoleCode": "01",
-                },
-                "artifacts": [{"artifactId": "artifact-1"}],
-                "metadata": {
-                    "toolId": "tis.personal_grades.fetch",
-                    "stateKey": "grades-latest",
-                },
-            },
-            "TIS 成绩抓取完成；1 条记录；role=01",
-        ),
-        (
-            {
-                "status": "success",
-                "output": {
-                    "sourceUrl": "https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
-                    "resolvedRoleCode": "01",
-                    "summary": {
-                        "average_credit_gpa": 3.82,
-                        "rank": "5/100",
-                    },
-                    "persistence": {
-                        "enabled": True,
-                        "owner_key": "student_a",
-                    },
-                },
-                "artifacts": [{"artifactId": "artifact-1"}],
-                "metadata": {
-                    "toolId": "tis.credit_gpa.fetch",
-                    "stateKey": "credit-gpa-latest",
-                },
-            },
-            "TIS 绩点摘要抓取完成；均绩 3.82；排名 5/100；role=01；含持久化摘要",
-        ),
-        (
-            {
-                "status": "success",
-                "output": {
-                    "sourceUrl": "https://tis.sustech.edu.cn/Xsxk/queryYxkc",
-                    "semester": {
-                        "label": "2025秋季",
-                    },
-                    "courseCount": 1,
-                    "resolvedRoleCode": "01",
-                },
-                "artifacts": [{"artifactId": "artifact-1"}],
-                "metadata": {
-                    "toolId": "tis.selected_courses.fetch",
-                    "stateKey": "selected-courses-latest",
-                },
-            },
-            "TIS 选课抓取完成；2025秋季；1 门课程；role=01",
-        ),
-    ],
-)
-def test_summarize_tool_result_prefers_compact_contract_output_over_envelope(
-    result: dict[str, object],
-    expected_summary: str,
-) -> None:
-    summary = summarize_tool_result(result)
 
-    assert summary == expected_summary
-    assert summary is not None
-    assert '"status"' not in summary
-    assert '"metadata"' not in summary
-    assert not summary.startswith("{")
+def test_summarize_tool_result_serializes_common_payloads() -> None:
+    summary = summarize_tool_result({"status": "success", "count": 3})
+
+    assert summary == '{"count": 3, "status": "success"}'

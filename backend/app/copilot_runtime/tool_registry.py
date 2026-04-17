@@ -11,7 +11,12 @@ from typing import Any
 from pathlib import Path
 
 from app.tools.file_convert import convert_file_to_str
-from app.tooling.file_tools import FILE_TOOL_READ_ID, build_file_tool_read_runtime_binding
+from app.tooling.file_tools import (
+    FILE_TOOL_GLOB_ID,
+    FILE_TOOL_READ_ID,
+    build_file_tool_glob_runtime_binding,
+    build_file_tool_read_runtime_binding,
+)
 from app.tooling.runtime_adapter.copilot_runtime import (
     ToolHostCapabilitiesFactory,
     build_default_contract_runtime_bindings,
@@ -34,6 +39,9 @@ WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 FILE_TOOL_READ_DISPLAY_NAME = "File Read"
 FILE_TOOL_READ_DESCRIPTION = "Read UTF-8 text files from the workspace with line-based pagination."
 FILE_TOOL_READ_PROMPT = "Use this tool to inspect workspace text files in paginated line ranges before making edits."
+FILE_TOOL_GLOB_DISPLAY_NAME = "File Glob"
+FILE_TOOL_GLOB_DESCRIPTION = "Discover workspace files and directories by glob pattern without reading contents."
+FILE_TOOL_GLOB_PROMPT = "Use this tool to discover workspace files or folders by glob pattern before reading them."
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
     "Return a placeholder current-weather result for a requested location."
@@ -52,6 +60,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "按行分页读取工作区内 UTF-8 文本文件。",
             "prompt": "使用此工具先读取工作区文本文件，再继续分析或修改。",
         },
+        FILE_TOOL_GLOB_ID: {
+            "displayName": "文件发现",
+            "description": "按 glob 模式发现工作区内文件与目录，不读取内容。",
+            "prompt": "使用此工具先发现匹配路径，再决定是否进一步读取。",
+        },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": "当前天气",
             "description": "返回指定地点的占位当前天气结果。",
@@ -68,6 +81,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": FILE_TOOL_READ_DISPLAY_NAME,
             "description": FILE_TOOL_READ_DESCRIPTION,
             "prompt": FILE_TOOL_READ_PROMPT,
+        },
+        FILE_TOOL_GLOB_ID: {
+            "displayName": FILE_TOOL_GLOB_DISPLAY_NAME,
+            "description": FILE_TOOL_GLOB_DESCRIPTION,
+            "prompt": FILE_TOOL_GLOB_PROMPT,
         },
         WEATHER_CURRENT_TOOL_ID: {
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
@@ -405,13 +423,13 @@ async def execute_weather_current_tool(
 ) -> dict[str, Any]:
     payload = dict(arguments or {})
     raw_location = payload.get("location")
-    if isinstance(raw_location, str):
-        location = raw_location.strip() or DEFAULT_WEATHER_LOCATION
-    else:
-        location = DEFAULT_WEATHER_LOCATION
-
-    random_source = rng or random.Random()
-    sample = dict(random_source.choice(_WEATHER_SAMPLE_RESULTS))
+    location = (
+        raw_location.strip()
+        if isinstance(raw_location, str) and raw_location.strip() != ""
+        else DEFAULT_WEATHER_LOCATION
+    )
+    selected_rng = rng or random.Random()
+    sample = selected_rng.choice(_WEATHER_SAMPLE_RESULTS)
     return {
         "location": location,
         "condition": sample["condition"],
@@ -457,6 +475,7 @@ _MCP_TOOL_GROUP = ToolPresentationGroup(
 _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_CONVERT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_READ_ID: _BUILTIN_TOOL_GROUP,
+    FILE_TOOL_GLOB_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     "blackboard.sql.query": _BLACKBOARD_TOOL_GROUP,
     "blackboard.course_catalog.search": _BLACKBOARD_TOOL_GROUP,
@@ -481,6 +500,12 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": FILE_TOOL_READ_DISPLAY_NAME,
         "description_zh": "按行分页读取工作区内 UTF-8 文本文件。",
         "description_en": FILE_TOOL_READ_DESCRIPTION,
+    },
+    FILE_TOOL_GLOB_ID: {
+        "display_name_zh": "文件发现",
+        "display_name_en": FILE_TOOL_GLOB_DISPLAY_NAME,
+        "description_zh": "按 glob 模式发现工作区内文件与目录，不读取内容。",
+        "description_en": FILE_TOOL_GLOB_DESCRIPTION,
     },
     WEATHER_CURRENT_TOOL_ID: {
         "display_name_zh": "当前天气",
@@ -574,7 +599,6 @@ def _build_contract_runtime_executable_tools(
     )
 
 
-
 def build_default_tool_registry(
     *,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
@@ -582,6 +606,9 @@ def build_default_tool_registry(
 ) -> ToolRegistry:
     resolved_workspace_root = (workspace_root or Path.cwd()).resolve(strict=False)
     file_read_binding = build_file_tool_read_runtime_binding(
+        workspace_root=resolved_workspace_root,
+    )
+    file_glob_binding = build_file_tool_glob_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
     registry = ToolRegistry()
@@ -605,6 +632,20 @@ def build_default_tool_registry(
                     execute=file_read_binding.execute,
                     function_name=file_read_binding.function_name,
                     parameters_json_schema=file_read_binding.parameters_json_schema,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=FILE_TOOL_GLOB_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=FILE_TOOL_GLOB_DISPLAY_NAME,
+                        description=FILE_TOOL_GLOB_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=FILE_TOOL_GLOB_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_TOOL_GLOB_ID],
+                    ),
+                    execute=file_glob_binding.execute,
+                    function_name=file_glob_binding.function_name,
+                    parameters_json_schema=file_glob_binding.parameters_json_schema,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(
@@ -694,313 +735,42 @@ def _sanitize_tool_argument_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_sanitize_tool_argument_value(item) for item in value)
     if isinstance(value, str):
-        return _truncate_tool_argument_text(
-            value,
-            limit=_MAX_TOOL_ARGUMENT_VALUE_LENGTH,
-        )
+        return _truncate_tool_argument_text(value, limit=_MAX_TOOL_ARGUMENT_VALUE_LENGTH)
     return value
-
-
-def _is_sensitive_tool_argument_key(key: str) -> bool:
-    normalized_key = "".join(character for character in key.lower() if character.isalnum())
-    return any(
-        keyword in normalized_key
-        for keyword in _SENSITIVE_TOOL_ARGUMENT_KEYWORDS
-    )
-
-
-def _truncate_tool_argument_text(value: str, *, limit: int) -> str:
-    if len(value) <= limit:
-        return value
-    if limit <= 1:
-        return value[:limit]
-    return f"{value[: limit - 1]}…"
-
-
-def _truncate_tool_result_text(value: str) -> str:
-    return _truncate_tool_argument_text(
-        value,
-        limit=_MAX_TOOL_RESULT_SUMMARY_LENGTH,
-    )
-
-
-
-def _serialize_tool_result_value(value: Any) -> str:
-    try:
-        if isinstance(value, Mapping):
-            return json.dumps(dict(value), ensure_ascii=False, sort_keys=True)
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
-    except TypeError:
-        if isinstance(value, Mapping):
-            return str(dict(value))
-        return str(value)
-
-
-
-def _compact_tool_result_text(value: Any) -> str:
-    return _truncate_tool_result_text(_serialize_tool_result_value(value))
-
-
-
-def _as_non_empty_text(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
-
-
-
-def _persistence_detail(output: Mapping[str, Any]) -> str | None:
-    persistence = output.get("persistence")
-    if not isinstance(persistence, Mapping) or not persistence:
-        return None
-    return "含持久化摘要"
-
-
-
-def _format_named_counts(
-    counts: Mapping[str, Any],
-    *,
-    keys: tuple[str, ...],
-) -> str | None:
-    parts: list[str] = []
-    for key in keys:
-        value = counts.get(key)
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, (int, float)):
-            parts.append(f"{key} {int(value)}")
-    if not parts:
-        return None
-    return "、".join(parts)
-
-
-
-def _format_semester_label(value: Any) -> str | None:
-    if not isinstance(value, Mapping):
-        return None
-    label = _as_non_empty_text(value.get("label"))
-    if label is not None:
-        return label
-    academic_year = _as_non_empty_text(value.get("academic_year"))
-    term_code = _as_non_empty_text(value.get("term_code"))
-    if academic_year is None and term_code is None:
-        return None
-    if academic_year is None:
-        return term_code
-    if term_code is None:
-        return academic_year
-    return f"{academic_year}-{term_code}"
-
-
-
-def _summarize_weather_mapping(result: Mapping[str, Any]) -> str | None:
-    location = result.get("location")
-    condition = result.get("condition")
-    temperature = result.get("temperatureC")
-    humidity = result.get("humidity")
-    if all(value is not None for value in (location, condition, temperature, humidity)):
-        return _truncate_tool_result_text(
-            f"{location}：{condition} / {temperature}°C / 湿度 {humidity}%"
-        )
-    return None
-
-
-
-def _infer_compact_tool_id(output: Mapping[str, Any]) -> str | None:
-    if "scrapedCounts" in output and "integrityOk" in output:
-        return "blackboard.snapshot.sync"
-    if "totalRecords" in output and "sourceUrl" in output:
-        return "tis.personal_grades.fetch"
-    if "courseCount" in output and "semester" in output:
-        return "tis.selected_courses.fetch"
-    if "summary" in output and "sourceUrl" in output:
-        return "tis.credit_gpa.fetch"
-    return None
-
-
-
-def _summarize_blackboard_snapshot_output(output: Mapping[str, Any]) -> str | None:
-    details: list[str] = []
-    db_path = _as_non_empty_text(output.get("dbPath"))
-    if db_path is not None:
-        details.append(f"db={db_path}")
-    scraped_counts = output.get("scrapedCounts")
-    if isinstance(scraped_counts, Mapping):
-        counts_summary = _format_named_counts(
-            scraped_counts,
-            keys=("courses", "assignments", "resources", "grades", "announcements"),
-        )
-        if counts_summary is not None:
-            details.append(counts_summary)
-    integrity_ok = output.get("integrityOk")
-    if integrity_ok is True:
-        details.append("完整性校验通过")
-    elif integrity_ok is False:
-        details.append("完整性校验未通过")
-    second_sync_no_new = output.get("secondSyncHasNoNewRecords")
-    second_sync_no_deleted = output.get("secondSyncHasNoDeletedRecords")
-    if second_sync_no_new is True and second_sync_no_deleted is True:
-        details.append("二次同步无新增且无删除")
-    elif second_sync_no_new is True:
-        details.append("二次同步无新增")
-    elif second_sync_no_deleted is True:
-        details.append("二次同步无删除")
-    if not details:
-        return None
-    return _truncate_tool_result_text(
-        f"Blackboard snapshot 同步完成；{'；'.join(details)}"
-    )
-
-
-
-def _summarize_tis_personal_grades_output(output: Mapping[str, Any]) -> str | None:
-    details: list[str] = []
-    total_records = output.get("totalRecords")
-    if isinstance(total_records, bool):
-        total_records = None
-    if isinstance(total_records, (int, float)):
-        details.append(f"{int(total_records)} 条记录")
-    role_code = _as_non_empty_text(output.get("resolvedRoleCode"))
-    if role_code is not None:
-        details.append(f"role={role_code}")
-    persistence_detail = _persistence_detail(output)
-    if persistence_detail is not None:
-        details.append(persistence_detail)
-    if not details:
-        return None
-    return _truncate_tool_result_text(
-        f"TIS 成绩抓取完成；{'；'.join(details)}"
-    )
-
-
-
-def _summarize_tis_credit_gpa_output(output: Mapping[str, Any]) -> str | None:
-    details: list[str] = []
-    summary = output.get("summary")
-    if isinstance(summary, Mapping):
-        average_credit_gpa = summary.get("average_credit_gpa")
-        if not isinstance(average_credit_gpa, bool) and isinstance(
-            average_credit_gpa,
-            (int, float),
-        ):
-            details.append(f"均绩 {average_credit_gpa:g}")
-        rank = _as_non_empty_text(summary.get("rank"))
-        if rank is not None:
-            details.append(f"排名 {rank}")
-    role_code = _as_non_empty_text(output.get("resolvedRoleCode"))
-    if role_code is not None:
-        details.append(f"role={role_code}")
-    persistence_detail = _persistence_detail(output)
-    if persistence_detail is not None:
-        details.append(persistence_detail)
-    if not details:
-        return None
-    return _truncate_tool_result_text(
-        f"TIS 绩点摘要抓取完成；{'；'.join(details)}"
-    )
-
-
-
-def _summarize_tis_selected_courses_output(output: Mapping[str, Any]) -> str | None:
-    details: list[str] = []
-    semester_label = _format_semester_label(output.get("semester"))
-    if semester_label is not None:
-        details.append(semester_label)
-    course_count = output.get("courseCount")
-    if not isinstance(course_count, bool) and isinstance(course_count, (int, float)):
-        details.append(f"{int(course_count)} 门课程")
-    role_code = _as_non_empty_text(output.get("resolvedRoleCode"))
-    if role_code is not None:
-        details.append(f"role={role_code}")
-    persistence_detail = _persistence_detail(output)
-    if persistence_detail is not None:
-        details.append(persistence_detail)
-    if not details:
-        return None
-    return _truncate_tool_result_text(
-        f"TIS 选课抓取完成；{'；'.join(details)}"
-    )
-
-
-
-def _summarize_known_tool_output(
-    *,
-    tool_id: str | None,
-    output: Mapping[str, Any],
-) -> str | None:
-    resolved_tool_id = tool_id or _infer_compact_tool_id(output)
-    if resolved_tool_id == "blackboard.snapshot.sync":
-        return _summarize_blackboard_snapshot_output(output)
-    if resolved_tool_id == "tis.personal_grades.fetch":
-        return _summarize_tis_personal_grades_output(output)
-    if resolved_tool_id == "tis.credit_gpa.fetch":
-        return _summarize_tis_credit_gpa_output(output)
-    if resolved_tool_id == "tis.selected_courses.fetch":
-        return _summarize_tis_selected_courses_output(output)
-    return None
-
-
-
-def _summarize_tool_output_value(*, tool_id: str | None, output: Any) -> str | None:
-    if output is None:
-        return None
-    if isinstance(output, str):
-        value = output.strip()
-        return _truncate_tool_result_text(value) if value else None
-    if isinstance(output, Mapping):
-        summary = _summarize_known_tool_output(tool_id=tool_id, output=output)
-        if summary is not None:
-            return summary
-        weather_summary = _summarize_weather_mapping(output)
-        if weather_summary is not None:
-            return weather_summary
-        return _compact_tool_result_text(output)
-    return _compact_tool_result_text(output)
-
 
 
 def summarize_tool_result(result: Any) -> str | None:
     if result is None:
         return None
-    if isinstance(result, str):
-        value = result.strip()
-        return _truncate_tool_result_text(value) if value else None
-    if isinstance(result, Mapping):
-        if result.get("status") == "success":
-            metadata = result.get("metadata")
-            tool_id = (
-                _as_non_empty_text(metadata.get("toolId"))
-                if isinstance(metadata, Mapping)
-                else None
-            )
-            output_summary = _summarize_tool_output_value(
-                tool_id=tool_id,
-                output=result.get("output"),
-            )
-            if output_summary is not None:
-                return output_summary
-        weather_summary = _summarize_weather_mapping(result)
-        if weather_summary is not None:
-            return weather_summary
-        return _compact_tool_result_text(result)
-    return _compact_tool_result_text(result)
+    try:
+        summary = json.dumps(result, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        summary = str(result)
+    return _truncate_tool_argument_text(summary, limit=_MAX_TOOL_RESULT_SUMMARY_LENGTH)
+
+
+def _truncate_tool_argument_text(value: str, *, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: max(0, limit - 1)]}…"
+
+
+def _is_sensitive_tool_argument_key(key: str) -> bool:
+    normalized = key.strip().lower().replace("_", "").replace("-", "")
+    return any(keyword in normalized for keyword in _SENSITIVE_TOOL_ARGUMENT_KEYWORDS)
 
 
 __all__ = [
-    "DEFAULT_TOOLSET_DESCRIPTION",
-    "DEFAULT_TOOLSET_LABEL",
-    "DEFAULT_TOOLSET_NAME",
-    "DEFAULT_TOOL_DIRECTORY_VERSION",
-    "DEFAULT_TOOL_AVAILABILITY",
-    "DEFAULT_TOOL_KIND",
     "DEFAULT_WEATHER_LOCATION",
     "ExecutableTool",
     "FILE_CONVERT_TOOL_DESCRIPTION",
     "FILE_CONVERT_TOOL_DISPLAY_NAME",
     "FILE_CONVERT_TOOL_ID",
+    "FILE_TOOL_GLOB_DESCRIPTION",
+    "FILE_TOOL_GLOB_DISPLAY_NAME",
+    "FILE_TOOL_READ_DESCRIPTION",
+    "FILE_TOOL_READ_DISPLAY_NAME",
     "ToolDescriptor",
-    "ToolExecutor",
     "ToolPresentation",
     "ToolPresentationGroup",
     "ToolRegistry",
@@ -1010,6 +780,7 @@ __all__ = [
     "WEATHER_CURRENT_TOOL_ID",
     "build_default_tool_registry",
     "execute_weather_current_tool",
+    "normalize_tool_catalog_language",
     "summarize_tool_arguments",
     "summarize_tool_result",
 ]

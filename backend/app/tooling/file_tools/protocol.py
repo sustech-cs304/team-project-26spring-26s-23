@@ -263,17 +263,16 @@ class ReadResult:
 
 @dataclass(frozen=True, slots=True)
 class GlobRequest:
-    """Request contract for future staged Glob implementation."""
+    """Request contract for staged Glob implementation."""
 
-    path: str
-    pattern: str
+    base_path: str = "."
+    pattern: str = ""
     include_hidden: bool = False
-    case_sensitive: bool = False
     max_results: int | None = None
     audit: AuditMetadata | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "path", _require_non_empty_text(self.path, field_name="path"))
+        object.__setattr__(self, "base_path", _require_non_empty_text(self.base_path, field_name="base_path"))
         object.__setattr__(self, "pattern", _require_non_empty_text(self.pattern, field_name="pattern"))
         if self.max_results is not None:
             object.__setattr__(
@@ -284,10 +283,9 @@ class GlobRequest:
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "path": self.path,
+            "basePath": self.base_path,
             "pattern": self.pattern,
             "includeHidden": self.include_hidden,
-            "caseSensitive": self.case_sensitive,
         }
         if self.max_results is not None:
             payload["maxResults"] = self.max_results
@@ -298,18 +296,31 @@ class GlobRequest:
 
 @dataclass(frozen=True, slots=True)
 class GlobMatch:
-    """Resolved file discovery record returned by future Glob."""
+    """Resolved file discovery record returned by staged Glob."""
 
     path: PathMetadata
     is_directory: bool
     is_hidden: bool
+    size_bytes: int | None = None
+    modified_time_ms: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.size_bytes is not None and self.size_bytes < 0:
+            raise ValueError("size_bytes must be greater than or equal to 0.")
+        if self.modified_time_ms is not None and self.modified_time_ms < 0:
+            raise ValueError("modified_time_ms must be greater than or equal to 0.")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             **self.path.to_dict(),
             "isDirectory": self.is_directory,
             "isHidden": self.is_hidden,
         }
+        if self.size_bytes is not None:
+            payload["sizeBytes"] = self.size_bytes
+        if self.modified_time_ms is not None:
+            payload["modifiedTimeMs"] = self.modified_time_ms
+        return payload
 
 
 @dataclass(frozen=True, slots=True)

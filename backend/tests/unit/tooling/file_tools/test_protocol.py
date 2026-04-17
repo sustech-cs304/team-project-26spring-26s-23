@@ -62,14 +62,21 @@ def test_read_request_and_result_serialize_to_stable_protocol_shape() -> None:
     }
 
 
+
 def test_glob_and_grep_shapes_share_path_metadata() -> None:
     path = PathMetadata(
         path="src/app.py",
         resolved_path="C:/workspace/src/app.py",
         path_kind="relative",
     )
-    glob_request = GlobRequest(path="src", pattern="**/*.py", include_hidden=True, max_results=20)
-    glob_match = GlobMatch(path=path, is_directory=False, is_hidden=False)
+    glob_request = GlobRequest(base_path="src", pattern="**/*.py", include_hidden=True, max_results=20)
+    glob_match = GlobMatch(
+        path=path,
+        is_directory=False,
+        is_hidden=False,
+        size_bytes=123,
+        modified_time_ms=1700000000000,
+    )
     grep_request = GrepRequest(
         path="src",
         pattern="TODO",
@@ -87,13 +94,22 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
     )
 
     assert glob_request.to_dict() == {
-        "path": "src",
+        "basePath": "src",
         "pattern": "**/*.py",
         "includeHidden": True,
-        "caseSensitive": False,
         "maxResults": 20,
     }
-    assert glob_match.to_dict()["resolvedPath"] == "C:/workspace/src/app.py"
+    assert glob_match.to_dict() == {
+        "path": "src/app.py",
+        "resolvedPath": "C:/workspace/src/app.py",
+        "pathKind": "relative",
+        "rootPolicy": "workspace_only",
+        "symlinkPolicy": "deny_escape",
+        "isDirectory": False,
+        "isHidden": False,
+        "sizeBytes": 123,
+        "modifiedTimeMs": 1700000000000,
+    }
     assert grep_request.to_dict() == {
         "path": "src",
         "pattern": "TODO",
@@ -115,6 +131,7 @@ def test_glob_and_grep_shapes_share_path_metadata() -> None:
         "before": ["# note"],
         "after": ["pass"],
     }
+
 
 
 def test_result_envelope_enforces_success_and_failure_invariants() -> None:

@@ -1,4 +1,4 @@
-"""Service orchestration for staged file tool Read support."""
+"""Service orchestration for staged file tool Read and Glob support."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from time import perf_counter
 
 from .errors import FileToolError
+from .glob_search import FileToolGlobSearcher
 from .path_policy import FileToolPathPolicy
-from .protocol import FileToolCallMetadata, ReadRequest, ToolResultEnvelope
+from .protocol import FileToolCallMetadata, GlobRequest, ReadRequest, ToolResultEnvelope
 from .text_reader import FileToolTextReader
 
 
@@ -44,4 +45,37 @@ class FileToolReadService:
             )
 
 
-__all__ = ["FileToolReadService"]
+@dataclass(frozen=True, slots=True)
+class FileToolGlobService:
+    """Compose path policy and glob search into the staged Glob service."""
+
+    path_policy: FileToolPathPolicy
+    glob_searcher: FileToolGlobSearcher
+
+    def glob(self, request: GlobRequest) -> ToolResultEnvelope:
+        started = perf_counter()
+        try:
+            resolution = self.path_policy.resolve_path(request.base_path)
+            payload = self.glob_searcher.search(request=request, resolution=resolution)
+            return ToolResultEnvelope(
+                ok=True,
+                tool="Glob",
+                data=payload.to_dict(),
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+        except FileToolError as exc:
+            return ToolResultEnvelope(
+                ok=False,
+                tool="Glob",
+                error=exc,
+                metadata=FileToolCallMetadata(
+                    duration_ms=max(0, int((perf_counter() - started) * 1000)),
+                    audit=request.audit,
+                ),
+            )
+
+
+__all__ = ["FileToolGlobService", "FileToolReadService"]
