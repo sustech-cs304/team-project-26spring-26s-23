@@ -911,6 +911,7 @@ describe('AssistantWorkspace render + interactions', () => {
               threadId: protectedFixture.summary.threadId,
             },
             pendingHistorySyncRunId: protectedFixture.replay.run.runId,
+            lastAccessedAt: Date.now(),
           },
         }))
       },

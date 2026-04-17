@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 
 import { getAssistantSessionCopy, type WorkbenchLanguage } from '../locale'
 import {
@@ -18,17 +17,14 @@ interface AssistantSessionContextMenuProps {
   onConfirmDelete: (sessionId: string) => void
   onCancelDelete: () => void
   onDismissContextMenu: () => void
-  onSelectSubmenu: (submenu: 'copy' | 'export' | null) => void
+  onSelectSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
 }
 
-interface AssistantSessionSubmenuProps {
-  active: boolean
-  panelTestId: string
-  triggerTestId: string
-  label: string
-  ariaLabel: string
-  children: ReactNode
-  onActiveChange: (active: boolean) => void
+function clampMenuTop(top: number): number {
+  const margin = 12
+  const estimatedMenuHeight = 320
+  const viewportHeight = window.innerHeight
+  return Math.max(margin, Math.min(top, viewportHeight - estimatedMenuHeight - margin))
 }
 
 export function AssistantSessionContextMenu({
@@ -62,7 +58,7 @@ export function AssistantSessionContextMenu({
       data-testid="assistant-session-context-menu"
       role="menu"
       aria-label={copy.contextMenu.menuAriaLabel(sessionContextMenu.sessionLabel)}
-      style={{ left: `${sessionContextMenu.x}px`, top: `${sessionContextMenu.y}px` }}
+      style={{ left: `${sessionContextMenu.x}px`, top: `${clampMenuTop(sessionContextMenu.y)}px` }}
     >
       <p className="session-context-menu__title">{sessionContextMenu.sessionLabel}</p>
 
@@ -127,7 +123,8 @@ export function AssistantSessionContextMenu({
           triggerTestId="assistant-session-context-submenu-copy"
           label={copy.contextMenu.copySession}
           ariaLabel={copy.contextMenu.copySession}
-          onActiveChange={(active) => onSelectSubmenu(active ? 'copy' : null)}
+          onOpen={() => onSelectSubmenu(sessionContextMenu.sessionId, 'copy')}
+          onClose={() => onSelectSubmenu(sessionContextMenu.sessionId, null)}
         >
           {assistantSessionCopyActions.map((action) => (
             <button
@@ -149,7 +146,8 @@ export function AssistantSessionContextMenu({
           triggerTestId="assistant-session-context-submenu-export"
           label={copy.contextMenu.exportSession}
           ariaLabel={copy.contextMenu.exportSession}
-          onActiveChange={(active) => onSelectSubmenu(active ? 'export' : null)}
+          onOpen={() => onSelectSubmenu(sessionContextMenu.sessionId, 'export')}
+          onClose={() => onSelectSubmenu(sessionContextMenu.sessionId, null)}
         >
           {assistantSessionExportActions.map((action) => (
             <button
@@ -169,6 +167,17 @@ export function AssistantSessionContextMenu({
   )
 }
 
+interface AssistantSessionSubmenuProps {
+  active: boolean
+  panelTestId: string
+  triggerTestId: string
+  label: string
+  ariaLabel: string
+  children: React.ReactNode
+  onOpen: () => void
+  onClose: () => void
+}
+
 function AssistantSessionSubmenu({
   active,
   panelTestId,
@@ -176,23 +185,30 @@ function AssistantSessionSubmenu({
   label,
   ariaLabel,
   children,
-  onActiveChange,
+  onOpen,
+  onClose,
 }: AssistantSessionSubmenuProps) {
   return (
-    <div className="session-context-submenu">
+    <div
+      className="session-context-menu__submenu"
+      onMouseEnter={onOpen}
+      onMouseLeave={onClose}
+    >
       <button
         type="button"
-        className="session-context-menu__item"
+        className="session-context-menu__item session-context-menu__item--submenu"
         data-testid={triggerTestId}
         aria-haspopup="menu"
         aria-expanded={active ? 'true' : 'false'}
         aria-label={ariaLabel}
-        onClick={() => onActiveChange(!active)}
+        onMouseEnter={onOpen}
+        onFocus={onOpen}
       >
-        {label}
+        <span>{label}</span>
+        <span className="session-context-menu__submenu-caret" aria-hidden="true">›</span>
       </button>
       {active && (
-        <div className="session-context-menu__group" data-testid={panelTestId}>
+        <div className="session-context-submenu" data-testid={panelTestId}>
           {children}
         </div>
       )}

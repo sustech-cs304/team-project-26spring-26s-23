@@ -48,7 +48,7 @@ interface AssistantSessionListProps {
   onConfirmDelete: (sessionId: string) => void
   onCancelDelete: () => void
   onDismissContextMenu: () => void
-  onSelectSubmenu: (submenu: 'copy' | 'export' | null) => void
+  onSelectSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
 }
 
 export function AssistantSessionList({

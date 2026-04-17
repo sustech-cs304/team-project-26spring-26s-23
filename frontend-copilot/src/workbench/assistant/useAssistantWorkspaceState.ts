@@ -130,6 +130,7 @@ interface UseAssistantWorkspaceStateResult {
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   handleSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   dismissSessionContextMenu: () => void
+  selectSessionContextSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
   requestSessionRename: (sessionId: string) => void
   updateSessionRenameValue: (value: string) => void
   commitSessionRename: () => void
@@ -579,6 +580,7 @@ export function useAssistantWorkspaceState({
     handleSessionClick,
     handleSessionContextMenu: showSessionContextMenu,
     dismissSessionContextMenu,
+    selectSessionContextSubmenu,
   } = useAssistantSessionInteractionState({
     sessionListState,
     setSessionListState,
@@ -1480,6 +1482,7 @@ export function useAssistantWorkspaceState({
     handleSessionClick,
     handleSessionContextMenu,
     dismissSessionContextMenu: dismissManagedSessionContextMenu,
+    selectSessionContextSubmenu,
     requestSessionRename,
     updateSessionRenameValue,
     commitSessionRename,

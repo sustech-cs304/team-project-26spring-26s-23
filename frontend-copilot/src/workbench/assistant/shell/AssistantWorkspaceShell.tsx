@@ -80,6 +80,7 @@ export function AssistantWorkspaceShell({
     sessionListRef,
     sessionDragGhostRef,
     dismissSessionContextMenu,
+    selectSessionContextSubmenu,
     selectAgent,
     handleCreateSession,
     retryActiveSessionHistoryLoad,
@@ -154,7 +155,7 @@ export function AssistantWorkspaceShell({
         onConfirmDelete={confirmSessionDelete}
         onCancelDelete={cancelSessionDelete}
         onDismissContextMenu={dismissSessionContextMenu}
-        onSelectSubmenu={() => undefined}
+        onSelectSubmenu={selectSessionContextSubmenu}
       />
 
       <main className="workspace-main workspace-main--chat" aria-label="会话主内容区">

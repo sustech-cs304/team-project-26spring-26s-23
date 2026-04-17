@@ -44,6 +44,7 @@ interface UseAssistantSessionInteractionStateResult {
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   handleSessionContextMenu: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
   dismissSessionContextMenu: () => void
+  selectSessionContextSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
 }
 
 export function useAssistantSessionInteractionState({
@@ -245,6 +246,23 @@ export function useAssistantSessionInteractionState({
     setSessionContextMenu(null)
   }, [])
 
+  const selectSessionContextSubmenu = useCallback((sessionId: string, submenu: 'copy' | 'export' | null) => {
+    setSessionContextMenu((current) => {
+      if (current === null || current.sessionId !== sessionId) {
+        return current
+      }
+
+      if (current.activeSubmenu === submenu) {
+        return current
+      }
+
+      return {
+        ...current,
+        activeSubmenu: submenu,
+      }
+    })
+  }, [])
+
   const renderedSessionState = useMemo(
     () => createAssistantRenderedSessionState({
       sessions: sessionListState.sessions,
@@ -265,5 +283,6 @@ export function useAssistantSessionInteractionState({
     handleSessionClick,
     handleSessionContextMenu,
     dismissSessionContextMenu,
+    selectSessionContextSubmenu,
   }
 }
