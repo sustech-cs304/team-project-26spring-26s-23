@@ -352,9 +352,13 @@ class _PydanticAIEventStream:
                 raise AgentExecutionError("Runtime agent returned empty text response.")
             self._cached_output = normalized_output
             self._raise_if_raw_tool_call_left_unexecuted()
-        except BaseException as exc:
+        except asyncio.CancelledError as exc:
+            self._run_exception = exc
+            raise
+        except Exception as exc:
             self._run_exception = exc
         finally:
+            self._deps.approval_coordinator.discard_run(run_id=self._run_id)
             self._event_buffer.finish_assistant_segment()
             self._event_buffer.finish_reasoning_segment()
             self._flush_pending_events_to_queue(reason="run_finished")

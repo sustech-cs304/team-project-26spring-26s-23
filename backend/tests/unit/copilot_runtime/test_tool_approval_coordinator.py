@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -53,7 +55,7 @@ class _Clock:
 
 
 @pytest.fixture
-def fake_loop() -> _FakeLoop:
+def fake_loop() -> Iterator[_FakeLoop]:
     loop = _FakeLoop()
     try:
         yield loop
@@ -61,12 +63,16 @@ def fake_loop() -> _FakeLoop:
         loop.loop.close()
 
 
+def _loop_provider(loop: _FakeLoop) -> asyncio.AbstractEventLoop:
+    return cast(asyncio.AbstractEventLoop, loop)
+
+
 def test_create_pending_request_exposes_snapshot_and_payload(fake_loop: _FakeLoop) -> None:
     clock = _Clock()
     loop = fake_loop
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=clock.now,
-        _loop_provider=lambda: loop,
+        _loop_provider=lambda: _loop_provider(loop),
     )
 
     request, future = coordinator.create_request(
@@ -95,7 +101,7 @@ def test_manual_approve_resolves_request_and_future(fake_loop: _FakeLoop) -> Non
     loop = fake_loop
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=clock.now,
-        _loop_provider=lambda: loop,
+        _loop_provider=lambda: _loop_provider(loop),
     )
     _, future = coordinator.create_request(
         run_id="run-1",
@@ -134,7 +140,7 @@ def test_manual_reject_resolves_request(fake_loop: _FakeLoop) -> None:
     loop = fake_loop
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=clock.now,
-        _loop_provider=lambda: loop,
+        _loop_provider=lambda: _loop_provider(loop),
     )
     coordinator.create_request(
         run_id="run-2",
@@ -157,7 +163,7 @@ def test_manual_reject_resolves_request(fake_loop: _FakeLoop) -> None:
 def test_resolve_missing_request_raises_not_found() -> None:
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=_Clock().now,
-        _loop_provider=lambda: _FakeLoop(),
+        _loop_provider=lambda: _loop_provider(_FakeLoop()),
     )
 
     with pytest.raises(ToolApprovalNotFoundError, match="No pending approval exists"):
@@ -173,7 +179,7 @@ def test_duplicate_resolution_raises_not_found_after_completion(fake_loop: _Fake
     loop = fake_loop
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=clock.now,
-        _loop_provider=lambda: loop,
+        _loop_provider=lambda: _loop_provider(loop),
     )
     coordinator.create_request(
         run_id="run-3",
@@ -200,7 +206,7 @@ def test_delay_timeout_auto_rejects_and_wait_for_resolution_observes_result(fake
     loop = fake_loop
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=clock.now,
-        _loop_provider=lambda: loop,
+        _loop_provider=lambda: _loop_provider(loop),
     )
     request, future = coordinator.create_request(
         run_id="run-4",
@@ -233,7 +239,7 @@ def test_delay_timeout_auto_approves_when_configured(fake_loop: _FakeLoop) -> No
     loop = fake_loop
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=clock.now,
-        _loop_provider=lambda: loop,
+        _loop_provider=lambda: _loop_provider(loop),
     )
     _, future = coordinator.create_request(
         run_id="run-5",
@@ -260,7 +266,7 @@ def test_manual_resolution_wins_over_later_timeout(fake_loop: _FakeLoop) -> None
     loop = fake_loop
     coordinator = RuntimeToolApprovalCoordinator(
         _time_provider=clock.now,
-        _loop_provider=lambda: loop,
+        _loop_provider=lambda: _loop_provider(loop),
     )
     _, future = coordinator.create_request(
         run_id="run-6",
@@ -284,6 +290,77 @@ def test_manual_resolution_wins_over_later_timeout(fake_loop: _FakeLoop) -> None
     assert future.result() == resolution
     assert coordinator.snapshot() == ()
     assert handle.cancelled is True
+
+
+def test_wait_for_resolution_cancellation_discards_pending_request(fake_loop: _FakeLoop) -> None:
+    clock = _Clock()
+    loop = fake_loop
+    coordinator = RuntimeToolApprovalCoordinator(
+        _time_provider=clock.now,
+        _loop_provider=lambda: _loop_provider(loop),
+    )
+    coordinator.create_request(
+        run_id="run-cancelled",
+        tool_call_id="call-cancelled",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    async def run_and_cancel() -> None:
+        task = asyncio.create_task(
+            coordinator.wait_for_resolution(run_id="run-cancelled", tool_call_id="call-cancelled")
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run_and_cancel())
+
+    assert coordinator.snapshot() == ()
+    with pytest.raises(ToolApprovalNotFoundError, match="No pending approval exists"):
+        coordinator.resolve(
+            run_id="run-cancelled",
+            tool_call_id="call-cancelled",
+            decision="approved",
+        )
+
+
+def test_discard_run_clears_all_pending_requests(fake_loop: _FakeLoop) -> None:
+    clock = _Clock()
+    loop = fake_loop
+    coordinator = RuntimeToolApprovalCoordinator(
+        _time_provider=clock.now,
+        _loop_provider=lambda: _loop_provider(loop),
+    )
+    first_request, first_future = coordinator.create_request(
+        run_id="run-discard",
+        tool_call_id="call-1",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+    second_request, second_future = coordinator.create_request(
+        run_id="run-discard",
+        tool_call_id="call-2",
+        tool_id="tool.weather-current",
+        mode="delay",
+        timeout_seconds=5,
+        timeout_action="deny",
+    )
+
+    discarded = coordinator.discard_run(run_id="run-discard")
+
+    assert discarded == (first_request, second_request)
+    assert first_future.cancelled() is True
+    assert second_future.cancelled() is True
+    assert coordinator.snapshot() == ()
+    assert loop.handles[0].cancelled is True
+    with pytest.raises(ToolApprovalNotFoundError, match="No pending approval exists"):
+        coordinator.resolve(
+            run_id="run-discard",
+            tool_call_id="call-2",
+            decision="approved",
+        )
 
 
 @pytest.mark.parametrize(

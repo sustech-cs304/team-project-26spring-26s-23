@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -196,7 +196,14 @@ class RuntimeToolApprovalCoordinator:
                 None if pending.request.timeout_at is None else pending.request.timeout_at.isoformat()
             ),
         )
-        resolution = await pending.future
+        try:
+            resolution = await pending.future
+        except asyncio.CancelledError:
+            self.discard(run_id=run_id, tool_call_id=tool_call_id)
+            raise
+        except Exception:
+            self.discard(run_id=run_id, tool_call_id=tool_call_id)
+            raise
         log_runtime_chain_debug(
             "tool.approval_request.wait_resumed",
             enabled=pending.debug_enabled,
@@ -205,6 +212,41 @@ class RuntimeToolApprovalCoordinator:
             resolution=resolution.to_payload(),
         )
         return resolution
+
+    def discard(
+        self,
+        *,
+        run_id: str,
+        tool_call_id: str,
+    ) -> bool:
+        pending = self._pending_by_key.pop((run_id, tool_call_id), None)
+        if pending is None:
+            return False
+        if pending.timeout_handle is not None:
+            pending.timeout_handle.cancel()
+            pending.timeout_handle = None
+        if not pending.future.done():
+            pending.future.cancel()
+        log_runtime_chain_debug(
+            "tool.approval_request.discarded",
+            enabled=pending.debug_enabled,
+            runId=run_id,
+            toolCallId=tool_call_id,
+            toolId=pending.request.tool_id,
+            pendingCount=len(self._pending_by_key),
+        )
+        return True
+
+    def discard_run(self, *, run_id: str) -> tuple[RuntimeToolApprovalRequest, ...]:
+        discarded: list[RuntimeToolApprovalRequest] = []
+        keys = [key for key in self._pending_by_key if key[0] == run_id]
+        for _, tool_call_id in keys:
+            pending = self._pending_by_key.get((run_id, tool_call_id))
+            if pending is None:
+                continue
+            discarded.append(pending.request)
+            self.discard(run_id=run_id, tool_call_id=tool_call_id)
+        return tuple(discarded)
 
     def resolve(
         self,

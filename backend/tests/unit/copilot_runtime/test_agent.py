@@ -28,7 +28,10 @@ from app.copilot_runtime.agent import (
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
 )
-from app.copilot_runtime.tool_approval_coordinator import RuntimeToolApprovalCoordinator
+from app.copilot_runtime.tool_approval_coordinator import (
+    RuntimeToolApprovalCoordinator,
+    ToolApprovalNotFoundError,
+)
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
@@ -1451,6 +1454,56 @@ def test_open_event_stream_propagates_cancelled_error_from_agent_run(
                     request_options={},
                 )
             )
+        )
+
+
+def test_execute_bound_tool_cancellation_discards_pending_approval_request() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    tool_call_id = f"{WEATHER_CURRENT_TOOL_ID}:call-cancelled"
+    ctx = SimpleNamespace(
+        tool_call_id=tool_call_id,
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-approval-cancelled",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="ask"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_cancel() -> None:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        pending_request = approval_coordinator.get_request(
+            run_id="run-approval-cancelled",
+            tool_call_id=tool_call_id,
+        )
+        assert pending_request is not None
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run_and_cancel())
+
+    assert approval_coordinator.snapshot() == ()
+    with pytest.raises(ToolApprovalNotFoundError, match="No pending approval exists"):
+        approval_coordinator.resolve(
+            run_id="run-approval-cancelled",
+            tool_call_id=tool_call_id,
+            decision="approved",
         )
 
 
