@@ -6,7 +6,11 @@ import re
 from typing import Any, Sequence
 
 from ..shared import _clean_text, _jsonable, compose_semester_label
-from .dto import TISSelectedCourseRecord, TISSelectedCourseSemester, TISSelectedCourseSummary
+from .dto import (
+    TISSelectedCourseRecord,
+    TISSelectedCourseSemester,
+    TISSelectedCourseSummary,
+)
 
 
 def _to_float_or_none(value: Any) -> float | None:
@@ -55,7 +59,9 @@ def _build_selected_course_semester(
     )
 
 
-def _extract_selected_courses_current_semester(payload: Any) -> TISSelectedCourseSemester | None:
+def _extract_selected_courses_current_semester(
+    payload: Any,
+) -> TISSelectedCourseSemester | None:
     if not isinstance(payload, dict):
         return None
     current_semester = _build_selected_course_semester(
@@ -95,14 +101,18 @@ def _parse_selected_course_semester_argument(
     normalized = text.replace("/", "-").replace(" ", "")
     full_match = re.fullmatch(r"(\d{4}-\d{4})([123])", normalized)
     if full_match:
-        semester_option = _build_selected_course_semester(full_match.group(1), full_match.group(2), raw={"input": text})
+        semester_option = _build_selected_course_semester(
+            full_match.group(1), full_match.group(2), raw={"input": text}
+        )
         if semester_option is None:
             raise ValueError(f"无法解析学期参数: {semester}")
         return semester_option
 
     segmented_match = re.fullmatch(r"(\d{4}-\d{4})-([123])", normalized)
     if segmented_match:
-        semester_option = _build_selected_course_semester(segmented_match.group(1), segmented_match.group(2), raw={"input": text})
+        semester_option = _build_selected_course_semester(
+            segmented_match.group(1), segmented_match.group(2), raw={"input": text}
+        )
         if semester_option is None:
             raise ValueError(f"无法解析学期参数: {semester}")
         return semester_option
@@ -175,7 +185,9 @@ def _build_selected_courses_base_payload(
     return payload
 
 
-def extract_selected_course_records_from_json(payload: Any, *, semester: TISSelectedCourseSemester) -> list[TISSelectedCourseRecord]:
+def extract_selected_course_records_from_json(
+    payload: Any, *, semester: TISSelectedCourseSemester
+) -> list[TISSelectedCourseRecord]:
     if not isinstance(payload, dict):
         return []
     rows = payload.get("yxkcList")
@@ -193,7 +205,9 @@ def extract_selected_course_records_from_json(payload: Any, *, semester: TISSele
 
         class_time = _clean_text(item.get("sksj")) or None
         class_location = _clean_text(item.get("skdd")) or None
-        class_info = " ".join(part for part in (class_time, class_location) if part) or None
+        class_info = (
+            " ".join(part for part in (class_time, class_location) if part) or None
+        )
         effective_status = _clean_text(item.get("cqms") or item.get("cqzt")) or None
 
         records.append(
@@ -202,15 +216,18 @@ def extract_selected_course_records_from_json(payload: Any, *, semester: TISSele
                 course_name=course_name,
                 task_number=_clean_text(item.get("rwh")) or None,
                 course_sequence_number=_clean_text(item.get("kxh")) or None,
-                course_nature=_clean_text(item.get("kcxzmc") or item.get("kcxz")) or None,
-                course_category=_clean_text(item.get("kclbmc") or item.get("kclb")) or None,
+                course_nature=_clean_text(item.get("kcxzmc") or item.get("kcxz"))
+                or None,
+                course_category=_clean_text(item.get("kclbmc") or item.get("kclb"))
+                or None,
                 credits=_to_float_or_none(item.get("xf")),
                 hours=_to_float_or_none(item.get("xs")),
                 class_time=class_time,
                 class_location=class_location,
                 class_info=class_info,
                 offering_department=_clean_text(item.get("kkyxmc")) or None,
-                selection_category=_clean_text(item.get("xkfsmc") or item.get("xkfsdm")) or None,
+                selection_category=_clean_text(item.get("xkfsmc") or item.get("xkfsdm"))
+                or None,
                 selection_coefficient=_to_float_or_none(item.get("xkxs")),
                 effective_flag=_to_bool_or_none(item.get("cqzt")),
                 effective_status=effective_status,
@@ -232,8 +249,12 @@ def build_selected_course_summary(
 ) -> TISSelectedCourseSummary:
     credit_values = [course.credits for course in courses if course.credits is not None]
     hour_values = [course.hours for course in courses if course.hours is not None]
-    effective_course_count = sum(1 for course in courses if course.effective_flag is True)
-    raw_keys = sorted(str(key) for key in payload.keys()) if isinstance(payload, dict) else []
+    effective_course_count = sum(
+        1 for course in courses if course.effective_flag is True
+    )
+    raw_keys = (
+        sorted(str(key) for key in payload.keys()) if isinstance(payload, dict) else []
+    )
     return TISSelectedCourseSummary(
         course_count=len(courses),
         total_credits=round(sum(credit_values), 3) if credit_values else None,

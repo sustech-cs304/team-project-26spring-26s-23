@@ -3,12 +3,27 @@
 from __future__ import annotations
 
 from app.integrations.sustech.teaching_information_system.api.client import TISClient
-from app.integrations.sustech.teaching_information_system.api.dto import DEFAULT_TIS_SERVICE_CONFIG, TISGradeQueryResult, TISServiceConfig
-from app.integrations.sustech.teaching_information_system.api.grades import probe_grade_candidates
-from app.integrations.sustech.teaching_information_system.api.homepage import analyze_homepage_html
+from app.integrations.sustech.teaching_information_system.api.dto import (
+    DEFAULT_TIS_SERVICE_CONFIG,
+    TISGradeQueryResult,
+    TISServiceConfig,
+)
+from app.integrations.sustech.teaching_information_system.api.grades import (
+    probe_grade_candidates,
+)
+from app.integrations.sustech.teaching_information_system.api.homepage import (
+    analyze_homepage_html,
+)
 from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
-from app.integrations.sustech.teaching_information_system.provider.results import TISPersistenceSummary, attach_persistence_summary, resource_result
-from app.integrations.sustech.teaching_information_system.shared import _clean_text, create_tis_log_session
+from app.integrations.sustech.teaching_information_system.provider.results import (
+    TISPersistenceSummary,
+    attach_persistence_summary,
+    resource_result,
+)
+from app.integrations.sustech.teaching_information_system.shared import (
+    _clean_text,
+    create_tis_log_session,
+)
 
 
 def fetch_personal_grades_with_credentials(
@@ -34,13 +49,20 @@ def fetch_personal_grades_with_credentials(
     logger = log_session.make_logger(
         layer="provider",
         source="teaching_information_system.fetch_personal_grades",
-        context={"base_url": service_config.base_url, "role_code": _clean_text(role_code) or None},
+        context={
+            "base_url": service_config.base_url,
+            "role_code": _clean_text(role_code) or None,
+        },
     )
 
-    tis_client = TISClient(config=service_config, logger=logger.child("teaching_information_system.client"))
+    tis_client = TISClient(
+        config=service_config, logger=logger.child("teaching_information_system.client")
+    )
     try:
         logger.info("▶ 开始建立 TIS 会话")
-        if not tis_client.login(normalized_username, normalized_password, role_code=role_code):
+        if not tis_client.login(
+            normalized_username, normalized_password, role_code=role_code
+        ):
             raise RuntimeError("CAS 登录成功状态未能传递到 TIS")
 
         if homepage_html is None:
@@ -61,7 +83,9 @@ def fetch_personal_grades_with_credentials(
                 "ℹ 已补全 TIS RoleCode",
                 payload={
                     "resolved_role_code": tis_client.context.role_code,
-                    "source": "homepage" if homepage.role_codes else "default-student-grade-role",
+                    "source": "homepage"
+                    if homepage.role_codes
+                    else "default-student-grade-role",
                 },
             )
         logger.info(
@@ -89,7 +113,11 @@ def fetch_personal_grades_with_credentials(
         source_url = probes[0].url if probes else homepage.page_url
         logger.info(
             "✅ TIS 成绩候选探测完成",
-            payload={"probe_count": len(probes), "record_count": len(grade_records), "source_url": source_url},
+            payload={
+                "probe_count": len(probes),
+                "record_count": len(grade_records),
+                "source_url": source_url,
+            },
         )
         result = TISGradeQueryResult(
             success=bool(grade_records),
@@ -105,7 +133,9 @@ def fetch_personal_grades_with_credentials(
 
         resolved_owner_key = _clean_text(owner_key) or normalized_username
         resolved_db_manager = db_manager or TISDatabaseManager()
-        stats = resolved_db_manager.sync_personal_grades(resolved_owner_key, grade_records)
+        stats = resolved_db_manager.sync_personal_grades(
+            resolved_owner_key, grade_records
+        )
         summary = TISPersistenceSummary(
             enabled=True,
             owner_key=resolved_owner_key,
@@ -123,4 +153,3 @@ def fetch_personal_grades_with_credentials(
 
 
 __all__ = ["fetch_personal_grades_with_credentials"]
-

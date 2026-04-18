@@ -20,12 +20,26 @@ from app.integrations.sustech.teaching_information_system.api.dto import (
     TISCreditGPAQueryResult,
     TISServiceConfig,
 )
-from app.integrations.sustech.teaching_information_system.api.fetch_helpers import _is_authenticated_tis_response, _safe_parse_json_response
-from app.integrations.sustech.teaching_information_system.api.grades import _build_tis_probe_result
-from app.integrations.sustech.teaching_information_system.api.homepage import analyze_homepage_html
+from app.integrations.sustech.teaching_information_system.api.fetch_helpers import (
+    _is_authenticated_tis_response,
+    _safe_parse_json_response,
+)
+from app.integrations.sustech.teaching_information_system.api.grades import (
+    _build_tis_probe_result,
+)
+from app.integrations.sustech.teaching_information_system.api.homepage import (
+    analyze_homepage_html,
+)
 from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
-from app.integrations.sustech.teaching_information_system.provider.results import TISPersistenceSummary, attach_persistence_summary, resource_group_result
-from app.integrations.sustech.teaching_information_system.shared import _clean_text, create_tis_log_session
+from app.integrations.sustech.teaching_information_system.provider.results import (
+    TISPersistenceSummary,
+    attach_persistence_summary,
+    resource_group_result,
+)
+from app.integrations.sustech.teaching_information_system.shared import (
+    _clean_text,
+    create_tis_log_session,
+)
 
 
 def fetch_credit_gpa_with_credentials(
@@ -50,13 +64,20 @@ def fetch_credit_gpa_with_credentials(
     logger = log_session.make_logger(
         layer="provider",
         source="teaching_information_system.fetch_credit_gpa",
-        context={"base_url": service_config.base_url, "role_code": _clean_text(role_code) or None},
+        context={
+            "base_url": service_config.base_url,
+            "role_code": _clean_text(role_code) or None,
+        },
     )
 
-    tis_client = TISClient(config=service_config, logger=logger.child("teaching_information_system.client"))
+    tis_client = TISClient(
+        config=service_config, logger=logger.child("teaching_information_system.client")
+    )
     try:
         logger.info("▶ 开始建立 TIS 会话")
-        if not tis_client.login(normalized_username, normalized_password, role_code=role_code):
+        if not tis_client.login(
+            normalized_username, normalized_password, role_code=role_code
+        ):
             raise RuntimeError("CAS 登录成功状态未能传递到 TIS")
 
         if homepage_html is None:
@@ -65,7 +86,11 @@ def fetch_credit_gpa_with_credentials(
         else:
             logger.info("ℹ 使用外部提供的 TIS 首页 HTML")
 
-        homepage = analyze_homepage_html(homepage_html, page_url=service_config.homepage_url, base_url=service_config.base_url)
+        homepage = analyze_homepage_html(
+            homepage_html,
+            page_url=service_config.homepage_url,
+            base_url=service_config.base_url,
+        )
         if tis_client.context.role_code is None:
             resolved_role_code = homepage.role_codes[0] if homepage.role_codes else "01"
             tis_client.context.set_role_code(resolved_role_code)
@@ -73,7 +98,9 @@ def fetch_credit_gpa_with_credentials(
                 "ℹ 已补全 TIS RoleCode",
                 payload={
                     "resolved_role_code": tis_client.context.role_code,
-                    "source": "homepage" if homepage.role_codes else "default-student-grade-role",
+                    "source": "homepage"
+                    if homepage.role_codes
+                    else "default-student-grade-role",
                 },
             )
 
@@ -89,7 +116,9 @@ def fetch_credit_gpa_with_credentials(
             },
         )
         page_response.raise_for_status()
-        if not _is_authenticated_tis_response(page_response, base_url=service_config.base_url):
+        if not _is_authenticated_tis_response(
+            page_response, base_url=service_config.base_url
+        ):
             raise RuntimeError("TIS 学分绩查询页面返回了未认证内容")
 
         logger.info("▶ 请求 TIS 学分绩查询数据接口", payload={"api_url": api_url})
@@ -103,7 +132,9 @@ def fetch_credit_gpa_with_credentials(
             },
         )
         api_response.raise_for_status()
-        if not _is_authenticated_tis_response(api_response, base_url=service_config.base_url):
+        if not _is_authenticated_tis_response(
+            api_response, base_url=service_config.base_url
+        ):
             raise RuntimeError("TIS 学分绩查询接口返回了未认证内容")
 
         payload = _safe_parse_json_response(api_response)
@@ -113,12 +144,22 @@ def fetch_credit_gpa_with_credentials(
         summary = extract_credit_gpa_summary_from_json(payload)
         term_records = extract_credit_gpa_term_records_from_json(payload)
         year_records = extract_credit_gpa_year_records_from_json(payload)
-        if summary.average_credit_gpa is None and not summary.rank and not term_records and not year_records:
+        if (
+            summary.average_credit_gpa is None
+            and not summary.rank
+            and not term_records
+            and not year_records
+        ):
             raise RuntimeError("TIS 学分绩查询接口未返回可识别的学分绩数据")
 
         probes = [
             _build_tis_probe_result(page_response, probe_label="credit-gpa-page"),
-            _build_tis_probe_result(api_response, probe_label="credit-gpa-api", request_payload=None, record_count=len(term_records)),
+            _build_tis_probe_result(
+                api_response,
+                probe_label="credit-gpa-api",
+                request_payload=None,
+                record_count=len(term_records),
+            ),
         ]
         logger.info(
             "✅ TIS 学分绩查询完成",
@@ -150,13 +191,18 @@ def fetch_credit_gpa_with_credentials(
 
         resolved_owner_key = _clean_text(owner_key) or normalized_username
         resolved_db_manager = db_manager or TISDatabaseManager()
-        stats = resolved_db_manager.sync_credit_gpa(resolved_owner_key, summary, term_records, year_records)
+        stats = resolved_db_manager.sync_credit_gpa(
+            resolved_owner_key, summary, term_records, year_records
+        )
         persistence_summary = TISPersistenceSummary(
             enabled=True,
             owner_key=resolved_owner_key,
             db_path=resolved_db_manager.describe().db_path,
             resources={"credit_gpa": resource_group_result("credit_gpa", stats)},
-            metadata={"term_record_count": len(term_records), "year_record_count": len(year_records)},
+            metadata={
+                "term_record_count": len(term_records),
+                "year_record_count": len(year_records),
+            },
         )
         logger.info("✅ TIS 学分绩持久化完成", payload=persistence_summary.to_dict())
         return attach_persistence_summary(result, persistence_summary)
@@ -168,4 +214,3 @@ def fetch_credit_gpa_with_credentials(
 
 
 __all__ = ["fetch_credit_gpa_with_credentials"]
-

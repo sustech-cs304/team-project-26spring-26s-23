@@ -38,7 +38,9 @@ class TISPersistenceGroupResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
-            "resources": {key: value.to_dict() for key, value in self.resources.items()},
+            "resources": {
+                key: value.to_dict() for key, value in self.resources.items()
+            },
         }
 
 
@@ -47,7 +49,9 @@ class TISPersistenceSummary:
     enabled: bool = False
     owner_key: str | None = None
     db_path: str | None = None
-    resources: dict[str, TISPersistenceResourceResult | TISPersistenceGroupResult] = field(default_factory=dict)
+    resources: dict[str, TISPersistenceResourceResult | TISPersistenceGroupResult] = (
+        field(default_factory=dict)
+    )
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,7 +67,9 @@ class TISPersistenceSummary:
         }
 
 
-def attach_persistence_summary(result: Any, summary: TISPersistenceSummary | None) -> Any:
+def attach_persistence_summary(
+    result: Any, summary: TISPersistenceSummary | None
+) -> Any:
     setattr(result, "persistence", None if summary is None else summary.to_dict())
     return result
 
@@ -72,11 +78,17 @@ def resource_result(name: str, stats: TISSyncStats) -> TISPersistenceResourceRes
     return TISPersistenceResourceResult(name=name, stats=stats)
 
 
-def resource_group_result(name: str, stats_by_resource: dict[str, TISSyncStats]) -> TISPersistenceGroupResult:
+def resource_group_result(
+    name: str, stats_by_resource: dict[str, TISSyncStats]
+) -> TISPersistenceGroupResult:
     return TISPersistenceGroupResult(
         name=name,
-        resources={key: TISPersistenceResourceResult(name=key, stats=value) for key, value in stats_by_resource.items()},
+        resources={
+            key: TISPersistenceResourceResult(name=key, stats=value)
+            for key, value in stats_by_resource.items()
+        },
     )
+
 
 __all__ = [
     "TISPersistenceGroupResult",
@@ -97,5 +109,3 @@ __all__ = [
     "resource_group_result",
     "resource_result",
 ]
-
-

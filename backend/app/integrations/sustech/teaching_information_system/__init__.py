@@ -11,7 +11,9 @@ from app.integrations.sustech.teaching_information_system.api import (
     TISSelectedCoursesQueryResult,
     TISServiceConfig,
 )
-from app.integrations.sustech.teaching_information_system.facade import get_tis_tool_contracts
+from app.integrations.sustech.teaching_information_system.facade import (
+    get_tis_tool_contracts,
+)
 from app.integrations.sustech.teaching_information_system.provider import (
     fetch_credit_gpa_with_credentials,
     fetch_personal_grades_with_credentials,
@@ -31,4 +33,3 @@ __all__ = [
     "get_tis_tool_contracts",
     "run_tis_link_diagnostic",
 ]
-

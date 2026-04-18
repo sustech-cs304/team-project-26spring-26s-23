@@ -12,4 +12,3 @@ __all__ = [
     "run_tis_link_diagnostic",
     "run_tis_link_diagnostic_from_env",
 ]
-

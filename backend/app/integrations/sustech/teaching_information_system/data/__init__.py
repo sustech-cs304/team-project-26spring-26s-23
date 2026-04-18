@@ -10,7 +10,11 @@ from .models import (
     TISSelectedCourse,
 )
 from .results import TISPersistenceResult, TISSyncStats, empty_sync_stats
-from .sync_operations import sync_credit_gpa, sync_personal_grades, sync_selected_courses
+from .sync_operations import (
+    sync_credit_gpa,
+    sync_personal_grades,
+    sync_selected_courses,
+)
 
 __all__ = [
     "Base",

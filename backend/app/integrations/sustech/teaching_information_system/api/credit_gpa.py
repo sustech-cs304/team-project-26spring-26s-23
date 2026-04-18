@@ -35,7 +35,9 @@ def extract_credit_gpa_summary_from_json(payload: Any) -> TISCreditGPASummary:
     )
 
 
-def extract_credit_gpa_term_records_from_json(payload: Any) -> list[TISCreditGPATermRecord]:
+def extract_credit_gpa_term_records_from_json(
+    payload: Any,
+) -> list[TISCreditGPATermRecord]:
     if not isinstance(payload, dict):
         return []
     rows = payload.get("xnanxqxfj")
@@ -62,7 +64,9 @@ def extract_credit_gpa_term_records_from_json(payload: Any) -> list[TISCreditGPA
     return records
 
 
-def extract_credit_gpa_year_records_from_json(payload: Any) -> list[TISCreditGPAYearRecord]:
+def extract_credit_gpa_year_records_from_json(
+    payload: Any,
+) -> list[TISCreditGPAYearRecord]:
     term_records = extract_credit_gpa_term_records_from_json(payload)
     year_records: list[TISCreditGPAYearRecord] = []
     seen_years: set[str] = set()
@@ -75,7 +79,11 @@ def extract_credit_gpa_year_records_from_json(payload: Any) -> list[TISCreditGPA
             TISCreditGPAYearRecord(
                 academic_year=academic_year,
                 year_credit_gpa=term_record.year_credit_gpa,
-                raw={"XN": academic_year, "XNXFJ": term_record.year_credit_gpa, "source": term_record.raw},
+                raw={
+                    "XN": academic_year,
+                    "XNXFJ": term_record.year_credit_gpa,
+                    "source": term_record.raw,
+                },
             )
         )
     return year_records

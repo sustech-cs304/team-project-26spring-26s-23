@@ -8,10 +8,21 @@ from typing import Any
 from dotenv import dotenv_values
 
 from app.integrations.sustech.teaching_information_system.api.client import TISClient
-from app.integrations.sustech.teaching_information_system.api.dto import DEFAULT_TIS_SERVICE_CONFIG, TISServiceConfig
-from app.integrations.sustech.teaching_information_system.api.grades import build_grade_candidate_urls, probe_grade_candidates
-from app.integrations.sustech.teaching_information_system.api.homepage import analyze_homepage_html
-from app.integrations.sustech.teaching_information_system.shared import _clean_text, create_tis_log_session
+from app.integrations.sustech.teaching_information_system.api.dto import (
+    DEFAULT_TIS_SERVICE_CONFIG,
+    TISServiceConfig,
+)
+from app.integrations.sustech.teaching_information_system.api.grades import (
+    build_grade_candidate_urls,
+    probe_grade_candidates,
+)
+from app.integrations.sustech.teaching_information_system.api.homepage import (
+    analyze_homepage_html,
+)
+from app.integrations.sustech.teaching_information_system.shared import (
+    _clean_text,
+    create_tis_log_session,
+)
 
 
 def run_tis_link_diagnostic(
@@ -24,11 +35,16 @@ def run_tis_link_diagnostic(
     max_probe_count: int = 12,
 ) -> dict[str, Any]:
     service_config = config or DEFAULT_TIS_SERVICE_CONFIG
-    log_session = create_tis_log_session(console=enable_console_logging, min_level="debug")
+    log_session = create_tis_log_session(
+        console=enable_console_logging, min_level="debug"
+    )
     logger = log_session.make_logger(
         layer="debug",
         source="teaching_information_system.link_diagnostic",
-        context={"base_url": service_config.base_url, "input_role_code": _clean_text(role_code) or None},
+        context={
+            "base_url": service_config.base_url,
+            "input_role_code": _clean_text(role_code) or None,
+        },
     )
     summary: dict[str, Any] = {
         "login_success": False,
@@ -47,7 +63,9 @@ def run_tis_link_diagnostic(
         "cookie_names": [],
     }
 
-    tis_client = TISClient(config=service_config, logger=logger.child("teaching_information_system.client"))
+    tis_client = TISClient(
+        config=service_config, logger=logger.child("teaching_information_system.client")
+    )
     try:
         logger.info("▶ 开始 TIS 最小链路诊断")
         if not tis_client.login(username, password, role_code=role_code):
@@ -57,22 +75,34 @@ def run_tis_link_diagnostic(
 
         summary["login_success"] = True
         summary["cookie_names"] = sorted(tis_client.get_cookies().keys())
-        logger.info("✅ 已确认 TIS 登录成功", payload={"cookie_names": summary["cookie_names"]})
+        logger.info(
+            "✅ 已确认 TIS 登录成功", payload={"cookie_names": summary["cookie_names"]}
+        )
 
-        homepage_response = tis_client.context.get(service_config.homepage_url, label="TIS-Homepage-Diagnostic")
+        homepage_response = tis_client.context.get(
+            service_config.homepage_url, label="TIS-Homepage-Diagnostic"
+        )
         summary["homepage_status_code"] = int(homepage_response.status_code)
         summary["homepage_url"] = str(homepage_response.url)
         homepage_response.raise_for_status()
         summary["homepage_fetch_success"] = True
 
-        homepage = analyze_homepage_html(homepage_response.text, page_url=str(homepage_response.url), base_url=service_config.base_url)
+        homepage = analyze_homepage_html(
+            homepage_response.text,
+            page_url=str(homepage_response.url),
+            base_url=service_config.base_url,
+        )
         if tis_client.context.role_code is None:
-            tis_client.context.set_role_code(homepage.role_codes[0] if homepage.role_codes else "01")
+            tis_client.context.set_role_code(
+                homepage.role_codes[0] if homepage.role_codes else "01"
+            )
         summary["homepage_analysis_success"] = True
         summary["homepage"] = homepage.to_dict()
         summary["resolved_role_code"] = tis_client.context.role_code
 
-        candidate_urls = build_grade_candidate_urls(homepage, base_url=service_config.base_url)
+        candidate_urls = build_grade_candidate_urls(
+            homepage, base_url=service_config.base_url
+        )
         summary["candidate_url_count"] = len(candidate_urls)
         summary["candidate_urls"] = candidate_urls[: max(int(max_probe_count), 0) or 0]
         logger.info(
@@ -111,7 +141,9 @@ def run_tis_link_diagnostic(
     except Exception as ex:
         summary["failure_stage"] = summary["failure_stage"] or "exception"
         summary["error"] = f"{type(ex).__name__}: {ex}"
-        logger.exception("TIS 链路诊断失败", ex, payload={"failure_stage": summary["failure_stage"]})
+        logger.exception(
+            "TIS 链路诊断失败", ex, payload={"failure_stage": summary["failure_stage"]}
+        )
     finally:
         summary["request_history"] = [
             {"label": label, "method": method, "status_code": status_code, "url": url}
@@ -130,11 +162,18 @@ def run_tis_link_diagnostic_from_env(
     enable_console_logging: bool = False,
     max_probe_count: int = 12,
 ) -> dict[str, Any]:
-    resolved_env_path = Path(env_path) if env_path else Path(__file__).resolve().parents[4] / ".env"
+    resolved_env_path = (
+        Path(env_path) if env_path else Path(__file__).resolve().parents[4] / ".env"
+    )
     env_values = dotenv_values(resolved_env_path)
     username = _clean_text(env_values.get("SUSTECH_USERNAME"))
     password = str(env_values.get("SUSTECH_PASSWORD") or "").strip()
-    derived_role_code = _clean_text(role_code or env_values.get("TIS_ROLE_CODE") or env_values.get("ROLE_CODE")) or None
+    derived_role_code = (
+        _clean_text(
+            role_code or env_values.get("TIS_ROLE_CODE") or env_values.get("ROLE_CODE")
+        )
+        or None
+    )
     if not username or not password:
         raise RuntimeError(f"缺少 TIS/CAS 登录凭据：{resolved_env_path}")
 
@@ -156,4 +195,3 @@ def run_tis_link_diagnostic_from_env(
 
 
 __all__ = ["run_tis_link_diagnostic", "run_tis_link_diagnostic_from_env"]
-

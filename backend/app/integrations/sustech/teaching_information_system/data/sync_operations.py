@@ -85,11 +85,20 @@ def _sync_by_key(
     return stats
 
 
-def sync_personal_grades(session: Session, owner_key: str, grade_records: list[TISGradeRecord]) -> TISSyncStats:
+def sync_personal_grades(
+    session: Session, owner_key: str, grade_records: list[TISGradeRecord]
+) -> TISSyncStats:
     normalized_owner = str(owner_key).strip()
     incoming: list[tuple[str, dict[str, Any]]] = []
     for record in grade_records:
-        key = "|".join([normalized_owner, record.course_name, record.course_code or "", record.term or ""])
+        key = "|".join(
+            [
+                normalized_owner,
+                record.course_name,
+                record.course_code or "",
+                record.term or "",
+            ]
+        )
         incoming.append(
             (
                 key,
@@ -107,9 +116,13 @@ def sync_personal_grades(session: Session, owner_key: str, grade_records: list[T
 
     return _sync_by_key(
         session,
-        existing_stmt=select(TISPersonalGrade).where(TISPersonalGrade.owner_key == normalized_owner),
+        existing_stmt=select(TISPersonalGrade).where(
+            TISPersonalGrade.owner_key == normalized_owner
+        ),
         incoming=incoming,
-        existing_key=lambda row: f"{row.owner_key}|{row.course_name}|{row.course_code or ''}|{row.term or ''}",
+        existing_key=lambda row: (
+            f"{row.owner_key}|{row.course_name}|{row.course_code or ''}|{row.term or ''}"
+        ),
         build_model=lambda payload: TISPersonalGrade(**payload),
     )
 
@@ -125,7 +138,9 @@ def sync_credit_gpa(
 
     summary_stats = _sync_by_key(
         session,
-        existing_stmt=select(TISCreditGPASummaryModel).where(TISCreditGPASummaryModel.owner_key == normalized_owner),
+        existing_stmt=select(TISCreditGPASummaryModel).where(
+            TISCreditGPASummaryModel.owner_key == normalized_owner
+        ),
         incoming=[
             (
                 normalized_owner,
@@ -143,7 +158,9 @@ def sync_credit_gpa(
 
     term_stats = _sync_by_key(
         session,
-        existing_stmt=select(TISCreditGPATermModel).where(TISCreditGPATermModel.owner_key == normalized_owner),
+        existing_stmt=select(TISCreditGPATermModel).where(
+            TISCreditGPATermModel.owner_key == normalized_owner
+        ),
         incoming=[
             (
                 f"{normalized_owner}|{record.academic_year_term}",
@@ -165,7 +182,9 @@ def sync_credit_gpa(
 
     year_stats = _sync_by_key(
         session,
-        existing_stmt=select(TISCreditGPAYearModel).where(TISCreditGPAYearModel.owner_key == normalized_owner),
+        existing_stmt=select(TISCreditGPAYearModel).where(
+            TISCreditGPAYearModel.owner_key == normalized_owner
+        ),
         incoming=[
             (
                 f"{normalized_owner}|{record.academic_year}",
@@ -195,7 +214,14 @@ def sync_selected_courses(
     normalized_semester = str(semester_id).strip()
     incoming: list[tuple[str, dict[str, Any]]] = []
     for record in course_records:
-        key = "|".join([normalized_owner, normalized_semester, record.course_code, record.course_sequence_number or ""])
+        key = "|".join(
+            [
+                normalized_owner,
+                normalized_semester,
+                record.course_code,
+                record.course_sequence_number or "",
+            ]
+        )
         incoming.append(
             (
                 key,
@@ -228,10 +254,11 @@ def sync_selected_courses(
             TISSelectedCourse.semester_id == normalized_semester,
         ),
         incoming=incoming,
-        existing_key=lambda row: f"{row.owner_key}|{row.semester_id}|{row.course_code}|{row.course_sequence_number or ''}",
+        existing_key=lambda row: (
+            f"{row.owner_key}|{row.semester_id}|{row.course_code}|{row.course_sequence_number or ''}"
+        ),
         build_model=lambda payload: TISSelectedCourse(**payload),
     )
 
 
 __all__ = ["sync_credit_gpa", "sync_personal_grades", "sync_selected_courses"]
-
