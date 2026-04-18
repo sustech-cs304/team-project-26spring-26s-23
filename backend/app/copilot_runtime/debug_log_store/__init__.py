@@ -23,6 +23,7 @@ from .query_service import (
     DebugLogQueryService,
 )
 from .retention import RetentionCoordinator, RetentionRunResult, build_retention_config_from_runtime_config
+from .runtime_events import RuntimeDebugLogWriter
 from .sanitizer import Sanitizer
 from .store import DebugLogStore, resolve_debug_log_database_path
 
@@ -42,6 +43,7 @@ __all__ = [
     "DebugLogQueryResult",
     "DebugLogQueryService",
     "DebugLogRetentionConfig",
+    "RuntimeDebugLogWriter",
     "DebugLogSafeEventDetail",
     "DebugLogSafeEventSummary",
     "DebugLogStore",

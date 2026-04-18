@@ -20,8 +20,9 @@ from ..copilot_runtime.debug_log_store import (
     DebugLogEventContext,
     DebugLogLevel,
     DebugLogQueryService,
-    RetentionCoordinator,
     DebugLogStore,
+    RetentionCoordinator,
+    RuntimeDebugLogWriter,
     Sanitizer,
 )
 from ..copilot_runtime.model_routes import RuntimeModelRouteResolver
@@ -100,6 +101,12 @@ def create_app(
         retention_config=debug_log_retention_coordinator.config,
     )
     debug_log_environment = _resolve_debug_log_environment(runtime_config.environment)
+    runtime_debug_log_writer = RuntimeDebugLogWriter(
+        store=debug_log_store,
+        environment=debug_log_environment,
+    )
+    runtime_bridge.set_debug_event_logger(runtime_debug_log_writer)
+    runtime_agent_executor.set_debug_event_logger(runtime_debug_log_writer)
     history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
     runtime_history_query_service = (
         history_query_service_factory(
@@ -207,7 +214,7 @@ def create_app(
     )
     app.add_middleware(DesktopNullOriginMiddleware)
 
-    app.include_router(build_router(runtime_scaffold, runtime_bridge))
+    app.include_router(build_router(runtime_scaffold, runtime_bridge, runtime_debug_log_writer))
     app.include_router(build_diagnostics_router())
     app.include_router(build_debug_log_router())
     app.include_router(build_history_router())

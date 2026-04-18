@@ -42,6 +42,7 @@ from .debug_logging import (
     summarize_runtime_model_route,
     summarize_runtime_tool_event,
 )
+from .debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from .execution_event_graph import (
     TOOL_COMPLETED_EVENT_TYPE,
     TOOL_FAILED_EVENT_TYPE,
@@ -1077,6 +1078,7 @@ class PydanticAIAgentExecutor:
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
+        self._debug_event_logger: RuntimeDebugLogWriter | None = None
         self._agent = Agent(
             name=agent_name,
             output_type=str,
@@ -1098,6 +1100,9 @@ class PydanticAIAgentExecutor:
     @property
     def provider_adapter_registry(self) -> RuntimeProviderAdapterRegistry:
         return self._provider_adapter_registry
+
+    def set_debug_event_logger(self, logger: RuntimeDebugLogWriter | None) -> None:
+        self._debug_event_logger = logger
 
     async def run(
         self,
@@ -1346,6 +1351,21 @@ class PydanticAIAgentExecutor:
             enabledToolIds=sorted(ctx.deps.enabled_tool_ids),
             inputSummary=preview_text(input_summary, limit=160),
         )
+        self._write_debug_event(
+            level=DebugLogLevel.INFO,
+            event_name="tool.execution.started",
+            message="Tool execution started.",
+            run_id=ctx.deps.run_id,
+            correlation_id=tool_call_id,
+            phase="started",
+            summary={
+                "toolId": tool_id,
+                "toolCallId": tool_call_id,
+                "inputSummary": input_summary,
+                "enabledToolIds": sorted(ctx.deps.enabled_tool_ids),
+                "status": "started",
+            },
+        )
 
         try:
             tool = ctx.deps.tool_registry.resolve_tool(tool_id)
@@ -1358,6 +1378,21 @@ class PydanticAIAgentExecutor:
                 summary="工具未注册。",
                 input_summary=input_summary,
                 error_summary=error_message,
+            )
+            self._write_debug_event(
+                level=DebugLogLevel.ERROR,
+                event_name="tool.execution.failed",
+                message="Tool execution failed because tool was not found.",
+                run_id=ctx.deps.run_id,
+                correlation_id=tool_call_id,
+                phase="failed",
+                summary={
+                    "toolId": tool_id,
+                    "toolCallId": tool_call_id,
+                    "inputSummary": input_summary,
+                    "errorSummary": error_message,
+                    "status": "failed",
+                },
             )
             return self._build_tool_failure_result(
                 tool_id=tool_id,
@@ -1392,6 +1427,21 @@ class PydanticAIAgentExecutor:
                 summary="当前运行未启用该工具。",
                 input_summary=input_summary,
                 error_summary=error_message,
+            )
+            self._write_debug_event(
+                level=DebugLogLevel.WARN,
+                event_name="tool.execution.failed",
+                message="Tool execution rejected because tool was not enabled.",
+                run_id=ctx.deps.run_id,
+                correlation_id=tool_call_id,
+                phase="failed",
+                summary={
+                    "toolId": tool_id,
+                    "toolCallId": tool_call_id,
+                    "inputSummary": input_summary,
+                    "errorSummary": error_message,
+                    "status": "failed",
+                },
             )
             return self._build_tool_failure_result(
                 tool_id=tool_id,
@@ -1434,6 +1484,22 @@ class PydanticAIAgentExecutor:
                 input_summary=input_summary,
                 error_summary=exc.message,
             )
+            self._write_debug_event(
+                level=DebugLogLevel.ERROR,
+                event_name="tool.execution.failed",
+                message="Tool execution raised a runtime tool error.",
+                run_id=ctx.deps.run_id,
+                correlation_id=tool_call_id,
+                phase="failed",
+                summary={
+                    "toolId": tool_id,
+                    "toolCallId": tool_call_id,
+                    "inputSummary": input_summary,
+                    "errorSummary": exc.message,
+                    "status": "failed",
+                },
+                error=exc,
+            )
             return self._build_tool_failure_result(
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
@@ -1459,6 +1525,22 @@ class PydanticAIAgentExecutor:
                 input_summary=input_summary,
                 error_summary=str(exc),
             )
+            self._write_debug_event(
+                level=DebugLogLevel.ERROR,
+                event_name="tool.execution.failed",
+                message="Tool execution raised an unexpected exception.",
+                run_id=ctx.deps.run_id,
+                correlation_id=tool_call_id,
+                phase="failed",
+                summary={
+                    "toolId": tool_id,
+                    "toolCallId": tool_call_id,
+                    "inputSummary": input_summary,
+                    "errorSummary": str(exc),
+                    "status": "failed",
+                },
+                error=exc,
+            )
             return self._build_tool_failure_result(
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
@@ -1480,6 +1562,21 @@ class PydanticAIAgentExecutor:
                     summary="工具执行失败。",
                     input_summary=input_summary,
                     error_summary=error_message,
+                )
+                self._write_debug_event(
+                    level=DebugLogLevel.ERROR,
+                    event_name="tool.execution.failed",
+                    message="Tool execution returned an invalid contract status.",
+                    run_id=ctx.deps.run_id,
+                    correlation_id=tool_call_id,
+                    phase="failed",
+                    summary={
+                        "toolId": tool_id,
+                        "toolCallId": tool_call_id,
+                        "inputSummary": input_summary,
+                        "errorSummary": error_message,
+                        "status": "failed",
+                    },
                 )
                 return self._build_tool_failure_result(
                     tool_id=tool_id,
@@ -1510,6 +1607,21 @@ class PydanticAIAgentExecutor:
                         input_summary=input_summary,
                         error_summary=integrity_message,
                     )
+                    self._write_debug_event(
+                        level=DebugLogLevel.ERROR,
+                        event_name="tool.execution.failed",
+                        message="Tool execution returned an invalid contract error code.",
+                        run_id=ctx.deps.run_id,
+                        correlation_id=tool_call_id,
+                        phase="failed",
+                        summary={
+                            "toolId": tool_id,
+                            "toolCallId": tool_call_id,
+                            "inputSummary": input_summary,
+                            "errorSummary": integrity_message,
+                            "status": "failed",
+                        },
+                    )
                     return self._build_tool_failure_result(
                         tool_id=tool_id,
                         tool_call_id=tool_call_id,
@@ -1529,6 +1641,21 @@ class PydanticAIAgentExecutor:
                         input_summary=input_summary,
                         error_summary=integrity_message,
                     )
+                    self._write_debug_event(
+                        level=DebugLogLevel.ERROR,
+                        event_name="tool.execution.failed",
+                        message="Tool execution returned an invalid contract error message.",
+                        run_id=ctx.deps.run_id,
+                        correlation_id=tool_call_id,
+                        phase="failed",
+                        summary={
+                            "toolId": tool_id,
+                            "toolCallId": tool_call_id,
+                            "inputSummary": input_summary,
+                            "errorSummary": integrity_message,
+                            "status": "failed",
+                        },
+                    )
                     return self._build_tool_failure_result(
                         tool_id=tool_id,
                         tool_call_id=tool_call_id,
@@ -1544,6 +1671,21 @@ class PydanticAIAgentExecutor:
                     summary="工具执行失败。",
                     input_summary=input_summary,
                     error_summary=normalized_error_message,
+                )
+                self._write_debug_event(
+                    level=DebugLogLevel.WARN,
+                    event_name="tool.execution.failed",
+                    message="Tool execution returned a contract error result.",
+                    run_id=ctx.deps.run_id,
+                    correlation_id=tool_call_id,
+                    phase="failed",
+                    summary={
+                        "toolId": tool_id,
+                        "toolCallId": tool_call_id,
+                        "inputSummary": input_summary,
+                        "errorSummary": normalized_error_message,
+                        "status": "failed",
+                    },
                 )
                 return result
 
@@ -1565,7 +1707,50 @@ class PydanticAIAgentExecutor:
                 result_summary=result_summary,
             ),
         )
+        self._write_debug_event(
+            level=DebugLogLevel.INFO,
+            event_name="tool.execution.completed",
+            message="Tool execution completed.",
+            run_id=ctx.deps.run_id,
+            correlation_id=tool_call_id,
+            phase="completed",
+            summary={
+                "toolId": tool_id,
+                "toolCallId": tool_call_id,
+                "inputSummary": input_summary,
+                "resultSummary": result_summary,
+                "status": "succeeded",
+            },
+        )
         return result
+
+    def _write_debug_event(
+        self,
+        *,
+        level: DebugLogLevel,
+        event_name: str,
+        message: str,
+        run_id: str | None,
+        correlation_id: str | None,
+        phase: str,
+        summary: Mapping[str, Any],
+        error: BaseException | None = None,
+    ) -> None:
+        if self._debug_event_logger is None:
+            return
+        self._debug_event_logger.write(
+            category=DebugLogCategory.TOOL,
+            level=level,
+            event_name=event_name,
+            message=message,
+            component="copilot_runtime.agent",
+            operation="execute_bound_tool",
+            phase=phase,
+            run_id=run_id,
+            correlation_id=correlation_id,
+            summary=summary,
+            error=error,
+        )
 
     def _build_tool_failure_result(
         self,
