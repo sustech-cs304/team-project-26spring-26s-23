@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "generate:icons": "node ./scripts/generate-icons.mjs",
-    "prebuild": "npm run generate:icons",
+    "prebuild": "npm run generate:icons && cd ../backend && uv sync && cd ../frontend-copilot",
     "typecheck": "npm run typecheck:check",
     "typecheck:check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "build": "npm run typecheck && npm run build:app",
