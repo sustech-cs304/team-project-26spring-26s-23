@@ -857,36 +857,17 @@ def _resolve_verified_series_spec(
 def _resolve_override_series_spec(
     override_input: ThinkingCapabilityOverrideInput,
 ) -> _SeriesSpec | None:
-    normalized_series = _normalize_series_id(override_input.series)
-    base_spec = (
-        None if normalized_series is None else _SERIES_REGISTRY.get(normalized_series)
-    )
-    series_id = normalized_series or (
-        None if base_spec is None else base_spec.series_id
-    )
-    editor_type = override_input.editor_type or (
-        None if base_spec is None else base_spec.editor_type
-    )
+    normalized_series, base_spec = _resolve_override_base_spec(override_input)
+    series_id = _resolve_override_series_id(normalized_series, base_spec)
+    editor_type = _resolve_override_editor_type(override_input, base_spec)
     if series_id is None or editor_type is None:
         return None
 
-    label_zh = series_id if base_spec is None else base_spec.label_zh
-    provider_builder_key = None if base_spec is None else base_spec.provider_builder_key
-    allowed_values = (
-        override_input.allowed_values
-        if len(override_input.allowed_values) > 0
-        else (() if base_spec is None else base_spec.allowed_values)
-    )
-    default_value = (
-        override_input.default_value
-        if override_input.default_value is not None
-        else (None if base_spec is None else base_spec.default_value)
-    )
-    budget = (
-        override_input.budget
-        if override_input.budget is not None
-        else (None if base_spec is None else base_spec.budget)
-    )
+    label_zh = _resolve_override_label(series_id, base_spec)
+    provider_builder_key = _resolve_override_provider_builder_key(base_spec)
+    allowed_values = _resolve_override_allowed_values(override_input, base_spec)
+    default_value = _resolve_override_default_value(override_input, base_spec)
+    budget = _resolve_override_budget(override_input, base_spec)
     visibility = override_input.visibility
 
     normalized_allowed_values = _normalize_allowed_values(
@@ -928,6 +909,83 @@ def _resolve_override_series_spec(
     )
 
 
+def _resolve_override_base_spec(
+    override_input: ThinkingCapabilityOverrideInput,
+) -> tuple[str | None, _SeriesSpec | None]:
+    normalized_series = _normalize_series_id(override_input.series)
+    base_spec = (
+        None if normalized_series is None else _SERIES_REGISTRY.get(normalized_series)
+    )
+    return normalized_series, base_spec
+
+
+def _resolve_override_series_id(
+    normalized_series: str | None,
+    base_spec: _SeriesSpec | None,
+) -> str | None:
+    if normalized_series is not None:
+        return normalized_series
+    if base_spec is None:
+        return None
+    return base_spec.series_id
+
+
+def _resolve_override_editor_type(
+    override_input: ThinkingCapabilityOverrideInput,
+    base_spec: _SeriesSpec | None,
+) -> ThinkingSeriesEditorType | None:
+    if override_input.editor_type is not None:
+        return override_input.editor_type
+    if base_spec is None:
+        return None
+    return base_spec.editor_type
+
+
+def _resolve_override_label(series_id: str, base_spec: _SeriesSpec | None) -> str:
+    if base_spec is None:
+        return series_id
+    return base_spec.label_zh
+
+
+def _resolve_override_provider_builder_key(base_spec: _SeriesSpec | None) -> str | None:
+    if base_spec is None:
+        return None
+    return base_spec.provider_builder_key
+
+
+def _resolve_override_allowed_values(
+    override_input: ThinkingCapabilityOverrideInput,
+    base_spec: _SeriesSpec | None,
+) -> tuple[RuntimeThinkingValue, ...]:
+    if len(override_input.allowed_values) > 0:
+        return override_input.allowed_values
+    if base_spec is None:
+        return ()
+    return base_spec.allowed_values
+
+
+def _resolve_override_default_value(
+    override_input: ThinkingCapabilityOverrideInput,
+    base_spec: _SeriesSpec | None,
+) -> RuntimeThinkingValue | None:
+    if override_input.default_value is not None:
+        return override_input.default_value
+    if base_spec is None:
+        return None
+    return base_spec.default_value
+
+
+def _resolve_override_budget(
+    override_input: ThinkingCapabilityOverrideInput,
+    base_spec: _SeriesSpec | None,
+) -> ThinkingSeriesBudgetConfig | None:
+    if override_input.budget is not None:
+        return override_input.budget
+    if base_spec is None:
+        return None
+    return base_spec.budget
+
+
 def _normalize_allowed_values(
     *,
     editor_type: ThinkingSeriesEditorType,
@@ -963,31 +1021,86 @@ def _normalize_default_value(
 ) -> RuntimeThinkingValue | None:
     candidate = default_value or fallback
     if editor_type == "fixed":
-        if candidate is not None and candidate.valueType == "fixed":
-            return candidate
-        return _fixed_value("固定推理")
+        return _normalize_fixed_default_value(candidate)
     if editor_type == "budget":
-        if candidate is not None and candidate.valueType == "budget":
-            if candidate.mode == "budget":
-                if candidate.budgetTokens is None or budget is None:
-                    return None
-                snapped = _clamp_budget_tokens(candidate.budgetTokens, budget)
-                return _budget_value(
-                    "budget", candidate.labelZh or f"{snapped} Tokens", snapped
-                )
-            if candidate.mode == "off":
-                return _budget_value("off", candidate.labelZh or "关闭")
-            if candidate.mode == "dynamic":
-                return _budget_value("dynamic", candidate.labelZh or "动态")
-        off_value = next(
-            (
-                value
-                for value in allowed_values
-                if value.valueType == "budget" and value.mode == "off"
-            ),
-            None,
+        return _normalize_budget_default_value(
+            candidate=candidate,
+            allowed_values=allowed_values,
+            budget=budget,
         )
-        return off_value
+    return _normalize_discrete_default_value(candidate, allowed_values)
+
+
+def _normalize_fixed_default_value(
+    candidate: RuntimeThinkingValue | None,
+) -> RuntimeThinkingValue:
+    if candidate is not None and candidate.valueType == "fixed":
+        return candidate
+    return _fixed_value("固定推理")
+
+
+def _normalize_budget_default_value(
+    *,
+    candidate: RuntimeThinkingValue | None,
+    allowed_values: tuple[RuntimeThinkingValue, ...],
+    budget: ThinkingSeriesBudgetConfig | None,
+) -> RuntimeThinkingValue | None:
+    normalized_candidate = _normalize_budget_candidate(candidate, budget)
+    if normalized_candidate is not None:
+        return normalized_candidate
+    return _find_budget_off_value(allowed_values)
+
+
+def _normalize_budget_candidate(
+    candidate: RuntimeThinkingValue | None,
+    budget: ThinkingSeriesBudgetConfig | None,
+) -> RuntimeThinkingValue | None:
+    if candidate is None or candidate.valueType != "budget":
+        return None
+    return _normalize_non_token_budget_candidate(candidate) or _normalize_budget_token_value(
+        candidate, budget
+    )
+
+
+def _normalize_non_token_budget_candidate(
+    candidate: RuntimeThinkingValue,
+) -> RuntimeThinkingValue | None:
+    if candidate.mode == "off":
+        return _budget_value("off", candidate.labelZh or "关闭")
+    if candidate.mode == "dynamic":
+        return _budget_value("dynamic", candidate.labelZh or "动态")
+    if candidate.mode != "budget":
+        return None
+    return None
+
+
+def _normalize_budget_token_value(
+    candidate: RuntimeThinkingValue,
+    budget: ThinkingSeriesBudgetConfig | None,
+) -> RuntimeThinkingValue | None:
+    if candidate.budgetTokens is None or budget is None:
+        return None
+    snapped = _clamp_budget_tokens(candidate.budgetTokens, budget)
+    return _budget_value("budget", candidate.labelZh or f"{snapped} Tokens", snapped)
+
+
+def _find_budget_off_value(
+    allowed_values: tuple[RuntimeThinkingValue, ...],
+) -> RuntimeThinkingValue | None:
+    return next(
+        (
+            value
+            for value in allowed_values
+            if value.valueType == "budget" and value.mode == "off"
+        ),
+        None,
+    )
+
+
+def _normalize_discrete_default_value(
+    candidate: RuntimeThinkingValue | None,
+    allowed_values: tuple[RuntimeThinkingValue, ...],
+) -> RuntimeThinkingValue | None:
     if candidate is not None and candidate.valueType == "code":
         if any(_runtime_values_equal(candidate, allowed) for allowed in allowed_values):
             return candidate
