@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 import base64
 import imghdr
+import re
 import struct
-from xml.etree import ElementTree
 
 from .errors import FileToolError
 from .path_policy import PathResolution
@@ -152,7 +152,7 @@ def _resolve_dimensions(
             return _read_jpeg_dimensions(raw)
         if mime_type == _SVG_MIME:
             return _read_svg_dimensions(path)
-    except (OSError, ValueError, ElementTree.ParseError):
+    except (OSError, ValueError):
         return None, None
     return None, None
 
@@ -241,12 +241,13 @@ def _read_jpeg_dimensions(raw: bytes) -> tuple[int | None, int | None]:
 
 
 def _read_svg_dimensions(path: Path) -> tuple[int | None, int | None]:
-    root = ElementTree.fromstring(path.read_text(encoding="utf-8"))
-    width = _parse_svg_length(root.attrib.get("width"))
-    height = _parse_svg_length(root.attrib.get("height"))
+    svg_text = path.read_text(encoding="utf-8")
+    root_attributes = _extract_svg_root_attributes(svg_text)
+    width = _parse_svg_length(root_attributes.get("width"))
+    height = _parse_svg_length(root_attributes.get("height"))
     if width is not None and height is not None:
         return width, height
-    view_box = root.attrib.get("viewBox")
+    view_box = root_attributes.get("viewBox")
     if view_box is None:
         return None, None
     parts = [part for part in view_box.replace(",", " ").split() if part]
@@ -256,6 +257,20 @@ def _read_svg_dimensions(path: Path) -> tuple[int | None, int | None]:
         return int(float(parts[2])), int(float(parts[3]))
     except ValueError:
         return None, None
+
+
+def _extract_svg_root_attributes(svg_text: str) -> dict[str, str]:
+    root_match = re.search(r"<svg\b(?P<attrs>[^>]*)>", svg_text, flags=re.IGNORECASE)
+    if root_match is None:
+        return {}
+
+    attributes: dict[str, str] = {}
+    for key, double_quoted, single_quoted in re.findall(
+        r"([:\w.-]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')",
+        root_match.group("attrs"),
+    ):
+        attributes[key] = double_quoted or single_quoted
+    return attributes
 
 
 def _parse_svg_length(value: str | None) -> int | None:
