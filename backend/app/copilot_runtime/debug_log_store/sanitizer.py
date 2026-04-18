@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -9,6 +10,38 @@ from typing import Any
 from .contracts import SanitizedPayload
 
 _DEFAULT_MASK = "***REDACTED***"
+_DEFAULT_SENSITIVE_KEYS = frozenset(
+    {
+        "authorization",
+        "token",
+        "accesstoken",
+        "refreshtoken",
+        "apikey",
+        "secret",
+        "password",
+        "passwd",
+        "cookie",
+        "setcookie",
+        "session",
+        "sessionid",
+    }
+)
+_SENSITIVE_TEXT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"(?P<prefix>(?:^|[?&\s,;])(?:access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|session[_-]?id)\s*=)"
+        r"(?P<secret>[^&\s,;]+)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?P<prefix>(?:^|[\s,;])(?:authorization|x-api-key|api-key|api[_-]?key|token|access[_-]?token|refresh[_-]?token|cookie|set-cookie|session[_-]?id)\s*[:=]\s*)"
+        r"(?P<secret>[^\r\n,;]+)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?P<prefix>\bBearer\s+)(?P<secret>[A-Za-z0-9._\-+/=]+)",
+        re.IGNORECASE,
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,23 +52,7 @@ class Sanitizer:
     max_collection_items: int = 20
     max_depth: int = 4
     mask: str = _DEFAULT_MASK
-    sensitive_keys: frozenset[str] = frozenset(
-        {
-            "authorization",
-            "token",
-            "access_token",
-            "refresh_token",
-            "api_key",
-            "apikey",
-            "secret",
-            "password",
-            "passwd",
-            "cookie",
-            "set-cookie",
-            "session",
-            "sessionid",
-        }
-    )
+    sensitive_keys: frozenset[str] = _DEFAULT_SENSITIVE_KEYS
 
     def sanitize_summary(self, payload: Mapping[str, Any] | None) -> SanitizedPayload:
         if payload is None:
@@ -67,12 +84,35 @@ class Sanitizer:
             dropped_fields=tuple(sorted(dropped_fields)),
         )
 
-    def sanitize_stack(self, stack: str | None) -> tuple[str | None, bool]:
-        if stack is None:
+    def sanitize_text(self, text: str | None) -> tuple[str | None, bool]:
+        if text is None:
             return None, False
-        if len(stack) <= self.max_string_length:
-            return stack, False
-        return f"{stack[: self.max_string_length]}…", True
+        redacted = self._sanitize_text_content(text)
+        if len(redacted) <= self.max_string_length:
+            return redacted, redacted != text
+        return f"{redacted[: self.max_string_length]}…", True
+
+    def sanitize_error_text(self, text: str | None) -> str | None:
+        sanitized, _changed = self.sanitize_text(text)
+        return sanitized
+
+    def _sanitize_text_content(self, text: str) -> str:
+        sanitized = text
+        for pattern in _SENSITIVE_TEXT_PATTERNS:
+            sanitized = pattern.sub(lambda match: f"{match.group('prefix')}{self.mask}", sanitized)
+        return sanitized
+
+    def _normalize_sensitive_key(self, key: str) -> str:
+        return "".join(character for character in key.strip().lower() if character.isalnum())
+
+    def normalized_sensitive_keys(self) -> frozenset[str]:
+        return frozenset(self._normalize_sensitive_key(key) for key in self.sensitive_keys)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "sensitive_keys", self.normalized_sensitive_keys())
+
+    def sanitize_stack(self, stack: str | None) -> tuple[str | None, bool]:
+        return self.sanitize_text(stack)
 
     def _sanitize_value(
         self,
@@ -140,5 +180,5 @@ class Sanitizer:
         return f"{text[: self.max_string_length]}…", True, {field_path}
 
     def _is_sensitive_key(self, key: str) -> bool:
-        normalized = key.strip().lower().replace("_", "-")
+        normalized = self._normalize_sensitive_key(key)
         return normalized in self.sensitive_keys

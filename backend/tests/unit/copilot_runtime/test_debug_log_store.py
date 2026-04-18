@@ -54,6 +54,25 @@ def test_sanitizer_redacts_sensitive_keys_and_truncates_values() -> None:
     assert "payload.items" in sanitized.dropped_fields
 
 
+def test_sanitizer_matches_common_sensitive_key_variants() -> None:
+    sanitizer = Sanitizer()
+
+    sanitized = sanitizer.sanitize_summary(
+        {
+            "access_token": "secret-1",
+            "refresh-token": "secret-2",
+            "API_KEY": "secret-3",
+            "session_id": "secret-4",
+        }
+    )
+
+    assert sanitized.content["access_token"] == "***REDACTED***"
+    assert sanitized.content["refresh-token"] == "***REDACTED***"
+    assert sanitized.content["API_KEY"] == "***REDACTED***"
+    assert sanitized.content["session_id"] == "***REDACTED***"
+    assert sanitized.redacted_keys == ("API_KEY", "access_token", "refresh-token", "session_id")
+
+
 def test_debug_log_store_initializes_schema_and_reads_recent_events(tmp_path: Path) -> None:
     store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
     event = DebugLogEvent.create(
@@ -126,3 +145,48 @@ def test_debug_log_store_truncates_exception_stack_before_persisting(tmp_path: P
 
     assert persisted.exception_type == "RuntimeError"
     assert persisted.exception_stack == "0123456789abcdef…"
+
+
+def test_debug_log_store_redacts_sensitive_error_summary_and_stack_before_persisting(tmp_path: Path) -> None:
+    store = DebugLogStore(
+        db_path=tmp_path / "debug-log.sqlite3",
+        sanitizer=Sanitizer(max_string_length=240),
+    )
+
+    store.write_event(
+        DebugLogEvent.create(
+            level=DebugLogLevel.ERROR,
+            category=DebugLogCategory.RUNTIME,
+            event_name="runtime.failed",
+            message="Runtime failed.",
+            environment=DebugLogEnvironmentMode.TEST,
+            error_summary="request failed api_key=topsecret Bearer abc123",
+            exception_type="RuntimeError",
+            exception_stack=(
+                "Traceback... https://example.com?access_token=alpha&x=1\n"
+                "Authorization: Bearer zzz\n"
+                "session_id=opaque"
+            ),
+        )
+    )
+
+    persisted = store.list_recent_events(limit=1)[0]
+
+    assert "topsecret" not in (persisted.error_summary or "")
+    assert "abc123" not in (persisted.error_summary or "")
+    assert "alpha" not in (persisted.exception_stack or "")
+    assert "zzz" not in (persisted.exception_stack or "")
+    assert "opaque" not in (persisted.exception_stack or "")
+    assert "***REDACTED***" in (persisted.error_summary or "")
+    assert "***REDACTED***" in (persisted.exception_stack or "")
+
+
+def test_checkpoint_wal_rejects_unsupported_mode(tmp_path: Path) -> None:
+    store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
+
+    try:
+        store.checkpoint_wal(mode="PASSIVE); DROP TABLE debug_log_events; --")
+    except ValueError as exc:
+        assert "Unsupported wal_checkpoint mode" in str(exc)
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("Expected checkpoint_wal() to reject unsupported modes.")

@@ -26,6 +26,7 @@ DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME = "copilot-debug-log.db"
 DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS = 5.0
 ENV_DEBUG_LOG_DATABASE_PATH = "COPILOT_RUNTIME_DEBUG_LOG_DATABASE_PATH"
 ENV_DESKTOP_DATABASE_DIR = "COPILOT_DESKTOP_RUNTIME_DATABASE_DIR"
+_ALLOWED_WAL_CHECKPOINT_MODES = frozenset({"PASSIVE", "FULL", "RESTART", "TRUNCATE"})
 
 
 def resolve_debug_log_database_path(
@@ -78,6 +79,7 @@ class DebugLogStore:
         self._initialize_schema()
 
     def write_event(self, event: DebugLogEvent) -> None:
+        sanitized_error_summary = self.sanitizer.sanitize_error_text(event.error_summary)
         summary_stack, _stack_truncated = self.sanitizer.sanitize_stack(event.exception_stack)
         with self._connection() as connection:
             connection.execute(
@@ -127,7 +129,7 @@ class DebugLogStore:
                     int(event.summary.truncated),
                     json.dumps(list(event.summary.redacted_keys), ensure_ascii=False),
                     json.dumps(list(event.summary.dropped_fields), ensure_ascii=False),
-                    event.error_summary,
+                    sanitized_error_summary,
                     event.exception_type,
                     summary_stack,
                 ),
@@ -242,8 +244,11 @@ class DebugLogStore:
         return int(self.db_path.stat().st_size)
 
     def checkpoint_wal(self, *, mode: str = "PASSIVE") -> None:
+        normalized_mode = mode.strip().upper()
+        if normalized_mode not in _ALLOWED_WAL_CHECKPOINT_MODES:
+            raise ValueError(f"Unsupported wal_checkpoint mode: {mode}")
         with self._connection() as connection:
-            connection.execute(f"PRAGMA wal_checkpoint({mode});")
+            connection.execute(f"PRAGMA wal_checkpoint({normalized_mode});")
 
     def list_recent_events(self, *, limit: int = 20) -> tuple[DebugLogQueryResult, ...]:
         return self.query_events(DebugLogQueryFilter(limit=limit))

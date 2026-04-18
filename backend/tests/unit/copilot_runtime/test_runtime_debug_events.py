@@ -197,14 +197,14 @@ def test_transport_debug_logs_cover_run_start_and_run_stream_failure(tmp_path: P
                     "threadId": thread_id,
                     "agentId": "default",
                     "message": {"role": "user", "content": "hello"},
-                        "policy": {
-                            "modelRoute": {
-                                "routeRef": {
-                                    "routeKind": "provider-model",
-                                    "profileId": "profile-1",
-                                    "modelId": "gpt-4.1",
+                    "policy": {
+                        "modelRoute": {
+                            "routeRef": {
+                                "routeKind": "provider-model",
+                                "profileId": "profile-1",
+                                "modelId": "gpt-4.1",
                             },
-                        }
+                        },
                     },
                 },
             },

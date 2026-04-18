@@ -7,9 +7,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 
 from .contracts import DebugLogAuditRecord, DebugLogRetentionConfig
+from .sanitizer import Sanitizer
 from .store import DebugLogStore
 
 _RETENTION_AUDIT_ACTION = "retention.cleanup"
+_ERROR_SANITIZER = Sanitizer(max_string_length=500)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +112,7 @@ class RetentionCoordinator:
                 if deleted_batch < self._config.delete_batch_size:
                     break
 
-            if deleted_rows > 0 and self._config.vacuum_after_cleanup:
+            if deleted_rows > 0 and self._config.checkpoint_after_cleanup:
                 self._store.checkpoint_wal(mode="PASSIVE")
                 extra_maintenance_performed = True
 
@@ -197,7 +199,7 @@ def _normalize_utc(value: datetime) -> datetime:
 
 def _truncate_error_summary(exc: Exception) -> str:
     text = str(exc).strip() or exc.__class__.__name__
-    return text[:500]
+    return _ERROR_SANITIZER.sanitize_error_text(text) or exc.__class__.__name__
 
 
 __all__ = [

@@ -147,7 +147,7 @@ class DebugLogRetentionConfig:
     min_cleanup_interval_seconds: int = 6 * 60 * 60
     detailed_snapshot_retention_days: int | None = None
     delete_batch_size: int = 500
-    vacuum_after_cleanup: bool = False
+    checkpoint_after_cleanup: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,7 +302,7 @@ class DebugLogMaintenanceStatus:
                 "minCleanupIntervalSeconds": self.retention.min_cleanup_interval_seconds,
                 "detailedSnapshotRetentionDays": self.retention.detailed_snapshot_retention_days,
                 "deleteBatchSize": self.retention.delete_batch_size,
-                "vacuumAfterCleanup": self.retention.vacuum_after_cleanup,
+                "checkpointAfterCleanup": self.retention.checkpoint_after_cleanup,
             },
             "statistics": {
                 "totalEvents": self.total_events,

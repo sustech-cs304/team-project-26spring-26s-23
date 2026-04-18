@@ -68,6 +68,8 @@ class RuntimeDebugLogWriter:
         exception_stack: str | None = None
         if error is not None:
             exception_type, error_summary, exception_stack = _summarize_error(error)
+            error_summary = self.store.sanitizer.sanitize_error_text(error_summary)
+            exception_stack = self.store.sanitizer.sanitize_error_text(exception_stack)
 
         try:
             self.store.write_event(

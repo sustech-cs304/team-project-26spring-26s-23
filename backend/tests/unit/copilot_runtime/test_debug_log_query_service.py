@@ -125,6 +125,31 @@ def test_debug_log_query_service_exposes_safe_detail_and_chain_queries(tmp_path:
     assert detail.event.event.summary.get("cookie") is None
 
 
+def test_debug_log_query_service_returns_redacted_error_fields(tmp_path: Path) -> None:
+    store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
+    _write_event(
+        store,
+        occurred_at=datetime(2026, 4, 18, 7, 0, tzinfo=UTC),
+        event_name="provider.request.failed",
+        message="Provider request failed.",
+        category=DebugLogCategory.PROVIDER,
+        level=DebugLogLevel.ERROR,
+        context=DebugLogEventContext(correlation_id="corr-safe", run_id="run-safe"),
+        summary_payload={"statusCode": 401},
+        error_summary="Authorization: Bearer super-secret",
+        exception_type="RuntimeError",
+        exception_stack="https://example.com?refresh_token=refresh-secret",
+    )
+
+    service = DebugLogQueryService(store)
+    detail = service.get_event_detail(store.list_recent_events(limit=1)[0].event_id)
+
+    assert "super-secret" not in (detail.event.event.error_summary or "")
+    assert "refresh-secret" not in (detail.event.exception_stack or "")
+    assert "***REDACTED***" in (detail.event.event.error_summary or "")
+    assert "***REDACTED***" in (detail.event.exception_stack or "")
+
+
 def test_debug_log_query_service_requires_chain_filter(tmp_path: Path) -> None:
     service = DebugLogQueryService(DebugLogStore(db_path=tmp_path / "debug-log.sqlite3"))
 

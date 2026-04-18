@@ -132,6 +132,39 @@ def test_retention_coordinator_allows_immediate_retry_after_failed_cleanup(tmp_p
     assert audits[1].status == "failed"
 
 
+def test_retention_coordinator_runs_checkpoint_when_enabled(tmp_path: Path) -> None:
+    store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
+    _write_event(store, occurred_at=datetime(2026, 4, 1, 8, 0, tzinfo=UTC), event_name="expired.1")
+
+    checkpoint_calls: list[str] = []
+    original_checkpoint_wal = store.checkpoint_wal
+
+    def tracking_checkpoint_wal(*, mode: str = "PASSIVE") -> None:
+        checkpoint_calls.append(mode)
+        original_checkpoint_wal(mode=mode)
+
+    store.checkpoint_wal = tracking_checkpoint_wal  # type: ignore[method-assign]
+    coordinator = RetentionCoordinator(
+        store,
+        config=DebugLogRetentionConfig(
+            retention_days=7,
+            auto_cleanup_enabled=True,
+            min_cleanup_interval_seconds=0,
+            checkpoint_after_cleanup=True,
+        ),
+        clock=lambda: datetime(2026, 4, 18, 8, 0, tzinfo=UTC),
+    )
+
+    result = coordinator.run_due_maintenance(trigger="startup")
+    latest_audit = store.get_latest_audit_record(action="retention.cleanup")
+
+    assert result.status == "succeeded"
+    assert checkpoint_calls == ["PASSIVE"]
+    assert result.extra_maintenance_performed is True
+    assert latest_audit is not None
+    assert latest_audit.details["extraMaintenancePerformed"] is True
+
+
 def _write_event(store: DebugLogStore, *, occurred_at: datetime, event_name: str) -> None:
     store.write_event(
         DebugLogEvent(
