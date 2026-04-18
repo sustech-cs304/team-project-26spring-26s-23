@@ -25,6 +25,7 @@ from ..contracts import (
     THREAD_GET_METHOD,
     RuntimeScaffold,
 )
+from ..debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from ..model_routes import RuntimeModelRouteResolutionError
 from ..protocol import RuntimeProtocolError
 from ..provider_adapter_registry import RuntimeProviderAdapterError
@@ -57,6 +58,7 @@ from .response_mappers import (
 def build_router(
     scaffold: RuntimeScaffold,
     runtime_bridge: RuntimeBridge,
+    debug_event_logger: RuntimeDebugLogWriter | None = None,
 ) -> APIRouter:
     dependencies = build_runtime_transport_dependencies(scaffold, runtime_bridge)
     router = APIRouter()
@@ -91,6 +93,7 @@ def build_router(
                 dependencies=dependencies,
                 payload=payload,
                 http_request=request,
+                debug_event_logger=debug_event_logger,
             )
 
         if requested_method == RUN_STREAM_METHOD:
@@ -98,6 +101,7 @@ def build_router(
                 dependencies=dependencies,
                 payload=payload,
                 http_request=request,
+                debug_event_logger=debug_event_logger,
             )
 
         if requested_method == RUN_CANCEL_METHOD:
@@ -182,7 +186,9 @@ async def _handle_run_start_request(
     dependencies: RuntimeTransportDependencies,
     payload: dict[str, Any] | None,
     http_request: Request,
+    debug_event_logger: RuntimeDebugLogWriter | None = None,
 ) -> JSONResponse:
+    request_id = ensure_runtime_request_id(http_request)
     try:
         run_start_request = dependencies.parser.extract_run_start_request(payload)
         http_request.state.copilot_runtime_debug_mode_enabled = run_start_request.policy.debugModeEnabled
@@ -192,6 +198,23 @@ async def _handle_run_start_request(
             thread_id=run_start_request.thread_id,
             agent_id=run_start_request.agent_id,
             phase="create_run_record",
+        )
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.INFO,
+            event_name="transport.http.run_start.received",
+            message="Runtime HTTP run/start request received.",
+            operation="run_start",
+            phase="received",
+            request_id=request_id,
+            thread_id=run_start_request.thread_id,
+            session_id=run_start_request.thread_id,
+            summary={
+                "runtimeMethod": RUN_START_METHOD,
+                "agentId": run_start_request.agent_id,
+                "path": str(http_request.url.path),
+                "status": "received",
+            },
         )
         log_run_start_stage(http_request, "run_start.request_received")
         log_run_start_stage(http_request, "run_start.create_run_record.enter")
@@ -203,7 +226,7 @@ async def _handle_run_start_request(
         run = await dependencies.runtime_bridge.prime_run_metadata(
             run_id=run.run_id,
             runtime_method=RUN_START_METHOD,
-            request_id=ensure_runtime_request_id(http_request),
+            request_id=request_id,
         )
         log_run_start_stage(http_request, "run_start.prime_run_metadata.succeeded")
         set_runtime_request_context(http_request, phase="build_run_start_response")
@@ -215,21 +238,87 @@ async def _handle_run_start_request(
         serialized_response = response.to_dict()
         json_response = JSONResponse(content=serialized_response)
         log_run_start_stage(http_request, "run_start.serialize_run_start_response.succeeded")
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.INFO,
+            event_name="transport.http.run_start.succeeded",
+            message="Runtime HTTP run/start request completed.",
+            operation="run_start",
+            phase="response",
+            request_id=request_id,
+            run_id=run.run_id,
+            thread_id=run.thread_id,
+            session_id=run.thread_id,
+            summary={
+                "runtimeMethod": RUN_START_METHOD,
+                "status": "succeeded",
+                "responseStatusCode": json_response.status_code,
+            },
+        )
     except RuntimeProtocolError as exc:
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.WARN,
+            event_name="transport.http.run_start.failed",
+            message="Runtime HTTP run/start request failed protocol validation.",
+            operation="run_start",
+            phase="protocol_error",
+            request_id=request_id,
+            summary={"runtimeMethod": RUN_START_METHOD, "status": "failed"},
+            error=exc,
+        )
         return protocol_error_response(exc)
     except ThreadNotFoundError as exc:
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.WARN,
+            event_name="transport.http.run_start.failed",
+            message="Runtime HTTP run/start request referenced a missing thread.",
+            operation="run_start",
+            phase="thread_lookup",
+            request_id=request_id,
+            thread_id=exc.thread_id,
+            session_id=exc.thread_id,
+            summary={"runtimeMethod": RUN_START_METHOD, "status": "failed"},
+            error=exc,
+        )
         return thread_not_found_response(
             thread_id=exc.thread_id,
             scaffold=dependencies.scaffold,
             requested_method=RUN_START_METHOD,
         )
     except AgentNotFoundError as exc:
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.WARN,
+            event_name="transport.http.run_start.failed",
+            message="Runtime HTTP run/start request referenced a missing agent.",
+            operation="run_start",
+            phase="agent_lookup",
+            request_id=request_id,
+            summary={"runtimeMethod": RUN_START_METHOD, "agentId": exc.agent_name, "status": "failed"},
+            error=exc,
+        )
         return agent_not_found_response(
             agent_name=exc.agent_name,
             scaffold=dependencies.scaffold,
             requested_method=RUN_START_METHOD,
         )
     except Exception as exc:
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.ERROR,
+            event_name="transport.http.run_start.failed",
+            message="Runtime HTTP run/start request failed unexpectedly.",
+            operation="run_start",
+            phase=get_request_state_text(http_request, "copilot_runtime_phase") or "unknown",
+            request_id=request_id,
+            run_id=get_request_state_text(http_request, "copilot_runtime_run_id"),
+            thread_id=get_request_state_text(http_request, "copilot_runtime_thread_id"),
+            session_id=get_request_state_text(http_request, "copilot_runtime_session_id"),
+            summary={"runtimeMethod": RUN_START_METHOD, "status": "failed"},
+            error=exc,
+        )
         log_run_start_stage(
             http_request,
             build_run_start_failed_event_name(
@@ -252,28 +341,120 @@ async def _handle_run_stream_request(
     dependencies: RuntimeTransportDependencies,
     payload: dict[str, Any] | None,
     http_request: Request,
+    debug_event_logger: RuntimeDebugLogWriter | None = None,
 ) -> JSONResponse | StreamingResponse:
+    request_id = ensure_runtime_request_id(http_request)
     try:
         run_stream_request = dependencies.parser.extract_run_stream_request(payload)
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.INFO,
+            event_name="transport.http.run_stream.received",
+            message="Runtime HTTP run/stream request received.",
+            operation="run_stream",
+            phase="received",
+            request_id=request_id,
+            run_id=run_stream_request.run_id,
+            summary={"runtimeMethod": RUN_STREAM_METHOD, "status": "received"},
+        )
         events = dependencies.runtime_bridge.stream_run(
             run_id=run_stream_request.run_id,
             is_client_disconnected=http_request.is_disconnected,
         )
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.INFO,
+            event_name="transport.http.run_stream.succeeded",
+            message="Runtime HTTP run/stream response opened.",
+            operation="run_stream",
+            phase="response",
+            request_id=request_id,
+            run_id=run_stream_request.run_id,
+            summary={"runtimeMethod": RUN_STREAM_METHOD, "status": "streaming"},
+        )
         return stream_runtime_run_events(events)
     except RuntimeProtocolError as exc:
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.WARN,
+            event_name="transport.http.run_stream.failed",
+            message="Runtime HTTP run/stream request failed protocol validation.",
+            operation="run_stream",
+            phase="protocol_error",
+            request_id=request_id,
+            summary={"runtimeMethod": RUN_STREAM_METHOD, "status": "failed"},
+            error=exc,
+        )
         return protocol_error_response(exc)
     except RunNotFoundError as exc:
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.WARN,
+            event_name="transport.http.run_stream.failed",
+            message="Runtime HTTP run/stream request referenced a missing run.",
+            operation="run_stream",
+            phase="run_lookup",
+            request_id=request_id,
+            run_id=exc.run_id,
+            summary={"runtimeMethod": RUN_STREAM_METHOD, "status": "failed"},
+            error=exc,
+        )
         return run_not_found_response(
             run_id=exc.run_id,
             scaffold=dependencies.scaffold,
             requested_method=RUN_STREAM_METHOD,
         )
     except RuntimeError as exc:
+        _write_transport_event(
+            debug_event_logger,
+            level=DebugLogLevel.ERROR,
+            event_name="transport.http.run_stream.failed",
+            message="Runtime HTTP run/stream request failed before streaming started.",
+            operation="run_stream",
+            phase="stream_setup",
+            request_id=request_id,
+            summary={"runtimeMethod": RUN_STREAM_METHOD, "status": "failed"},
+            error=exc,
+        )
         return agent_execution_failed_response(
             message=str(exc),
             scaffold=dependencies.scaffold,
             requested_method=RUN_STREAM_METHOD,
         )
+
+
+def _write_transport_event(
+    logger: RuntimeDebugLogWriter | None,
+    *,
+    level: DebugLogLevel,
+    event_name: str,
+    message: str,
+    operation: str,
+    phase: str,
+    summary: dict[str, Any],
+    request_id: str | None = None,
+    run_id: str | None = None,
+    thread_id: str | None = None,
+    session_id: str | None = None,
+    error: BaseException | None = None,
+) -> None:
+    if logger is None:
+        return
+    logger.write(
+        category=DebugLogCategory.TRANSPORT,
+        level=level,
+        event_name=event_name,
+        message=message,
+        component="copilot_runtime.http_transport",
+        operation=operation,
+        phase=phase,
+        request_id=request_id,
+        run_id=run_id,
+        thread_id=thread_id,
+        session_id=session_id,
+        summary=summary,
+        error=error,
+    )
 
 
 

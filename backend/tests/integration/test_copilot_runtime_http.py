@@ -1308,10 +1308,11 @@ def test_post_root_run_stream_corrupted_thread_history_returns_failed_event() ->
     with TestClient(app) as client:
         thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
         thread_id = thread_response.json()["threadId"]
+        corrupted_run_id = f"run-corrupted-{thread_id}"
         store = app.state.copilot_runtime_session_store
         store.create_run(
             thread_id=thread_id,
-            run_id="run-corrupted",
+            run_id=corrupted_run_id,
             request=RuntimeStoredRunInput(
                 message_role="assistant",
                 message_content="orphan assistant",
@@ -1328,7 +1329,7 @@ def test_post_root_run_stream_corrupted_thread_history_returns_failed_event() ->
                 agent_id="default",
             ),
         )
-        store.mark_run_completed("run-corrupted", assistant_text="projected assistant reply")
+        store.mark_run_completed(corrupted_run_id, assistant_text="projected assistant reply")
         run_start_response = client.post(
             "/",
             json=_build_run_start_request(

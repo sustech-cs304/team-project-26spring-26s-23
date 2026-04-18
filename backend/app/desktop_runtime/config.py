@@ -20,6 +20,9 @@ DEFAULT_CONFIG_DIR_NAME = "config"
 DEFAULT_LOGS_DIR_NAME = "logs"
 DEFAULT_DATABASE_DIR_NAME = "database"
 DEFAULT_STATE_DIR_NAME = "state"
+DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME = "copilot-debug-log.db"
+DEFAULT_DEBUG_LOG_RETENTION_DAYS = 14
+DEFAULT_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60
 DEFAULT_COPILOT_SETTINGS_FILE_NAME = "copilot-settings.json"
 DEFAULT_HOST_LOG_FILE_NAME = "electron-host.log"
 DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME = "backend.stdout.log"
@@ -37,6 +40,11 @@ ENV_CONFIG_DIR = "COPILOT_DESKTOP_RUNTIME_CONFIG_DIR"
 ENV_LOGS_DIR = "COPILOT_DESKTOP_RUNTIME_LOGS_DIR"
 ENV_DATABASE_DIR = "COPILOT_DESKTOP_RUNTIME_DATABASE_DIR"
 ENV_STATE_DIR = "COPILOT_DESKTOP_RUNTIME_STATE_DIR"
+ENV_DEBUG_LOG_DATABASE_FILE = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_DATABASE_FILE"
+ENV_DEBUG_LOG_RETENTION_DAYS = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_RETENTION_DAYS"
+ENV_DEBUG_LOG_AUTO_CLEANUP_ENABLED = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_AUTO_CLEANUP_ENABLED"
+ENV_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS"
+ENV_DEBUG_LOG_SNAPSHOT_RETENTION_DAYS = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_SNAPSHOT_RETENTION_DAYS"
 ENV_COPILOT_SETTINGS_FILE = "COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE"
 ENV_HOST_LOG_FILE = "COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE"
 ENV_BACKEND_STDOUT_LOG_FILE = "COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE"
@@ -61,6 +69,7 @@ class DesktopRuntimePaths:
     logs_dir: Path
     database_dir: Path
     state_dir: Path
+    debug_log_database_file: Path
     copilot_settings_file: Path
     host_log_file: Path
     backend_stdout_log_file: Path
@@ -89,6 +98,7 @@ class DesktopRuntimePaths:
             "logs_dir": self.logs_dir.as_posix(),
             "database_dir": self.database_dir.as_posix(),
             "state_dir": self.state_dir.as_posix(),
+            "debug_log_database_file": self.debug_log_database_file.as_posix(),
             "copilot_settings_file": self.copilot_settings_file.as_posix(),
             "host_log_file": self.host_log_file.as_posix(),
             "backend_stdout_log_file": self.backend_stdout_log_file.as_posix(),
@@ -108,6 +118,10 @@ class DesktopRuntimeConfig:
     paths: DesktopRuntimePaths
     app_mode: str
     environment: str
+    debug_log_retention_days: int = DEFAULT_DEBUG_LOG_RETENTION_DAYS
+    debug_log_auto_cleanup_enabled: bool = True
+    debug_log_min_cleanup_interval_seconds: int = DEFAULT_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS
+    debug_log_snapshot_retention_days: int | None = None
     host_model_route_bridge_url: str | None = None
     host_model_route_bridge_token: str | None = None
     host_capability_bridge_url: str | None = None
@@ -137,6 +151,10 @@ class DesktopRuntimeConfig:
     @property
     def state_dir(self) -> Path:
         return self.paths.state_dir
+
+    @property
+    def debug_log_database_file(self) -> Path:
+        return self.paths.debug_log_database_file
 
     @property
     def copilot_settings_file(self) -> Path:
@@ -178,6 +196,10 @@ class DesktopRuntimeConfig:
             "base_url": self.base_url,
             "app_mode": self.app_mode,
             "environment": self.environment,
+            "debug_log_retention_days": self.debug_log_retention_days,
+            "debug_log_auto_cleanup_enabled": self.debug_log_auto_cleanup_enabled,
+            "debug_log_min_cleanup_interval_seconds": self.debug_log_min_cleanup_interval_seconds,
+            "debug_log_snapshot_retention_days": self.debug_log_snapshot_retention_days,
             "host_model_route_bridge_configured": bool(
                 self.host_model_route_bridge_url and self.host_model_route_bridge_token
             ),
@@ -224,6 +246,25 @@ def build_runtime_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--logs-dir", default=None, help="日志目录")
     parser.add_argument("--database-dir", default=None, help="数据库目录")
     parser.add_argument("--state-dir", default=None, help="诊断与状态目录")
+    parser.add_argument("--debug-log-database-file", default=None, help="调试日志 SQLite 文件路径")
+    parser.add_argument("--debug-log-retention-days", type=int, default=None, help="调试日志保留天数")
+    parser.add_argument(
+        "--debug-log-auto-cleanup-enabled",
+        default=None,
+        help="是否启用调试日志自动清理，支持 true/false",
+    )
+    parser.add_argument(
+        "--debug-log-min-cleanup-interval-seconds",
+        type=int,
+        default=None,
+        help="调试日志自动清理最小间隔秒数",
+    )
+    parser.add_argument(
+        "--debug-log-snapshot-retention-days",
+        type=int,
+        default=None,
+        help="可选详细快照保留天数",
+    )
     parser.add_argument("--settings-file", default=None, help="Copilot 设置文件路径")
     parser.add_argument("--host-log-file", default=None, help="Electron 主进程日志文件路径")
     parser.add_argument("--backend-stdout-log-file", default=None, help="Python 子进程 stdout 日志文件路径")
@@ -319,6 +360,38 @@ def parse_runtime_config(
         cwd=base_dir,
         fallback=runtime_root_dir / DEFAULT_STATE_DIR_NAME,
     )
+    debug_log_database_file = _resolve_path(
+        _resolve_optional_text_value(args.debug_log_database_file, env_map, ENV_DEBUG_LOG_DATABASE_FILE),
+        cwd=base_dir,
+        fallback=database_dir / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME,
+    )
+    debug_log_retention_days = _resolve_positive_int_value(
+        args.debug_log_retention_days,
+        env_map,
+        ENV_DEBUG_LOG_RETENTION_DAYS,
+        default=DEFAULT_DEBUG_LOG_RETENTION_DAYS,
+        field_name="debug log retention days",
+    )
+    debug_log_auto_cleanup_enabled = _resolve_bool_value(
+        args.debug_log_auto_cleanup_enabled,
+        env_map,
+        ENV_DEBUG_LOG_AUTO_CLEANUP_ENABLED,
+        default=True,
+        field_name="debug log auto cleanup enabled",
+    )
+    debug_log_min_cleanup_interval_seconds = _resolve_non_negative_int_value(
+        args.debug_log_min_cleanup_interval_seconds,
+        env_map,
+        ENV_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS,
+        default=DEFAULT_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS,
+        field_name="debug log min cleanup interval seconds",
+    )
+    debug_log_snapshot_retention_days = _resolve_optional_positive_int_value(
+        args.debug_log_snapshot_retention_days,
+        env_map,
+        ENV_DEBUG_LOG_SNAPSHOT_RETENTION_DAYS,
+        field_name="debug log snapshot retention days",
+    )
     copilot_settings_file = _resolve_path(
         _resolve_optional_text_value(args.settings_file, env_map, ENV_COPILOT_SETTINGS_FILE),
         cwd=base_dir,
@@ -364,6 +437,7 @@ def parse_runtime_config(
             logs_dir=logs_dir,
             database_dir=database_dir,
             state_dir=state_dir,
+            debug_log_database_file=debug_log_database_file,
             copilot_settings_file=copilot_settings_file,
             host_log_file=host_log_file,
             backend_stdout_log_file=backend_stdout_log_file,
@@ -373,6 +447,10 @@ def parse_runtime_config(
         ),
         app_mode=app_mode,
         environment=environment,
+        debug_log_retention_days=debug_log_retention_days,
+        debug_log_auto_cleanup_enabled=debug_log_auto_cleanup_enabled,
+        debug_log_min_cleanup_interval_seconds=debug_log_min_cleanup_interval_seconds,
+        debug_log_snapshot_retention_days=debug_log_snapshot_retention_days,
         host_model_route_bridge_url=host_model_route_bridge_url,
         host_model_route_bridge_token=host_model_route_bridge_token,
         host_capability_bridge_url=host_capability_bridge_url,
@@ -426,6 +504,85 @@ def _resolve_port(cli_value: int | None, env: Mapping[str, str]) -> int:
     if not 1 <= port <= 65535:
         raise ValueError(f"Desktop runtime port must be between 1 and 65535: {port}")
     return port
+
+
+def _resolve_bool_value(
+    cli_value: object | None,
+    env: Mapping[str, str],
+    env_key: str,
+    *,
+    default: bool,
+    field_name: str,
+) -> bool:
+    raw_value: object | None = cli_value if cli_value is not None else env.get(env_key)
+    if raw_value is None:
+        return default
+
+    normalized = str(raw_value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid {field_name}: {raw_value!r}")
+
+
+def _resolve_positive_int_value(
+    cli_value: object | None,
+    env: Mapping[str, str],
+    env_key: str,
+    *,
+    default: int,
+    field_name: str,
+) -> int:
+    raw_value: object | None = cli_value if cli_value is not None else env.get(env_key)
+    if raw_value is None:
+        return default
+    try:
+        resolved = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid {field_name}: {raw_value!r}") from exc
+    if resolved <= 0:
+        raise ValueError(f"{field_name.capitalize()} must be greater than 0: {resolved}")
+    return resolved
+
+
+def _resolve_non_negative_int_value(
+    cli_value: object | None,
+    env: Mapping[str, str],
+    env_key: str,
+    *,
+    default: int,
+    field_name: str,
+) -> int:
+    raw_value: object | None = cli_value if cli_value is not None else env.get(env_key)
+    if raw_value is None:
+        return default
+    try:
+        resolved = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid {field_name}: {raw_value!r}") from exc
+    if resolved < 0:
+        raise ValueError(f"{field_name.capitalize()} must be non-negative: {resolved}")
+    return resolved
+
+
+def _resolve_optional_positive_int_value(
+    cli_value: object | None,
+    env: Mapping[str, str],
+    env_key: str,
+    *,
+    field_name: str,
+) -> int | None:
+    raw_value: object | None = cli_value if cli_value is not None else env.get(env_key)
+    if raw_value is None:
+        return None
+    try:
+        resolved = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid {field_name}: {raw_value!r}") from exc
+    if resolved <= 0:
+        raise ValueError(f"{field_name.capitalize()} must be greater than 0: {resolved}")
+    return resolved
 
 
 def _resolve_path(value: str | None, *, cwd: Path, fallback: Path) -> Path:
