@@ -54,3 +54,7 @@ include = ["*.py"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "venv"]
+skips = ["B101"]

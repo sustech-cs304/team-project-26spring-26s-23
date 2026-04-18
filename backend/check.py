@@ -19,19 +19,23 @@ def main():
     print("🚀 代码质量查验...\n")
     success = True
     success &= run_command(
-        command=["ruff", "format", "--check", "app"],
+        command=["uv", "run", "ruff", "format", "--check", "app"],
         step_name="Ruff 格式检查"
     )
     success &= run_command(
-        command=["ruff", "check", "app"],
+        command=["uv", "run", "ruff", "check", "app"],
         step_name="Ruff 规范检查"
     )
     success &= run_command(
-        command=["pyright", "."],
+        command=["uv", "run", "pyright", "."],
         step_name="Pyright 类型检查"
     )
     success &= run_command(
-        command=["xenon", "--max-absolute", "C", "--max-modules", "B", "--max-average", "A", "app"],
+        command=["uv", "run", "bandit", "-r", "-l", "app"],
+        step_name="Bandit 安全检查"
+    )
+    success &= run_command(
+        command=["uv", "run", "xenon", "--max-absolute", "C", "--max-modules", "B", "--max-average", "A", "app"],
         step_name="Xenon 复杂度检查"
     )
     if not success:
