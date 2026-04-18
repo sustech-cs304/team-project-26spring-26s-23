@@ -1810,7 +1810,56 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
-  it('renders a waiting approval tool bubble with delay countdown actions', async () => {
+  it('renders tool approval buttons without waiting callout in manual approval mode', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl, {
+      approval: {
+        mode: 'ask',
+        timeoutAt: null,
+        timeoutSeconds: null,
+        timeoutAction: null,
+      },
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请人工审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-approval-approve-1') !== null,
+      'manual approval buttons rendered',
+    )
+    expect(rendered.container.textContent).toContain('拒绝')
+    expect(rendered.container.textContent).toContain('批准')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动')
+
+    rendered.unmount()
+  })
+
+  it('renders a waiting approval tool bubble with delay auto deny countdown on reject action', async () => {
     const toolApprovalControl = createDeferredSignal()
     const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl)
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -1841,12 +1890,62 @@ describe('CopilotChatPanel composer interactions', () => {
     toolApprovalControl.release()
 
     await waitForCondition(
-      () => (rendered.container.textContent ?? '').includes('后自动拒绝'),
-      'delay approval timeout copy rendered',
+      () => (rendered.container.textContent ?? '').includes('拒绝（30s）'),
+      'delay auto deny countdown rendered on reject action',
     )
-    expect(rendered.container.textContent).toContain('等待批准')
-    expect(rendered.container.textContent).toContain('批准（30s)')
+    expect(rendered.container.textContent).toContain('拒绝（30s）')
+    expect(rendered.container.textContent).toContain('批准')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动拒绝')
+
+    rendered.unmount()
+  })
+
+  it('renders a waiting approval tool bubble with delay auto approve countdown on approve action', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl, {
+      approval: {
+        mode: 'delay',
+        timeoutAt: new Date(Date.now() + 30_000).toISOString(),
+        timeoutSeconds: 30,
+        timeoutAction: 'approve',
+      },
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请限时审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => (rendered.container.textContent ?? '').includes('批准（30s）'),
+      'delay auto approve countdown rendered on approve action',
+    )
+    expect(rendered.container.textContent).toContain('批准（30s）')
     expect(rendered.container.textContent).toContain('拒绝')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动批准')
 
     rendered.unmount()
   })
@@ -3267,7 +3366,17 @@ function createToolFailureThenFatalSendMessageSpy() {
   ]))
 }
 
-function createToolWaitingApprovalSendMessageSpy(control: DeferredSignal) {
+function createToolWaitingApprovalSendMessageSpy(
+  control: DeferredSignal,
+  options?: {
+    approval?: {
+      mode: 'allow' | 'ask' | 'delay' | 'deny'
+      timeoutAt: string | null
+      timeoutSeconds: number | null
+      timeoutAction: 'approve' | 'deny' | null
+    }
+  },
+) {
   return vi.fn(async function* (
     input: CopilotMessageDispatchInput,
   ): AsyncGenerator<RuntimeRunEvent> {
@@ -3298,7 +3407,7 @@ function createToolWaitingApprovalSendMessageSpy(control: DeferredSignal) {
           riskLevel: 'high',
           approvalMethod: 'accept_reject',
         },
-        approval: {
+        approval: options?.approval ?? {
           mode: 'delay',
           timeoutAt: new Date(Date.now() + 30_000).toISOString(),
           timeoutSeconds: 30,

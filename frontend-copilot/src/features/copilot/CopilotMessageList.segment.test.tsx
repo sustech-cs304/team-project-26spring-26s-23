@@ -749,7 +749,7 @@ describe('CopilotMessageList segment rendering', () => {
     expect(css).toContain('.copilot-chat__message-text--plain')
     expect(css).toContain('white-space: pre-wrap;')
   })
-  it('renders waiting approval tool metadata in the message list html', () => {
+  it('renders approval action buttons without the legacy waiting callout', () => {
     const html = renderConversation({
       phase: 'streaming',
       runId: 'run-1',
@@ -797,7 +797,10 @@ describe('CopilotMessageList segment rendering', () => {
       }],
     })
 
-    expect(html).toContain('等待批准')
+    expect(html).toContain('拒绝（0s）')
+    expect(html).toContain('批准')
+    expect(html).not.toContain('等待批准')
+    expect(html).not.toContain('后自动拒绝')
   })
 })
 
