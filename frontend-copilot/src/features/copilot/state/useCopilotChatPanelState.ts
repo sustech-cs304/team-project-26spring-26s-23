@@ -326,9 +326,25 @@ export function useCopilotChatPanelState({
     () => persistedConversation.length > 0,
     [persistedConversation],
   )
+  const hasSufficientPersistedSelectedConversationForActiveRun = useMemo(
+    () => hasSufficientPersistedConversationForRun({
+      conversation: persistedConversation,
+      runId: runState.runId,
+      runPhase: runState.phase,
+    }),
+    [persistedConversation, runState.phase, runState.runId],
+  )
   const hasRenderablePersistedHandoffConversation = useMemo(
     () => pendingHistorySyncRunId !== null && persistedHandoffConversation.length > 0,
     [pendingHistorySyncRunId, persistedHandoffConversation],
+  )
+  const persistedHandoffConversationWaitReason = useMemo(
+    () => resolvePersistedConversationHandoffWaitReason({
+      conversation: persistedHandoffConversation,
+      pendingRunId: pendingHistorySyncRunId,
+      runState,
+    }),
+    [pendingHistorySyncRunId, persistedHandoffConversation, runState],
   )
   const persistedSelectedRunConversationPending = useMemo(() => (
     sessionHistory !== null
@@ -374,8 +390,18 @@ export function useCopilotChatPanelState({
         : false
     }
 
-    return !hasRenderablePersistedSelectedConversation
-  }, [conversation.length, hasRenderablePersistedSelectedConversation, pendingHistorySyncRunId, runState.phase, runState.runId, runState.threadId, sessionHistory, sessionShell?.sessionId])
+    return !hasSufficientPersistedSelectedConversationForActiveRun
+  }, [
+    conversation.length,
+    hasRenderablePersistedSelectedConversation,
+    hasSufficientPersistedSelectedConversationForActiveRun,
+    pendingHistorySyncRunId,
+    runState.phase,
+    runState.runId,
+    runState.threadId,
+    sessionHistory,
+    sessionShell?.sessionId,
+  ])
   const hasTransientConversation = useMemo(
     () => shouldRenderTransientConversation && (conversation.length > 0 || runState.phase !== 'idle'),
     [conversation.length, runState.phase, shouldRenderTransientConversation],
@@ -504,9 +530,7 @@ export function useCopilotChatPanelState({
         ? 'detail-not-ready'
         : !sessionHistory.runSummaries.some((runSummary) => runSummary.runId === pendingRunId)
           ? 'handoff-run-missing-from-detail'
-          : !hasRenderablePersistedHandoffConversation
-            ? 'persisted-handoff-run-empty'
-            : null
+          : persistedHandoffConversationWaitReason
 
     if (waitReason !== null) {
       const logKey = [
@@ -527,10 +551,13 @@ export function useCopilotChatPanelState({
           selectedRunId: sessionHistory?.selectedRunId ?? null,
           detailStatus: sessionHistory?.detailStatus ?? null,
           replayStatus: sessionHistory?.replayStatus ?? null,
+          transientRunId: runState.runId,
+          transientRunPhase: runState.phase,
           persistedConversationLength: persistedConversation.length,
           persistedConversationSource: persistedSelectedRunConversationSource,
           persistedHandoffConversationLength: persistedHandoffConversation.length,
           persistedHandoffConversationSource,
+          hasRenderablePersistedHandoffConversation,
           waitReason,
         })
       }
@@ -563,10 +590,13 @@ export function useCopilotChatPanelState({
     activeTransientState.pendingHistorySyncRunId,
     debugModeEnabled,
     hasRenderablePersistedHandoffConversation,
+    persistedHandoffConversationWaitReason,
     persistedConversation.length,
     persistedHandoffConversation.length,
     persistedHandoffConversationSource,
     persistedSelectedRunConversationSource,
+    runState.phase,
+    runState.runId,
     sessionHistory,
     sessionShell?.sessionId,
     updateSessionTransientStateById,
@@ -1061,4 +1091,68 @@ export function useCopilotChatPanelState({
     composerHeight,
     onComposerResizeStart,
   }
+}
+
+function hasSufficientPersistedConversationForRun(input: {
+  conversation: CopilotMessageListItem[]
+  runId: string | null
+  runPhase: CopilotRunState['phase']
+}): boolean {
+  if (input.conversation.length === 0) {
+    return false
+  }
+
+  if (input.runPhase !== 'failed' && input.runPhase !== 'cancelled') {
+    return true
+  }
+
+  return hasPersistedTerminalForRunPhase({
+    conversation: input.conversation,
+    runId: input.runId,
+    terminalPhase: input.runPhase,
+  })
+}
+
+function resolvePersistedConversationHandoffWaitReason(input: {
+  conversation: CopilotMessageListItem[]
+  pendingRunId: string | null
+  runState: CopilotRunState
+}): string | null {
+  if (input.conversation.length === 0) {
+    return 'persisted-handoff-run-empty'
+  }
+
+  const pendingRunId = input.pendingRunId?.trim() ?? ''
+  if (pendingRunId === '' || input.runState.runId !== pendingRunId) {
+    return null
+  }
+
+  if (input.runState.phase === 'failed' || input.runState.phase === 'cancelled') {
+    return hasPersistedTerminalForRunPhase({
+      conversation: input.conversation,
+      runId: pendingRunId,
+      terminalPhase: input.runState.phase,
+    })
+      ? null
+      : `${input.runState.phase}-terminal-missing-from-handoff`
+  }
+
+  return null
+}
+
+function hasPersistedTerminalForRunPhase(input: {
+  conversation: CopilotMessageListItem[]
+  runId: string | null
+  terminalPhase: 'failed' | 'cancelled'
+}): boolean {
+  const normalizedRunId = input.runId?.trim() ?? ''
+  if (normalizedRunId === '') {
+    return false
+  }
+
+  return input.conversation.some((item) => (
+    item.kind === 'terminal'
+    && item.runId === normalizedRunId
+    && item.terminalPhase === input.terminalPhase
+  ))
 }

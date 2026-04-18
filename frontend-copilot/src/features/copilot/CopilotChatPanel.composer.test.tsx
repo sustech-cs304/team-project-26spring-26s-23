@@ -2075,6 +2075,315 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('keeps the transient failed terminal visible until persisted replay contains the failed terminal handoff', async () => {
+    const sendMessage = createToolFailureThenFatalSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请调用天气工具并处理 fatal 失败')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '发送失败')
+    await waitForText(rendered.container, '当前响应失败，请重试。')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          runSummaries: [
+            {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+          ],
+          selectedRunId: 'run-tool-then-failed',
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            lastRunId: 'run-tool-then-failed',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastAssistantMessagePreview: '',
+          },
+          replayStatus: 'idle',
+          replay: null,
+          replayByRunId: {},
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          runSummaries: [
+            {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+          ],
+          selectedRunId: 'run-tool-then-failed',
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            lastRunId: 'run-tool-then-failed',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastAssistantMessagePreview: '',
+          },
+          replayStatus: 'ready',
+          replay: {
+            ok: true,
+            version: 'chat-history-v1',
+            run: {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+            historicalSnapshot: {
+              resolvedModelId: 'openai/gpt-4.1',
+              resolvedModelRoute: createRuntimeResolvedModelRoute({
+                routeRef: {
+                  routeKind: 'provider-model',
+                  profileId: 'provider-openai',
+                  modelId: 'openai/gpt-4.1',
+                },
+                providerProfileId: 'provider-openai',
+                provider: 'openai',
+                providerId: 'openai',
+                adapterId: 'openai-chat',
+                runtimeStatus: 'enabled',
+                endpointFamily: 'openai',
+                endpointType: 'responses',
+                baseUrl: 'https://api.openai.com/v1',
+                modelId: 'openai/gpt-4.1',
+                authKind: 'api-key',
+              }),
+              resolvedToolIds: ['tool.weather-current'],
+              requestOptions: {},
+            },
+            orderedEvents: [
+              {
+                eventType: 'tool_event',
+                sequence: 2,
+                createdAt: '2026-04-14T08:00:02Z',
+                payload: {
+                  toolCallId: 'tool.weather-current:call-1',
+                  toolId: 'tool.weather-current',
+                  phase: 'failed',
+                  title: '工具调用失败',
+                  summary: '工具执行失败。',
+                  inputSummary: '{"location":"Shenzhen"}',
+                  errorSummary: 'boom',
+                },
+                toolCallId: 'tool.weather-current:call-1',
+                toolId: 'tool.weather-current',
+                phase: 'failed',
+                isRedacted: false,
+                redactionVersion: 0,
+              },
+              {
+                eventType: 'run_failed',
+                sequence: 3,
+                createdAt: '2026-04-14T08:00:03Z',
+                payload: {
+                  code: 'agent_execution_failed',
+                  message: 'Model stream collapsed.',
+                  details: {
+                    stage: 'execute_model',
+                  },
+                },
+                toolCallId: null,
+                toolId: null,
+                phase: null,
+                isRedacted: false,
+                redactionVersion: 0,
+              },
+            ],
+            toolCallBlocks: [],
+            diagnosticBlocks: [],
+            terminalState: null,
+            availabilityInterpretation: null,
+          },
+          replayByRunId: {
+            'run-tool-then-failed': {
+              ok: true,
+              version: 'chat-history-v1',
+              run: {
+                runId: 'run-tool-then-failed',
+                threadId: 'session-1',
+                status: 'failed',
+                createdAt: '2026-04-14T08:00:00Z',
+                updatedAt: '2026-04-14T08:00:03Z',
+                startedAt: '2026-04-14T08:00:01Z',
+                terminalAt: '2026-04-14T08:00:03Z',
+                resolvedModelId: 'openai/gpt-4.1',
+                requestedMessageText: '请调用天气工具并处理 fatal 失败',
+                assistantText: null,
+              },
+              historicalSnapshot: {
+                resolvedModelId: 'openai/gpt-4.1',
+                resolvedModelRoute: createRuntimeResolvedModelRoute({
+                  routeRef: {
+                    routeKind: 'provider-model',
+                    profileId: 'provider-openai',
+                    modelId: 'openai/gpt-4.1',
+                  },
+                  providerProfileId: 'provider-openai',
+                  provider: 'openai',
+                  providerId: 'openai',
+                  adapterId: 'openai-chat',
+                  runtimeStatus: 'enabled',
+                  endpointFamily: 'openai',
+                  endpointType: 'responses',
+                  baseUrl: 'https://api.openai.com/v1',
+                  modelId: 'openai/gpt-4.1',
+                  authKind: 'api-key',
+                }),
+                resolvedToolIds: ['tool.weather-current'],
+                requestOptions: {},
+              },
+              orderedEvents: [
+                {
+                  eventType: 'tool_event',
+                  sequence: 2,
+                  createdAt: '2026-04-14T08:00:02Z',
+                  payload: {
+                    toolCallId: 'tool.weather-current:call-1',
+                    toolId: 'tool.weather-current',
+                    phase: 'failed',
+                    title: '工具调用失败',
+                    summary: '工具执行失败。',
+                    inputSummary: '{"location":"Shenzhen"}',
+                    errorSummary: 'boom',
+                  },
+                  toolCallId: 'tool.weather-current:call-1',
+                  toolId: 'tool.weather-current',
+                  phase: 'failed',
+                  isRedacted: false,
+                  redactionVersion: 0,
+                },
+                {
+                  eventType: 'run_failed',
+                  sequence: 3,
+                  createdAt: '2026-04-14T08:00:03Z',
+                  payload: {
+                    code: 'agent_execution_failed',
+                    message: 'Model stream collapsed.',
+                    details: {
+                      stage: 'execute_model',
+                    },
+                  },
+                  toolCallId: null,
+                  toolId: null,
+                  phase: null,
+                  isRedacted: false,
+                  redactionVersion: 0,
+                },
+              ],
+              toolCallBlocks: [],
+              diagnosticBlocks: [],
+              terminalState: null,
+              availabilityInterpretation: null,
+            },
+          },
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+
+    rendered.unmount()
+  })
+
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {
       yield* []
