@@ -360,12 +360,13 @@ function normalizeMcpState(
   defaults: SettingsWorkspaceStateValues['mcp'],
 ): SettingsWorkspaceStateValues['mcp'] {
   const record = asRecord(input)
-  const normalizedBase = normalizeBooleanStringGroup(record, defaults)
   const legacyMode = normalizeLegacyToolPermissionMode(record.toolPermissionMode)
   const toolPermissionPolicy = normalizeToolPermissionPolicyState(record.toolPermissionPolicy, legacyMode)
 
   return {
-    ...normalizedBase,
+    mcpAutoDiscoveryEnabled: typeof record.mcpAutoDiscoveryEnabled === 'boolean'
+      ? record.mcpAutoDiscoveryEnabled
+      : defaults.mcpAutoDiscoveryEnabled,
     toolPermissionMode: legacyModeToStoredValue(toolPermissionPolicy.defaultMode),
     toolPermissionPolicy,
   }

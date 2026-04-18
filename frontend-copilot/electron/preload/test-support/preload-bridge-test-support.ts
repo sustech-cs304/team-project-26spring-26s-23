@@ -87,6 +87,9 @@ export function createConfigCenterPublicSnapshotFixture(): ConfigCenterPublicSna
       backendExposed: {
         model: 'qwen-plus',
       },
+      general: {
+        language: 'zh-CN',
+      },
     },
   }
 }
