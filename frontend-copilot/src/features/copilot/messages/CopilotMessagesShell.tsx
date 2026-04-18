@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useState, type ComponentType } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
@@ -537,7 +537,7 @@ function ToolMessageCard({
   turn: CopilotToolMessageItem
   index: number
   runtimeUrl: string | null
-  onResolveToolApproval: CopilotMessagesShellProps['onResolveToolApproval']
+  onResolveToolApproval?: CopilotMessagesShellProps['onResolveToolApproval']
 }) {
   const [expanded, setExpanded] = useState(false)
   const [inputExpanded, setInputExpanded] = useState(false)
@@ -575,7 +575,7 @@ function ToolMessageCard({
   }, [turn.toolPhase])
 
   const handleResolveApproval = async (decision: 'approved' | 'rejected') => {
-    if (turn.toolPhase !== 'waiting_approval' || onResolveToolApproval === null) {
+    if (turn.toolPhase !== 'waiting_approval' || onResolveToolApproval == null) {
       return
     }
 
@@ -968,7 +968,7 @@ function renderToolApprovalBar(input: {
           >
             {resolveToolApprovalActionLabel({
               action: 'reject',
-              approval: input.turn.approval,
+              approval: input.turn.approval ?? null,
               timeoutSecondsLabel: input.timeoutSecondsLabel,
             })}
           </button>
@@ -981,7 +981,7 @@ function renderToolApprovalBar(input: {
           >
             {resolveToolApprovalActionLabel({
               action: 'approve',
-              approval: input.turn.approval,
+              approval: input.turn.approval ?? null,
               timeoutSecondsLabel: input.timeoutSecondsLabel,
             })}
           </button>
@@ -1019,12 +1019,14 @@ function formatToolApprovalTimeoutSecondsLabel(
 
 function resolveToolApprovalActionLabel(input: {
   action: 'approve' | 'reject'
-  approval: NonNullable<CopilotToolMessageItem['approval']>
+  approval: CopilotToolMessageItem['approval']
   timeoutSecondsLabel: string | null
 }): string {
   const baseLabel = input.action === 'approve' ? '批准' : '拒绝'
   if (
-    input.approval.mode !== 'delay'
+    input.approval === null
+    || input.approval === undefined
+    || input.approval.mode !== 'delay'
     || input.timeoutSecondsLabel === null
     || input.approval.timeoutAction === null
   ) {

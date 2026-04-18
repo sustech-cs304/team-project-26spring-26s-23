@@ -1,5 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
 import type { AssistantSessionShell } from '../../workbench/types'
 import {
   RuntimeRequestError,
@@ -20,7 +21,6 @@ import {
   type CopilotChatComposerDraft,
   type CopilotTransientErrorState,
   type RuntimeMessageSendInput,
-  type RuntimeToolPermissionPolicy,
 } from './copilot-chat-helpers'
 import { createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 import {
@@ -245,11 +245,6 @@ function summarizeRuntimeRunEventForDebug(event: RuntimeRunEvent): Record<string
         thinkingCapabilitySnapshot: event.payload.thinkingCapabilitySnapshot ?? null,
         reasoningSuppressionBasis: event.payload.reasoningSuppressionBasis ?? null,
       }
-    default:
-      return {
-        runId: event.runId,
-        type: event.type,
-      }
   }
 }
 
@@ -372,7 +367,7 @@ export async function orchestrateCopilotSend(input: {
   setConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>>
   signal?: AbortSignal
   thinkingCapabilityOverride?: Record<string, unknown> | null
-  toolPermissionPolicy?: RuntimeToolPermissionPolicy | null
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
 }) {
   if (!isCopilotConnectableState(input.state) || input.sessionShell === null) {
     return

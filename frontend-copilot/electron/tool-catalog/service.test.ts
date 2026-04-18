@@ -147,9 +147,11 @@ describe('createElectronToolCatalogService', () => {
         },
       }),
     })
-    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
-    expect(headers.get('Content-Type')).toBe('application/json')
-    expect(headers.get('X-Local-Token')).toBe('runtime-token')
+    const firstCall = (fetchMock.mock.calls as unknown as Array<[string, RequestInit | undefined]>)[0]
+    const headers = firstCall?.[1]?.headers as Headers | undefined
+    expect(headers).toBeDefined()
+    expect(headers!.get('Content-Type')).toBe('application/json')
+    expect(headers!.get('X-Local-Token')).toBe('runtime-token')
   })
 
   it('returns a structured failure when the hosted backend responds with an invalid payload', async () => {

@@ -329,7 +329,7 @@ function buildPolicyStateFromTools(
   tools: ToolPermissionRecord[],
   previousPolicy: SettingsWorkspaceToolPermissionPolicyState,
 ): SettingsWorkspaceToolPermissionPolicyState {
-  const defaultMode = resolveDefaultMode(tools, previousPolicy.defaultMode)
+  const defaultMode = resolveDefaultMode(tools, previousPolicy.defaultMode, previousPolicy)
   const toolPermissions = {
     ...collectPersistedOrphanPolicies(previousPolicy, tools),
     ...Object.fromEntries(tools.flatMap((tool) => {
@@ -365,7 +365,16 @@ function buildPolicyStateFromTools(
 function resolveDefaultMode(
   tools: ToolPermissionRecord[],
   fallbackMode: ToolPermissionPolicyMode,
+  previousPolicy?: SettingsWorkspaceToolPermissionPolicyState,
 ): ToolPermissionPolicyMode {
+  if (previousPolicy !== undefined) {
+    const knownToolIds = new Set(tools.map((tool) => tool.toolId))
+    const hasOrphanPolicies = Object.keys(previousPolicy.toolPermissions).some((toolId) => !knownToolIds.has(toolId))
+    if (hasOrphanPolicies) {
+      return fallbackMode
+    }
+  }
+
   const counts = {
     allow: 0,
     ask: 0,

@@ -13,6 +13,7 @@ import {
 } from 'react'
 import { ArrowUp, Lightbulb, Square } from 'lucide-react'
 
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../electron/settings-workspace/state-schema'
 import {
   ThinkingBudgetSlider,
   ThinkingPillGroup,

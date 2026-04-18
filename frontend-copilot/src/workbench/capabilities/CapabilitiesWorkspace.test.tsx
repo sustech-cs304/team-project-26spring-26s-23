@@ -141,7 +141,9 @@ function createLoadResult() {
   }
 }
 
-function createToolCatalogLoadResult(overrides: Partial<ToolCatalogLoadResult> = {}): ToolCatalogLoadResult {
+function createToolCatalogLoadResult(
+  overrides: Partial<Extract<ToolCatalogLoadResult, { ok: true }>> = {},
+): ToolCatalogLoadResult {
   return {
     ok: true,
     tools: [
@@ -516,7 +518,8 @@ describe('CapabilitiesWorkspace', () => {
     expect((getToolRow(rendered.container, '读取文件').querySelector('input[aria-label="超时秒数"]') as HTMLInputElement).value).toBe('27')
 
     expect(mockedSaveSettingsWorkspaceState).toHaveBeenCalled()
-    const saveInput = mockedSaveSettingsWorkspaceState.mock.calls.at(-1)?.[0] as SettingsWorkspaceStateSaveInput
+    const lastSaveCall = mockedSaveSettingsWorkspaceState.mock.calls[mockedSaveSettingsWorkspaceState.mock.calls.length - 1]
+    const saveInput = lastSaveCall?.[0] as SettingsWorkspaceStateSaveInput
     expect(saveInput.mcp.toolPermissionPolicy.toolPermissions['functions.read_file']).toEqual({
       mode: 'delay',
       timeoutAction: 'deny',

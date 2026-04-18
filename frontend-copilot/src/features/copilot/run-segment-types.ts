@@ -68,7 +68,7 @@ export interface CopilotToolSegment extends CopilotRunSegmentBase {
   inputSummary: string | null
   resultSummary: string | null
   errorSummary: string | null
-  approval: CopilotToolSegmentApproval | null
+  approval?: CopilotToolSegmentApproval | null
 }
 
 export interface CopilotDiagnosticSegment extends CopilotRunSegmentBase {

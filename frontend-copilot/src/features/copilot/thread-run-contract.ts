@@ -375,7 +375,7 @@ export interface RuntimeToolEventSecurity {
 
 export interface RuntimeToolEventApproval {
   mode: RuntimeToolPermissionMode
-  timeoutAt?: string
+  timeoutAt?: string | null
   timeoutSeconds?: number | null
   timeoutAction?: 'approve' | 'deny' | null
 }

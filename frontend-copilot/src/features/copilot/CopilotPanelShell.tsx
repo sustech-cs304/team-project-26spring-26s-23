@@ -75,12 +75,12 @@ export interface CopilotPanelShellProps {
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onCancelCurrentRun: () => void
-  onResolveToolApproval: (input: {
+  onResolveToolApproval?: (input: {
     runId: string
     toolCallId: string
     decision: 'approved' | 'rejected'
   }) => Promise<void>
-  runtimeUrl: string | null
+  runtimeUrl?: string | null
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
