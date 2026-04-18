@@ -265,21 +265,80 @@ _FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA = ToolSchema(
     }
 )
 
+_RUNTIME_FILE_TOOL_READ_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_READ_ID,
+    display_name="File Read",
+    description="Read UTF-8 text files from the workspace with line-based pagination.",
+    kind="operation",
+    input_schema=_FILE_TOOL_READ_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-read"},
+)
+_RUNTIME_FILE_TOOL_WRITE_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_WRITE_ID,
+    display_name="File Write",
+    description="Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics.",
+    kind="operation",
+    input_schema=_FILE_TOOL_WRITE_INPUT_SCHEMA,
+    idempotent=False,
+    annotations={"stage": "phase2-write"},
+)
+_RUNTIME_FILE_TOOL_EDIT_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_EDIT_ID,
+    display_name="File Edit",
+    description="Edit UTF-8 text files in the workspace using exact replacement semantics.",
+    kind="operation",
+    input_schema=_FILE_TOOL_EDIT_INPUT_SCHEMA,
+    idempotent=False,
+    annotations={"stage": "phase2-edit"},
+)
+_RUNTIME_FILE_TOOL_GLOB_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_GLOB_ID,
+    display_name="File Glob",
+    description="Discover workspace files and directories by glob pattern without reading contents.",
+    kind="operation",
+    input_schema=_FILE_TOOL_GLOB_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-glob"},
+)
+_RUNTIME_FILE_TOOL_GREP_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_GREP_ID,
+    display_name="File Grep",
+    description="Search workspace text files by literal or regex pattern with bounded line context.",
+    kind="operation",
+    input_schema=_FILE_TOOL_GREP_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-grep"},
+)
+_RUNTIME_FILE_TOOL_SWITCH_ROOT_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_SWITCH_ROOT_ID,
+    display_name="File Switch Root",
+    description="Validate and resolve a new default file root directory for later tool calls.",
+    kind="operation",
+    input_schema=_FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-switch-root"},
+)
+_RUNTIME_FILE_TOOL_NOTEBOOK_EDIT_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_NOTEBOOK_EDIT_ID,
+    display_name="Notebook Edit",
+    description="Edit workspace notebooks with transactional cell operations.",
+    kind="operation",
+    input_schema=_FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA,
+    idempotent=False,
+    annotations={"stage": "phase3-notebook-edit"},
+)
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeFileToolReadContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file text Read tool."""
 
     service: FileToolReadService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_READ_ID,
-        display_name="File Read",
-        description="Read UTF-8 text files from the workspace with line-based pagination.",
-        kind="operation",
-        input_schema=_FILE_TOOL_READ_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-read"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_READ_METADATA
 
     async def invoke(
         self,
@@ -316,15 +375,10 @@ class RuntimeFileToolWriteContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file text Write tool."""
 
     service: FileToolWriteService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_WRITE_ID,
-        display_name="File Write",
-        description="Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics.",
-        kind="operation",
-        input_schema=_FILE_TOOL_WRITE_INPUT_SCHEMA,
-        idempotent=False,
-        annotations={"stage": "phase2-write"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_WRITE_METADATA
 
     async def invoke(
         self,
@@ -360,15 +414,10 @@ class RuntimeFileToolEditContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file text Edit tool."""
 
     service: FileToolEditService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_EDIT_ID,
-        display_name="File Edit",
-        description="Edit UTF-8 text files in the workspace using exact replacement semantics.",
-        kind="operation",
-        input_schema=_FILE_TOOL_EDIT_INPUT_SCHEMA,
-        idempotent=False,
-        annotations={"stage": "phase2-edit"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_EDIT_METADATA
 
     async def invoke(
         self,
@@ -404,15 +453,10 @@ class RuntimeFileToolGlobContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file discovery Glob tool."""
 
     service: FileToolGlobService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_GLOB_ID,
-        display_name="File Glob",
-        description="Discover workspace files and directories by glob pattern without reading contents.",
-        kind="operation",
-        input_schema=_FILE_TOOL_GLOB_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-glob"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_GLOB_METADATA
 
     async def invoke(
         self,
@@ -448,15 +492,10 @@ class RuntimeFileToolGrepContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file grep tool."""
 
     service: FileToolGrepService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_GREP_ID,
-        display_name="File Grep",
-        description="Search workspace text files by literal or regex pattern with bounded line context.",
-        kind="operation",
-        input_schema=_FILE_TOOL_GREP_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-grep"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_GREP_METADATA
 
     async def invoke(
         self,
@@ -492,15 +531,10 @@ class RuntimeFileToolSwitchRootContract(ToolContract):
     """Runtime-agnostic contract wrapper for switching the file-tool default root."""
 
     service: FileToolSwitchRootService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_SWITCH_ROOT_ID,
-        display_name="File Switch Root",
-        description="Validate and resolve a new default file root directory for later tool calls.",
-        kind="operation",
-        input_schema=_FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-switch-root"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_SWITCH_ROOT_METADATA
 
     async def invoke(
         self,
@@ -536,15 +570,10 @@ class RuntimeFileToolNotebookEditContract(ToolContract):
     """Runtime-agnostic contract wrapper for staged notebook cell editing."""
 
     service: FileToolNotebookEditService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_NOTEBOOK_EDIT_ID,
-        display_name="Notebook Edit",
-        description="Edit workspace notebooks with transactional cell operations.",
-        kind="operation",
-        input_schema=_FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA,
-        idempotent=False,
-        annotations={"stage": "phase3-notebook-edit"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_NOTEBOOK_EDIT_METADATA
 
     async def invoke(
         self,
