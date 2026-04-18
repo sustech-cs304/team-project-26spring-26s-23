@@ -954,6 +954,7 @@ class PydanticAIAgentExecutor:
             if value is not None
         }
         input_summary = summarize_tool_arguments(normalized_arguments)
+        approval_input_summary = input_summary or "{}"
         log_runtime_chain_debug(
             "tool.execute_enter",
             enabled=ctx.deps.debug_enabled,
@@ -1066,7 +1067,7 @@ class PydanticAIAgentExecutor:
             ctx,
             tool_id=tool_id,
             tool_call_id=tool_call_id,
-            input_summary=input_summary,
+            input_summary=approval_input_summary,
         )
         if gate_result is not None:
             return gate_result
