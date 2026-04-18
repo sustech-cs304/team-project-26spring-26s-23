@@ -20,6 +20,7 @@ DEFAULT_CONFIG_DIR_NAME = "config"
 DEFAULT_LOGS_DIR_NAME = "logs"
 DEFAULT_DATABASE_DIR_NAME = "database"
 DEFAULT_STATE_DIR_NAME = "state"
+DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME = "copilot-debug-log.db"
 DEFAULT_COPILOT_SETTINGS_FILE_NAME = "copilot-settings.json"
 DEFAULT_HOST_LOG_FILE_NAME = "electron-host.log"
 DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME = "backend.stdout.log"
@@ -37,6 +38,7 @@ ENV_CONFIG_DIR = "COPILOT_DESKTOP_RUNTIME_CONFIG_DIR"
 ENV_LOGS_DIR = "COPILOT_DESKTOP_RUNTIME_LOGS_DIR"
 ENV_DATABASE_DIR = "COPILOT_DESKTOP_RUNTIME_DATABASE_DIR"
 ENV_STATE_DIR = "COPILOT_DESKTOP_RUNTIME_STATE_DIR"
+ENV_DEBUG_LOG_DATABASE_FILE = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_DATABASE_FILE"
 ENV_COPILOT_SETTINGS_FILE = "COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE"
 ENV_HOST_LOG_FILE = "COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE"
 ENV_BACKEND_STDOUT_LOG_FILE = "COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE"
@@ -61,6 +63,7 @@ class DesktopRuntimePaths:
     logs_dir: Path
     database_dir: Path
     state_dir: Path
+    debug_log_database_file: Path
     copilot_settings_file: Path
     host_log_file: Path
     backend_stdout_log_file: Path
@@ -89,6 +92,7 @@ class DesktopRuntimePaths:
             "logs_dir": self.logs_dir.as_posix(),
             "database_dir": self.database_dir.as_posix(),
             "state_dir": self.state_dir.as_posix(),
+            "debug_log_database_file": self.debug_log_database_file.as_posix(),
             "copilot_settings_file": self.copilot_settings_file.as_posix(),
             "host_log_file": self.host_log_file.as_posix(),
             "backend_stdout_log_file": self.backend_stdout_log_file.as_posix(),
@@ -137,6 +141,10 @@ class DesktopRuntimeConfig:
     @property
     def state_dir(self) -> Path:
         return self.paths.state_dir
+
+    @property
+    def debug_log_database_file(self) -> Path:
+        return self.paths.debug_log_database_file
 
     @property
     def copilot_settings_file(self) -> Path:
@@ -224,6 +232,7 @@ def build_runtime_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--logs-dir", default=None, help="日志目录")
     parser.add_argument("--database-dir", default=None, help="数据库目录")
     parser.add_argument("--state-dir", default=None, help="诊断与状态目录")
+    parser.add_argument("--debug-log-database-file", default=None, help="调试日志 SQLite 文件路径")
     parser.add_argument("--settings-file", default=None, help="Copilot 设置文件路径")
     parser.add_argument("--host-log-file", default=None, help="Electron 主进程日志文件路径")
     parser.add_argument("--backend-stdout-log-file", default=None, help="Python 子进程 stdout 日志文件路径")
@@ -319,6 +328,11 @@ def parse_runtime_config(
         cwd=base_dir,
         fallback=runtime_root_dir / DEFAULT_STATE_DIR_NAME,
     )
+    debug_log_database_file = _resolve_path(
+        _resolve_optional_text_value(args.debug_log_database_file, env_map, ENV_DEBUG_LOG_DATABASE_FILE),
+        cwd=base_dir,
+        fallback=database_dir / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME,
+    )
     copilot_settings_file = _resolve_path(
         _resolve_optional_text_value(args.settings_file, env_map, ENV_COPILOT_SETTINGS_FILE),
         cwd=base_dir,
@@ -364,6 +378,7 @@ def parse_runtime_config(
             logs_dir=logs_dir,
             database_dir=database_dir,
             state_dir=state_dir,
+            debug_log_database_file=debug_log_database_file,
             copilot_settings_file=copilot_settings_file,
             host_log_file=host_log_file,
             backend_stdout_log_file=backend_stdout_log_file,

@@ -13,6 +13,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ..copilot_runtime import PydanticAIAgentExecutor, build_default_runtime_dependencies, build_router
+from ..copilot_runtime.debug_log_store import (
+    DebugLogCategory,
+    DebugLogEnvironmentMode,
+    DebugLogEvent,
+    DebugLogEventContext,
+    DebugLogLevel,
+    DebugLogStore,
+    Sanitizer,
+)
 from ..copilot_runtime.model_routes import RuntimeModelRouteResolver
 from ..copilot_runtime.runtime_session_store import RuntimeSessionStore
 from .capability_bridge_client import DesktopCapabilityBridgeClient
@@ -27,6 +36,17 @@ from .routes.history import build_history_router
 
 _DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
 _RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
+
+
+def _resolve_debug_log_environment(environment: str) -> DebugLogEnvironmentMode:
+    normalized = environment.strip().lower()
+    if normalized == "development":
+        return DebugLogEnvironmentMode.DEVELOPMENT
+    if normalized == "production":
+        return DebugLogEnvironmentMode.PRODUCTION
+    if normalized == "test":
+        return DebugLogEnvironmentMode.TEST
+    return DebugLogEnvironmentMode.UNKNOWN
 
 
 def create_app(
@@ -67,6 +87,11 @@ def create_app(
     runtime_scaffold = runtime_dependencies.scaffold
     runtime_agent_registry = runtime_dependencies.agent_registry
     runtime_tool_registry = runtime_dependencies.tool_registry
+    debug_log_store = DebugLogStore(
+        runtime_config=runtime_config,
+        sanitizer=Sanitizer(),
+    )
+    debug_log_environment = _resolve_debug_log_environment(runtime_config.environment)
     history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
     runtime_history_query_service = (
         history_query_service_factory(
@@ -92,6 +117,29 @@ def create_app(
         app.state.copilot_runtime_agent_executor = runtime_agent_executor
         app.state.copilot_runtime_bridge = runtime_bridge
         app.state.copilot_runtime_history_query_service = runtime_history_query_service
+        app.state.copilot_runtime_debug_log_store = debug_log_store
+        app.state.copilot_runtime_debug_log_environment = debug_log_environment
+        debug_log_store.write_event(
+            DebugLogEvent.create(
+                level=DebugLogLevel.INFO,
+                category=DebugLogCategory.LIFECYCLE,
+                event_name="desktop_runtime.startup.initialized",
+                message="Desktop runtime debug log infrastructure initialized.",
+                environment=debug_log_environment,
+                context=DebugLogEventContext(
+                    phase="startup",
+                    component="desktop_runtime",
+                    operation="create_app",
+                ),
+                summary=debug_log_store.sanitizer.sanitize_summary(
+                    {
+                        "debugLogDatabaseFile": runtime_config.debug_log_database_file.as_posix(),
+                        "appMode": runtime_config.app_mode,
+                        "environment": runtime_config.environment,
+                    }
+                ),
+            )
+        )
         lifecycle_manager.startup()
         try:
             yield
@@ -108,6 +156,20 @@ def create_app(
                         resource_name,
                     )
             try:
+                debug_log_store.write_event(
+                    DebugLogEvent.create(
+                        level=DebugLogLevel.INFO,
+                        category=DebugLogCategory.LIFECYCLE,
+                        event_name="desktop_runtime.shutdown.completed",
+                        message="Desktop runtime shutdown completed.",
+                        environment=debug_log_environment,
+                        context=DebugLogEventContext(
+                            phase="shutdown",
+                            component="desktop_runtime",
+                            operation="lifespan",
+                        ),
+                    )
+                )
                 dispose = getattr(runtime_session_store, "dispose", None)
                 if callable(dispose):
                     dispose()
