@@ -51,8 +51,9 @@ from app.tooling.contract.errors import (
 _STATE_NAMESPACE_CALENDAR_REFRESH = "blackboard.calendar_refresh"
 _STATE_NAMESPACE_SNAPSHOT_SYNC = "blackboard.snapshot_sync"
 _STATE_NAMESPACE_COURSE_RESOURCES_SYNC = "blackboard.course_resources_sync"
-_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
-_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
+# Bandit B105 false positive: these are config/secret registry key names, not credentials.
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"  # nosec B105
+_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"  # nosec B105
 
 
 class BlackboardAuthenticationError(RuntimeError):
