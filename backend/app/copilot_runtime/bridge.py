@@ -451,6 +451,11 @@ class RuntimeBridge:
 
     def _to_stored_run_input(self, request: RuntimeRunStartRequest) -> RuntimeStoredRunInput:
         resolved_thinking_selection = request.policy.resolve_thinking_selection()
+        tool_permission_policy_payload = (
+            None
+            if request.policy.toolPermissionPolicy is None
+            else request.policy.toolPermissionPolicy.to_dict()
+        )
         return RuntimeStoredRunInput(
             message_role=cast(RuntimeMessageRole, request.message.role),
             message_content=request.message.content,
@@ -466,9 +471,7 @@ class RuntimeBridge:
                 if request.policy.thinkingCapabilityOverride is None
                 else dict(request.policy.thinkingCapabilityOverride),
                 enabled_tools=tuple(request.policy.enabledTools),
-                tool_permission_policy=None
-                if request.policy.toolPermissionPolicy is None
-                else request.policy.toolPermissionPolicy.to_dict(),
+                tool_permission_policy=tool_permission_policy_payload,
                 debug_mode_enabled=request.policy.debugModeEnabled,
                 request_options=dict(request.policy.requestOptions),
             ),
@@ -484,6 +487,17 @@ class RuntimeBridge:
         stored_route = stored_policy.model_route
         runtime_thinking_selection, legacy_fallback_used, rehydrate_error = _rehydrate_runtime_thinking_selection(
             stored_policy.thinking_selection
+        )
+        tool_permission_policy = (
+            None
+            if stored_policy.tool_permission_policy is None
+            else RuntimeToolPermissionPolicy(
+                schemaVersion=stored_policy.tool_permission_policy.get("schemaVersion", 1),
+                defaultMode=stored_policy.tool_permission_policy.get("defaultMode", "ask"),
+                toolModes=dict(stored_policy.tool_permission_policy.get("toolModes", {})),
+                toolTimeoutSeconds=dict(stored_policy.tool_permission_policy.get("toolTimeoutSeconds", {})),
+                toolTimeoutActions=dict(stored_policy.tool_permission_policy.get("toolTimeoutActions", {})),
+            )
         )
         return (
             RuntimeRunStartRequest(
@@ -503,13 +517,7 @@ class RuntimeBridge:
                     if stored_policy.thinking_capability_override is None
                     else dict(stored_policy.thinking_capability_override),
                     enabledTools=tuple(stored_policy.enabled_tools),
-                    toolPermissionPolicy=None
-                    if stored_policy.tool_permission_policy is None
-                    else RuntimeToolPermissionPolicy(
-                        schemaVersion=stored_policy.tool_permission_policy.get("schemaVersion", 1),
-                        defaultMode=stored_policy.tool_permission_policy.get("defaultMode", "ask"),
-                        toolModes=dict(stored_policy.tool_permission_policy.get("toolModes", {})),
-                    ),
+                    toolPermissionPolicy=tool_permission_policy,
                     debugModeEnabled=stored_policy.debug_mode_enabled,
                     requestOptions=dict(stored_policy.request_options),
                 ),

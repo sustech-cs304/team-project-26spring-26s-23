@@ -226,7 +226,9 @@ def test_start_run_round_trips_tool_permission_policy() -> None:
             tool_permission_policy={
                 "schemaVersion": 1,
                 "defaultMode": "ask",
-                "toolModes": {"tool.weather-current": "allow"},
+                "toolModes": {"tool.weather-current": "delay"},
+                "toolTimeoutSeconds": {"tool.weather-current": 27},
+                "toolTimeoutActions": {"tool.weather-current": "approve"},
             },
         )
     )
@@ -234,9 +236,9 @@ def test_start_run_round_trips_tool_permission_policy() -> None:
     assert run.request.policy.tool_permission_policy == {
         "schemaVersion": 1,
         "defaultMode": "ask",
-        "toolModes": {"tool.weather-current": "allow"},
-        "toolTimeoutSeconds": {},
-        "toolTimeoutActions": {},
+        "toolModes": {"tool.weather-current": "delay"},
+        "toolTimeoutSeconds": {"tool.weather-current": 27},
+        "toolTimeoutActions": {"tool.weather-current": "approve"},
     }
 
     run_start_request, legacy_fallback_used, rehydrate_error = bridge._to_run_start_request(run)
@@ -247,9 +249,9 @@ def test_start_run_round_trips_tool_permission_policy() -> None:
     assert run_start_request.policy.toolPermissionPolicy.to_dict() == {
         "schemaVersion": 1,
         "defaultMode": "ask",
-        "toolModes": {"tool.weather-current": "allow"},
-        "toolTimeoutSeconds": {},
-        "toolTimeoutActions": {},
+        "toolModes": {"tool.weather-current": "delay"},
+        "toolTimeoutSeconds": {"tool.weather-current": 27},
+        "toolTimeoutActions": {"tool.weather-current": "approve"},
     }
 
 
@@ -759,6 +761,8 @@ def _build_run_start_request(
                 schemaVersion=int(tool_permission_policy.get("schemaVersion", 1)),
                 defaultMode=str(tool_permission_policy.get("defaultMode", "ask")),
                 toolModes=dict(tool_permission_policy.get("toolModes", {})),
+                toolTimeoutSeconds=dict(tool_permission_policy.get("toolTimeoutSeconds", {})),
+                toolTimeoutActions=dict(tool_permission_policy.get("toolTimeoutActions", {})),
             ),
             requestOptions={},
         ),
