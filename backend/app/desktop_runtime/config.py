@@ -42,9 +42,15 @@ ENV_DATABASE_DIR = "COPILOT_DESKTOP_RUNTIME_DATABASE_DIR"
 ENV_STATE_DIR = "COPILOT_DESKTOP_RUNTIME_STATE_DIR"
 ENV_DEBUG_LOG_DATABASE_FILE = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_DATABASE_FILE"
 ENV_DEBUG_LOG_RETENTION_DAYS = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_RETENTION_DAYS"
-ENV_DEBUG_LOG_AUTO_CLEANUP_ENABLED = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_AUTO_CLEANUP_ENABLED"
-ENV_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS"
-ENV_DEBUG_LOG_SNAPSHOT_RETENTION_DAYS = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_SNAPSHOT_RETENTION_DAYS"
+ENV_DEBUG_LOG_AUTO_CLEANUP_ENABLED = (
+    "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_AUTO_CLEANUP_ENABLED"
+)
+ENV_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS = (
+    "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS"
+)
+ENV_DEBUG_LOG_SNAPSHOT_RETENTION_DAYS = (
+    "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_SNAPSHOT_RETENTION_DAYS"
+)
 ENV_COPILOT_SETTINGS_FILE = "COPILOT_DESKTOP_RUNTIME_SETTINGS_FILE"
 ENV_HOST_LOG_FILE = "COPILOT_DESKTOP_RUNTIME_HOST_LOG_FILE"
 ENV_BACKEND_STDOUT_LOG_FILE = "COPILOT_DESKTOP_RUNTIME_BACKEND_STDOUT_LOG_FILE"
@@ -54,7 +60,9 @@ ENV_LAST_FAILURE_FILE = "COPILOT_DESKTOP_RUNTIME_LAST_FAILURE_FILE"
 ENV_APP_MODE = "COPILOT_DESKTOP_RUNTIME_APP_MODE"
 ENV_ENVIRONMENT = "COPILOT_DESKTOP_RUNTIME_ENVIRONMENT"
 ENV_HOST_CAPABILITY_BRIDGE_URL = "COPILOT_DESKTOP_RUNTIME_HOST_CAPABILITY_BRIDGE_URL"
-ENV_HOST_CAPABILITY_BRIDGE_TOKEN = "COPILOT_DESKTOP_RUNTIME_HOST_CAPABILITY_BRIDGE_TOKEN"
+ENV_HOST_CAPABILITY_BRIDGE_TOKEN = (
+    "COPILOT_DESKTOP_RUNTIME_HOST_CAPABILITY_BRIDGE_TOKEN"
+)
 
 _ALLOWED_LOOPBACK_HOSTS = {DEFAULT_HOST, "localhost", "::1"}
 
@@ -120,7 +128,9 @@ class DesktopRuntimeConfig:
     environment: str
     debug_log_retention_days: int = DEFAULT_DEBUG_LOG_RETENTION_DAYS
     debug_log_auto_cleanup_enabled: bool = True
-    debug_log_min_cleanup_interval_seconds: int = DEFAULT_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS
+    debug_log_min_cleanup_interval_seconds: int = (
+        DEFAULT_DEBUG_LOG_MIN_CLEANUP_INTERVAL_SECONDS
+    )
     debug_log_snapshot_retention_days: int | None = None
     host_model_route_bridge_url: str | None = None
     host_model_route_bridge_token: str | None = None
@@ -238,16 +248,28 @@ def build_runtime_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--port", type=int, default=None, help="监听端口")
     parser.add_argument("--app-mode", default=None, help="应用模式，例如 desktop")
-    parser.add_argument("--environment", default=None, help="运行环境，例如 development 或 production")
-    parser.add_argument("--root-dir", dest="root_dir", default=None, help="桌面运行时根目录")
-    parser.add_argument("--runtime-root-dir", dest="root_dir", default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--user-data-dir", default=None, help="Electron userData 根目录")
+    parser.add_argument(
+        "--environment", default=None, help="运行环境，例如 development 或 production"
+    )
+    parser.add_argument(
+        "--root-dir", dest="root_dir", default=None, help="桌面运行时根目录"
+    )
+    parser.add_argument(
+        "--runtime-root-dir", dest="root_dir", default=None, help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--user-data-dir", default=None, help="Electron userData 根目录"
+    )
     parser.add_argument("--config-dir", default=None, help="桌面运行时配置目录")
     parser.add_argument("--logs-dir", default=None, help="日志目录")
     parser.add_argument("--database-dir", default=None, help="数据库目录")
     parser.add_argument("--state-dir", default=None, help="诊断与状态目录")
-    parser.add_argument("--debug-log-database-file", default=None, help="调试日志 SQLite 文件路径")
-    parser.add_argument("--debug-log-retention-days", type=int, default=None, help="调试日志保留天数")
+    parser.add_argument(
+        "--debug-log-database-file", default=None, help="调试日志 SQLite 文件路径"
+    )
+    parser.add_argument(
+        "--debug-log-retention-days", type=int, default=None, help="调试日志保留天数"
+    )
     parser.add_argument(
         "--debug-log-auto-cleanup-enabled",
         default=None,
@@ -266,11 +288,25 @@ def build_runtime_argument_parser() -> argparse.ArgumentParser:
         help="可选详细快照保留天数",
     )
     parser.add_argument("--settings-file", default=None, help="Copilot 设置文件路径")
-    parser.add_argument("--host-log-file", default=None, help="Electron 主进程日志文件路径")
-    parser.add_argument("--backend-stdout-log-file", default=None, help="Python 子进程 stdout 日志文件路径")
-    parser.add_argument("--backend-stderr-log-file", default=None, help="Python 子进程 stderr 日志文件路径")
-    parser.add_argument("--runtime-snapshot-file", default=None, help="运行态快照文件路径")
-    parser.add_argument("--last-failure-file", default=None, help="最近失败摘要文件路径")
+    parser.add_argument(
+        "--host-log-file", default=None, help="Electron 主进程日志文件路径"
+    )
+    parser.add_argument(
+        "--backend-stdout-log-file",
+        default=None,
+        help="Python 子进程 stdout 日志文件路径",
+    )
+    parser.add_argument(
+        "--backend-stderr-log-file",
+        default=None,
+        help="Python 子进程 stderr 日志文件路径",
+    )
+    parser.add_argument(
+        "--runtime-snapshot-file", default=None, help="运行态快照文件路径"
+    )
+    parser.add_argument(
+        "--last-failure-file", default=None, help="最近失败摘要文件路径"
+    )
     parser.add_argument(
         "--host-model-route-bridge-url",
         dest="host_model_route_bridge_url",
@@ -316,9 +352,15 @@ def parse_runtime_config(
 
     host = _resolve_host(args.host, env_map)
     port = _resolve_port(args.port, env_map)
-    local_token = _resolve_optional_text_value(args.local_token, env_map, ENV_LOCAL_TOKEN)
-    host_model_route_bridge_url = _resolve_optional_text_value(args.host_model_route_bridge_url, env_map)
-    host_model_route_bridge_token = _resolve_optional_text_value(args.host_model_route_bridge_token, env_map)
+    local_token = _resolve_optional_text_value(
+        args.local_token, env_map, ENV_LOCAL_TOKEN
+    )
+    host_model_route_bridge_url = _resolve_optional_text_value(
+        args.host_model_route_bridge_url, env_map
+    )
+    host_model_route_bridge_token = _resolve_optional_text_value(
+        args.host_model_route_bridge_token, env_map
+    )
     host_capability_bridge_url = _resolve_optional_text_value(
         args.host_capability_bridge_url,
         env_map,
@@ -361,7 +403,9 @@ def parse_runtime_config(
         fallback=runtime_root_dir / DEFAULT_STATE_DIR_NAME,
     )
     debug_log_database_file = _resolve_path(
-        _resolve_optional_text_value(args.debug_log_database_file, env_map, ENV_DEBUG_LOG_DATABASE_FILE),
+        _resolve_optional_text_value(
+            args.debug_log_database_file, env_map, ENV_DEBUG_LOG_DATABASE_FILE
+        ),
         cwd=base_dir,
         fallback=database_dir / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME,
     )
@@ -393,7 +437,9 @@ def parse_runtime_config(
         field_name="debug log snapshot retention days",
     )
     copilot_settings_file = _resolve_path(
-        _resolve_optional_text_value(args.settings_file, env_map, ENV_COPILOT_SETTINGS_FILE),
+        _resolve_optional_text_value(
+            args.settings_file, env_map, ENV_COPILOT_SETTINGS_FILE
+        ),
         cwd=base_dir,
         fallback=config_dir / DEFAULT_COPILOT_SETTINGS_FILE_NAME,
     )
@@ -403,28 +449,42 @@ def parse_runtime_config(
         fallback=logs_dir / DEFAULT_HOST_LOG_FILE_NAME,
     )
     backend_stdout_log_file = _resolve_path(
-        _resolve_optional_text_value(args.backend_stdout_log_file, env_map, ENV_BACKEND_STDOUT_LOG_FILE),
+        _resolve_optional_text_value(
+            args.backend_stdout_log_file, env_map, ENV_BACKEND_STDOUT_LOG_FILE
+        ),
         cwd=base_dir,
         fallback=logs_dir / DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME,
     )
     backend_stderr_log_file = _resolve_path(
-        _resolve_optional_text_value(args.backend_stderr_log_file, env_map, ENV_BACKEND_STDERR_LOG_FILE),
+        _resolve_optional_text_value(
+            args.backend_stderr_log_file, env_map, ENV_BACKEND_STDERR_LOG_FILE
+        ),
         cwd=base_dir,
         fallback=logs_dir / DEFAULT_BACKEND_STDERR_LOG_FILE_NAME,
     )
     runtime_snapshot_file = _resolve_path(
-        _resolve_optional_text_value(args.runtime_snapshot_file, env_map, ENV_RUNTIME_SNAPSHOT_FILE),
+        _resolve_optional_text_value(
+            args.runtime_snapshot_file, env_map, ENV_RUNTIME_SNAPSHOT_FILE
+        ),
         cwd=base_dir,
         fallback=state_dir / DEFAULT_RUNTIME_SNAPSHOT_FILE_NAME,
     )
     last_failure_file = _resolve_path(
-        _resolve_optional_text_value(args.last_failure_file, env_map, ENV_LAST_FAILURE_FILE),
+        _resolve_optional_text_value(
+            args.last_failure_file, env_map, ENV_LAST_FAILURE_FILE
+        ),
         cwd=base_dir,
         fallback=state_dir / DEFAULT_LAST_FAILURE_FILE_NAME,
     )
 
-    app_mode = _resolve_optional_text_value(args.app_mode, env_map, ENV_APP_MODE) or DEFAULT_APP_MODE
-    environment = _resolve_optional_text_value(args.environment, env_map, ENV_ENVIRONMENT) or DEFAULT_ENVIRONMENT
+    app_mode = (
+        _resolve_optional_text_value(args.app_mode, env_map, ENV_APP_MODE)
+        or DEFAULT_APP_MODE
+    )
+    environment = (
+        _resolve_optional_text_value(args.environment, env_map, ENV_ENVIRONMENT)
+        or DEFAULT_ENVIRONMENT
+    )
 
     return DesktopRuntimeConfig(
         host=host,
@@ -496,7 +556,9 @@ def _resolve_host(cli_value: str | None, env: Mapping[str, str]) -> str:
     host = raw_host.lower()
     if host not in _ALLOWED_LOOPBACK_HOSTS:
         allowed = ", ".join(sorted(_ALLOWED_LOOPBACK_HOSTS))
-        raise ValueError(f"Desktop runtime host must stay on loopback: {raw_host!r}. Allowed: {allowed}")
+        raise ValueError(
+            f"Desktop runtime host must stay on loopback: {raw_host!r}. Allowed: {allowed}"
+        )
     return host
 
 
@@ -553,7 +615,9 @@ def _resolve_positive_int_value(
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid {field_name}: {raw_value!r}") from exc
     if resolved <= 0:
-        raise ValueError(f"{field_name.capitalize()} must be greater than 0: {resolved}")
+        raise ValueError(
+            f"{field_name.capitalize()} must be greater than 0: {resolved}"
+        )
     return resolved
 
 
@@ -596,7 +660,9 @@ def _resolve_optional_positive_int_value(
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid {field_name}: {raw_value!r}") from exc
     if resolved <= 0:
-        raise ValueError(f"{field_name.capitalize()} must be greater than 0: {resolved}")
+        raise ValueError(
+            f"{field_name.capitalize()} must be greater than 0: {resolved}"
+        )
     return resolved
 
 

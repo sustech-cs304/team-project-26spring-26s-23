@@ -85,7 +85,10 @@ class DesktopCapabilityBridgeClient:
     ) -> None:
         self._bridge_url = _normalize_optional_text(bridge_url)
         self._bridge_token = _normalize_optional_text(bridge_token)
-        self._header_name = _normalize_optional_text(header_name) or HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME
+        self._header_name = (
+            _normalize_optional_text(header_name)
+            or HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME
+        )
         self._transport = transport
         self._timeout = timeout
         self._sync_client: httpx.Client | None = None
@@ -322,7 +325,9 @@ class DesktopCapabilityBridgeClient:
             context=context,
             payload=payload,
         )
-        bridge_url = self._require_bridge_url(capability=capability, operation=operation)
+        bridge_url = self._require_bridge_url(
+            capability=capability, operation=operation
+        )
         try:
             response = await self._get_async_client().post(
                 bridge_url,
@@ -356,7 +361,9 @@ class DesktopCapabilityBridgeClient:
             context=context,
             payload=payload,
         )
-        bridge_url = self._require_bridge_url(capability=capability, operation=operation)
+        bridge_url = self._require_bridge_url(
+            capability=capability, operation=operation
+        )
         try:
             response = self._get_sync_client().post(
                 bridge_url,
@@ -525,7 +532,11 @@ class DesktopCapabilityBridgeClient:
 
         if ok is False:
             raw_code = _normalize_optional_text(payload.get("errorCode"))
-            code = raw_code if raw_code in DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES else "internal_error"
+            code = (
+                raw_code
+                if raw_code in DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES
+                else "internal_error"
+            )
             message = _normalize_optional_text(payload.get("errorMessage")) or (
                 "Desktop capability bridge request failed."
             )
@@ -566,7 +577,9 @@ def _build_artifact_descriptor(
         name=_normalize_optional_text(payload.get("name")),
         content_type=_normalize_optional_text(payload.get("contentType")),
         metadata=_normalize_mapping(
-            payload.get("metadata") if isinstance(payload.get("metadata"), Mapping) else None
+            payload.get("metadata")
+            if isinstance(payload.get("metadata"), Mapping)
+            else None
         ),
     )
 

@@ -14,6 +14,7 @@ from .config import (
     parse_runtime_config,
 )
 
+
 def create_app(config: DesktopRuntimeConfig | None = None) -> Any:
     from .server import create_app as _create_app
 

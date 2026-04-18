@@ -82,7 +82,9 @@ def build_debug_log_router() -> APIRouter:
             ) from exc
 
     @router.get("/diagnostics/debug-logs/events/{event_id}")
-    def get_debug_log_event_detail(event_id: int, request: Request) -> dict[str, object]:
+    def get_debug_log_event_detail(
+        event_id: int, request: Request
+    ) -> dict[str, object]:
         runtime_config = _get_runtime_config(request)
         require_local_token(request, runtime_config)
         service = _get_debug_log_query_service(request)
@@ -113,7 +115,9 @@ def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
 
 
 def _get_debug_log_query_service(request: Request) -> DebugLogQueryService:
-    service = getattr(request.app.state, "copilot_runtime_debug_log_query_service", None)
+    service = getattr(
+        request.app.state, "copilot_runtime_debug_log_query_service", None
+    )
     if isinstance(service, DebugLogQueryService):
         return service
     raise HTTPException(
