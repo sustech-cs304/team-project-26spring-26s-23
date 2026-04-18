@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import Awaitable
 from pathlib import Path
+from typing import TypeVar
 
 from app.tooling.file_tools.runtime_bindings import (
     FILE_TOOL_GLOB_FUNCTION_NAME,
@@ -25,6 +27,13 @@ from app.tooling.file_tools.runtime_bindings import (
 from app.tooling.runtime_adapter.copilot_runtime import RuntimeToolExecutionContext, runtime_tool_execution_scope
 
 
+_T = TypeVar("_T")
+
+
+async def _as_coroutine(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
+
+
 def _runtime_context(default_root: Path) -> RuntimeToolExecutionContext:
     return RuntimeToolExecutionContext(
         tool_call_id="call-1",
@@ -39,7 +48,7 @@ def test_file_tool_read_runtime_binding_exposes_schema_and_executes(tmp_path: Pa
     target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
 
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1}))
+    result = asyncio.run(_as_coroutine(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1})))
 
     assert binding.tool_id == FILE_TOOL_READ_ID
     assert binding.kind == "builtin"
@@ -83,7 +92,7 @@ def test_file_tool_write_runtime_binding_exposes_schema_and_executes(tmp_path: P
     workspace_root.mkdir()
 
     binding = build_file_tool_write_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"path": "sample.txt", "content": "hello"}))
+    result = asyncio.run(_as_coroutine(binding.execute({"path": "sample.txt", "content": "hello"})))
 
     assert binding.tool_id == FILE_TOOL_WRITE_ID
     assert binding.kind == "builtin"
@@ -125,7 +134,7 @@ def test_file_tool_write_runtime_binding_maps_conflicts(tmp_path: Path) -> None:
     target.write_text("before", encoding="utf-8")
 
     binding = build_file_tool_write_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"path": "sample.txt", "content": "after", "overwrite": False}))
+    result = asyncio.run(_as_coroutine(binding.execute({"path": "sample.txt", "content": "after", "overwrite": False})))
 
     assert result["status"] == "error"
     assert result["error"]["code"] == "conflict"
@@ -139,7 +148,7 @@ def test_file_tool_read_runtime_binding_returns_structured_failure_for_binary(tm
     target.write_bytes(b"\x00\x01")
 
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"path": "sample.bin"}))
+    result = asyncio.run(_as_coroutine(binding.execute({"path": "sample.bin"})))
 
     assert result["status"] == "error"
     assert result["error"]["code"] == "invalid_input"
@@ -159,7 +168,7 @@ def test_file_tool_glob_runtime_binding_exposes_schema_and_executes(tmp_path: Pa
     os.utime(newer, (now - 10, now - 10))
 
     binding = build_file_tool_glob_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"basePath": "docs", "pattern": "*.md", "maxResults": 1}))
+    result = asyncio.run(_as_coroutine(binding.execute({"basePath": "docs", "pattern": "*.md", "maxResults": 1})))
 
     assert binding.tool_id == FILE_TOOL_GLOB_ID
     assert binding.kind == "builtin"
@@ -200,13 +209,13 @@ def test_file_tool_grep_runtime_binding_exposes_schema_and_executes(tmp_path: Pa
 
     binding = build_file_tool_grep_runtime_binding(workspace_root=workspace_root)
     result = asyncio.run(
-        binding.execute({
+        _as_coroutine(binding.execute({
             "basePath": ".",
             "pattern": "TODO",
             "fileGlob": "*.txt",
             "contextLines": 1,
             "maxResults": 5,
-        })
+        }))
     )
 
     assert binding.tool_id == FILE_TOOL_GREP_ID
@@ -252,12 +261,12 @@ def test_file_tool_grep_runtime_binding_maps_invalid_regex_to_invalid_input(tmp_
 
     binding = build_file_tool_grep_runtime_binding(workspace_root=workspace_root)
     result = asyncio.run(
-        binding.execute({
+        _as_coroutine(binding.execute({
             "basePath": ".",
             "pattern": "(",
             "fileGlob": "*.txt",
             "isRegex": True,
-        })
+        }))
     )
 
     assert result["status"] == "error"
@@ -275,7 +284,7 @@ def test_file_tool_read_runtime_binding_uses_runtime_default_root(tmp_path: Path
 
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
     with runtime_tool_execution_scope(_runtime_context(runtime_root)):
-        result = asyncio.run(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1}))
+        result = asyncio.run(_as_coroutine(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1})))
 
     assert result["status"] == "success"
     assert result["output"]["data"]["content"] == {"text": "value"}
@@ -293,9 +302,9 @@ def test_file_tool_runtime_binding_does_not_mutate_shared_workspace_root(tmp_pat
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
 
     with runtime_tool_execution_scope(_runtime_context(runtime_root)):
-        runtime_result = asyncio.run(binding.execute({"path": "runtime.txt", "offset": 2, "limit": 1}))
+        runtime_result = asyncio.run(_as_coroutine(binding.execute({"path": "runtime.txt", "offset": 2, "limit": 1})))
 
-    workspace_result = asyncio.run(binding.execute({"path": "workspace.txt", "offset": 2, "limit": 1}))
+    workspace_result = asyncio.run(_as_coroutine(binding.execute({"path": "workspace.txt", "offset": 2, "limit": 1})))
 
     assert runtime_result["status"] == "success"
     assert runtime_result["output"]["data"]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
@@ -315,8 +324,8 @@ def test_file_tool_runtime_binding_switch_root_then_glob_then_read_uses_runtime_
     glob_binding = build_file_tool_glob_runtime_binding(workspace_root=workspace_root)
     read_binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
     with runtime_tool_execution_scope(_runtime_context(runtime_root)):
-        glob_result = asyncio.run(glob_binding.execute({"basePath": "nested", "pattern": "*.txt"}))
-        read_result = asyncio.run(read_binding.execute({"path": "nested/sample.txt", "offset": 2, "limit": 1}))
+        glob_result = asyncio.run(_as_coroutine(glob_binding.execute({"basePath": "nested", "pattern": "*.txt"})))
+        read_result = asyncio.run(_as_coroutine(read_binding.execute({"path": "nested/sample.txt", "offset": 2, "limit": 1})))
 
     assert glob_result["status"] == "success"
     assert glob_result["output"]["data"]["matches"][0]["path"] == "nested/sample.txt"
@@ -339,7 +348,7 @@ def test_file_tool_read_runtime_binding_absolute_path_overrides_runtime_default_
 
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
     with runtime_tool_execution_scope(_runtime_context(runtime_root)):
-        result = asyncio.run(binding.execute({"path": str(target), "offset": 2, "limit": 1}))
+        result = asyncio.run(_as_coroutine(binding.execute({"path": str(target), "offset": 2, "limit": 1})))
 
     assert result["status"] == "success"
     assert result["output"]["data"]["content"] == {"text": "value"}
@@ -355,7 +364,7 @@ def test_file_tool_read_runtime_binding_falls_back_to_workspace_root_without_run
     (workspace_root / "sample.txt").write_text("workspace\nvalue\n", encoding="utf-8")
 
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1}))
+    result = asyncio.run(_as_coroutine(binding.execute({"path": "sample.txt", "offset": 2, "limit": 1})))
 
     assert result["status"] == "success"
     assert result["output"]["data"]["content"] == {"text": "value"}
@@ -370,7 +379,7 @@ def test_file_tool_switch_root_runtime_binding_succeeds_for_directory(tmp_path: 
     target_root.mkdir()
 
     binding = build_file_tool_switch_root_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"path": str(target_root)}))
+    result = asyncio.run(_as_coroutine(binding.execute({"path": str(target_root)})))
 
     assert binding.tool_id == FILE_TOOL_SWITCH_ROOT_ID
     assert binding.function_name == FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME
@@ -387,7 +396,7 @@ def test_file_tool_switch_root_runtime_binding_rejects_file_target(tmp_path: Pat
     target_file.write_text("hello", encoding="utf-8")
 
     binding = build_file_tool_switch_root_runtime_binding(workspace_root=workspace_root)
-    result = asyncio.run(binding.execute({"path": str(target_file)}))
+    result = asyncio.run(_as_coroutine(binding.execute({"path": str(target_file)})))
 
     assert result["status"] == "error"
     assert result["error"]["code"] == "invalid_input"
