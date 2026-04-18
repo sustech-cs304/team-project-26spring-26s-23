@@ -72,11 +72,15 @@ class BlackboardCalendarICSParser:
     def stable_uid(raw_uid: str | None, title: str, end_at: datetime | None) -> str:
         canonical_raw_uid = BlackboardCalendarICSParser.canonicalize_raw_uid(raw_uid)
         if canonical_raw_uid:
-            digest = hashlib.sha1(canonical_raw_uid.encode("utf-8")).hexdigest()[:20]
+            digest = hashlib.sha1(
+                canonical_raw_uid.encode("utf-8"), usedforsecurity=False
+            ).hexdigest()[:20]
             return f"ics_{digest}"
 
         fallback = f"{title.strip()}::{end_at.isoformat() if end_at else '<none>'}"
-        digest = hashlib.sha1(fallback.encode("utf-8")).hexdigest()[:20]
+        digest = hashlib.sha1(
+            fallback.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()[:20]
         return f"ics_{digest}"
 
     @staticmethod

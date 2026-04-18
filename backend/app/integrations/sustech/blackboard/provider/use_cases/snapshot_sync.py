@@ -60,7 +60,9 @@ def _stable_id(prefix: str, *parts: Any) -> str:
     normalized = "|".join(
         str(part).strip() for part in parts if part is not None and str(part).strip()
     )
-    digest = hashlib.sha1((normalized or "<empty>").encode("utf-8")).hexdigest()[:20]
+    digest = hashlib.sha1(
+        (normalized or "<empty>").encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:20]
     return f"{prefix}_{digest}"
 
 

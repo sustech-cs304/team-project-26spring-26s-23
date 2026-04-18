@@ -126,7 +126,9 @@ class DatabaseManager:
         )
         if not normalized:
             normalized = "<empty>"
-        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:20]
+        digest = hashlib.sha1(
+            normalized.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()[:20]
         return f"{prefix}_{digest}"
 
     @staticmethod

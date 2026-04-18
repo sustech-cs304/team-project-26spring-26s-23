@@ -324,7 +324,9 @@ def stable_resource_id(course_id: str, name: str, url: str) -> str:
     normalized = "|".join(
         part.strip() for part in (course_id, url, name) if part and part.strip()
     )
-    digest = hashlib.sha1((normalized or "<empty>").encode("utf-8")).hexdigest()[:20]
+    digest = hashlib.sha1(
+        (normalized or "<empty>").encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:20]
     return f"res_{digest}"
 
 
