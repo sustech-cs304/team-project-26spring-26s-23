@@ -17,7 +17,7 @@ class ToolContract(Protocol):
 
     @property
     def metadata(self) -> ToolMetadata:
-        pass
+        raise NotImplementedError
 
     async def invoke(
         self,
@@ -26,7 +26,7 @@ class ToolContract(Protocol):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> ToolResultEnvelope:
-        pass
+        raise NotImplementedError
 
 
 __all__ = ["ToolContract"]
