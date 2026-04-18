@@ -465,6 +465,15 @@ def _normalize_optional_text(value: object | None) -> str | None:
     return text or None
 
 
+def _normalize_int_parseable_value(value: object | None) -> int | str | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    normalized = _normalize_optional_text(value)
+    return normalized
+
+
 def _resolve_optional_text_value(
     cli_value: object | None,
     env: Mapping[str, str],
@@ -534,7 +543,9 @@ def _resolve_positive_int_value(
     default: int,
     field_name: str,
 ) -> int:
-    raw_value: object | None = cli_value if cli_value is not None else env.get(env_key)
+    raw_value = _normalize_int_parseable_value(
+        cli_value if cli_value is not None else env.get(env_key)
+    )
     if raw_value is None:
         return default
     try:
@@ -554,7 +565,9 @@ def _resolve_non_negative_int_value(
     default: int,
     field_name: str,
 ) -> int:
-    raw_value: object | None = cli_value if cli_value is not None else env.get(env_key)
+    raw_value = _normalize_int_parseable_value(
+        cli_value if cli_value is not None else env.get(env_key)
+    )
     if raw_value is None:
         return default
     try:
@@ -573,7 +586,9 @@ def _resolve_optional_positive_int_value(
     *,
     field_name: str,
 ) -> int | None:
-    raw_value: object | None = cli_value if cli_value is not None else env.get(env_key)
+    raw_value = _normalize_int_parseable_value(
+        cli_value if cli_value is not None else env.get(env_key)
+    )
     if raw_value is None:
         return None
     try:
