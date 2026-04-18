@@ -11,6 +11,7 @@ from app.desktop_runtime.config import (
     DEFAULT_CONFIG_DIR_NAME,
     DEFAULT_COPILOT_SETTINGS_FILE_NAME,
     DEFAULT_DATABASE_DIR_NAME,
+    DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME,
     DEFAULT_ENVIRONMENT,
     DEFAULT_HOST,
     DEFAULT_HOST_LOG_FILE_NAME,
@@ -23,6 +24,7 @@ from app.desktop_runtime.config import (
     DEFAULT_USER_DATA_DIR,
     ENV_APP_MODE,
     ENV_DATABASE_DIR,
+    ENV_DEBUG_LOG_DATABASE_FILE,
     ENV_ENVIRONMENT,
     ENV_HOST,
     ENV_HOST_CAPABILITY_BRIDGE_TOKEN,
@@ -56,6 +58,7 @@ def test_parse_runtime_config_defaults_to_loopback_and_backend_data_dir() -> Non
     assert config.logs_dir == config.runtime_root_dir / DEFAULT_LOGS_DIR_NAME
     assert config.database_dir == config.runtime_root_dir / DEFAULT_DATABASE_DIR_NAME
     assert config.state_dir == config.runtime_root_dir / DEFAULT_STATE_DIR_NAME
+    assert config.debug_log_database_file == config.database_dir / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME
     assert config.copilot_settings_file == config.config_dir / DEFAULT_COPILOT_SETTINGS_FILE_NAME
     assert config.host_log_file == config.logs_dir / DEFAULT_HOST_LOG_FILE_NAME
     assert config.backend_stdout_log_file == config.logs_dir / DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME
@@ -75,6 +78,7 @@ def test_parse_runtime_config_reads_environment_values() -> None:
         ENV_ROOT_DIR: "runtime-state/runtime-root",
         ENV_LOGS_DIR: "runtime-state/logs-custom",
         ENV_DATABASE_DIR: "runtime-state/db-custom",
+        ENV_DEBUG_LOG_DATABASE_FILE: "runtime-state/db-custom/debug-events.sqlite3",
         ENV_APP_MODE: "desktop-bundled",
         ENV_ENVIRONMENT: "production",
         ENV_HOST_CAPABILITY_BRIDGE_URL: "http://127.0.0.1:45678/host/private/capability-bridge",
@@ -92,6 +96,9 @@ def test_parse_runtime_config_reads_environment_values() -> None:
     assert config.logs_dir == (BACKEND_DIR / "runtime-state" / "logs-custom").resolve()
     assert config.database_dir == (BACKEND_DIR / "runtime-state" / "db-custom").resolve()
     assert config.state_dir == config.runtime_root_dir / DEFAULT_STATE_DIR_NAME
+    assert config.debug_log_database_file == (
+        BACKEND_DIR / "runtime-state" / "db-custom" / "debug-events.sqlite3"
+    ).resolve()
     assert config.app_mode == "desktop-bundled"
     assert config.environment == "production"
     assert config.host_capability_bridge_url == "http://127.0.0.1:45678/host/private/capability-bridge"
@@ -148,6 +155,8 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
             str(tmp_path / "cli-db"),
             "--state-dir",
             str(tmp_path / "cli-state"),
+            "--debug-log-database-file",
+            str(tmp_path / "cli-debug-log.sqlite3"),
             "--settings-file",
             str(tmp_path / "cli-settings.json"),
             "--host-log-file",
@@ -188,6 +197,7 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
     assert config.logs_dir == (tmp_path / "cli-logs").resolve()
     assert config.database_dir == (tmp_path / "cli-db").resolve()
     assert config.state_dir == (tmp_path / "cli-state").resolve()
+    assert config.debug_log_database_file == (tmp_path / "cli-debug-log.sqlite3").resolve()
     assert config.copilot_settings_file == (tmp_path / "cli-settings.json").resolve()
     assert config.host_log_file == (tmp_path / "cli-host.log").resolve()
     assert config.backend_stdout_log_file == (tmp_path / "cli.stdout.log").resolve()

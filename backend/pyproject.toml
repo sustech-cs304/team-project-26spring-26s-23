@@ -22,7 +22,10 @@ test = [
     "pytest>=9.0.2",
 ]
 dev = [
-    "pyright>=1.1.396",
+    "ruff>=0.15.11",
+    "bandit>=1.9.4",
+    "xenon>=0.9.3",
+    "pyright>=1.1.408",
 ]
 
 [build-system]
@@ -35,6 +38,7 @@ packages = ["app"]
 [tool.pyright]
 include = ["app"]
 extraPaths = ["."]
+typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
 addopts = "-ra"
@@ -43,3 +47,13 @@ markers = [
     "live: requires real Blackboard credentials and network access",
     "e2e: end-to-end Blackboard snapshot sync verification",
 ]
+
+[tool.ruff]
+include = ["*.py"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "venv"]
+skips = ["B101"]

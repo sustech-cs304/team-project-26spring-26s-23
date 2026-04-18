@@ -31,6 +31,7 @@ from .debug_logging import (
     summarize_runtime_thinking_capability,
     summarize_runtime_thinking_selection_result,
 )
+from .debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from .execution_support import (
     AgentNotFoundError,
     RunNotFoundError,
@@ -93,10 +94,41 @@ class RuntimeBridge:
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
         self._approval_coordinator = approval_coordinator or RuntimeToolApprovalCoordinator()
+        self._debug_event_logger: RuntimeDebugLogWriter | None = None
+
+    def set_debug_event_logger(self, logger: RuntimeDebugLogWriter | None) -> None:
+        self._debug_event_logger = logger
 
     def create_thread(self, *, agent_id: str) -> RuntimeThreadRecord:
-        self._resolve_agent(agent_id)
-        return self._session_store.create_thread(bound_agent_id=agent_id)
+        try:
+            self._resolve_agent(agent_id)
+            thread = self._session_store.create_thread(bound_agent_id=agent_id)
+        except Exception as exc:
+            self._write_debug_event(
+                category=DebugLogCategory.RUNTIME,
+                level=DebugLogLevel.ERROR,
+                event_name="runtime.thread.create.failed",
+                message="Runtime thread creation failed.",
+                component="copilot_runtime.bridge",
+                operation="create_thread",
+                phase="create_thread",
+                summary={"agentId": agent_id, "status": "failed"},
+                error=exc,
+            )
+            raise
+        self._write_debug_event(
+            category=DebugLogCategory.RUNTIME,
+            level=DebugLogLevel.INFO,
+            event_name="runtime.thread.create.succeeded",
+            message="Runtime thread created.",
+            component="copilot_runtime.bridge",
+            operation="create_thread",
+            phase="create_thread",
+            thread_id=thread.thread_id,
+            session_id=thread.thread_id,
+            summary={"agentId": agent_id, "status": "succeeded"},
+        )
+        return thread
 
     def get_thread(self, *, thread_id: str) -> RuntimeThreadRecord:
         thread = self._session_store.get_thread(thread_id)
@@ -117,6 +149,19 @@ class RuntimeBridge:
             self.get_thread(thread_id=request.thread_id)
             run = self._create_run_record(request=request, validate_thread=False)
         except Exception as exc:
+            self._write_debug_event(
+                category=DebugLogCategory.RUNTIME,
+                level=DebugLogLevel.ERROR,
+                event_name="runtime.run.start.failed",
+                message="Runtime run creation failed.",
+                component="copilot_runtime.bridge",
+                operation="start_run",
+                phase="create_run_record",
+                thread_id=request.thread_id,
+                session_id=request.thread_id,
+                summary={"agentId": request.agent_id, "status": "failed"},
+                error=exc,
+            )
             log_runtime_chain_debug(
                 "run_start.bridge.start_run.failed",
                 runtimeMethod=RUN_START_METHOD,
@@ -133,6 +178,19 @@ class RuntimeBridge:
             agentId=request.agent_id,
             runId=run.run_id,
             phase="create_run_record",
+        )
+        self._write_debug_event(
+            category=DebugLogCategory.RUNTIME,
+            level=DebugLogLevel.INFO,
+            event_name="runtime.run.start.succeeded",
+            message="Runtime run record created.",
+            component="copilot_runtime.bridge",
+            operation="start_run",
+            phase="create_run_record",
+            run_id=run.run_id,
+            thread_id=request.thread_id,
+            session_id=request.thread_id,
+            summary={"agentId": request.agent_id, "status": "succeeded"},
         )
         return run
 
@@ -248,6 +306,21 @@ class RuntimeBridge:
             if metadata:
                 run = self._session_store.touch_run(run.run_id, metadata=metadata)
         except Exception as exc:
+            self._write_debug_event(
+                category=DebugLogCategory.RUNTIME,
+                level=DebugLogLevel.ERROR,
+                event_name="runtime.run.metadata.failed",
+                message="Runtime run metadata priming failed.",
+                component="copilot_runtime.bridge",
+                operation="prime_run_metadata",
+                phase="prime_run_metadata",
+                run_id=run.run_id,
+                thread_id=run.thread_id,
+                session_id=run.thread_id,
+                request_id=request_id,
+                summary={"agentId": run.request.agent_id, "status": "failed"},
+                error=exc,
+            )
             log_runtime_chain_debug(
                 "run_start.bridge.prime_run_metadata.failed",
                 runtimeMethod=runtime_method,
@@ -266,6 +339,24 @@ class RuntimeBridge:
             runId=run.run_id,
             phase="prime_run_metadata",
             metadataKeys=tuple(sorted(metadata.keys())),
+        )
+        self._write_debug_event(
+            category=DebugLogCategory.RUNTIME,
+            level=DebugLogLevel.INFO,
+            event_name="runtime.run.metadata.succeeded",
+            message="Runtime run metadata primed.",
+            component="copilot_runtime.bridge",
+            operation="prime_run_metadata",
+            phase="prime_run_metadata",
+            run_id=run.run_id,
+            thread_id=run.thread_id,
+            session_id=run.thread_id,
+            request_id=request_id,
+            summary={
+                "agentId": run.request.agent_id,
+                "metadataKeys": tuple(sorted(metadata.keys())),
+                "status": "succeeded",
+            },
         )
         return run
 
@@ -405,6 +496,7 @@ class RuntimeBridge:
             )
             return
         if event.type == RUN_COMPLETED_EVENT_TYPE:
+            self._write_terminal_debug_event(run_id=run_id, event=event, status="completed", level=DebugLogLevel.INFO)
             assistant_text = event.payload.get("assistantText")
             self._session_store.mark_run_completed(
                 run_id,
@@ -413,12 +505,14 @@ class RuntimeBridge:
             )
             return
         if event.type == RUN_FAILED_EVENT_TYPE:
+            self._write_terminal_debug_event(run_id=run_id, event=event, status="failed", level=DebugLogLevel.ERROR)
             self._session_store.mark_run_failed(
                 run_id,
                 metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
             )
             return
         if event.type == RUN_CANCELLED_EVENT_TYPE:
+            self._write_terminal_debug_event(run_id=run_id, event=event, status="cancelled", level=DebugLogLevel.WARN)
             self._session_store.mark_run_cancelled(
                 run_id,
                 metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
@@ -439,6 +533,38 @@ class RuntimeBridge:
         run = self._session_store.get_run(run_id)
         if run is not None:
             self._session_store.touch_run(run_id, metadata=metadata)
+
+    def _write_terminal_debug_event(
+        self,
+        *,
+        run_id: str,
+        event: RuntimeRunEvent,
+        status: str,
+        level: DebugLogLevel,
+    ) -> None:
+        run = self._session_store.get_run(run_id)
+        self._write_debug_event(
+            category=DebugLogCategory.RUNTIME,
+            level=level,
+            event_name=f"runtime.run.{status}",
+            message=f"Runtime run {status}.",
+            component="copilot_runtime.bridge",
+            operation="stream_run",
+            phase=event.type,
+            run_id=run_id,
+            thread_id=None if run is None else run.thread_id,
+            session_id=None if run is None else run.thread_id,
+            summary={
+                "status": status,
+                "eventType": event.type,
+                "payloadKeys": tuple(sorted(event.payload.keys())),
+            },
+        )
+
+    def _write_debug_event(self, **kwargs: Any) -> None:
+        if self._debug_event_logger is None:
+            return
+        self._debug_event_logger.write(**kwargs)
 
     def _assistant_message_id_for_run(self, run: RuntimeRunRecord) -> str:
         stored = run.metadata.get("assistant_message_id")
