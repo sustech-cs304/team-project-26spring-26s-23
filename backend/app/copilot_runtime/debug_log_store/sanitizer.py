@@ -141,9 +141,10 @@ class Sanitizer:
 
         if isinstance(value, str):
             sanitized_text, changed = self.sanitize_text(value)
-            assert (
-                sanitized_text is not None
-            )  # pragma: no cover - sanitize_text() preserves non-None str inputs
+            if sanitized_text is None:  # pragma: no cover - defensive invariant guard
+                raise RuntimeError(
+                    "sanitize_text() returned None for a non-None string input"
+                )
             if changed:
                 return sanitized_text, True, {field_path}
             return sanitized_text, False, set()
@@ -198,9 +199,10 @@ class Sanitizer:
 
         text = repr(value)
         sanitized_text, changed = self.sanitize_text(text)
-        assert (
-            sanitized_text is not None
-        )  # pragma: no cover - sanitize_text() preserves non-None str inputs
+        if sanitized_text is None:  # pragma: no cover - defensive invariant guard
+            raise RuntimeError(
+                "sanitize_text() returned None for repr()-derived string input"
+            )
         if changed:
             return sanitized_text, True, {field_path}
         return sanitized_text, False, set()
