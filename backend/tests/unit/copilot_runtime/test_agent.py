@@ -294,6 +294,7 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
                 message_history=[],
                 model_route=_build_resolved_route(),
                 enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
                 request_options={},
             )
         )
@@ -309,6 +310,7 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
     assert result["output"] == "Weather reply"
     assert [payload["phase"] for payload in tool_events] == ["started", "completed"]
     assert all(payload["toolId"] == WEATHER_CURRENT_TOOL_ID for payload in tool_events)
+    assert not any(event.type == "tool_waiting_approval" for event in result["events"])
 
     completed_payload = tool_events[1]
     parsed_summary = json.loads(completed_payload["summary"])
@@ -1044,6 +1046,7 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
             enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -1109,6 +1112,7 @@ def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising
             enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -1163,6 +1167,7 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
             enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -1239,6 +1244,7 @@ def test_execute_bound_tool_returns_contract_integrity_failure_without_raising(
             enabled_tool_ids=frozenset({"contract.invalid"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-integrity",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -1296,6 +1302,7 @@ def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -
             workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
             default_root=str(Path.cwd().resolve(strict=False).as_posix()),
             run_id="run-file-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -1347,6 +1354,7 @@ def test_execute_bound_tool_persists_switched_default_root_within_same_run(tmp_p
         workspace_root=workspace_root.resolve(strict=False).as_posix(),
         default_root=workspace_root.resolve(strict=False).as_posix(),
         run_id="run-switch-root",
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
         debug_enabled=False,
     )
 
