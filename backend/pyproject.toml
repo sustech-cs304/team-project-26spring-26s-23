@@ -15,10 +15,6 @@ dependencies = [
     "python-pptx>=1.0.2",
     "python-docx>=1.2.0",
     "alembic>=1.18.4",
-    "ruff>=0.15.11",
-    "bandit>=1.9.4",
-    "xenon>=0.9.3",
-    "pyright>=1.1.408",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +22,10 @@ test = [
     "pytest>=9.0.2",
 ]
 dev = [
-    "pyright>=1.1.396",
+    "ruff>=0.15.11",
+    "bandit>=1.9.4",
+    "xenon>=0.9.3",
+    "pyright>=1.1.408",
 ]
 
 [build-system]
