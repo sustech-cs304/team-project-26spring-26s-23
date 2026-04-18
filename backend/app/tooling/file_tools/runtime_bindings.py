@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
 from app.tooling.contract import ToolContract, ToolInvocationContext
-from app.tooling.contract.errors import NormalizedToolError
+from app.tooling.contract.errors import NormalizedToolError, NormalizedToolErrorCode
 from app.tooling.contract.metadata import ToolMetadata
 from app.tooling.contract.results import (
     ToolResultEnvelope as ContractToolResultEnvelope,
@@ -33,6 +33,7 @@ from .protocol import (
     GlobRequest,
     GrepRequest,
     NotebookEditOperation,
+    NotebookEditOperationKind,
     NotebookEditRequest,
     ReadRequest,
     SwitchRootRequest,
@@ -604,6 +605,17 @@ class RuntimeFileToolNotebookEditContract(ToolContract):
         )
 
 
+RuntimeFileToolContract: TypeAlias = (
+    RuntimeFileToolReadContract
+    | RuntimeFileToolWriteContract
+    | RuntimeFileToolEditContract
+    | RuntimeFileToolGlobContract
+    | RuntimeFileToolGrepContract
+    | RuntimeFileToolSwitchRootContract
+    | RuntimeFileToolNotebookEditContract
+)
+
+
 def build_file_tool_read_runtime_binding(
     *, workspace_root: Path
 ) -> RuntimeExecutableToolBinding:
@@ -863,7 +875,9 @@ def _build_notebook_edit_operation(value: Any) -> NotebookEditOperation:
         raise ValueError("operations entries must be objects.")
     payload = dict(value)
     return NotebookEditOperation(
-        kind=_require_string(payload.get("kind"), field_name="operations.kind"),
+        kind=_normalize_notebook_edit_operation_kind(
+            payload.get("kind"), field_name="operations.kind"
+        ),
         cell_id=_optional_string(payload.get("cellId"), field_name="operations.cellId"),
         source=_optional_plain_string(
             payload.get("source"), field_name="operations.source"
@@ -929,6 +943,21 @@ def _optional_plain_string(value: Any, *, field_name: str) -> str | None:
     return value
 
 
+def _normalize_notebook_edit_operation_kind(
+    value: Any, *, field_name: str
+) -> NotebookEditOperationKind:
+    normalized = _require_string(value, field_name=field_name)
+    if normalized == "replace":
+        return "replace"
+    if normalized == "insert":
+        return "insert"
+    if normalized == "delete":
+        return "delete"
+    raise ValueError(
+        f"{field_name} must be one of: replace, insert, delete."
+    )
+
+
 def _coerce_int(value: Any, *, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{field_name} must be an integer.")
@@ -969,7 +998,7 @@ def _coerce_bool(value: Any, *, field_name: str) -> bool:
 
 def _build_runtime_aware_binding(
     *,
-    contract: ToolContract,
+    contract: RuntimeFileToolContract,
     workspace_root: Path,
     function_name: str,
 ) -> RuntimeExecutableToolBinding:
@@ -1007,12 +1036,36 @@ def _build_runtime_aware_binding(
 
 
 def _clone_contract_with_workspace_root(
-    *, contract: ToolContract, workspace_root: Path
-) -> ToolContract:
+    *, contract: RuntimeFileToolContract, workspace_root: Path
+) -> RuntimeFileToolContract:
     runtime_root = workspace_root.resolve(strict=False)
+    if isinstance(contract, RuntimeFileToolReadContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolReadContract(service=service)
+    if isinstance(contract, RuntimeFileToolWriteContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolWriteContract(service=service)
+    if isinstance(contract, RuntimeFileToolEditContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolEditContract(service=service)
+    if isinstance(contract, RuntimeFileToolGlobContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolGlobContract(service=service)
+    if isinstance(contract, RuntimeFileToolGrepContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolGrepContract(service=service)
+    if isinstance(contract, RuntimeFileToolSwitchRootContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolSwitchRootContract(service=service)
     path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
     service = replace(contract.service, path_policy=path_policy)
-    return replace(contract, service=service)
+    return RuntimeFileToolNotebookEditContract(service=service)
 
 
 def _get_runtime_default_root() -> Path | None:
@@ -1069,7 +1122,7 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
         return NormalizedToolError(
             code="execution_failed", message="File tool execution failed."
         )
-    code_map = {
+    code_map: dict[str, NormalizedToolErrorCode] = {
         "invalid_request": "invalid_input",
         "path_out_of_bounds": "permission_denied",
         "file_not_found": "not_found",
@@ -1086,17 +1139,20 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
         "permission_denied": "permission_denied",
         "already_exists": "conflict",
         "hash_mismatch": "conflict",
-        "vision_required": "unsupported_operation",
+        "vision_required": "execution_failed",
         "invalid_pages": "invalid_input",
         "page_range_required": "invalid_input",
     }
-    normalized_code = code_map.get(error.code, "execution_failed")
+    normalized_code = code_map.get(error.code, _DEFAULT_NORMALIZED_TOOL_ERROR_CODE)
     return NormalizedToolError(
         code=normalized_code,
         message=error.message,
         details=error.details,
         retryable=error.retryable,
     )
+
+
+_DEFAULT_NORMALIZED_TOOL_ERROR_CODE: Literal["execution_failed"] = "execution_failed"
 
 
 __all__ = [
