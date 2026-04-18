@@ -14,6 +14,7 @@ from typing import Any
 from .contracts import (
     DebugLogCategory,
     DebugLogAuditRecord,
+    DebugLogAuditSummary,
     DebugLogEnvironmentMode,
     DebugLogEvent,
     DebugLogLevel,
@@ -157,6 +158,81 @@ class DebugLogStore:
                     record.error_summary,
                 ),
             )
+
+    def count_events(self) -> int:
+        with self._connection() as connection:
+            row = connection.execute("SELECT COUNT(*) AS total FROM debug_log_events").fetchone()
+        return int(row["total"])
+
+    def delete_events_older_than(self, cutoff: datetime, *, limit: int) -> int:
+        normalized_limit = max(int(limit), 1)
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM debug_log_events
+                WHERE id IN (
+                    SELECT id
+                    FROM debug_log_events
+                    WHERE occurred_at < ?
+                    ORDER BY occurred_at ASC, id ASC
+                    LIMIT ?
+                )
+                """,
+                (cutoff.isoformat(), normalized_limit),
+            )
+        return int(cursor.rowcount if cursor.rowcount is not None else 0)
+
+    def get_latest_audit_record(self, *, action: str | None = None) -> DebugLogAuditRecord | None:
+        where_sql = ""
+        parameters: tuple[object, ...] = ()
+        if action is not None:
+            where_sql = "WHERE action = ?"
+            parameters = (action,)
+
+        with self._connection() as connection:
+            row = connection.execute(
+                f"""
+                SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, error_summary
+                FROM debug_log_audit
+                {where_sql}
+                ORDER BY occurred_at DESC, id DESC
+                LIMIT 1
+                """,
+                parameters,
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_audit_record(row)
+
+    def list_audit_records(self, *, limit: int = 20, action: str | None = None) -> tuple[DebugLogAuditRecord, ...]:
+        normalized_limit = max(int(limit), 1)
+        where_sql = ""
+        parameters: tuple[object, ...] = (normalized_limit,)
+        if action is not None:
+            where_sql = "WHERE action = ?"
+            parameters = (action, normalized_limit)
+
+        with self._connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, error_summary
+                FROM debug_log_audit
+                {where_sql}
+                ORDER BY occurred_at DESC, id DESC
+                LIMIT ?
+                """,
+                parameters,
+            ).fetchall()
+        return tuple(self._row_to_audit_record(row) for row in rows)
+
+    def get_database_file_size_bytes(self) -> int:
+        if not self.db_path.exists():
+            return 0
+        return int(self.db_path.stat().st_size)
+
+    def checkpoint_wal(self, *, mode: str = "PASSIVE") -> None:
+        with self._connection() as connection:
+            connection.execute(f"PRAGMA wal_checkpoint({mode});")
 
     def list_recent_events(self, *, limit: int = 20) -> tuple[DebugLogQueryResult, ...]:
         return self.query_events(DebugLogQueryFilter(limit=limit))
@@ -361,6 +437,17 @@ class DebugLogStore:
             error_summary=row["error_summary"],
             exception_type=row["exception_type"],
             exception_stack=row["exception_stack"],
+        )
+
+    def _row_to_audit_record(self, row: sqlite3.Row) -> DebugLogAuditRecord:
+        return DebugLogAuditRecord(
+            occurred_at=datetime.fromisoformat(row["occurred_at"]),
+            action=row["action"],
+            trigger=row["trigger_reason"],
+            status=row["status"],
+            details=json.loads(row["details_json"]),
+            deleted_rows=int(row["deleted_rows"]),
+            error_summary=row["error_summary"],
         )
 
 

@@ -98,6 +98,13 @@ def build_debug_log_router() -> APIRouter:
                 },
             ) from exc
 
+    @router.get("/diagnostics/debug-logs/maintenance-status")
+    def get_debug_log_maintenance_status(request: Request) -> dict[str, object]:
+        runtime_config = _get_runtime_config(request)
+        require_local_token(request, runtime_config)
+        service = _get_debug_log_query_service(request)
+        return service.get_maintenance_status().to_dict()
+
     return router
 
 

@@ -20,6 +20,7 @@ from ..copilot_runtime.debug_log_store import (
     DebugLogEventContext,
     DebugLogLevel,
     DebugLogQueryService,
+    RetentionCoordinator,
     DebugLogStore,
     Sanitizer,
 )
@@ -93,7 +94,11 @@ def create_app(
         runtime_config=runtime_config,
         sanitizer=Sanitizer(),
     )
-    debug_log_query_service = DebugLogQueryService(debug_log_store)
+    debug_log_retention_coordinator = RetentionCoordinator.from_runtime_config(debug_log_store, runtime_config)
+    debug_log_query_service = DebugLogQueryService(
+        debug_log_store,
+        retention_config=debug_log_retention_coordinator.config,
+    )
     debug_log_environment = _resolve_debug_log_environment(runtime_config.environment)
     history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
     runtime_history_query_service = (
@@ -121,6 +126,7 @@ def create_app(
         app.state.copilot_runtime_bridge = runtime_bridge
         app.state.copilot_runtime_history_query_service = runtime_history_query_service
         app.state.copilot_runtime_debug_log_store = debug_log_store
+        app.state.copilot_runtime_debug_log_retention_coordinator = debug_log_retention_coordinator
         app.state.copilot_runtime_debug_log_query_service = debug_log_query_service
         app.state.copilot_runtime_debug_log_environment = debug_log_environment
         debug_log_store.write_event(
@@ -144,6 +150,7 @@ def create_app(
                 ),
             )
         )
+        debug_log_retention_coordinator.run_due_maintenance(trigger="startup")
         lifecycle_manager.startup()
         try:
             yield

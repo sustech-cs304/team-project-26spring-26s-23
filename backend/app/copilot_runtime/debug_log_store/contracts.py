@@ -139,6 +139,18 @@ class DebugLogAuditRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class DebugLogRetentionConfig:
+    """Runtime-controlled retention settings for debug log maintenance."""
+
+    retention_days: int = 14
+    auto_cleanup_enabled: bool = True
+    min_cleanup_interval_seconds: int = 6 * 60 * 60
+    detailed_snapshot_retention_days: int | None = None
+    delete_batch_size: int = 500
+    vacuum_after_cleanup: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class DebugLogQueryResult:
     """Recent debug event row returned for internal verification."""
 
@@ -247,3 +259,54 @@ class DebugLogSafeEventDetail:
         payload = self.event.to_dict()
         payload["exceptionStack"] = self.exception_stack
         return payload
+
+
+@dataclass(frozen=True, slots=True)
+class DebugLogAuditSummary:
+    """Safe summary of a maintenance audit record."""
+
+    occurred_at: str
+    action: str
+    trigger: str
+    status: str
+    deleted_rows: int
+    details: dict[str, Any]
+    error_summary: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "occurredAt": self.occurred_at,
+            "action": self.action,
+            "trigger": self.trigger,
+            "status": self.status,
+            "deletedRows": self.deleted_rows,
+            "details": dict(self.details),
+            "errorSummary": self.error_summary,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DebugLogMaintenanceStatus:
+    """Read-only maintenance status exposed to protected diagnostics routes."""
+
+    retention: DebugLogRetentionConfig
+    total_events: int
+    database_file_size_bytes: int
+    last_cleanup: DebugLogAuditSummary | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "retention": {
+                "retentionDays": self.retention.retention_days,
+                "autoCleanupEnabled": self.retention.auto_cleanup_enabled,
+                "minCleanupIntervalSeconds": self.retention.min_cleanup_interval_seconds,
+                "detailedSnapshotRetentionDays": self.retention.detailed_snapshot_retention_days,
+                "deleteBatchSize": self.retention.delete_batch_size,
+                "vacuumAfterCleanup": self.retention.vacuum_after_cleanup,
+            },
+            "statistics": {
+                "totalEvents": self.total_events,
+                "databaseFileSizeBytes": self.database_file_size_bytes,
+            },
+            "lastCleanup": self.last_cleanup.to_dict() if self.last_cleanup is not None else None,
+        }

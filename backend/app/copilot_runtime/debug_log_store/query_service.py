@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from .contracts import (
+    DebugLogAuditSummary,
     DebugLogCategory,
     DebugLogLevel,
+    DebugLogMaintenanceStatus,
     DebugLogQueryFilter,
     DebugLogQueryResult,
+    DebugLogRetentionConfig,
     DebugLogSafeEventDetail,
     DebugLogSafeEventSummary,
 )
@@ -40,11 +44,24 @@ class DebugLogDetailResponse:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class DebugLogMaintenanceStatusResponse:
+    status: DebugLogMaintenanceStatus
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ok": True,
+            "version": "debug-log-v1",
+            "maintenance": self.status.to_dict(),
+        }
+
+
 class DebugLogQueryService:
     """Compose internal store queries into safe, route-friendly read models."""
 
-    def __init__(self, store: DebugLogStore) -> None:
+    def __init__(self, store: DebugLogStore, *, retention_config: DebugLogRetentionConfig | None = None) -> None:
         self._store = store
+        self._retention_config = retention_config or DebugLogRetentionConfig()
 
     def list_recent_events(
         self,
@@ -78,6 +95,28 @@ class DebugLogQueryService:
         if result is None:
             raise LookupError(f"Debug log event '{event_id}' was not found.")
         return DebugLogDetailResponse(event=self._to_safe_detail(result))
+
+    def get_maintenance_status(self) -> DebugLogMaintenanceStatusResponse:
+        latest_audit = self._store.get_latest_audit_record(action="retention.cleanup")
+        audit_summary = None
+        if latest_audit is not None:
+            audit_summary = DebugLogAuditSummary(
+                occurred_at=latest_audit.occurred_at.isoformat(),
+                action=latest_audit.action,
+                trigger=latest_audit.trigger,
+                status=latest_audit.status,
+                deleted_rows=latest_audit.deleted_rows,
+                details=dict(latest_audit.details),
+                error_summary=latest_audit.error_summary,
+            )
+        return DebugLogMaintenanceStatusResponse(
+            status=DebugLogMaintenanceStatus(
+                retention=self._retention_config,
+                total_events=self._store.count_events(),
+                database_file_size_bytes=self._store.get_database_file_size_bytes(),
+                last_cleanup=audit_summary,
+            )
+        )
 
     def list_correlation_chain(
         self,
@@ -159,5 +198,6 @@ def _normalize_optional_text(value: str | None) -> str | None:
 __all__ = [
     "DebugLogDetailResponse",
     "DebugLogListResponse",
+    "DebugLogMaintenanceStatusResponse",
     "DebugLogQueryService",
 ]

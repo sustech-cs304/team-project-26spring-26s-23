@@ -104,6 +104,44 @@ def test_debug_log_routes_validate_chain_filters_and_missing_events(tmp_path: Pa
     assert invalid_chain.json()["detail"]["code"] == "debug_log_chain_filter_required"
 
 
+def test_debug_log_routes_expose_protected_maintenance_status(tmp_path: Path) -> None:
+    app = create_app(_build_config(tmp_path, local_token="debug-token"))
+
+    with TestClient(app) as client:
+        store = app.state.copilot_runtime_debug_log_store
+        _write_event(
+            store,
+            occurred_at=datetime(2026, 4, 18, 8, 2, tzinfo=UTC),
+            event_name="runtime.maintenance.visible",
+            level=DebugLogLevel.INFO,
+            category=DebugLogCategory.RUNTIME,
+            run_id="run-maintenance",
+            thread_id="thread-maintenance",
+            request_id="request-maintenance",
+            correlation_id="corr-maintenance",
+            summary_payload={"visible": True},
+        )
+
+        unauthorized = client.get("/diagnostics/debug-logs/maintenance-status")
+        authorized = client.get(
+            "/diagnostics/debug-logs/maintenance-status",
+            headers={LOCAL_TOKEN_HEADER_NAME: "debug-token"},
+        )
+
+    assert unauthorized.status_code == 401
+    assert unauthorized.json()["detail"]["code"] == "invalid_local_token"
+
+    payload = authorized.json()
+    assert authorized.status_code == 200
+    assert payload["ok"] is True
+    assert payload["version"] == "debug-log-v1"
+    assert payload["maintenance"]["retention"]["retentionDays"] == 14
+    assert payload["maintenance"]["retention"]["autoCleanupEnabled"] is True
+    assert payload["maintenance"]["statistics"]["totalEvents"] >= 1
+    assert payload["maintenance"]["lastCleanup"]["action"] == "retention.cleanup"
+    assert payload["maintenance"]["lastCleanup"]["details"]["cutoffAt"]
+
+
 def _build_config(tmp_path: Path, *, local_token: str | None = None) -> DesktopRuntimeConfig:
     argv = [
         "--user-data-dir",
