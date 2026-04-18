@@ -56,7 +56,9 @@ class FileToolReadService:
                 reader = self.image_reader or FileToolImageReader()
                 payload = reader.read_image(request=request, resolution=resolution)
             else:
-                payload = self.text_reader.read_text(request=request, resolution=resolution)
+                payload = self.text_reader.read_text(
+                    request=request, resolution=resolution
+                )
             return ToolResultEnvelope(
                 ok=True,
                 tool="Read",
@@ -89,7 +91,9 @@ class FileToolWriteService:
         started = perf_counter()
         try:
             resolution = self.path_policy.resolve_path(request.path)
-            payload = self.text_writer.write_text(request=request, resolution=resolution)
+            payload = self.text_writer.write_text(
+                request=request, resolution=resolution
+            )
             return ToolResultEnvelope(
                 ok=True,
                 tool="Write",
@@ -155,7 +159,9 @@ class FileToolNotebookEditService:
         started = perf_counter()
         try:
             resolution = self.path_policy.resolve_path(request.path)
-            payload = self.notebook_editor.edit_notebook(request=request, resolution=resolution)
+            payload = self.notebook_editor.edit_notebook(
+                request=request, resolution=resolution
+            )
             return ToolResultEnvelope(
                 ok=True,
                 tool="NotebookEdit",

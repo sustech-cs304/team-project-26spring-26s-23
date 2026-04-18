@@ -30,9 +30,13 @@ class NotebookEditPayload:
 class FileToolNotebookEditor:
     """Apply transactional cell edits to notebook files."""
 
-    def edit_notebook(self, *, request: NotebookEditRequest, resolution: PathResolution) -> NotebookEditPayload:
+    def edit_notebook(
+        self, *, request: NotebookEditRequest, resolution: PathResolution
+    ) -> NotebookEditPayload:
         target_path = resolution.resolved_path
-        notebook, existing_raw = _load_notebook(target_path=target_path, request_path=request.path)
+        notebook, existing_raw = _load_notebook(
+            target_path=target_path, request_path=request.path
+        )
         current_hash = _build_sha256(existing_raw)
         if request.expected_hash is not None and current_hash != request.expected_hash:
             raise FileToolError(
@@ -49,9 +53,13 @@ class FileToolNotebookEditor:
         cells = notebook["cells"]
         _normalize_missing_cell_ids(cells)
         for operation_index, operation in enumerate(request.operations):
-            _apply_operation(cells=cells, operation=operation, operation_index=operation_index)
+            _apply_operation(
+                cells=cells, operation=operation, operation_index=operation_index
+            )
 
-        updated_raw = json.dumps(notebook, ensure_ascii=False, indent=1).encode("utf-8") + b"\n"
+        updated_raw = (
+            json.dumps(notebook, ensure_ascii=False, indent=1).encode("utf-8") + b"\n"
+        )
         _write_notebook_if_hash_matches(
             target_path=target_path,
             raw=updated_raw,
@@ -80,7 +88,9 @@ class FileToolNotebookEditor:
         )
 
 
-def _load_notebook(*, target_path: Path, request_path: str) -> tuple[dict[str, Any], bytes]:
+def _load_notebook(
+    *, target_path: Path, request_path: str
+) -> tuple[dict[str, Any], bytes]:
     if not target_path.exists():
         raise FileToolError(
             code="file_not_found",
@@ -122,7 +132,9 @@ def _normalize_missing_cell_ids(cells: list[dict[str, Any]]) -> None:
     next_generated_index = 1
     for cell in cells:
         if not isinstance(cell, dict):
-            raise FileToolError(code="invalid_request", message="Notebook cell entries must be objects.")
+            raise FileToolError(
+                code="invalid_request", message="Notebook cell entries must be objects."
+            )
         if not _has_real_cell_id(cell):
             while True:
                 candidate = f"cell-{next_generated_index}"
@@ -133,9 +145,16 @@ def _normalize_missing_cell_ids(cells: list[dict[str, Any]]) -> None:
                     break
 
 
-def _apply_operation(*, cells: list[dict[str, Any]], operation: NotebookEditOperation, operation_index: int) -> None:
+def _apply_operation(
+    *,
+    cells: list[dict[str, Any]],
+    operation: NotebookEditOperation,
+    operation_index: int,
+) -> None:
     if operation.kind == "replace":
-        cell_index = _find_cell_index(cells=cells, cell_id=operation.cell_id, operation_index=operation_index)
+        cell_index = _find_cell_index(
+            cells=cells, cell_id=operation.cell_id, operation_index=operation_index
+        )
         target_cell = cells[cell_index]
         target_cell["source"] = _split_source(operation.source or "")
         if target_cell.get("cell_type") == "code":
@@ -143,7 +162,9 @@ def _apply_operation(*, cells: list[dict[str, Any]], operation: NotebookEditOper
             target_cell["outputs"] = []
         return
     if operation.kind == "delete":
-        cell_index = _find_cell_index(cells=cells, cell_id=operation.cell_id, operation_index=operation_index)
+        cell_index = _find_cell_index(
+            cells=cells, cell_id=operation.cell_id, operation_index=operation_index
+        )
         del cells[cell_index]
         return
     if operation.kind == "insert":
@@ -153,7 +174,11 @@ def _apply_operation(*, cells: list[dict[str, Any]], operation: NotebookEditOper
                 message="Notebook insert operations require afterCellId.",
                 details={"operationIndex": operation_index},
             )
-        anchor_index = _find_cell_index(cells=cells, cell_id=operation.after_cell_id, operation_index=operation_index)
+        anchor_index = _find_cell_index(
+            cells=cells,
+            cell_id=operation.after_cell_id,
+            operation_index=operation_index,
+        )
         cells.insert(anchor_index + 1, _build_inserted_cell(operation=operation))
         return
     raise FileToolError(
@@ -163,7 +188,9 @@ def _apply_operation(*, cells: list[dict[str, Any]], operation: NotebookEditOper
     )
 
 
-def _find_cell_index(*, cells: list[dict[str, Any]], cell_id: str | None, operation_index: int) -> int:
+def _find_cell_index(
+    *, cells: list[dict[str, Any]], cell_id: str | None, operation_index: int
+) -> int:
     if cell_id is None:
         raise FileToolError(
             code="invalid_request",
@@ -207,7 +234,9 @@ def _write_notebook_if_hash_matches(
     request_path: str,
     expected_hash: str | None,
 ) -> None:
-    temp_fd, temp_name = tempfile.mkstemp(prefix=f".{target_path.name}.", suffix=".tmp", dir=target_path.parent)
+    temp_fd, temp_name = tempfile.mkstemp(
+        prefix=f".{target_path.name}.", suffix=".tmp", dir=target_path.parent
+    )
     temp_path = Path(temp_name)
     try:
         with open(temp_fd, "wb", closefd=True) as handle:

@@ -42,7 +42,9 @@ class HostArtifact:
         object.__setattr__(self, "artifact_id", normalized_artifact_id)
         object.__setattr__(self, "uri", _normalize_optional_text(self.uri))
         object.__setattr__(self, "name", _normalize_optional_text(self.name))
-        object.__setattr__(self, "content_type", _normalize_optional_text(self.content_type))
+        object.__setattr__(
+            self, "content_type", _normalize_optional_text(self.content_type)
+        )
         object.__setattr__(self, "metadata", _normalize_metadata(self.metadata))
 
     def to_dict(self) -> dict[str, Any]:

@@ -15,7 +15,9 @@ from .path_policy import PathResolution
 from .protocol import PathMetadata, ReadRequest, ReadResult
 from .text_reader import _build_sha256
 
-_SUPPORTED_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"})
+_SUPPORTED_IMAGE_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+)
 _RASTER_MIME_BY_SUFFIX = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -38,7 +40,9 @@ class ImageReadPayload:
 class FileToolImageReader:
     """Read image files into a structured payload, but only when vision is enabled."""
 
-    def read_image(self, *, request: ReadRequest, resolution: PathResolution) -> ImageReadPayload:
+    def read_image(
+        self, *, request: ReadRequest, resolution: PathResolution
+    ) -> ImageReadPayload:
         target_path = resolution.resolved_path
         if not target_path.exists():
             raise FileToolError(
@@ -68,7 +72,9 @@ class FileToolImageReader:
         file_size = len(raw)
         suffix = target_path.suffix.lower()
         mime_type = _resolve_mime_type(path=target_path, raw=raw)
-        width, height = _resolve_dimensions(path=target_path, raw=raw, mime_type=mime_type)
+        width, height = _resolve_dimensions(
+            path=target_path, raw=raw, mime_type=mime_type
+        )
         path_metadata = PathMetadata(
             path=request.path,
             resolved_path=target_path.as_posix(),
@@ -130,7 +136,9 @@ def _resolve_mime_type(*, path: Path, raw: bytes) -> str:
     return _RASTER_MIME_BY_SUFFIX.get(suffix, "application/octet-stream")
 
 
-def _resolve_dimensions(*, path: Path, raw: bytes, mime_type: str) -> tuple[int | None, int | None]:
+def _resolve_dimensions(
+    *, path: Path, raw: bytes, mime_type: str
+) -> tuple[int | None, int | None]:
     try:
         if mime_type == "image/png":
             return _read_png_dimensions(raw)
@@ -206,13 +214,27 @@ def _read_jpeg_dimensions(raw: bytes) -> tuple[int | None, int | None]:
             continue
         if index + 2 > len(raw):
             break
-        segment_length = struct.unpack(">H", raw[index:index + 2])[0]
+        segment_length = struct.unpack(">H", raw[index : index + 2])[0]
         if segment_length < 2 or index + segment_length > len(raw):
             break
-        if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+        if marker in {
+            0xC0,
+            0xC1,
+            0xC2,
+            0xC3,
+            0xC5,
+            0xC6,
+            0xC7,
+            0xC9,
+            0xCA,
+            0xCB,
+            0xCD,
+            0xCE,
+            0xCF,
+        }:
             if index + 7 > len(raw):
                 break
-            height, width = struct.unpack(">HH", raw[index + 3:index + 7])
+            height, width = struct.unpack(">HH", raw[index + 3 : index + 7])
             return int(width), int(height)
         index += segment_length
     return None, None

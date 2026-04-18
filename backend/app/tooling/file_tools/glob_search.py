@@ -12,6 +12,8 @@ from .path_policy import PathResolution, is_hidden_path
 from .protocol import GlobMatch, GlobRequest, PathMetadata
 
 _DEFAULT_MAX_RESULTS = 500
+
+
 @dataclass(frozen=True, slots=True)
 class GlobSearchPayload:
     """Resolved glob result payload before service/runtime envelope mapping."""
@@ -35,19 +37,27 @@ class GlobSearchPayload:
 class FileToolGlobSearcher:
     """Discover paths using glob-like patterns without reading file contents."""
 
-    def search(self, *, request: GlobRequest, resolution: PathResolution) -> GlobSearchPayload:
+    def search(
+        self, *, request: GlobRequest, resolution: PathResolution
+    ) -> GlobSearchPayload:
         base_path = resolution.resolved_path
         if not base_path.exists():
             raise FileToolError(
                 code="file_not_found",
                 message="Base path does not exist.",
-                details={"path": request.base_path, "resolvedPath": base_path.as_posix()},
+                details={
+                    "path": request.base_path,
+                    "resolvedPath": base_path.as_posix(),
+                },
             )
         if not base_path.is_dir():
             raise FileToolError(
                 code="not_a_directory",
                 message="Base path must resolve to a directory.",
-                details={"path": request.base_path, "resolvedPath": base_path.as_posix()},
+                details={
+                    "path": request.base_path,
+                    "resolvedPath": base_path.as_posix(),
+                },
             )
 
         matcher = _compile_pattern(request.pattern)
@@ -57,7 +67,9 @@ class FileToolGlobSearcher:
 
         for candidate in _iter_workspace_entries(base_path):
             relative_candidate = candidate.relative_to(base_path)
-            if not request.include_hidden and is_hidden_path(candidate, workspace_root=resolution.effective_root):
+            if not request.include_hidden and is_hidden_path(
+                candidate, workspace_root=resolution.effective_root
+            ):
                 continue
             if not _matches_candidate(matcher, relative_candidate):
                 continue
@@ -75,7 +87,9 @@ class FileToolGlobSearcher:
                     symlink_policy=resolution.symlink_policy,
                 ),
                 is_directory=candidate.is_dir(),
-                is_hidden=is_hidden_path(candidate, workspace_root=resolution.effective_root),
+                is_hidden=is_hidden_path(
+                    candidate, workspace_root=resolution.effective_root
+                ),
                 size_bytes=None if candidate.is_dir() else stat.st_size,
                 modified_time_ms=int(stat.st_mtime * 1000),
             )
@@ -98,7 +112,9 @@ class FileToolGlobSearcher:
 def _compile_pattern(pattern: str) -> re.Pattern[str]:
     normalized = pattern.strip()
     if normalized == "":
-        raise FileToolError(code="invalid_pattern", message="pattern must be a non-empty string.")
+        raise FileToolError(
+            code="invalid_pattern", message="pattern must be a non-empty string."
+        )
     try:
         return re.compile(translate(normalized))
     except re.error as exc:

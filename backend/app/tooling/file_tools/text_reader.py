@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-from pathlib import Path
 
 from .errors import FileToolError
 from .path_policy import PathResolution
@@ -26,7 +25,9 @@ class TextReadPayload:
 class FileToolTextReader:
     """Read text files with line-based pagination and minimal binary detection."""
 
-    def read_text(self, *, request: ReadRequest, resolution: PathResolution) -> TextReadPayload:
+    def read_text(
+        self, *, request: ReadRequest, resolution: PathResolution
+    ) -> TextReadPayload:
         target_path = resolution.resolved_path
         if not target_path.exists():
             raise FileToolError(
@@ -70,7 +71,11 @@ class FileToolTextReader:
 
         lines = text.splitlines()
         start_index = request.offset - 1
-        selected_lines = lines[start_index : start_index + request.limit] if start_index < len(lines) else []
+        selected_lines = (
+            lines[start_index : start_index + request.limit]
+            if start_index < len(lines)
+            else []
+        )
         line_count = len(selected_lines)
         truncated = start_index + line_count < len(lines)
         next_offset = request.offset + line_count if truncated else None

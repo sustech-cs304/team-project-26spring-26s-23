@@ -59,7 +59,6 @@ def _require_non_empty_text(value: str, *, field_name: str) -> str:
     return normalized
 
 
-
 def _normalize_optional_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -67,10 +66,8 @@ def _normalize_optional_text(value: str | None) -> str | None:
     return normalized or None
 
 
-
 def _normalize_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
     return deepcopy(dict(value))
-
 
 
 def _normalize_tags(tags: Sequence[str]) -> tuple[str, ...]:
@@ -83,7 +80,6 @@ def _normalize_tags(tags: Sequence[str]) -> tuple[str, ...]:
         seen.add(normalized_tag)
         normalized_tags.append(normalized_tag)
     return tuple(normalized_tags)
-
 
 
 def _normalize_direct_capabilities(
@@ -104,7 +100,6 @@ def _normalize_direct_capabilities(
     return tuple(normalized_capabilities)
 
 
-
 def _build_mcp_tool_name(tool_id: str) -> str:
     normalized = re.sub(r"[^0-9a-zA-Z_-]+", "_", tool_id.strip()).strip("_").lower()
     if normalized == "":
@@ -114,12 +109,10 @@ def _build_mcp_tool_name(tool_id: str) -> str:
     return normalized
 
 
-
 def _resolve_metadata(tool_or_metadata: ToolContract | ToolMetadata) -> ToolMetadata:
     if isinstance(tool_or_metadata, ToolMetadata):
         return tool_or_metadata
     return tool_or_metadata.metadata
-
 
 
 def _derive_mcp_annotations(metadata: ToolMetadata) -> dict[str, Any]:
@@ -133,7 +126,6 @@ def _derive_mcp_annotations(metadata: ToolMetadata) -> dict[str, Any]:
     elif metadata.idempotent is False:
         annotations["destructiveHint"] = True
     return annotations
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +151,9 @@ class MCPToolDescriptor:
             "name",
             _require_non_empty_text(self.name, field_name="name"),
         )
-        object.__setattr__(self, "description", _normalize_optional_text(self.description))
+        object.__setattr__(
+            self, "description", _normalize_optional_text(self.description)
+        )
         object.__setattr__(self, "input_schema", _normalize_metadata(self.input_schema))
         object.__setattr__(self, "annotations", _normalize_metadata(self.annotations))
         object.__setattr__(self, "tags", _normalize_tags(self.tags))
@@ -182,9 +176,10 @@ class MCPToolDescriptor:
         if self.tags:
             payload["tags"] = list(self.tags)
         if self.contract_annotations:
-            payload["contractAnnotations"] = _normalize_metadata(self.contract_annotations)
+            payload["contractAnnotations"] = _normalize_metadata(
+                self.contract_annotations
+            )
         return payload
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +218,6 @@ class MCPToolCapabilityReadiness:
         return payload
 
 
-
 @dataclass(frozen=True, slots=True)
 class MCPToolReadinessReport:
     """Structured readiness report for exposing a contract-ready tool via a future MCP adapter."""
@@ -245,7 +239,9 @@ class MCPToolReadinessReport:
         )
         object.__setattr__(self, "blocking_reasons", tuple(self.blocking_reasons))
         object.__setattr__(self, "warnings", tuple(self.warnings))
-        object.__setattr__(self, "capability_readiness", tuple(self.capability_readiness))
+        object.__setattr__(
+            self, "capability_readiness", tuple(self.capability_readiness)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -260,7 +256,6 @@ class MCPToolReadinessReport:
             "blockingReasons": list(self.blocking_reasons),
             "warnings": list(self.warnings),
         }
-
 
 
 def build_mcp_tool_descriptor(
@@ -283,17 +278,22 @@ def build_mcp_tool_descriptor(
     )
 
 
-
 def assess_mcp_tool_readiness(
     tool_or_metadata: ToolContract | ToolMetadata,
     *,
-    direct_host_capabilities: Sequence[HostCapabilityName] = DEFAULT_MCP_DIRECT_HOST_CAPABILITIES,
+    direct_host_capabilities: Sequence[
+        HostCapabilityName
+    ] = DEFAULT_MCP_DIRECT_HOST_CAPABILITIES,
 ) -> MCPToolReadinessReport:
     """Assess whether a contract-ready tool can be exposed through a minimal future MCP adapter."""
 
     metadata = _resolve_metadata(tool_or_metadata)
-    normalized_direct_capabilities = _normalize_direct_capabilities(direct_host_capabilities)
-    supported_input_schema = metadata.input_schema.format in MCP_SUPPORTED_INPUT_SCHEMA_FORMATS
+    normalized_direct_capabilities = _normalize_direct_capabilities(
+        direct_host_capabilities
+    )
+    supported_input_schema = (
+        metadata.input_schema.format in MCP_SUPPORTED_INPUT_SCHEMA_FORMATS
+    )
     descriptor = build_mcp_tool_descriptor(metadata)
 
     capability_readiness: list[MCPToolCapabilityReadiness] = []
@@ -348,12 +348,13 @@ def assess_mcp_tool_readiness(
     )
 
 
-
 def assess_default_contract_mcp_readiness() -> tuple[MCPToolReadinessReport, ...]:
     """Assess MCP readiness for the currently approved Blackboard and TIS facade tools."""
 
     from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
-    from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+    from app.integrations.sustech.teaching_information_system import (
+        get_tis_tool_contracts,
+    )
 
     contracts = (
         *get_blackboard_tool_contracts(),

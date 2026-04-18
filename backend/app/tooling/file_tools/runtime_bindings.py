@@ -10,7 +10,9 @@ from typing import Any
 from app.tooling.contract import ToolContract, ToolInvocationContext
 from app.tooling.contract.errors import NormalizedToolError
 from app.tooling.contract.metadata import ToolMetadata
-from app.tooling.contract.results import ToolResultEnvelope as ContractToolResultEnvelope
+from app.tooling.contract.results import (
+    ToolResultEnvelope as ContractToolResultEnvelope,
+)
 from app.tooling.contract.schema import ToolSchema
 from app.tooling.host_capabilities import ToolHostCapabilities
 from app.tooling.runtime_adapter.copilot_runtime import (
@@ -211,11 +213,17 @@ _FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA = ToolSchema(
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
-                        "kind": {"type": "string", "enum": ["replace", "insert", "delete"]},
+                        "kind": {
+                            "type": "string",
+                            "enum": ["replace", "insert", "delete"],
+                        },
                         "cellId": {"type": "string", "minLength": 1},
                         "source": {"type": "string"},
                         "afterCellId": {"type": "string", "minLength": 1},
-                        "cellType": {"type": "string", "enum": ["code", "markdown", "raw"]},
+                        "cellType": {
+                            "type": "string",
+                            "enum": ["code", "markdown", "raw"],
+                        },
                     },
                     "required": ["kind"],
                 },
@@ -567,7 +575,9 @@ class RuntimeFileToolNotebookEditContract(ToolContract):
         )
 
 
-def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_read_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolReadContract(
         service=FileToolReadService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -582,7 +592,9 @@ def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_write_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_write_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolWriteContract(
         service=FileToolWriteService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -596,7 +608,9 @@ def build_file_tool_write_runtime_binding(*, workspace_root: Path) -> RuntimeExe
     )
 
 
-def build_file_tool_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_edit_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolEditContract(
         service=FileToolEditService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -610,7 +624,9 @@ def build_file_tool_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_glob_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolGlobContract(
         service=FileToolGlobService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -624,7 +640,9 @@ def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_grep_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_grep_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolGrepContract(
         service=FileToolGrepService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -638,7 +656,9 @@ def build_file_tool_grep_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_notebook_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_notebook_edit_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolNotebookEditContract(
         service=FileToolNotebookEditService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -652,7 +672,9 @@ def build_file_tool_notebook_edit_runtime_binding(*, workspace_root: Path) -> Ru
     )
 
 
-def build_file_tool_switch_root_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_switch_root_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolSwitchRootContract(
         service=FileToolSwitchRootService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -665,7 +687,9 @@ def build_file_tool_switch_root_runtime_binding(*, workspace_root: Path) -> Runt
     )
 
 
-def _build_read_request(arguments: Mapping[str, Any] | None, *, vision_enabled: bool = False) -> ReadRequest:
+def _build_read_request(
+    arguments: Mapping[str, Any] | None, *, vision_enabled: bool = False
+) -> ReadRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
     audit = _build_audit_metadata(audit_payload)
@@ -673,8 +697,12 @@ def _build_read_request(arguments: Mapping[str, Any] | None, *, vision_enabled: 
         path=_require_string(payload.get("path"), field_name="path"),
         offset=_coerce_int(payload.get("offset", 1), field_name="offset"),
         limit=_coerce_int(payload.get("limit", 2000), field_name="limit"),
-        include_metadata=_coerce_bool(payload.get("includeMetadata", True), field_name="includeMetadata"),
-        parser_hint=_optional_string(payload.get("parserHint"), field_name="parserHint"),
+        include_metadata=_coerce_bool(
+            payload.get("includeMetadata", True), field_name="includeMetadata"
+        ),
+        parser_hint=_optional_string(
+            payload.get("parserHint"), field_name="parserHint"
+        ),
         pages=_coerce_optional_pages(payload.get("pages"), field_name="pages"),
         vision_enabled=vision_enabled,
         audit=audit,
@@ -688,9 +716,13 @@ def _build_write_request(arguments: Mapping[str, Any] | None) -> WriteRequest:
     return WriteRequest(
         path=_require_string(payload.get("path"), field_name="path"),
         content=_require_plain_string(payload.get("content"), field_name="content"),
-        encoding=_require_string(payload.get("encoding", "utf-8"), field_name="encoding"),
+        encoding=_require_string(
+            payload.get("encoding", "utf-8"), field_name="encoding"
+        ),
         overwrite=_coerce_bool(payload.get("overwrite", True), field_name="overwrite"),
-        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        expected_hash=_optional_string(
+            payload.get("expectedHash"), field_name="expectedHash"
+        ),
         atomic=_coerce_bool(payload.get("atomic", True), field_name="atomic"),
         audit=audit,
     )
@@ -703,10 +735,18 @@ def _build_edit_request(arguments: Mapping[str, Any] | None) -> EditRequest:
     return EditRequest(
         path=_require_string(payload.get("path"), field_name="path"),
         old_string=_require_string(payload.get("oldString"), field_name="oldString"),
-        new_string=_require_plain_string(payload.get("newString"), field_name="newString"),
-        replace_all=_coerce_bool(payload.get("replaceAll", False), field_name="replaceAll"),
-        expected_occurrences=_coerce_optional_int(payload.get("expectedOccurrences"), field_name="expectedOccurrences"),
-        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        new_string=_require_plain_string(
+            payload.get("newString"), field_name="newString"
+        ),
+        replace_all=_coerce_bool(
+            payload.get("replaceAll", False), field_name="replaceAll"
+        ),
+        expected_occurrences=_coerce_optional_int(
+            payload.get("expectedOccurrences"), field_name="expectedOccurrences"
+        ),
+        expected_hash=_optional_string(
+            payload.get("expectedHash"), field_name="expectedHash"
+        ),
         audit=audit,
     )
 
@@ -718,8 +758,12 @@ def _build_glob_request(arguments: Mapping[str, Any] | None) -> GlobRequest:
     return GlobRequest(
         base_path=_require_string(payload.get("basePath", "."), field_name="basePath"),
         pattern=_require_string(payload.get("pattern"), field_name="pattern"),
-        include_hidden=_coerce_bool(payload.get("includeHidden", False), field_name="includeHidden"),
-        max_results=_coerce_optional_int(payload.get("maxResults"), field_name="maxResults"),
+        include_hidden=_coerce_bool(
+            payload.get("includeHidden", False), field_name="includeHidden"
+        ),
+        max_results=_coerce_optional_int(
+            payload.get("maxResults"), field_name="maxResults"
+        ),
         audit=audit,
     )
 
@@ -731,33 +775,51 @@ def _build_grep_request(arguments: Mapping[str, Any] | None) -> GrepRequest:
     return GrepRequest(
         base_path=_require_string(payload.get("basePath", "."), field_name="basePath"),
         pattern=_require_string(payload.get("pattern"), field_name="pattern"),
-        file_glob=_require_string(payload.get("fileGlob", "**/*"), field_name="fileGlob"),
+        file_glob=_require_string(
+            payload.get("fileGlob", "**/*"), field_name="fileGlob"
+        ),
         is_regex=_coerce_bool(payload.get("isRegex", False), field_name="isRegex"),
-        case_sensitive=_coerce_bool(payload.get("caseSensitive", False), field_name="caseSensitive"),
-        context_lines=_coerce_non_negative_int(payload.get("contextLines", 0), field_name="contextLines"),
-        include_hidden=_coerce_bool(payload.get("includeHidden", False), field_name="includeHidden"),
-        max_results=_coerce_optional_int(payload.get("maxResults"), field_name="maxResults"),
+        case_sensitive=_coerce_bool(
+            payload.get("caseSensitive", False), field_name="caseSensitive"
+        ),
+        context_lines=_coerce_non_negative_int(
+            payload.get("contextLines", 0), field_name="contextLines"
+        ),
+        include_hidden=_coerce_bool(
+            payload.get("includeHidden", False), field_name="includeHidden"
+        ),
+        max_results=_coerce_optional_int(
+            payload.get("maxResults"), field_name="maxResults"
+        ),
         audit=audit,
     )
 
 
-def _build_notebook_edit_request(arguments: Mapping[str, Any] | None) -> NotebookEditRequest:
+def _build_notebook_edit_request(
+    arguments: Mapping[str, Any] | None,
+) -> NotebookEditRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
     audit = _build_audit_metadata(audit_payload)
     operations_payload = payload.get("operations")
     if not isinstance(operations_payload, list):
         raise ValueError("operations must be an array.")
-    operations = tuple(_build_notebook_edit_operation(item) for item in operations_payload)
+    operations = tuple(
+        _build_notebook_edit_operation(item) for item in operations_payload
+    )
     return NotebookEditRequest(
         path=_require_string(payload.get("path"), field_name="path"),
         operations=operations,
-        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        expected_hash=_optional_string(
+            payload.get("expectedHash"), field_name="expectedHash"
+        ),
         audit=audit,
     )
 
 
-def _build_switch_root_request(arguments: Mapping[str, Any] | None) -> SwitchRootRequest:
+def _build_switch_root_request(
+    arguments: Mapping[str, Any] | None,
+) -> SwitchRootRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
     audit = _build_audit_metadata(audit_payload)
@@ -767,7 +829,6 @@ def _build_switch_root_request(arguments: Mapping[str, Any] | None) -> SwitchRoo
     )
 
 
-
 def _build_notebook_edit_operation(value: Any) -> NotebookEditOperation:
     if not isinstance(value, Mapping):
         raise ValueError("operations entries must be objects.")
@@ -775,9 +836,15 @@ def _build_notebook_edit_operation(value: Any) -> NotebookEditOperation:
     return NotebookEditOperation(
         kind=_require_string(payload.get("kind"), field_name="operations.kind"),
         cell_id=_optional_string(payload.get("cellId"), field_name="operations.cellId"),
-        source=_optional_plain_string(payload.get("source"), field_name="operations.source"),
-        after_cell_id=_optional_string(payload.get("afterCellId"), field_name="operations.afterCellId"),
-        cell_type=_optional_string(payload.get("cellType"), field_name="operations.cellType"),
+        source=_optional_plain_string(
+            payload.get("source"), field_name="operations.source"
+        ),
+        after_cell_id=_optional_string(
+            payload.get("afterCellId"), field_name="operations.afterCellId"
+        ),
+        cell_type=_optional_string(
+            payload.get("cellType"), field_name="operations.cellType"
+        ),
     )
 
 
@@ -795,7 +862,9 @@ def _build_audit_metadata(value: Any) -> AuditMetadata | None:
     return AuditMetadata(
         actor=_optional_string(payload.get("actor"), field_name="audit.actor"),
         intent=_optional_string(payload.get("intent"), field_name="audit.intent"),
-        session_id=_optional_string(payload.get("sessionId"), field_name="audit.sessionId"),
+        session_id=_optional_string(
+            payload.get("sessionId"), field_name="audit.sessionId"
+        ),
         trace_id=_optional_string(payload.get("traceId"), field_name="audit.traceId"),
         reason=_optional_string(payload.get("reason"), field_name="audit.reason"),
         extra=extras,
@@ -854,7 +923,9 @@ def _coerce_optional_pages(value: Any, *, field_name: str) -> tuple[int, int] | 
     if value is None:
         return None
     if not isinstance(value, list) or len(value) != 2:
-        raise ValueError(f"{field_name} must be an array of exactly two integers when provided.")
+        raise ValueError(
+            f"{field_name} must be an array of exactly two integers when provided."
+        )
     return (
         _coerce_int(value[0], field_name=f"{field_name}[0]"),
         _coerce_int(value[1], field_name=f"{field_name}[1]"),
@@ -873,7 +944,9 @@ def _build_runtime_aware_binding(
     workspace_root: Path,
     function_name: str,
 ) -> RuntimeExecutableToolBinding:
-    binding = build_contract_runtime_binding(contract, kind="builtin", function_name=function_name)
+    binding = build_contract_runtime_binding(
+        contract, kind="builtin", function_name=function_name
+    )
     base_execute = binding.execute
     resolved_workspace_root = workspace_root.resolve(strict=False)
 
@@ -904,16 +977,19 @@ def _build_runtime_aware_binding(
     )
 
 
-def _clone_contract_with_workspace_root(*, contract: ToolContract, workspace_root: Path) -> ToolContract:
+def _clone_contract_with_workspace_root(
+    *, contract: ToolContract, workspace_root: Path
+) -> ToolContract:
     runtime_root = workspace_root.resolve(strict=False)
     path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
     service = replace(contract.service, path_policy=path_policy)
     return replace(contract, service=service)
 
 
-
 def _get_runtime_default_root() -> Path | None:
-    default_root_value = get_runtime_context_metadata_value(("fileSystemState", "defaultRoot"))
+    default_root_value = get_runtime_context_metadata_value(
+        ("fileSystemState", "defaultRoot")
+    )
     if not isinstance(default_root_value, str):
         default_root_value = get_runtime_context_metadata_value("defaultRoot")
     if not isinstance(default_root_value, str):
@@ -922,7 +998,6 @@ def _get_runtime_default_root() -> Path | None:
     if normalized == "":
         return None
     return Path(normalized).resolve(strict=False)
-
 
 
 def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
@@ -946,8 +1021,14 @@ def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
         if "vision" in normalized_tags or "multimodal" in normalized_tags:
             return True
     model_id = str(resolved_model_route.get("modelId") or "").lower()
-    provider = str(resolved_model_route.get("providerId") or resolved_model_route.get("provider") or "").lower()
-    if provider == "openai" and any(token in model_id for token in ("gpt-4.1", "gpt-4o", "o4")):
+    provider = str(
+        resolved_model_route.get("providerId")
+        or resolved_model_route.get("provider")
+        or ""
+    ).lower()
+    if provider == "openai" and any(
+        token in model_id for token in ("gpt-4.1", "gpt-4o", "o4")
+    ):
         return True
     if provider == "google" and "gemini" in model_id:
         return True
@@ -956,7 +1037,9 @@ def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
 
 def _map_file_tool_error(error: Any) -> NormalizedToolError:
     if error is None:
-        return NormalizedToolError(code="execution_failed", message="File tool execution failed.")
+        return NormalizedToolError(
+            code="execution_failed", message="File tool execution failed."
+        )
     code_map = {
         "invalid_request": "invalid_input",
         "path_out_of_bounds": "permission_denied",

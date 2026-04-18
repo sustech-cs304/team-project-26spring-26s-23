@@ -8,7 +8,14 @@ from typing import Any
 
 from .errors import FileToolError
 from .path_policy import PathResolution
-from .protocol import NotebookCell, NotebookOutputSummary, NotebookReadResult, PathMetadata, ReadRequest, ReadResult
+from .protocol import (
+    NotebookCell,
+    NotebookOutputSummary,
+    NotebookReadResult,
+    PathMetadata,
+    ReadRequest,
+    ReadResult,
+)
 from .text_reader import _build_sha256
 
 
@@ -23,7 +30,9 @@ class NotebookReadPayload:
 class FileToolNotebookReader:
     """Read `.ipynb` files into a structured cell-oriented representation."""
 
-    def read_notebook(self, *, request: ReadRequest, resolution: PathResolution) -> NotebookReadPayload:
+    def read_notebook(
+        self, *, request: ReadRequest, resolution: PathResolution
+    ) -> NotebookReadPayload:
         target_path = resolution.resolved_path
         if not target_path.exists():
             raise FileToolError(
@@ -49,7 +58,9 @@ class FileToolNotebookReader:
                 details={"path": request.path, "resolvedPath": target_path.as_posix()},
             ) from exc
 
-        if not isinstance(notebook, dict) or not isinstance(notebook.get("cells"), list):
+        if not isinstance(notebook, dict) or not isinstance(
+            notebook.get("cells"), list
+        ):
             raise FileToolError(
                 code="invalid_request",
                 message="Notebook file must be a JSON object with a cells array.",
@@ -76,7 +87,9 @@ class FileToolNotebookReader:
         notebook_result = NotebookReadResult(
             path=path_metadata,
             notebook_format=_normalize_optional_int(notebook.get("nbformat")),
-            notebook_format_minor=_normalize_optional_int(notebook.get("nbformat_minor")),
+            notebook_format_minor=_normalize_optional_int(
+                notebook.get("nbformat_minor")
+            ),
             cell_count=len(cells_payload),
             cells=tuple(NotebookCell(**cell_payload) for cell_payload in cells_payload),
             metadata={
@@ -117,7 +130,10 @@ def _build_cell_payload(*, cell: Any, index: int) -> dict[str, Any]:
     if raw_outputs is None:
         raw_outputs = []
     if not isinstance(raw_outputs, list):
-        raise FileToolError(code="invalid_request", message="Notebook outputs must be an array when present.")
+        raise FileToolError(
+            code="invalid_request",
+            message="Notebook outputs must be an array when present.",
+        )
     outputs = tuple(
         _summarize_output(output=output, index=output_index)
         for output_index, output in enumerate(raw_outputs)
@@ -134,16 +150,22 @@ def _normalize_missing_cell_ids(cells: list[Any]) -> None:
     next_generated_index = 1
     for cell in cells:
         if not isinstance(cell, dict):
-            raise FileToolError(code="invalid_request", message="Notebook cell entries must be objects.")
+            raise FileToolError(
+                code="invalid_request", message="Notebook cell entries must be objects."
+            )
         raw_cell_id = cell.get("id")
         if isinstance(raw_cell_id, str) and raw_cell_id.strip() != "":
             continue
         while True:
             candidate = f"cell-{next_generated_index}"
             next_generated_index += 1
-            if candidate not in {existing.get("id") for existing in cells if isinstance(existing, dict)}:
+            if candidate not in {
+                existing.get("id") for existing in cells if isinstance(existing, dict)
+            }:
                 cell["id"] = candidate
                 break
+
+
 def _resolve_cell_id(*, cell: dict[str, Any], index: int) -> str:
     raw_cell_id = cell.get("id")
     if isinstance(raw_cell_id, str) and raw_cell_id.strip() != "":
@@ -153,7 +175,10 @@ def _resolve_cell_id(*, cell: dict[str, Any], index: int) -> str:
 
 def _normalize_cell_type(value: Any) -> str:
     if not isinstance(value, str) or value.strip() == "":
-        raise FileToolError(code="invalid_request", message="Notebook cell_type must be a non-empty string.")
+        raise FileToolError(
+            code="invalid_request",
+            message="Notebook cell_type must be a non-empty string.",
+        )
     return value.strip()
 
 
@@ -164,16 +189,30 @@ def _normalize_source(value: Any) -> str:
         chunks: list[str] = []
         for item in value:
             if not isinstance(item, str):
-                raise FileToolError(code="invalid_request", message="Notebook source items must be strings.")
+                raise FileToolError(
+                    code="invalid_request",
+                    message="Notebook source items must be strings.",
+                )
             chunks.append(item)
         return "".join(chunks)
-    raise FileToolError(code="invalid_request", message="Notebook source must be a string or string array.")
+    raise FileToolError(
+        code="invalid_request",
+        message="Notebook source must be a string or string array.",
+    )
 
 
 def _summarize_output(*, output: Any, index: int) -> NotebookOutputSummary:
     if not isinstance(output, dict):
-        raise FileToolError(code="invalid_request", message="Notebook outputs must be objects.", details={"outputIndex": index})
-    output_type = output.get("output_type") if isinstance(output.get("output_type"), str) else "unknown"
+        raise FileToolError(
+            code="invalid_request",
+            message="Notebook outputs must be objects.",
+            details={"outputIndex": index},
+        )
+    output_type = (
+        output.get("output_type")
+        if isinstance(output.get("output_type"), str)
+        else "unknown"
+    )
     text_parts: list[str] = []
     if "text" in output:
         text_parts.append(_normalize_source(output.get("text")))
@@ -186,13 +225,17 @@ def _summarize_output(*, output: Any, index: int) -> NotebookOutputSummary:
             if key in data:
                 structured[key] = data[key]
         if "text/html" in data:
-            structured["text/html"] = _summarize_text(_normalize_source(data["text/html"]))
+            structured["text/html"] = _summarize_text(
+                _normalize_source(data["text/html"])
+            )
     if isinstance(output.get("ename"), str):
         structured["ename"] = output["ename"]
     if isinstance(output.get("evalue"), str):
         structured["evalue"] = output["evalue"]
     if isinstance(output.get("traceback"), list):
-        structured["traceback"] = [item for item in output["traceback"] if isinstance(item, str)]
+        structured["traceback"] = [
+            item for item in output["traceback"] if isinstance(item, str)
+        ]
     return NotebookOutputSummary(
         output_type=output_type,
         text=_summarize_text("\n".join(part for part in text_parts if part)),
@@ -217,7 +260,10 @@ def _normalize_optional_int(value: Any) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
-        raise FileToolError(code="invalid_request", message="Notebook format fields must be integers when present.")
+        raise FileToolError(
+            code="invalid_request",
+            message="Notebook format fields must be integers when present.",
+        )
     return value
 
 
