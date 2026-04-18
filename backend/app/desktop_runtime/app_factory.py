@@ -19,6 +19,7 @@ from ..copilot_runtime.debug_log_store import (
     DebugLogEvent,
     DebugLogEventContext,
     DebugLogLevel,
+    DebugLogQueryService,
     DebugLogStore,
     Sanitizer,
 )
@@ -32,6 +33,7 @@ from .health import DESKTOP_RUNTIME_SERVICE_NAME
 from .lifecycle import RuntimeLifecycleManager
 from .middlewares import DesktopNullOriginMiddleware, DesktopRuntimeFailureEnvelopeMiddleware
 from .routes.diagnostics import build_diagnostics_router
+from .routes.debug_logs import build_debug_log_router
 from .routes.history import build_history_router
 
 _DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
@@ -91,6 +93,7 @@ def create_app(
         runtime_config=runtime_config,
         sanitizer=Sanitizer(),
     )
+    debug_log_query_service = DebugLogQueryService(debug_log_store)
     debug_log_environment = _resolve_debug_log_environment(runtime_config.environment)
     history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
     runtime_history_query_service = (
@@ -118,6 +121,7 @@ def create_app(
         app.state.copilot_runtime_bridge = runtime_bridge
         app.state.copilot_runtime_history_query_service = runtime_history_query_service
         app.state.copilot_runtime_debug_log_store = debug_log_store
+        app.state.copilot_runtime_debug_log_query_service = debug_log_query_service
         app.state.copilot_runtime_debug_log_environment = debug_log_environment
         debug_log_store.write_event(
             DebugLogEvent.create(
@@ -198,6 +202,7 @@ def create_app(
 
     app.include_router(build_router(runtime_scaffold, runtime_bridge))
     app.include_router(build_diagnostics_router())
+    app.include_router(build_debug_log_router())
     app.include_router(build_history_router())
     return app
 

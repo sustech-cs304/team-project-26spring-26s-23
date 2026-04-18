@@ -17,6 +17,7 @@ from .contracts import (
     DebugLogEnvironmentMode,
     DebugLogEvent,
     DebugLogLevel,
+    DebugLogQueryFilter,
     DebugLogQueryResult,
 )
 from .sanitizer import Sanitizer
@@ -158,11 +159,45 @@ class DebugLogStore:
             )
 
     def list_recent_events(self, *, limit: int = 20) -> tuple[DebugLogQueryResult, ...]:
-        normalized_limit = max(int(limit), 1)
+        return self.query_events(DebugLogQueryFilter(limit=limit))
+
+    def query_events(self, query_filter: DebugLogQueryFilter) -> tuple[DebugLogQueryResult, ...]:
+        normalized_limit = max(int(query_filter.limit), 1)
+        where_clauses: list[str] = []
+        parameters: list[object] = []
+
+        for field_name, field_value in (
+            ("run_id", query_filter.run_id),
+            ("thread_id", query_filter.thread_id),
+            ("request_id", query_filter.request_id),
+            ("correlation_id", query_filter.correlation_id),
+        ):
+            if field_value is not None:
+                where_clauses.append(f"{field_name} = ?")
+                parameters.append(field_value)
+
+        if query_filter.level is not None:
+            where_clauses.append("level = ?")
+            parameters.append(query_filter.level.value)
+        if query_filter.category is not None:
+            where_clauses.append("category = ?")
+            parameters.append(query_filter.category.value)
+        if query_filter.occurred_from is not None:
+            where_clauses.append("occurred_at >= ?")
+            parameters.append(query_filter.occurred_from.isoformat())
+        if query_filter.occurred_to is not None:
+            where_clauses.append("occurred_at <= ?")
+            parameters.append(query_filter.occurred_to.isoformat())
+
+        where_sql = ""
+        if where_clauses:
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+
         with self._connection() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT
+                    id,
                     occurred_at,
                     level,
                     category,
@@ -186,12 +221,50 @@ class DebugLogStore:
                     exception_type,
                     exception_stack
                 FROM debug_log_events
+                {where_sql}
                 ORDER BY occurred_at DESC, id DESC
                 LIMIT ?
                 """,
-                (normalized_limit,),
+                (*parameters, normalized_limit),
             ).fetchall()
         return tuple(self._row_to_query_result(row) for row in rows)
+
+    def get_event_by_id(self, event_id: int) -> DebugLogQueryResult | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    occurred_at,
+                    level,
+                    category,
+                    event_name,
+                    message,
+                    environment,
+                    phase,
+                    run_id,
+                    thread_id,
+                    request_id,
+                    correlation_id,
+                    session_id,
+                    component,
+                    operation,
+                    tags_json,
+                    summary_json,
+                    summary_truncated,
+                    summary_redacted_keys_json,
+                    summary_dropped_fields_json,
+                    error_summary,
+                    exception_type,
+                    exception_stack
+                FROM debug_log_events
+                WHERE id = ?
+                """,
+                (event_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_query_result(row)
 
     def _initialize_schema(self) -> None:
         with self._connection() as connection:
@@ -265,6 +338,7 @@ class DebugLogStore:
 
     def _row_to_query_result(self, row: sqlite3.Row) -> DebugLogQueryResult:
         return DebugLogQueryResult(
+            event_id=int(row["id"]),
             occurred_at=datetime.fromisoformat(row["occurred_at"]),
             level=DebugLogLevel(row["level"]),
             category=DebugLogCategory(row["category"]),
