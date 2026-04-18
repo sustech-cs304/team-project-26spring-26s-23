@@ -50,8 +50,9 @@ from app.tooling.contract.errors import (
 _STATE_NAMESPACE_PERSONAL_GRADES = "tis.personal_grades.fetch"
 _STATE_NAMESPACE_CREDIT_GPA = "tis.credit_gpa.fetch"
 _STATE_NAMESPACE_SELECTED_COURSES = "tis.selected_courses.fetch"
-_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
-_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
+# Secret registry key names for host-side credential lookup, not embedded credentials.
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"  # nosec B105
+_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"  # nosec B105
 
 
 class TISAuthenticationError(RuntimeError):
