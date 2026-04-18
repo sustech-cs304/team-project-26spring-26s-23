@@ -130,16 +130,17 @@ def _attachment_payloads(attachments: Any) -> list[dict[str, Any]]:
     return payloads
 
 
-def build_blackboard_sync_payloads(
+def _normalize_name(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+
+
+def _normalize_code(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "")).strip().upper()
+
+
+def _build_course_payloads(
     courses: list[Any],
-    assignments_by_course: dict[str, list[Any]],
-    resources_by_course: dict[str, list[Any]],
-    grades_by_course: dict[str, list[Any]],
-    announcements: list[Any],
-    logger: BlackboardLogger | None = None,
-    *,
-    include_assignment_attachments_as_resources: bool = True,
-) -> BlackboardSyncPayloads:
+) -> tuple[list[dict[str, Any]], set[str]]:
     course_payload: list[dict[str, Any]] = []
     valid_course_ids: set[str] = set()
     for course in courses:
@@ -148,6 +149,7 @@ def build_blackboard_sync_payloads(
             continue
 
         valid_course_ids.add(course_id)
+        is_active = _value(course, "is_active")
         course_payload.append(
             {
                 "course_id": course_id,
@@ -158,12 +160,15 @@ def build_blackboard_sync_payloads(
                 "url": _value(course, "url"),
                 "total_grade": _value(course, "total_grade"),
                 "listed_grade": _value(course, "listed_grade"),
-                "is_active": _value(course, "is_active")
-                if _value(course, "is_active") is not None
-                else True,
+                "is_active": is_active if is_active is not None else True,
             }
         )
+    return course_payload, valid_course_ids
 
+
+def _build_assignment_payloads(
+    assignments_by_course: dict[str, list[Any]],
+) -> dict[str, list[dict[str, Any]]]:
     assignment_payloads: dict[str, list[dict[str, Any]]] = {}
     for course_id, items in assignments_by_course.items():
         payload: list[dict[str, Any]] = []
@@ -192,8 +197,13 @@ def build_blackboard_sync_payloads(
                 }
             )
         assignment_payloads[course_id] = payload
+    return assignment_payloads
 
-    valid_assignment_ids_by_course = {
+
+def _collect_assignment_ids_by_course(
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> dict[str, set[str]]:
+    return {
         course_id: {
             str(row.get("assignment_id") or "").strip()
             for row in rows
@@ -202,6 +212,10 @@ def build_blackboard_sync_payloads(
         for course_id, rows in assignment_payloads.items()
     }
 
+
+def _build_resource_payloads(
+    resources_by_course: dict[str, list[Any]],
+) -> dict[str, list[dict[str, Any]]]:
     resource_payloads: dict[str, list[dict[str, Any]]] = {}
     for course_id, items in resources_by_course.items():
         payload: list[dict[str, Any]] = []
@@ -225,55 +239,94 @@ def build_blackboard_sync_payloads(
                 }
             )
         resource_payloads[course_id] = payload
+    return resource_payloads
 
-    if include_assignment_attachments_as_resources:
-        for course_id, assignments in assignment_payloads.items():
-            resource_payloads.setdefault(course_id, [])
-            existing_keys = {
-                (
-                    str(item.get("resource_id") or "").strip(),
-                    str(item.get("url") or "").strip(),
-                )
-                for item in resource_payloads[course_id]
-            }
 
-            for assignment in assignments:
-                attachments = assignment.get("attachments", [])
-                if not isinstance(attachments, list):
+def _merge_assignment_attachment_resources(
+    resource_payloads: dict[str, list[dict[str, Any]]],
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> None:
+    for course_id, assignments in assignment_payloads.items():
+        resource_payloads.setdefault(course_id, [])
+        existing_keys = {
+            (
+                str(item.get("resource_id") or "").strip(),
+                str(item.get("url") or "").strip(),
+            )
+            for item in resource_payloads[course_id]
+        }
+
+        for assignment in assignments:
+            attachments = assignment.get("attachments", [])
+            if not isinstance(attachments, list):
+                continue
+
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
                     continue
 
-                for attachment in attachments:
-                    if not isinstance(attachment, dict):
-                        continue
+                title = str(attachment.get("title") or attachment.get("name") or "").strip()
+                url = str(attachment.get("url") or "").strip()
+                resource_id = str(attachment.get("resource_id") or "").strip()
+                if not resource_id:
+                    resource_id = _stable_id("res", course_id, url, title)
 
-                    title = str(
-                        attachment.get("title") or attachment.get("name") or ""
-                    ).strip()
-                    url = str(attachment.get("url") or "").strip()
-                    resource_id = str(attachment.get("resource_id") or "").strip()
-                    if not resource_id:
-                        resource_id = _stable_id("res", course_id, url, title)
+                dedupe_key = (resource_id, url)
+                if dedupe_key in existing_keys:
+                    continue
+                existing_keys.add(dedupe_key)
 
-                    dedupe_key = (resource_id, url)
-                    if dedupe_key in existing_keys:
-                        continue
-                    existing_keys.add(dedupe_key)
+                resource_payloads[course_id].append(
+                    {
+                        "resource_id": resource_id,
+                        "title": title,
+                        "type": attachment.get("type", "file"),
+                        "size": attachment.get("size"),
+                        "url": url or None,
+                        "parent_id": None,
+                        "source_page": assignment.get("source_page"),
+                        "assignment_id": assignment.get("assignment_id"),
+                    }
+                )
 
-                    resource_payloads[course_id].append(
-                        {
-                            "resource_id": resource_id,
-                            "title": title,
-                            "type": attachment.get("type", "file"),
-                            "size": attachment.get("size"),
-                            "url": url or None,
-                            "parent_id": None,
-                            "source_page": assignment.get("source_page"),
-                            "assignment_id": assignment.get("assignment_id"),
-                        }
-                    )
 
+def _build_assignment_title_indexes(
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> dict[str, dict[str, str]]:
+    indexes: dict[str, dict[str, str]] = {}
+    for course_id, assignments in assignment_payloads.items():
+        title_index: dict[str, str] = {}
+        for assignment in assignments:
+            title = str(assignment.get("title") or "")
+            assignment_id = str(assignment.get("assignment_id") or "")
+            if title and assignment_id:
+                title_index.setdefault(title, assignment_id)
+        indexes[course_id] = title_index
+    return indexes
+
+
+def _resolve_grade_assignment_match(
+    course_id: str,
+    item_name: str,
+    item: Any,
+    assignment_title_indexes: dict[str, dict[str, str]],
+) -> tuple[str | None, str]:
+    assignment_id_match = _text_value(item, "assignment_id") or None
+    if assignment_id_match:
+        return assignment_id_match, "grade.assignment_id"
+    return assignment_title_indexes.get(course_id, {}).get(item_name), "assignment.title"
+
+
+def _build_grade_payloads(
+    grades_by_course: dict[str, list[Any]],
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+    valid_assignment_ids_by_course: dict[str, set[str]],
+    logger: BlackboardLogger | None = None,
+) -> tuple[dict[str, list[dict[str, Any]]], int]:
     invalid_grade_assignment_refs = 0
+    assignment_title_indexes = _build_assignment_title_indexes(assignment_payloads)
     grade_payloads: dict[str, list[dict[str, Any]]] = {}
+
     for course_id, items in grades_by_course.items():
         payload: list[dict[str, Any]] = []
         valid_assignment_ids = valid_assignment_ids_by_course.get(course_id, set())
@@ -289,16 +342,12 @@ def build_blackboard_sync_payloads(
                 )
             score, total_score = split_score_text(_value(item, "score"))
 
-            assignment_id_match = _text_value(item, "assignment_id") or None
-            assignment_match_source = (
-                "grade.assignment_id" if assignment_id_match else "assignment.title"
+            assignment_id_match, assignment_match_source = _resolve_grade_assignment_match(
+                course_id,
+                item_name,
+                item,
+                assignment_title_indexes,
             )
-            if not assignment_id_match and course_id in assignment_payloads:
-                for assignment in assignment_payloads[course_id]:
-                    if assignment["title"] == item_name:
-                        assignment_id_match = assignment["assignment_id"]
-                        assignment_match_source = "assignment.title"
-                        break
 
             if assignment_id_match and assignment_id_match not in valid_assignment_ids:
                 invalid_grade_assignment_refs += 1
@@ -334,22 +383,21 @@ def build_blackboard_sync_payloads(
             )
         grade_payloads[course_id] = payload
 
+    return grade_payloads, invalid_grade_assignment_refs
+
+
+def _build_course_match_candidates(
+    courses: list[Any],
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     course_name_candidates: dict[str, set[str]] = {}
     course_code_candidates: dict[str, set[str]] = {}
-
-    def _normalize_name(value: Any) -> str:
-        return re.sub(r"\s+", " ", str(value or "")).strip().lower()
-
-    def _normalize_code(value: Any) -> str:
-        return re.sub(r"\s+", "", str(value or "")).strip().upper()
 
     for course in courses:
         course_id = _text_value(course, "course_id", "id")
         if not course_id:
             continue
 
-        course_name = _text_value(course, "name")
-        normalized_name = _normalize_name(course_name)
+        normalized_name = _normalize_name(_text_value(course, "name"))
         if normalized_name:
             course_name_candidates.setdefault(normalized_name, set()).add(course_id)
 
@@ -357,39 +405,62 @@ def build_blackboard_sync_payloads(
         if explicit_code:
             course_code_candidates.setdefault(explicit_code, set()).add(course_id)
 
+    return course_name_candidates, course_code_candidates
+
+
+def _resolve_announcement_course_id(
+    item: Any,
+    course_name_candidates: dict[str, set[str]],
+    course_code_candidates: dict[str, set[str]],
+    valid_course_ids: set[str],
+) -> str | None:
+    course_id = _text_value(item, "course_id") or None
+    if not course_id:
+        normalized_ann_name = _normalize_name(_text_value(item, "course_name"))
+        if normalized_ann_name:
+            exact_matches = course_name_candidates.get(normalized_ann_name, set())
+            if len(exact_matches) == 1:
+                course_id = next(iter(exact_matches))
+            else:
+                fuzzy_matches = {
+                    cid
+                    for name, course_ids in course_name_candidates.items()
+                    if normalized_ann_name in name or name in normalized_ann_name
+                    for cid in course_ids
+                }
+                if len(fuzzy_matches) == 1:
+                    course_id = next(iter(fuzzy_matches))
+
+    if not course_id:
+        course_code = _normalize_code(_value(item, "course_code"))
+        if course_code:
+            code_matches = course_code_candidates.get(course_code, set())
+            if len(code_matches) == 1:
+                course_id = next(iter(code_matches))
+
+    if course_id and course_id not in valid_course_ids:
+        return None
+    return course_id
+
+
+def _build_announcements_payload(
+    announcements: list[Any],
+    courses: list[Any],
+    valid_course_ids: set[str],
+) -> list[dict[str, Any]]:
+    course_name_candidates, course_code_candidates = _build_course_match_candidates(courses)
     announcements_payload: list[dict[str, Any]] = []
+
     for item in announcements:
         title = _text_value(item, "title")
         posted_at_text = _text_value(item, "publish_time", "posted_date")
         url = _text_value(item, "url")
-        course_id = _text_value(item, "course_id") or None
-
-        if not course_id:
-            ann_course_name = _text_value(item, "course_name")
-            normalized_ann_name = _normalize_name(ann_course_name)
-            if normalized_ann_name:
-                exact_matches = course_name_candidates.get(normalized_ann_name, set())
-                if len(exact_matches) == 1:
-                    course_id = next(iter(exact_matches))
-                else:
-                    fuzzy_matches = {
-                        cid
-                        for name, course_ids in course_name_candidates.items()
-                        if normalized_ann_name in name or name in normalized_ann_name
-                        for cid in course_ids
-                    }
-                    if len(fuzzy_matches) == 1:
-                        course_id = next(iter(fuzzy_matches))
-
-        if not course_id:
-            course_code = _normalize_code(_value(item, "course_code"))
-            if course_code:
-                code_matches = course_code_candidates.get(course_code, set())
-                if len(code_matches) == 1:
-                    course_id = next(iter(code_matches))
-
-        if course_id and course_id not in valid_course_ids:
-            course_id = None
+        course_id = _resolve_announcement_course_id(
+            item,
+            course_name_candidates,
+            course_code_candidates,
+            valid_course_ids,
+        )
 
         announcement_id = _text_value(item, "announcement_id")
         if not announcement_id:
@@ -414,18 +485,72 @@ def build_blackboard_sync_payloads(
             }
         )
 
-    if logger is not None:
-        logger.info(
-            "✅ Blackboard sync payloads 构建完成",
-            payload={
-                "courses": len(course_payload),
-                "assignments": sum(len(rows) for rows in assignment_payloads.values()),
-                "resources": sum(len(rows) for rows in resource_payloads.values()),
-                "grades": sum(len(rows) for rows in grade_payloads.values()),
-                "announcements": len(announcements_payload),
-                "invalid_grade_assignment_refs": invalid_grade_assignment_refs,
-            },
-        )
+    return announcements_payload
+
+
+def _log_sync_payload_summary(
+    course_payload: list[dict[str, Any]],
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+    resource_payloads: dict[str, list[dict[str, Any]]],
+    grade_payloads: dict[str, list[dict[str, Any]]],
+    announcements_payload: list[dict[str, Any]],
+    invalid_grade_assignment_refs: int,
+    logger: BlackboardLogger | None = None,
+) -> None:
+    if logger is None:
+        return
+
+    logger.info(
+        "✅ Blackboard sync payloads 构建完成",
+        payload={
+            "courses": len(course_payload),
+            "assignments": sum(len(rows) for rows in assignment_payloads.values()),
+            "resources": sum(len(rows) for rows in resource_payloads.values()),
+            "grades": sum(len(rows) for rows in grade_payloads.values()),
+            "announcements": len(announcements_payload),
+            "invalid_grade_assignment_refs": invalid_grade_assignment_refs,
+        },
+    )
+
+
+def build_blackboard_sync_payloads(
+    courses: list[Any],
+    assignments_by_course: dict[str, list[Any]],
+    resources_by_course: dict[str, list[Any]],
+    grades_by_course: dict[str, list[Any]],
+    announcements: list[Any],
+    logger: BlackboardLogger | None = None,
+    *,
+    include_assignment_attachments_as_resources: bool = True,
+) -> BlackboardSyncPayloads:
+    course_payload, valid_course_ids = _build_course_payloads(courses)
+    assignment_payloads = _build_assignment_payloads(assignments_by_course)
+    valid_assignment_ids_by_course = _collect_assignment_ids_by_course(
+        assignment_payloads
+    )
+    resource_payloads = _build_resource_payloads(resources_by_course)
+    if include_assignment_attachments_as_resources:
+        _merge_assignment_attachment_resources(resource_payloads, assignment_payloads)
+    grade_payloads, invalid_grade_assignment_refs = _build_grade_payloads(
+        grades_by_course,
+        assignment_payloads,
+        valid_assignment_ids_by_course,
+        logger,
+    )
+    announcements_payload = _build_announcements_payload(
+        announcements,
+        courses,
+        valid_course_ids,
+    )
+    _log_sync_payload_summary(
+        course_payload,
+        assignment_payloads,
+        resource_payloads,
+        grade_payloads,
+        announcements_payload,
+        invalid_grade_assignment_refs,
+        logger,
+    )
 
     return BlackboardSyncPayloads(
         course_payload=course_payload,
