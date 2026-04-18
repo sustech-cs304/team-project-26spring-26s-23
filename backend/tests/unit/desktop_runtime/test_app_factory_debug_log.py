@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
@@ -100,3 +102,29 @@ def test_create_app_supports_runtime_to_query_debug_log_regression_flow(tmp_path
     event_names = [event["eventName"] for event in payload["events"]]
     assert "runtime.run.start.succeeded" in event_names
     assert any(event_name.startswith("transport.http.run_start.") for event_name in event_names)
+
+
+def test_create_app_keeps_startup_available_when_retention_maintenance_raises(tmp_path: Path, caplog) -> None:
+    config = parse_runtime_config(
+        [
+            "--database-dir",
+            str(tmp_path / "database"),
+            "--debug-log-database-file",
+            str(tmp_path / "database" / "runtime-debug.sqlite3"),
+        ],
+        env={},
+        cwd=tmp_path,
+    )
+
+    with patch(
+        "app.desktop_runtime.app_factory.RetentionCoordinator.run_due_maintenance",
+        side_effect=RuntimeError("database locked"),
+    ) as run_due_maintenance:
+        app = create_app(config)
+
+        with caplog.at_level(logging.ERROR, logger="uvicorn.error"):
+            with TestClient(app):
+                assert app.state.copilot_runtime_debug_log_store.db_path == config.debug_log_database_file
+
+    assert run_due_maintenance.call_count == 1
+    assert "desktop-runtime startup retention maintenance failed; continuing startup" in caplog.text

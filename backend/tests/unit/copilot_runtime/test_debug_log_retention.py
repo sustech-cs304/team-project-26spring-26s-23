@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -163,6 +164,38 @@ def test_retention_coordinator_runs_checkpoint_when_enabled(tmp_path: Path) -> N
     assert result.extra_maintenance_performed is True
     assert latest_audit is not None
     assert latest_audit.details["extraMaintenancePerformed"] is True
+
+
+def test_retention_coordinator_swallows_audit_write_failures_and_logs(tmp_path: Path, caplog) -> None:
+    store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
+    _write_event(store, occurred_at=datetime(2026, 4, 1, 8, 0, tzinfo=UTC), event_name="expired.1")
+
+    original_write_audit_record = store.write_audit_record
+
+    def flaky_write_audit_record(*args, **kwargs) -> None:
+        raise RuntimeError("database is read-only")
+
+    store.write_audit_record = flaky_write_audit_record  # type: ignore[method-assign]
+    coordinator = RetentionCoordinator(
+        store,
+        config=DebugLogRetentionConfig(
+            retention_days=7,
+            auto_cleanup_enabled=True,
+            min_cleanup_interval_seconds=0,
+        ),
+        clock=lambda: datetime(2026, 4, 18, 8, 0, tzinfo=UTC),
+    )
+
+    with caplog.at_level(logging.ERROR):
+        result = coordinator.run_due_maintenance(trigger="startup")
+
+    store.write_audit_record = original_write_audit_record  # type: ignore[method-assign]
+
+    assert result.status == "succeeded"
+    assert result.deleted_rows == 1
+    assert store.count_events() == 0
+    assert store.get_latest_audit_record(action="retention.cleanup") is None
+    assert "Debug log retention audit write failed; continuing maintenance flow." in caplog.text
 
 
 def _write_event(store: DebugLogStore, *, occurred_at: datetime, event_name: str) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
@@ -12,6 +13,7 @@ from .store import DebugLogStore
 
 _RETENTION_AUDIT_ACTION = "retention.cleanup"
 _ERROR_SANITIZER = Sanitizer(max_string_length=500)
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,16 +161,26 @@ class RetentionCoordinator:
         details: dict[str, Any],
         error_summary: str | None = None,
     ) -> None:
-        self._store.write_audit_record(
-            DebugLogAuditRecord.create(
-                action=_RETENTION_AUDIT_ACTION,
-                trigger=trigger,
-                status=status,
-                deleted_rows=deleted_rows,
-                details=details,
-                error_summary=error_summary,
+        try:
+            self._store.write_audit_record(
+                DebugLogAuditRecord.create(
+                    action=_RETENTION_AUDIT_ACTION,
+                    trigger=trigger,
+                    status=status,
+                    deleted_rows=deleted_rows,
+                    details=details,
+                    error_summary=error_summary,
+                )
             )
-        )
+        except Exception:
+            _LOGGER.exception(
+                "Debug log retention audit write failed; continuing maintenance flow.",
+                extra={
+                    "trigger": trigger,
+                    "status": status,
+                    "deleted_rows": deleted_rows,
+                },
+            )
 
 
 def build_retention_config_from_runtime_config(runtime_config: Any) -> DebugLogRetentionConfig:

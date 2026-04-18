@@ -150,7 +150,12 @@ def create_app(
                 "environment": runtime_config.environment,
             },
         )
-        debug_log_retention_coordinator.run_due_maintenance(trigger="startup")
+        try:
+            debug_log_retention_coordinator.run_due_maintenance(trigger="startup")
+        except Exception:
+            _RUNTIME_LOGGER.exception(
+                "desktop-runtime startup retention maintenance failed; continuing startup"
+            )
         lifecycle_manager.startup()
         try:
             yield
