@@ -456,6 +456,36 @@ def test_extract_run_start_request_rejects_invalid_tool_timeout_seconds() -> Non
     assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutSeconds.tool.file-convert"}
 
 
+@pytest.mark.parametrize(
+    "timeout_value",
+    ["abc", "1.5", "0", "-5", "   ", "15s"],
+)
+def test_extract_run_start_request_rejects_non_numeric_tool_timeout_seconds_strings(timeout_value: str) -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["toolPermissionPolicy"] = {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {"tool.file-convert": "delay"},
+        "toolTimeoutSeconds": {"tool.file-convert": timeout_value},
+        "toolTimeoutActions": {"tool.file-convert": "deny"},
+    }
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_run_start_request(
+            {
+                "method": "run/start",
+                "body": {
+                    "threadId": "thread-123",
+                    "message": {"role": "user", "content": "Hello"},
+                    "policy": policy,
+                },
+            }
+        )
+
+    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutSeconds.tool.file-convert"}
+
+
 def test_extract_run_start_request_rejects_invalid_tool_timeout_action() -> None:
     parser = _build_parser()
     policy = _build_policy_payload()

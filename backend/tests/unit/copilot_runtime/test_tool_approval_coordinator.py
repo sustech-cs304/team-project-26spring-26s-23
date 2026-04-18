@@ -10,7 +10,6 @@ from app.copilot_runtime import (
     RuntimeToolApprovalResolveRequest,
     RuntimeToolApprovalResolveResponse,
     RuntimeToolPermissionPolicy,
-    ToolApprovalConflictError,
     ToolApprovalNotFoundError,
     parse_tool_timeout_seconds,
 )

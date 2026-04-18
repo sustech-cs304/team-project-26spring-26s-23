@@ -43,7 +43,7 @@ class FileToolPathPolicy:
         requested = Path(normalized)
         path_kind: PathKind = "absolute" if requested.is_absolute() else "relative"
         if requested.is_absolute():
-            effective_root = requested.parent if requested.name else requested
+            effective_root = _resolve_absolute_effective_root(requested)
             root_source: RootSource = "absolute_override"
             candidate = requested
         else:
@@ -65,6 +65,14 @@ class FileToolPathPolicy:
             root_policy=self.root_policy,
             symlink_policy=self.symlink_policy,
         )
+
+
+def _resolve_absolute_effective_root(requested: Path) -> Path:
+    if requested.exists() and requested.is_dir():
+        return requested
+    if requested.name == "":
+        return requested
+    return requested.parent
 
 
 def ensure_within_workspace(*, resolved_path: Path, workspace_root: Path) -> None:

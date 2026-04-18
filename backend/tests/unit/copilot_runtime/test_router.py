@@ -1618,9 +1618,9 @@ def test_root_post_tool_approval_resolve_missing_request_returns_stable_error() 
     payload = response.json()
     assert response.status_code == 404
     assert payload["ok"] is False
-    assert payload["error"]["code"] == "run_not_found"
+    assert payload["error"]["code"] == "tool_approval_not_found"
     assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
-    assert payload["error"]["details"] == {"runId": "run-missing"}
+    assert payload["error"]["details"] == {"runId": "run-missing", "toolCallId": "call-missing"}
 
 
 
@@ -1658,8 +1658,9 @@ def test_root_post_tool_approval_resolve_duplicate_decision_returns_stable_error
     assert first_response.status_code == 200
     payload = second_response.json()
     assert second_response.status_code == 404
-    assert payload["error"]["code"] == "run_not_found"
+    assert payload["error"]["code"] == "tool_approval_not_found"
     assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
+    assert payload["error"]["details"] == {"runId": "run-dup", "toolCallId": "call-dup"}
 
 
 

@@ -282,6 +282,27 @@ def test_file_tool_read_runtime_binding_uses_runtime_default_root(tmp_path: Path
     assert result["output"]["data"]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
 
 
+def test_file_tool_runtime_binding_does_not_mutate_shared_workspace_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    runtime_root = tmp_path / "runtime-root"
+    workspace_root.mkdir()
+    runtime_root.mkdir()
+    (workspace_root / "workspace.txt").write_text("workspace\nvalue\n", encoding="utf-8")
+    (runtime_root / "runtime.txt").write_text("runtime\nvalue\n", encoding="utf-8")
+
+    binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
+
+    with runtime_tool_execution_scope(_runtime_context(runtime_root)):
+        runtime_result = asyncio.run(binding.execute({"path": "runtime.txt", "offset": 2, "limit": 1}))
+
+    workspace_result = asyncio.run(binding.execute({"path": "workspace.txt", "offset": 2, "limit": 1}))
+
+    assert runtime_result["status"] == "success"
+    assert runtime_result["output"]["data"]["effectiveRoot"] == runtime_root.resolve(strict=False).as_posix()
+    assert workspace_result["status"] == "success"
+    assert workspace_result["output"]["data"]["effectiveRoot"] == workspace_root.resolve(strict=False).as_posix()
+
+
 
 def test_file_tool_runtime_binding_switch_root_then_glob_then_read_uses_runtime_root(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"

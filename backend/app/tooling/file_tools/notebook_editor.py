@@ -112,11 +112,25 @@ def _load_notebook(*, target_path: Path, request_path: str) -> tuple[dict[str, A
 
 
 def _normalize_missing_cell_ids(cells: list[dict[str, Any]]) -> None:
+    existing_ids = {
+        raw_cell_id.strip()
+        for cell in cells
+        if isinstance(cell, dict)
+        and isinstance((raw_cell_id := cell.get("id")), str)
+        and raw_cell_id.strip() != ""
+    }
+    next_generated_index = 1
     for cell in cells:
         if not isinstance(cell, dict):
             raise FileToolError(code="invalid_request", message="Notebook cell entries must be objects.")
         if not _has_real_cell_id(cell):
-            cell["id"] = _new_cell_id()
+            while True:
+                candidate = f"cell-{next_generated_index}"
+                next_generated_index += 1
+                if candidate not in existing_ids:
+                    cell["id"] = candidate
+                    existing_ids.add(candidate)
+                    break
 
 
 def _apply_operation(*, cells: list[dict[str, Any]], operation: NotebookEditOperation, operation_index: int) -> None:

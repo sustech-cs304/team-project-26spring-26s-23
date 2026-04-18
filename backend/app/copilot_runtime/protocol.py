@@ -42,6 +42,7 @@ from .errors import (
     build_unsupported_message_shape_error,
 )
 from .model_routes import RuntimeModelRoute, RuntimeModelRouteRef
+from .tool_permissions import parse_tool_timeout_seconds
 
 
 class RuntimeProtocolError(RuntimeError):
@@ -808,7 +809,7 @@ class RuntimeProtocolParser:
                     ),
                 )
             if isinstance(timeout_seconds, int):
-                if timeout_seconds <= 0:
+                if parse_tool_timeout_seconds(timeout_seconds) is None:
                     raise RuntimeProtocolError(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         error=build_invalid_request_error(
@@ -823,9 +824,11 @@ class RuntimeProtocolParser:
                     )
                 tool_timeout_seconds[tool_id] = timeout_seconds
                 continue
-            if isinstance(timeout_seconds, str) and timeout_seconds.strip() != "":
-                tool_timeout_seconds[tool_id] = timeout_seconds
-                continue
+            if isinstance(timeout_seconds, str):
+                normalized_timeout_seconds = timeout_seconds.strip()
+                if parse_tool_timeout_seconds(normalized_timeout_seconds) is not None:
+                    tool_timeout_seconds[tool_id] = normalized_timeout_seconds
+                    continue
             raise RuntimeProtocolError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 error=build_invalid_request_error(

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from app.tooling.contract import ToolContract, ToolInvocationContext
 from app.tooling.contract.errors import NormalizedToolError
@@ -875,17 +875,22 @@ def _build_runtime_aware_binding(
 ) -> RuntimeExecutableToolBinding:
     binding = build_contract_runtime_binding(contract, kind="builtin", function_name=function_name)
     base_execute = binding.execute
+    resolved_workspace_root = workspace_root.resolve(strict=False)
 
     async def execute(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
         default_root = _get_runtime_default_root()
-        if default_root is None:
+        if default_root is None or default_root == resolved_workspace_root:
             return await base_execute(arguments)
-        previous_root = contract.service.path_policy.workspace_root
-        object.__setattr__(contract.service.path_policy, "workspace_root", default_root.resolve(strict=False))
-        try:
-            return await base_execute(arguments)
-        finally:
-            object.__setattr__(contract.service.path_policy, "workspace_root", previous_root)
+        runtime_contract = _clone_contract_with_workspace_root(
+            contract=contract,
+            workspace_root=default_root,
+        )
+        runtime_binding = build_contract_runtime_binding(
+            runtime_contract,
+            kind="builtin",
+            function_name=function_name,
+        )
+        return await runtime_binding.execute(arguments)
 
     return RuntimeExecutableToolBinding(
         tool_id=binding.tool_id,
@@ -897,6 +902,13 @@ def _build_runtime_aware_binding(
         parameters_json_schema=binding.parameters_json_schema,
         execute=execute,
     )
+
+
+def _clone_contract_with_workspace_root(*, contract: ToolContract, workspace_root: Path) -> ToolContract:
+    runtime_root = workspace_root.resolve(strict=False)
+    path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+    service = replace(contract.service, path_policy=path_policy)
+    return replace(contract, service=service)
 
 
 

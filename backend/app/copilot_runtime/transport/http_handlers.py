@@ -41,6 +41,7 @@ from ..shared.errors import (
     run_not_found_response,
     runtime_operation_conflict_response,
     session_not_found_response,
+    tool_approval_not_found_response,
     thread_not_found_response,
 )
 from .request_mappers import (
@@ -510,8 +511,9 @@ def _handle_tool_approval_resolve_request(
     except RuntimeProtocolError as exc:
         return protocol_error_response(exc)
     except ToolApprovalNotFoundError as exc:
-        return run_not_found_response(
+        return tool_approval_not_found_response(
             run_id=exc.run_id,
+            tool_call_id=exc.tool_call_id,
             scaffold=dependencies.scaffold,
             requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
         )
