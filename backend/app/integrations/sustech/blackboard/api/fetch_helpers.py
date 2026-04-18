@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+import html
+import re
+
+
+_CONTENTS_PATTERN = re.compile(
+    r"<contents\b[^>]*>(?P<body>.*?)</contents>",
+    re.IGNORECASE | re.DOTALL,
+)
+_CDATA_PATTERN = re.compile(r"^<!\[CDATA\[(?P<body>.*)\]\]>$", re.DOTALL)
 
 
 def extract_xml_contents(raw: str) -> str | None:
@@ -11,16 +19,13 @@ def extract_xml_contents(raw: str) -> str | None:
     if not stripped.startswith("<?xml") and "<contents" not in stripped:
         return None
 
-    try:
-        root = ET.fromstring(raw)
-    except ET.ParseError:
+    match = _CONTENTS_PATTERN.search(raw)
+    if match is None:
         return None
 
-    if root.tag == "contents":
-        return root.text or ""
+    contents_body = match.group("body")
+    cdata_match = _CDATA_PATTERN.match(contents_body)
+    if cdata_match is not None:
+        return cdata_match.group("body")
 
-    contents = root.find(".//contents")
-    if contents is not None:
-        return contents.text or ""
-
-    return None
+    return html.unescape(contents_body)
