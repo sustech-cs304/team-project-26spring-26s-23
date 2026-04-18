@@ -190,7 +190,7 @@ describe('ToolPicker', () => {
     rendered.unmount()
   })
 
-  it('shows denied tools as disabled and keeps selectable tools interactive', async () => {
+  it('keeps denied tools focusable, blocks fresh selection, and still allows deselection', async () => {
     const rendered = renderWithRoot(
       <ToolPickerHarness
         initialSelectedToolIds={['tool.file-convert', 'blackboard.calendar.refresh']}
@@ -208,18 +208,28 @@ describe('ToolPicker', () => {
 
     const deniedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
     const normalOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
+    const blockedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
 
-    expect(deniedOption.disabled).toBe(true)
+    expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
-    expect(deniedOption.title).toContain('总是关闭')
     expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
     expect(deniedOption.textContent).toContain('已禁用')
     expect(deniedOption.textContent).toContain('当前策略：总是关闭')
     expect(normalOption.disabled).toBe(false)
 
+    await clickElement(deniedOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert')
+
     await clickElement(normalOption)
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
-      'tool.file-convert|blackboard.calendar.refresh|blackboard.course_catalog.search',
+      'tool.file-convert|blackboard.course_catalog.search',
+    )
+
+    expect(blockedOption.getAttribute('aria-disabled')).toBe('true')
+
+    await clickElement(blockedOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+      'tool.file-convert|blackboard.course_catalog.search',
     )
 
     rendered.unmount()

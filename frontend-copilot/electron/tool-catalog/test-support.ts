@@ -3,25 +3,25 @@ import type { RuntimeToolDirectoryEntry } from '../../src/features/copilot/chat-
 export function createToolCatalogFixture(): RuntimeToolDirectoryEntry[] {
   return [
     {
-      toolId: 'functions.read_file',
+      toolId: 'tool.fs.read',
       kind: 'builtin',
       availability: 'available',
       displayName: '读取文件',
       description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
     },
     {
-      toolId: 'functions.execute_command',
-      kind: 'builtin',
-      availability: 'available',
-      displayName: '执行命令',
-      description: '运行本地终端命令，适合构建、检查与资源处理。',
-    },
-    {
-      toolId: 'functions.write_to_file',
+      toolId: 'tool.fs.write',
       kind: 'builtin',
       availability: 'available',
       displayName: '写入文件',
-      description: '创建或重写文件，适用于页面搭建、样式输出与配置修改。',
+      description: '创建或覆盖文件内容，用于输出生成结果与落盘修改。',
+    },
+    {
+      toolId: 'tool.fs.edit',
+      kind: 'builtin',
+      availability: 'available',
+      displayName: '编辑文件',
+      description: '对现有文件执行精确编辑，适用于补丁式修改与小范围更新。',
     },
     {
       toolId: 'mcp--fetch--fetch',

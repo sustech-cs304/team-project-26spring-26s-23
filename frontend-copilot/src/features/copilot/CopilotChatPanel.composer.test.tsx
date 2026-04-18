@@ -693,8 +693,9 @@ describe('CopilotChatPanel composer interactions', () => {
     const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
     const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
 
-    expect(deniedOption.disabled).toBe(true)
+    expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
+    expect(deniedOption.getAttribute('aria-disabled')).toBe('true')
     expect(deniedOption.title).toContain('总是关闭')
     expect(allowedOption.disabled).toBe(false)
 
@@ -806,8 +807,9 @@ describe('CopilotChatPanel composer interactions', () => {
     const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
     const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
 
-    expect(deniedOption.disabled).toBe(true)
+    expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.getAttribute('aria-disabled')).toBe(null)
     expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
 
     const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement

@@ -1,4 +1,4 @@
-import type { RuntimeToolDirectoryEntry } from '../../src/features/copilot/thread-run-contract'
+import type { RuntimeToolDirectoryEntry } from '../../src/features/copilot/chat-contract'
 
 export const TOOL_CATALOG_LOAD_CHANNEL = 'tool-catalog:load'
 

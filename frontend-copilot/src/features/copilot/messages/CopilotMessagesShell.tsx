@@ -550,8 +550,8 @@ function ToolMessageCard({
   const inputPanelId = `chat-message-tool-input-panel-${turn.id}`
   const approval = turn.approval ?? null
   const timeoutSecondsLabel = approval === null ? null : formatToolApprovalTimeoutSecondsLabel(approval, countdownNow)
-  const showApprovalActions = turn.toolPhase === 'waiting_approval' && approvalPendingDecision === null
-  const approvalControlsEnabled = runtimeUrl !== null && onResolveToolApproval !== null && approvalPendingDecision === null
+  const showApprovalActions = turn.toolPhase === 'waiting_approval'
+  const approvalControlsEnabled = runtimeUrl !== null && typeof onResolveToolApproval === 'function' && approvalPendingDecision === null
 
   useEffect(() => {
     if (turn.toolPhase !== 'waiting_approval' || approval?.timeoutAt === null || approval?.timeoutAt === undefined) {
@@ -575,7 +575,7 @@ function ToolMessageCard({
   }, [turn.toolPhase])
 
   const handleResolveApproval = async (decision: 'approved' | 'rejected') => {
-    if (turn.toolPhase !== 'waiting_approval' || onResolveToolApproval == null) {
+    if (turn.toolPhase !== 'waiting_approval' || typeof onResolveToolApproval !== 'function') {
       return
     }
 
@@ -951,7 +951,7 @@ function renderToolApprovalBar(input: {
   onApprove: () => void
   onReject: () => void
 }) {
-  if (input.turn.toolPhase !== 'waiting_approval' || input.turn.approval === null) {
+  if (input.turn.toolPhase !== 'waiting_approval') {
     return null
   }
 

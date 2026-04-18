@@ -477,7 +477,9 @@ function upsertToolSegment(
 ): CopilotRunSegment[] {
   const segmentId = `tool:${event.runId}:${event.payload.toolCallId}`
   const existingIndex = segments.findIndex((segment) => segment.id === segmentId)
-  const existingSegment = existingIndex >= 0 ? segments[existingIndex] : null
+  const existingSegment = existingIndex >= 0 && segments[existingIndex]?.kind === 'tool'
+    ? segments[existingIndex]
+    : null
   const nextSegment: CopilotToolSegment = {
     id: segmentId,
     kind: 'tool',
@@ -493,7 +495,7 @@ function upsertToolSegment(
     inputSummary: event.payload.inputSummary ?? null,
     resultSummary: event.payload.resultSummary ?? null,
     errorSummary: event.payload.errorSummary ?? null,
-    approval: buildToolSegmentApproval(event),
+    approval: buildToolSegmentApproval(event, existingSegment),
   }
 
   if (existingIndex >= 0) {
@@ -653,18 +655,23 @@ function failStreamingSegments(segments: CopilotRunSegment[], observedAt: number
   })
 }
 
-function buildToolSegmentApproval(event: RuntimeToolEvent): CopilotToolSegment['approval'] {
+function buildToolSegmentApproval(
+  event: RuntimeToolEvent,
+  existingSegment: CopilotToolSegment | null,
+): CopilotToolSegment['approval'] {
+  const previousApproval = existingSegment?.approval ?? null
+
   if (event.payload.phase !== 'waiting_approval') {
-    return null
+    return previousApproval
   }
 
   return {
-    mode: event.payload.approval?.mode ?? null,
-    approvalMethod: event.payload.security?.approvalMethod ?? null,
-    riskLevel: event.payload.security?.riskLevel ?? null,
-    timeoutAt: event.payload.approval?.timeoutAt ?? null,
-    timeoutSeconds: event.payload.approval?.timeoutSeconds ?? null,
-    timeoutAction: event.payload.approval?.timeoutAction ?? null,
+    mode: event.payload.approval?.mode ?? previousApproval?.mode ?? null,
+    approvalMethod: event.payload.security?.approvalMethod ?? previousApproval?.approvalMethod ?? null,
+    riskLevel: event.payload.security?.riskLevel ?? previousApproval?.riskLevel ?? null,
+    timeoutAt: event.payload.approval?.timeoutAt ?? previousApproval?.timeoutAt ?? null,
+    timeoutSeconds: event.payload.approval?.timeoutSeconds ?? previousApproval?.timeoutSeconds ?? null,
+    timeoutAction: event.payload.approval?.timeoutAction ?? previousApproval?.timeoutAction ?? null,
   }
 }
 

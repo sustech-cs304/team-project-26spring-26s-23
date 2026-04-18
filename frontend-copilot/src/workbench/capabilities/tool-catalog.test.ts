@@ -24,7 +24,7 @@ describe('capabilities tool catalog bridge', () => {
       ok: true,
       tools: [
         {
-          toolId: 'functions.read_file',
+          toolId: 'tool.fs.read',
           kind: 'builtin',
           availability: 'available',
           displayName: '读取文件',

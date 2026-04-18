@@ -171,13 +171,15 @@ export function toggleToolIdInSelection(input: {
   toolId: string
   policy: SettingsWorkspaceToolPermissionPolicyState | null
 }): string[] {
+  if (input.selectedToolIds.includes(input.toolId)) {
+    return input.selectedToolIds.filter((currentToolId) => currentToolId !== input.toolId)
+  }
+
   if (isCopilotToolDenied(input.toolId, input.policy)) {
     return sanitizeSelectedToolIds(input.selectedToolIds)
   }
 
-  return input.selectedToolIds.includes(input.toolId)
-    ? input.selectedToolIds.filter((currentToolId) => currentToolId !== input.toolId)
-    : [...sanitizeSelectedToolIds(input.selectedToolIds), input.toolId]
+  return [...sanitizeSelectedToolIds(input.selectedToolIds), input.toolId]
 }
 
 function compareGroupedTools(

@@ -124,7 +124,7 @@ function createLoadResult() {
           migrationSourceMode: 'manual',
           defaultMode: 'ask',
           toolPermissions: {
-            'functions.read_file': {
+            'tool.fs.read': {
               mode: 'allow',
               source: 'user',
               updatedAt: '2026-04-17T04:00:00.000Z',
@@ -148,7 +148,7 @@ function createToolCatalogLoadResult(
     ok: true,
     tools: [
       {
-        toolId: 'functions.read_file',
+        toolId: 'tool.fs.read',
         kind: 'builtin',
         availability: 'available',
         displayName: '读取文件',
@@ -163,11 +163,11 @@ function createToolCatalogLoadResult(
         },
       },
       {
-        toolId: 'functions.execute_command',
+        toolId: 'tool.fs.write',
         kind: 'builtin',
         availability: 'available',
-        displayName: '执行命令',
-        description: '运行本地终端命令，适合构建、检查与资源处理。',
+        displayName: '写入文件',
+        description: '创建或覆盖文件内容，用于输出生成结果与落盘修改。',
         group: {
           id: 'builtin-core',
           label: '内置基础工具',
@@ -178,11 +178,11 @@ function createToolCatalogLoadResult(
         },
       },
       {
-        toolId: 'functions.write_to_file',
+        toolId: 'tool.fs.edit',
         kind: 'builtin',
         availability: 'available',
-        displayName: '写入文件',
-        description: '创建或重写文件，适用于页面搭建、样式输出与配置修改。',
+        displayName: '编辑文件',
+        description: '对现有文件执行精确编辑，适用于补丁式修改与小范围更新。',
         group: {
           id: 'builtin-core',
           label: '内置基础工具',
@@ -318,9 +318,9 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).toContain('能力中心')
     expect(rendered.container.textContent).toContain('工具权限')
     expect(rendered.container.textContent).toContain('读取文件')
-    expect(rendered.container.textContent).toContain('执行命令')
+    expect(rendered.container.textContent).toContain('写入文件')
     expect(rendered.container.textContent).toContain('浏览器自动化')
-    expect(getToolRow(rendered.container, '读取文件').textContent).toContain('functions.read_file')
+    expect(getToolRow(rendered.container, '读取文件').textContent).toContain('tool.fs.read')
     expect(getExactButton(getToolRow(rendered.container, '读取文件'), '自动批准').className).toContain(
       'tool-permission-segmented__item--active',
     )
@@ -399,7 +399,7 @@ describe('CapabilitiesWorkspace', () => {
       ok: true,
       tools: [
         {
-          toolId: 'functions.read_file',
+          toolId: 'tool.fs.read',
           kind: 'builtin',
           availability: 'available',
           displayName: '读取文件',
@@ -443,7 +443,7 @@ describe('CapabilitiesWorkspace', () => {
     const rendered = renderWithRoot(<CapabilitiesWorkspace />)
     await waitForNextFrame()
 
-    await clickElement(getExactButton(getToolRow(rendered.container, '执行命令'), '总是关闭'))
+    await clickElement(getExactButton(getToolRow(rendered.container, '写入文件'), '总是关闭'))
 
     expect(mockedSaveSettingsWorkspaceState).toHaveBeenCalledTimes(1)
     const saveInput = mockedSaveSettingsWorkspaceState.mock.calls[0]?.[0] as SettingsWorkspaceStateSaveInput
@@ -454,14 +454,14 @@ describe('CapabilitiesWorkspace', () => {
     expect(saveInput.mcp.toolPermissionMode).toBe('strict')
     expect(saveInput.mcp.toolPermissionPolicy).toEqual({
       version: 1,
-      defaultMode: 'deny',
-      toolPermissions: {
-        'functions.read_file': {
+        defaultMode: 'deny',
+        toolPermissions: {
+        'tool.fs.read': {
           mode: 'allow',
           source: 'user',
           updatedAt: '2026-04-17T00:00:00.000Z',
         },
-        'functions.write_to_file': {
+        'tool.fs.edit': {
           mode: 'ask',
           source: 'user',
           updatedAt: '2026-04-17T00:00:00.000Z',
@@ -520,7 +520,7 @@ describe('CapabilitiesWorkspace', () => {
     expect(mockedSaveSettingsWorkspaceState).toHaveBeenCalled()
     const lastSaveCall = mockedSaveSettingsWorkspaceState.mock.calls[mockedSaveSettingsWorkspaceState.mock.calls.length - 1]
     const saveInput = lastSaveCall?.[0] as SettingsWorkspaceStateSaveInput
-    expect(saveInput.mcp.toolPermissionPolicy.toolPermissions['functions.read_file']).toEqual({
+    expect(saveInput.mcp.toolPermissionPolicy.toolPermissions['tool.fs.read']).toEqual({
       mode: 'delay',
       timeoutAction: 'deny',
       timeoutSeconds: 27,
