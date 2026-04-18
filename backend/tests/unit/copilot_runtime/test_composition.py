@@ -12,11 +12,15 @@ from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
     RuntimeRunStartRequest,
+    TOOL_APPROVAL_RESOLVE_METHOD,
+    RuntimeToolApprovalResolveRequest,
+    RuntimeToolPermissionPolicy,
 )
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteRef
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
 from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
 
 
@@ -113,6 +117,7 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     executor_factory = default_agent.executor_factory
     assert executor_factory is not None
     assert executor_factory() is dependencies.agent_executor
+    assert dependencies.runtime_bridge._approval_coordinator is dependencies.agent_executor._approval_coordinator
 
     assert dependencies.scaffold.default_agent == default_agent.name
     assert dependencies.scaffold.tool_registry is dependencies.tool_registry
@@ -126,6 +131,7 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "capabilities/get",
         "tools/catalog/get",
         THINKING_CAPABILITY_GET_METHOD,
+        TOOL_APPROVAL_RESOLVE_METHOD,
     )
     global_tool_catalog = dependencies.scaffold.build_global_tool_catalog_response().to_dict()
     assert global_tool_catalog["ok"] is True
@@ -235,6 +241,59 @@ def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor()
     executor_factory = dependencies.agent_registry.get_default().executor_factory
     assert executor_factory is not None
     assert executor_factory() is agent_executor
+    assert dependencies.runtime_bridge._approval_coordinator is agent_executor._approval_coordinator
+
+
+def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_against_shared_context() -> None:
+    dependencies = build_default_runtime_dependencies(
+        agent_executor=PydanticAIAgentExecutor(
+            model=TestModel(
+                call_tools=["weather_current"],
+                custom_output_text=TEST_MODEL_REPLY,
+                seed=0,
+            )
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    dependencies.session_store.create_thread(bound_agent_id=DEFAULT_AGENT_NAME, thread_id="thread-1")
+    run = dependencies.runtime_bridge.start_run(
+        request=_build_run_request(
+            thread_id="thread-1",
+            enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+            tool_permission_policy=RuntimeToolPermissionPolicy(schemaVersion=1, defaultMode="ask"),
+        )
+    )
+    resolution_payloads: list[dict[str, object]] = []
+
+    async def collect_and_resolve():
+        events = []
+        async for event in dependencies.runtime_bridge.stream_run(run_id=run.run_id):
+            events.append(event)
+            if event.type != "tool_event" or event.payload.get("phase") != "waiting_approval":
+                continue
+            resolution_payloads.append(
+                dependencies.runtime_bridge.resolve_tool_approval(
+                    request=RuntimeToolApprovalResolveRequest(
+                        run_id=run.run_id,
+                        tool_call_id=str(event.payload["toolCallId"]),
+                        decision="approved",
+                    )
+                ).to_dict()
+            )
+        return events
+
+    events = asyncio.run(collect_and_resolve())
+
+    assert len(resolution_payloads) == 1
+    assert resolution_payloads[0]["runId"] == run.run_id
+    assert resolution_payloads[0]["decision"] == "approved"
+    assert resolution_payloads[0]["status"] == "approved"
+    assert any(
+        event.type == "tool_event" and event.payload.get("phase") == "waiting_approval"
+        for event in events
+    )
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == TEST_MODEL_REPLY
 
 
 def test_build_default_runtime_dependencies_default_executor_is_unconfigured_without_explicit_model(
@@ -260,7 +319,12 @@ def _build_test_agent_executor() -> PydanticAIAgentExecutor:
     return PydanticAIAgentExecutor(model=TestModel(custom_output_text=TEST_MODEL_REPLY))
 
 
-def _build_run_request(*, thread_id: str) -> RuntimeRunStartRequest:
+def _build_run_request(
+    *,
+    thread_id: str,
+    enabled_tools: tuple[str, ...] = (),
+    tool_permission_policy: RuntimeToolPermissionPolicy | None = None,
+) -> RuntimeRunStartRequest:
     return RuntimeRunStartRequest(
         thread_id=thread_id,
         message=RuntimeMessagePayload(role="user", content="Hello"),
@@ -273,7 +337,8 @@ def _build_run_request(*, thread_id: str) -> RuntimeRunStartRequest:
                     model_id="gpt-4.1",
                 ),
             ),
-            enabledTools=(),
+            enabledTools=enabled_tools,
+            toolPermissionPolicy=tool_permission_policy,
             requestOptions={},
         ),
         agent_id=DEFAULT_AGENT_NAME,

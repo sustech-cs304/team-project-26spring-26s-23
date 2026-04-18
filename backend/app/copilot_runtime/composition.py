@@ -20,6 +20,7 @@ from .model_routes import (
 from .persistence import SQLiteSessionStore
 from .runtime_session_store import RuntimeSessionStore
 from .session_store import InMemorySessionStore
+from .tool_approval_coordinator import RuntimeToolApprovalCoordinator
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
 if TYPE_CHECKING:
@@ -67,9 +68,20 @@ def build_default_runtime_dependencies(
         host_capabilities_factory=host_capabilities_factory,
         workspace_root=(runtime_config.backend_dir.parent if runtime_config is not None else None),
     )
-    resolved_agent_executor = agent_executor or PydanticAIAgentExecutor(
-        tool_registry=tool_registry,
-    )
+    shared_approval_coordinator: RuntimeToolApprovalCoordinator | None = None
+    if agent_executor is None:
+        shared_approval_coordinator = RuntimeToolApprovalCoordinator()
+        resolved_agent_executor = PydanticAIAgentExecutor(
+            tool_registry=tool_registry,
+            approval_coordinator=shared_approval_coordinator,
+        )
+    else:
+        resolved_agent_executor = agent_executor
+        existing_approval_coordinator = getattr(resolved_agent_executor, "_approval_coordinator", None)
+        if isinstance(existing_approval_coordinator, RuntimeToolApprovalCoordinator):
+            shared_approval_coordinator = existing_approval_coordinator
+    if shared_approval_coordinator is None:
+        shared_approval_coordinator = RuntimeToolApprovalCoordinator()
     agent_registry = build_default_agent_registry(
         executor_factory=lambda: resolved_agent_executor,
         toolset_name=tool_registry.get_default().name,
@@ -95,6 +107,7 @@ def build_default_runtime_dependencies(
         message_run_orchestrator=message_run_orchestrator,
         model_route_resolver=resolved_model_route_resolver,
         provider_adapter_registry=resolved_agent_executor.provider_adapter_registry,
+        approval_coordinator=shared_approval_coordinator,
     )
     return RuntimeDependencies(
         session_store=resolved_session_store,
