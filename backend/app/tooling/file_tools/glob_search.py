@@ -12,9 +12,6 @@ from .path_policy import PathResolution, is_hidden_path
 from .protocol import GlobMatch, GlobRequest, PathMetadata
 
 _DEFAULT_MAX_RESULTS = 500
-_GLOB_META_SEGMENTS = ("**", "*", "?", "[", "]")
-
-
 @dataclass(frozen=True, slots=True)
 class GlobSearchPayload:
     """Resolved glob result payload before service/runtime envelope mapping."""

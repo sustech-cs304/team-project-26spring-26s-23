@@ -112,7 +112,9 @@ def _search_file(
     if remaining <= 0:
         return [], False
 
-    lines = candidate.read_text(encoding="utf-8").splitlines()
+    lines = _read_searchable_lines(candidate)
+    if lines is None:
+        return [], False
     before_buffer: deque[str] = deque(maxlen=request.context_lines)
     results: list[GrepMatch] = []
     truncated = False
@@ -221,6 +223,13 @@ def _is_binary_file(path: Path) -> bool:
     return _looks_binary(sample)
 
 
+def _read_searchable_lines(path: Path) -> list[str] | None:
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def _line_has_following_match(*, lines: list[str], start_index: int, matcher: re.Pattern[str]) -> bool:
     for line in lines[start_index:]:
         if matcher.search(line) is not None:
@@ -242,7 +251,10 @@ def _remaining_candidates(candidates: list[Path], *, after: Path) -> list[Path]:
 
 def _has_any_match(*, candidates: list[Path], matcher: re.Pattern[str]) -> bool:
     for candidate in candidates:
-        for line in candidate.read_text(encoding="utf-8").splitlines():
+        lines = _read_searchable_lines(candidate)
+        if lines is None:
+            continue
+        for line in lines:
             if matcher.search(line) is not None:
                 return True
     return False

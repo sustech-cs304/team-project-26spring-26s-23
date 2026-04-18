@@ -1,21 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-
-from .contracts import RuntimeContract, RuntimeToolDirectoryEntry, RuntimeScaffold
+from .contracts import RuntimeGlobalToolCatalogResponse, RuntimeScaffold
 from .tool_registry import normalize_tool_catalog_language
 
 GLOBAL_TOOL_CATALOG_GET_METHOD = "tools/catalog/get"
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeGlobalToolCatalogResponse(RuntimeContract):
-    ok: bool
-    directoryVersion: str
-    defaultToolset: str
-    tools: tuple[RuntimeToolDirectoryEntry, ...]
-
 
 def build_global_tool_catalog_response(
     scaffold: RuntimeScaffold,

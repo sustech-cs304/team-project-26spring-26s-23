@@ -475,14 +475,6 @@ _TIS_TOOL_GROUP = ToolPresentationGroup(
     order=20,
     source_kind="sustech-tis",
 )
-_MCP_TOOL_GROUP = ToolPresentationGroup(
-    group_id="mcp",
-    label_zh="MCP 工具",
-    label_en="MCP Tools",
-    order=100,
-    source_kind="mcp-server",
-)
-
 _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_CONVERT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_READ_ID: _BUILTIN_TOOL_GROUP,

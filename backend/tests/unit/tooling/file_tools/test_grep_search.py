@@ -114,3 +114,18 @@ def test_grep_search_skips_binary_files_and_reports_invalid_regex(tmp_path: Path
         )
 
     assert exc_info.value.code == "invalid_regex"
+
+
+def test_grep_search_skips_invalid_utf8_text_without_crashing(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "broken.txt").write_bytes(b"hello\xffworld")
+    (workspace_root / "good.txt").write_text("TODO\n", encoding="utf-8")
+    resolution = FileToolPathPolicy(workspace_root=workspace_root).resolve_path(".")
+
+    payload = FileToolGrepSearcher().search(
+        request=GrepRequest(base_path=".", pattern="TODO", file_glob="*.txt"),
+        resolution=resolution,
+    )
+
+    assert [match.path.path for match in payload.matches] == ["good.txt"]

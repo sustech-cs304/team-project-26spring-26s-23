@@ -36,7 +36,6 @@ from .protocol import (
     PathMetadata,
     ReadRequest,
     ReadResult,
-    RootSource,
     SwitchRootRequest,
     SwitchRootResult,
     ToolName,

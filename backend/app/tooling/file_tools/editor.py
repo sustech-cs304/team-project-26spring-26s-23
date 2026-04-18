@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-
 from .errors import FileToolError
 from .path_policy import PathResolution
 from .protocol import EditRequest, EditResult, PathMetadata

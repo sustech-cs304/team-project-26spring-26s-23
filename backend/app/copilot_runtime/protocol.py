@@ -790,31 +790,77 @@ class RuntimeProtocolParser:
             field_name=f"{field_name}.toolTimeoutSeconds",
             requested_method=requested_method,
         )
-        tool_timeout_seconds = {
-            tool_id: timeout_seconds
-            for tool_id, timeout_seconds in raw_tool_timeout_seconds.items()
-            if isinstance(tool_id, str)
-            and tool_id.strip() != ""
-            and (
-                isinstance(timeout_seconds, int)
-                or (
-                    isinstance(timeout_seconds, str)
-                    and timeout_seconds.strip() != ""
+        tool_timeout_seconds: dict[str, int | str] = {}
+        for tool_id, timeout_seconds in raw_tool_timeout_seconds.items():
+            if not isinstance(tool_id, str) or tool_id.strip() == "":
+                continue
+            if isinstance(timeout_seconds, bool):
+                raise RuntimeProtocolError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error=build_invalid_request_error(
+                        message=(
+                            f"Runtime request field '{field_name}.toolTimeoutSeconds.{tool_id}' must be "
+                            "a positive integer or numeric string."
+                        ),
+                        scaffold=self._scaffold,
+                        requested_method=requested_method,
+                        details={"field": f"{field_name}.toolTimeoutSeconds.{tool_id}"},
+                    ),
                 )
+            if isinstance(timeout_seconds, int):
+                if timeout_seconds <= 0:
+                    raise RuntimeProtocolError(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        error=build_invalid_request_error(
+                            message=(
+                                f"Runtime request field '{field_name}.toolTimeoutSeconds.{tool_id}' must be "
+                                "a positive integer or numeric string."
+                            ),
+                            scaffold=self._scaffold,
+                            requested_method=requested_method,
+                            details={"field": f"{field_name}.toolTimeoutSeconds.{tool_id}"},
+                        ),
+                    )
+                tool_timeout_seconds[tool_id] = timeout_seconds
+                continue
+            if isinstance(timeout_seconds, str) and timeout_seconds.strip() != "":
+                tool_timeout_seconds[tool_id] = timeout_seconds
+                continue
+            raise RuntimeProtocolError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=build_invalid_request_error(
+                    message=(
+                        f"Runtime request field '{field_name}.toolTimeoutSeconds.{tool_id}' must be "
+                        "a positive integer or numeric string."
+                    ),
+                    scaffold=self._scaffold,
+                    requested_method=requested_method,
+                    details={"field": f"{field_name}.toolTimeoutSeconds.{tool_id}"},
+                ),
             )
-        }
         raw_tool_timeout_actions = self._require_object(
             policy.get("toolTimeoutActions") if policy.get("toolTimeoutActions") is not None else {},
             field_name=f"{field_name}.toolTimeoutActions",
             requested_method=requested_method,
         )
-        tool_timeout_actions = {
-            tool_id: timeout_action
-            for tool_id, timeout_action in raw_tool_timeout_actions.items()
-            if isinstance(tool_id, str)
-            and tool_id.strip() != ""
-            and timeout_action in {"approve", "deny"}
-        }
+        tool_timeout_actions: dict[str, str] = {}
+        for tool_id, timeout_action in raw_tool_timeout_actions.items():
+            if not isinstance(tool_id, str) or tool_id.strip() == "":
+                continue
+            if timeout_action not in {"approve", "deny"}:
+                raise RuntimeProtocolError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error=build_invalid_request_error(
+                        message=(
+                            f"Runtime request field '{field_name}.toolTimeoutActions.{tool_id}' must be "
+                            "either 'approve' or 'deny'."
+                        ),
+                        scaffold=self._scaffold,
+                        requested_method=requested_method,
+                        details={"field": f"{field_name}.toolTimeoutActions.{tool_id}"},
+                    ),
+                )
+            tool_timeout_actions[tool_id] = timeout_action
         return RuntimeToolPermissionPolicy(
             schemaVersion=schema_version,
             defaultMode=default_mode,

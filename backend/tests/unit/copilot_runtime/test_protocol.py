@@ -430,6 +430,58 @@ def test_extract_run_start_request_reads_delay_tool_permission_policy_timeout_fi
     }
 
 
+def test_extract_run_start_request_rejects_invalid_tool_timeout_seconds() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["toolPermissionPolicy"] = {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {"tool.file-convert": "delay"},
+        "toolTimeoutSeconds": {"tool.file-convert": 0},
+        "toolTimeoutActions": {"tool.file-convert": "deny"},
+    }
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_run_start_request(
+            {
+                "method": "run/start",
+                "body": {
+                    "threadId": "thread-123",
+                    "message": {"role": "user", "content": "Hello"},
+                    "policy": policy,
+                },
+            }
+        )
+
+    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutSeconds.tool.file-convert"}
+
+
+def test_extract_run_start_request_rejects_invalid_tool_timeout_action() -> None:
+    parser = _build_parser()
+    policy = _build_policy_payload()
+    policy["toolPermissionPolicy"] = {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {"tool.file-convert": "delay"},
+        "toolTimeoutSeconds": {"tool.file-convert": 27},
+        "toolTimeoutActions": {"tool.file-convert": "later"},
+    }
+
+    with pytest.raises(RuntimeProtocolError) as exc_info:
+        parser.extract_run_start_request(
+            {
+                "method": "run/start",
+                "body": {
+                    "threadId": "thread-123",
+                    "message": {"role": "user", "content": "Hello"},
+                    "policy": policy,
+                },
+            }
+        )
+
+    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutActions.tool.file-convert"}
+
+
 
 def test_extract_run_start_request_requires_model_route_policy_object() -> None:
     parser = _build_parser()
