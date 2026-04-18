@@ -31,6 +31,9 @@ from .contracts import (
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
     RuntimeToolApprovalResolveRequest,
+    RuntimeToolApprovalDecision,
+    RuntimeToolPermissionMode,
+    RuntimeToolTimeoutAction,
     RuntimeThreadCreateRequest,
     RuntimeThreadGetRequest,
     normalize_thinking_level_intent,
@@ -263,23 +266,11 @@ class RuntimeProtocolParser:
             field_name="toolCallId",
             requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
         )
-        decision = self._require_non_empty_string(
+        decision = self._require_tool_approval_decision(
             request_body.get("decision"),
             field_name="decision",
             requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
         )
-        if decision not in {"approved", "rejected"}:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message=(
-                        "Runtime request field 'decision' must be one of: approved, rejected."
-                    ),
-                    scaffold=self._scaffold,
-                    requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
-                    details={"field": "decision"},
-                ),
-            )
         return RuntimeToolApprovalResolveRequest(
             run_id=run_id,
             tool_call_id=tool_call_id,
@@ -785,7 +776,7 @@ class RuntimeProtocolParser:
             field_name=f"{field_name}.toolModes",
             requested_method=requested_method,
         )
-        tool_modes = {
+        tool_modes: dict[str, RuntimeToolPermissionMode] = {
             tool_id: self._require_tool_permission_mode(
                 mode,
                 field_name=f"{field_name}.toolModes.{tool_id}",
@@ -860,24 +851,15 @@ class RuntimeProtocolParser:
             field_name=f"{field_name}.toolTimeoutActions",
             requested_method=requested_method,
         )
-        tool_timeout_actions: dict[str, str] = {}
+        tool_timeout_actions: dict[str, RuntimeToolTimeoutAction] = {}
         for tool_id, timeout_action in raw_tool_timeout_actions.items():
             if not isinstance(tool_id, str) or tool_id.strip() == "":
                 continue
-            if timeout_action not in {"approve", "deny"}:
-                raise RuntimeProtocolError(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    error=build_invalid_request_error(
-                        message=(
-                            f"Runtime request field '{field_name}.toolTimeoutActions.{tool_id}' must be "
-                            "either 'approve' or 'deny'."
-                        ),
-                        scaffold=self._scaffold,
-                        requested_method=requested_method,
-                        details={"field": f"{field_name}.toolTimeoutActions.{tool_id}"},
-                    ),
-                )
-            tool_timeout_actions[tool_id] = timeout_action
+            tool_timeout_actions[tool_id] = self._require_tool_timeout_action(
+                timeout_action,
+                field_name=f"{field_name}.toolTimeoutActions.{tool_id}",
+                requested_method=requested_method,
+            )
         return RuntimeToolPermissionPolicy(
             schemaVersion=schema_version,
             defaultMode=default_mode,
@@ -886,29 +868,91 @@ class RuntimeProtocolParser:
             toolTimeoutActions=tool_timeout_actions,
         )
 
+    def _require_tool_approval_decision(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeToolApprovalDecision:
+        normalized = self._require_non_empty_string(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+        if normalized == "approved":
+            return "approved"
+        if normalized == "rejected":
+            return "rejected"
+        raise RuntimeProtocolError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error=build_invalid_request_error(
+                message=(
+                    f"Runtime request field '{field_name}' must be one of: approved, rejected."
+                ),
+                scaffold=self._scaffold,
+                requested_method=requested_method,
+                details={"field": field_name},
+            ),
+        )
+
     def _require_tool_permission_mode(
         self,
         value: Any,
         *,
         field_name: str,
         requested_method: str,
-    ) -> str:
+    ) -> RuntimeToolPermissionMode:
         normalized = self._require_non_empty_string(
             value,
             field_name=field_name,
             requested_method=requested_method,
         )
-        if normalized not in {"allow", "ask", "delay", "deny"}:
-            raise RuntimeProtocolError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=build_invalid_request_error(
-                    message=f"Runtime request field '{field_name}' must be one of: allow, ask, delay, deny.",
-                    scaffold=self._scaffold,
-                    requested_method=requested_method,
-                    details={"field": field_name},
+        if normalized == "allow":
+            return "allow"
+        if normalized == "ask":
+            return "ask"
+        if normalized == "delay":
+            return "delay"
+        if normalized == "deny":
+            return "deny"
+        raise RuntimeProtocolError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error=build_invalid_request_error(
+                message=f"Runtime request field '{field_name}' must be one of: allow, ask, delay, deny.",
+                scaffold=self._scaffold,
+                requested_method=requested_method,
+                details={"field": field_name},
+            ),
+        )
+
+    def _require_tool_timeout_action(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        requested_method: str,
+    ) -> RuntimeToolTimeoutAction:
+        normalized = self._require_non_empty_string(
+            value,
+            field_name=field_name,
+            requested_method=requested_method,
+        )
+        if normalized == "approve":
+            return "approve"
+        if normalized == "deny":
+            return "deny"
+        raise RuntimeProtocolError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error=build_invalid_request_error(
+                message=(
+                    f"Runtime request field '{field_name}' must be either 'approve' or 'deny'."
                 ),
-            )
-        return normalized
+                scaffold=self._scaffold,
+                requested_method=requested_method,
+                details={"field": field_name},
+            ),
+        )
 
     def _optional_thinking_selection(
         self,
