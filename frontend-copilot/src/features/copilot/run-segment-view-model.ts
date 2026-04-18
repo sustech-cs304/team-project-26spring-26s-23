@@ -47,6 +47,9 @@ export interface CopilotAssistantMessageItem extends CopilotRunSegmentViewItemBa
   thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
   reasoningTraceState?: CopilotRunState['reasoningTraceState']
   reasoningSuppressionBasis?: CopilotRunState['reasoningSuppressionBasis']
+  availabilityInterpretation?: Record<string, unknown> | null
+  availabilityDrift?: Record<string, unknown> | null
+  historicalSnapshot?: Record<string, unknown> | null
 }
 
 export interface CopilotReasoningMessageItem extends CopilotRunSegmentViewItemBase {
@@ -96,6 +99,9 @@ export interface CopilotTerminalMessageItem extends CopilotRunSegmentViewItemBas
   thinkingCapabilitySnapshot?: CopilotRunState['thinkingCapabilitySnapshot']
   reasoningTraceState?: CopilotRunState['reasoningTraceState']
   reasoningSuppressionBasis?: CopilotRunState['reasoningSuppressionBasis']
+  availabilityInterpretation?: Record<string, unknown> | null
+  availabilityDrift?: Record<string, unknown> | null
+  historicalSnapshot?: Record<string, unknown> | null
 }
 
 export type CopilotRunSegmentViewItem =
@@ -631,6 +637,10 @@ function formatFailureMessage(failure: CopilotRunFailureSummary | null): string 
   switch (failure.code) {
     case 'tool_execution_failed':
       return '工具执行失败，请重试。'
+    case 'authentication_required': {
+      const explicitMessage = failure.message.trim()
+      return explicitMessage === '' ? '认证失败，请检查 SUSTech CAS 凭证。' : explicitMessage
+    }
     default:
       return '当前响应失败，请重试。'
   }

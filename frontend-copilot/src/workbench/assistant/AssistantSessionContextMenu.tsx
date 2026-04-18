@@ -1,47 +1,66 @@
+
 import type { ReactNode } from 'react'
 
+import { getAssistantSessionCopy, type WorkbenchLanguage } from '../locale'
 import {
-  assistantSessionCopyActions,
-  assistantSessionExportActions,
-  assistantSessionPrimaryActions,
+  getAssistantSessionCopyActions,
+  getAssistantSessionExportActions,
+  getAssistantSessionPrimaryActions,
   type AssistantSessionContextMenuState,
-  type AssistantSessionContextSubmenu,
 } from './assistant-session-list-helpers'
 
 interface AssistantSessionContextMenuProps {
+  language?: WorkbenchLanguage
   sessionContextMenu: AssistantSessionContextMenuState | null
   deleteConfirmationSessionId: string | null
-  onDismissContextMenu: () => void
   onRequestRename: (sessionId: string) => void
+  onDuplicateSession: (sessionId: string) => void
   onRequestDelete: (sessionId: string) => void
   onConfirmDelete: (sessionId: string) => void
   onCancelDelete: () => void
-  onSelectSubmenu: (submenu: AssistantSessionContextSubmenu | null) => void
+  onDismissContextMenu: () => void
+  onSelectSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
+}
+
+function clampMenuTop(top: number): number {
+  const margin = 12
+  const estimatedMenuHeight = 320
+  const viewportHeight = window.innerHeight
+  return Math.max(margin, Math.min(top, viewportHeight - estimatedMenuHeight - margin))
 }
 
 export function AssistantSessionContextMenu({
+  language = 'zh-CN',
   sessionContextMenu,
   deleteConfirmationSessionId,
-  onDismissContextMenu,
   onRequestRename,
+  onDuplicateSession,
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
+  onDismissContextMenu,
   onSelectSubmenu,
 }: AssistantSessionContextMenuProps) {
   if (sessionContextMenu === null) {
     return null
   }
 
+  const copy = getAssistantSessionCopy(language)
+  const assistantSessionPrimaryActions = getAssistantSessionPrimaryActions(language)
+  const assistantSessionCopyActions = getAssistantSessionCopyActions(language)
+  const assistantSessionExportActions = getAssistantSessionExportActions(language)
   const deleteConfirmationActive = deleteConfirmationSessionId === sessionContextMenu.sessionId
+  const renameAction = assistantSessionPrimaryActions[0]
+  const deleteAction = assistantSessionPrimaryActions[1]
+  const duplicateAction = assistantSessionPrimaryActions[2]
 
   return (
     <div
       className="session-context-menu"
       data-testid="assistant-session-context-menu"
       role="menu"
-      aria-label={`${sessionContextMenu.sessionLabel} 会话菜单`}
-      style={{ left: `${sessionContextMenu.x}px`, top: `${sessionContextMenu.y}px` }}
+      aria-label={copy.contextMenu.menuAriaLabel(sessionContextMenu.sessionLabel)}
+      style={{ left: `${sessionContextMenu.x}px`, top: `${clampMenuTop(sessionContextMenu.y)}px` }}
     >
       <p className="session-context-menu__title">{sessionContextMenu.sessionLabel}</p>
 
@@ -49,11 +68,11 @@ export function AssistantSessionContextMenu({
         <button
           type="button"
           className="session-context-menu__item"
-          data-testid={assistantSessionPrimaryActions[0]?.testId}
+          data-testid={renameAction?.testId}
           role="menuitem"
           onClick={() => onRequestRename(sessionContextMenu.sessionId)}
         >
-          {assistantSessionPrimaryActions[0]?.label}
+          {renameAction?.label}
         </button>
 
         {deleteConfirmationActive
@@ -66,7 +85,7 @@ export function AssistantSessionContextMenu({
                   role="menuitem"
                   onClick={() => onConfirmDelete(sessionContextMenu.sessionId)}
                 >
-                  确认删除会话
+                  {copy.contextMenu.confirmDeleteSession}
                 </button>
                 <button
                   type="button"
@@ -75,7 +94,7 @@ export function AssistantSessionContextMenu({
                   role="menuitem"
                   onClick={onCancelDelete}
                 >
-                  取消删除
+                  {copy.contextMenu.cancelDelete}
                 </button>
               </>
             )
@@ -83,31 +102,31 @@ export function AssistantSessionContextMenu({
               <button
                 type="button"
                 className="session-context-menu__item"
-                data-testid={assistantSessionPrimaryActions[1]?.testId}
+                data-testid={deleteAction?.testId}
                 role="menuitem"
                 onClick={() => onRequestDelete(sessionContextMenu.sessionId)}
               >
-                {assistantSessionPrimaryActions[1]?.label}
+                {deleteAction?.label}
               </button>
             )}
 
         <button
           type="button"
           className="session-context-menu__item"
-          data-testid={assistantSessionPrimaryActions[2]?.testId}
+          data-testid={duplicateAction?.testId}
           role="menuitem"
-          onClick={onDismissContextMenu}
+          onClick={() => onDuplicateSession(sessionContextMenu.sessionId)}
         >
-          {assistantSessionPrimaryActions[2]?.label}
+          {duplicateAction?.label}
         </button>
-
         <AssistantSessionSubmenu
           active={sessionContextMenu.activeSubmenu === 'copy'}
           panelTestId="assistant-session-context-submenu-panel-copy"
           triggerTestId="assistant-session-context-submenu-copy"
-          label="复制会话"
-          ariaLabel="复制会话子菜单"
-          onActiveChange={(active) => onSelectSubmenu(active ? 'copy' : null)}
+          label={copy.contextMenu.copySession}
+          ariaLabel={copy.contextMenu.copySession}
+          onOpen={() => onSelectSubmenu(sessionContextMenu.sessionId, 'copy')}
+          onClose={() => onSelectSubmenu(sessionContextMenu.sessionId, null)}
         >
           {assistantSessionCopyActions.map((action) => (
             <button
@@ -127,9 +146,10 @@ export function AssistantSessionContextMenu({
           active={sessionContextMenu.activeSubmenu === 'export'}
           panelTestId="assistant-session-context-submenu-panel-export"
           triggerTestId="assistant-session-context-submenu-export"
-          label="导出会话"
-          ariaLabel="导出会话子菜单"
-          onActiveChange={(active) => onSelectSubmenu(active ? 'export' : null)}
+          label={copy.contextMenu.exportSession}
+          ariaLabel={copy.contextMenu.exportSession}
+          onOpen={() => onSelectSubmenu(sessionContextMenu.sessionId, 'export')}
+          onClose={() => onSelectSubmenu(sessionContextMenu.sessionId, null)}
         >
           {assistantSessionExportActions.map((action) => (
             <button
@@ -151,28 +171,30 @@ export function AssistantSessionContextMenu({
 
 interface AssistantSessionSubmenuProps {
   active: boolean
-  triggerTestId: string
   panelTestId: string
+  triggerTestId: string
   label: string
   ariaLabel: string
-  onActiveChange: (active: boolean) => void
   children: ReactNode
+  onOpen: () => void
+  onClose: () => void
 }
 
 function AssistantSessionSubmenu({
   active,
-  triggerTestId,
   panelTestId,
+  triggerTestId,
   label,
   ariaLabel,
-  onActiveChange,
   children,
+  onOpen,
+  onClose,
 }: AssistantSessionSubmenuProps) {
   return (
     <div
       className="session-context-menu__submenu"
-      onMouseEnter={() => onActiveChange(true)}
-      onMouseLeave={() => onActiveChange(false)}
+      onMouseEnter={onOpen}
+      onMouseLeave={onClose}
     >
       <button
         type="button"
@@ -180,19 +202,16 @@ function AssistantSessionSubmenu({
         data-testid={triggerTestId}
         role="menuitem"
         aria-haspopup="menu"
-        aria-expanded={active}
+        aria-expanded={active ? 'true' : 'false'}
+        aria-label={ariaLabel}
+        onMouseEnter={onOpen}
+        onFocus={onOpen}
       >
         <span>{label}</span>
         <span className="session-context-menu__submenu-caret" aria-hidden="true">›</span>
       </button>
-
       {active && (
-        <div
-          className="session-context-submenu"
-          data-testid={panelTestId}
-          role="menu"
-          aria-label={ariaLabel}
-        >
+        <div className="session-context-submenu" data-testid={panelTestId}>
           {children}
         </div>
       )}

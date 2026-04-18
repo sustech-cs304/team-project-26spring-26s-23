@@ -7,6 +7,7 @@ import {
 import {
   buildErrorDetailOverlayViewModel,
   createCopilotErrorDetailSource,
+  parseErrorDetailJsonTextForViewer,
 } from './error-detail-overlay-view-model'
 import { RuntimeRequestError } from './thread-run-contract'
 import { createRuntimeModelRoute } from './thread-run-contract.test-support'
@@ -124,5 +125,94 @@ describe('error detail overlay view model', () => {
       'raw-details',
     ])
     expect(viewModel.groups[viewModel.groups.length - 1]?.key).toBe('raw-details')
+  })
+
+  it('preserves traceback diagnostics in the raw details group for streaming tool failures', () => {
+    const traceback = [
+      'Traceback (most recent call last):',
+      '  File "/workspace/backend/tool.py", line 42, in invoke',
+      '    raise RuntimeError("blackboard search exploded")',
+      'RuntimeError: blackboard search exploded',
+    ].join('\n')
+    const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '发送失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'blackboard search exploded',
+      code: 'execution_failed',
+      stage: 'streaming',
+      requestedMethod: 'run/stream',
+      details: {
+        toolId: 'blackboard.course_catalog.search',
+        toolCallId: 'tool-call-1',
+        exceptionType: 'RuntimeError',
+        exceptionMessage: 'blackboard search exploded',
+        traceback,
+        diagnosticContext: {
+          integration: 'blackboard',
+        },
+      },
+      resolvedToolIds: ['blackboard.course_catalog.search'],
+    }))
+    const rawDetailsItem = viewModel.groups
+      .find((group) => group.key === 'raw-details')
+      ?.items.find((item) => item.kind === 'text' && item.label === '原始 details')
+
+    expect(rawDetailsItem).toMatchObject({
+      kind: 'text',
+      label: '原始 details',
+      presentation: 'json',
+      structuredValue: {
+        toolId: 'blackboard.course_catalog.search',
+        toolCallId: 'tool-call-1',
+        exceptionType: 'RuntimeError',
+        exceptionMessage: 'blackboard search exploded',
+        traceback,
+        diagnosticContext: {
+          integration: 'blackboard',
+        },
+      },
+    })
+    expect(rawDetailsItem?.kind).toBe('text')
+    if (rawDetailsItem?.kind === 'text') {
+      expect(rawDetailsItem.text).toContain('Traceback (most recent call last):')
+      expect(rawDetailsItem.text).toContain('RuntimeError: blackboard search exploded')
+    }
+  })
+
+  it('marks raw details as structured json only when the serialized value is a json object or array', () => {
+    const jsonViewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '发送失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'Tool failed: boom',
+      details: {
+        toolId: 'tool.weather-current',
+        retryable: false,
+        attempts: [1, 2],
+      },
+    }))
+    const jsonItem = jsonViewModel.groups
+      .find((group) => group.key === 'raw-details')
+      ?.items.find((item) => item.kind === 'text' && item.label === '原始 details')
+
+    expect(jsonItem).toMatchObject({
+      kind: 'text',
+      label: '原始 details',
+      presentation: 'json',
+      structuredValue: {
+        toolId: 'tool.weather-current',
+        retryable: false,
+        attempts: [1, 2],
+      },
+    })
+
+    expect(parseErrorDetailJsonTextForViewer('{"toolId":"tool.weather-current"}')).toEqual({
+      toolId: 'tool.weather-current',
+    })
+    expect(parseErrorDetailJsonTextForViewer('[1,true,{"ok":false}]')).toEqual([1, true, { ok: false }])
+    expect(parseErrorDetailJsonTextForViewer('"tool.weather-current"')).toBeNull()
+    expect(parseErrorDetailJsonTextForViewer('123')).toBeNull()
+    expect(parseErrorDetailJsonTextForViewer('invalid json')).toBeNull()
   })
 })

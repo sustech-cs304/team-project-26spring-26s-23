@@ -19,6 +19,7 @@ import {
 
 interface UseAssistantDirectoryStateInput {
   bootstrap: CopilotBootstrapController
+  language?: string
   listAgents?: typeof listRuntimeAgents
   initialDirectoryState?: AssistantAgentDirectoryState
 }
@@ -33,6 +34,7 @@ interface UseAssistantDirectoryStateResult {
 
 export function useAssistantDirectoryState({
   bootstrap,
+  language = 'zh-CN',
   listAgents: listAgentsImpl = listRuntimeAgents,
   initialDirectoryState = emptyAssistantAgentDirectoryState,
 }: UseAssistantDirectoryStateInput): UseAssistantDirectoryStateResult {
@@ -53,6 +55,7 @@ export function useAssistantDirectoryState({
     void loadAssistantAgentDirectory({
       runtimeUrl: bootstrap.state.runtimeUrl,
       listAgents: listAgentsImpl,
+      language,
     })
       .then((nextDirectoryState) => {
         if (disposed) {
@@ -76,7 +79,7 @@ export function useAssistantDirectoryState({
     return () => {
       disposed = true
     }
-  }, [bootstrap.state, listAgentsImpl])
+  }, [bootstrap.state, language, listAgentsImpl])
 
   const selectedAgent = useMemo(
     () => resolveAssistantSelectedAgent({

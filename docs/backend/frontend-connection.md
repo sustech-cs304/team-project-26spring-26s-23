@@ -32,6 +32,7 @@ sidebar_label: 旧资料：连接面
 
 - 一组控制面端点。
 - 一个统一的聊天根端点 `POST /`。
+- 一组持久化历史与运维端点，用于读取历史线程、回放 run，以及执行 delete / backup / restore。
 
 当前前端的后端联调重点，主要落在这第二层。
 
@@ -73,6 +74,23 @@ sidebar_label: 旧资料：连接面
 - 本地 runtime 是否已经启动。
 - 当前是否 ready，以及最近一次失败发生了什么。
 - 当前运行目录、配置摘要和聊天能力摘要是什么。
+
+## 当前聊天持久化运维契约
+
+除了 `thread/run` 主链外，desktop runtime 现在还额外暴露一组面向持久化历史的运维端点：
+
+- `GET /history/threads`
+- `GET /history/threads/{threadId}`
+- `GET /history/runs/{runId}/replay`
+- `DELETE /history/threads/{threadId}`
+- `POST /history/database/backup`
+- `POST /history/database/restore`
+
+这里的职责边界是：
+
+- renderer 不直接接触 SQLite 文件本身，而是通过 Electron main / preload IPC 间接调用这些端点；
+- `delete` 直接永久删除线程 truth、run、event 与 projection；
+- `backup` / `restore` 仍然是桌面本地单机运维能力，不涉及云同步或多副本协调。
 
 ## 当前聊天主契约
 

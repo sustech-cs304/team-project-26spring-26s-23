@@ -4,14 +4,14 @@ from typing import Any
 
 import pytest
 
-from app.blackboard.api import (
+from app.integrations.sustech.blackboard.api import (
     BlackboardAPIContext,
     BlackboardAnnouncementAPI,
     BlackboardAssignmentAPI,
     BlackboardCourseAPI,
     BlackboardGradeAPI,
 )
-from app.core.auth.cas_client import CASClient
+from app.shared_integrations.sustech_auth.cas_client import CASClient
 from tests.helpers import require_live_credentials
 
 pytestmark = pytest.mark.live

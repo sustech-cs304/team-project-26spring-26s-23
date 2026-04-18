@@ -16,6 +16,8 @@ interface SelectFieldProps {
 interface TextFieldProps {
   label: string
   description?: string
+  feedback?: string
+  feedbackTone?: 'success' | 'warning'
   value: string
   onChange: (value: string) => void
   placeholder?: string
@@ -23,7 +25,9 @@ interface TextFieldProps {
   inputRef?: Ref<HTMLInputElement>
   containerClassName?: string
   disabled?: boolean
+  invalid?: boolean
   inputTestId?: string
+  feedbackTestId?: string
 }
 
 interface TextareaFieldProps {
@@ -152,6 +156,8 @@ export function SelectField({ label, description, value, options, onChange, plac
 export function TextField({
   label,
   description,
+  feedback,
+  feedbackTone = 'warning',
   value,
   onChange,
   placeholder,
@@ -159,7 +165,9 @@ export function TextField({
   inputRef,
   containerClassName,
   disabled = false,
+  invalid = false,
   inputTestId,
+  feedbackTestId,
 }: TextFieldProps) {
   return (
     <label className={containerClassName ? `form-field ${containerClassName}` : 'form-field'}>
@@ -175,8 +183,18 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         disabled={disabled}
+        aria-invalid={invalid || undefined}
         onChange={(event) => onChange(event.target.value)}
       />
+      {feedback ? (
+        <span
+          className={`form-field__feedback form-field__feedback--${feedbackTone}`}
+          data-testid={feedbackTestId}
+          role="status"
+        >
+          {feedback}
+        </span>
+      ) : null}
     </label>
   )
 }

@@ -46,8 +46,8 @@ from .run_events import (
     RuntimeRunEvent,
     RuntimeRunEventFactory,
 )
+from .runtime_session_store import RuntimeSessionStore
 from .session_store import (
-    InMemorySessionStore,
     RuntimeMessageRole,
     RuntimeRunRecord,
     RuntimeStoredModelRoute,
@@ -70,7 +70,7 @@ class RuntimeBridge:
     def __init__(
         self,
         *,
-        session_store: InMemorySessionStore,
+        session_store: RuntimeSessionStore,
         agent_registry: AgentRegistry,
         scaffold: RuntimeScaffold | None = None,
         message_run_orchestrator: RuntimeMessageRunOrchestrator | None = None,
@@ -213,7 +213,7 @@ class RuntimeBridge:
                 request_id=request_id,
             )
             if metadata:
-                run.touch(metadata=metadata)
+                run = self._session_store.touch_run(run.run_id, metadata=metadata)
         except Exception as exc:
             log_runtime_chain_debug(
                 "run_start.bridge.prime_run_metadata.failed",
@@ -405,7 +405,7 @@ class RuntimeBridge:
             return
         run = self._session_store.get_run(run_id)
         if run is not None:
-            run.touch(metadata=metadata)
+            self._session_store.touch_run(run_id, metadata=metadata)
 
     def _assistant_message_id_for_run(self, run: RuntimeRunRecord) -> str:
         stored = run.metadata.get("assistant_message_id")
@@ -553,6 +553,7 @@ class RuntimeBridge:
                     "appliedThinkingSelection": (
                         None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
                     ),
+                    "resolvedModelRoute": resolved_model_route.to_resolved_route_dict(),
                     "thinkingCapabilitySnapshot": capability_snapshot,
                     "thinkingSeriesDecision": thinking_series_decision,
                     "reasoningSuppressionBasis": reasoning_suppression_basis,

@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
@@ -35,16 +35,22 @@ from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
+from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
+from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
     ENV_HOST,
+    ENV_HOST_CAPABILITY_BRIDGE_TOKEN,
+    ENV_HOST_CAPABILITY_BRIDGE_URL,
     ENV_PORT,
     ENV_USER_DATA_DIR,
     LOCAL_TOKEN_HEADER_NAME,
     DesktopRuntimeConfig,
     DesktopRuntimePaths,
 )
+from app.desktop_runtime.security import apply_cors_headers
 from app.desktop_runtime.server import BACKEND_DIR, create_app
 
 
@@ -165,6 +171,7 @@ def test_create_app_mounts_runtime_dependencies_from_composition(tmp_path: Path)
         assert dependencies.agent_executor is app.state.copilot_runtime_agent_executor
         assert dependencies.runtime_bridge is app.state.copilot_runtime_bridge
         assert dependencies.scaffold is app.state.copilot_runtime_scaffold
+        assert dependencies.host_capabilities_factory is app.state.copilot_runtime_host_capabilities_factory
         assert dependencies.agent_registry.get_default().name == "default"
         assert dependencies.tool_registry.get_default().name == "default"
 
@@ -207,8 +214,12 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
     assert toolset_summary["name"] == "default"
     assert toolset_summary["label"] == "Default"
     assert toolset_summary["default"] is True
-    assert toolset_summary["toolCount"] == 3
-    assert len(toolset_summary["tools"]) == 3
+    expected_contract_tool_ids = [
+        contract.metadata.tool_id
+        for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
+    ]
+    assert toolset_summary["toolCount"] == 2 + len(expected_contract_tool_ids)
+    assert len(toolset_summary["tools"]) == 2 + len(expected_contract_tool_ids)
     assert toolset_summary["tools"][0] == {
         "toolId": FILE_CONVERT_TOOL_ID,
         "kind": "builtin",
@@ -223,13 +234,8 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         "displayName": "Current Weather",
         "description": "Return a placeholder current-weather result for a requested location.",
     }
-    assert toolset_summary["tools"][2] == {
-        "toolId": "tool.campus-info.search",
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": "Campus Info Search",
-        "description": "Search indexed campus official documents and return cited snippets.",
-    }
+    assert [tool["toolId"] for tool in toolset_summary["tools"][2:]] == expected_contract_tool_ids
+    assert all(tool["kind"] == "contract" for tool in toolset_summary["tools"][2:])
 
 
 
@@ -348,7 +354,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["capabilities"]["available_agents"] == ["default"]
     assert diagnostics_payload["capabilities"]["default_agent"] == "default"
     assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
-    assert diagnostics_payload["capabilities"]["session_store_type"] == "in-memory"
+    assert diagnostics_payload["capabilities"]["session_store_type"] == "sqlite"
     assert diagnostics_payload["capabilities"]["current_stage_supports_agents_list"] is True
     assert diagnostics_payload["capabilities"]["current_stage_supports_thread_create"] is True
     assert diagnostics_payload["capabilities"]["current_stage_supports_thread_get"] is True
@@ -374,7 +380,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
 def test_cors_preflight_allows_loopback_origins(tmp_path: Path, origin: str) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("203.0.113.10", 50000)) as client:
         response = client.options("/", headers=_build_cors_preflight_headers(origin))
 
     assert response.status_code == 200
@@ -383,28 +389,49 @@ def test_cors_preflight_allows_loopback_origins(tmp_path: Path, origin: str) -> 
 
 
 
+def test_apply_cors_headers_preserves_existing_vary_header_order() -> None:
+    response = Response()
+    response.headers["Vary"] = "Accept-Encoding, Origin, Accept-Encoding"
+
+    apply_cors_headers(
+        response,
+        origin="http://localhost:5173",
+        requested_headers="content-type",
+        is_preflight_request=True,
+    )
+
+    assert response.headers["vary"] == (
+        "Accept-Encoding, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    )
+
+
+
 def test_cors_preflight_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.options(
             "/",
             headers=_build_cors_preflight_headers(
                 "null",
                 user_agent=_ELECTRON_TEST_USER_AGENT,
+                requested_headers="content-type, x-local-token",
             ),
         )
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "null"
     assert "POST" in response.headers["access-control-allow-methods"]
+    assert response.headers["access-control-allow-headers"] == "content-type, x-local-token"
+    assert response.headers["access-control-max-age"] == "600"
+    assert response.headers["vary"] == "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
 
 
 
 def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.post(
             "/",
             json={"method": "agents/list"},
@@ -416,6 +443,23 @@ def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "null"
+
+
+
+def test_cors_preflight_rejects_packaged_electron_null_origin_from_non_loopback_client(tmp_path: Path) -> None:
+    app = _create_test_app(tmp_path)
+
+    with TestClient(app, client=("203.0.113.10", 50000)) as client:
+        response = client.options(
+            "/",
+            headers=_build_cors_preflight_headers(
+                "null",
+                user_agent=_ELECTRON_TEST_USER_AGENT,
+            ),
+        )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
 
 
 
@@ -511,7 +555,7 @@ def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
     assert "agent_id=default" in run_start_logs[0]
     assert "phase=create_run_record" in run_start_logs[0]
     assert "exception_type=RuntimeError" in run_start_logs[0]
-    assert "exception_summary=forced run/start failure" in run_start_logs[0]
+    assert "exception_message=forced run/start failure" in run_start_logs[0]
     assert all(
         "desktop-runtime unexpected exception" not in record.getMessage()
         for record in caplog.records
@@ -560,14 +604,14 @@ def test_runtime_failure_envelope_logs_request_context_fields(
     assert "run_id=run-log" in unexpected_logs[0]
     assert "phase=build_run_start_response" in unexpected_logs[0]
     assert "exception_type=RuntimeError" in unexpected_logs[0]
-    assert "exception_summary=forced middleware failure" in unexpected_logs[0]
+    assert "exception_message=forced middleware failure" in unexpected_logs[0]
 
 
 
 def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.options(
             "/",
             headers=_build_cors_preflight_headers(
@@ -584,7 +628,7 @@ def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None
 def test_cors_simple_request_rejects_non_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         response = client.get(
             "/health",
             headers={
@@ -604,6 +648,8 @@ def test_create_app_without_explicit_config_reads_environment_values(
     monkeypatch.setenv(ENV_HOST, "127.0.0.1")
     monkeypatch.setenv(ENV_PORT, "9988")
     monkeypatch.setenv(ENV_USER_DATA_DIR, "env-user-data")
+    monkeypatch.setenv(ENV_HOST_CAPABILITY_BRIDGE_URL, "http://127.0.0.1:45678/host/private/capability-bridge")
+    monkeypatch.setenv(ENV_HOST_CAPABILITY_BRIDGE_TOKEN, "capability-token-123")
 
     app = create_app(agent_executor=_build_test_agent_executor(), model_route_resolver=_ResolvedRouteResolver())
 
@@ -615,6 +661,8 @@ def test_create_app_without_explicit_config_reads_environment_values(
     assert runtime_config.host == "127.0.0.1"
     assert runtime_config.port == 9988
     assert runtime_config.user_data_dir == (BACKEND_DIR / "env-user-data").resolve()
+    assert runtime_config.host_capability_bridge_url == "http://127.0.0.1:45678/host/private/capability-bridge"
+    assert runtime_config.host_capability_bridge_token == "capability-token-123"
 
 
 
@@ -687,18 +735,96 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
 
 
 
-def test_create_app_closes_host_model_route_bridge_client_on_shutdown(tmp_path: Path) -> None:
-    app = _create_test_app(tmp_path)
+def test_create_app_closes_host_bridge_clients_on_shutdown(tmp_path: Path) -> None:
+    host_capability_bridge_client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="capability-token-123",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "requestId": request.read().decode("utf-8"),
+                    "ok": True,
+                    "result": {"path": "workspace-root"},
+                },
+                request=request,
+            )
+        ),
+    )
+    app = create_app(
+        _build_config(tmp_path),
+        agent_executor=_build_test_agent_executor(),
+        model_route_resolver=_ResolvedRouteResolver(),
+        host_capability_bridge_client=host_capability_bridge_client,
+    )
 
     with TestClient(app):
-        bridge_client = app.state.host_model_route_bridge_client
-        http_client = bridge_client._get_client()
-        assert isinstance(http_client, httpx.AsyncClient)
-        assert bridge_client._client is http_client
-        assert http_client.is_closed is False
+        model_bridge_client = app.state.host_model_route_bridge_client
+        model_http_client = model_bridge_client._get_client()
+        capability_http_client = app.state.host_capability_bridge_client._get_sync_client()
+        assert isinstance(model_http_client, httpx.AsyncClient)
+        assert isinstance(capability_http_client, httpx.Client)
+        assert model_bridge_client._client is model_http_client
+        assert app.state.host_capability_bridge_client._sync_client is capability_http_client
+        assert model_http_client.is_closed is False
+        assert capability_http_client.is_closed is False
 
-    assert bridge_client._client is None
-    assert http_client.is_closed is True
+    assert model_bridge_client._client is None
+    assert model_http_client.is_closed is True
+    assert app.state.host_capability_bridge_client._sync_client is None
+    assert capability_http_client.is_closed is True
+
+
+def test_create_app_shutdown_continues_when_bridge_close_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    close_calls: list[str] = []
+    shutdown_calls: list[str] = []
+    logged_messages: list[str] = []
+
+    class _FailingCapabilityBridgeClient(DesktopCapabilityBridgeClient):
+        async def aclose(self) -> None:
+            close_calls.append("capability")
+            await super().aclose()
+            raise RuntimeError("capability close failed")
+
+    host_capability_bridge_client = _FailingCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="capability-token-123",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"requestId": "ok", "ok": True, "result": {}},
+                request=request,
+            )
+        ),
+    )
+    app = create_app(
+        _build_config(tmp_path),
+        agent_executor=_build_test_agent_executor(),
+        model_route_resolver=_ResolvedRouteResolver(),
+        host_capability_bridge_client=host_capability_bridge_client,
+    )
+
+    with TestClient(app):
+        async def _failing_model_aclose() -> None:
+            shutdown_calls.append("model")
+            raise RuntimeError("model close failed")
+
+        def _record_shutdown() -> None:
+            shutdown_calls.append("lifecycle")
+
+        monkeypatch.setattr(app.state.host_model_route_bridge_client, "aclose", _failing_model_aclose)
+        monkeypatch.setattr(app.state.lifecycle_manager, "shutdown", _record_shutdown)
+        monkeypatch.setattr(
+            "app.desktop_runtime.app_factory._RUNTIME_LOGGER.exception",
+            lambda message, *args: logged_messages.append(message % args),
+        )
+
+    assert close_calls == ["capability"]
+    assert shutdown_calls == ["model", "lifecycle"]
+    assert logged_messages == [
+        "desktop-runtime shutdown failed while closing host capability bridge client",
+        "desktop-runtime shutdown failed while closing host model route bridge client",
+    ]
 
 
 
@@ -758,13 +884,20 @@ def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
 
 
 
-def _build_cors_preflight_headers(origin: str, *, user_agent: str | None = None) -> dict[str, str]:
+def _build_cors_preflight_headers(
+    origin: str,
+    *,
+    user_agent: str | None = None,
+    requested_headers: str | None = None,
+) -> dict[str, str]:
     headers = {
         "Origin": origin,
         "Access-Control-Request-Method": "POST",
     }
     if user_agent is not None:
         headers["User-Agent"] = user_agent
+    if requested_headers is not None:
+        headers["Access-Control-Request-Headers"] = requested_headers
     return headers
 
 

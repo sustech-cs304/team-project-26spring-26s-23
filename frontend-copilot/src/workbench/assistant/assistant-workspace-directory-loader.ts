@@ -68,7 +68,8 @@ export function createAssistantDirectoryErrorState(
 export async function loadAssistantAgentDirectory(input: {
   runtimeUrl: string
   listAgents: typeof listRuntimeAgents
+  language?: string
 }): Promise<AssistantAgentDirectoryState> {
   const response = await input.listAgents({ runtimeUrl: input.runtimeUrl })
-  return createAssistantAgentDirectoryState(response)
+  return createAssistantAgentDirectoryState(response, input.language)
 }

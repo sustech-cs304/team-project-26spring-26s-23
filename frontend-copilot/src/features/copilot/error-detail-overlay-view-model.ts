@@ -36,6 +36,8 @@ export type ErrorDetailOverlayGroupKey =
   | 'tool-model-context'
   | 'raw-details'
 
+export type ErrorDetailOverlayStructuredJsonValue = Record<string, unknown> | unknown[]
+
 export type ErrorDetailOverlayContentItem =
   | {
       kind: 'key-value'
@@ -51,6 +53,8 @@ export type ErrorDetailOverlayContentItem =
       kind: 'text'
       label: string | null
       text: string
+      presentation?: 'plain-text' | 'json'
+      structuredValue?: ErrorDetailOverlayStructuredJsonValue
     }
 
 export interface ErrorDetailOverlayGroup {
@@ -349,10 +353,13 @@ function buildRawDetailsGroup(source: CopilotErrorDetailSource): ErrorDetailOver
 
   const rawDetailsText = stringifyRecord(rawDetails)
   if (rawDetailsText !== null) {
+    const structuredValue = parseErrorDetailJsonTextForViewer(rawDetailsText)
     items.push({
       kind: 'text',
       label: '原始 details',
       text: rawDetailsText,
+      presentation: structuredValue === null ? 'plain-text' : 'json',
+      ...(structuredValue === null ? {} : { structuredValue }),
     })
   }
 
@@ -386,6 +393,28 @@ function stringifyRecord(record: Record<string, unknown>): string | null {
 
   const serialized = JSON.stringify(record, null, 2)
   return serialized === undefined || serialized.trim() === '' ? null : serialized
+}
+
+export function parseErrorDetailJsonTextForViewer(
+  text: string,
+): ErrorDetailOverlayStructuredJsonValue | null {
+  const trimmedText = text.trim()
+  if (trimmedText === '') {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(trimmedText)
+    return isErrorDetailStructuredJsonValue(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function isErrorDetailStructuredJsonValue(
+  value: unknown,
+): value is ErrorDetailOverlayStructuredJsonValue {
+  return Array.isArray(value) || (typeof value === 'object' && value !== null)
 }
 
 function formatRouteSummary(

@@ -30,12 +30,13 @@ export const emptyAssistantAgentDirectoryState: AssistantAgentDirectoryState = {
 
 export function createAssistantAgentDirectoryState(
   response: RuntimeAgentsListResponse,
+  language: string = 'zh-CN',
 ): AssistantAgentDirectoryState {
   return {
     status: 'ready',
     directoryVersion: response.directoryVersion,
     defaultAgentId: response.defaultAgentId,
-    agents: enhanceRuntimeAgents(response.agents),
+    agents: enhanceRuntimeAgents(response.agents, language),
     error: null,
   }
 }

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.teaching_information_system.api.dto import TISSelectedCourseSemester
-from app.teaching_information_system.api.selected_courses import extract_selected_course_records_from_json
-from app.teaching_information_system.shared import _clean_text
+from app.integrations.sustech.teaching_information_system.api.dto import TISSelectedCourseSemester
+from app.integrations.sustech.teaching_information_system.api.selected_courses import extract_selected_course_records_from_json
+from app.integrations.sustech.teaching_information_system.shared import _clean_text
 
 
 

@@ -8,7 +8,9 @@ import { clickElement } from './copilot-chat-test-interactions'
 import { ErrorDetailOverlay } from './ErrorDetailOverlay'
 import { buildErrorDetailOverlayViewModel, createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 
-function createViewModel() {
+function createViewModel(details: Record<string, unknown> = {
+  toolId: 'tool.weather-current',
+}) {
   return buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
     source: 'streaming',
     title: '发送失败',
@@ -17,9 +19,7 @@ function createViewModel() {
     code: 'tool_execution_failed',
     stage: 'streaming',
     requestedMethod: 'run/stream',
-    details: {
-      toolId: 'tool.weather-current',
-    },
+    details,
     resolvedModelId: 'openai/gpt-4.1',
     resolvedToolIds: ['tool.weather-current'],
     requestOptions: {
@@ -99,6 +99,65 @@ describe('ErrorDetailOverlay', () => {
     rendered.unmount()
   })
 
+  it('renders structured json for raw details while keeping non-json text blocks plain', async () => {
+    const rendered = renderWithRoot(
+      <ErrorDetailOverlay
+        viewModel={createViewModel({
+          toolId: 'tool.weather-current',
+          retryable: false,
+          nested: {
+            attempt: 1,
+            reason: 'network',
+          },
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const rawDetailsJson = rendered.getByTestId('error-detail-overlay-raw-details-json')
+    expect(rawDetailsJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
+    expect(rawDetailsJson.textContent).toContain('toolId')
+    expect(rawDetailsJson.textContent).toContain('tool.weather-current')
+    expect(rendered.queryByTestId('error-detail-overlay-raw-details-text')).toBeNull()
+    expect(rendered.getByTestId('error-detail-overlay-group-raw-details').textContent).toContain('Tool failed: boom')
+
+    rendered.unmount()
+  })
+
+  it('renders traceback diagnostics in the raw details group for tool failures', async () => {
+    const traceback = [
+      'Traceback (most recent call last):',
+      '  File "/workspace/backend/tool.py", line 42, in invoke',
+      '    raise RuntimeError("blackboard search exploded")',
+      'RuntimeError: blackboard search exploded',
+    ].join('\n')
+    const rendered = renderWithRoot(
+      <ErrorDetailOverlay
+        viewModel={createViewModel({
+          toolId: 'blackboard.course_catalog.search',
+          toolCallId: 'tool-call-1',
+          exceptionType: 'RuntimeError',
+          exceptionMessage: 'blackboard search exploded',
+          traceback,
+          diagnosticContext: {
+            integration: 'blackboard',
+          },
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const rawDetailsGroup = rendered.getByTestId('error-detail-overlay-group-raw-details')
+    const rawDetailsJson = rendered.getByTestId('error-detail-overlay-raw-details-json')
+
+    expect(rawDetailsJson.textContent).toContain('traceback')
+    expect(rawDetailsJson.textContent).toContain('Traceback (most recent call last):')
+    expect(rawDetailsJson.textContent).toContain('blackboard search exploded')
+    expect(rawDetailsGroup.textContent).toContain('Traceback (most recent call last):')
+
+    rendered.unmount()
+  })
+
   it('traps focus within the dialog when tabbing forward and backward', async () => {
     const rendered = renderWithRoot(
       <ErrorDetailOverlay
@@ -109,6 +168,12 @@ describe('ErrorDetailOverlay', () => {
 
     const copyAllButton = rendered.getByTestId('error-detail-overlay-copy-all') as HTMLButtonElement
     const lastGroupCopyButton = rendered.getByTestId('error-detail-overlay-group-copy-raw-details') as HTMLButtonElement
+
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve())
+      })
+    })
 
     await act(async () => {
       lastGroupCopyButton.focus()

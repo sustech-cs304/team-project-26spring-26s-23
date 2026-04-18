@@ -8,6 +8,7 @@ export interface HostedBackendService {
   getState(): HostedBackendState
   getLastFailure(): HostedBackendFailure | null
   getRuntimeBaseUrl(): string | null
+  getLocalToken(): string | null
 }
 
 export function createHostedBackendService(options: PythonRuntimeManagerOptions): HostedBackendService {
@@ -28,6 +29,9 @@ export function createHostedBackendService(options: PythonRuntimeManagerOptions)
     },
     getRuntimeBaseUrl() {
       return manager.getRuntimeBaseUrl()
+    },
+    getLocalToken() {
+      return manager.getLocalToken()
     },
   }
 }

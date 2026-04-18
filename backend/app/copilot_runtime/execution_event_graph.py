@@ -19,8 +19,10 @@ RuntimeExecutionEventType = Literal[
     "reasoning_segment_delta",
     "reasoning_segment_completed",
     "tool_started",
+    "tool_waiting_approval",
     "tool_completed",
     "tool_failed",
+    "tool_cancelled",
     "diagnostic",
     "run_completed",
     "run_failed",
@@ -34,8 +36,10 @@ REASONING_SEGMENT_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_seg
 REASONING_SEGMENT_DELTA_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_delta"
 REASONING_SEGMENT_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_completed"
 TOOL_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "tool_started"
+TOOL_WAITING_APPROVAL_EVENT_TYPE: RuntimeExecutionEventType = "tool_waiting_approval"
 TOOL_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "tool_completed"
 TOOL_FAILED_EVENT_TYPE: RuntimeExecutionEventType = "tool_failed"
+TOOL_CANCELLED_EVENT_TYPE: RuntimeExecutionEventType = "tool_cancelled"
 DIAGNOSTIC_EVENT_TYPE: RuntimeExecutionEventType = "diagnostic"
 RUN_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "run_completed"
 RUN_FAILED_EVENT_TYPE: RuntimeExecutionEventType = "run_failed"
@@ -51,8 +55,10 @@ TERMINAL_RUNTIME_EXECUTION_EVENT_TYPES = frozenset(
 TOOL_RUNTIME_EXECUTION_EVENT_TYPES = frozenset(
     {
         TOOL_STARTED_EVENT_TYPE,
+        TOOL_WAITING_APPROVAL_EVENT_TYPE,
         TOOL_COMPLETED_EVENT_TYPE,
         TOOL_FAILED_EVENT_TYPE,
+        TOOL_CANCELLED_EVENT_TYPE,
     }
 )
 

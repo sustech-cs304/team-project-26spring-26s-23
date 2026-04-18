@@ -117,7 +117,7 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
 }
 
 export function createComposerDraftFromSession(
-  sessionShell?: AssistantSessionShell,
+  sessionShell?: Pick<AssistantSessionShell, 'sessionId'> | null,
 ): CopilotChatComposerDraft {
   void sessionShell
   return {
@@ -574,6 +574,7 @@ export function formatRuntimeMessageSendError(error: unknown): string {
       case 'provider_auth_missing':
       case 'provider_secret_missing':
       case 'provider_auth_kind_unsupported':
+      case 'provider_base_url_missing':
         return '请先完成模型服务配置后再试。'
       default:
         return error.message
@@ -691,6 +692,7 @@ export function describeThinkingCapabilityUnavailableReason(
     case 'provider_auth_missing':
     case 'provider_secret_missing':
     case 'provider_auth_kind_unsupported':
+    case 'provider_base_url_missing':
       return '请先完成模型配置'
     case 'provider_profile_not_found':
     case 'route_ref_snapshot_mismatch':
@@ -717,6 +719,7 @@ function isVerifiedThinkingCapabilityErrorCode(code: string): boolean {
     'provider_auth_missing',
     'provider_secret_missing',
     'provider_auth_kind_unsupported',
+    'provider_base_url_missing',
     'provider_adapter_mismatch',
     'provider_profile_not_found',
     'route_ref_snapshot_mismatch',
@@ -1013,11 +1016,14 @@ function mapToolPhaseToTurnStatus(
 ): NonNullable<CopilotConversationTurn['status']> {
   switch (phase) {
     case 'started':
+    case 'waiting_approval':
       return 'streaming'
     case 'completed':
       return 'completed'
     case 'failed':
       return 'failed'
+    case 'cancelled':
+      return 'cancelled'
   }
 }
 

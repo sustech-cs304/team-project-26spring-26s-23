@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.teaching_information_system.api.dto import (
+from app.integrations.sustech.teaching_information_system.api.dto import (
     TISCreditGPASummary,
     TISCreditGPATermRecord,
     TISCreditGPAYearRecord,
@@ -13,10 +13,10 @@ from app.teaching_information_system.api.dto import (
     TISSelectedCourseSemester,
     TISServiceConfig,
 )
-from app.teaching_information_system.data import TISDatabaseManager
-from app.teaching_information_system.provider.use_cases import credit_gpa as credit_gpa_use_case
-from app.teaching_information_system.provider.use_cases import personal_grades as personal_grades_use_case
-from app.teaching_information_system.provider.use_cases import selected_courses as selected_courses_use_case
+from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
+from app.integrations.sustech.teaching_information_system.provider.use_cases import credit_gpa as credit_gpa_use_case
+from app.integrations.sustech.teaching_information_system.provider.use_cases import personal_grades as personal_grades_use_case
+from app.integrations.sustech.teaching_information_system.provider.use_cases import selected_courses as selected_courses_use_case
 
 
 class _FakeTISClient:

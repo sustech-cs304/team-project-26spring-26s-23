@@ -36,8 +36,8 @@ jobs:
       - name: Run backend pyright for active application domains
         run: |
           uv run --project backend pyright -p pyrightconfig.json \
-            backend/app/blackboard \
-            backend/app/teaching_information_system \
+            backend/app/integrations/sustech/blackboard \
+            backend/app/integrations/sustech/teaching_information_system \
             backend/app/copilot_runtime \
             backend/app/desktop_runtime \
             backend/app/tools

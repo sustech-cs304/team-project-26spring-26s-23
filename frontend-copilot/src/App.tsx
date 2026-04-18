@@ -3,7 +3,15 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
 import type { CopilotBootstrapController } from './features/copilot/types'
+import {
+  getWorkbenchShellCopy,
+  getWorkspaceLabel,
+  getWorkspaceMeta,
+  normalizeWorkbenchLanguage,
+  type WorkbenchLanguage,
+} from './workbench/locale'
 import { isHubWorkspaceView, railPrimaryItems, railSecondaryItems } from './workbench/config'
+import { CapabilitiesWorkspace } from './workbench/capabilities/CapabilitiesWorkspace'
 import {
   loadAnimationsEnabledPreference,
   subscribeToAnimationsEnabledPreferenceUpdates,
@@ -14,6 +22,7 @@ import {
   subscribeToThemeModePreferenceUpdates,
 } from './workbench/theme-config'
 import type { ThemeMode, WorkspaceView } from './workbench/types'
+import { loadSettingsWorkspaceState } from './workbench/settings/workspace-state'
 import './App.css'
 
 function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
@@ -80,6 +89,7 @@ function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode)
   const [animationsEnabled, setAnimationsEnabled] = useState(resolveInitialAnimationsEnabled)
+  const [workbenchLanguage, setWorkbenchLanguage] = useState<WorkbenchLanguage>('zh-CN')
 
   const applyThemeMode = useCallback((nextThemeMode: ThemeMode) => {
     setThemeMode(nextThemeMode)
@@ -87,6 +97,10 @@ function App({ bootstrap }: AppProps) {
 
   const applyAnimationsEnabled = useCallback((nextAnimationsEnabled: boolean) => {
     setAnimationsEnabled(nextAnimationsEnabled)
+  }, [])
+
+  const applyWorkbenchLanguage = useCallback((nextLanguage: string) => {
+    setWorkbenchLanguage(normalizeWorkbenchLanguage(nextLanguage))
   }, [])
 
   const handleThemeModeChange = useCallback((nextThemeMode: ThemeMode) => {
@@ -160,6 +174,22 @@ function App({ bootstrap }: AppProps) {
   }, [applyAnimationsEnabled])
 
   useEffect(() => {
+    let disposed = false
+
+    void loadSettingsWorkspaceState().then((result) => {
+      if (disposed || !result.ok) {
+        return
+      }
+
+      applyWorkbenchLanguage(result.state.general.language)
+    })
+
+    return () => {
+      disposed = true
+    }
+  }, [applyWorkbenchLanguage])
+
+  useEffect(() => {
     document.documentElement.dataset.theme = themeMode
   }, [themeMode])
 
@@ -174,7 +204,14 @@ function App({ bootstrap }: AppProps) {
     })
   }, [activeWorkspace, bootstrap.state.status])
 
-  const workspaceMeta = useMemo(() => resolveWorkspaceMeta(activeWorkspace), [activeWorkspace])
+  const workspaceMeta = useMemo(
+    () => getWorkspaceMeta(workbenchLanguage, activeWorkspace),
+    [activeWorkspace, workbenchLanguage],
+  )
+  const workbenchShellCopy = useMemo(
+    () => getWorkbenchShellCopy(workbenchLanguage),
+    [workbenchLanguage],
+  )
 
   return (
     <div
@@ -182,18 +219,19 @@ function App({ bootstrap }: AppProps) {
       data-theme={themeMode}
       data-animations={animationsEnabled ? 'enabled' : 'disabled'}
     >
-      <aside className="workbench-rail" aria-label="主图标栏">
+      <aside className="workbench-rail" aria-label={workbenchShellCopy.railAriaLabel}>
         {railPrimaryItems.map((item) => {
           const Icon = item.icon
           const active = activeWorkspace === item.id
+          const label = getWorkspaceLabel(workbenchLanguage, item.id)
 
           return (
             <button
               key={item.id}
               type="button"
               className={`rail-button${active ? ' rail-button--active' : ''}`}
-              title={item.label}
-              aria-label={item.label}
+              title={label}
+              aria-label={label}
               aria-pressed={active}
               onClick={() => setActiveWorkspace(item.id)}
             >
@@ -207,14 +245,15 @@ function App({ bootstrap }: AppProps) {
         {railSecondaryItems.map((item) => {
           const Icon = item.icon
           const active = activeWorkspace === item.id
+          const label = getWorkspaceLabel(workbenchLanguage, item.id)
 
           return (
             <button
               key={item.id}
               type="button"
               className={`rail-button${active ? ' rail-button--active' : ''}`}
-              title={item.label}
-              aria-label={item.label}
+              title={label}
+              aria-label={label}
               aria-pressed={active}
               onClick={() => setActiveWorkspace(item.id)}
             >
@@ -228,13 +267,17 @@ function App({ bootstrap }: AppProps) {
         resetKeys={[activeWorkspace]}
         fallback={({ error, reset }) => (
           <BootstrapScreen
-            title={`${workspaceMeta.label}工作区加载失败`}
-            description="当前工作区模块未能完成懒加载或渲染，但工作台外壳仍保持可解释失败态，不会退化为纯白屏。"
+            title={workbenchLanguage === 'en-US'
+              ? `${workspaceMeta.label} workspace failed to load`
+              : `${workspaceMeta.label}工作区加载失败`}
+            description={workbenchShellCopy.workspaceLoadFailureDescription}
             tone="error"
             details={<pre className="startup-shell__pre">{formatErrorMessage(error)}</pre>}
             actions={[
               {
-                label: activeWorkspace === 'assistant' ? '重试当前工作区' : '切换回助手工作区',
+                label: activeWorkspace === 'assistant'
+                  ? workbenchShellCopy.retryCurrentWorkspace
+                  : workbenchShellCopy.switchBackToAssistant,
                 onClick: () => {
                   if (activeWorkspace === 'assistant') {
                     reset()
@@ -245,7 +288,7 @@ function App({ bootstrap }: AppProps) {
                 },
               },
               {
-                label: '重新加载页面',
+                label: workbenchShellCopy.reloadPage,
                 onClick: () => window.location.reload(),
                 emphasis: 'secondary',
               },
@@ -261,6 +304,8 @@ function App({ bootstrap }: AppProps) {
             bootstrap,
             themeMode,
             handleThemeModeChange,
+            workbenchLanguage,
+            applyWorkbenchLanguage,
           )}
         </Suspense>
       </RecoverableErrorBoundary>
@@ -273,9 +318,11 @@ function renderActiveWorkspace(
   bootstrap: CopilotBootstrapController,
   themeMode: ThemeMode,
   onThemeModeChange: (value: ThemeMode) => void,
+  workbenchLanguage: WorkbenchLanguage,
+  onWorkbenchLanguageChange: (value: string) => void,
 ) {
   if (activeWorkspace === 'assistant') {
-    return <AssistantWorkspace bootstrap={bootstrap} />
+    return <AssistantWorkspace bootstrap={bootstrap} language={workbenchLanguage} />
   }
 
   if (activeWorkspace === 'settings') {
@@ -284,45 +331,20 @@ function renderActiveWorkspace(
         bootstrap={bootstrap}
         themeMode={themeMode}
         onThemeModeChange={onThemeModeChange}
+        onLanguageChange={onWorkbenchLanguageChange}
       />
     )
   }
 
+  if (activeWorkspace === 'capabilities') {
+    return <CapabilitiesWorkspace />
+  }
+
   if (isHubWorkspaceView(activeWorkspace)) {
-    return <HubWorkspace view={activeWorkspace} />
+    return <HubWorkspace view={activeWorkspace} language={workbenchLanguage} />
   }
 
   return null
-}
-
-function resolveWorkspaceMeta(view: WorkspaceView): { label: string; loadingDescription: string } {
-  switch (view) {
-    case 'assistant':
-      return {
-        label: '助手',
-        loadingDescription: '助手工作区已从工作台壳拆分为独立懒加载模块；当前仅加载默认首屏所需代码。',
-      }
-    case 'settings':
-      return {
-        label: '设置',
-        loadingDescription: '设置工作区已从入口壳层剥离，仅在切换到设置时再按需加载。',
-      }
-    case 'capabilities':
-      return {
-        label: '能力',
-        loadingDescription: '能力工作区模块正在按需加载，不再与默认助手首屏共同打包在一个超级入口文件中。',
-      }
-    case 'files':
-      return {
-        label: '文件',
-        loadingDescription: '文件工作区模块正在按需加载，以缩短默认首屏装配链。',
-      }
-    case 'developer':
-      return {
-        label: '开发',
-        loadingDescription: '开发工作区模块正在按需加载，避免与默认助手首屏形成死耦合。',
-      }
-  }
 }
 
 function formatErrorMessage(error: unknown): string {

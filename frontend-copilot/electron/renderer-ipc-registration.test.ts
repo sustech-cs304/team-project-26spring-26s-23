@@ -3,13 +3,24 @@ import { describe, expect, it } from 'vitest'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from './bootstrap-window'
 import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL } from './config-center/public-patch'
 import { CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL } from './config-center/public-snapshot'
+import {
+  COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+  COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+  COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+  COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+  COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+  COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+  COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+  COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+} from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
+import { DESKTOP_NOTIFICATION_SHOW_CHANNEL } from './desktop-notification'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
 import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
 
 describe('registerRendererIpcHandlers', () => {
-  it('registers only the config center public and runtime channels needed by the renderer', async () => {
+  it('registers only the config center, history, settings workspace, and runtime channels needed by the renderer', async () => {
     const { registeredHandlers, ipcMain } = createFakeIpcMain()
     const handlers = createRendererIpcHandlers()
 
@@ -26,8 +37,17 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:clear-provider-api-key',
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
+      COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+      COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+      COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+      COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+      COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+      COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+      COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+      COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
+      DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
     ])
     expect([...registeredHandlers.keys()]).toEqual([
@@ -41,8 +61,17 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:clear-provider-api-key',
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
+      COPILOT_HISTORY_LIST_THREADS_CHANNEL,
+      COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
+      COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
+      COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
+      COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL,
+      COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
+      COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
+      COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
+      DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
     ])
     expect(registeredHandlers.has('copilot-settings:load')).toBe(false)
@@ -50,8 +79,17 @@ describe('registerRendererIpcHandlers', () => {
 
     const loadSnapshotHandler = getRegisteredHandler(registeredHandlers, CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
     const applyPatchHandler = getRegisteredHandler(registeredHandlers, CONFIG_CENTER_PUBLIC_PATCH_CHANNEL)
+    const listThreadsHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_LIST_THREADS_CHANNEL)
+    const getThreadDetailHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL)
+    const getRunReplayHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL)
+    const renameThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RENAME_THREAD_CHANNEL)
+    const duplicateThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL)
+    const deleteThreadHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_DELETE_THREAD_CHANNEL)
+    const backupDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL)
+    const restoreDatabaseHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL)
     const loadRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)
     const retryRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)
+    const notifyDesktopNotificationHandler = getRegisteredHandler(registeredHandlers, DESKTOP_NOTIFICATION_SHOW_CHANNEL)
     const notifyBootstrapWindowReadyHandler = getRegisteredHandler(registeredHandlers, BOOTSTRAP_WINDOW_READY_CHANNEL)
 
     await expect(loadSnapshotHandler()).resolves.toEqual(await handlers.loadConfigCenterPublicSnapshot())
@@ -68,8 +106,40 @@ describe('registerRendererIpcHandlers', () => {
         },
       },
     }))
+    await expect(listThreadsHandler()).resolves.toEqual(await handlers.listCopilotHistoryThreads())
+    await expect(getThreadDetailHandler(undefined, 'thread-1')).resolves.toEqual(
+      await handlers.getCopilotHistoryThreadDetail('thread-1'),
+    )
+    await expect(getRunReplayHandler(undefined, 'run-1')).resolves.toEqual(
+      await handlers.getCopilotHistoryRunReplay('run-1'),
+    )
+    await expect(renameThreadHandler(undefined, 'thread-1', { title: '已重命名线程' })).resolves.toEqual(
+      await handlers.renameCopilotHistoryThread('thread-1', { title: '已重命名线程' }),
+    )
+    await expect(duplicateThreadHandler(undefined, 'thread-1', { title: '历史线程（副本）' })).resolves.toEqual(
+      await handlers.duplicateCopilotHistoryThread('thread-1', { title: '历史线程（副本）' }),
+    )
+    await expect(deleteThreadHandler(undefined, 'thread-1')).resolves.toEqual(
+      await handlers.deleteCopilotHistoryThread('thread-1'),
+    )
+    await expect(backupDatabaseHandler(undefined, { targetPath: 'backups/history.db' })).resolves.toEqual(
+      await handlers.backupCopilotHistoryDatabase({ targetPath: 'backups/history.db' }),
+    )
+    await expect(restoreDatabaseHandler(undefined, { sourcePath: 'backups/history.db' })).resolves.toEqual(
+      await handlers.restoreCopilotHistoryDatabase({ sourcePath: 'backups/history.db' }),
+    )
     await expect(loadRuntimeHandler()).resolves.toEqual(await handlers.loadCopilotRuntime())
     await expect(retryRuntimeHandler()).resolves.toEqual(await handlers.retryCopilotRuntime())
+    await expect(notifyDesktopNotificationHandler(undefined, {
+      title: '助手消息已完成',
+      body: '这是助手回显',
+      tag: 'run-1:completed',
+    })).resolves.toBeUndefined()
+    expect(handlers.notifyDesktopNotification).toHaveBeenCalledWith({
+      title: '助手消息已完成',
+      body: '这是助手回显',
+      tag: 'run-1:completed',
+    })
     await expect(notifyBootstrapWindowReadyHandler()).resolves.toBeUndefined()
     expect(handlers.notifyBootstrapWindowReady).toHaveBeenCalledOnce()
   })

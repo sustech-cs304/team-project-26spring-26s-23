@@ -1,7 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 
+import { getConfigCenterPublicFieldCopy } from '../locale'
 import { ConfigCenterPublicTextFieldCard } from './ConfigCenterPublicFieldCard'
-import { hostConfigRuntimeUrlField } from './config-center-public-field-definitions'
+import { createHostConfigRuntimeUrlField } from './config-center-public-field-definitions'
 
 export { hostConfigRuntimeUrlField } from './config-center-public-field-definitions'
 export type {
@@ -29,6 +30,12 @@ export { ConfigCenterPublicTextFieldCard } from './ConfigCenterPublicFieldCard'
 export { handleConfigCenterPublicTextFieldKeyDown } from './config-center-public-field-card-keydown'
 export { useConfigCenterPublicTextField } from './useConfigCenterPublicField'
 
-export function HostConfigRuntimeOverrideCard() {
-  return <ConfigCenterPublicTextFieldCard definition={hostConfigRuntimeUrlField} />
+export function HostConfigRuntimeOverrideCard({ language = 'zh-CN' }: { language?: string }) {
+  const copy = getConfigCenterPublicFieldCopy(language)
+  const definition = createHostConfigRuntimeUrlField({
+    cardTitle: copy.hostConfigRuntimeUrlCardTitle,
+    label: copy.hostConfigRuntimeUrlLabel,
+  })
+
+  return <ConfigCenterPublicTextFieldCard definition={definition} language={language} />
 }

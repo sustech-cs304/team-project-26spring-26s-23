@@ -1,6 +1,5 @@
+import { getGeneralSettingsCopy, getLanguageOptions, getProxyModeOptions } from '../locale'
 import { SelectField, ToggleSwitch } from '../components/FormFields'
-
-import { languageOptions, proxyModeOptions } from './config'
 
 interface GeneralSettingsSectionProps {
   language: string
@@ -27,31 +26,35 @@ export function GeneralSettingsSection({
   onBackupEnabledChange,
   onDebugModeEnabledChange,
 }: GeneralSettingsSectionProps) {
+  const copy = getGeneralSettingsCopy(language)
+  const languageOptions = getLanguageOptions(language)
+  const proxyModeOptions = getProxyModeOptions(language)
+
   return (
     <div className="settings-page">
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">常规设置</h3>
+            <h3 className="settings-card__title">{copy.title}</h3>
           </div>
         </div>
 
         <div className="settings-stack">
           <div className="form-grid form-grid--two">
-            <SelectField label="界面语言" value={language} options={languageOptions} onChange={onLanguageChange} />
-            <SelectField label="代理模式" value={proxyMode} options={proxyModeOptions} onChange={onProxyModeChange} />
+            <SelectField label={copy.languageLabel} value={language} options={languageOptions} onChange={onLanguageChange} />
+            <SelectField label={copy.proxyModeLabel} value={proxyMode} options={proxyModeOptions} onChange={onProxyModeChange} />
           </div>
 
           <div className="toggle-grid">
             <ToggleSwitch
-              label="助手消息通知"
+              label={copy.notificationsLabel}
               checked={assistantNotificationsEnabled}
               onChange={onAssistantNotificationsEnabledChange}
             />
-            <ToggleSwitch label="自动备份" checked={backupEnabled} onChange={onBackupEnabledChange} />
+            <ToggleSwitch label={copy.backupLabel} checked={backupEnabled} onChange={onBackupEnabledChange} />
             <ToggleSwitch
-              label="启用调试模式"
-              description="开启后会显示更多问题排查信息。"
+              label={copy.debugModeLabel}
+              description={copy.debugModeDescription}
               checked={debugModeEnabled}
               onChange={onDebugModeEnabledChange}
             />

@@ -1,8 +1,8 @@
+import { getDocsFormatOptions, getDocsSettingsCopy } from '../locale'
 import { SelectField, TextField, ToggleSwitch } from '../components/FormFields'
 
-import { docsFormatOptions } from './config'
-
 interface DocsSettingsSectionProps {
+  language: string
   docsFormat: string
   outputDirectory: string
   autoFileNameEnabled: boolean
@@ -12,6 +12,7 @@ interface DocsSettingsSectionProps {
 }
 
 export function DocsSettingsSection({
+  language,
   docsFormat,
   outputDirectory,
   autoFileNameEnabled,
@@ -19,28 +20,31 @@ export function DocsSettingsSection({
   onOutputDirectoryChange,
   onAutoFileNameEnabledChange,
 }: DocsSettingsSectionProps) {
+  const copy = getDocsSettingsCopy(language)
+  const docsFormatOptions = getDocsFormatOptions(language)
+
   return (
     <div className="settings-page">
       <section className="settings-card settings-card--form">
         <div className="settings-card__header">
           <div>
-            <h3 className="settings-card__title">文档处理</h3>
+            <h3 className="settings-card__title">{copy.title}</h3>
           </div>
         </div>
 
         <div className="settings-stack">
           <div className="form-grid form-grid--two">
-            <SelectField label="默认导出格式" value={docsFormat} options={docsFormatOptions} onChange={onDocsFormatChange} />
+            <SelectField label={copy.formatLabel} value={docsFormat} options={docsFormatOptions} onChange={onDocsFormatChange} />
             <TextField
-              label="输出目录"
+              label={copy.outputDirectoryLabel}
               value={outputDirectory}
               onChange={onOutputDirectoryChange}
-              placeholder="输入导出目录"
+              placeholder={copy.outputDirectoryPlaceholder}
             />
           </div>
 
           <ToggleSwitch
-            label="自动生成文件名"
+            label={copy.autoFileNameLabel}
             checked={autoFileNameEnabled}
             onChange={onAutoFileNameEnabledChange}
           />

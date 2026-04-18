@@ -1,10 +1,14 @@
 /** @vitest-environment jsdom */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import type { CopilotHistoryRunReplaySuccess } from '../../../electron/copilot-history'
+import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
+import { buildPersistedConversationFromHistory } from './persisted-history-view-model'
 import { CopilotChatPanel } from './CopilotChatPanel'
 import {
+  clickElement,
   createDirectoryState,
   createEmptyState,
   createFailedState,
@@ -12,6 +16,7 @@ import {
   createReadyState,
   createSelectedAgent,
   createSessionShell,
+  renderWithRoot,
 } from './CopilotChatPanel.test-support'
 
 declare global {
@@ -109,6 +114,508 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('当前 threadId')
   })
 
+  it('shows a lightweight skeleton while persisted history detail is still loading', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          detailStatus: 'loading',
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-history-loading-skeleton"')
+    expect(html).not.toContain('data-testid="chat-history-retry-button"')
+    expect(html).not.toContain('data-testid="chat-message-scroll-region"')
+  })
+
+  it('does not treat a new live session history shell as persisted loading', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          isPersistedThread: false,
+          detailStatus: 'loading',
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+    expect(html).not.toContain('data-testid="chat-history-retry-button"')
+  })
+
+  it('shows persisted history messages directly once detail is ready', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          detailStatus: 'ready',
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-1',
+              sequenceStart: 1,
+              text: '历史消息已恢复',
+            },
+          ],
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('历史消息已恢复')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+    expect(html).not.toContain('data-testid="chat-history-retry-button"')
+  })
+
+  it('keeps the last restored history visible when a later detail refresh fails', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'error',
+          detailError: 'detail unavailable',
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-1',
+              sequenceStart: 1,
+              text: '保留上一版成功内容',
+            },
+          ],
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('保留上一版成功内容')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+    expect(html).not.toContain('data-testid="chat-history-retry-button"')
+  })
+
+  it('shows a concise retry prompt when persisted history detail failed and retries on click', async () => {
+    const retrySessionHistory = vi.fn()
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          detailStatus: 'error',
+          detailError: 'detail unavailable',
+        })}
+        retrySessionHistory={retrySessionHistory}
+      />,
+    )
+
+    expect(rendered.getByTestId('chat-history-retry-button').textContent).toContain('历史消息加载失败，点击重试')
+    expect(rendered.container.textContent).not.toContain('detail unavailable')
+
+    await clickElement(rendered.getByTestId('chat-history-retry-button'))
+
+    expect(retrySessionHistory).toHaveBeenCalledOnce()
+
+    rendered.unmount()
+  })
+
+  it('shows selected-run replay failure feedback while keeping timeline fallback visible and retryable', async () => {
+    const retrySessionHistory = vi.fn()
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-1',
+              sequenceStart: 1,
+              text: '回放失败时仍保留时间线快照',
+            },
+          ],
+          selectedRunId: 'run-1',
+          replayStatus: 'error',
+          replayError: 'replay unavailable',
+          replay: null,
+        })}
+        retrySessionHistory={retrySessionHistory}
+        persistedSelectedRunConversationPending={false}
+      />,
+    )
+
+    expect(rendered.getByTestId('chat-history-replay-error').textContent).toContain('当前运行回放失败')
+    expect(rendered.container.textContent).toContain('回放失败时仍保留时间线快照')
+
+    await clickElement(rendered.getByTestId('chat-history-replay-retry-button'))
+
+    expect(retrySessionHistory).toHaveBeenCalledOnce()
+
+    rendered.unmount()
+  })
+
+  it('renders summary fallback content when the selected persisted run has no timeline or replay yet', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          runSummaries: [
+            {
+              runId: 'run-1',
+              threadId: 'thread-1',
+              status: 'completed',
+              createdAt: '2026-04-13T15:00:00Z',
+              updatedAt: '2026-04-13T15:05:00Z',
+              startedAt: '2026-04-13T15:00:01Z',
+              terminalAt: '2026-04-13T15:05:00Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '你好',
+              assistantText: '历史摘要',
+            },
+          ],
+          timelineItems: [],
+          replayStatus: 'idle',
+          replay: null,
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('你好')
+    expect(html).toContain('历史摘要')
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+  })
+
+  it('keeps a restored history thread on the default chat path until run browse is explicitly selected', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          selectedRunId: null,
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-2b',
+              sequenceStart: 1,
+              text: '恢复后默认直接停留在普通聊天主视图。',
+            },
+          ],
+          runSummaries: [
+            {
+              runId: 'run-2a',
+              threadId: 'thread-1',
+              status: 'completed',
+              createdAt: '2026-04-13T15:00:00Z',
+              updatedAt: '2026-04-13T15:03:00Z',
+              startedAt: '2026-04-13T15:00:01Z',
+              terminalAt: '2026-04-13T15:03:00Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '第一轮',
+              assistantText: '第一轮回复',
+            },
+            {
+              runId: 'run-2b',
+              threadId: 'thread-1',
+              status: 'completed',
+              createdAt: '2026-04-13T15:04:00Z',
+              updatedAt: '2026-04-13T15:05:00Z',
+              startedAt: '2026-04-13T15:04:01Z',
+              terminalAt: '2026-04-13T15:05:00Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '第二轮',
+              assistantText: '第二轮回复',
+            },
+          ],
+          availabilityDrift: {
+            status: 'historical_provider_removed',
+            historicalModelId: 'legacy-model',
+            historicalToolIds: ['tool.file-convert'],
+            historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
+            warnings: [{
+              code: 'historical_provider_removed',
+              message: '历史线程绑定的模型服务商当前已不可用。',
+            }],
+            requiresExplicitRebind: true,
+          },
+          replayStatus: 'ready',
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('恢复后默认直接停留在普通聊天主视图。')
+    expect(html).not.toContain('data-testid="chat-history-run-selector-label"')
+    expect(html).not.toContain('data-testid="chat-history-drift-notice"')
+  })
+
+  it('does not replay user request text as assistant content when run_completed payload omits assistant fields', () => {
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      timelineItems: [],
+      runSummaries: [{
+        runId: 'run-1',
+        threadId: 'thread-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '用户原问题',
+        assistantText: '摘要中已有旧回复',
+      }],
+      replayStatus: 'ready',
+      replay: createRunReplayResult({
+        run: {
+          assistantText: null,
+          requestedMessageText: '用户原问题',
+        },
+        historicalSnapshot: {
+          requestMessage: {
+            role: 'user',
+            content: '用户原问题',
+          },
+        },
+        orderedEvents: [{
+          eventType: 'run_completed',
+          sequence: 1,
+          createdAt: '2026-04-13T15:05:00Z',
+          payload: {
+            resolvedModelId: 'openai/gpt-4.1',
+          },
+          toolCallId: null,
+          toolId: null,
+          phase: null,
+          isRedacted: false,
+          redactionVersion: 0,
+        }],
+      }),
+    }))
+
+    expect(conversation.selectedRunConversationSource).toBe('summary')
+    expect(conversation.conversation).toMatchObject([
+      { kind: 'user', content: '用户原问题' },
+      { kind: 'assistant', content: '摘要中已有旧回复' },
+    ])
+  })
+
+  it('falls back to persisted run assistantText when run_completed payload omits assistant fields', () => {
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      timelineItems: [],
+      runSummaries: [{
+        runId: 'run-1',
+        threadId: 'thread-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:05:00Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:05:00Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '用户原问题',
+        assistantText: '持久化助手回复',
+      }],
+      replayStatus: 'ready',
+      replay: createRunReplayResult({
+        run: {
+          assistantText: '持久化助手回复',
+          requestedMessageText: '用户原问题',
+        },
+        historicalSnapshot: {
+          requestMessage: {
+            role: 'user',
+            content: '用户原问题',
+          },
+        },
+        orderedEvents: [{
+          eventType: 'run_completed',
+          sequence: 1,
+          createdAt: '2026-04-13T15:05:00Z',
+          payload: {
+            resolvedModelId: 'openai/gpt-4.1',
+          },
+          toolCallId: null,
+          toolId: null,
+          phase: null,
+          isRedacted: false,
+          redactionVersion: 0,
+        }],
+      }),
+    }))
+
+    expect(conversation.selectedRunConversationSource).toBe('summary')
+    expect(conversation.conversation).toMatchObject([
+      { kind: 'user', content: '用户原问题' },
+      { kind: 'assistant', content: '持久化助手回复' },
+    ])
+  })
+
+  it('keeps restored history visible while the directory is still loading if a session is already active', () => {
+    const html = renderToStaticMarkup(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={{
+          ...createDirectoryState(),
+          status: 'loading',
+        }}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          selectedRunId: null,
+          timelineItems: [
+            {
+              kind: 'assistant_message',
+              runId: 'run-startup',
+              sequenceStart: 1,
+              text: '启动恢复的历史消息应立即可见。',
+            },
+          ],
+          replayStatus: 'idle',
+        })}
+      />,
+    )
+
+    expect(html).toContain('data-testid="chat-message-scroll-region"')
+    expect(html).toContain('启动恢复的历史消息应立即可见。')
+    expect(html).not.toContain('正在加载助手列表')
+  })
+
+  it('shows persisted capability hydration failures as a visible retryable notice and disables send', async () => {
+    const retrySessionHistory = vi.fn()
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedHistoryState({
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          capabilitiesStatus: 'error',
+          capabilitiesError: 'capabilities unavailable',
+        })}
+        retrySessionHistory={retrySessionHistory}
+      />,
+    )
+
+    expect(rendered.getByTestId('chat-history-capabilities-error').textContent).toContain('历史线程能力恢复失败，请重试后再继续发送。')
+    expect((rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement).disabled).toBe(true)
+
+    await clickElement(rendered.getByTestId('chat-history-capabilities-retry-button'))
+
+    expect(retrySessionHistory).toHaveBeenCalledOnce()
+
+    rendered.unmount()
+  })
+
   it('keeps the non-connected branch intact for empty state', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel
@@ -148,3 +655,74 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('当前 threadId')
   })
 })
+
+function createRunReplayResult(overrides: {
+  run?: Partial<CopilotHistoryRunReplaySuccess['run']>
+  historicalSnapshot?: Record<string, unknown> | null
+  orderedEvents?: CopilotHistoryRunReplaySuccess['orderedEvents']
+} = {}): CopilotHistoryRunReplaySuccess {
+  return {
+    ok: true,
+    version: 'chat-history-v1',
+    run: {
+      runId: 'run-1',
+      threadId: 'thread-1',
+      status: 'completed',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      startedAt: '2026-04-13T15:00:01Z',
+      terminalAt: '2026-04-13T15:05:00Z',
+      resolvedModelId: 'openai/gpt-4.1',
+      requestedMessageText: '你好',
+      assistantText: '历史摘要',
+      ...overrides.run,
+    },
+    historicalSnapshot: overrides.historicalSnapshot ?? null,
+    orderedEvents: overrides.orderedEvents ?? [],
+    toolCallBlocks: [],
+    diagnosticBlocks: [],
+    terminalState: null,
+    availabilityInterpretation: null,
+  }
+}
+
+function createPersistedHistoryState(
+  overrides: Partial<AssistantSessionHistoryState> = {},
+): AssistantSessionHistoryState {
+  return {
+    summary: {
+      threadId: 'thread-1',
+      boundAgentId: 'general',
+      title: '历史线程',
+      titleSource: 'deterministic',
+      summary: '历史摘要',
+      summarySource: 'deterministic',
+      createdAt: '2026-04-13T15:00:00Z',
+      updatedAt: '2026-04-13T15:05:00Z',
+      lastActivityAt: '2026-04-13T15:05:00Z',
+      lastRunId: 'run-1',
+      lastRunStatus: 'completed',
+      lastUserMessagePreview: '你好',
+      lastAssistantMessagePreview: '历史摘要',
+      driftSummary: {
+        status: 'not_evaluated',
+      },
+    },
+    isPersistedThread: true,
+    hasLoadedDetail: false,
+    detailStatus: 'idle',
+    detailError: null,
+    timelineItems: [],
+    runSummaries: [],
+    latestConfigurationSnapshot: null,
+    availabilityDrift: null,
+    capabilitiesStatus: 'ready',
+    capabilitiesError: null,
+    selectedRunId: 'run-1',
+    replayStatus: 'idle',
+    replayError: null,
+    replay: null,
+    replayByRunId: {},
+    ...overrides,
+  }
+}

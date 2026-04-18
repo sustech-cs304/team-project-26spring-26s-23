@@ -10,7 +10,8 @@ const projectRoot = path.resolve(__dirname, '..')
 process.chdir(normalizeWindowsDriveLetter(projectRoot))
 
 const vitestCliPath = path.join(process.cwd(), 'node_modules', 'vitest', 'vitest.mjs')
-const result = spawnSync(process.execPath, [vitestCliPath, 'run'], {
+const vitestArgs = process.argv.slice(2)
+const result = spawnSync(process.execPath, [vitestCliPath, 'run', ...vitestArgs], {
   cwd: process.cwd(),
   stdio: 'inherit',
   env: process.env,

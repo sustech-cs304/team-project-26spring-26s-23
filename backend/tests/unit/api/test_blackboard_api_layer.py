@@ -6,14 +6,14 @@ from typing import Any
 
 import httpx
 
-from app.blackboard.api import (
+from app.integrations.sustech.blackboard.api import (
     BlackboardCalendarICSParser,
     BlackboardCourseAPI,
     BlackboardCourseCatalogAPI,
     BlackboardCourseParser,
     extract_xml_contents,
 )
-from app.blackboard.provider.use_cases.calendar_ics import (
+from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
     refresh_calendar_ics_subscription_from_text,
 )
 
