@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from urllib.parse import urljoin
 
+import httpx
+
 from app.integrations.sustech.teaching_information_system.api.client import TISClient
 from app.integrations.sustech.teaching_information_system.api.constants import (
     _DEFAULT_TIS_ENTRY_PATH,
@@ -13,6 +15,7 @@ from app.integrations.sustech.teaching_information_system.api.constants import (
 )
 from app.integrations.sustech.teaching_information_system.api.dto import (
     DEFAULT_TIS_SERVICE_CONFIG,
+    TISSelectedCourseSemester,
     TISSelectedCoursesQueryResult,
     TISServiceConfig,
 )
@@ -43,6 +46,221 @@ from app.integrations.sustech.teaching_information_system.shared import (
     _clean_text,
     create_tis_log_session,
 )
+from app.integrations.sustech.teaching_information_system.shared.logging import TISLogger
+
+
+def _normalize_selected_courses_credentials(username: str, password: str) -> tuple[str, str]:
+    normalized_username = _clean_text(username)
+    normalized_password = str(password or "").strip()
+    if not normalized_username or not normalized_password:
+        raise ValueError("缺少 TIS/CAS 用户名或密码")
+    return normalized_username, normalized_password
+
+
+def _resolve_selected_courses_homepage_html(
+    tis_client: TISClient,
+    *,
+    homepage_html: str | None,
+    logger: TISLogger,
+) -> str:
+    if homepage_html is not None:
+        logger.info("ℹ 使用外部提供的 TIS 首页 HTML")
+        return homepage_html
+
+    logger.info("▶ 抓取 TIS 首页 HTML")
+    return tis_client.fetch_homepage()
+
+
+def _resolve_selected_courses_role_code(
+    tis_client: TISClient,
+    *,
+    homepage_role_codes: list[str],
+    logger: TISLogger,
+) -> None:
+    if tis_client.context.role_code is not None:
+        return
+
+    resolved_role_code = homepage_role_codes[0] if homepage_role_codes else "01"
+    tis_client.context.set_role_code(resolved_role_code)
+    logger.info(
+        "ℹ 已补全 TIS RoleCode",
+        payload={
+            "resolved_role_code": tis_client.context.role_code,
+            "source": "homepage"
+            if homepage_role_codes
+            else "default-student-selected-course-role",
+        },
+    )
+
+
+def _probe_authenticated_response(
+    tis_client: TISClient,
+    *,
+    url: str,
+    base_url: str,
+    unauthenticated_message: str,
+    logger: TISLogger,
+    method: str = "GET",
+    params: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    response = tis_client.probe(url, method=method, params=params, headers=headers)
+    response.raise_for_status()
+    if not _is_authenticated_tis_response(response, base_url=base_url):
+        logger.error(
+            "TIS selected courses request returned unauthenticated content",
+            payload={"url": url, "method": method},
+        )
+        raise RuntimeError(unauthenticated_message)
+    return response
+
+
+def _resolve_selected_courses_semesters(
+    tis_client: TISClient,
+    *,
+    service_config: TISServiceConfig,
+    page_url: str,
+    current_term_url: str,
+    resolved_pylx: str,
+    semester: str | None,
+    logger: TISLogger,
+) -> tuple[
+    TISSelectedCourseSemester | None,
+    TISSelectedCourseSemester,
+    dict[str, object],
+    httpx.Response,
+    str,
+]:
+    current_term_request_payload = _build_selected_courses_base_payload(
+        pylx=resolved_pylx, selected_credit_flag="0"
+    )
+    logger.info(
+        "▶ 请求 TIS 当前选课学期上下文",
+        payload={"current_term_url": current_term_url},
+    )
+    current_term_response = _probe_authenticated_response(
+        tis_client,
+        url=current_term_url,
+        method="POST",
+        params=current_term_request_payload,
+        headers={
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin": service_config.base_url,
+            "Referer": page_url,
+        },
+        base_url=service_config.base_url,
+        unauthenticated_message="TIS 当前选课学期接口返回了未认证内容",
+        logger=logger,
+    )
+    current_term_payload = _safe_parse_json_response(current_term_response)
+    if not isinstance(current_term_payload, dict):
+        raise RuntimeError("TIS 当前选课学期接口返回的响应不是有效 JSON")
+
+    current_semester = _extract_selected_courses_current_semester(current_term_payload)
+    actual_semester = _parse_selected_course_semester_argument(
+        semester, current_semester=current_semester
+    )
+    semester_source = "parameter" if semester is not None else "default-current-term"
+    return (
+        current_semester,
+        actual_semester,
+        current_term_request_payload,
+        current_term_response,
+        semester_source,
+    )
+
+
+def _build_selected_courses_api_payload(
+    *,
+    resolved_pylx: str,
+    actual_semester: TISSelectedCourseSemester,
+    current_semester: TISSelectedCourseSemester | None,
+    page_num: int,
+    page_size: int,
+) -> dict[str, object]:
+    return _build_selected_courses_base_payload(
+        pylx=resolved_pylx,
+        academic_year=actual_semester.academic_year,
+        term_code=actual_semester.term_code,
+        semester_id=actual_semester.semester_id,
+        current_academic_year=current_semester.academic_year
+        if current_semester is not None
+        else actual_semester.academic_year,
+        current_term_code=current_semester.term_code
+        if current_semester is not None
+        else actual_semester.term_code,
+        current_semester_id=current_semester.semester_id
+        if current_semester is not None
+        else actual_semester.semester_id,
+        selection_mode="yixuan",
+        page_num=page_num,
+        page_size=page_size,
+        selected_credit_flag="",
+    )
+
+
+def _fetch_selected_courses_payload(
+    tis_client: TISClient,
+    *,
+    service_config: TISServiceConfig,
+    page_url: str,
+    api_url: str,
+    request_payload: dict[str, object],
+    logger: TISLogger,
+) -> tuple[dict[str, object], httpx.Response]:
+    api_response = _probe_authenticated_response(
+        tis_client,
+        url=api_url,
+        method="POST",
+        params=request_payload,
+        headers={
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin": service_config.base_url,
+            "Referer": page_url,
+        },
+        base_url=service_config.base_url,
+        unauthenticated_message="TIS 已选课程明细接口返回了未认证内容",
+        logger=logger,
+    )
+    payload = _safe_parse_json_response(api_response)
+    if not isinstance(payload, dict):
+        raise RuntimeError("TIS 已选课程明细接口返回的响应不是有效 JSON")
+    if "yxkcList" not in payload:
+        raise RuntimeError("TIS 已选课程明细接口未返回 yxkcList 字段")
+    return payload, api_response
+
+
+def _persist_selected_courses_result(
+    result: TISSelectedCoursesQueryResult,
+    *,
+    persist: bool,
+    owner_key: str | None,
+    normalized_username: str,
+    db_manager: TISDatabaseManager | None,
+    logger: TISLogger,
+) -> TISSelectedCoursesQueryResult:
+    if not persist:
+        return attach_persistence_summary(result, None)
+
+    resolved_owner_key = _clean_text(owner_key) or normalized_username
+    resolved_db_manager = db_manager or TISDatabaseManager()
+    stats = resolved_db_manager.sync_selected_courses(
+        resolved_owner_key, result.semester.semester_id, result.courses
+    )
+    persistence_summary = TISPersistenceSummary(
+        enabled=True,
+        owner_key=resolved_owner_key,
+        db_path=resolved_db_manager.describe().db_path,
+        resources={"selected_courses": resource_result("selected_courses", stats)},
+        metadata={
+            "semester_id": result.semester.semester_id,
+            "course_count": len(result.courses),
+        },
+    )
+    logger.info("✅ TIS 已选课程持久化完成", payload=persistence_summary.to_dict())
+    return attach_persistence_summary(result, persistence_summary)
 
 
 def fetch_selected_courses_with_credentials(
@@ -60,10 +278,9 @@ def fetch_selected_courses_with_credentials(
     db_manager: TISDatabaseManager | None = None,
     owner_key: str | None = None,
 ) -> TISSelectedCoursesQueryResult:
-    normalized_username = _clean_text(username)
-    normalized_password = str(password or "").strip()
-    if not normalized_username or not normalized_password:
-        raise ValueError("缺少 TIS/CAS 用户名或密码")
+    normalized_username, normalized_password = _normalize_selected_courses_credentials(
+        username, password
+    )
 
     service_config = config or DEFAULT_TIS_SERVICE_CONFIG
     log_session = create_tis_log_session(console=enable_console_logging)
@@ -87,29 +304,18 @@ def fetch_selected_courses_with_credentials(
         ):
             raise RuntimeError("CAS 登录成功状态未能传递到 TIS")
 
-        if homepage_html is None:
-            logger.info("▶ 抓取 TIS 首页 HTML")
-            homepage_html = tis_client.fetch_homepage()
-        else:
-            logger.info("ℹ 使用外部提供的 TIS 首页 HTML")
+        homepage_html = _resolve_selected_courses_homepage_html(
+            tis_client, homepage_html=homepage_html, logger=logger
+        )
 
         homepage = analyze_homepage_html(
             homepage_html,
             page_url=service_config.homepage_url,
             base_url=service_config.base_url,
         )
-        if tis_client.context.role_code is None:
-            resolved_role_code = homepage.role_codes[0] if homepage.role_codes else "01"
-            tis_client.context.set_role_code(resolved_role_code)
-            logger.info(
-                "ℹ 已补全 TIS RoleCode",
-                payload={
-                    "resolved_role_code": tis_client.context.role_code,
-                    "source": "homepage"
-                    if homepage.role_codes
-                    else "default-student-selected-course-role",
-                },
-            )
+        _resolve_selected_courses_role_code(
+            tis_client, homepage_role_codes=homepage.role_codes, logger=logger
+        )
 
         page_url = urljoin(
             service_config.base_url, _DEFAULT_TIS_SELECTED_COURSES_PAGE_PATH
@@ -123,74 +329,38 @@ def fetch_selected_courses_with_credentials(
         resolved_pylx = tis_client.pylx or "1"
 
         logger.info("▶ 访问 TIS 我要选课页面", payload={"page_url": page_url})
-        page_response = tis_client.probe(
-            page_url,
+        page_response = _probe_authenticated_response(
+            tis_client,
+            url=page_url,
             headers={
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Referer": urljoin(service_config.base_url, _DEFAULT_TIS_ENTRY_PATH),
             },
+            base_url=service_config.base_url,
+            unauthenticated_message="TIS 我要选课页面返回了未认证内容",
+            logger=logger,
         )
-        page_response.raise_for_status()
-        if not _is_authenticated_tis_response(
-            page_response, base_url=service_config.base_url
-        ):
-            raise RuntimeError("TIS 我要选课页面返回了未认证内容")
-
-        current_term_request_payload = _build_selected_courses_base_payload(
-            pylx=resolved_pylx, selected_credit_flag="0"
+        (
+            current_semester,
+            actual_semester,
+            current_term_request_payload,
+            current_term_response,
+            semester_source,
+        ) = _resolve_selected_courses_semesters(
+            tis_client,
+            service_config=service_config,
+            page_url=page_url,
+            current_term_url=current_term_url,
+            resolved_pylx=resolved_pylx,
+            semester=semester,
+            logger=logger,
         )
-        logger.info(
-            "▶ 请求 TIS 当前选课学期上下文",
-            payload={"current_term_url": current_term_url},
-        )
-        current_term_response = tis_client.probe(
-            current_term_url,
-            method="POST",
-            params=current_term_request_payload,
-            headers={
-                "Accept": "*/*",
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "Origin": service_config.base_url,
-                "Referer": page_url,
-            },
-        )
-        current_term_response.raise_for_status()
-        if not _is_authenticated_tis_response(
-            current_term_response, base_url=service_config.base_url
-        ):
-            raise RuntimeError("TIS 当前选课学期接口返回了未认证内容")
-
-        current_term_payload = _safe_parse_json_response(current_term_response)
-        if not isinstance(current_term_payload, dict):
-            raise RuntimeError("TIS 当前选课学期接口返回的响应不是有效 JSON")
-        current_semester = _extract_selected_courses_current_semester(
-            current_term_payload
-        )
-        actual_semester = _parse_selected_course_semester_argument(
-            semester, current_semester=current_semester
-        )
-        semester_source = (
-            "parameter" if semester is not None else "default-current-term"
-        )
-
-        request_payload = _build_selected_courses_base_payload(
-            pylx=resolved_pylx,
-            academic_year=actual_semester.academic_year,
-            term_code=actual_semester.term_code,
-            semester_id=actual_semester.semester_id,
-            current_academic_year=current_semester.academic_year
-            if current_semester is not None
-            else actual_semester.academic_year,
-            current_term_code=current_semester.term_code
-            if current_semester is not None
-            else actual_semester.term_code,
-            current_semester_id=current_semester.semester_id
-            if current_semester is not None
-            else actual_semester.semester_id,
-            selection_mode="yixuan",
+        request_payload = _build_selected_courses_api_payload(
+            resolved_pylx=resolved_pylx,
+            actual_semester=actual_semester,
+            current_semester=current_semester,
             page_num=page_num,
             page_size=page_size,
-            selected_credit_flag="",
         )
 
         logger.info(
@@ -201,28 +371,14 @@ def fetch_selected_courses_with_credentials(
                 "semester_source": semester_source,
             },
         )
-        api_response = tis_client.probe(
-            api_url,
-            method="POST",
-            params=request_payload,
-            headers={
-                "Accept": "*/*",
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "Origin": service_config.base_url,
-                "Referer": page_url,
-            },
+        payload, api_response = _fetch_selected_courses_payload(
+            tis_client,
+            service_config=service_config,
+            page_url=page_url,
+            api_url=api_url,
+            request_payload=request_payload,
+            logger=logger,
         )
-        api_response.raise_for_status()
-        if not _is_authenticated_tis_response(
-            api_response, base_url=service_config.base_url
-        ):
-            raise RuntimeError("TIS 已选课程明细接口返回了未认证内容")
-
-        payload = _safe_parse_json_response(api_response)
-        if not isinstance(payload, dict):
-            raise RuntimeError("TIS 已选课程明细接口返回的响应不是有效 JSON")
-        if "yxkcList" not in payload:
-            raise RuntimeError("TIS 已选课程明细接口未返回 yxkcList 字段")
 
         courses = extract_selected_course_records_from_json(
             payload, semester=actual_semester
@@ -276,26 +432,14 @@ def fetch_selected_courses_with_credentials(
             resolved_pylx=resolved_pylx,
             semester_source=semester_source,
         )
-        if not persist:
-            return attach_persistence_summary(result, None)
-
-        resolved_owner_key = _clean_text(owner_key) or normalized_username
-        resolved_db_manager = db_manager or TISDatabaseManager()
-        stats = resolved_db_manager.sync_selected_courses(
-            resolved_owner_key, actual_semester.semester_id, courses
+        return _persist_selected_courses_result(
+            result,
+            persist=persist,
+            owner_key=owner_key,
+            normalized_username=normalized_username,
+            db_manager=db_manager,
+            logger=logger,
         )
-        persistence_summary = TISPersistenceSummary(
-            enabled=True,
-            owner_key=resolved_owner_key,
-            db_path=resolved_db_manager.describe().db_path,
-            resources={"selected_courses": resource_result("selected_courses", stats)},
-            metadata={
-                "semester_id": actual_semester.semester_id,
-                "course_count": len(courses),
-            },
-        )
-        logger.info("✅ TIS 已选课程持久化完成", payload=persistence_summary.to_dict())
-        return attach_persistence_summary(result, persistence_summary)
     except Exception as ex:
         logger.exception("TIS 已选课程明细查询失败", ex)
         raise
