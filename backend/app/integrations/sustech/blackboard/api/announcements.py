@@ -494,13 +494,52 @@ class BlackboardAnnouncementAPI:
 
         return None
 
-    def _parse_all_announcements_from_html(
-        self, html: str, page_url: str
-    ) -> list[dict[str, object]]:
-        soup = BeautifulSoup(html, "html.parser")
-        announcements: list[dict[str, object]] = []
-        seen_keys: set[str] = set()
+    def _build_announcement_payload(
+        self,
+        *,
+        course_id: str | None,
+        course_code: str | None,
+        course_name: str,
+        title: str,
+        publish_time: str,
+        detail: str,
+        author: str | None,
+        url: str,
+        source_page: str,
+    ) -> dict[str, object]:
+        return {
+            "course_id": course_id,
+            "course_code": course_code,
+            "course_name": course_name,
+            "title": title,
+            "publish_time": publish_time,
+            "detail": detail,
+            "author": author,
+            "url": url,
+            "source_page": source_page,
+        }
 
+    def _append_unique_announcement(
+        self,
+        announcements: list[dict[str, object]],
+        seen_keys: set[str],
+        item: dict[str, object],
+    ) -> None:
+        key = "|".join(
+            [
+                str(item.get("course_name") or ""),
+                str(item.get("title") or ""),
+                str(item.get("publish_time") or ""),
+                str(item.get("url") or ""),
+            ]
+        )
+        if key in seen_keys:
+            return
+
+        announcements.append(item)
+        seen_keys.add(key)
+
+    def _collect_candidate_announcement_blocks(self, soup: BeautifulSoup) -> list[Tag]:
         candidate_blocks: list[Tag] = []
         for selector in (
             "ul.announcementList > li",
@@ -512,180 +551,179 @@ class BlackboardAnnouncementAPI:
         ):
             candidate_blocks.extend(soup.select(selector))
 
-        if not candidate_blocks:
-            for li in soup.find_all("li"):
-                parent = li.find_parent(["ul", "div", "section"])
-                if not isinstance(parent, Tag):
-                    continue
+        if candidate_blocks:
+            return candidate_blocks
 
-                parent_id_attr = parent.get("id")
-                parent_class_attr = parent.get("class")
+        for li in soup.find_all("li"):
+            parent = li.find_parent(["ul", "div", "section"])
+            if not isinstance(parent, Tag):
+                continue
 
-                parent_id_text = str(parent_id_attr or "")
-                if isinstance(parent_class_attr, list):
-                    parent_class_text = " ".join(
-                        str(item) for item in parent_class_attr
-                    )
-                elif isinstance(parent_class_attr, str):
-                    parent_class_text = parent_class_attr
-                else:
-                    parent_class_text = ""
+            parent_id_attr = parent.get("id")
+            parent_class_attr = parent.get("class")
+            parent_id_text = str(parent_id_attr or "")
 
-                hint = f"{parent_id_text} {parent_class_text}".lower()
-                if "announce" in hint and li not in candidate_blocks:
-                    candidate_blocks.append(li)
+            if isinstance(parent_class_attr, list):
+                parent_class_text = " ".join(str(item) for item in parent_class_attr)
+            elif isinstance(parent_class_attr, str):
+                parent_class_text = parent_class_attr
+            else:
+                parent_class_text = ""
+
+            hint = f"{parent_id_text} {parent_class_text}".lower()
+            if "announce" in hint and li not in candidate_blocks:
+                candidate_blocks.append(li)
+
+        return candidate_blocks
+
+    def _parse_announcement_table_row(
+        self, row: Tag, page_url: str
+    ) -> dict[str, object] | None:
+        cells = row.find_all(["th", "td"])
+        if len(cells) < 2:
+            return None
+
+        row_text = clean_field(row.get_text(" ", strip=True), max_length=2000)
+        if not row_text or is_navigation_noise(row_text):
+            return None
+
+        link = row.find("a", href=True)
+        if not link:
+            return None
+
+        publish_time = clean_field(extract_date_text_safe(row_text), max_length=120)
+        has_announcement_signal = (
+            "announcement" in row_text.lower()
+            or "公告" in row_text
+            or "通知" in row_text
+        )
+        if not publish_time and not has_announcement_signal:
+            return None
+
+        title = clean_field(
+            link.get_text(" ", strip=True) or row_text[:120], max_length=200
+        )
+        if not title:
+            return None
+
+        course_name = ""
+        if len(cells) >= 3:
+            maybe_course = clean_field(cells[0].get_text(" ", strip=True), max_length=160)
+            if maybe_course != title and looks_like_course_name(maybe_course):
+                course_name = maybe_course
+
+        detail = clean_field(row_text, max_length=600)
+        url = self.context.absolute_url(page_url, str(link.get("href") or "").strip())
+        return self._build_announcement_payload(
+            course_id=self._extract_course_id_from_announcement_block(row, page_url),
+            course_code=self._extract_course_code_from_announcement_block(row, page_url),
+            course_name=course_name,
+            title=title,
+            publish_time=publish_time,
+            detail=detail,
+            author=self._extract_author_from_announcement_block(row),
+            url=url,
+            source_page=page_url,
+        )
+
+    def _extract_announcement_title(self, block: Tag, block_text: str) -> str:
+        title_node = block.find(["h2", "h3", "h4", "strong"])
+        if title_node:
+            return clean_field(title_node.get_text(" ", strip=True), max_length=200)
+
+        link_node = block.find("a", href=True)
+        if link_node:
+            return clean_field(link_node.get_text(" ", strip=True), max_length=200)
+
+        return clean_field(block_text[:120], max_length=200)
+
+    def _normalize_announcement_course_name(self, block: Tag, block_text: str) -> str:
+        details_node = block.select_one(".details")
+        details_text = (
+            clean_field(details_node.get_text(" ", strip=True), max_length=3000)
+            if details_node
+            else ""
+        )
+        course_name = self._extract_course_name_from_announcement_block(block)
+        if not course_name:
+            course_name = self._extract_course_name_from_announcement_text(
+                details_text or block_text
+            )
+        course_name = clean_field(course_name, max_length=160)
+        if course_name and not looks_like_course_name(course_name):
+            return ""
+        return course_name
+
+    def _parse_announcement_block(
+        self, block: Tag, page_url: str
+    ) -> dict[str, object] | None:
+        block_text = clean_field(block.get_text(" ", strip=True), max_length=3000)
+        if not block_text or is_navigation_noise(block_text):
+            return None
+
+        lower_text = block_text.lower()
+        details_node = block.select_one(".details")
+        details_text = (
+            clean_field(details_node.get_text(" ", strip=True), max_length=3000)
+            if details_node
+            else ""
+        )
+        publish_time = clean_field(
+            extract_date_text_safe(details_text or block_text), max_length=120
+        )
+        has_announcement_signal = (
+            "announcement" in lower_text
+            or "posted on" in lower_text
+            or "公告" in block_text
+            or "通知" in block_text
+        )
+        if not publish_time and not has_announcement_signal:
+            return None
+
+        title = self._extract_announcement_title(block, block_text)
+        if not title:
+            return None
+
+        body_node = block.select_one(".vtbegenerated")
+        detail = clean_field(
+            body_node.get_text(" ", strip=True) if body_node else (details_text or block_text),
+            max_length=600,
+        )
+        dom_id = clean_field(str(block.get("id") or ""), max_length=120)
+        url = f"{page_url}#{dom_id}" if dom_id else page_url
+
+        return self._build_announcement_payload(
+            course_id=self._extract_course_id_from_announcement_block(block, page_url),
+            course_code=self._extract_course_code_from_announcement_block(block, page_url),
+            course_name=self._normalize_announcement_course_name(block, block_text),
+            title=title,
+            publish_time=publish_time,
+            detail=detail,
+            author=self._extract_author_from_announcement_block(block),
+            url=url,
+            source_page=page_url,
+        )
+
+    def _parse_all_announcements_from_html(
+        self, html: str, page_url: str
+    ) -> list[dict[str, object]]:
+        soup = BeautifulSoup(html, "html.parser")
+        announcements: list[dict[str, object]] = []
+        seen_keys: set[str] = set()
+        candidate_blocks = self._collect_candidate_announcement_blocks(soup)
 
         if not candidate_blocks:
             for row in soup.select("table tr"):
-                cells = row.find_all(["th", "td"])
-                if len(cells) < 2:
-                    continue
-
-                row_text = clean_field(row.get_text(" ", strip=True), max_length=2000)
-                if not row_text or is_navigation_noise(row_text):
-                    continue
-
-                link = row.find("a", href=True)
-                if not link:
-                    continue
-
-                publish_time = clean_field(
-                    extract_date_text_safe(row_text), max_length=120
-                )
-                if (
-                    not publish_time
-                    and "announcement" not in row_text.lower()
-                    and "公告" not in row_text
-                    and "通知" not in row_text
-                ):
-                    continue
-
-                title = clean_field(
-                    link.get_text(" ", strip=True) or row_text[:120], max_length=200
-                )
-                if not title:
-                    continue
-
-                course_name = ""
-                if len(cells) >= 3:
-                    maybe_course = clean_field(
-                        cells[0].get_text(" ", strip=True), max_length=160
+                parsed_row = self._parse_announcement_table_row(row, page_url)
+                if parsed_row is not None:
+                    self._append_unique_announcement(
+                        announcements, seen_keys, parsed_row
                     )
-                    if maybe_course != title and looks_like_course_name(maybe_course):
-                        course_name = maybe_course
-
-                detail = clean_field(row_text, max_length=600)
-                url = self.context.absolute_url(
-                    page_url, str(link.get("href") or "").strip()
-                )
-                course_id = self._extract_course_id_from_announcement_block(
-                    row, page_url
-                )
-                course_code = self._extract_course_code_from_announcement_block(
-                    row, page_url
-                )
-                author = self._extract_author_from_announcement_block(row)
-                key = f"{course_name}|{title}|{publish_time}|{url}"
-                if key in seen_keys:
-                    continue
-
-                announcements.append(
-                    {
-                        "course_id": course_id,
-                        "course_code": course_code,
-                        "course_name": course_name,
-                        "title": title,
-                        "publish_time": publish_time,
-                        "detail": detail,
-                        "author": author,
-                        "url": url,
-                        "source_page": page_url,
-                    }
-                )
-                seen_keys.add(key)
 
         for block in candidate_blocks:
-            block_text = clean_field(block.get_text(" ", strip=True), max_length=3000)
-            if not block_text or is_navigation_noise(block_text):
-                continue
-
-            lower_text = block_text.lower()
-            details_node = block.select_one(".details")
-            details_text = (
-                clean_field(details_node.get_text(" ", strip=True), max_length=3000)
-                if details_node
-                else ""
-            )
-            publish_time = clean_field(
-                extract_date_text_safe(details_text or block_text), max_length=120
-            )
-            has_announcement_signal = (
-                "announcement" in lower_text
-                or "posted on" in lower_text
-                or "公告" in block_text
-                or "通知" in block_text
-            )
-            if not publish_time and not has_announcement_signal:
-                continue
-
-            title_node = block.find(["h2", "h3", "h4", "strong"])
-            link_node = block.find("a", href=True)
-            title = ""
-            if title_node:
-                title = clean_field(
-                    title_node.get_text(" ", strip=True), max_length=200
-                )
-            elif link_node:
-                title = clean_field(link_node.get_text(" ", strip=True), max_length=200)
-            if not title:
-                title = clean_field(block_text[:120], max_length=200)
-            if not title:
-                continue
-
-            course_name = self._extract_course_name_from_announcement_block(block)
-            if not course_name:
-                course_name = self._extract_course_name_from_announcement_text(
-                    details_text or block_text
-                )
-            course_name = clean_field(course_name, max_length=160)
-            if course_name and not looks_like_course_name(course_name):
-                course_name = ""
-
-            body_node = block.select_one(".vtbegenerated")
-            detail = clean_field(
-                body_node.get_text(" ", strip=True)
-                if body_node
-                else (details_text or block_text),
-                max_length=600,
-            )
-
-            course_id = self._extract_course_id_from_announcement_block(block, page_url)
-            course_code = self._extract_course_code_from_announcement_block(
-                block, page_url
-            )
-            author = self._extract_author_from_announcement_block(block)
-
-            dom_id = clean_field(str(block.get("id") or ""), max_length=120)
-            url = f"{page_url}#{dom_id}" if dom_id else page_url
-
-            key = f"{course_name}|{title}|{publish_time}|{url}"
-            if key in seen_keys:
-                continue
-
-            announcements.append(
-                {
-                    "course_id": course_id,
-                    "course_code": course_code,
-                    "course_name": course_name,
-                    "title": title,
-                    "publish_time": publish_time,
-                    "detail": detail,
-                    "author": author,
-                    "url": url,
-                    "source_page": page_url,
-                }
-            )
-            seen_keys.add(key)
+            parsed_block = self._parse_announcement_block(block, page_url)
+            if parsed_block is not None:
+                self._append_unique_announcement(announcements, seen_keys, parsed_block)
 
         announcements.sort(
             key=lambda item: parse_datetime_safe(str(item.get("publish_time") or "")),
