@@ -59,7 +59,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
         db_path: str | Path | None = None,
         apply_migrations: bool = True,
     ) -> None:
-        self.db_path = resolve_chat_database_path(runtime_config=runtime_config, db_path=db_path)
+        self.db_path = resolve_chat_database_path(
+            runtime_config=runtime_config, db_path=db_path
+        )
         if apply_migrations:
             upgrade_database(db_path=self.db_path)
         self.engine = create_sqlite_engine(db_path=self.db_path)
@@ -84,7 +86,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
         metadata: Mapping[str, Any] | None = None,
         thread_id: str | None = None,
     ) -> RuntimeThreadRecord:
-        resolved_agent_id = _require_non_empty_string(bound_agent_id, field_name="bound_agent_id")
+        resolved_agent_id = _require_non_empty_string(
+            bound_agent_id, field_name="bound_agent_id"
+        )
         resolved_thread_id = (
             _require_non_empty_string(thread_id, field_name="thread_id")
             if thread_id is not None
@@ -102,7 +106,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 updated_at=now,
             )
             thread_model = repositories.threads.create_from_runtime_record(thread)
-            ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
+            ProjectionService.refresh_thread_in_transaction(
+                repositories, resolved_thread_id
+            )
             return repositories.threads.to_runtime_record(thread_model)
 
     def get_or_create_thread(
@@ -112,16 +118,24 @@ class SQLiteSessionStore(RuntimeSessionStore):
         bound_agent_id: str,
         metadata: Mapping[str, Any] | None = None,
     ) -> tuple[RuntimeThreadRecord, bool]:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
-        resolved_agent_id = _require_non_empty_string(bound_agent_id, field_name="bound_agent_id")
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
+        resolved_agent_id = _require_non_empty_string(
+            bound_agent_id, field_name="bound_agent_id"
+        )
         with run_lifecycle_transaction(self._session_factory) as repositories:
             existing = repositories.threads.get(resolved_thread_id)
             if existing is not None:
                 runtime_thread = repositories.threads.to_runtime_record(existing)
-                self._assert_bound_agent(runtime_thread, requested_agent_id=resolved_agent_id)
+                self._assert_bound_agent(
+                    runtime_thread, requested_agent_id=resolved_agent_id
+                )
                 runtime_thread.touch(metadata=metadata)
                 repositories.threads.apply_runtime_record(existing, runtime_thread)
-                ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
+                ProjectionService.refresh_thread_in_transaction(
+                    repositories, resolved_thread_id
+                )
                 return repositories.threads.to_runtime_record(existing), False
 
             now = datetime.now(UTC)
@@ -132,8 +146,12 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 created_at=now,
                 updated_at=now,
             )
-            thread_model = repositories.threads.create_from_runtime_record(created_thread)
-            ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
+            thread_model = repositories.threads.create_from_runtime_record(
+                created_thread
+            )
+            ProjectionService.refresh_thread_in_transaction(
+                repositories, resolved_thread_id
+            )
             return repositories.threads.to_runtime_record(thread_model), True
 
     def get_run(self, run_id: str) -> RuntimeRunRecord | None:
@@ -171,7 +189,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
         metadata: Mapping[str, Any] | None = None,
         run_id: str | None = None,
     ) -> RuntimeRunRecord:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
         resolved_run_id = (
             _require_non_empty_string(run_id, field_name="run_id")
             if run_id is not None
@@ -238,7 +258,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> RuntimeRunRecord:
-        return self._mutate_run(run_id, lambda run: run.mark_streaming(metadata=metadata))
+        return self._mutate_run(
+            run_id, lambda run: run.mark_streaming(metadata=metadata)
+        )
 
     def mark_run_completed(
         self,
@@ -249,7 +271,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
     ) -> RuntimeRunRecord:
         return self._mutate_run(
             run_id,
-            lambda run: run.mark_completed(assistant_text=assistant_text, metadata=metadata),
+            lambda run: run.mark_completed(
+                assistant_text=assistant_text, metadata=metadata
+            ),
         )
 
     def mark_run_failed(
@@ -266,7 +290,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> RuntimeRunRecord:
-        return self._mutate_run(run_id, lambda run: run.mark_cancelled(metadata=metadata))
+        return self._mutate_run(
+            run_id, lambda run: run.mark_cancelled(metadata=metadata)
+        )
 
     def touch_run(
         self,
@@ -297,33 +323,53 @@ class SQLiteSessionStore(RuntimeSessionStore):
         return tuple(projected_messages)
 
     def rename_thread(self, thread_id: str, *, title: str) -> str:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
         normalized_title = _require_non_empty_string(title, field_name="title")
         with run_lifecycle_transaction(self._session_factory) as repositories:
             thread_model = repositories.threads.require(resolved_thread_id)
             thread_model.title = normalized_title
             thread_model.title_source = _MANUAL_THREAD_TITLE_SOURCE
             thread_model.updated_at = datetime.now(UTC)
-            ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
+            ProjectionService.refresh_thread_in_transaction(
+                repositories, resolved_thread_id
+            )
             return thread_model.id
 
     def duplicate_thread(self, thread_id: str, *, title: str | None = None) -> str:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
         duplicated_at = datetime.now(UTC)
         duplicated_thread_id = f"thread-{uuid4().hex}"
         with run_lifecycle_transaction(self._session_factory) as repositories:
             source_thread_model = repositories.threads.require(resolved_thread_id)
-            source_projection = repositories.projections.get_thread_projection(resolved_thread_id)
+            source_projection = repositories.projections.get_thread_projection(
+                resolved_thread_id
+            )
             if source_projection is None:
-                ProjectionService.refresh_thread_in_transaction(repositories, resolved_thread_id)
-                source_projection = repositories.projections.get_thread_projection(resolved_thread_id)
-            source_thread_title = _require_non_empty_string(
-                title,
-                field_name="title",
-            ) if title is not None and title.strip() != "" else (
-                source_thread_model.title
-                or (None if source_projection is None else source_projection.display_title)
-                or source_thread_model.bound_agent_id
+                ProjectionService.refresh_thread_in_transaction(
+                    repositories, resolved_thread_id
+                )
+                source_projection = repositories.projections.get_thread_projection(
+                    resolved_thread_id
+                )
+            source_thread_title = (
+                _require_non_empty_string(
+                    title,
+                    field_name="title",
+                )
+                if title is not None and title.strip() != ""
+                else (
+                    source_thread_model.title
+                    or (
+                        None
+                        if source_projection is None
+                        else source_projection.display_title
+                    )
+                    or source_thread_model.bound_agent_id
+                )
             )
             duplicated_thread = RuntimeThreadRecord(
                 thread_id=duplicated_thread_id,
@@ -332,17 +378,27 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 created_at=duplicated_at,
                 updated_at=duplicated_at,
             )
-            duplicated_thread_model = repositories.threads.create_from_runtime_record(duplicated_thread)
-            duplicated_thread_model.title = _build_duplicate_thread_title(source_thread_title)
+            duplicated_thread_model = repositories.threads.create_from_runtime_record(
+                duplicated_thread
+            )
+            duplicated_thread_model.title = _build_duplicate_thread_title(
+                source_thread_title
+            )
             duplicated_thread_model.title_source = _MANUAL_THREAD_TITLE_SOURCE
             duplicated_thread_model.summary_text = source_thread_model.summary_text
             duplicated_thread_model.summary_source = source_thread_model.summary_source
-            duplicated_thread_model.last_user_message_preview = source_thread_model.last_user_message_preview
-            duplicated_thread_model.last_assistant_message_preview = source_thread_model.last_assistant_message_preview
+            duplicated_thread_model.last_user_message_preview = (
+                source_thread_model.last_user_message_preview
+            )
+            duplicated_thread_model.last_assistant_message_preview = (
+                source_thread_model.last_assistant_message_preview
+            )
             source_run_models = repositories.runs.list_for_thread(resolved_thread_id)
             last_source_run_id = source_run_models[-1].id if source_run_models else None
             for source_run_model in source_run_models:
-                source_runtime_run = repositories.runs.to_runtime_record(source_run_model)
+                source_runtime_run = repositories.runs.to_runtime_record(
+                    source_run_model
+                )
                 is_latest_run = source_run_model.id == last_source_run_id
                 duplicated_run = RuntimeRunRecord(
                     run_id=f"run-{uuid4().hex}",
@@ -353,7 +409,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
                     cancel_requested=source_runtime_run.cancel_requested,
                     assistant_text=source_runtime_run.assistant_text,
                     created_at=source_runtime_run.created_at,
-                    updated_at=duplicated_at if is_latest_run else source_runtime_run.updated_at,
+                    updated_at=duplicated_at
+                    if is_latest_run
+                    else source_runtime_run.updated_at,
                     started_at=source_runtime_run.started_at,
                     terminal_at=(
                         duplicated_at
@@ -362,23 +420,31 @@ class SQLiteSessionStore(RuntimeSessionStore):
                     ),
                 )
                 repositories.runs.create_from_runtime_record(duplicated_run)
-                for source_event_model in repositories.events.list_for_run(source_run_model.id):
+                for source_event_model in repositories.events.list_for_run(
+                    source_run_model.id
+                ):
                     repositories.events.clone_for_run(
                         source_event_model,
                         run_id=duplicated_run.run_id,
                         created_at=source_event_model.created_at,
                     )
-                repositories.threads.touch_for_run(duplicated_thread_model, duplicated_run)
+                repositories.threads.touch_for_run(
+                    duplicated_thread_model, duplicated_run
+                )
                 ProjectionService.refresh_run_in_transaction(
                     repositories,
                     duplicated_run.run_id,
                     refresh_thread=False,
                 )
-            ProjectionService.refresh_thread_in_transaction(repositories, duplicated_thread_id)
+            ProjectionService.refresh_thread_in_transaction(
+                repositories, duplicated_thread_id
+            )
             return duplicated_thread_id
 
     def delete_thread(self, thread_id: str) -> PersistedThreadDeleteResponse:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
         deleted_at = datetime.now(UTC)
         with run_lifecycle_transaction(self._session_factory) as repositories:
             repositories.threads.require(resolved_thread_id)
@@ -401,12 +467,18 @@ class SQLiteSessionStore(RuntimeSessionStore):
             resolved_backup_path = _resolve_database_operation_path(
                 self.db_path,
                 target_path,
-                default_file_name=_build_default_backup_file_name(self.db_path, created_at),
+                default_file_name=_build_default_backup_file_name(
+                    self.db_path, created_at
+                ),
             )
-            _ensure_distinct_database_path(self.db_path, resolved_backup_path, operation_name="backup")
+            _ensure_distinct_database_path(
+                self.db_path, resolved_backup_path, operation_name="backup"
+            )
             resolved_backup_path.parent.mkdir(parents=True, exist_ok=True)
             with _open_sqlite_connection(self.db_path) as source_connection:
-                with _open_sqlite_connection(resolved_backup_path) as destination_connection:
+                with _open_sqlite_connection(
+                    resolved_backup_path
+                ) as destination_connection:
                     source_connection.backup(destination_connection)
             return PersistedDatabaseBackupResponse(
                 ok=True,
@@ -439,8 +511,12 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 allow_absolute_within_backup_directory=True,
             )
             if not resolved_source_path.is_file():
-                raise ValueError(f"Restore source '{resolved_source_path}' does not exist.")
-            _ensure_distinct_database_path(self.db_path, resolved_source_path, operation_name="restore")
+                raise ValueError(
+                    f"Restore source '{resolved_source_path}' does not exist."
+                )
+            _ensure_distinct_database_path(
+                self.db_path, resolved_source_path, operation_name="restore"
+            )
             restored_at = datetime.now(UTC)
             self.engine.dispose()
             _remove_sqlite_sidecar_files(self.db_path)
@@ -514,19 +590,18 @@ class SQLiteSessionStore(RuntimeSessionStore):
             )
 
 
-
 def _require_non_empty_string(value: str | None, *, field_name: str) -> str:
     if value is None or value.strip() == "":
-        raise ValueError(f"Session store field '{field_name}' must be a non-empty string.")
+        raise ValueError(
+            f"Session store field '{field_name}' must be a non-empty string."
+        )
     return value.strip()
-
 
 
 def _build_default_backup_file_name(db_path: Path, created_at: datetime) -> str:
     suffix = db_path.suffix or ".db"
     timestamp = created_at.strftime("%Y%m%dT%H%M%SZ")
     return f"{db_path.stem}.backup.{timestamp}{suffix}"
-
 
 
 def _resolve_database_operation_path(
@@ -553,7 +628,9 @@ def _resolve_database_operation_path(
     try:
         resolved_candidate.relative_to(backup_directory)
     except ValueError as exc:
-        raise ValueError("Database backup and restore paths must stay within the backups directory.") from exc
+        raise ValueError(
+            "Database backup and restore paths must stay within the backups directory."
+        ) from exc
     if resolved_candidate.suffix.lower() not in _ALLOWED_BACKUP_EXTENSIONS:
         raise ValueError(
             "Database backup and restore paths must use one of: .db, .sqlite3, .bak."
@@ -561,10 +638,8 @@ def _resolve_database_operation_path(
     return resolved_candidate
 
 
-
 def _resolve_backup_directory(db_path: Path) -> Path:
     return (db_path.parent.parent / _BACKUP_DIRECTORY_NAME).resolve()
-
 
 
 def _normalize_backup_relative_path(
@@ -576,25 +651,33 @@ def _normalize_backup_relative_path(
     candidate = Path(path_value)
     if candidate.is_absolute():
         if not allow_absolute_within_backup_directory:
-            raise ValueError("Database backup and restore paths must be relative to the backups directory.")
+            raise ValueError(
+                "Database backup and restore paths must be relative to the backups directory."
+            )
         resolved_candidate = candidate.resolve()
         try:
             resolved_candidate.relative_to(backup_directory)
         except ValueError as exc:
-            raise ValueError("Database backup and restore paths must stay within the backups directory.") from exc
+            raise ValueError(
+                "Database backup and restore paths must stay within the backups directory."
+            ) from exc
         return resolved_candidate
     if any(part == ".." for part in candidate.parts):
-        raise ValueError("Database backup and restore paths must not traverse parent directories.")
+        raise ValueError(
+            "Database backup and restore paths must not traverse parent directories."
+        )
     if any(part in {"", "."} for part in candidate.parts):
-        raise ValueError("Database backup and restore paths must be a normalized relative file path.")
+        raise ValueError(
+            "Database backup and restore paths must be a normalized relative file path."
+        )
     return candidate
 
 
-
-def _ensure_distinct_database_path(db_path: Path, candidate_path: Path, *, operation_name: str) -> None:
+def _ensure_distinct_database_path(
+    db_path: Path, candidate_path: Path, *, operation_name: str
+) -> None:
     if candidate_path == db_path:
         raise ValueError(f"Cannot {operation_name} the live database file in place.")
-
 
 
 def _remove_sqlite_sidecar_files(db_path: Path) -> None:
@@ -604,12 +687,13 @@ def _remove_sqlite_sidecar_files(db_path: Path) -> None:
             sidecar_path.unlink()
 
 
-
 @contextmanager
 def _open_sqlite_connection(path: Path) -> Iterator[sqlite3.Connection]:
     connection = sqlite3.connect(path, timeout=DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS)
     try:
-        connection.execute(f"PRAGMA busy_timeout={int(DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS * 1000)};")
+        connection.execute(
+            f"PRAGMA busy_timeout={int(DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS * 1000)};"
+        )
         yield connection
     finally:
         connection.close()

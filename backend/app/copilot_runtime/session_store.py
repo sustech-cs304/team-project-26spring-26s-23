@@ -306,7 +306,9 @@ class InMemorySessionStore:
         bound_agent_id: str,
         metadata: Mapping[str, Any] | None = None,
     ) -> tuple[RuntimeThreadRecord, bool]:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
         resolved_agent_id = _require_non_empty_string(
             bound_agent_id,
             field_name="bound_agent_id",
@@ -330,8 +332,12 @@ class InMemorySessionStore:
         return self._runs.get(run_id)
 
     def list_runs(self, thread_id: str) -> tuple[RuntimeRunRecord, ...]:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
-        runs = [run for run in self._runs.values() if run.thread_id == resolved_thread_id]
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
+        runs = [
+            run for run in self._runs.values() if run.thread_id == resolved_thread_id
+        ]
         runs.sort(key=lambda run: (run.created_at, run.run_id))
         return tuple(runs)
 
@@ -347,7 +353,9 @@ class InMemorySessionStore:
         metadata: Mapping[str, Any] | None = None,
         run_id: str | None = None,
     ) -> RuntimeRunRecord:
-        resolved_thread_id = _require_non_empty_string(thread_id, field_name="thread_id")
+        resolved_thread_id = _require_non_empty_string(
+            thread_id, field_name="thread_id"
+        )
         resolved_run_id = (
             _require_non_empty_string(run_id, field_name="run_id")
             if run_id is not None
@@ -392,7 +400,9 @@ class InMemorySessionStore:
     ) -> RuntimeRunRecord:
         run = self._require_run(run_id)
         allocated_sequence = len(run.event_log) + 1
-        run.append_event(event_type=event_type, payload=payload, sequence=allocated_sequence)
+        run.append_event(
+            event_type=event_type, payload=payload, sequence=allocated_sequence
+        )
         self._touch_thread_for_run(run)
         return run
 
@@ -508,7 +518,6 @@ class InMemorySessionStore:
                 return candidate
 
 
-
 def _normalize_projected_text(value: str | None) -> str | None:
     if not isinstance(value, str):
         return None
@@ -516,7 +525,6 @@ def _normalize_projected_text(value: str | None) -> str | None:
     if normalized_value == "":
         return None
     return normalized_value
-
 
 
 def _normalize_optional_non_empty_string(value: object) -> str | None:
@@ -528,10 +536,11 @@ def _normalize_optional_non_empty_string(value: object) -> str | None:
     return normalized_value
 
 
-
 def _require_non_empty_string(value: str | None, *, field_name: str) -> str:
     if value is None or value.strip() == "":
-        raise ValueError(f"Session store field '{field_name}' must be a non-empty string.")
+        raise ValueError(
+            f"Session store field '{field_name}' must be a non-empty string."
+        )
     return value.strip()
 
 

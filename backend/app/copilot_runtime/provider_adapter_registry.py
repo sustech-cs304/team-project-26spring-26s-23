@@ -98,14 +98,24 @@ class _StaticRuntimeProviderAdapter:
     adapter_id: str
     provider_family: str
     build_model_impl: Callable[[ResolvedRuntimeModelRoute, ProviderCatalogEntry], Any]
-    thinking_capability_impl: Callable[
-        [ResolvedRuntimeModelRoute, ProviderCatalogEntry],
-        RuntimeProviderThinkingCapability,
-    ] | None = None
-    thinking_mapping_impl: Callable[
-        [RuntimeThinkingLevelIntent, ResolvedRuntimeModelRoute, ProviderCatalogEntry],
-        RuntimeProviderThinkingMapping | None,
-    ] | None = None
+    thinking_capability_impl: (
+        Callable[
+            [ResolvedRuntimeModelRoute, ProviderCatalogEntry],
+            RuntimeProviderThinkingCapability,
+        ]
+        | None
+    ) = None
+    thinking_mapping_impl: (
+        Callable[
+            [
+                RuntimeThinkingLevelIntent,
+                ResolvedRuntimeModelRoute,
+                ProviderCatalogEntry,
+            ],
+            RuntimeProviderThinkingMapping | None,
+        ]
+        | None
+    ) = None
 
     def supports_streaming_execution(
         self,
@@ -157,9 +167,13 @@ class RuntimeProviderAdapterRegistry:
     def register(self, adapter: RuntimeProviderAdapter) -> RuntimeProviderAdapter:
         adapter_id = _normalize_optional_text(adapter.adapter_id)
         if adapter_id is None:
-            raise ValueError("Runtime provider adapter must declare a non-empty adapter id.")
+            raise ValueError(
+                "Runtime provider adapter must declare a non-empty adapter id."
+            )
         if adapter_id in self._adapters_by_id:
-            raise ValueError(f"Runtime provider adapter '{adapter_id}' is already registered.")
+            raise ValueError(
+                f"Runtime provider adapter '{adapter_id}' is already registered."
+            )
         self._adapters_by_id[adapter_id] = adapter
         return adapter
 
@@ -174,9 +188,13 @@ class RuntimeProviderAdapterRegistry:
 
     def build_stream_model(self, *, model_route: ResolvedRuntimeModelRoute) -> Any:
         catalog_entry = self._resolve_catalog_entry(model_route)
-        self._assert_runtime_enabled(model_route=model_route, catalog_entry=catalog_entry)
+        self._assert_runtime_enabled(
+            model_route=model_route, catalog_entry=catalog_entry
+        )
         self._validate_auth(model_route=model_route, catalog_entry=catalog_entry)
-        adapter = self._resolve_adapter(model_route=model_route, catalog_entry=catalog_entry)
+        adapter = self._resolve_adapter(
+            model_route=model_route, catalog_entry=catalog_entry
+        )
         if not adapter.supports_streaming_execution(
             model_route=model_route,
             catalog_entry=catalog_entry,
@@ -199,7 +217,9 @@ class RuntimeProviderAdapterRegistry:
             )
         except RuntimeProviderAdapterError:
             raise
-        except Exception as exc:  # pragma: no cover - defensive boundary for provider SDK failures
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive boundary for provider SDK failures
             raise RuntimeProviderAdapterError(
                 code="provider_model_build_failed",
                 message=(
@@ -218,9 +238,13 @@ class RuntimeProviderAdapterRegistry:
         model_route: ResolvedRuntimeModelRoute,
     ) -> RuntimeProviderThinkingCapability:
         catalog_entry = self._resolve_catalog_entry(model_route)
-        self._assert_runtime_enabled(model_route=model_route, catalog_entry=catalog_entry)
+        self._assert_runtime_enabled(
+            model_route=model_route, catalog_entry=catalog_entry
+        )
         self._validate_auth(model_route=model_route, catalog_entry=catalog_entry)
-        adapter = self._resolve_adapter(model_route=model_route, catalog_entry=catalog_entry)
+        adapter = self._resolve_adapter(
+            model_route=model_route, catalog_entry=catalog_entry
+        )
         try:
             return adapter.resolve_thinking_capability(
                 model_route=model_route,
@@ -248,9 +272,13 @@ class RuntimeProviderAdapterRegistry:
         model_route: ResolvedRuntimeModelRoute,
     ) -> RuntimeProviderThinkingMapping | None:
         catalog_entry = self._resolve_catalog_entry(model_route)
-        self._assert_runtime_enabled(model_route=model_route, catalog_entry=catalog_entry)
+        self._assert_runtime_enabled(
+            model_route=model_route, catalog_entry=catalog_entry
+        )
         self._validate_auth(model_route=model_route, catalog_entry=catalog_entry)
-        adapter = self._resolve_adapter(model_route=model_route, catalog_entry=catalog_entry)
+        adapter = self._resolve_adapter(
+            model_route=model_route, catalog_entry=catalog_entry
+        )
         try:
             return adapter.build_thinking_mapping(
                 intent=intent,
@@ -272,8 +300,12 @@ class RuntimeProviderAdapterRegistry:
                 ),
             ) from exc
 
-    def _resolve_catalog_entry(self, model_route: ResolvedRuntimeModelRoute) -> ProviderCatalogEntry:
-        provider_id = _normalize_optional_text(model_route.provider_id) or _normalize_optional_text(model_route.provider)
+    def _resolve_catalog_entry(
+        self, model_route: ResolvedRuntimeModelRoute
+    ) -> ProviderCatalogEntry:
+        provider_id = _normalize_optional_text(
+            model_route.provider_id
+        ) or _normalize_optional_text(model_route.provider)
         if provider_id is None:
             raise RuntimeProviderAdapterError(
                 code="provider_unknown",
@@ -285,7 +317,9 @@ class RuntimeProviderAdapterRegistry:
             raise RuntimeProviderAdapterError(
                 code="provider_unknown",
                 message=f"Provider '{provider_id}' is not present in the shared provider catalog.",
-                details=_build_route_details(model_route=model_route, provider_id=provider_id),
+                details=_build_route_details(
+                    model_route=model_route, provider_id=provider_id
+                ),
             )
         return catalog_entry
 
@@ -296,9 +330,14 @@ class RuntimeProviderAdapterRegistry:
         catalog_entry: ProviderCatalogEntry,
     ) -> None:
         catalog_runtime_status = catalog_entry.runtime_status
-        resolved_runtime_status = _normalize_optional_text(model_route.runtime_status) or catalog_runtime_status
+        resolved_runtime_status = (
+            _normalize_optional_text(model_route.runtime_status)
+            or catalog_runtime_status
+        )
         effective_runtime_status = (
-            catalog_runtime_status if catalog_runtime_status != "enabled" else resolved_runtime_status
+            catalog_runtime_status
+            if catalog_runtime_status != "enabled"
+            else resolved_runtime_status
         )
         if effective_runtime_status == "enabled":
             return
@@ -341,7 +380,10 @@ class RuntimeProviderAdapterRegistry:
     ) -> RuntimeProviderAdapter:
         requested_adapter_id = _normalize_optional_text(model_route.adapter_id)
         expected_adapter_id = catalog_entry.adapter_id
-        if requested_adapter_id is not None and requested_adapter_id != expected_adapter_id:
+        if (
+            requested_adapter_id is not None
+            and requested_adapter_id != expected_adapter_id
+        ):
             raise RuntimeProviderAdapterError(
                 code="provider_adapter_mismatch",
                 message=(
@@ -376,7 +418,10 @@ class RuntimeProviderAdapterRegistry:
         model_route: ResolvedRuntimeModelRoute,
         catalog_entry: ProviderCatalogEntry,
     ) -> None:
-        auth_kind = _normalize_optional_text(model_route.auth_kind) or catalog_entry.auth_schema.default_kind
+        auth_kind = (
+            _normalize_optional_text(model_route.auth_kind)
+            or catalog_entry.auth_schema.default_kind
+        )
         api_key = _normalize_optional_text(model_route.api_key)
         if auth_kind not in catalog_entry.auth_schema.supported_kinds:
             raise RuntimeProviderAdapterError(
@@ -409,8 +454,10 @@ def build_default_provider_adapter_registry() -> RuntimeProviderAdapterRegistry:
             adapter_id="openai",
             provider_family="openai-compatible",
             build_model_impl=_build_openai_model,
-            thinking_capability_impl=lambda model_route, catalog_entry: _build_verified_unsupported_thinking_capability(
-                catalog_entry.provider_id
+            thinking_capability_impl=lambda model_route, catalog_entry: (
+                _build_verified_unsupported_thinking_capability(
+                    catalog_entry.provider_id
+                )
             ),
         )
     )
@@ -419,8 +466,10 @@ def build_default_provider_adapter_registry() -> RuntimeProviderAdapterRegistry:
             adapter_id="anthropic",
             provider_family="anthropic-native",
             build_model_impl=_build_anthropic_model,
-            thinking_capability_impl=lambda model_route, catalog_entry: _build_verified_unsupported_thinking_capability(
-                catalog_entry.provider_id
+            thinking_capability_impl=lambda model_route, catalog_entry: (
+                _build_verified_unsupported_thinking_capability(
+                    catalog_entry.provider_id
+                )
             ),
         )
     )
@@ -429,8 +478,10 @@ def build_default_provider_adapter_registry() -> RuntimeProviderAdapterRegistry:
             adapter_id="gemini",
             provider_family="gemini-native",
             build_model_impl=_build_gemini_model,
-            thinking_capability_impl=lambda model_route, catalog_entry: _build_verified_unsupported_thinking_capability(
-                catalog_entry.provider_id
+            thinking_capability_impl=lambda model_route, catalog_entry: (
+                _build_verified_unsupported_thinking_capability(
+                    catalog_entry.provider_id
+                )
             ),
         )
     )
@@ -439,8 +490,10 @@ def build_default_provider_adapter_registry() -> RuntimeProviderAdapterRegistry:
             adapter_id="ollama",
             provider_family="ollama-native",
             build_model_impl=_build_ollama_model,
-            thinking_capability_impl=lambda model_route, catalog_entry: _build_verified_unsupported_thinking_capability(
-                catalog_entry.provider_id
+            thinking_capability_impl=lambda model_route, catalog_entry: (
+                _build_verified_unsupported_thinking_capability(
+                    catalog_entry.provider_id
+                )
             ),
         )
     )
@@ -449,8 +502,10 @@ def build_default_provider_adapter_registry() -> RuntimeProviderAdapterRegistry:
             adapter_id="groq",
             provider_family="openai-compatible",
             build_model_impl=_build_groq_model,
-            thinking_capability_impl=lambda model_route, catalog_entry: _build_verified_unsupported_thinking_capability(
-                catalog_entry.provider_id
+            thinking_capability_impl=lambda model_route, catalog_entry: (
+                _build_verified_unsupported_thinking_capability(
+                    catalog_entry.provider_id
+                )
             ),
         )
     )
@@ -459,8 +514,10 @@ def build_default_provider_adapter_registry() -> RuntimeProviderAdapterRegistry:
             adapter_id="mistral",
             provider_family="openai-compatible",
             build_model_impl=_build_mistral_model,
-            thinking_capability_impl=lambda model_route, catalog_entry: _build_verified_unsupported_thinking_capability(
-                catalog_entry.provider_id
+            thinking_capability_impl=lambda model_route, catalog_entry: (
+                _build_verified_unsupported_thinking_capability(
+                    catalog_entry.provider_id
+                )
             ),
         )
     )
@@ -545,7 +602,8 @@ def _build_verified_unsupported_thinking_capability(
         supported=False,
         supported_levels=(),
         default_level=None,
-        reason_code=reason_code or f"{normalized_provider_id}_thinking_not_supported_for_model",
+        reason_code=reason_code
+        or f"{normalized_provider_id}_thinking_not_supported_for_model",
         provider_hint=provider_hint or normalized_provider_id,
     )
 

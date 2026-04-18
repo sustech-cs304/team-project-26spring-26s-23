@@ -63,10 +63,14 @@ def build_default_runtime_dependencies(
         if runtime_config is not None
         else InMemorySessionStore()
     )
-    resolved_model_route_resolver = model_route_resolver or _UnavailableRuntimeModelRouteResolver()
+    resolved_model_route_resolver = (
+        model_route_resolver or _UnavailableRuntimeModelRouteResolver()
+    )
     tool_registry = build_default_tool_registry(
         host_capabilities_factory=host_capabilities_factory,
-        workspace_root=(runtime_config.backend_dir.parent if runtime_config is not None else None),
+        workspace_root=(
+            runtime_config.backend_dir.parent if runtime_config is not None else None
+        ),
     )
     shared_approval_coordinator: RuntimeToolApprovalCoordinator | None = None
     if agent_executor is None:
@@ -77,7 +81,9 @@ def build_default_runtime_dependencies(
         )
     else:
         resolved_agent_executor = agent_executor
-        existing_approval_coordinator = getattr(resolved_agent_executor, "_approval_coordinator", None)
+        existing_approval_coordinator = getattr(
+            resolved_agent_executor, "_approval_coordinator", None
+        )
         if isinstance(existing_approval_coordinator, RuntimeToolApprovalCoordinator):
             shared_approval_coordinator = existing_approval_coordinator
     if shared_approval_coordinator is None:

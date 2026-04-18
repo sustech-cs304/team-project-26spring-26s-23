@@ -292,7 +292,9 @@ class RuntimeProtocolParser:
         payload: dict[str, Any] | None,
         requested_method: str,
     ) -> str:
-        request_body = self._require_payload_body(payload, requested_method=requested_method)
+        request_body = self._require_payload_body(
+            payload, requested_method=requested_method
+        )
         agent_id = self._require_non_empty_string(
             request_body.get("agentId"),
             field_name="agentId",
@@ -317,7 +319,9 @@ class RuntimeProtocolParser:
         requested_method: str,
         field_name: str,
     ) -> str:
-        request_body = self._require_payload_body(payload, requested_method=requested_method)
+        request_body = self._require_payload_body(
+            payload, requested_method=requested_method
+        )
         return self._require_non_empty_string(
             request_body.get(field_name),
             field_name=field_name,
@@ -332,7 +336,9 @@ class RuntimeProtocolParser:
         id_field_name: str,
         id_value_name: str,
     ) -> RuntimeRunStartRequest:
-        request_body = self._require_payload_body(payload, requested_method=requested_method)
+        request_body = self._require_payload_body(
+            payload, requested_method=requested_method
+        )
         identifier = self._require_non_empty_string(
             request_body.get(id_field_name),
             field_name=id_field_name,
@@ -381,7 +387,9 @@ class RuntimeProtocolParser:
 
         return self._extract_body(payload, requested_method=requested_method)
 
-    def _extract_body(self, payload: dict[str, Any], *, requested_method: str) -> dict[str, Any]:
+    def _extract_body(
+        self, payload: dict[str, Any], *, requested_method: str
+    ) -> dict[str, Any]:
         raw_body = payload.get("body")
         if not isinstance(raw_body, dict):
             raise RuntimeProtocolError(
@@ -787,7 +795,9 @@ class RuntimeProtocolParser:
             if isinstance(tool_id, str) and tool_id.strip() != ""
         }
         raw_tool_timeout_seconds = self._require_object(
-            policy.get("toolTimeoutSeconds") if policy.get("toolTimeoutSeconds") is not None else {},
+            policy.get("toolTimeoutSeconds")
+            if policy.get("toolTimeoutSeconds") is not None
+            else {},
             field_name=f"{field_name}.toolTimeoutSeconds",
             requested_method=requested_method,
         )
@@ -819,7 +829,9 @@ class RuntimeProtocolParser:
                             ),
                             scaffold=self._scaffold,
                             requested_method=requested_method,
-                            details={"field": f"{field_name}.toolTimeoutSeconds.{tool_id}"},
+                            details={
+                                "field": f"{field_name}.toolTimeoutSeconds.{tool_id}"
+                            },
                         ),
                     )
                 tool_timeout_seconds[tool_id] = timeout_seconds
@@ -842,7 +854,9 @@ class RuntimeProtocolParser:
                 ),
             )
         raw_tool_timeout_actions = self._require_object(
-            policy.get("toolTimeoutActions") if policy.get("toolTimeoutActions") is not None else {},
+            policy.get("toolTimeoutActions")
+            if policy.get("toolTimeoutActions") is not None
+            else {},
             field_name=f"{field_name}.toolTimeoutActions",
             requested_method=requested_method,
         )

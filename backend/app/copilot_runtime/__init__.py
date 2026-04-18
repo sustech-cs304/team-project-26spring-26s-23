@@ -8,7 +8,12 @@ from .agent import (
     PydanticAIAgentExecutor,
 )
 from .agent_registry import AgentDescriptor, AgentRegistry, build_default_agent_registry
-from .bridge import RuntimeBridge, RunNotFoundError, SessionNotFoundError, ThreadNotFoundError
+from .bridge import (
+    RuntimeBridge,
+    RunNotFoundError,
+    SessionNotFoundError,
+    ThreadNotFoundError,
+)
 from .composition import RuntimeDependencies, build_default_runtime_dependencies
 from .contracts import (
     AGENTS_LIST_METHOD,

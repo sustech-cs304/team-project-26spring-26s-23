@@ -53,7 +53,6 @@ def redact_payload(payload: Mapping[str, Any] | None) -> RedactionResult:
     )
 
 
-
 def _redact_value(value: Any) -> tuple[Any, bool]:
     if isinstance(value, Mapping):
         redacted_mapping: dict[str, Any] = {}
@@ -87,13 +86,14 @@ def _redact_value(value: Any) -> tuple[Any, bool]:
     return value, False
 
 
-
 def _is_sensitive_key(key: str) -> bool:
     normalized_key = key.strip().lower()
     if normalized_key == "":
         return False
     canonical_key = normalized_key.replace("-", "_")
-    compact_key = "".join(character for character in canonical_key if character.isalnum())
+    compact_key = "".join(
+        character for character in canonical_key if character.isalnum()
+    )
     return canonical_key in _SENSITIVE_KEY_NAMES or compact_key in _SENSITIVE_KEY_NAMES
 
 

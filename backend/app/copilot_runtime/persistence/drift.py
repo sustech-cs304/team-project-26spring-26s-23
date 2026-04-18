@@ -16,8 +16,14 @@ from ..model_routes import (
     RuntimeModelRouteResolutionError,
     RuntimeModelRouteResolver,
 )
-from ..provider_adapter_registry import RuntimeProviderAdapterError, RuntimeProviderAdapterRegistry
-from ..thinking_adapter import CanonicalThinkingCapability, resolve_canonical_thinking_capability
+from ..provider_adapter_registry import (
+    RuntimeProviderAdapterError,
+    RuntimeProviderAdapterRegistry,
+)
+from ..thinking_adapter import (
+    CanonicalThinkingCapability,
+    resolve_canonical_thinking_capability,
+)
 from ..tool_registry import ToolRegistry
 from .models.chat import RunModel
 
@@ -51,18 +57,26 @@ class PersistedHistoryDriftEvaluator:
         bound_agent_id: str,
     ) -> dict[str, Any]:
         historical_model_id = _normalize_optional_string(run.resolved_model_id)
-        historical_tool_ids = list(run.resolved_tool_ids_json or run.enabled_tools_json or [])
+        historical_tool_ids = list(
+            run.resolved_tool_ids_json or run.enabled_tools_json or []
+        )
         historical_thinking_selection = _copy_mapping(
             run.applied_thinking_json or run.requested_thinking_json
         )
-        historical_thinking_override = _copy_mapping(run.thinking_capability_override_json)
-        historical_thinking_summary = _format_historical_thinking_summary(historical_thinking_selection)
+        historical_thinking_override = _copy_mapping(
+            run.thinking_capability_override_json
+        )
+        historical_thinking_summary = _format_historical_thinking_summary(
+            historical_thinking_selection
+        )
         warnings: list[dict[str, str]] = []
         evaluated_dimensions = 0
         unresolved_dimensions = 0
 
         resolved_model_route: ResolvedRuntimeModelRoute | None = None
-        selected_model_route = _deserialize_runtime_model_route(run.selected_model_route_json)
+        selected_model_route = _deserialize_runtime_model_route(
+            run.selected_model_route_json
+        )
         if selected_model_route is not None:
             if self._model_route_resolver is None:
                 unresolved_dimensions += 1
@@ -99,7 +113,11 @@ class PersistedHistoryDriftEvaluator:
                 unresolved_dimensions += 1
             else:
                 evaluated_dimensions += 1
-                missing_tool_ids = [tool_id for tool_id in historical_tool_ids if tool_id not in available_tool_ids]
+                missing_tool_ids = [
+                    tool_id
+                    for tool_id in historical_tool_ids
+                    if tool_id not in available_tool_ids
+                ]
                 if missing_tool_ids:
                     warnings.append(
                         _build_warning(
@@ -138,21 +156,25 @@ class PersistedHistoryDriftEvaluator:
         }
 
 
-
 def _deserialize_runtime_model_route(payload: Any) -> RuntimeModelRoute | None:
     record = payload if isinstance(payload, Mapping) else None
     if record is None:
         return None
 
     route_ref_payload = record.get("routeRef")
-    route_ref_record = route_ref_payload if isinstance(route_ref_payload, Mapping) else None
+    route_ref_record = (
+        route_ref_payload if isinstance(route_ref_payload, Mapping) else None
+    )
     if route_ref_record is None:
         return None
 
     provider_profile_id = _normalize_optional_string(record.get("providerProfileId"))
     route_profile_id = _normalize_optional_string(route_ref_record.get("profileId"))
     model_id = _normalize_optional_string(route_ref_record.get("modelId"))
-    route_kind = _normalize_optional_string(route_ref_record.get("routeKind")) or "provider-model"
+    route_kind = (
+        _normalize_optional_string(route_ref_record.get("routeKind"))
+        or "provider-model"
+    )
     catalog_revision = _normalize_optional_string(record.get("catalogRevision"))
 
     resolved_profile_id = provider_profile_id or route_profile_id
@@ -172,7 +194,6 @@ def _deserialize_runtime_model_route(payload: Any) -> RuntimeModelRoute | None:
     )
 
 
-
 def _resolve_runtime_model_route(
     *,
     model_route_resolver: RuntimeModelRouteResolver,
@@ -181,11 +202,13 @@ def _resolve_runtime_model_route(
     run_from_thread = getattr(anyio.from_thread, "run", None)
     if callable(run_from_thread):
         try:
-            return cast(ResolvedRuntimeModelRoute, run_from_thread(model_route_resolver.resolve, model_route))
+            return cast(
+                ResolvedRuntimeModelRoute,
+                run_from_thread(model_route_resolver.resolve, model_route),
+            )
         except RuntimeError:
             pass
     return asyncio.run(model_route_resolver.resolve(model_route))
-
 
 
 def _map_route_resolution_warning(
@@ -219,7 +242,6 @@ def _map_route_resolution_warning(
     return None
 
 
-
 def _build_available_tool_id_set(
     *,
     bound_agent_id: str,
@@ -229,7 +251,10 @@ def _build_available_tool_id_set(
     if agent_registry is None or tool_registry is None:
         return None
 
-    toolset_name = agent_registry.build_agent_toolset_map().get(bound_agent_id) or tool_registry.get_default().name
+    toolset_name = (
+        agent_registry.build_agent_toolset_map().get(bound_agent_id)
+        or tool_registry.get_default().name
+    )
     try:
         catalog = tool_registry.build_tool_catalog(toolset_name)
     except LookupError:
@@ -242,7 +267,6 @@ def _build_available_tool_id_set(
             if tool_id is not None:
                 available_tool_ids.add(tool_id)
     return available_tool_ids
-
 
 
 def _evaluate_thinking_warning(
@@ -280,10 +304,8 @@ def _evaluate_thinking_warning(
     )
 
 
-
 def _thinking_capability_supported(capability: CanonicalThinkingCapability) -> bool:
     return capability.series is not None
-
 
 
 def _resolve_status(
@@ -304,13 +326,11 @@ def _resolve_status(
     return _MULTIPLE_ISSUES_STATUS
 
 
-
 def _build_warning(code: str, message: str) -> dict[str, str]:
     return {
         "code": code,
         "message": message,
     }
-
 
 
 def _format_historical_thinking_summary(value: Any) -> str | None:
@@ -323,10 +343,14 @@ def _format_historical_thinking_summary(value: Any) -> str | None:
     series = _normalize_optional_string(record.get("series"))
     mode = _normalize_optional_string(record.get("mode"))
     level = _normalize_optional_string(record.get("level"))
-    value_label = _normalize_optional_string(None if value_record is None else value_record.get("labelZh"))
+    value_label = _normalize_optional_string(
+        None if value_record is None else value_record.get("labelZh")
+    )
     if value_label is None and value_record is not None:
         value_label = _normalize_optional_string(value_record.get("code"))
-    budget_tokens_value = None if value_record is None else value_record.get("budgetTokens")
+    budget_tokens_value = (
+        None if value_record is None else value_record.get("budgetTokens")
+    )
     budget_tokens = (
         f"{budget_tokens_value} tokens"
         if isinstance(budget_tokens_value, int)
@@ -338,10 +362,8 @@ def _format_historical_thinking_summary(value: Any) -> str | None:
     return " / ".join(normalized_parts) or None
 
 
-
 def _copy_mapping(value: Any) -> dict[str, Any] | None:
     return dict(value) if isinstance(value, Mapping) else None
-
 
 
 def _normalize_optional_string(value: Any) -> str | None:

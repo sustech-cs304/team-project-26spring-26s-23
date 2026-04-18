@@ -41,7 +41,9 @@ def create_message_run_context(
         else request_debug_enabled
     )
     assistant_message_id = f"{resolved_run_id}:assistant"
-    events = RuntimeRunEventFactory(session_id=request.thread_id, run_id=resolved_run_id)
+    events = RuntimeRunEventFactory(
+        session_id=request.thread_id, run_id=resolved_run_id
+    )
     projector = RuntimeRunEventProjector(
         events=events,
         assistant_message_id=assistant_message_id,

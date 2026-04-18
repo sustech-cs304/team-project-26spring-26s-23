@@ -51,12 +51,17 @@ class RuntimeToolPermissionResolver:
             tool_modes=dict(policy.toolModes),
             tool_timeout_seconds={
                 tool_id: timeout_seconds
-                for tool_id, raw_timeout_seconds in dict(policy.toolTimeoutSeconds or {}).items()
-                if (timeout_seconds := parse_tool_timeout_seconds(raw_timeout_seconds)) is not None
+                for tool_id, raw_timeout_seconds in dict(
+                    policy.toolTimeoutSeconds or {}
+                ).items()
+                if (timeout_seconds := parse_tool_timeout_seconds(raw_timeout_seconds))
+                is not None
             },
             tool_timeout_actions={
                 tool_id: cast(ResolvedToolTimeoutAction, timeout_action)
-                for tool_id, timeout_action in dict(policy.toolTimeoutActions or {}).items()
+                for tool_id, timeout_action in dict(
+                    policy.toolTimeoutActions or {}
+                ).items()
                 if timeout_action in ("approve", "deny")
             },
         )

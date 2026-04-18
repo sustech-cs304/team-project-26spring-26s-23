@@ -58,7 +58,12 @@ class DebugLogMaintenanceStatusResponse:
 class DebugLogQueryService:
     """Compose internal store queries into safe, route-friendly read models."""
 
-    def __init__(self, store: DebugLogStore, *, retention_config: DebugLogRetentionConfig | None = None) -> None:
+    def __init__(
+        self,
+        store: DebugLogStore,
+        *,
+        retention_config: DebugLogRetentionConfig | None = None,
+    ) -> None:
         self._store = store
         self._retention_config = retention_config or DebugLogRetentionConfig()
 
@@ -87,7 +92,9 @@ class DebugLogQueryService:
             occurred_to=occurred_to,
         )
         results = self._store.query_events(query_filter)
-        return DebugLogListResponse(events=tuple(self._to_safe_summary(result) for result in results))
+        return DebugLogListResponse(
+            events=tuple(self._to_safe_summary(result) for result in results)
+        )
 
     def get_event_detail(self, event_id: int) -> DebugLogDetailResponse:
         result = self._store.get_event_by_id(event_id)
@@ -133,12 +140,21 @@ class DebugLogQueryService:
             request_id=_normalize_optional_text(request_id),
             correlation_id=_normalize_optional_text(correlation_id),
         )
-        if not any((query_filter.run_id, query_filter.thread_id, query_filter.request_id, query_filter.correlation_id)):
+        if not any(
+            (
+                query_filter.run_id,
+                query_filter.thread_id,
+                query_filter.request_id,
+                query_filter.correlation_id,
+            )
+        ):
             raise ValueError(
                 "Correlation chain queries require at least one of run_id, thread_id, request_id, or correlation_id."
             )
         results = self._store.query_events(query_filter)
-        return DebugLogListResponse(events=tuple(self._to_safe_summary(result) for result in results))
+        return DebugLogListResponse(
+            events=tuple(self._to_safe_summary(result) for result in results)
+        )
 
     def _to_safe_summary(self, result: DebugLogQueryResult) -> DebugLogSafeEventSummary:
         return DebugLogSafeEventSummary(

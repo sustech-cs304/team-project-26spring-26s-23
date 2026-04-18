@@ -105,7 +105,8 @@ def open_execution_stream(
         supported_stream_kwargs = stream_kwargs
     else:
         supports_var_kwargs = any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
         )
         supports_tool_permission_resolver = (
             supports_var_kwargs or "tool_permission_resolver" in signature.parameters
@@ -114,7 +115,9 @@ def open_execution_stream(
             supported_stream_kwargs = stream_kwargs
         else:
             supported_stream_kwargs = {
-                key: value for key, value in stream_kwargs.items() if key in signature.parameters
+                key: value
+                for key, value in stream_kwargs.items()
+                if key in signature.parameters
             }
     log_runtime_chain_debug(
         "orchestrator.open_execution_stream.forwarded_kwargs",
@@ -129,8 +132,12 @@ def open_execution_stream(
             else {
                 "defaultMode": tool_permission_resolver.default_mode,
                 "toolModes": dict(tool_permission_resolver.tool_modes or {}),
-                "toolTimeoutSeconds": dict(tool_permission_resolver.tool_timeout_seconds or {}),
-                "toolTimeoutActions": dict(tool_permission_resolver.tool_timeout_actions or {}),
+                "toolTimeoutSeconds": dict(
+                    tool_permission_resolver.tool_timeout_seconds or {}
+                ),
+                "toolTimeoutActions": dict(
+                    tool_permission_resolver.tool_timeout_actions or {}
+                ),
             }
         ),
     )

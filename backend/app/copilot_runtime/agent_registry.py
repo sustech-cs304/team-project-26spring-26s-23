@@ -10,7 +10,9 @@ from .agent import AgentExecutorFactory, DEFAULT_AGENT_NAME
 from .tool_registry import DEFAULT_TOOLSET_NAME, FILE_CONVERT_TOOL_ID
 
 DEFAULT_AGENT_LABEL = "Default"
-DEFAULT_AGENT_DESCRIPTION = "Minimal default agent exposed by the Copilot runtime run bridge."
+DEFAULT_AGENT_DESCRIPTION = (
+    "Minimal default agent exposed by the Copilot runtime run bridge."
+)
 DEFAULT_AGENT_STATUS = "active"
 DEFAULT_AGENT_DIRECTORY_VERSION = "agents-v1"
 

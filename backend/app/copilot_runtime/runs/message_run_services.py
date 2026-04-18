@@ -31,7 +31,6 @@ from ..contracts import (
 from ..debug_logging import (
     log_runtime_chain_debug,
     preview_text,
-    summarize_exception,
     summarize_runtime_execution_event,
     summarize_runtime_model_route,
     summarize_runtime_reasoning_suppression_basis,
@@ -113,7 +112,9 @@ class RuntimeMessageRunOrchestrator:
             message_history = build_message_history(
                 self._session_store.list_messages(thread.thread_id)
             )
-            resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
+            resolved_model_route = await self._model_route_resolver.resolve(
+                request.policy.modelRoute
+            )
             requested_thinking_selection = request.policy.resolve_thinking_selection()
             thinking_adaptation = adapt_thinking_selection(
                 selection=requested_thinking_selection,
@@ -137,13 +138,17 @@ class RuntimeMessageRunOrchestrator:
                 capability_series=capability_series,
             )
             selection_result = thinking_adaptation.to_public_dict()
-            selection_result_summary = summarize_runtime_thinking_selection_result(selection_result)
+            selection_result_summary = summarize_runtime_thinking_selection_result(
+                selection_result
+            )
             reasoning_suppression_basis = build_reasoning_suppression_basis(
                 capability=thinking_adaptation.capability.to_public_dict(),
                 applied_selection=applied_thinking_selection,
             )
-            reasoning_suppression_basis_summary = summarize_runtime_reasoning_suppression_basis(
-                reasoning_suppression_basis
+            reasoning_suppression_basis_summary = (
+                summarize_runtime_reasoning_suppression_basis(
+                    reasoning_suppression_basis
+                )
             )
             log_runtime_chain_debug(
                 "thinking.capability_resolved",
@@ -151,14 +156,20 @@ class RuntimeMessageRunOrchestrator:
                 runId=context.run_id,
                 threadId=request.thread_id,
                 requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                    None
+                    if requested_thinking_selection is None
+                    else requested_thinking_selection.to_dict()
                 ),
                 appliedThinkingSelection=(
-                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                    None
+                    if applied_thinking_selection is None
+                    else applied_thinking_selection.to_dict()
                 ),
                 resolvedModelRoute=summarize_runtime_model_route(resolved_model_route),
                 overrideInput=request.policy.thinkingCapabilityOverride,
-                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                capability=summarize_runtime_thinking_capability(
+                    thinking_adaptation.capability
+                ),
                 selectionResult=selection_result_summary,
                 reasoningSuppressionBasis=reasoning_suppression_basis_summary,
             )
@@ -168,14 +179,20 @@ class RuntimeMessageRunOrchestrator:
                 runId=context.run_id,
                 threadId=request.thread_id,
                 requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                    None
+                    if requested_thinking_selection is None
+                    else requested_thinking_selection.to_dict()
                 ),
                 appliedThinkingSelection=(
-                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                    None
+                    if applied_thinking_selection is None
+                    else applied_thinking_selection.to_dict()
                 ),
                 applied=thinking_adaptation.applied,
                 reason=thinking_adaptation.reason,
-                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                capability=summarize_runtime_thinking_capability(
+                    thinking_adaptation.capability
+                ),
                 selectionResult=selection_result_summary,
                 reasoningSuppressionBasis=reasoning_suppression_basis_summary,
             )
@@ -185,16 +202,22 @@ class RuntimeMessageRunOrchestrator:
                 runId=context.run_id,
                 threadId=request.thread_id,
                 requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                    None
+                    if requested_thinking_selection is None
+                    else requested_thinking_selection.to_dict()
                 ),
                 appliedThinkingSelection=(
-                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                    None
+                    if applied_thinking_selection is None
+                    else applied_thinking_selection.to_dict()
                 ),
                 providerBuilderKey=thinking_adaptation.provider_builder_key,
                 modelSettings=thinking_adaptation.model_settings,
                 mappingReasonCode=thinking_adaptation.mapping_reason_code,
                 reason=thinking_adaptation.reason,
-                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                capability=summarize_runtime_thinking_capability(
+                    thinking_adaptation.capability
+                ),
                 selectionResult=selection_result_summary,
                 reasoningSuppressionBasis=reasoning_suppression_basis_summary,
             )
@@ -217,9 +240,13 @@ class RuntimeMessageRunOrchestrator:
                 yieldedEvent=summarize_runtime_run_event(run_metadata),
             )
             yield run_metadata
-            if requested_thinking_selection is not None and not thinking_adaptation.applied:
+            if (
+                requested_thinking_selection is not None
+                and not thinking_adaptation.applied
+            ):
                 fail_fast_code = (
-                    thinking_adaptation.error_code or "thinking_series_not_supported_for_route"
+                    thinking_adaptation.error_code
+                    or "thinking_series_not_supported_for_route"
                 )
                 fail_fast_details = {
                     **thinking_adaptation.diagnostics,
@@ -233,10 +260,14 @@ class RuntimeMessageRunOrchestrator:
                     code=fail_fast_code,
                     requestedThinkingSelection=requested_thinking_selection.to_dict(),
                     appliedThinkingSelection=(
-                        None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                        None
+                        if applied_thinking_selection is None
+                        else applied_thinking_selection.to_dict()
                     ),
                     reason=thinking_adaptation.reason,
-                    capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
+                    capability=summarize_runtime_thinking_capability(
+                        thinking_adaptation.capability
+                    ),
                     diagnostics=fail_fast_details,
                     selectionResult=selection_result_summary,
                     reasoningSuppressionBasis=reasoning_suppression_basis_summary,
@@ -347,7 +378,9 @@ class RuntimeMessageRunOrchestrator:
                 execution_events=context.execution_events,
                 code="model_not_configured",
                 message=str(exc),
-                details={"modelEnvironmentKeys": list(self._scaffold.model_environment_keys)},
+                details={
+                    "modelEnvironmentKeys": list(self._scaffold.model_environment_keys)
+                },
             ):
                 for projected in context.projector.project(event):
                     yield projected
@@ -408,7 +441,8 @@ class RuntimeMessageRunOrchestrator:
                     if (
                         event.type == "reasoning_segment_delta"
                         and isinstance(reasoning_suppression_basis_summary, dict)
-                        and reasoning_suppression_basis_summary.get("shouldSuppress") is True
+                        and reasoning_suppression_basis_summary.get("shouldSuppress")
+                        is True
                     ):
                         log_runtime_chain_debug(
                             "thinking.reasoning_suppressed",
@@ -416,11 +450,17 @@ class RuntimeMessageRunOrchestrator:
                             runId=context.run_id,
                             threadId=request.thread_id,
                             suppressionEnabled=True,
-                            suppressionSource=reasoning_suppression_basis_summary.get("source"),
-                            suppressionReasonCode=reasoning_suppression_basis_summary.get("reasonCode"),
+                            suppressionSource=reasoning_suppression_basis_summary.get(
+                                "source"
+                            ),
+                            suppressionReasonCode=reasoning_suppression_basis_summary.get(
+                                "reasonCode"
+                            ),
                             reasoningSuppressionBasis=reasoning_suppression_basis_summary,
                             executionEvent=summarize_runtime_execution_event(event),
-                            projectedEventTypes=[projected.type for projected in projected_events],
+                            projectedEventTypes=[
+                                projected.type for projected in projected_events
+                            ],
                         )
                     log_runtime_chain_debug(
                         "orchestrator.execution_event_projected",
@@ -428,7 +468,9 @@ class RuntimeMessageRunOrchestrator:
                         runId=context.run_id,
                         threadId=request.thread_id,
                         executionEvent=summarize_runtime_execution_event(event),
-                        projectedEventTypes=[projected.type for projected in projected_events],
+                        projectedEventTypes=[
+                            projected.type for projected in projected_events
+                        ],
                         projectedEvents=[
                             summarize_runtime_run_event(projected)
                             for projected in projected_events
@@ -480,7 +522,10 @@ class RuntimeMessageRunOrchestrator:
                 threadId=request.thread_id,
                 terminalReason="cancelled",
                 projectedEventTypes=[projected.type for projected in projected_events],
-                projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
+                projectedEvents=[
+                    summarize_runtime_run_event(projected)
+                    for projected in projected_events
+                ],
             )
             for projected in projected_events:
                 yield projected
@@ -490,7 +535,9 @@ class RuntimeMessageRunOrchestrator:
                 execution_events=context.execution_events,
                 code="model_not_configured",
                 message=str(exc),
-                details={"modelEnvironmentKeys": list(self._scaffold.model_environment_keys)},
+                details={
+                    "modelEnvironmentKeys": list(self._scaffold.model_environment_keys)
+                },
             ):
                 for projected in context.projector.project(event):
                     yield projected
@@ -544,7 +591,9 @@ class RuntimeMessageRunOrchestrator:
             threadId=request.thread_id,
             terminalReason="completed",
             projectedEventTypes=[projected.type for projected in projected_events],
-            projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
+            projectedEvents=[
+                summarize_runtime_run_event(projected) for projected in projected_events
+            ],
         )
         for projected in projected_events:
             yield projected

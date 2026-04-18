@@ -23,15 +23,12 @@ from ..errors import (
 from ..protocol import RuntimeProtocolError
 
 
-
 def error_response(status_code: int, error: RuntimeErrorResponse) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=error.to_dict())
 
 
-
 def protocol_error_response(exc: RuntimeProtocolError) -> JSONResponse:
     return error_response(exc.status_code, exc.error)
-
 
 
 def agent_not_found_response(
@@ -50,7 +47,6 @@ def agent_not_found_response(
     )
 
 
-
 def thread_not_found_response(
     *,
     thread_id: str,
@@ -67,7 +63,6 @@ def thread_not_found_response(
     )
 
 
-
 def run_not_found_response(
     *,
     run_id: str,
@@ -82,7 +77,6 @@ def run_not_found_response(
             requested_method=requested_method,
         ),
     )
-
 
 
 def session_not_found_response(
@@ -119,7 +113,6 @@ def tool_approval_not_found_response(
     )
 
 
-
 def runtime_operation_conflict_response(
     *,
     code: str,
@@ -140,7 +133,6 @@ def runtime_operation_conflict_response(
     )
 
 
-
 def agent_execution_failed_response(
     *,
     message: str,
@@ -157,7 +149,6 @@ def agent_execution_failed_response(
     )
 
 
-
 def method_not_implemented_response(
     *,
     requested_method: str,
@@ -170,7 +161,6 @@ def method_not_implemented_response(
             scaffold=scaffold,
         ),
     )
-
 
 
 def internal_server_error_response(
