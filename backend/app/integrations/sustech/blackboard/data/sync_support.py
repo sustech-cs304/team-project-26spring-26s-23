@@ -9,7 +9,12 @@ from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
 
 from sqlalchemy.orm import Session
 
-from app.integrations.sustech.blackboard.data.models import Announcement, Assignment, Course, Resource
+from app.integrations.sustech.blackboard.data.models import (
+    Announcement,
+    Assignment,
+    Course,
+    Resource,
+)
 
 from .results import SyncStats, empty_sync_stats
 
@@ -58,7 +63,9 @@ def sync_records(
         unique_value = str(record.get(unique_field, "")).strip()
         if not unique_value:
             continue
-        warn_unknown_fields(record, model_fields, f"{model.__tablename__}.{unique_value}", logger=logger)
+        warn_unknown_fields(
+            record, model_fields, f"{model.__tablename__}.{unique_value}", logger=logger
+        )
         latest_records[unique_value] = record
 
     incoming_ids = set(latest_records.keys())
@@ -98,18 +105,30 @@ def refresh_course_stats(session: Session, course_id: str) -> None:
     if course is None:
         return
 
-    course.total_assignments = session.query(Assignment).filter(
-        Assignment.course_id == course_id,
-        Assignment.is_deleted.is_(False),
-    ).count()
-    course.total_resources = session.query(Resource).filter(
-        Resource.course_id == course_id,
-        Resource.is_deleted.is_(False),
-    ).count()
-    course.total_announcements = session.query(Announcement).filter(
-        Announcement.course_id == course_id,
-        Announcement.is_deleted.is_(False),
-    ).count()
+    course.total_assignments = (
+        session.query(Assignment)
+        .filter(
+            Assignment.course_id == course_id,
+            Assignment.is_deleted.is_(False),
+        )
+        .count()
+    )
+    course.total_resources = (
+        session.query(Resource)
+        .filter(
+            Resource.course_id == course_id,
+            Resource.is_deleted.is_(False),
+        )
+        .count()
+    )
+    course.total_announcements = (
+        session.query(Announcement)
+        .filter(
+            Announcement.course_id == course_id,
+            Announcement.is_deleted.is_(False),
+        )
+        .count()
+    )
     course.last_synced_at = datetime.utcnow()
 
 
@@ -132,7 +151,11 @@ def upsert_assignment_attachments(
             continue
 
         resource_id = stable_id("res", course_id, assignment_id, url)
-        resource = session.query(Resource).filter(Resource.resource_id == resource_id).one_or_none()
+        resource = (
+            session.query(Resource)
+            .filter(Resource.resource_id == resource_id)
+            .one_or_none()
+        )
         payload = {
             "course_id": course_id,
             "assignment_id": assignment_id,
@@ -156,4 +179,3 @@ def upsert_assignment_attachments(
         for key, value in payload.items():
             setattr(resource, key, value)
         resource.updated_at = now
-

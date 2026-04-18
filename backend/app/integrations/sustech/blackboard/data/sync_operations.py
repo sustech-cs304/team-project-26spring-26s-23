@@ -21,7 +21,11 @@ from app.integrations.sustech.blackboard.data.models import (
 )
 
 from .results import SyncStats, empty_sync_stats
-from .sync_support import refresh_course_stats, sync_records, upsert_assignment_attachments
+from .sync_support import (
+    refresh_course_stats,
+    sync_records,
+    upsert_assignment_attachments,
+)
 
 
 def sync_courses(
@@ -39,7 +43,9 @@ def sync_courses(
         if not course_id:
             continue
 
-        name = str(item.get("name") or item.get("course_name") or "").strip() or course_id
+        name = (
+            str(item.get("name") or item.get("course_name") or "").strip() or course_id
+        )
         code = str(item.get("code") or "").strip() or extract_code(name)
         term = str(item.get("term") or "").strip() or extract_term(name)
 
@@ -81,7 +87,9 @@ def sync_assignments(
     logger: BlackboardLogger | None = None,
 ) -> SyncStats:
     normalized: list[dict[str, Any]] = []
-    attachments_by_assignment_id: dict[str, tuple[str | None, list[dict[str, Any]]]] = {}
+    attachments_by_assignment_id: dict[
+        str, tuple[str | None, list[dict[str, Any]]]
+    ] = {}
     for item in assignments_data:
         title = str(item.get("title") or "").strip()
         if not title:
@@ -122,7 +130,8 @@ def sync_assignments(
                 "due_date_parsed": parse_datetime(due_date),
                 "posted_date": item.get("posted_date"),
                 "status": item.get("status"),
-                "submission_status": item.get("submission_status") or item.get("status"),
+                "submission_status": item.get("submission_status")
+                or item.get("status"),
                 "score": None if score is None else str(score),
                 "total_score": None if total_score is None else str(total_score),
             }
@@ -145,7 +154,10 @@ def sync_assignments(
         logger=logger,
     )
     if allow_attachment_resource_upsert:
-        for assignment_id, (source_page, attachments) in attachments_by_assignment_id.items():
+        for assignment_id, (
+            source_page,
+            attachments,
+        ) in attachments_by_assignment_id.items():
             upsert_assignment_attachments(
                 session,
                 course_id=course_id,
@@ -224,7 +236,9 @@ def sync_resources(
 
     if requested_parent_map:
         resource_ids = list(requested_parent_map.keys())
-        existing_resources = session.query(Resource).filter(Resource.resource_id.in_(resource_ids)).all()
+        existing_resources = (
+            session.query(Resource).filter(Resource.resource_id.in_(resource_ids)).all()
+        )
         existing_by_id = {item.resource_id: item for item in existing_resources}
 
         parent_ids = {pid for pid in requested_parent_map.values() if pid}
@@ -276,7 +290,9 @@ def sync_grades(
     *,
     stable_id: Callable[..., str],
     parse_total_score: Callable[[Any], str | None],
-    parse_score_metrics: Callable[[Any], tuple[float | None, float | None, float | None]],
+    parse_score_metrics: Callable[
+        [Any], tuple[float | None, float | None, float | None]
+    ],
     parse_datetime: Callable[[Any], datetime | None],
     to_float: Callable[[Any], float | None],
     logger: BlackboardLogger | None = None,
@@ -301,7 +317,9 @@ def sync_grades(
         grade_id = str(item.get("grade_id") or "").strip()
 
         if not grade_id:
-            grade_id = stable_id("grd", course_id, item_name, due_date or graded_date, category or "")
+            grade_id = stable_id(
+                "grd", course_id, item_name, due_date or graded_date, category or ""
+            )
 
         score = item.get("score")
         total_score = item.get("total_score") or parse_total_score(score)
@@ -381,13 +399,17 @@ def sync_announcements(
         if not title:
             continue
 
-        posted_text = str(item.get("publish_time") or item.get("posted_date") or "").strip()
+        posted_text = str(
+            item.get("publish_time") or item.get("posted_date") or ""
+        ).strip()
         url = normalize_url(item.get("url"))
         announcement_id = str(item.get("announcement_id") or "").strip()
 
         if not announcement_id:
             fallback = json.dumps(item, ensure_ascii=False, sort_keys=True)
-            announcement_id = stable_id("ann", course_id, title, posted_text, url, fallback)
+            announcement_id = stable_id(
+                "ann", course_id, title, posted_text, url, fallback
+            )
 
         normalized.append(
             {
@@ -406,7 +428,9 @@ def sync_announcements(
     for row in normalized:
         if row.get("course_id"):
             continue
-        resolved = resolve_course_id_by_course_name(session, str(row.get("course_name") or ""))
+        resolved = resolve_course_id_by_course_name(
+            session, str(row.get("course_name") or "")
+        )
         if resolved:
             row["course_id"] = resolved
 
@@ -445,7 +469,11 @@ def upsert_calendar_subscription(
         return
 
     now = datetime.utcnow()
-    row = session.query(CalendarSubscription).filter(CalendarSubscription.feed_url == normalized_feed_url).one_or_none()
+    row = (
+        session.query(CalendarSubscription)
+        .filter(CalendarSubscription.feed_url == normalized_feed_url)
+        .one_or_none()
+    )
 
     if row is None:
         session.add(
@@ -478,7 +506,11 @@ def get_calendar_subscription(session: Session, feed_url: str) -> dict[str, Any]
     if not normalized_feed_url:
         return None
 
-    row = session.query(CalendarSubscription).filter(CalendarSubscription.feed_url == normalized_feed_url).one_or_none()
+    row = (
+        session.query(CalendarSubscription)
+        .filter(CalendarSubscription.feed_url == normalized_feed_url)
+        .one_or_none()
+    )
     if row is None:
         return None
 
@@ -528,7 +560,11 @@ def sync_calendar_events(
         )
 
     now = datetime.utcnow()
-    subscription = session.query(CalendarSubscription).filter(CalendarSubscription.feed_url == normalized_feed_url).one_or_none()
+    subscription = (
+        session.query(CalendarSubscription)
+        .filter(CalendarSubscription.feed_url == normalized_feed_url)
+        .one_or_none()
+    )
     if subscription is None:
         session.add(
             CalendarSubscription(
@@ -540,7 +576,11 @@ def sync_calendar_events(
             )
         )
 
-    existing = session.query(CalendarEvent).filter(CalendarEvent.feed_url == normalized_feed_url).all()
+    existing = (
+        session.query(CalendarEvent)
+        .filter(CalendarEvent.feed_url == normalized_feed_url)
+        .all()
+    )
     existing_map = {item.uid: item for item in existing}
     incoming_map = {row["uid"]: row for row in normalized}
 
@@ -599,7 +639,9 @@ def list_calendar_events(
     if not normalized_feed_url:
         return []
 
-    query = session.query(CalendarEvent).filter(CalendarEvent.feed_url == normalized_feed_url)
+    query = session.query(CalendarEvent).filter(
+        CalendarEvent.feed_url == normalized_feed_url
+    )
     if not include_deleted:
         query = query.filter(CalendarEvent.is_deleted.is_(False))
 
@@ -621,4 +663,3 @@ def list_calendar_events(
         }
         for row in rows
     ]
-

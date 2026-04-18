@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -29,7 +28,9 @@ class BlackboardGradeAPI:
 
     def get_course_grades(self, course_id: str) -> CourseGradesDTO:
         """获取课程成绩（总评 + 分项成绩 + 统计信息）。"""
-        total_grade, grade_items, stats, source_url = self._collect_course_grades(course_id)
+        total_grade, grade_items, stats, source_url = self._collect_course_grades(
+            course_id
+        )
         result = CourseGradesDTO(
             course_id=course_id,
             total_grade=total_grade,
@@ -83,7 +84,9 @@ class BlackboardGradeAPI:
                     if dto is not None:
                         grade_items.append(dto)
 
-            if grade_items or any(token in page_text.lower() for token in ("grade", "成绩", "my grades")):
+            if grade_items or any(
+                token in page_text.lower() for token in ("grade", "成绩", "my grades")
+            ):
                 break
 
         deduped_items = self._dedupe_grade_items(grade_items)
@@ -114,7 +117,9 @@ class BlackboardGradeAPI:
                 response = self.context.get(page_url, label="All-Grades")
                 response.raise_for_status()
             except Exception as ex:
-                self.context.log(f"⚠️ [Blackboard] 访问汇总成绩页面失败: {page_url} - {ex}")
+                self.context.log(
+                    f"⚠️ [Blackboard] 访问汇总成绩页面失败: {page_url} - {ex}"
+                )
                 continue
 
             selected_source_url = str(response.url)
@@ -135,7 +140,9 @@ class BlackboardGradeAPI:
                     scoped_links.extend(container.find_all("a", href=True))
 
             candidate_links = scoped_links or soup.find_all("a", href=True)
-            self.context.log(f"🔍 [Blackboard] 汇总成绩页候选链接数: {len(candidate_links)}")
+            self.context.log(
+                f"🔍 [Blackboard] 汇总成绩页候选链接数: {len(candidate_links)}"
+            )
 
             for link in candidate_links:
                 href = str(link.get("href") or "").strip()
@@ -143,7 +150,11 @@ class BlackboardGradeAPI:
                     continue
 
                 lower_href = href.lower()
-                if "course_id=" not in lower_href and "viewgrades" not in lower_href and "mygrades" not in lower_href:
+                if (
+                    "course_id=" not in lower_href
+                    and "viewgrades" not in lower_href
+                    and "mygrades" not in lower_href
+                ):
                     continue
 
                 course_id = self.context.extract_course_id(href)
@@ -152,11 +163,15 @@ class BlackboardGradeAPI:
 
                 raw_text = link.get_text(" ", strip=True)
                 parent_block = link.find_parent(["li", "tr", "div"])
-                parent_text = parent_block.get_text(" ", strip=True) if parent_block else ""
+                parent_text = (
+                    parent_block.get_text(" ", strip=True) if parent_block else ""
+                )
                 if parent_text and len(parent_text) > len(raw_text):
                     raw_text = parent_text
 
-                course_name, listed_grade = extract_course_name_and_listed_grade(raw_text)
+                course_name, listed_grade = extract_course_name_and_listed_grade(
+                    raw_text
+                )
                 if not course_name:
                     course_name = link.get_text(" ", strip=True)
 
@@ -179,7 +194,9 @@ class BlackboardGradeAPI:
                 break
 
         if not discovered_courses and fallback_course_loader is not None:
-            self.context.log("⚠️ [Blackboard] 未在'我的成绩'页面解析到课程列表，回退到课程模块列表")
+            self.context.log(
+                "⚠️ [Blackboard] 未在'我的成绩'页面解析到课程列表，回退到课程模块列表"
+            )
             for course in fallback_course_loader():
                 course_id = self._course_field(course, "course_id", "id")
                 course_name = self._course_field(course, "name", "course_name")
@@ -215,7 +232,9 @@ class BlackboardGradeAPI:
             try:
                 grade_detail = course_grade_loader(course_id)
             except Exception as ex:
-                self.context.log(f"⚠️ [Blackboard] 获取课程成绩详情失败: {course_id} - {ex}")
+                self.context.log(
+                    f"⚠️ [Blackboard] 获取课程成绩详情失败: {course_id} - {ex}"
+                )
                 grade_detail = CourseGradesDTO(
                     course_id=course_id,
                     total_grade="",
@@ -243,7 +262,9 @@ class BlackboardGradeAPI:
             course_order=course_order,
             courses=courses_result,
         )
-        self.context.log(f"✅ [Blackboard] 汇总成绩解析完成，课程数={len(courses_result)}")
+        self.context.log(
+            f"✅ [Blackboard] 汇总成绩解析完成，课程数={len(courses_result)}"
+        )
         return result
 
     def _course_field(self, item: object, *names: str) -> str:
@@ -261,7 +282,9 @@ class BlackboardGradeAPI:
                     return str(value).strip()
         return ""
 
-    def _parse_grade_row(self, row: Tag, course_id: str, page_url: str) -> GradeDTO | None:
+    def _parse_grade_row(
+        self, row: Tag, course_id: str, page_url: str
+    ) -> GradeDTO | None:
         gradable_node = row.select_one(".cell.gradable")
         if not gradable_node:
             return None
@@ -294,12 +317,29 @@ class BlackboardGradeAPI:
 
         row_id = str(row.get("id") or "").strip()
         first_link = row.find("a", href=True)
-        detail_url = self.context.absolute_url(page_url, str(first_link.get("href") or "").strip()) if first_link else ""
+        detail_url = (
+            self.context.absolute_url(
+                page_url, str(first_link.get("href") or "").strip()
+            )
+            if first_link
+            else ""
+        )
         grade_id = self._extract_grade_id(detail_url, row_id)
 
         looks_like_grade_row = bool(score_raw.strip()) or any(
             token in name.lower()
-            for token in ("作业", "assignment", "quiz", "exam", "test", "project", "实验", "测验", "grade", "total")
+            for token in (
+                "作业",
+                "assignment",
+                "quiz",
+                "exam",
+                "test",
+                "project",
+                "实验",
+                "测验",
+                "grade",
+                "total",
+            )
         )
         if not looks_like_grade_row:
             return None
@@ -317,8 +357,15 @@ class BlackboardGradeAPI:
 
     def _extract_grade_id(self, url: str, row_id: str) -> str | None:
         if url:
-            ids = self.context.extract_ids(url, id_types=("pk1", "xid", "rid", "content_id"))
-            result = ids.get("pk1") or ids.get("xid") or ids.get("rid") or ids.get("content_id")
+            ids = self.context.extract_ids(
+                url, id_types=("pk1", "xid", "rid", "content_id")
+            )
+            result = (
+                ids.get("pk1")
+                or ids.get("xid")
+                or ids.get("rid")
+                or ids.get("content_id")
+            )
             if result:
                 return result
 
@@ -334,7 +381,12 @@ class BlackboardGradeAPI:
         for item in grade_items:
             name = str(item.item_name or "").strip().lower()
             score = str(item.score or "").strip()
-            if name in ("course grade", "total", "weighted total") and score not in ("", "-", "--", "n/a"):
+            if name in ("course grade", "total", "weighted total") and score not in (
+                "",
+                "-",
+                "--",
+                "n/a",
+            ):
                 return score
 
         total_match = re.search(
@@ -357,12 +409,16 @@ class BlackboardGradeAPI:
             deduped_items.append(item)
         return deduped_items
 
-    def _build_stats(self, grade_items: list[GradeDTO]) -> dict[str, int | float | None]:
+    def _build_stats(
+        self, grade_items: list[GradeDTO]
+    ) -> dict[str, int | float | None]:
         numeric_values: list[float] = []
         graded_items = 0
         for item in grade_items:
             score_text = str(item.score or "").strip()
-            ratio_match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", score_text)
+            ratio_match = re.search(
+                r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", score_text
+            )
             percent_match = re.search(r"(\d+(?:\.\d+)?)\s*%", score_text)
             number_match = re.search(r"^(\d+(?:\.\d+)?)$", score_text)
             if ratio_match:
@@ -381,5 +437,7 @@ class BlackboardGradeAPI:
         return {
             "total_items": len(grade_items),
             "graded_items": graded_items,
-            "average_score": round(sum(numeric_values) / len(numeric_values), 2) if numeric_values else None,
+            "average_score": round(sum(numeric_values) / len(numeric_values), 2)
+            if numeric_values
+            else None,
         }

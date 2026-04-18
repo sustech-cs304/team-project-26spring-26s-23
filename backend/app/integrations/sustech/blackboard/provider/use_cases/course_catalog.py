@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from app.integrations.sustech.blackboard.api.course_catalog import BlackboardCourseCatalogAPI
-from app.integrations.sustech.blackboard.provider.results import CourseCatalogSearchResult
+from app.integrations.sustech.blackboard.api.course_catalog import (
+    BlackboardCourseCatalogAPI,
+)
+from app.integrations.sustech.blackboard.provider.results import (
+    CourseCatalogSearchResult,
+)
 from app.integrations.sustech.blackboard.shared import create_log_session
 from app.shared_integrations.sustech_auth.cas_client import CASClient
 
@@ -71,7 +75,9 @@ def search_course_catalog_with_credentials(
     cas_client = CASClient(logger=logger.child("provider.use_cases.course_catalog.cas"))
     try:
         logger.info("▶ 开始执行课程目录搜索")
-        if not cas_client.login(normalized_username, normalized_password, BLACKBOARD_LOGIN_SERVICE_URL):
+        if not cas_client.login(
+            normalized_username, normalized_password, BLACKBOARD_LOGIN_SERVICE_URL
+        ):
             logger.error("❌  CAS 登录失败")
             raise RuntimeError("CAS 登录失败")
 

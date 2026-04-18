@@ -31,7 +31,8 @@ class BlackboardAnnouncementAPI:
         self,
         *,
         course_loader: Callable[[], Sequence[Mapping[str, object]]] | None = None,
-        course_announcement_loader: Callable[[str], Sequence[Mapping[str, object]]] | None = None,
+        course_announcement_loader: Callable[[str], Sequence[Mapping[str, object]]]
+        | None = None,
     ) -> list[AnnouncementDTO]:
         """获取跨课程汇总公告 DTO。"""
         self.context.log("🔍 [Blackboard] 开始获取汇总公告")
@@ -59,24 +60,38 @@ class BlackboardAnnouncementAPI:
             except Exception as ex:
                 self.context.log(f"⚠️ [Blackboard] 构建课程名映射失败: {ex}")
 
-        def _normalize_merged_announcement(item: Mapping[str, object]) -> AnnouncementDTO:
+        def _normalize_merged_announcement(
+            item: Mapping[str, object],
+        ) -> AnnouncementDTO:
             announcement_url = str(item.get("url") or "")
-            merged_course_name = clean_field(str(item.get("course_name") or ""), max_length=160) or None
-            merged_course_id = clean_field(str(item.get("course_id") or ""), max_length=64)
+            merged_course_name = (
+                clean_field(str(item.get("course_name") or ""), max_length=160) or None
+            )
+            merged_course_id = clean_field(
+                str(item.get("course_id") or ""), max_length=64
+            )
             if not merged_course_id:
-                merged_course_id = (
-                    self.context.extract_course_id(announcement_url)
-                    or self.context.extract_course_id(str(item.get("source_page") or ""))
-                )
+                merged_course_id = self.context.extract_course_id(
+                    announcement_url
+                ) or self.context.extract_course_id(str(item.get("source_page") or ""))
             if not merged_course_id and merged_course_name:
                 lookup_key = re.sub(r"\s+", " ", merged_course_name).strip().lower()
                 merged_course_id = course_name_to_id.get(lookup_key, "")
 
-            publish_time = clean_field(str(item.get("publish_time") or ""), max_length=120) or None
-            detail = clean_field(str(item.get("detail") or item.get("content") or ""), max_length=600) or None
+            publish_time = (
+                clean_field(str(item.get("publish_time") or ""), max_length=120) or None
+            )
+            detail = (
+                clean_field(
+                    str(item.get("detail") or item.get("content") or ""), max_length=600
+                )
+                or None
+            )
             title = clean_field(str(item.get("title") or ""), max_length=200)
             author = clean_field(str(item.get("author") or ""), max_length=255) or None
-            source_page = clean_field(str(item.get("source_page") or ""), max_length=500) or None
+            source_page = (
+                clean_field(str(item.get("source_page") or ""), max_length=500) or None
+            )
 
             return AnnouncementDTO(
                 announcement_id=self._extract_announcement_id(announcement_url),
@@ -105,7 +120,9 @@ class BlackboardAnnouncementAPI:
                 response = self.context.get(page_url, label="All-Announcements")
                 response.raise_for_status()
             except Exception as ex:
-                self.context.log(f"⚠️ [Blackboard] 访问汇总公告页面失败: {page_url} - {ex}")
+                self.context.log(
+                    f"⚠️ [Blackboard] 访问汇总公告页面失败: {page_url} - {ex}"
+                )
                 continue
 
             html = response.text
@@ -114,7 +131,9 @@ class BlackboardAnnouncementAPI:
                 html = xml_inner
 
             parsed = self._parse_all_announcements_from_html(html, str(response.url))
-            self.context.log(f"🔍 [Blackboard] 页面公告解析数量: {len(parsed)} ({response.url})")
+            self.context.log(
+                f"🔍 [Blackboard] 页面公告解析数量: {len(parsed)} ({response.url})"
+            )
             _merge(parsed)
 
         tabs_url = f"{self.context.base_url}/webapps/portal/execute/tabs/tabAction"
@@ -126,10 +145,14 @@ class BlackboardAnnouncementAPI:
                 "tab_tab_group_id": "_1_1",
             }
             try:
-                response = self.context.post(tabs_url, data=post_data, label=f"All-Announcements-POST-{mod_id}")
+                response = self.context.post(
+                    tabs_url, data=post_data, label=f"All-Announcements-POST-{mod_id}"
+                )
                 response.raise_for_status()
             except Exception as ex:
-                self.context.log(f"⚠️ [Blackboard] 公告模块Ajax访问失败: modId={mod_id} - {ex}")
+                self.context.log(
+                    f"⚠️ [Blackboard] 公告模块Ajax访问失败: modId={mod_id} - {ex}"
+                )
                 continue
 
             html = response.text
@@ -139,10 +162,16 @@ class BlackboardAnnouncementAPI:
 
             parsed = self._parse_all_announcements_from_html(html, str(response.url))
             if parsed:
-                self.context.log(f"🔍 [Blackboard] modId={mod_id} 命中公告数量: {len(parsed)}")
+                self.context.log(
+                    f"🔍 [Blackboard] modId={mod_id} 命中公告数量: {len(parsed)}"
+                )
             _merge(parsed)
 
-        if not all_announcements and course_loader is not None and course_announcement_loader is not None:
+        if (
+            not all_announcements
+            and course_loader is not None
+            and course_announcement_loader is not None
+        ):
             self.context.log("⚠️ [Blackboard] 汇总公告为空，尝试逐课程公告回退补齐")
             try:
                 for course in course_loader():
@@ -175,7 +204,9 @@ class BlackboardAnnouncementAPI:
             key=lambda item: parse_datetime_safe(str(item.publish_time or "")),
             reverse=True,
         )
-        self.context.log(f"✅ [Blackboard] 汇总公告解析完成，共 {len(all_announcements)} 条")
+        self.context.log(
+            f"✅ [Blackboard] 汇总公告解析完成，共 {len(all_announcements)} 条"
+        )
         return all_announcements
 
     def get_course_announcement_dtos(self, course_id: str) -> list[AnnouncementDTO]:
@@ -212,7 +243,9 @@ class BlackboardAnnouncementAPI:
 
                 details_node = block.select_one(".details")
                 body_node = block.select_one(".vtbegenerated")
-                details_text = details_node.get_text(" ", strip=True) if details_node else ""
+                details_text = (
+                    details_node.get_text(" ", strip=True) if details_node else ""
+                )
                 body_text = body_node.get_text(" ", strip=True) if body_node else ""
 
                 title_node = block.find(["h2", "h3"])
@@ -229,7 +262,13 @@ class BlackboardAnnouncementAPI:
                 publish_time = extract_date_text_safe(details_text or block_text)
                 detail = body_text or details_text or block_text
                 author = self._extract_author_from_announcement_block(block)
-                url = self.context.absolute_url(page_url, str(link_node.get("href") or "").strip()) if link_node else page_url
+                url = (
+                    self.context.absolute_url(
+                        page_url, str(link_node.get("href") or "").strip()
+                    )
+                    if link_node
+                    else page_url
+                )
 
                 key = f"{title}|{url}|{publish_time}"
                 if key in seen_keys:
@@ -269,7 +308,13 @@ class BlackboardAnnouncementAPI:
                     continue
 
                 link = container.find("a", href=True)
-                link_href = self.context.absolute_url(page_url, str(link.get("href") or "").strip()) if link else page_url
+                link_href = (
+                    self.context.absolute_url(
+                        page_url, str(link.get("href") or "").strip()
+                    )
+                    if link
+                    else page_url
+                )
                 link_text = link.get_text(strip=True) if link else ""
 
                 title = link_text or text[:100]
@@ -277,7 +322,7 @@ class BlackboardAnnouncementAPI:
                 detail = text
                 author = self._extract_author_from_announcement_block(container)
                 if title and detail.startswith(title):
-                    detail = detail[len(title):].strip()
+                    detail = detail[len(title) :].strip()
 
                 key = f"{title}|{link_href}|{publish_time}"
                 if key in seen_keys:
@@ -331,7 +376,11 @@ class BlackboardAnnouncementAPI:
     def _extract_course_name_from_announcement_block(self, block: Tag) -> str:
         for info in block.select(".announcementInfo p"):
             label_node = info.find("span")
-            label_text = clean_field(label_node.get_text(" ", strip=True), max_length=40) if label_node else ""
+            label_text = (
+                clean_field(label_node.get_text(" ", strip=True), max_length=40)
+                if label_node
+                else ""
+            )
             whole_text = clean_field(info.get_text(" ", strip=True), max_length=220)
             if not whole_text:
                 continue
@@ -345,7 +394,13 @@ class BlackboardAnnouncementAPI:
                 if looks_like_course_name(course_name):
                     return course_name
 
-        for selector in (".course", ".courseName", ".context", ".course-title", ".courseTitle"):
+        for selector in (
+            ".course",
+            ".courseName",
+            ".context",
+            ".course-title",
+            ".courseTitle",
+        ):
             node = block.select_one(selector)
             if not node:
                 continue
@@ -362,18 +417,34 @@ class BlackboardAnnouncementAPI:
                 continue
 
             label_node = info.find("span")
-            label = clean_field(label_node.get_text(" ", strip=True), max_length=40) if label_node else ""
+            label = (
+                clean_field(label_node.get_text(" ", strip=True), max_length=40)
+                if label_node
+                else ""
+            )
             lower_label = label.lower()
             lower_text = text.lower()
 
-            if "发帖者" not in text and "posted by" not in lower_text and "author" not in lower_text:
+            if (
+                "发帖者" not in text
+                and "posted by" not in lower_text
+                and "author" not in lower_text
+            ):
                 continue
 
             author = text
-            if label and ("发帖者" in label or "posted by" in lower_label or "author" in lower_label):
+            if label and (
+                "发帖者" in label
+                or "posted by" in lower_label
+                or "author" in lower_label
+            ):
                 author = text.replace(label, "", 1).strip(" :：")
             else:
-                matched = re.search(r"(?:发帖者|posted\s*by|author)\s*[:：]\s*(.+)$", text, re.IGNORECASE)
+                matched = re.search(
+                    r"(?:发帖者|posted\s*by|author)\s*[:：]\s*(.+)$",
+                    text,
+                    re.IGNORECASE,
+                )
                 if matched:
                     author = matched.group(1)
 
@@ -383,7 +454,9 @@ class BlackboardAnnouncementAPI:
 
         return None
 
-    def _extract_course_id_from_announcement_block(self, block: Tag, page_url: str) -> str | None:
+    def _extract_course_id_from_announcement_block(
+        self, block: Tag, page_url: str
+    ) -> str | None:
         for attr in ("data-course-id", "data-course_id", "course_id"):
             value = str(block.get(attr) or "").strip()
             if value:
@@ -400,7 +473,9 @@ class BlackboardAnnouncementAPI:
 
         return None
 
-    def _extract_course_code_from_announcement_block(self, block: Tag, page_url: str) -> str | None:
+    def _extract_course_code_from_announcement_block(
+        self, block: Tag, page_url: str
+    ) -> str | None:
         for attr in ("data-course-code", "data-course_code", "course_code"):
             value = str(block.get(attr) or "").strip()
             if value:
@@ -419,7 +494,9 @@ class BlackboardAnnouncementAPI:
 
         return None
 
-    def _parse_all_announcements_from_html(self, html: str, page_url: str) -> list[dict[str, object]]:
+    def _parse_all_announcements_from_html(
+        self, html: str, page_url: str
+    ) -> list[dict[str, object]]:
         soup = BeautifulSoup(html, "html.parser")
         announcements: list[dict[str, object]] = []
         seen_keys: set[str] = set()
@@ -446,7 +523,9 @@ class BlackboardAnnouncementAPI:
 
                 parent_id_text = str(parent_id_attr or "")
                 if isinstance(parent_class_attr, list):
-                    parent_class_text = " ".join(str(item) for item in parent_class_attr)
+                    parent_class_text = " ".join(
+                        str(item) for item in parent_class_attr
+                    )
                 elif isinstance(parent_class_attr, str):
                     parent_class_text = parent_class_attr
                 else:
@@ -470,24 +549,41 @@ class BlackboardAnnouncementAPI:
                 if not link:
                     continue
 
-                publish_time = clean_field(extract_date_text_safe(row_text), max_length=120)
-                if not publish_time and "announcement" not in row_text.lower() and "公告" not in row_text and "通知" not in row_text:
+                publish_time = clean_field(
+                    extract_date_text_safe(row_text), max_length=120
+                )
+                if (
+                    not publish_time
+                    and "announcement" not in row_text.lower()
+                    and "公告" not in row_text
+                    and "通知" not in row_text
+                ):
                     continue
 
-                title = clean_field(link.get_text(" ", strip=True) or row_text[:120], max_length=200)
+                title = clean_field(
+                    link.get_text(" ", strip=True) or row_text[:120], max_length=200
+                )
                 if not title:
                     continue
 
                 course_name = ""
                 if len(cells) >= 3:
-                    maybe_course = clean_field(cells[0].get_text(" ", strip=True), max_length=160)
+                    maybe_course = clean_field(
+                        cells[0].get_text(" ", strip=True), max_length=160
+                    )
                     if maybe_course != title and looks_like_course_name(maybe_course):
                         course_name = maybe_course
 
                 detail = clean_field(row_text, max_length=600)
-                url = self.context.absolute_url(page_url, str(link.get("href") or "").strip())
-                course_id = self._extract_course_id_from_announcement_block(row, page_url)
-                course_code = self._extract_course_code_from_announcement_block(row, page_url)
+                url = self.context.absolute_url(
+                    page_url, str(link.get("href") or "").strip()
+                )
+                course_id = self._extract_course_id_from_announcement_block(
+                    row, page_url
+                )
+                course_code = self._extract_course_code_from_announcement_block(
+                    row, page_url
+                )
                 author = self._extract_author_from_announcement_block(row)
                 key = f"{course_name}|{title}|{publish_time}|{url}"
                 if key in seen_keys:
@@ -515,8 +611,14 @@ class BlackboardAnnouncementAPI:
 
             lower_text = block_text.lower()
             details_node = block.select_one(".details")
-            details_text = clean_field(details_node.get_text(" ", strip=True), max_length=3000) if details_node else ""
-            publish_time = clean_field(extract_date_text_safe(details_text or block_text), max_length=120)
+            details_text = (
+                clean_field(details_node.get_text(" ", strip=True), max_length=3000)
+                if details_node
+                else ""
+            )
+            publish_time = clean_field(
+                extract_date_text_safe(details_text or block_text), max_length=120
+            )
             has_announcement_signal = (
                 "announcement" in lower_text
                 or "posted on" in lower_text
@@ -530,7 +632,9 @@ class BlackboardAnnouncementAPI:
             link_node = block.find("a", href=True)
             title = ""
             if title_node:
-                title = clean_field(title_node.get_text(" ", strip=True), max_length=200)
+                title = clean_field(
+                    title_node.get_text(" ", strip=True), max_length=200
+                )
             elif link_node:
                 title = clean_field(link_node.get_text(" ", strip=True), max_length=200)
             if not title:
@@ -540,19 +644,25 @@ class BlackboardAnnouncementAPI:
 
             course_name = self._extract_course_name_from_announcement_block(block)
             if not course_name:
-                course_name = self._extract_course_name_from_announcement_text(details_text or block_text)
+                course_name = self._extract_course_name_from_announcement_text(
+                    details_text or block_text
+                )
             course_name = clean_field(course_name, max_length=160)
             if course_name and not looks_like_course_name(course_name):
                 course_name = ""
 
             body_node = block.select_one(".vtbegenerated")
             detail = clean_field(
-                body_node.get_text(" ", strip=True) if body_node else (details_text or block_text),
+                body_node.get_text(" ", strip=True)
+                if body_node
+                else (details_text or block_text),
                 max_length=600,
             )
 
             course_id = self._extract_course_id_from_announcement_block(block, page_url)
-            course_code = self._extract_course_code_from_announcement_block(block, page_url)
+            course_code = self._extract_course_code_from_announcement_block(
+                block, page_url
+            )
             author = self._extract_author_from_announcement_block(block)
 
             dom_id = clean_field(str(block.get("id") or ""), max_length=120)
@@ -582,6 +692,3 @@ class BlackboardAnnouncementAPI:
             reverse=True,
         )
         return announcements
-
-
-

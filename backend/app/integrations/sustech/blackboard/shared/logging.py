@@ -34,7 +34,9 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.isoformat(timespec="seconds")
-        return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return (
+            value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        )
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
@@ -75,9 +77,13 @@ class BlackboardLogEvent:
         headline = f"[{self.timestamp}] {self.level.upper():<7} [{self.layer}] {self.source}: {self.message}"
         segments: list[str] = []
         if self.context:
-            segments.append(f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True, default=str)}")
+            segments.append(
+                f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True, default=str)}"
+            )
         if self.payload:
-            segments.append(f"payload={json.dumps(self.payload, ensure_ascii=False, sort_keys=True, default=str)}")
+            segments.append(
+                f"payload={json.dumps(self.payload, ensure_ascii=False, sort_keys=True, default=str)}"
+            )
         if not segments:
             return headline
         return f"{headline} | {'; '.join(segments)}"
@@ -103,7 +109,9 @@ class BlackboardConsoleSink:
     writer: BlackboardLogWriter | None = None
 
     def emit(self, event: BlackboardLogEvent) -> None:
-        if _LEVEL_VALUES.get(str(event.level), 100) < _LEVEL_VALUES.get(self.min_level, 20):
+        if _LEVEL_VALUES.get(str(event.level), 100) < _LEVEL_VALUES.get(
+            self.min_level, 20
+        ):
             return
         output = self.writer or print
         output(event.format_console_line())
@@ -245,7 +253,9 @@ def create_log_session(
     min_level: LogLevel = "info",
     writer: BlackboardLogWriter | None = None,
 ) -> BlackboardLogSession:
-    console_sink = BlackboardConsoleSink(min_level=min_level, writer=writer) if console else None
+    console_sink = (
+        BlackboardConsoleSink(min_level=min_level, writer=writer) if console else None
+    )
     return BlackboardLogSession(console_sink=console_sink)
 
 

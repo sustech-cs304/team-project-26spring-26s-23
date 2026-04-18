@@ -13,18 +13,25 @@ BACKEND_DIR = Path(__file__).resolve().parents[4]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
-from app.integrations.sustech.blackboard.provider.use_cases.course_catalog import (
+from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO  # noqa: E402
+from app.integrations.sustech.blackboard.provider.use_cases.course_catalog import (  # noqa: E402
     search_course_catalog_with_credentials,
 )
-from app.integrations.sustech.blackboard.shared import BlackboardLogger, create_log_session
+from app.integrations.sustech.blackboard.shared import (  # noqa: E402
+    BlackboardLogger,
+    create_log_session,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="搜索 Blackboard 课程目录")
     parser.add_argument("--keyword", required=True, help="搜索关键词，例如：计算机")
-    parser.add_argument("--field", default="CourseName", help="搜索字段，默认 CourseName")
-    parser.add_argument("--operator", default="Contains", help="搜索操作符，默认 Contains")
+    parser.add_argument(
+        "--field", default="CourseName", help="搜索字段，默认 CourseName"
+    )
+    parser.add_argument(
+        "--operator", default="Contains", help="搜索操作符，默认 Contains"
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -68,8 +75,13 @@ def _strip_value_label(text: str) -> str:
     return value
 
 
-def _log_preview(logger: BlackboardLogger, results: list[CourseCatalogResultDTO], preview: int) -> None:
-    logger.info("▶ 课程目录搜索结果预览开始", payload={"preview": max(preview, 0), "total": len(results)})
+def _log_preview(
+    logger: BlackboardLogger, results: list[CourseCatalogResultDTO], preview: int
+) -> None:
+    logger.info(
+        "▶ 课程目录搜索结果预览开始",
+        payload={"preview": max(preview, 0), "total": len(results)},
+    )
     if not results:
         logger.info("🏳 未查询到课程目录结果")
         return
@@ -152,7 +164,10 @@ def main() -> int:
     limit = args.limit if args.limit and args.limit > 0 else None
 
     try:
-        logger.info("▶ 开始执行课程目录搜索 CLI", payload={"limit": limit, "preview": args.preview})
+        logger.info(
+            "▶ 开始执行课程目录搜索 CLI",
+            payload={"limit": limit, "preview": args.preview},
+        )
         result = search_course_catalog_with_credentials(
             username,
             password,
@@ -200,4 +215,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

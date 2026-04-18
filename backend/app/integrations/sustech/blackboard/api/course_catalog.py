@@ -11,7 +11,11 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
-from app.integrations.sustech.blackboard.shared import DEFAULT_BLACKBOARD_BASE_URL, clean_text, extract_course_id_from_url
+from app.integrations.sustech.blackboard.shared import (
+    DEFAULT_BLACKBOARD_BASE_URL,
+    clean_text,
+    extract_course_id_from_url,
+)
 
 ResponseLogger = Callable[[str, httpx.Response], None]
 
@@ -82,7 +86,9 @@ def find_course_catalog_next_page_url(html: str, page_url: str) -> str | None:
 
         full_url = urljoin(page_url, href)
         link_text = clean_text(link.get_text(" ", strip=True), max_length=80).lower()
-        rel_values = [str(v).strip().lower() for v in (link.get("rel") or []) if str(v).strip()]
+        rel_values = [
+            str(v).strip().lower() for v in (link.get("rel") or []) if str(v).strip()
+        ]
         classes = " ".join(str(c) for c in (link.get("class") or [])).lower()
 
         if "startindex=" in full_url.lower():
@@ -120,7 +126,10 @@ def parse_course_catalog_table(html: str) -> list[CourseCatalogResultDTO]:
         return []
 
     header_cells = table.select("thead th")
-    headers = [clean_text(cell.get_text(" ", strip=True), max_length=80).lower() for cell in header_cells]
+    headers = [
+        clean_text(cell.get_text(" ", strip=True), max_length=80).lower()
+        for cell in header_cells
+    ]
     column_map: dict[str, int] = {}
 
     for idx, header in enumerate(headers):
@@ -173,16 +182,24 @@ def parse_course_catalog_table(html: str) -> list[CourseCatalogResultDTO]:
         return None
 
     for row in rows:
-        cells = [cell for cell in row.find_all(["th", "td"], recursive=False) if isinstance(cell, Tag)]
+        cells = [
+            cell
+            for cell in row.find_all(["th", "td"], recursive=False)
+            if isinstance(cell, Tag)
+        ]
         if not cells:
-            cells = [cell for cell in row.find_all(["th", "td"]) if isinstance(cell, Tag)]
+            cells = [
+                cell for cell in row.find_all(["th", "td"]) if isinstance(cell, Tag)
+            ]
         if not cells:
             continue
 
         identifier_idx = column_map.get("course_identifier", 0)
         course_name_idx = column_map.get("course_name", 1 if len(cells) > 1 else 0)
         instructor_idx = column_map.get("instructor", 2 if len(cells) > 2 else 0)
-        description_idx = column_map.get("description", 3 if len(cells) > 3 else len(cells) - 1)
+        description_idx = column_map.get(
+            "description", 3 if len(cells) > 3 else len(cells) - 1
+        )
 
         identifier_cell = _get_cell(cells, identifier_idx, 0)
         name_cell = _get_cell(cells, course_name_idx, 1 if len(cells) > 1 else 0)
@@ -193,7 +210,9 @@ def parse_course_catalog_table(html: str) -> list[CourseCatalogResultDTO]:
         if isinstance(identifier_cell, Tag) and identifier_cell.name == "th":
             th_link = identifier_cell.select_one("a")
             if isinstance(th_link, Tag):
-                course_identifier = clean_text(th_link.get_text(" ", strip=True), max_length=500)
+                course_identifier = clean_text(
+                    th_link.get_text(" ", strip=True), max_length=500
+                )
             if not course_identifier:
                 course_identifier = _cell_text(identifier_cell)
         else:
@@ -307,7 +326,10 @@ class BlackboardCourseCatalogAPI:
                 try:
                     next_response = self.client.get(next_page_url)
                     if self.response_logger is not None:
-                        self.response_logger(f"Course-Catalog-Page-{source}-{page_count + 1}", next_response)
+                        self.response_logger(
+                            f"Course-Catalog-Page-{source}-{page_count + 1}",
+                            next_response,
+                        )
                     next_response.raise_for_status()
                 except Exception:
                     break
@@ -320,16 +342,24 @@ class BlackboardCourseCatalogAPI:
         else:
             _collect_from_page(response.text, str(response.url), "search")
 
-            show_all_url = find_course_catalog_show_all_url(response.text, str(response.url))
+            show_all_url = find_course_catalog_show_all_url(
+                response.text, str(response.url)
+            )
             if show_all_url:
                 try:
                     show_all_response = self.client.get(show_all_url)
                     if self.response_logger is not None:
-                        self.response_logger("Course-Catalog-Show-All", show_all_response)
+                        self.response_logger(
+                            "Course-Catalog-Show-All", show_all_response
+                        )
                     show_all_response.raise_for_status()
-                    _collect_from_page(show_all_response.text, str(show_all_response.url), "show-all")
+                    _collect_from_page(
+                        show_all_response.text, str(show_all_response.url), "show-all"
+                    )
                 except Exception:
-                    return results[:limit] if limit is not None and limit > 0 else results
+                    return (
+                        results[:limit] if limit is not None and limit > 0 else results
+                    )
 
         if limit is not None and limit > 0:
             return results[:limit]

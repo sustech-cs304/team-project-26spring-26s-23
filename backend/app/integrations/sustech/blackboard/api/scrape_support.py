@@ -10,7 +10,11 @@ from typing import Any
 from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
 from urllib.parse import urlparse
 
-from app.integrations.sustech.blackboard.shared import clean_text, extract_date_text, parse_loose_datetime_or_min
+from app.integrations.sustech.blackboard.shared import (
+    clean_text,
+    extract_date_text,
+    parse_loose_datetime_or_min,
+)
 
 
 def clean_field(text: str, max_length: int = 600) -> str:
@@ -78,11 +82,15 @@ def extract_grade_text(text: str) -> str:
     if match:
         return match.group(1)
 
-    match = re.search(r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)\b", text, re.IGNORECASE)
+    match = re.search(
+        r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)\b", text, re.IGNORECASE
+    )
     if match:
         return match.group(1).upper()
 
-    match = re.search(r"(?:得分|成绩|score|grade)\s*[:：]?\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    match = re.search(
+        r"(?:得分|成绩|score|grade)\s*[:：]?\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE
+    )
     if match:
         return match.group(1)
 
@@ -166,7 +174,10 @@ def is_valid_assignment(
         _log_filtered("javascript_url", payload={"url": url})
         return False
 
-    if any(token in lower_title for token in ("course menu", "menu management options", "top frame tabs")):
+    if any(
+        token in lower_title
+        for token in ("course menu", "menu management options", "top frame tabs")
+    ):
         _log_filtered("navigation_text", payload={"title": title})
         return False
 
@@ -192,7 +203,10 @@ def is_valid_assignment(
     if any(token in lower_title for token in assignment_title_tokens):
         return True
 
-    if any(token in lower_url for token in ("/webapps/assignment/", "/bb-assignment-", "/bb-mygrades-")):
+    if any(
+        token in lower_url
+        for token in ("/webapps/assignment/", "/bb-assignment-", "/bb-mygrades-")
+    ):
         return True
 
     _log_filtered("missing_signal", payload={"title": title, "url": url})
@@ -261,7 +275,13 @@ def is_valid_resource(
 
     if "/webapps/blackboard/content/" in lower_url and not any(
         token in lower_url
-        for token in ("/bbcswebdav/", "/webapps/assignment/", "download", "xid=", "attachment")
+        for token in (
+            "/bbcswebdav/",
+            "/webapps/assignment/",
+            "download",
+            "xid=",
+            "attachment",
+        )
     ):
         _log_filtered("course_help_page", payload={"download_url": download_url})
         return False
@@ -278,7 +298,9 @@ def is_valid_resource(
             "folder ",
         )
     ):
-        _log_filtered("blackboard_help_doc", payload={"name": name, "download_url": download_url})
+        _log_filtered(
+            "blackboard_help_doc", payload={"name": name, "download_url": download_url}
+        )
         return False
 
     return True
@@ -299,7 +321,9 @@ def extract_course_name_and_listed_grade(raw_text: str) -> tuple[str, str]:
 
 def stable_resource_id(course_id: str, name: str, url: str) -> str:
     """为资源生成稳定 resource_id。"""
-    normalized = "|".join(part.strip() for part in (course_id, url, name) if part and part.strip())
+    normalized = "|".join(
+        part.strip() for part in (course_id, url, name) if part and part.strip()
+    )
     digest = hashlib.sha1((normalized or "<empty>").encode("utf-8")).hexdigest()[:20]
     return f"res_{digest}"
 
@@ -323,7 +347,9 @@ def is_course_content_page_url(url: str, course_id: str, *, base_url: str) -> bo
     )
 
 
-def is_sidebar_seed_candidate(title: str, url: str, course_id: str, *, base_url: str) -> bool:
+def is_sidebar_seed_candidate(
+    title: str, url: str, course_id: str, *, base_url: str
+) -> bool:
     """判断侧边栏链接是否应作为内容抓取 seed。"""
     parsed = urlparse(url)
     if parsed.netloc and parsed.netloc != urlparse(base_url).netloc:
@@ -377,4 +403,3 @@ def is_sidebar_seed_candidate(title: str, url: str, course_id: str, *, base_url:
 def extract_date_text_safe(text: str) -> str:
     """与旧 facade 兼容的日期提取包装。"""
     return extract_date_text(text)
-

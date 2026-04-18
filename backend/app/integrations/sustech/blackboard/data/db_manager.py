@@ -16,7 +16,9 @@ from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.integrations.sustech.blackboard.data.course_matcher import resolve_course_id_by_course_name as data_resolve_course_id_by_course_name
+from app.integrations.sustech.blackboard.data.course_matcher import (
+    resolve_course_id_by_course_name as data_resolve_course_id_by_course_name,
+)
 from app.integrations.sustech.blackboard.data.results import SyncStats
 from app.integrations.sustech.blackboard.data.sync_operations import (
     get_calendar_subscription as data_get_calendar_subscription,
@@ -29,7 +31,11 @@ from app.integrations.sustech.blackboard.data.sync_operations import (
     sync_resources as data_sync_resources,
     upsert_calendar_subscription as data_upsert_calendar_subscription,
 )
-from app.integrations.sustech.blackboard.shared import extract_total_score, parse_loose_datetime, parse_score_metrics
+from app.integrations.sustech.blackboard.shared import (
+    extract_total_score,
+    parse_loose_datetime,
+    parse_score_metrics,
+)
 
 from .models import (
     Announcement,
@@ -68,8 +74,14 @@ class DatabaseManager:
 
     DEFAULT_DB_RELATIVE_PATH = _DEFAULT_BLACKBOARD_DB_RELATIVE_PATH
 
-    def __init__(self, db_path: str | Path | None = None, *, reset_schema: bool = False) -> None:
-        self.db_path = Path(db_path) if db_path is not None else resolve_default_blackboard_db_path()
+    def __init__(
+        self, db_path: str | Path | None = None, *, reset_schema: bool = False
+    ) -> None:
+        self.db_path = (
+            Path(db_path)
+            if db_path is not None
+            else resolve_default_blackboard_db_path()
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         if reset_schema and self.db_path.exists():
@@ -77,7 +89,9 @@ class DatabaseManager:
 
         self.engine = create_engine(f"sqlite:///{self.db_path.as_posix()}", future=True)
         self._enable_sqlite_foreign_keys()
-        self.SessionLocal = sessionmaker(bind=self.engine, expire_on_commit=False, class_=Session)
+        self.SessionLocal = sessionmaker(
+            bind=self.engine, expire_on_commit=False, class_=Session
+        )
         self.create_tables()
 
     def _enable_sqlite_foreign_keys(self) -> None:
@@ -107,7 +121,9 @@ class DatabaseManager:
 
     @staticmethod
     def _stable_id(prefix: str, *parts: Any) -> str:
-        normalized = "|".join(str(p).strip() for p in parts if p is not None and str(p).strip())
+        normalized = "|".join(
+            str(p).strip() for p in parts if p is not None and str(p).strip()
+        )
         if not normalized:
             normalized = "<empty>"
         digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:20]
@@ -154,7 +170,9 @@ class DatabaseManager:
 
     @staticmethod
     def _extract_term(name: str) -> str | None:
-        match = re.search(r"\b(Spring|Summer|Fall|Winter)\s+\d{4}\b", name, re.IGNORECASE)
+        match = re.search(
+            r"\b(Spring|Summer|Fall|Winter)\s+\d{4}\b", name, re.IGNORECASE
+        )
         return match.group(0) if match else None
 
     @staticmethod
@@ -198,7 +216,9 @@ class DatabaseManager:
                 normalize_url=self._normalize_url,
                 stable_id=self._stable_id,
                 parse_total_score=extract_total_score,
-                parse_datetime=lambda value: parse_loose_datetime(None if value is None else str(value)),
+                parse_datetime=lambda value: parse_loose_datetime(
+                    None if value is None else str(value)
+                ),
                 guess_resource_type_from_url=self._guess_resource_type_from_url,
                 allow_attachment_resource_upsert=allow_attachment_resource_upsert,
                 logger=logger,
@@ -236,7 +256,9 @@ class DatabaseManager:
                 stable_id=self._stable_id,
                 parse_total_score=extract_total_score,
                 parse_score_metrics=parse_score_metrics,
-                parse_datetime=lambda value: parse_loose_datetime(None if value is None else str(value)),
+                parse_datetime=lambda value: parse_loose_datetime(
+                    None if value is None else str(value)
+                ),
                 to_float=self._to_float,
                 logger=logger,
             )
@@ -252,7 +274,9 @@ class DatabaseManager:
                 session,
                 announcements_data,
                 normalize_url=self._normalize_url,
-                parse_datetime=lambda value: parse_loose_datetime(None if value is None else str(value)),
+                parse_datetime=lambda value: parse_loose_datetime(
+                    None if value is None else str(value)
+                ),
                 stable_id=self._stable_id,
                 resolve_course_id_by_course_name=data_resolve_course_id_by_course_name,
                 logger=logger,
@@ -291,11 +315,17 @@ class DatabaseManager:
         logger: BlackboardLogger | None = None,
     ) -> SyncStats:
         with self._session_scope() as session:
-            return data_sync_calendar_events(session, feed_url, events_data, logger=logger)
+            return data_sync_calendar_events(
+                session, feed_url, events_data, logger=logger
+            )
 
-    def list_calendar_events(self, feed_url: str, *, include_deleted: bool = False) -> list[dict[str, Any]]:
+    def list_calendar_events(
+        self, feed_url: str, *, include_deleted: bool = False
+    ) -> list[dict[str, Any]]:
         with self._session_scope() as session:
-            return data_list_calendar_events(session, feed_url, include_deleted=include_deleted)
+            return data_list_calendar_events(
+                session, feed_url, include_deleted=include_deleted
+            )
 
     def get_table_counts(self) -> dict[str, dict[str, int]]:
         result: dict[str, dict[str, int]] = {}
@@ -309,12 +339,13 @@ class DatabaseManager:
                 "calendar_subscriptions": CalendarSubscription,
                 "calendar_events": CalendarEvent,
             }.items():
-                total = session.execute(select(func.count()).select_from(model)).scalar_one()
-                active = (
-                    session.execute(
-                        select(func.count()).select_from(model).where(model.is_deleted.is_(False))
-                    ).scalar_one()
-                )
+                total = session.execute(
+                    select(func.count()).select_from(model)
+                ).scalar_one()
+                active = session.execute(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.is_deleted.is_(False))
+                ).scalar_one()
                 result[name] = {"total": total, "active": active}
         return result
-

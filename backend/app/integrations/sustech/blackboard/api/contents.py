@@ -47,9 +47,13 @@ class BlackboardContentAPI:
             try:
                 response = self.context.get(page_url, label="Sidebar")
                 response.raise_for_status()
-                parsed = self.parse_course_sidebar(response.text, str(response.url), course_id=course_id)
+                parsed = self.parse_course_sidebar(
+                    response.text, str(response.url), course_id=course_id
+                )
             except Exception as ex:
-                self.context.log(f"⚠️ [Blackboard] sidebar解析失败，跳过页面: {page_url} - {ex}")
+                self.context.log(
+                    f"⚠️ [Blackboard] sidebar解析失败，跳过页面: {page_url} - {ex}"
+                )
                 continue
 
             for group, links in parsed.items():
@@ -61,16 +65,22 @@ class BlackboardContentAPI:
                     bucket.append(item)
                     merged_seen_urls.add(item_url)
 
-        self.context.log(f"🔍 [Blackboard] sidebar分组数: {len(merged)}, sidebar seed命中数: {len(merged_seen_urls)}")
+        self.context.log(
+            f"🔍 [Blackboard] sidebar分组数: {len(merged)}, sidebar seed命中数: {len(merged_seen_urls)}"
+        )
         return merged
 
-    def parse_course_sidebar(self, html: str, page_url: str, *, course_id: str) -> dict[str, list[dict[str, str]]]:
+    def parse_course_sidebar(
+        self, html: str, page_url: str, *, course_id: str
+    ) -> dict[str, list[dict[str, str]]]:
         """解析课程左侧导航栏，返回按分组聚合的链接。"""
         if not html:
             return {}
 
         soup = BeautifulSoup(html, "html.parser")
-        sidebar_root = soup.select_one("#courseMenuPalette_contents") or soup.select_one("#courseMenuPalette")
+        sidebar_root = soup.select_one(
+            "#courseMenuPalette_contents"
+        ) or soup.select_one("#courseMenuPalette")
         if not isinstance(sidebar_root, Tag):
             return {}
 
@@ -87,7 +97,9 @@ class BlackboardContentAPI:
 
             if anchor is None:
                 if classes.intersection({"separator", "title", "menudivider"}):
-                    header_text = clean_field(li.get_text(" ", strip=True), max_length=80)
+                    header_text = clean_field(
+                        li.get_text(" ", strip=True), max_length=80
+                    )
                     if header_text:
                         current_group = header_text
                 continue
@@ -100,7 +112,9 @@ class BlackboardContentAPI:
             full_url = self.context.absolute_url(page_url, href)
             normalized_url = urlparse(full_url)._replace(fragment="").geturl()
 
-            if not is_sidebar_seed_candidate(title, normalized_url, course_id, base_url=self.context.base_url):
+            if not is_sidebar_seed_candidate(
+                title, normalized_url, course_id, base_url=self.context.base_url
+            ):
                 continue
 
             bucket = grouped_links.setdefault(current_group, [])
@@ -165,7 +179,9 @@ class BlackboardContentAPI:
                 continue
 
             visited.add(page_url)
-            self.context.log(f"📄 [Blackboard] 访问内容页 ({len(visited)}/{max_pages}): {page_url}")
+            self.context.log(
+                f"📄 [Blackboard] 访问内容页 ({len(visited)}/{max_pages}): {page_url}"
+            )
 
             try:
                 response = self.context.get(page_url, label="Contents")
@@ -195,7 +211,9 @@ class BlackboardContentAPI:
                         "name": resource.title,
                         "download_url": resource.url,
                     },
-                    logger=self.context.logger.child("api.scrape_support.resources") if self.context.logger is not None else None,
+                    logger=self.context.logger.child("api.scrape_support.resources")
+                    if self.context.logger is not None
+                    else None,
                 ):
                     continue
 
@@ -245,7 +263,9 @@ class BlackboardContentAPI:
                 continue
             resource.parent_id = old_to_real_id.get(parent_id, parent_id)
 
-        self.context.log(f"✅ [Blackboard] 资源抓取完成: 访问页面={len(visited)}, 资源数={len(resources)}")
+        self.context.log(
+            f"✅ [Blackboard] 资源抓取完成: 访问页面={len(visited)}, 资源数={len(resources)}"
+        )
         return resources
 
     def extract_content_container(
@@ -269,7 +289,9 @@ class BlackboardContentAPI:
         if normalized_url == current_page_url:
             return None
 
-        if not is_course_content_page_url(normalized_url, course_id, base_url=self.context.base_url):
+        if not is_course_content_page_url(
+            normalized_url, course_id, base_url=self.context.base_url
+        ):
             return None
 
         parsed = urlparse(normalized_url)
@@ -317,8 +339,13 @@ class BlackboardContentAPI:
         lower_url = full_url.lower()
         lower_path = parsed.path.lower()
 
-        is_download_like = any(token in lower_url for token in ("/bbcswebdav/", "download", "xid=", "attachment"))
-        is_download_like = is_download_like or bool(RESOURCE_FILE_SUFFIX_RE.search(lower_path))
+        is_download_like = any(
+            token in lower_url
+            for token in ("/bbcswebdav/", "download", "xid=", "attachment")
+        )
+        is_download_like = is_download_like or bool(
+            RESOURCE_FILE_SUFFIX_RE.search(lower_path)
+        )
 
         if "listcontent.jsp" in lower_path and "download" not in lower_url:
             return None
@@ -350,6 +377,3 @@ class BlackboardContentAPI:
             parent_id=parent_resource_id,
             source_page=page_url,
         )
-
-
-

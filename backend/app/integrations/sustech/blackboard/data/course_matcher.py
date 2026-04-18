@@ -33,4 +33,3 @@ def resolve_course_id_by_course_name(session: Session, course_name: str) -> str 
             return course.course_id
 
     return None
-

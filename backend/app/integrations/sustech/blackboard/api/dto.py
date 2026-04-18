@@ -11,7 +11,9 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.isoformat(timespec="seconds")
-        return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return (
+            value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        )
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):

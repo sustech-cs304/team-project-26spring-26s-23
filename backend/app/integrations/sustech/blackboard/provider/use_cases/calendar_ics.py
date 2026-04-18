@@ -6,11 +6,17 @@ from typing import Any
 
 import httpx
 
-from app.integrations.sustech.blackboard.api.calendar_ics_parser import BlackboardCalendarICSParser
+from app.integrations.sustech.blackboard.api.calendar_ics_parser import (
+    BlackboardCalendarICSParser,
+)
 from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
 from app.integrations.sustech.blackboard.provider.results import CalendarICSSyncResult
 from app.integrations.sustech.blackboard.data import DatabaseManager
-from app.integrations.sustech.blackboard.shared import BlackboardLogEvent, BlackboardLogSession, create_log_session
+from app.integrations.sustech.blackboard.shared import (
+    BlackboardLogEvent,
+    BlackboardLogSession,
+    create_log_session,
+)
 
 
 _ics_parser = BlackboardCalendarICSParser()
@@ -138,7 +144,11 @@ def refresh_calendar_ics_subscription(
                 last_error=None,
                 is_active=True,
             )
-            total = len(db_manager.list_calendar_events(normalized_feed_url, include_deleted=False))
+            total = len(
+                db_manager.list_calendar_events(
+                    normalized_feed_url, include_deleted=False
+                )
+            )
             logger.info(
                 "ℹ ICS 订阅未变化",
                 payload={
@@ -241,7 +251,9 @@ def refresh_calendar_ics_subscription_from_text(
         is_active=True,
     )
 
-    total = len(db_manager.list_calendar_events(normalized_feed_url, include_deleted=False))
+    total = len(
+        db_manager.list_calendar_events(normalized_feed_url, include_deleted=False)
+    )
     logger.info(
         "✅ ICS 订阅同步完成",
         payload={

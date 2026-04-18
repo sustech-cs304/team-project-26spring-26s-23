@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable
+from typing import Iterable
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 DEFAULT_BLACKBOARD_BASE_URL = "https://bb.sustech.edu.cn"
-DEFAULT_ID_TYPES: tuple[str, ...] = ("course_id", "content_id", "pk1", "xid", "rid", "id")
-COURSE_ID_ALIASES: tuple[str, ...] = ("course_id", "id", "searchSelect", "search_select")
+DEFAULT_ID_TYPES: tuple[str, ...] = (
+    "course_id",
+    "content_id",
+    "pk1",
+    "xid",
+    "rid",
+    "id",
+)
+COURSE_ID_ALIASES: tuple[str, ...] = (
+    "course_id",
+    "id",
+    "searchSelect",
+    "search_select",
+)
 COURSE_ID_PATTERN = re.compile(r"(_\d+_\d+)")
 
 
@@ -127,7 +139,9 @@ def extract_blackboard_ids_from_url(
     return result
 
 
-def extract_course_id_from_url(url: str | None, *, aliases: Iterable[str] | None = None) -> str | None:
+def extract_course_id_from_url(
+    url: str | None, *, aliases: Iterable[str] | None = None
+) -> str | None:
     """从 Blackboard URL 中提取课程 ID。"""
     id_candidates = tuple(aliases or COURSE_ID_ALIASES)
     ids = extract_blackboard_ids_from_url(url, id_types=id_candidates)

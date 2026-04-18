@@ -65,7 +65,19 @@ class BlackboardAssignmentAPI:
                 if lower_title in ("item", "course grade", "total", "weighted total"):
                     continue
 
-                if not any(token in lower_title for token in ("assignment", "作业", "homework", "quiz", "project", "lab", "实验", "测验")):
+                if not any(
+                    token in lower_title
+                    for token in (
+                        "assignment",
+                        "作业",
+                        "homework",
+                        "quiz",
+                        "project",
+                        "lab",
+                        "实验",
+                        "测验",
+                    )
+                ):
                     if "due" not in gradable_text.lower():
                         continue
 
@@ -85,27 +97,43 @@ class BlackboardAssignmentAPI:
                     status_text = status_node.get_text(" ", strip=True)
 
                 first_link = row.find("a", href=True)
-                detail_url = self.context.absolute_url(page_url, str(first_link.get("href") or "").strip()) if first_link else ""
+                detail_url = (
+                    self.context.absolute_url(
+                        page_url, str(first_link.get("href") or "").strip()
+                    )
+                    if first_link
+                    else ""
+                )
                 row_id = str(row.get("id") or "").strip()
                 if not detail_url:
                     detail_url = f"{page_url}#{row_id}" if row_id else page_url
 
                 row_attachments: list[dict[str, str]] = []
                 for att in row.find_all("a", href=True):
-                    att_href = self.context.absolute_url(page_url, str(att.get("href") or "").strip())
+                    att_href = self.context.absolute_url(
+                        page_url, str(att.get("href") or "").strip()
+                    )
                     if not att_href or att_href == detail_url:
                         continue
-                    if any(token in att_href.lower() for token in ("/bbcswebdav/", "download", "attachment", "file")):
+                    if any(
+                        token in att_href.lower()
+                        for token in ("/bbcswebdav/", "download", "attachment", "file")
+                    ):
                         row_attachments.append(
                             {
-                                "title": att.get_text(strip=True) or Path(urlparse(att_href).path).name,
+                                "title": att.get_text(strip=True)
+                                or Path(urlparse(att_href).path).name,
                                 "url": att_href,
                             }
                         )
 
                 assignment_id = self._extract_assignment_id(detail_url)
-                attachments = self._normalize_attachments(row_attachments, assignment_id, page_url)
-                detail_attachments = self._extract_assignment_attachments(detail_url, page_url, assignment_id)
+                attachments = self._normalize_attachments(
+                    row_attachments, assignment_id, page_url
+                )
+                detail_attachments = self._extract_assignment_attachments(
+                    detail_url, page_url, assignment_id
+                )
                 if detail_attachments:
                     merged: list[AssignmentAttachmentDTO] = []
                     seen_attachment_urls: set[str] = set()
@@ -118,7 +146,9 @@ class BlackboardAssignmentAPI:
                     attachments = merged
 
                 due_date = extract_date_text_safe(f"{gradable_text} {activity_text}")
-                status = extract_status_text(f"{status_text} {activity_text} {grade_text}")
+                status = extract_status_text(
+                    f"{status_text} {activity_text} {grade_text}"
+                )
                 summary = row.get_text(" ", strip=True)
 
                 candidate_assignment = {
@@ -128,12 +158,16 @@ class BlackboardAssignmentAPI:
                     "due_date": due_date,
                     "status": status,
                     "summary": summary[:240],
-                    "attachments": [{"name": item.name, "url": item.url} for item in attachments],
+                    "attachments": [
+                        {"name": item.name, "url": item.url} for item in attachments
+                    ],
                     "source_page": page_url,
                 }
                 if not is_valid_assignment(
                     candidate_assignment,
-                    logger=self.context.logger.child("api.scrape_support.assignments") if self.context.logger is not None else None,
+                    logger=self.context.logger.child("api.scrape_support.assignments")
+                    if self.context.logger is not None
+                    else None,
                 ):
                     continue
 
@@ -166,20 +200,36 @@ class BlackboardAssignmentAPI:
                     continue
 
                 lower_text = text.lower()
-                if not any(token in lower_text for token in ("assignment", "作业", "homework", "quiz", "project", "due")):
+                if not any(
+                    token in lower_text
+                    for token in (
+                        "assignment",
+                        "作业",
+                        "homework",
+                        "quiz",
+                        "project",
+                        "due",
+                    )
+                ):
                     continue
 
                 link = container.find("a", href=True)
                 if not link:
                     continue
 
-                title = normalize_assignment_title(link.get_text(strip=True) or text[:100])
-                detail_url = self.context.absolute_url(page_url, str(link.get("href") or "").strip())
+                title = normalize_assignment_title(
+                    link.get_text(strip=True) or text[:100]
+                )
+                detail_url = self.context.absolute_url(
+                    page_url, str(link.get("href") or "").strip()
+                )
                 if not detail_url:
                     continue
 
                 assignment_id = self._extract_assignment_id(detail_url)
-                attachments = self._extract_assignment_attachments(detail_url, page_url, assignment_id)
+                attachments = self._extract_assignment_attachments(
+                    detail_url, page_url, assignment_id
+                )
 
                 candidate_assignment = {
                     "assignment_id": assignment_id,
@@ -188,12 +238,16 @@ class BlackboardAssignmentAPI:
                     "due_date": extract_date_text_safe(text),
                     "status": extract_status_text(text),
                     "summary": text[:240],
-                    "attachments": [{"name": item.name, "url": item.url} for item in attachments],
+                    "attachments": [
+                        {"name": item.name, "url": item.url} for item in attachments
+                    ],
                     "source_page": page_url,
                 }
                 if not is_valid_assignment(
                     candidate_assignment,
-                    logger=self.context.logger.child("api.scrape_support.assignments") if self.context.logger is not None else None,
+                    logger=self.context.logger.child("api.scrape_support.assignments")
+                    if self.context.logger is not None
+                    else None,
                 ):
                     continue
 
@@ -207,7 +261,9 @@ class BlackboardAssignmentAPI:
                         course_id=course_id,
                         title=title,
                         due_date=str(candidate_assignment["due_date"] or ""),
-                        due_date_parsed=parse_datetime_safe(str(candidate_assignment["due_date"] or "")),
+                        due_date_parsed=parse_datetime_safe(
+                            str(candidate_assignment["due_date"] or "")
+                        ),
                         status=str(candidate_assignment["status"] or ""),
                         url=detail_url,
                         summary=text[:240],
@@ -217,7 +273,10 @@ class BlackboardAssignmentAPI:
                 )
                 seen_keys.add(key)
 
-        assignments.sort(key=lambda item: item.due_date_parsed or parse_datetime_safe(""), reverse=True)
+        assignments.sort(
+            key=lambda item: item.due_date_parsed or parse_datetime_safe(""),
+            reverse=True,
+        )
         self.context.log(f"✅ [Blackboard] 作业解析完成，共 {len(assignments)} 条")
         return assignments
 
@@ -256,7 +315,10 @@ class BlackboardAssignmentAPI:
             rows = soup.select("div.sortable_item_row.row")
             for row in rows:
                 gradable = row.select_one(".cell.gradable")
-                if gradable and "assignment" in gradable.get_text(" ", strip=True).lower():
+                if (
+                    gradable
+                    and "assignment" in gradable.get_text(" ", strip=True).lower()
+                ):
                     row_scope = row
                     break
 
@@ -272,8 +334,12 @@ class BlackboardAssignmentAPI:
             activity_node = row_scope.select_one(".cell.activity")
             status_node = row_scope.select_one(".cell.status")
 
-            gradable_text = gradable_node.get_text(" ", strip=True) if gradable_node else ""
-            activity_text = activity_node.get_text(" ", strip=True) if activity_node else ""
+            gradable_text = (
+                gradable_node.get_text(" ", strip=True) if gradable_node else ""
+            )
+            activity_text = (
+                activity_node.get_text(" ", strip=True) if activity_node else ""
+            )
             status_text = status_node.get_text(" ", strip=True) if status_node else ""
 
             title = normalize_assignment_title(gradable_text)
@@ -284,7 +350,12 @@ class BlackboardAssignmentAPI:
             title_node = soup.find(["h1", "h2"]) or soup.find("title")
             title = title_node.get_text(" ", strip=True) if title_node else ""
 
-            for selector in (".vtbegenerated", ".description", "#description", "#content_listContainer"):
+            for selector in (
+                ".vtbegenerated",
+                ".description",
+                "#description",
+                "#content_listContainer",
+            ):
                 node = soup.select_one(selector)
                 if node:
                     description = node.get_text(" ", strip=True)
@@ -301,14 +372,20 @@ class BlackboardAssignmentAPI:
         attachments: list[AssignmentAttachmentDTO] = []
         seen_attachment_urls: set[str] = set()
         for link in scope.find_all("a", href=True):
-            href = self.context.absolute_url(base_url, str(link.get("href") or "").strip())
+            href = self.context.absolute_url(
+                base_url, str(link.get("href") or "").strip()
+            )
             if not href or href in seen_attachment_urls:
                 continue
             lower_href = href.lower()
-            if any(token in lower_href for token in ("/bbcswebdav/", "download", "attachment", "file")):
+            if any(
+                token in lower_href
+                for token in ("/bbcswebdav/", "download", "attachment", "file")
+            ):
                 attachments.append(
                     AssignmentAttachmentDTO(
-                        name=link.get_text(strip=True) or Path(urlparse(href).path).name,
+                        name=link.get_text(strip=True)
+                        or Path(urlparse(href).path).name,
                         url=href,
                     )
                 )
@@ -331,8 +408,12 @@ class BlackboardAssignmentAPI:
         return details
 
     def _extract_assignment_id(self, url: str) -> str | None:
-        ids = self.context.extract_ids(url, id_types=("pk1", "xid", "rid", "content_id"))
-        return ids.get("pk1") or ids.get("xid") or ids.get("rid") or ids.get("content_id")
+        ids = self.context.extract_ids(
+            url, id_types=("pk1", "xid", "rid", "content_id")
+        )
+        return (
+            ids.get("pk1") or ids.get("xid") or ids.get("rid") or ids.get("content_id")
+        )
 
     def _extract_resource_id(self, url: str) -> str | None:
         ids = self.context.extract_ids(url, id_types=("xid", "rid"))
@@ -388,5 +469,3 @@ class BlackboardAssignmentAPI:
             for att in detail.attachments
         ]
         return self._normalize_attachments(raw_attachments, assignment_id, page_url)
-
-
