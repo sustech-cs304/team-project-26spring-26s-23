@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -12,7 +13,9 @@ from starlette.requests import Request
 from app.copilot_runtime import (
     RuntimeBridge,
     RuntimeRunStartResponse,
+    RuntimeToolApprovalCoordinator,
     RuntimeScaffold,
+    RuntimeToolPermissionPolicy,
     ToolDescriptor,
     ToolRegistry,
     ToolsetDescriptor,
@@ -23,6 +26,7 @@ from app.copilot_runtime import (
 )
 from app.copilot_runtime.agent import ModelNotConfiguredError
 from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
+from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
@@ -38,7 +42,9 @@ SUPPORTED_METHODS = [
     "run/stream",
     "run/cancel",
     "capabilities/get",
+    "tools/catalog/get",
     "thinking/capability/get",
+    "tool-approval/resolve",
 ]
 
 
@@ -248,9 +254,11 @@ def test_root_post_thread_get_returns_bound_agent_recommendations_and_tool_catal
     assert payload == scaffold.build_thread_get_response(thread=thread).to_dict()
     assert payload["recommendedTools"] == ["tool.file-convert"]
     assert payload["toolSelectionMode"] == "recommendation-only"
-    assert payload["tools"][0]["toolId"] == "tool.file-convert"
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
     assert payload["latestRunId"] is None
+    assert scaffold.tool_registry.get_default().name == "default"
 
 
 
@@ -268,6 +276,34 @@ def test_root_post_thread_get_unknown_thread_returns_structured_error() -> None:
     assert payload["error"]["requestedMethod"] == "thread/get"
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"threadId": "missing-thread"}
+
+
+
+def test_root_post_global_tool_catalog_returns_default_toolset_catalog() -> None:
+    app, scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "tools/catalog/get", "body": {}})
+
+    assert response.status_code == 200
+    assert response.json() == scaffold.build_global_tool_catalog_response().to_dict()
+    assert scaffold.tool_registry.get_default().name == "default"
+
+
+
+def test_root_post_global_tool_catalog_requires_explicit_body_wrapper() -> None:
+    app, _scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "tools/catalog/get"})
+
+    payload = response.json()
+
+    assert response.status_code == 400
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "invalid_request"
+    assert payload["error"]["requestedMethod"] == "tools/catalog/get"
+    assert payload["error"]["details"] == {"field": "body"}
 
 
 
@@ -944,9 +980,60 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
     assert response.status_code == 200
     assert payload == scaffold.build_capabilities_response(thread=thread).to_dict()
     assert payload["recommendedTools"] == ["tool.file-convert"]
+    assert scaffold.tool_registry.get_default().name == "default"
     assert payload["toolSelectionMode"] == "recommendation-only"
-    assert payload["tools"][0]["toolId"] == "tool.file-convert"
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
+
+
+
+def test_root_post_capabilities_get_routes_tool_permission_policy_to_bridge_catalog_filter() -> None:
+    app, _scaffold, store = _build_app()
+    thread = store.create_thread(bound_agent_id="default", thread_id="session-policy")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_capabilities_get_request(
+                session_id=thread.session_id,
+                tool_permission_policy={
+                    "schemaVersion": 1,
+                    "defaultMode": "allow",
+                    "toolModes": {"tool.file-convert": "deny"},
+                },
+            ),
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 200
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" not in tool_ids
+    assert "tool.weather-current" in tool_ids
+    assert payload["recommendedTools"] == []
+
+
+
+def test_scaffold_capabilities_response_filters_denied_tools_from_catalog() -> None:
+    _app, scaffold, store = _build_app()
+    thread = store.create_thread(bound_agent_id="default", thread_id="session-deny")
+
+    payload = scaffold.build_capabilities_response(
+        thread=thread,
+        tool_permission_resolver=RuntimeToolPermissionResolver.from_policy(
+            RuntimeToolPermissionPolicy(
+                schemaVersion=1,
+                defaultMode="allow",
+                toolModes={"tool.file-convert": "deny"},
+            )
+        ),
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" not in tool_ids
+    assert "tool.weather-current" in tool_ids
+    assert payload["recommendedTools"] == []
 
 
 
@@ -964,6 +1051,23 @@ def test_root_post_capabilities_get_unknown_session_returns_structured_error() -
     assert payload["error"]["requestedMethod"] == "capabilities/get"
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
     assert payload["error"]["details"] == {"sessionId": "missing-session"}
+
+
+
+def test_root_post_global_tool_catalog_get_returns_default_toolset_catalog() -> None:
+    app, scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post("/", json={"method": "tools/catalog/get", "body": {}})
+
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload == scaffold.build_global_tool_catalog_response().to_dict()
+    assert payload["directoryVersion"] == "tools-v1"
+    assert payload["defaultToolset"] == "default"
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" in tool_ids
 
 
 
@@ -1201,6 +1305,7 @@ def _build_app() -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
     )
     app = FastAPI()
     app.include_router(build_router(scaffold, bridge))
+    app.state.runtime_bridge = bridge
     return app, scaffold, store
 
 
@@ -1290,12 +1395,19 @@ def _build_thread_get_request(*, thread_id: str) -> dict[str, Any]:
 
 
 
-def _build_capabilities_get_request(*, session_id: str) -> dict[str, Any]:
+def _build_capabilities_get_request(
+    *,
+    session_id: str,
+    tool_permission_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "sessionId": session_id,
+    }
+    if tool_permission_policy is not None:
+        body["toolPermissionPolicy"] = dict(tool_permission_policy)
     return {
         "method": "capabilities/get",
-        "body": {
-            "sessionId": session_id,
-        },
+        "body": body,
     }
 
 
@@ -1400,6 +1512,155 @@ def _build_run_cancel_request(*, run_id: str) -> dict[str, Any]:
             "runId": run_id,
         },
     }
+
+
+
+def _build_tool_approval_resolve_request(
+    *,
+    run_id: str,
+    tool_call_id: str,
+    decision: str,
+) -> dict[str, Any]:
+    return {
+        "method": "tool-approval/resolve",
+        "body": {
+            "runId": run_id,
+            "toolCallId": tool_call_id,
+            "decision": decision,
+        },
+    }
+
+
+
+def test_root_post_tool_approval_resolve_approved_routes_to_coordinator() -> None:
+    app, _scaffold, _store = _build_app()
+    bridge = app.state.runtime_bridge
+    bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge._approval_coordinator.create_request(
+        run_id="run-approved",
+        tool_call_id="call-approved",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-approved",
+                tool_call_id="call-approved",
+                decision="approved",
+            ),
+        )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["decision"] == "approved"
+    assert payload["status"] == "approved"
+    assert payload["details"] == {
+        "toolId": "tool.file-convert",
+        "mode": "ask",
+    }
+
+
+
+def test_root_post_tool_approval_resolve_rejected_routes_to_coordinator() -> None:
+    app, _scaffold, _store = _build_app()
+    bridge = app.state.runtime_bridge
+    bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge._approval_coordinator.create_request(
+        run_id="run-rejected",
+        tool_call_id="call-rejected",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-rejected",
+                tool_call_id="call-rejected",
+                decision="rejected",
+            ),
+        )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["decision"] == "rejected"
+    assert payload["status"] == "rejected"
+    assert payload["details"] == {
+        "toolId": "tool.file-convert",
+        "mode": "ask",
+    }
+
+
+
+def test_root_post_tool_approval_resolve_missing_request_returns_stable_error() -> None:
+    app, _scaffold, _store = _build_app()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-missing",
+                tool_call_id="call-missing",
+                decision="approved",
+            ),
+        )
+
+    payload = response.json()
+    assert response.status_code == 404
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "tool_approval_not_found"
+    assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
+    assert payload["error"]["details"] == {"runId": "run-missing", "toolCallId": "call-missing"}
+
+
+
+def test_root_post_tool_approval_resolve_duplicate_decision_returns_stable_error() -> None:
+    app, _scaffold, _store = _build_app()
+    bridge = app.state.runtime_bridge
+    bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge._approval_coordinator.create_request(
+        run_id="run-dup",
+        tool_call_id="call-dup",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    with TestClient(app) as client:
+        first_response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-dup",
+                tool_call_id="call-dup",
+                decision="approved",
+            ),
+        )
+        second_response = client.post(
+            "/",
+            json=_build_tool_approval_resolve_request(
+                run_id="run-dup",
+                tool_call_id="call-dup",
+                decision="rejected",
+            ),
+        )
+
+    assert first_response.status_code == 200
+    payload = second_response.json()
+    assert second_response.status_code == 404
+    assert payload["error"]["code"] == "tool_approval_not_found"
+    assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
+    assert payload["error"]["details"] == {"runId": "run-dup", "toolCallId": "call-dup"}
 
 
 

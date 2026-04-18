@@ -30,6 +30,9 @@ export function createConfigCenterPublicSnapshotFixture(
       backendExposed: {
         model,
       },
+      general: {
+        language: 'zh-CN',
+      },
     },
   }
 }
@@ -63,6 +66,11 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     mcp: {
       mcpAutoDiscoveryEnabled: true,
       toolPermissionMode: 'manual',
+      toolPermissionPolicy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {},
+      },
     },
     search: {
       searchEngine: 'google',

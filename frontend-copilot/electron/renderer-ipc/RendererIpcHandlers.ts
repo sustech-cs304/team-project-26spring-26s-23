@@ -32,6 +32,7 @@ import type {
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
 import type { DesktopNotificationRequest } from '../desktop-notification'
+import type { ToolCatalogLoadRequest, ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export interface RendererIpcHandlers {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
@@ -70,6 +71,7 @@ export interface RendererIpcHandlers {
   restoreCopilotHistoryDatabase: (
     request: CopilotHistoryRestoreDatabaseRequest,
   ) => Promise<CopilotHistoryDatabaseRestoreResult>
+  loadToolCatalog: (request?: ToolCatalogLoadRequest) => Promise<ToolCatalogLoadResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>

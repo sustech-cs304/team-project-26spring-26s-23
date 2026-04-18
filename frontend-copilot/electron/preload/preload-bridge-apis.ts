@@ -42,6 +42,7 @@ import {
   type DesktopNotificationApi,
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
+import { TOOL_CATALOG_LOAD_CHANNEL, type ToolCatalogApi } from '../tool-catalog/ipc'
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
@@ -51,6 +52,7 @@ export interface PreloadBridgeApis {
   configCenterPublicPatch: ConfigCenterPublicPatchApi
   settingsWorkspaceState: SettingsWorkspaceStateApi
   settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
+  toolCatalog: ToolCatalogApi
   desktopNotification: DesktopNotificationApi
   bootstrapWindow: BootstrapWindowApi
 }
@@ -130,6 +132,11 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       clearSustechCasPassword() {
         return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
+      },
+    },
+    toolCatalog: {
+      load(request) {
+        return ipcRenderer.invoke(TOOL_CATALOG_LOAD_CHANNEL, request)
       },
     },
     desktopNotification: {

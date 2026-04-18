@@ -59,6 +59,12 @@ export interface CopilotMessagesShellProps {
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
   transientError?: CopilotTransientErrorState | null
+  runtimeUrl?: string | null
+  onResolveToolApproval?: ((input: {
+    runId: string
+    toolCallId: string
+    decision: 'approved' | 'rejected'
+  }) => Promise<void>) | null
   onOpenErrorDetail?: ((errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void) | null
   emptyState?: {
     title: string
@@ -78,6 +84,8 @@ export function CopilotMessagesShell({
   assistantPlaceholder = null,
   models = [],
   transientError = null,
+  runtimeUrl = null,
+  onResolveToolApproval = null,
   onOpenErrorDetail = null,
   emptyState = null,
 }: CopilotMessagesShellProps) {
@@ -183,7 +191,12 @@ export function CopilotMessagesShell({
               >
                 {turn.kind === 'tool'
                   ? (
-                      <ToolMessageCard turn={turn} index={index} />
+                      <ToolMessageCard
+                        turn={turn}
+                        index={index}
+                        runtimeUrl={runtimeUrl}
+                        onResolveToolApproval={onResolveToolApproval}
+                      />
                     )
                   : turn.kind === 'reasoning'
                     ? (
@@ -518,16 +531,68 @@ function ReasoningMessageCard({
 function ToolMessageCard({
   turn,
   index,
+  runtimeUrl,
+  onResolveToolApproval,
 }: {
   turn: CopilotToolMessageItem
   index: number
+  runtimeUrl: string | null
+  onResolveToolApproval?: CopilotMessagesShellProps['onResolveToolApproval']
 }) {
   const [expanded, setExpanded] = useState(false)
   const [inputExpanded, setInputExpanded] = useState(false)
+  const [approvalPendingDecision, setApprovalPendingDecision] = useState<'approved' | 'rejected' | null>(null)
+  const [approvalError, setApprovalError] = useState<string | null>(null)
+  const [countdownNow, setCountdownNow] = useState(() => Date.now())
   const contentSections = buildToolContentSections(turn)
   const inputSummary = hasNonEmptyValue(turn.inputSummary) ? turn.inputSummary : null
   const panelId = `chat-message-tool-panel-${turn.id}`
   const inputPanelId = `chat-message-tool-input-panel-${turn.id}`
+  const approval = turn.approval ?? null
+  const timeoutSecondsLabel = approval === null ? null : formatToolApprovalTimeoutSecondsLabel(approval, countdownNow)
+  const showApprovalActions = turn.toolPhase === 'waiting_approval'
+  const approvalControlsEnabled = runtimeUrl !== null && typeof onResolveToolApproval === 'function' && approvalPendingDecision === null
+
+  useEffect(() => {
+    if (turn.toolPhase !== 'waiting_approval' || approval?.timeoutAt === null || approval?.timeoutAt === undefined) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      setCountdownNow(Date.now())
+    }, 1_000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [approval?.timeoutAt, turn.toolPhase])
+
+  useEffect(() => {
+    if (turn.toolPhase !== 'waiting_approval') {
+      setApprovalPendingDecision(null)
+      setApprovalError(null)
+    }
+  }, [turn.toolPhase])
+
+  const handleResolveApproval = async (decision: 'approved' | 'rejected') => {
+    if (turn.toolPhase !== 'waiting_approval' || typeof onResolveToolApproval !== 'function') {
+      return
+    }
+
+    setApprovalPendingDecision(decision)
+    setApprovalError(null)
+    try {
+      await onResolveToolApproval({
+        runId: turn.runId,
+        toolCallId: turn.toolCallId,
+        decision,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '工具审批提交失败。'
+      setApprovalError(message)
+      setApprovalPendingDecision(null)
+    }
+  }
 
   return (
     <div className="copilot-chat__tool-card" data-testid={`chat-message-tool-card-${index}`}>
@@ -582,6 +647,20 @@ function ToolMessageCard({
               )}
             </button>
           )}
+      {showApprovalActions && renderToolApprovalBar({
+        turn,
+        index,
+        timeoutSecondsLabel,
+        approvalPendingDecision,
+        approvalControlsEnabled,
+        approvalError,
+        onApprove: () => {
+          void handleResolveApproval('approved')
+        },
+        onReject: () => {
+          void handleResolveApproval('rejected')
+        },
+      })}
       {expanded && (
         <div className="copilot-chat__tool-panel" id={panelId} data-testid={`chat-message-tool-panel-${index}`}>
           {contentSections.map((section, sectionIndex) => (
@@ -860,6 +939,103 @@ function resolveToolDisplayNameFromToolId(toolId: string): string | null {
 
 function hasNonEmptyValue(value: string | null | undefined): value is string {
   return (value?.trim() ?? '') !== ''
+}
+
+function renderToolApprovalBar(input: {
+  turn: CopilotToolMessageItem
+  index: number
+  timeoutSecondsLabel: string | null
+  approvalPendingDecision: 'approved' | 'rejected' | null
+  approvalControlsEnabled: boolean
+  approvalError: string | null
+  onApprove: () => void
+  onReject: () => void
+}) {
+  if (input.turn.toolPhase !== 'waiting_approval') {
+    return null
+  }
+
+  return (
+    <div className="copilot-chat__tool-approval" data-testid={`chat-message-tool-approval-${input.index}`}>
+      {input.approvalPendingDecision === null && (
+        <div className="copilot-chat__tool-approval-actions">
+          <button
+            type="button"
+            className="copilot-chat__tool-approval-button copilot-chat__tool-approval-button--reject"
+            data-testid={`chat-message-tool-approval-reject-${input.index}`}
+            disabled={!input.approvalControlsEnabled}
+            onClick={input.onReject}
+          >
+            {resolveToolApprovalActionLabel({
+              action: 'reject',
+              approval: input.turn.approval ?? null,
+              timeoutSecondsLabel: input.timeoutSecondsLabel,
+            })}
+          </button>
+          <button
+            type="button"
+            className="copilot-chat__tool-approval-button copilot-chat__tool-approval-button--approve"
+            data-testid={`chat-message-tool-approval-approve-${input.index}`}
+            disabled={!input.approvalControlsEnabled}
+            onClick={input.onApprove}
+          >
+            {resolveToolApprovalActionLabel({
+              action: 'approve',
+              approval: input.turn.approval ?? null,
+              timeoutSecondsLabel: input.timeoutSecondsLabel,
+            })}
+          </button>
+        </div>
+      )}
+      {input.approvalError !== null && (
+        <p className="copilot-chat__tool-approval-error" data-testid={`chat-message-tool-approval-error-${input.index}`}>
+          {input.approvalError}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function formatToolApprovalTimeoutSecondsLabel(
+  approval: NonNullable<CopilotToolMessageItem['approval']>,
+  observedNow: number,
+): string | null {
+  if (approval.timeoutAt === null || approval.timeoutAt === undefined) {
+    return approval.timeoutSeconds === null || approval.timeoutSeconds === undefined
+      ? null
+      : `${Math.max(0, Math.ceil(approval.timeoutSeconds))}s`
+  }
+
+  const timeoutAt = Date.parse(approval.timeoutAt)
+  if (Number.isNaN(timeoutAt)) {
+    return approval.timeoutSeconds === null || approval.timeoutSeconds === undefined
+      ? null
+      : `${Math.max(0, Math.ceil(approval.timeoutSeconds))}s`
+  }
+
+  const secondsRemaining = Math.max(0, Math.ceil((timeoutAt - observedNow) / 1_000))
+  return `${secondsRemaining}s`
+}
+
+function resolveToolApprovalActionLabel(input: {
+  action: 'approve' | 'reject'
+  approval: CopilotToolMessageItem['approval']
+  timeoutSecondsLabel: string | null
+}): string {
+  const baseLabel = input.action === 'approve' ? '批准' : '拒绝'
+  if (
+    input.approval === null
+    || input.approval === undefined
+    || input.approval.mode !== 'delay'
+    || input.timeoutSecondsLabel === null
+    || input.approval.timeoutAction === null
+  ) {
+    return baseLabel
+  }
+
+  const timeoutMatchesAction = (input.action === 'approve' && input.approval.timeoutAction === 'approve')
+    || (input.action === 'reject' && input.approval.timeoutAction === 'deny')
+  return timeoutMatchesAction ? `${baseLabel}（${input.timeoutSecondsLabel}）` : baseLabel
 }
 
 function hasDistinctNonEmptyValue(

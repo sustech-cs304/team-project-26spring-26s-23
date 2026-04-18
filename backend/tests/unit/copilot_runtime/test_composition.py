@@ -12,11 +12,15 @@ from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
     RuntimeRunStartRequest,
+    TOOL_APPROVAL_RESOLVE_METHOD,
+    RuntimeToolApprovalResolveRequest,
+    RuntimeToolPermissionPolicy,
 )
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteRef
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
 from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
 
 
@@ -100,7 +104,6 @@ class _ResolvedRouteResolver:
         )
 
 
-
 def test_build_default_runtime_dependencies_returns_complete_default_graph() -> None:
     dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
 
@@ -114,8 +117,10 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     executor_factory = default_agent.executor_factory
     assert executor_factory is not None
     assert executor_factory() is dependencies.agent_executor
+    assert dependencies.runtime_bridge._approval_coordinator is dependencies.agent_executor._approval_coordinator
 
     assert dependencies.scaffold.default_agent == default_agent.name
+    assert dependencies.scaffold.tool_registry is dependencies.tool_registry
     assert dependencies.scaffold.supported_methods == (
         "agents/list",
         "thread/create",
@@ -124,11 +129,74 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "run/stream",
         "run/cancel",
         "capabilities/get",
+        "tools/catalog/get",
         THINKING_CAPABILITY_GET_METHOD,
+        TOOL_APPROVAL_RESOLVE_METHOD,
     )
+    global_tool_catalog = dependencies.scaffold.build_global_tool_catalog_response().to_dict()
+    assert global_tool_catalog["ok"] is True
+    assert global_tool_catalog["directoryVersion"] == "tools-v1"
+    assert global_tool_catalog["defaultToolset"] == "default"
+    assert isinstance(global_tool_catalog["tools"], list)
+    assert len(global_tool_catalog["tools"]) >= 4
+    assert [tool["toolId"] for tool in global_tool_catalog["tools"][:6]] == [
+        "tool.fs.read",
+        "tool.fs.write",
+        "tool.fs.edit",
+        "tool.fs.glob",
+        "tool.fs.grep",
+        "tool.fs.notebook_edit",
+    ]
+    assert global_tool_catalog["tools"][0]["kind"] == "builtin"
+    assert global_tool_catalog["tools"][0]["availability"] == "available"
+    assert global_tool_catalog["tools"][0]["displayNameZh"] == "文件读取"
+    assert global_tool_catalog["tools"][0]["displayNameEn"] == "File Read"
+    assert global_tool_catalog["tools"][0]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
+    assert global_tool_catalog["tools"][1]["displayNameZh"] == "文件写入"
+    assert global_tool_catalog["tools"][1]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
+    assert global_tool_catalog["tools"][2]["displayNameZh"] == "文件编辑"
+    assert global_tool_catalog["tools"][2]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
+    assert global_tool_catalog["tools"][3]["displayNameZh"] == "文件发现"
+    assert global_tool_catalog["tools"][3]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
+    assert global_tool_catalog["tools"][4]["displayNameZh"] == "文件搜索"
+    assert global_tool_catalog["tools"][4]["group"] == {
+        "id": "builtin-core",
+        "label": "内置基础工具",
+        "labelZh": "内置基础工具",
+        "labelEn": "Built-in Core Tools",
+        "order": 0,
+        "sourceKind": "builtin",
+    }
     assert dependencies.scaffold.diagnostics_summary()["available_agents"] == [DEFAULT_AGENT_NAME]
     assert dependencies.scaffold.diagnostics_summary()["available_toolsets"] == ["default"]
-
 
 
 def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -> None:
@@ -158,7 +226,6 @@ def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -
     ]
 
 
-
 def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor() -> None:
     session_store = InMemorySessionStore()
     agent_executor = _build_test_agent_executor()
@@ -174,7 +241,82 @@ def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor()
     executor_factory = dependencies.agent_registry.get_default().executor_factory
     assert executor_factory is not None
     assert executor_factory() is agent_executor
+    assert dependencies.runtime_bridge._approval_coordinator is agent_executor._approval_coordinator
 
+
+def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_against_shared_context() -> None:
+    dependencies = build_default_runtime_dependencies(
+        agent_executor=PydanticAIAgentExecutor(
+            model=TestModel(
+                call_tools=["weather_current"],
+                custom_output_text=TEST_MODEL_REPLY,
+                seed=0,
+            )
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    dependencies.session_store.create_thread(bound_agent_id=DEFAULT_AGENT_NAME, thread_id="thread-1")
+    run = dependencies.runtime_bridge.start_run(
+        request=_build_run_request(
+            thread_id="thread-1",
+            enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+            tool_permission_policy=RuntimeToolPermissionPolicy(schemaVersion=1, defaultMode="ask"),
+        )
+    )
+    resolution_payloads: list[dict[str, object]] = []
+
+    async def collect_and_resolve():
+        events = []
+        async for event in dependencies.runtime_bridge.stream_run(run_id=run.run_id):
+            events.append(event)
+            if event.type != "tool_event" or event.payload.get("phase") != "waiting_approval":
+                continue
+            resolution_payloads.append(
+                dependencies.runtime_bridge.resolve_tool_approval(
+                    request=RuntimeToolApprovalResolveRequest(
+                        run_id=run.run_id,
+                        tool_call_id=str(event.payload["toolCallId"]),
+                        decision="approved",
+                    )
+                ).to_dict()
+            )
+        return events
+
+    events = asyncio.run(collect_and_resolve())
+
+    assert len(resolution_payloads) == 1
+    assert resolution_payloads[0]["runId"] == run.run_id
+    assert resolution_payloads[0]["decision"] == "approved"
+    assert resolution_payloads[0]["status"] == "approved"
+    assert any(
+        event.type == "tool_event" and event.payload.get("phase") == "waiting_approval"
+        for event in events
+    )
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == TEST_MODEL_REPLY
+
+
+
+def test_build_default_runtime_dependencies_capabilities_use_bridge_policy_as_single_visibility_source() -> None:
+    dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
+    thread = dependencies.session_store.create_thread(
+        bound_agent_id=DEFAULT_AGENT_NAME,
+        thread_id="thread-capabilities-policy",
+    )
+
+    payload = dependencies.runtime_bridge.get_capabilities(
+        session_id=thread.session_id,
+        tool_permission_policy=RuntimeToolPermissionPolicy(
+            schemaVersion=1,
+            defaultMode="allow",
+            toolModes={"tool.file-convert": "deny"},
+        ),
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" not in tool_ids
+    assert "tool.weather-current" in tool_ids
+    assert payload["recommendedTools"] == []
 
 
 def test_build_default_runtime_dependencies_default_executor_is_unconfigured_without_explicit_model(
@@ -196,13 +338,16 @@ async def _collect_events(events):
     return [event async for event in events]
 
 
-
 def _build_test_agent_executor() -> PydanticAIAgentExecutor:
     return PydanticAIAgentExecutor(model=TestModel(custom_output_text=TEST_MODEL_REPLY))
 
 
-
-def _build_run_request(*, thread_id: str) -> RuntimeRunStartRequest:
+def _build_run_request(
+    *,
+    thread_id: str,
+    enabled_tools: tuple[str, ...] = (),
+    tool_permission_policy: RuntimeToolPermissionPolicy | None = None,
+) -> RuntimeRunStartRequest:
     return RuntimeRunStartRequest(
         thread_id=thread_id,
         message=RuntimeMessagePayload(role="user", content="Hello"),
@@ -215,17 +360,23 @@ def _build_run_request(*, thread_id: str) -> RuntimeRunStartRequest:
                     model_id="gpt-4.1",
                 ),
             ),
-            enabledTools=(),
+            enabledTools=enabled_tools,
+            toolPermissionPolicy=tool_permission_policy,
             requestOptions={},
         ),
         agent_id=DEFAULT_AGENT_NAME,
     )
 
 
-
 def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
     user_data_dir = tmp_path / "user-data"
     runtime_root_dir = user_data_dir / "desktop-runtime"
+    config_dir = runtime_root_dir / "config"
+    logs_dir = runtime_root_dir / "logs"
+    database_dir = runtime_root_dir / "database"
+    state_dir = runtime_root_dir / "state"
+    user_data_dir.mkdir()
+    runtime_root_dir.mkdir()
     return DesktopRuntimeConfig(
         host="127.0.0.1",
         port=8765,
@@ -233,18 +384,18 @@ def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
         paths=DesktopRuntimePaths(
             user_data_dir=user_data_dir,
             runtime_root_dir=runtime_root_dir,
-            config_dir=runtime_root_dir / "config",
-            logs_dir=runtime_root_dir / "logs",
-            database_dir=runtime_root_dir / "database",
-            state_dir=runtime_root_dir / "state",
-            debug_log_database_file=runtime_root_dir / "database" / "copilot-debug-log.db",
-            copilot_settings_file=runtime_root_dir / "config" / "copilot-settings.json",
-            host_log_file=runtime_root_dir / "logs" / "electron-host.log",
-            backend_stdout_log_file=runtime_root_dir / "logs" / "backend.stdout.log",
-            backend_stderr_log_file=runtime_root_dir / "logs" / "backend.stderr.log",
-            runtime_snapshot_file=runtime_root_dir / "state" / "runtime-snapshot.json",
-            last_failure_file=runtime_root_dir / "state" / "last-failure.json",
+            config_dir=config_dir,
+            logs_dir=logs_dir,
+            database_dir=database_dir,
+            state_dir=state_dir,
+            debug_log_database_file=database_dir / "copilot-debug-log.db",
+            copilot_settings_file=config_dir / "copilot-settings.json",
+            host_log_file=logs_dir / "electron-host.log",
+            backend_stdout_log_file=logs_dir / "backend.stdout.log",
+            backend_stderr_log_file=logs_dir / "backend.stderr.log",
+            runtime_snapshot_file=state_dir / "runtime-snapshot.json",
+            last_failure_file=state_dir / "last-failure.json",
         ),
         app_mode="desktop",
-        environment="test",
+        environment="development",
     )

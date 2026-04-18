@@ -10,6 +10,10 @@ import {
   createElectronSettingsWorkspaceService,
   type ElectronSettingsWorkspaceService,
 } from '../settings-workspace/main-process'
+import {
+  createElectronToolCatalogService,
+  type ElectronToolCatalogService,
+} from '../tool-catalog/service'
 import type {
   CreateMainProcessServicesOptions,
   MainProcessServiceLogLevel,
@@ -20,6 +24,7 @@ export interface MainProcessServiceAccessors {
   getUnifiedConfigService: () => ElectronUnifiedConfigService
   getSettingsWorkspaceService: () => ElectronSettingsWorkspaceService
   getDesktopCapabilityBridgeService: () => ElectronDesktopCapabilityBridgeService
+  getToolCatalogService: () => ElectronToolCatalogService
 }
 
 export function createMainProcessServiceAccessors(
@@ -28,6 +33,7 @@ export function createMainProcessServiceAccessors(
   let unifiedConfigService: ElectronUnifiedConfigService | null = null
   let settingsWorkspaceService: ElectronSettingsWorkspaceService | null = null
   let desktopCapabilityBridgeService: ElectronDesktopCapabilityBridgeService | null = null
+  let toolCatalogService: ElectronToolCatalogService | null = null
 
   const forwardServiceLog = (
     level: MainProcessServiceLogLevel,
@@ -65,6 +71,7 @@ export function createMainProcessServiceAccessors(
     getUnifiedConfigService(): ElectronUnifiedConfigService {
       unifiedConfigService ??= createElectronUnifiedConfigService({
         prepareRuntimePaths: options.prepareRuntimePaths,
+        ensureHostedBackendService: options.ensureHostedBackendService,
         appendLog(level, message, context) {
           return forwardServiceLog(level, message, context)
         },
@@ -86,6 +93,20 @@ export function createMainProcessServiceAccessors(
       })
 
       return desktopCapabilityBridgeService
+    },
+    getToolCatalogService(): ElectronToolCatalogService {
+      toolCatalogService ??= createElectronToolCatalogService({
+        ensureHostedBackendService: async () => this.getUnifiedConfigService().getHostedBackendService(),
+        getLocalToken: async () => {
+          const service = await this.getUnifiedConfigService().getHostedBackendService()
+          return service.getLocalToken()
+        },
+        loadConfigCenterPublicSnapshot: async () => {
+          const result = await this.getUnifiedConfigService().loadPublicSnapshot()
+          return result.ok ? result.snapshot : null
+        },
+      })
+      return toolCatalogService
     },
   }
 }

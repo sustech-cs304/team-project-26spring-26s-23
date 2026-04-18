@@ -168,6 +168,9 @@ function createPublicSnapshot(animationsEnabled: boolean): ConfigCenterPublicSna
       backendExposed: {
         model: null,
       },
+      general: {
+        language: 'zh-CN',
+      },
     },
   }
 }

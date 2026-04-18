@@ -26,7 +26,7 @@ from app.integrations.sustech.blackboard.provider.results import (
     BlackboardSyncPayloads,
 )
 from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
-from app.copilot_runtime.agent import RuntimeToolLifecycleEvent
+from app.copilot_runtime.agent import PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
@@ -56,6 +56,7 @@ from app.desktop_runtime.capability_bridge_client import (
     DesktopCapabilityBridgeClient,
 )
 from app.desktop_runtime.server import create_app
+from app.tooling.file_tools.runtime_bindings import FILE_TOOL_READ_ID
 from app.integrations.sustech.teaching_information_system.api.dto import (
     TISCreditGPAQueryResult,
     TISCreditGPASummary,
@@ -220,7 +221,9 @@ SUPPORTED_METHODS = [
     RUN_STREAM_METHOD,
     RUN_CANCEL_METHOD,
     CAPABILITIES_GET_METHOD,
+    "tools/catalog/get",
     THINKING_CAPABILITY_GET_METHOD,
+    "tool-approval/resolve",
 ]
 
 
@@ -524,6 +527,9 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
                 model_id="gpt-4.1",
                 user_text="Search Blackboard course catalog.",
                 enabled_tools=["blackboard.course_catalog.search"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "blackboard.course_catalog.search"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -606,6 +612,9 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
                 model_id="gpt-4.1",
                 user_text="Search Blackboard course catalog.",
                 enabled_tools=["blackboard.course_catalog.search"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "blackboard.course_catalog.search"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -700,6 +709,9 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
                 model_id="gpt-4.1",
                 user_text="Sync Blackboard snapshot through the desktop bridge.",
                 enabled_tools=["blackboard.snapshot.sync"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "blackboard.snapshot.sync"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -821,6 +833,9 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
                 model_id="gpt-4.1",
                 user_text="Sync Blackboard snapshot with the default desktop database.",
                 enabled_tools=["blackboard.snapshot.sync"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "blackboard.snapshot.sync"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -933,6 +948,9 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_bridge_backed_host_ca
                 model_id="gpt-4.1",
                 user_text="Fetch TIS credit GPA through the desktop bridge.",
                 enabled_tools=["tis.credit_gpa.fetch"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "tis.credit_gpa.fetch"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -1069,6 +1087,9 @@ def test_post_root_run_stream_executes_tis_credit_gpa_with_default_bridge_backed
                 model_id="gpt-4.1",
                 user_text="Fetch TIS credit GPA with persistence on the default desktop database.",
                 enabled_tools=["tis.credit_gpa.fetch"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "tis.credit_gpa.fetch"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -1181,6 +1202,9 @@ def test_post_root_run_stream_executes_blackboard_sql_query_with_bridge_backed_d
                 model_id="gpt-4.1",
                 user_text="Query Blackboard SQLite data through the chat runtime.",
                 enabled_tools=["blackboard.sql.query"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "blackboard.sql.query"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -1268,6 +1292,9 @@ def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_database
                 model_id="gpt-4.1",
                 user_text="Update TIS SQLite data through the chat runtime.",
                 enabled_tools=["tis.sql.query"],
+                tool_permission_policy=_build_allow_tool_permission_policy(
+                    "tis.sql.query"
+                ),
             ),
         )
         run_id = run_start_response.json()["run"]["runId"]
@@ -1284,7 +1311,7 @@ def test_post_root_run_stream_executes_tis_sql_query_with_bridge_backed_database
     assert thread_response.status_code == 200
     assert run_start_response.status_code == 200
     assert response.status_code == 200
-    assert '"affectedRowCount": 1' in str(tool_events[1]["payload"]["resultSummary"])
+    assert '"affectedRowCount": 1' in tool_events[1]["payload"]["summary"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
@@ -1530,6 +1557,74 @@ def _create_sqlite_db(path: Path, *, script: str) -> Path:
     return path
 
 
+def test_post_root_run_stream_delay_tool_permission_policy_emits_waiting_approval_before_timeout_failure(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "sample.txt").write_text("http runtime sample", encoding="utf-8")
+    executor = PydanticAIAgentExecutor(workspace_root=tmp_path)
+    app = _create_app(executor)
+
+    with TestClient(app) as client:
+        _configure_contract_tool_test_model(
+            app,
+            tool_id=FILE_TOOL_READ_ID,
+            tool_arguments={"path": "sample.txt"},
+            output_text="HTTP delayed tool answer.",
+        )
+        thread_response = client.post("/", json=_build_thread_create_request(agent_id="default"))
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                model_id="gpt-4.1",
+                user_text="Read sample.txt with delayed approval.",
+                enabled_tools=[FILE_TOOL_READ_ID],
+                tool_permission_policy={
+                    "schemaVersion": 1,
+                    "defaultMode": "allow",
+                    "toolModes": {FILE_TOOL_READ_ID: "delay"},
+                    "toolTimeoutSeconds": {FILE_TOOL_READ_ID: 1},
+                    "toolTimeoutActions": {FILE_TOOL_READ_ID: "deny"},
+                },
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        run_stream_response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=run_id),
+        )
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert run_stream_response.status_code == 200
+
+    events = _parse_sse_events(run_stream_response.text)
+    tool_events = [
+        event
+        for event in events
+        if event["type"] == "tool_event" and event["payload"].get("toolId") == FILE_TOOL_READ_ID
+    ]
+
+    assert [event["payload"]["phase"] for event in tool_events] == [
+        "started",
+        "waiting_approval",
+        "failed",
+    ]
+    assert tool_events[1]["payload"]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_events[1]["payload"]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "deny",
+    }
+    assert isinstance(tool_events[1]["payload"]["approval"]["timeoutAt"], str)
+    assert tool_events[2]["payload"]["errorSummary"] == (
+        "Tool approval timed out and was automatically rejected."
+    )
+    assert events[-1]["type"] == "run_completed"
+    assert events[-1]["payload"]["assistantText"] == "HTTP delayed tool answer."
+
+
 
 def _configure_contract_tool_test_model(
     app,
@@ -1538,7 +1633,12 @@ def _configure_contract_tool_test_model(
     tool_arguments: dict[str, Any],
     output_text: str,
 ) -> None:
-    executable_tool = app.state.copilot_runtime_tool_registry.resolve_tool(tool_id)
+    tool_registry = getattr(app.state, "copilot_runtime_tool_registry", None)
+    if tool_registry is None:
+        runtime_executor = getattr(app.state, "copilot_runtime_agent_executor", None)
+        tool_registry = getattr(runtime_executor, "_tool_registry", None)
+    assert tool_registry is not None
+    executable_tool = tool_registry.resolve_tool(tool_id)
     function_name = executable_tool.function_name
     assert function_name is not None
     app.state.copilot_runtime_agent_executor._model_override = _ContractToolCallingTestModel(
@@ -1645,11 +1745,17 @@ def _create_app(
     *,
     host_capability_bridge_client: DesktopCapabilityBridgeClient | None = None,
 ):
-    return create_app(
+    app = create_app(
         agent_executor=executor,  # type: ignore[arg-type]
         model_route_resolver=_ResolvedRouteResolver(),
         host_capability_bridge_client=host_capability_bridge_client,
     )
+    if not hasattr(app.state, "copilot_runtime_tool_registry"):
+        runtime_executor = getattr(app.state, "copilot_runtime_agent_executor", None)
+        tool_registry = getattr(runtime_executor, "_tool_registry", None)
+        if tool_registry is not None:
+            app.state.copilot_runtime_tool_registry = tool_registry
+    return app
 
 
 def _build_thread_create_request(*, agent_id: str) -> dict[str, Any]:
@@ -1661,12 +1767,19 @@ def _build_thread_create_request(*, agent_id: str) -> dict[str, Any]:
     }
 
 
-def _build_capabilities_get_request(*, thread_id: str) -> dict[str, Any]:
+def _build_capabilities_get_request(
+    *,
+    thread_id: str,
+    tool_permission_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "sessionId": thread_id,
+    }
+    if tool_permission_policy is not None:
+        body["toolPermissionPolicy"] = dict(tool_permission_policy)
     return {
         "method": "capabilities/get",
-        "body": {
-            "sessionId": thread_id,
-        },
+        "body": body,
     }
 
 
@@ -1677,7 +1790,22 @@ def _build_run_start_request(
     user_text: str,
     enabled_tools: list[str] | None = None,
     debug_mode_enabled: bool = False,
+    tool_permission_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    policy: dict[str, Any] = {
+        "modelRoute": {
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": "provider-1",
+                "modelId": model_id,
+            },
+        },
+        "enabledTools": list(enabled_tools or []),
+        "debugModeEnabled": debug_mode_enabled,
+        "requestOptions": {},
+    }
+    if tool_permission_policy is not None:
+        policy["toolPermissionPolicy"] = dict(tool_permission_policy)
     return {
         "method": "run/start",
         "body": {
@@ -1687,19 +1815,16 @@ def _build_run_start_request(
                 "role": "user",
                 "content": user_text,
             },
-            "policy": {
-                "modelRoute": {
-                    "routeRef": {
-                        "routeKind": "provider-model",
-                        "profileId": "provider-1",
-                        "modelId": model_id,
-                    },
-                },
-                "enabledTools": list(enabled_tools or []),
-                "debugModeEnabled": debug_mode_enabled,
-                "requestOptions": {},
-            },
+            "policy": policy,
         },
+    }
+
+
+def _build_allow_tool_permission_policy(*tool_ids: str) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "defaultMode": "allow",
+        "toolModes": {tool_id: "allow" for tool_id in tool_ids},
     }
 
 

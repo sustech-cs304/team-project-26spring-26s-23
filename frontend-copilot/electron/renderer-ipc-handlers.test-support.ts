@@ -16,6 +16,7 @@ import type {
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type { RendererIpcHandlers } from './renderer-ipc-registration'
+import type { ToolCatalogLoadResult } from './tool-catalog/ipc'
 import {
   createConfigCenterPublicSnapshotFixture,
   createCopilotRuntimeSnapshotFixture,
@@ -217,6 +218,18 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       databasePath: 'D:/workspace/copilot-data/database/copilot-chat.db',
       sourcePath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
       restoredAt: '2026-04-13T14:09:00Z',
+    })),
+    loadToolCatalog: vi.fn(async (): Promise<ToolCatalogLoadResult> => ({
+      ok: true,
+      tools: [
+        {
+          toolId: 'functions.read_file',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: '读取文件',
+          description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
+        },
+      ],
     })),
     loadCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,

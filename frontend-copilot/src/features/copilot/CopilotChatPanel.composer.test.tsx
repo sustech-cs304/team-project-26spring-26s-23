@@ -12,6 +12,7 @@ import {
 import type { CopilotMessageDispatchInput } from './copilot-send-controller'
 import {
   createRuntimeMessageEventStream,
+  createRuntimeModelRoute,
   createRuntimeResolvedModelRoute,
   createRuntimeRunCancelResponse,
   createRuntimeToolEvent,
@@ -29,6 +30,10 @@ import {
   setFormControlValue,
   submitForm,
 } from './CopilotChatPanel.test-support'
+import {
+  createCopilotThreadRuntimeControllerState,
+  type CopilotThreadRuntimeControllerState,
+} from './thread-runtime-controller'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
@@ -639,6 +644,183 @@ describe('CopilotChatPanel composer interactions', () => {
       enabledTools: ['tool.file-convert', 'tool.remote-search'],
       message: {
         content: '请使用当前工具集执行摘要',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('keeps denied tools visible but disabled in the picker and strips them before send', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const sessionShell = createSessionShell()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        mcp: {
+          toolPermissionPolicy: {
+            version: 1,
+            defaultMode: 'ask',
+            toolPermissions: {
+              'tool.remote-search': { mode: 'deny' },
+            },
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(false)
+    expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
+    expect(deniedOption.getAttribute('aria-disabled')).toBe('true')
+    expect(deniedOption.title).toContain('总是关闭')
+    expect(allowedOption.disabled).toBe(false)
+
+    await clickElement(deniedOption)
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('false')
+
+    await clickElement(allowedOption)
+    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请在清洗 deny 后发送')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      enabledTools: ['tool.file-convert'],
+      message: {
+        content: '请在清洗 deny 后发送',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('strips stale denied enabledTools from live composer state before dispatching the request', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const sessionShell = createSessionShell({ sessionId: 'session-stale-deny' })
+    const staleState = createCopilotThreadRuntimeControllerState(sessionShell)
+    const runtimeControllerBySessionId: Record<string, CopilotThreadRuntimeControllerState> = {
+      [sessionShell.sessionId]: {
+        ...staleState,
+        composerDraft: {
+          ...staleState.composerDraft,
+          messageText: '请清洗残留 deny 工具',
+          selectedModelId: 'provider-openai:openai/gpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'provider-openai',
+            modelId: 'openai/gpt-4.1',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'provider-openai',
+              modelId: 'openai/gpt-4.1',
+            },
+          }),
+          enabledTools: ['tool.remote-search', 'tool.file-convert'],
+        },
+      },
+    }
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'openai/gpt-4.1',
+        },
+        mcp: {
+          toolPermissionPolicy: {
+            version: 1,
+            defaultMode: 'ask',
+            toolPermissions: {
+              'tool.remote-search': { mode: 'deny' },
+            },
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(false)
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.getAttribute('aria-disabled')).toBe(null)
+    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    expect(messageInput.value).toBe('请清洗残留 deny 工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      enabledTools: ['tool.file-convert'],
+      message: {
+        content: '请清洗残留 deny 工具',
       },
     })
 
@@ -1630,6 +1812,146 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('renders tool approval buttons without waiting callout in manual approval mode', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl, {
+      approval: {
+        mode: 'ask',
+        timeoutAt: null,
+        timeoutSeconds: null,
+        timeoutAction: null,
+      },
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请人工审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-approval-approve-1') !== null,
+      'manual approval buttons rendered',
+    )
+    expect(rendered.container.textContent).toContain('拒绝')
+    expect(rendered.container.textContent).toContain('批准')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动')
+
+    rendered.unmount()
+  })
+
+  it('renders a waiting approval tool bubble with delay auto deny countdown on reject action', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => (rendered.container.textContent ?? '').includes('拒绝（30s）'),
+      'delay auto deny countdown rendered on reject action',
+    )
+    expect(rendered.container.textContent).toContain('拒绝（30s）')
+    expect(rendered.container.textContent).toContain('批准')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动拒绝')
+
+    rendered.unmount()
+  })
+
+  it('renders a waiting approval tool bubble with delay auto approve countdown on approve action', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl, {
+      approval: {
+        mode: 'delay',
+        timeoutAt: new Date(Date.now() + 30_000).toISOString(),
+        timeoutSeconds: 30,
+        timeoutAction: 'approve',
+      },
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请限时审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => (rendered.container.textContent ?? '').includes('批准（30s）'),
+      'delay auto approve countdown rendered on approve action',
+    )
+    expect(rendered.container.textContent).toContain('批准（30s）')
+    expect(rendered.container.textContent).toContain('拒绝')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动批准')
+
+    rendered.unmount()
+  })
+
   it('does not keep the assistant placeholder after cancelling before any assistant text arrives', async () => {
     const sendMessage = createStartOnlyPendingSendMessageSpy()
     const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
@@ -1850,6 +2172,315 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(rendered.getByTestId('chat-message-tool-output-1-text').textContent).toContain('工具执行失败。')
     expect(rendered.getByTestId('chat-message-tool-extra-1-1-text').textContent).toContain('boom')
+
+    rendered.unmount()
+  })
+
+  it('keeps the transient failed terminal visible until persisted replay contains the failed terminal handoff', async () => {
+    const sendMessage = createToolFailureThenFatalSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请调用天气工具并处理 fatal 失败')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '发送失败')
+    await waitForText(rendered.container, '当前响应失败，请重试。')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          runSummaries: [
+            {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+          ],
+          selectedRunId: 'run-tool-then-failed',
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            lastRunId: 'run-tool-then-failed',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastAssistantMessagePreview: '',
+          },
+          replayStatus: 'idle',
+          replay: null,
+          replayByRunId: {},
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          runSummaries: [
+            {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+          ],
+          selectedRunId: 'run-tool-then-failed',
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            lastRunId: 'run-tool-then-failed',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastAssistantMessagePreview: '',
+          },
+          replayStatus: 'ready',
+          replay: {
+            ok: true,
+            version: 'chat-history-v1',
+            run: {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+            historicalSnapshot: {
+              resolvedModelId: 'openai/gpt-4.1',
+              resolvedModelRoute: createRuntimeResolvedModelRoute({
+                routeRef: {
+                  routeKind: 'provider-model',
+                  profileId: 'provider-openai',
+                  modelId: 'openai/gpt-4.1',
+                },
+                providerProfileId: 'provider-openai',
+                provider: 'openai',
+                providerId: 'openai',
+                adapterId: 'openai-chat',
+                runtimeStatus: 'enabled',
+                endpointFamily: 'openai',
+                endpointType: 'responses',
+                baseUrl: 'https://api.openai.com/v1',
+                modelId: 'openai/gpt-4.1',
+                authKind: 'api-key',
+              }),
+              resolvedToolIds: ['tool.weather-current'],
+              requestOptions: {},
+            },
+            orderedEvents: [
+              {
+                eventType: 'tool_event',
+                sequence: 2,
+                createdAt: '2026-04-14T08:00:02Z',
+                payload: {
+                  toolCallId: 'tool.weather-current:call-1',
+                  toolId: 'tool.weather-current',
+                  phase: 'failed',
+                  title: '工具调用失败',
+                  summary: '工具执行失败。',
+                  inputSummary: '{"location":"Shenzhen"}',
+                  errorSummary: 'boom',
+                },
+                toolCallId: 'tool.weather-current:call-1',
+                toolId: 'tool.weather-current',
+                phase: 'failed',
+                isRedacted: false,
+                redactionVersion: 0,
+              },
+              {
+                eventType: 'run_failed',
+                sequence: 3,
+                createdAt: '2026-04-14T08:00:03Z',
+                payload: {
+                  code: 'agent_execution_failed',
+                  message: 'Model stream collapsed.',
+                  details: {
+                    stage: 'execute_model',
+                  },
+                },
+                toolCallId: null,
+                toolId: null,
+                phase: null,
+                isRedacted: false,
+                redactionVersion: 0,
+              },
+            ],
+            toolCallBlocks: [],
+            diagnosticBlocks: [],
+            terminalState: null,
+            availabilityInterpretation: null,
+          },
+          replayByRunId: {
+            'run-tool-then-failed': {
+              ok: true,
+              version: 'chat-history-v1',
+              run: {
+                runId: 'run-tool-then-failed',
+                threadId: 'session-1',
+                status: 'failed',
+                createdAt: '2026-04-14T08:00:00Z',
+                updatedAt: '2026-04-14T08:00:03Z',
+                startedAt: '2026-04-14T08:00:01Z',
+                terminalAt: '2026-04-14T08:00:03Z',
+                resolvedModelId: 'openai/gpt-4.1',
+                requestedMessageText: '请调用天气工具并处理 fatal 失败',
+                assistantText: null,
+              },
+              historicalSnapshot: {
+                resolvedModelId: 'openai/gpt-4.1',
+                resolvedModelRoute: createRuntimeResolvedModelRoute({
+                  routeRef: {
+                    routeKind: 'provider-model',
+                    profileId: 'provider-openai',
+                    modelId: 'openai/gpt-4.1',
+                  },
+                  providerProfileId: 'provider-openai',
+                  provider: 'openai',
+                  providerId: 'openai',
+                  adapterId: 'openai-chat',
+                  runtimeStatus: 'enabled',
+                  endpointFamily: 'openai',
+                  endpointType: 'responses',
+                  baseUrl: 'https://api.openai.com/v1',
+                  modelId: 'openai/gpt-4.1',
+                  authKind: 'api-key',
+                }),
+                resolvedToolIds: ['tool.weather-current'],
+                requestOptions: {},
+              },
+              orderedEvents: [
+                {
+                  eventType: 'tool_event',
+                  sequence: 2,
+                  createdAt: '2026-04-14T08:00:02Z',
+                  payload: {
+                    toolCallId: 'tool.weather-current:call-1',
+                    toolId: 'tool.weather-current',
+                    phase: 'failed',
+                    title: '工具调用失败',
+                    summary: '工具执行失败。',
+                    inputSummary: '{"location":"Shenzhen"}',
+                    errorSummary: 'boom',
+                  },
+                  toolCallId: 'tool.weather-current:call-1',
+                  toolId: 'tool.weather-current',
+                  phase: 'failed',
+                  isRedacted: false,
+                  redactionVersion: 0,
+                },
+                {
+                  eventType: 'run_failed',
+                  sequence: 3,
+                  createdAt: '2026-04-14T08:00:03Z',
+                  payload: {
+                    code: 'agent_execution_failed',
+                    message: 'Model stream collapsed.',
+                    details: {
+                      stage: 'execute_model',
+                    },
+                  },
+                  toolCallId: null,
+                  toolId: null,
+                  phase: null,
+                  isRedacted: false,
+                  redactionVersion: 0,
+                },
+              ],
+              toolCallBlocks: [],
+              diagnosticBlocks: [],
+              terminalState: null,
+              availabilityInterpretation: null,
+            },
+          },
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
 
     rendered.unmount()
   })
@@ -2735,6 +3366,60 @@ function createToolFailureThenFatalSendMessageSpy() {
       },
     },
   ]))
+}
+
+function createToolWaitingApprovalSendMessageSpy(
+  control: DeferredSignal,
+  options?: {
+    approval?: {
+      mode: 'allow' | 'ask' | 'delay' | 'deny'
+      timeoutAt: string | null
+      timeoutSeconds: number | null
+      timeoutAction: 'approve' | 'deny' | null
+    }
+  },
+) {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-tool-approval',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-approval:assistant',
+      },
+    }
+
+    await control.wait()
+
+    yield createRuntimeToolEvent({
+      runId: 'run-tool-approval',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.weather-current:call-approve',
+        toolId: 'tool.weather-current',
+        phase: 'waiting_approval',
+        title: '工具等待审批',
+        summary: '工具调用正在等待审批决议。',
+        inputSummary: '{"location":"Shenzhen"}',
+        security: {
+          riskLevel: 'high',
+          approvalMethod: 'accept_reject',
+        },
+        approval: options?.approval ?? {
+          mode: 'delay',
+          timeoutAt: new Date(Date.now() + 30_000).toISOString(),
+          timeoutSeconds: 30,
+          timeoutAction: 'deny',
+        },
+      },
+    })
+
+    await waitForAbort(input.signal)
+  })
 }
 
 function createPersistedWorkspaceStateLoader() {

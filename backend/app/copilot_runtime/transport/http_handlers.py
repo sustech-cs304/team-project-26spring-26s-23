@@ -14,15 +14,18 @@ from ..bridge import (
     SessionNotFoundError,
     ThreadNotFoundError,
 )
+from ..tool_approval_coordinator import ToolApprovalConflictError, ToolApprovalNotFoundError
 from ..contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
+    GLOBAL_TOOL_CATALOG_GET_METHOD,
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
     THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
+    TOOL_APPROVAL_RESOLVE_METHOD,
     RuntimeScaffold,
 )
 from ..debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
@@ -38,6 +41,7 @@ from ..shared.errors import (
     run_not_found_response,
     runtime_operation_conflict_response,
     session_not_found_response,
+    tool_approval_not_found_response,
     thread_not_found_response,
 )
 from .request_mappers import (
@@ -116,8 +120,20 @@ def build_router(
                 payload=payload,
             )
 
+        if requested_method == GLOBAL_TOOL_CATALOG_GET_METHOD:
+            return _handle_global_tool_catalog_get_request(
+                dependencies=dependencies,
+                payload=payload,
+            )
+
         if requested_method == THINKING_CAPABILITY_GET_METHOD:
             return await _handle_thinking_capability_get_request(
+                dependencies=dependencies,
+                payload=payload,
+            )
+
+        if requested_method == TOOL_APPROVAL_RESOLVE_METHOD:
+            return _handle_tool_approval_resolve_request(
                 dependencies=dependencies,
                 payload=payload,
             )
@@ -484,6 +500,40 @@ def _handle_run_cancel_request(
 
 
 
+def _handle_tool_approval_resolve_request(
+    *,
+    dependencies: RuntimeTransportDependencies,
+    payload: dict[str, Any] | None,
+) -> JSONResponse:
+    try:
+        approval_request = dependencies.parser.extract_tool_approval_resolve_request(payload)
+        response = dependencies.runtime_bridge.resolve_tool_approval(request=approval_request)
+    except RuntimeProtocolError as exc:
+        return protocol_error_response(exc)
+    except ToolApprovalNotFoundError as exc:
+        return tool_approval_not_found_response(
+            run_id=exc.run_id,
+            tool_call_id=exc.tool_call_id,
+            scaffold=dependencies.scaffold,
+            requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
+        )
+    except ToolApprovalConflictError as exc:
+        return runtime_operation_conflict_response(
+            code="tool_approval_conflict",
+            message=str(exc),
+            scaffold=dependencies.scaffold,
+            requested_method=TOOL_APPROVAL_RESOLVE_METHOD,
+            details={
+                "runId": exc.run_id,
+                "toolCallId": exc.tool_call_id,
+                "status": exc.status,
+            },
+        )
+
+    return JSONResponse(content=response.to_dict())
+
+
+
 def _handle_capabilities_get_request(
     *,
     dependencies: RuntimeTransportDependencies,
@@ -491,7 +541,10 @@ def _handle_capabilities_get_request(
 ) -> JSONResponse:
     try:
         capabilities_request = dependencies.parser.extract_capabilities_get_request(payload)
-        capabilities = dependencies.runtime_bridge.get_capabilities(session_id=capabilities_request.session_id)
+        capabilities = dependencies.runtime_bridge.get_capabilities(
+            session_id=capabilities_request.session_id,
+            tool_permission_policy=capabilities_request.tool_permission_policy,
+        )
     except RuntimeProtocolError as exc:
         return protocol_error_response(exc)
     except SessionNotFoundError as exc:
@@ -508,6 +561,22 @@ def _handle_capabilities_get_request(
         )
 
     return JSONResponse(content=capabilities.to_dict())
+
+
+
+def _handle_global_tool_catalog_get_request(
+    *,
+    dependencies: RuntimeTransportDependencies,
+    payload: dict[str, Any] | None = None,
+) -> JSONResponse:
+    try:
+        language = dependencies.parser.extract_global_tool_catalog_get_request(payload)
+    except RuntimeProtocolError as exc:
+        return protocol_error_response(exc)
+
+    return JSONResponse(
+        content=dependencies.scaffold.build_global_tool_catalog_response(language=language).to_dict()
+    )
 
 
 

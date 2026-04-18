@@ -3,6 +3,8 @@ import type {
   AssistantSessionShell,
   ThinkingLevelIntent,
 } from '../../workbench/types'
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
+import { sanitizeEnabledToolIds } from './tool-picker'
 import {
   THINKING_BUDGET_DEFAULT_MAX_TOKENS,
   THINKING_BUDGET_DEFAULT_MIN_TOKENS,
@@ -24,6 +26,8 @@ import {
   type RuntimeRunCompletedEvent,
   type RuntimeThinkingCapability,
   type RuntimeThinkingSelection,
+  type RuntimeToolPermissionPolicy,
+  type RuntimeToolPermissionMode,
   type RuntimeToolEvent,
   type RuntimeToolEventPhase,
 } from './thread-run-contract'
@@ -55,8 +59,14 @@ export interface RuntimeMessageSendInput {
   thinkingSelection: RuntimeThinkingSelection | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
+  toolPermissionPolicy?: RuntimeToolPermissionPolicy | null
   requestOptions: Record<string, unknown>
 }
+
+export type {
+  RuntimeToolPermissionMode,
+  RuntimeToolPermissionPolicy,
+} from './thread-run-contract'
 
 export type CopilotToolStepPhase = RuntimeToolEventPhase | 'cancelled'
 
@@ -136,6 +146,7 @@ export function buildRuntimeMessageSendInput(input: {
   sessionShell: AssistantSessionShell
   draft: CopilotChatComposerDraft
   requestOptions: Record<string, unknown>
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
 }): RuntimeMessageSendInput {
   if (input.draft.selectedModelRoute === null) {
@@ -143,6 +154,15 @@ export function buildRuntimeMessageSendInput(input: {
   }
 
   const thinkingSelection = cloneRuntimeThinkingSelection(input.draft.thinkingSelection)
+  const enabledTools = sanitizeEnabledToolIds({
+    selectedToolIds: input.draft.enabledTools,
+    tools: input.sessionShell.capabilities.allAvailableTools,
+    policy: input.toolPermissionPolicy ?? null,
+  })
+  const toolPermissionPolicy = buildRuntimeToolPermissionPolicy({
+    enabledTools,
+    policy: input.toolPermissionPolicy ?? null,
+  })
 
   return {
     runtimeUrl: input.runtimeUrl,
@@ -161,9 +181,53 @@ export function buildRuntimeMessageSendInput(input: {
             ? null
             : { ...input.thinkingCapabilityOverride },
         }),
-    enabledTools: dedupeToolIds(input.draft.enabledTools),
+    enabledTools,
+    ...(toolPermissionPolicy === null ? {} : { toolPermissionPolicy }),
     requestOptions: { ...input.requestOptions },
   }
+}
+
+export function buildRuntimeToolPermissionPolicy(input: {
+  enabledTools: readonly string[]
+  policy: SettingsWorkspaceToolPermissionPolicyState | null
+}): RuntimeToolPermissionPolicy | null {
+  const policy = input.policy
+  if (policy === null) {
+    return null
+  }
+
+  const enabledTools = dedupeToolIds([...input.enabledTools])
+  const toolModes = Object.fromEntries(enabledTools.flatMap((toolId) => {
+    const mode = normalizeRuntimeToolPermissionMode(policy.toolPermissions[toolId]?.mode)
+    if (mode === null || mode === policy.defaultMode) {
+      return []
+    }
+    return [[toolId, mode]]
+  }))
+  const toolTimeoutSeconds = Object.fromEntries(enabledTools.flatMap((toolId) => {
+    const entry = policy.toolPermissions[toolId]
+    return entry?.mode === 'delay' && typeof entry.timeoutSeconds === 'number'
+      ? [[toolId, entry.timeoutSeconds]]
+      : []
+  }))
+  const toolTimeoutActions = Object.fromEntries(enabledTools.flatMap((toolId) => {
+    const entry = policy.toolPermissions[toolId]
+    return entry?.mode === 'delay' && (entry.timeoutAction === 'approve' || entry.timeoutAction === 'deny')
+      ? [[toolId, entry.timeoutAction]]
+      : []
+  }))
+
+  return {
+    schemaVersion: policy.version,
+    defaultMode: normalizeRuntimeToolPermissionMode(policy.defaultMode) ?? 'ask',
+    toolModes,
+    ...(Object.keys(toolTimeoutSeconds).length === 0 ? {} : { toolTimeoutSeconds }),
+    ...(Object.keys(toolTimeoutActions).length === 0 ? {} : { toolTimeoutActions }),
+  }
+}
+
+function normalizeRuntimeToolPermissionMode(value: unknown): RuntimeToolPermissionMode | null {
+  return value === 'allow' || value === 'ask' || value === 'deny' || value === 'delay' ? value : null
 }
 
 export function buildThinkingSessionMemoryKey(route: RuntimeModelRoute): string {

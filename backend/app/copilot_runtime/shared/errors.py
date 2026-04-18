@@ -17,6 +17,7 @@ from ..errors import (
     build_run_not_found_error,
     build_runtime_operation_error,
     build_session_not_found_error,
+    build_tool_approval_not_found_error,
     build_thread_not_found_error,
 )
 from ..protocol import RuntimeProtocolError
@@ -94,6 +95,24 @@ def session_not_found_response(
         status.HTTP_404_NOT_FOUND,
         build_session_not_found_error(
             session_id=session_id,
+            scaffold=scaffold,
+            requested_method=requested_method,
+        ),
+    )
+
+
+def tool_approval_not_found_response(
+    *,
+    run_id: str,
+    tool_call_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> JSONResponse:
+    return error_response(
+        status.HTTP_404_NOT_FOUND,
+        build_tool_approval_not_found_error(
+            run_id=run_id,
+            tool_call_id=tool_call_id,
             scaffold=scaffold,
             requested_method=requested_method,
         ),
@@ -180,5 +199,6 @@ __all__ = [
     "run_not_found_response",
     "runtime_operation_conflict_response",
     "session_not_found_response",
+    "tool_approval_not_found_response",
     "thread_not_found_response",
 ]

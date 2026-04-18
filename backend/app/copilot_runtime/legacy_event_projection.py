@@ -131,7 +131,7 @@ class RuntimeRunEventProjector:
                 ),
             )
 
-        if event.type in {"tool_started", "tool_completed", "tool_failed"}:
+        if event.type in {"tool_started", "tool_waiting_approval", "tool_completed", "tool_failed"}:
             return (
                 self.events.build(
                     TOOL_EVENT_EVENT_TYPE,

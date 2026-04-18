@@ -71,6 +71,7 @@ export interface CopilotToolMessageItem extends CopilotRunSegmentViewItemBase {
   inputSummary: string | null
   resultSummary: string | null
   errorSummary: string | null
+  approval?: Extract<CopilotRunSegment, { kind: 'tool' }>['approval']
 }
 
 export interface CopilotDiagnosticMessageItem extends CopilotRunSegmentViewItemBase {
@@ -320,6 +321,16 @@ function projectToolSegment(
     inputSummary: segment.inputSummary,
     resultSummary: segment.resultSummary,
     errorSummary: segment.errorSummary,
+    approval: segment.approval == null
+      ? null
+      : {
+          mode: segment.approval.mode ?? null,
+          riskLevel: segment.approval.riskLevel ?? null,
+          approvalMethod: segment.approval.approvalMethod ?? null,
+          timeoutAt: segment.approval.timeoutAt ?? null,
+          timeoutSeconds: segment.approval.timeoutSeconds ?? null,
+          timeoutAction: segment.approval.timeoutAction ?? null,
+        },
   }
 }
 

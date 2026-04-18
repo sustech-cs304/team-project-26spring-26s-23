@@ -114,6 +114,7 @@ class RuntimeStoredRunPolicy:
     thinking_level_intent: str | None = None
     thinking_capability_override: dict[str, Any] | None = None
     enabled_tools: tuple[str, ...] = ()
+    tool_permission_policy: dict[str, Any] | None = None
     debug_mode_enabled: bool | None = None
     request_options: dict[str, Any] = field(default_factory=dict)
 

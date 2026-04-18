@@ -49,6 +49,15 @@ export interface CopilotReasoningSegment extends CopilotRunSegmentBase {
   isCollapsedByDefault: true
 }
 
+export interface CopilotToolSegmentApproval {
+  mode: 'allow' | 'ask' | 'delay' | 'deny' | null
+  approvalMethod: 'accept_reject' | 'password' | null
+  riskLevel: 'safe' | 'moderate' | 'high' | null
+  timeoutAt: string | null
+  timeoutSeconds: number | null
+  timeoutAction: 'approve' | 'deny' | null
+}
+
 export interface CopilotToolSegment extends CopilotRunSegmentBase {
   kind: 'tool'
   toolCallId: string
@@ -59,6 +68,7 @@ export interface CopilotToolSegment extends CopilotRunSegmentBase {
   inputSummary: string | null
   resultSummary: string | null
   errorSummary: string | null
+  approval?: CopilotToolSegmentApproval | null
 }
 
 export interface CopilotDiagnosticSegment extends CopilotRunSegmentBase {

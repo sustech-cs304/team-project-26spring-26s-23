@@ -26,6 +26,9 @@ describe('startup theme bootstrap', () => {
           backendExposed: {
             model: null,
           },
+          general: {
+            language: 'zh-CN',
+          },
         },
       },
     }))

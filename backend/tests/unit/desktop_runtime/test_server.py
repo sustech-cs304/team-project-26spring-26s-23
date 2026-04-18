@@ -35,6 +35,7 @@ from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
 from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
+from app.tooling.file_tools.runtime_bindings import FILE_TOOL_READ_FUNCTION_NAME, FILE_TOOL_READ_ID
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
@@ -129,6 +130,30 @@ class _ResolvedRouteResolver:
         )
 
 
+class _ContractToolCallingTestModel(TestModel):
+    def __init__(
+        self,
+        *,
+        tool_args_by_name: dict[str, dict[str, Any]],
+        custom_output_text: str,
+    ) -> None:
+        super().__init__(
+            call_tools=list(tool_args_by_name),
+            custom_output_text=custom_output_text,
+            seed=0,
+        )
+        self._tool_args_by_name = {
+            name: dict(arguments)
+            for name, arguments in tool_args_by_name.items()
+        }
+
+    def gen_tool_args(self, tool_def) -> Any:
+        configured_arguments = self._tool_args_by_name.get(tool_def.name)
+        if configured_arguments is not None:
+            return dict(configured_arguments)
+        return super().gen_tool_args(tool_def)
+
+
 def _build_text_execution_events(*, run_id: str, text: str) -> list[RuntimeExecutionEvent]:
     return [
         RuntimeExecutionEvent(
@@ -149,7 +174,9 @@ SUPPORTED_METHODS = [
     RUN_STREAM_METHOD,
     RUN_CANCEL_METHOD,
     CAPABILITIES_GET_METHOD,
+    "tools/catalog/get",
     THINKING_CAPABILITY_GET_METHOD,
+    "tool-approval/resolve",
 ]
 
 
@@ -218,24 +245,37 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         contract.metadata.tool_id
         for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
     ]
-    assert toolset_summary["toolCount"] == 2 + len(expected_contract_tool_ids)
-    assert len(toolset_summary["tools"]) == 2 + len(expected_contract_tool_ids)
-    assert toolset_summary["tools"][0] == {
-        "toolId": FILE_CONVERT_TOOL_ID,
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": "File Convert",
-        "description": "Convert DOCX, PDF, and PPTX files into text.",
-    }
-    assert toolset_summary["tools"][1] == {
-        "toolId": "tool.weather-current",
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": "Current Weather",
-        "description": "Return a placeholder current-weather result for a requested location.",
-    }
-    assert [tool["toolId"] for tool in toolset_summary["tools"][2:]] == expected_contract_tool_ids
-    assert all(tool["kind"] == "contract" for tool in toolset_summary["tools"][2:])
+    expected_builtin_tool_ids = [
+        "tool.fs.read",
+        "tool.fs.write",
+        "tool.fs.edit",
+        "tool.fs.glob",
+        "tool.fs.grep",
+        "tool.fs.notebook_edit",
+        "tool.fs.switch_root",
+        FILE_CONVERT_TOOL_ID,
+        "tool.weather-current",
+    ]
+    expected_tool_ids = [*expected_builtin_tool_ids, *expected_contract_tool_ids]
+    assert toolset_summary["toolCount"] == len(expected_tool_ids)
+    assert len(toolset_summary["tools"]) == len(expected_tool_ids)
+    assert toolset_summary["tools"][0]["toolId"] == "tool.fs.read"
+    assert toolset_summary["tools"][0]["kind"] == "builtin"
+    assert toolset_summary["tools"][0]["availability"] == "available"
+    assert toolset_summary["tools"][0]["displayName"] == "File Read"
+    assert "Read UTF-8 text files" in toolset_summary["tools"][0]["description"]
+    assert toolset_summary["tools"][0]["prompt"]
+    assert toolset_summary["tools"][0]["presentation"]["displayNameEn"] == "File Read"
+    assert toolset_summary["tools"][1]["toolId"] == "tool.fs.write"
+    assert toolset_summary["tools"][1]["kind"] == "builtin"
+    assert toolset_summary["tools"][1]["availability"] == "available"
+    assert toolset_summary["tools"][1]["displayName"] == "File Write"
+    assert "Create or overwrite UTF-8 text files" in toolset_summary["tools"][1]["description"]
+    assert toolset_summary["tools"][1]["prompt"]
+    assert toolset_summary["tools"][1]["presentation"]["displayNameEn"] == "File Write"
+    assert [tool["toolId"] for tool in toolset_summary["tools"]] == expected_tool_ids
+    assert all(tool["kind"] == "builtin" for tool in toolset_summary["tools"][: len(expected_builtin_tool_ids)])
+    assert all(tool["kind"] == "contract" for tool in toolset_summary["tools"][len(expected_builtin_tool_ids) :])
 
 
 
@@ -322,7 +362,9 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     _assert_supported_methods(diagnostics_payload["capabilities"]["supported_methods"])
     assert capabilities_payload["sessionId"] == thread_payload["threadId"]
     assert capabilities_payload["boundAgent"]["agentId"] == "default"
-    assert capabilities_payload["tools"][0]["toolId"] == FILE_CONVERT_TOOL_ID
+    capability_tool_ids = [tool["toolId"] for tool in capabilities_payload["tools"]]
+    assert capability_tool_ids[0] == "tool.fs.read"
+    assert FILE_CONVERT_TOOL_ID in capability_tool_ids
     assert run_stream_response.headers["content-type"].startswith("text/event-stream")
     assert preflight_response.headers["access-control-allow-origin"] == "http://localhost:5173"
     assert "POST" in preflight_response.headers["access-control-allow-methods"]
@@ -367,6 +409,78 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert "/" in diagnostics_payload["capabilities"]["contract_paths"]
     assert diagnostics_payload["auth"]["token_configured"] is False
     assert Path(diagnostics_payload["runtime"]["working_directory"]).exists()
+
+
+def test_run_stream_delay_tool_permission_policy_emits_waiting_approval_before_timeout_failure(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "sample.txt").write_text("desktop runtime sample", encoding="utf-8")
+    executor = PydanticAIAgentExecutor(
+        model=_ContractToolCallingTestModel(
+            tool_args_by_name={
+                FILE_TOOL_READ_FUNCTION_NAME: {"path": "sample.txt"},
+            },
+            custom_output_text="Desktop runtime delayed tool answer.",
+        ),
+        workspace_root=tmp_path,
+    )
+    app = create_app(
+        _build_config(tmp_path),
+        agent_executor=executor,
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    with TestClient(app) as client:
+        thread_response = client.post("/", json=_build_thread_create_request())
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                enabled_tools=[FILE_TOOL_READ_ID],
+                tool_permission_policy={
+                    "schemaVersion": 1,
+                    "defaultMode": "allow",
+                    "toolModes": {FILE_TOOL_READ_ID: "delay"},
+                    "toolTimeoutSeconds": {FILE_TOOL_READ_ID: 1},
+                    "toolTimeoutActions": {FILE_TOOL_READ_ID: "deny"},
+                },
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        run_stream_response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=run_id),
+        )
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert run_stream_response.status_code == 200
+
+    events = _parse_sse_events(run_stream_response.text)
+    tool_events = [
+        event
+        for event in events
+        if event["type"] == "tool_event" and event["payload"].get("toolId") == FILE_TOOL_READ_ID
+    ]
+
+    assert [event["payload"]["phase"] for event in tool_events] == [
+        "started",
+        "waiting_approval",
+        "failed",
+    ]
+    assert tool_events[1]["payload"]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_events[1]["payload"]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "deny",
+    }
+    assert isinstance(tool_events[1]["payload"]["approval"]["timeoutAt"], str)
+    assert tool_events[2]["payload"]["errorSummary"] == (
+        "Tool approval timed out and was automatically rejected."
+    )
+    assert events[-1]["type"] == "run_completed"
+    assert events[-1]["payload"]["assistantText"] == "Desktop runtime delayed tool answer."
 
 
 @pytest.mark.parametrize(
@@ -847,7 +961,27 @@ def _build_thread_create_request() -> dict[str, Any]:
 
 
 
-def _build_run_start_request(*, thread_id: str, debug_mode_enabled: bool = False) -> dict[str, Any]:
+def _build_run_start_request(
+    *,
+    thread_id: str,
+    debug_mode_enabled: bool = False,
+    enabled_tools: list[str] | None = None,
+    tool_permission_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    policy: dict[str, Any] = {
+        "modelRoute": {
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": "provider-1",
+                "modelId": "gpt-4.1",
+            },
+        },
+        "enabledTools": list(enabled_tools or []),
+        "debugModeEnabled": debug_mode_enabled,
+        "requestOptions": {},
+    }
+    if tool_permission_policy is not None:
+        policy["toolPermissionPolicy"] = dict(tool_permission_policy)
     return {
         "method": "run/start",
         "body": {
@@ -857,18 +991,7 @@ def _build_run_start_request(*, thread_id: str, debug_mode_enabled: bool = False
                 "role": "user",
                 "content": "hello desktop runtime",
             },
-            "policy": {
-                "modelRoute": {
-                    "routeRef": {
-                        "routeKind": "provider-model",
-                        "profileId": "provider-1",
-                        "modelId": "gpt-4.1",
-                    },
-                },
-                "enabledTools": [],
-                "debugModeEnabled": debug_mode_enabled,
-                "requestOptions": {},
-            },
+            "policy": policy,
         },
     }
 

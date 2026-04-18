@@ -22,6 +22,7 @@ import type {
   RuntimeThinkingVisibility,
   RuntimeToolEvent,
   RuntimeToolEventPhase,
+  RuntimeToolEventApproval,
   RuntimeToolEventSecurity,
 } from './thread-run-contract'
 
@@ -264,6 +265,13 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
         toolEventPayload.security = securityPayload
       }
 
+      if (payload.approval !== undefined && payload.approval !== null) {
+        toolEventPayload.approval = requireRuntimeToolEventApproval(
+          payload.approval,
+          'runtime event payload.approval',
+        )
+      }
+
       return {
         type: 'tool_event',
         runId,
@@ -292,6 +300,35 @@ function requireRuntimeResolvedModelRoute(value: unknown, label: string): Runtim
     baseUrl: requireNonEmptyString(record.baseUrl, `${label}.baseUrl`),
     modelId: requireNonEmptyString(record.modelId, `${label}.modelId`),
     authKind: requireNonEmptyString(record.authKind, `${label}.authKind`),
+  }
+}
+
+function requireRuntimeToolEventApproval(value: unknown, label: string): RuntimeToolEventApproval {
+  const record = requireRecord(value, label)
+  const mode = requireNonEmptyString(record.mode, `${label}.mode`)
+  if (mode !== 'allow' && mode !== 'ask' && mode !== 'delay' && mode !== 'deny') {
+    throw new Error(`Invalid tool approval mode: ${mode}`)
+  }
+
+  const timeoutAt = requireOptionalString(record.timeoutAt, `${label}.timeoutAt`)
+  const timeoutSeconds = record.timeoutSeconds === undefined
+    ? undefined
+    : requireNullableNumber(record.timeoutSeconds, `${label}.timeoutSeconds`)
+  const timeoutAction = record.timeoutAction
+  if (
+    timeoutAction !== undefined
+    && timeoutAction !== null
+    && timeoutAction !== 'approve'
+    && timeoutAction !== 'deny'
+  ) {
+    throw new Error(`Invalid tool approval timeoutAction: ${timeoutAction}`)
+  }
+
+  return {
+    mode,
+    ...(timeoutAt === undefined ? {} : { timeoutAt }),
+    ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
+    ...(timeoutAction === undefined ? {} : { timeoutAction }),
   }
 }
 
@@ -1022,6 +1059,18 @@ function requireOptionalString(value: unknown, label: string): string | undefine
   }
 
   return requireString(value, label)
+}
+
+function requireNullableNumber(value: unknown, label: string): number | null {
+  if (value === null) {
+    return null
+  }
+
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new Error(`${label} must be a number or null.`)
+  }
+
+  return value
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {

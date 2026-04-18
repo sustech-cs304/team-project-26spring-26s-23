@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,8 @@ from pydantic_ai.messages import (
     ModelRequest,
     PartDeltaEvent,
     PartStartEvent,
+    ThinkingPart,
+    ThinkingPartDelta,
     TextPart,
     ToolCallPart,
     ToolCallPartDelta,
@@ -25,8 +28,14 @@ from app.copilot_runtime.agent import (
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
 )
+from app.copilot_runtime.tool_approval_coordinator import (
+    RuntimeToolApprovalCoordinator,
+    ToolApprovalNotFoundError,
+)
+from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
 
 
@@ -73,6 +82,90 @@ def test_resolve_model_no_longer_falls_back_to_environment_keys() -> None:
         runtime_env_executor.resolve_model()
 
     assert runtime_env_executor.model_configured is False
+
+
+
+def test_open_event_stream_uses_route_scoped_stream_model_without_global_executor_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = PydanticAIAgentExecutor()
+    resolved_model_ids: list[str] = []
+
+    def fake_build_stream_model(model_route: ResolvedRuntimeModelRoute) -> TestModel:
+        resolved_model_ids.append(model_route.model_id)
+        return TestModel(custom_output_text="route-scoped model", seed=0)
+
+    monkeypatch.setattr(executor, "_build_stream_model", fake_build_stream_model)
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-request-model-only",
+                agent_name="default",
+                user_prompt="Use the resolved route model.",
+                message_history=[],
+                model_route=_build_resolved_route(model_id="provider-route-model"),
+                request_options={},
+            )
+        )
+    )
+
+    assert resolved_model_ids == ["provider-route-model"]
+    assert result["error"] is None
+    assert result["output"] == "route-scoped model"
+
+
+def test_open_event_stream_projects_reasoning_parts_into_reasoning_segments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = PydanticAIAgentExecutor(model="test-model")
+
+    async def fake_run(user_prompt: str, **kwargs) -> SimpleNamespace:
+        _ = user_prompt
+        event_stream_handler = kwargs["event_stream_handler"]
+
+        async def runtime_events() -> AsyncIterator[object]:
+            yield PartStartEvent(index=0, part=ThinkingPart(content="先分析。"))
+            yield PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta="再补充。"))
+            yield PartStartEvent(index=1, part=TextPart(content="最终答复。"))
+
+        await event_stream_handler(SimpleNamespace(), runtime_events())
+        return SimpleNamespace(output="最终答复。")
+
+    monkeypatch.setattr(executor._agent, "run", fake_run)
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-reasoning-visible",
+                agent_name="default",
+                user_prompt="请先思考再作答。",
+                message_history=[],
+                model_route=_build_resolved_route(),
+                request_options={},
+            )
+        )
+    )
+
+    assert result["error"] is None
+    assert result["output"] == "最终答复。"
+    assert [event.type for event in result["events"]] == [
+        "reasoning_segment_started",
+        "reasoning_segment_delta",
+        "reasoning_segment_delta",
+        "reasoning_segment_completed",
+        "assistant_segment_started",
+        "assistant_segment_delta",
+        "assistant_segment_completed",
+    ]
+    assert result["events"][1].payload == {
+        "segmentId": "run-reasoning-visible:reasoning-segment-1",
+        "delta": "先分析。",
+    }
+    assert result["events"][2].payload == {
+        "segmentId": "run-reasoning-visible:reasoning-segment-1",
+        "delta": "再补充。",
+    }
 
 
 
@@ -204,6 +297,7 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
                 message_history=[],
                 model_route=_build_resolved_route(),
                 enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
                 request_options={},
             )
         )
@@ -219,6 +313,7 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
     assert result["output"] == "Weather reply"
     assert [payload["phase"] for payload in tool_events] == ["started", "completed"]
     assert all(payload["toolId"] == WEATHER_CURRENT_TOOL_ID for payload in tool_events)
+    assert not any(event.type == "tool_waiting_approval" for event in result["events"])
 
     completed_payload = tool_events[1]
     parsed_summary = json.loads(completed_payload["summary"])
@@ -325,6 +420,11 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
         )
         return SimpleNamespace(output="我先查一下。查到了。")
 
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -418,6 +518,11 @@ def test_open_event_stream_emits_failed_tool_event_when_completed_raw_tool_call_
         await event_stream_handler(SimpleNamespace(), runtime_events())
         return SimpleNamespace(output="我先查一下。")
 
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -556,6 +661,338 @@ def test_execute_bound_tool_returns_tool_not_enabled_failure_without_raising() -
 
 
 
+def test_execute_bound_tool_allow_mode_skips_waiting_approval() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-allow",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-allow",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            arguments={"location": "Shenzhen"},
+        )
+    )
+
+    assert result["location"] == "Shenzhen"
+    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_ask_mode_waits_for_manual_approval_then_executes() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-approved",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-approved",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="ask"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_resolve() -> dict[str, Any]:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        phases_before_resolution = [event.phase for event in emitted_tool_events]
+        pending_request = approval_coordinator.get_request(
+            run_id="run-weather-approved",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-approved",
+        )
+        assert pending_request is not None
+        approval_coordinator.resolve(
+            run_id="run-weather-approved",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-approved",
+            decision="approved",
+        )
+        result = await task
+        return {
+            "result": result,
+            "phases_before_resolution": phases_before_resolution,
+        }
+
+    outcome = asyncio.run(run_and_resolve())
+
+    assert outcome["result"]["location"] == "Shenzhen"
+    assert outcome["phases_before_resolution"] == ["started", "waiting_approval"]
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
+    waiting_event = emitted_tool_events[1]
+    assert waiting_event.approval == {
+        "mode": "ask",
+        "timeoutSeconds": None,
+        "timeoutAction": None,
+    }
+    assert "timeoutAt" not in waiting_event.approval
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_ask_mode_returns_failure_when_rejected() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-rejected",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-rejected",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="ask"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_reject() -> dict[str, Any]:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        phases_before_resolution = [event.phase for event in emitted_tool_events]
+        approval_coordinator.resolve(
+            run_id="run-weather-rejected",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-rejected",
+            decision="rejected",
+        )
+        result = await task
+        return {
+            "result": result,
+            "phases_before_resolution": phases_before_resolution,
+        }
+
+    outcome = asyncio.run(run_and_reject())
+
+    assert outcome["phases_before_resolution"] == ["started", "waiting_approval"]
+    assert outcome["result"] == {
+        "status": "error",
+        "error": {
+            "code": "tool_approval_rejected",
+            "message": "Tool call was rejected by the user.",
+            "retryable": False,
+            "details": {
+                "decision": "rejected",
+                "source": "manual",
+                "mode": "ask",
+            },
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": WEATHER_CURRENT_TOOL_ID,
+            "toolCallId": f"{WEATHER_CURRENT_TOOL_ID}:call-rejected",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "failed"]
+    assert emitted_tool_events[-1].error_summary == "Tool call was rejected by the user."
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_delay_mode_auto_approves_after_timeout() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-approve",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-delay-approve",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(
+                default_mode="delay",
+                tool_timeout_seconds={WEATHER_CURRENT_TOOL_ID: 1},
+                tool_timeout_actions={WEATHER_CURRENT_TOOL_ID: "approve"},
+            ),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        asyncio.wait_for(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            ),
+            timeout=1.5,
+        )
+    )
+
+    assert result["location"] == "Shenzhen"
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
+    waiting_event = emitted_tool_events[1]
+    assert waiting_event.approval == {
+        "mode": "delay",
+        "timeoutAt": waiting_event.approval["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "approve",
+    }
+    assert isinstance(waiting_event.approval["timeoutAt"], str)
+    assert waiting_event.approval["timeoutAt"]
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_delay_mode_auto_rejects_after_timeout_without_crashing_run() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-deny",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-delay-deny",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(
+                default_mode="delay",
+                tool_timeout_seconds={WEATHER_CURRENT_TOOL_ID: 1},
+                tool_timeout_actions={WEATHER_CURRENT_TOOL_ID: "deny"},
+            ),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        asyncio.wait_for(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            ),
+            timeout=1.5,
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "code": "tool_approval_rejected",
+            "message": "Tool approval timed out and was automatically rejected.",
+            "retryable": False,
+            "details": {
+                "decision": "rejected",
+                "source": "timeout",
+                "mode": "delay",
+            },
+        },
+        "artifacts": [],
+        "metadata": {
+            "toolId": WEATHER_CURRENT_TOOL_ID,
+            "toolCallId": f"{WEATHER_CURRENT_TOOL_ID}:call-delay-deny",
+        },
+    }
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "failed"]
+    assert emitted_tool_events[-1].error_summary == "Tool approval timed out and was automatically rejected."
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_execute_bound_tool_delay_mode_manual_resolution_wins_before_timeout() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    ctx = SimpleNamespace(
+        tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-manual",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-weather-delay-manual",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(
+                default_mode="delay",
+                tool_timeout_seconds={WEATHER_CURRENT_TOOL_ID: 30},
+                tool_timeout_actions={WEATHER_CURRENT_TOOL_ID: "deny"},
+            ),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_resolve() -> dict[str, Any]:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        pending_request = approval_coordinator.get_request(
+            run_id="run-weather-delay-manual",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-manual",
+        )
+        assert pending_request is not None
+        approval_coordinator.resolve(
+            run_id="run-weather-delay-manual",
+            tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-manual",
+            decision="approved",
+        )
+        result = await task
+        return {
+            "result": result,
+            "pending_request": pending_request,
+        }
+
+    outcome = asyncio.run(run_and_resolve())
+
+    assert outcome["result"]["location"] == "Shenzhen"
+    assert outcome["pending_request"].timeout_seconds == 30
+    assert outcome["pending_request"].timeout_action == "deny"
+    assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
+    assert approval_coordinator.snapshot() == ()
+
+
+
 def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -612,6 +1049,7 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
             enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -677,6 +1115,7 @@ def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising
             enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -731,6 +1170,7 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
             enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -807,6 +1247,7 @@ def test_execute_bound_tool_returns_contract_integrity_failure_without_raising(
             enabled_tool_ids=frozenset({"contract.invalid"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-integrity",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
         ),
     )
@@ -841,6 +1282,149 @@ def test_execute_bound_tool_returns_contract_integrity_failure_without_raising(
 
 
 
+def test_build_contract_agent_tools_limits_registered_tools_to_enabled_set() -> None:
+    executor = PydanticAIAgentExecutor(model="test-model")
+
+    filtered_tools = executor._build_contract_agent_tools(enabled_tools=("tool.fs.glob",))
+    filtered_tool_names = tuple(tool.name for tool in filtered_tools)
+
+    assert filtered_tool_names == ("tool_fs_glob",)
+
+
+
+def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    ctx = SimpleNamespace(
+        tool_call_id="tool.fs.glob:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({"tool.fs.glob"}),
+            emit_tool_event=emitted_tool_events.append,
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            run_id="run-file-tool",
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+            debug_enabled=False,
+        ),
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            ctx,
+            tool_id="tool.fs.glob",
+            arguments={"basePath": ".", "pattern": "*.py"},
+        )
+    )
+
+    assert result["status"] == "success"
+    assert result["output"]["ok"] is True
+    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+
+
+
+def test_build_runtime_deps_initializes_file_roots_to_workspace_root() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+
+    deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-init",
+    )
+
+    expected_workspace_root = Path.cwd().resolve(strict=False).as_posix()
+    assert deps.workspace_root == expected_workspace_root
+    assert deps.default_root == expected_workspace_root
+
+
+
+def test_execute_bound_tool_persists_switched_default_root_within_same_run(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    switched_root = tmp_path / "switched-root"
+    workspace_root.mkdir()
+    switched_root.mkdir()
+    (switched_root / "sample.txt").write_text("alpha\n", encoding="utf-8")
+
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    deps = SimpleNamespace(
+        tool_registry=registry,
+        enabled_tool_ids=frozenset({"tool.fs.switch_root", "tool.fs.glob", "tool.fs.read"}),
+        emit_tool_event=emitted_tool_events.append,
+        workspace_root=workspace_root.resolve(strict=False).as_posix(),
+        default_root=workspace_root.resolve(strict=False).as_posix(),
+        run_id="run-switch-root",
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        debug_enabled=False,
+    )
+
+    switch_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id=f"{FILE_TOOL_SWITCH_ROOT_ID}:call-1", deps=deps),
+            tool_id=FILE_TOOL_SWITCH_ROOT_ID,
+            arguments={"path": str(switched_root)},
+        )
+    )
+    glob_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id="tool.fs.glob:call-2", deps=deps),
+            tool_id="tool.fs.glob",
+            arguments={"basePath": ".", "pattern": "*.txt"},
+        )
+    )
+    read_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id="tool.fs.read:call-3", deps=deps),
+            tool_id="tool.fs.read",
+            arguments={"path": "sample.txt"},
+        )
+    )
+    absolute_result = asyncio.run(
+        executor._execute_bound_tool(
+            SimpleNamespace(tool_call_id="tool.fs.read:call-4", deps=deps),
+            tool_id="tool.fs.read",
+            arguments={"path": str(workspace_root / "missing.txt")},
+        )
+    )
+
+    assert switch_result["status"] == "success"
+    assert deps.default_root == switched_root.resolve(strict=False).as_posix()
+    assert glob_result["status"] == "success"
+    assert glob_result["output"]["data"]["matches"][0]["path"] == "sample.txt"
+    assert glob_result["output"]["data"]["matches"][0]["effectiveRoot"] == switched_root.resolve(strict=False).as_posix()
+    assert read_result["status"] == "success"
+    assert read_result["output"]["data"]["effectiveRoot"] == switched_root.resolve(strict=False).as_posix()
+    assert absolute_result["status"] == "error"
+    assert absolute_result["output"]["error"]["code"] == "file_not_found"
+
+
+
+def test_build_runtime_deps_does_not_inherit_switched_root_between_runs(tmp_path: Path) -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+
+    first_run_deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.switch_root",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-1",
+    )
+    second_run_deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.switch_root",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-2",
+    )
+
+    first_run_deps.default_root = (tmp_path / "other-root").resolve(strict=False).as_posix()
+
+    expected_workspace_root = Path.cwd().resolve(strict=False).as_posix()
+    assert second_run_deps.default_root == second_run_deps.workspace_root
+    assert second_run_deps.workspace_root == expected_workspace_root
+
+
+
 def test_open_event_stream_propagates_cancelled_error_from_agent_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -850,6 +1434,11 @@ def test_open_event_stream_propagates_cancelled_error_from_agent_run(
         _ = (user_prompt, kwargs)
         raise asyncio.CancelledError()
 
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     with pytest.raises(asyncio.CancelledError):
@@ -865,6 +1454,56 @@ def test_open_event_stream_propagates_cancelled_error_from_agent_run(
                     request_options={},
                 )
             )
+        )
+
+
+def test_execute_bound_tool_cancellation_discards_pending_approval_request() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    tool_call_id = f"{WEATHER_CURRENT_TOOL_ID}:call-cancelled"
+    ctx = SimpleNamespace(
+        tool_call_id=tool_call_id,
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({WEATHER_CURRENT_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-approval-cancelled",
+            workspace_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            default_root=str(Path.cwd().resolve(strict=False).as_posix()),
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="ask"),
+            approval_coordinator=approval_coordinator,
+            debug_enabled=False,
+        ),
+    )
+
+    async def run_and_cancel() -> None:
+        task = asyncio.create_task(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=WEATHER_CURRENT_TOOL_ID,
+                arguments={"location": "Shenzhen"},
+            )
+        )
+        await asyncio.sleep(0)
+        pending_request = approval_coordinator.get_request(
+            run_id="run-approval-cancelled",
+            tool_call_id=tool_call_id,
+        )
+        assert pending_request is not None
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run_and_cancel())
+
+    assert approval_coordinator.snapshot() == ()
+    with pytest.raises(ToolApprovalNotFoundError, match="No pending approval exists"):
+        approval_coordinator.resolve(
+            run_id="run-approval-cancelled",
+            tool_call_id=tool_call_id,
+            decision="approved",
         )
 
 
@@ -927,12 +1566,12 @@ async def _collect_event_stream(stream) -> dict[str, object]:
     }
 
 
-def _build_resolved_route() -> ResolvedRuntimeModelRoute:
+def _build_resolved_route(*, model_id: str = "gpt-4.1") -> ResolvedRuntimeModelRoute:
     return ResolvedRuntimeModelRoute(
         provider_profile_id="provider-1",
         provider="openai",
         endpoint_type="openai-compatible",
         base_url="https://example.com/v1",
-        model_id="gpt-4.1",
+        model_id=model_id,
         api_key="test-api-key",
     )

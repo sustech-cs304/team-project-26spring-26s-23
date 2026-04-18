@@ -69,6 +69,9 @@ export function createConfigCenterPublicSnapshot(
       backendExposed: {
         model: overrides.model ?? null,
       },
+      general: {
+        language: 'zh-CN',
+      },
     },
   }
 }

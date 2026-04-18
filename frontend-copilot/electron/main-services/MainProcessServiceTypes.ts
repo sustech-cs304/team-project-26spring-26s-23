@@ -17,6 +17,7 @@ import type {
   CopilotHistoryThreadRenameResult,
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
+import type { HostedBackendService } from '../runtime/hosted-backend-service'
 import type {
   ConfigCenterPublicPatch,
   ConfigCenterPublicPatchResult,
@@ -43,6 +44,7 @@ import type {
   SettingsWorkspaceProviderRouteResolveResult,
 } from '../settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
+import type { ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
@@ -52,6 +54,7 @@ export interface MainProcessServiceLogOptions {
 
 export interface CreateMainProcessServicesOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
+  ensureHostedBackendService: () => Promise<HostedBackendService>
   appendMainRuntimeLog: (
     level: MainProcessServiceLogLevel,
     message: string,
@@ -66,6 +69,7 @@ export interface CreateMainProcessServicesOptions {
 
 export interface MainProcessServices {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
+  loadToolCatalog: () => Promise<ToolCatalogLoadResult>
   applyConfigCenterPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
   loadSettingsWorkspaceState: () => Promise<SettingsWorkspaceStateLoadResult>
   saveSettingsWorkspaceState: (input: SettingsWorkspaceStateSaveInput) => Promise<SettingsWorkspaceStateSaveResult>

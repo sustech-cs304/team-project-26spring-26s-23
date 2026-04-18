@@ -12,6 +12,10 @@ from .contracts import (
     RuntimeCapabilitiesResponse,
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
+    RuntimeToolApprovalDecision,
+    RuntimeToolApprovalResolveRequest,
+    RuntimeToolApprovalResolveResponse,
+    RuntimeToolPermissionPolicy,
     RuntimeRunStartRequest,
     RuntimeScaffold,
     RuntimeThinkingCapabilityResponse,
@@ -60,6 +64,8 @@ from .session_store import (
 
 
 from .thinking_adapter import adapt_thinking_selection, resolve_canonical_thinking_capability
+from .tool_approval_coordinator import RuntimeToolApprovalCoordinator
+from .tool_permissions import RuntimeToolPermissionResolver
 
 
 _RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
@@ -77,6 +83,7 @@ class RuntimeBridge:
         message_run_orchestrator: RuntimeMessageRunOrchestrator | None = None,
         model_route_resolver: RuntimeModelRouteResolver | None = None,
         provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
+        approval_coordinator: RuntimeToolApprovalCoordinator | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
@@ -86,6 +93,7 @@ class RuntimeBridge:
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
+        self._approval_coordinator = approval_coordinator or RuntimeToolApprovalCoordinator()
         self._debug_event_logger: RuntimeDebugLogWriter | None = None
 
     def set_debug_event_logger(self, logger: RuntimeDebugLogWriter | None) -> None:
@@ -201,14 +209,23 @@ class RuntimeBridge:
         except LookupError as exc:
             raise RunNotFoundError(run_id) from exc
 
-    def get_capabilities(self, *, session_id: str) -> RuntimeCapabilitiesResponse:
+    def get_capabilities(
+        self,
+        *,
+        session_id: str,
+        tool_permission_policy: RuntimeToolPermissionPolicy | None = None,
+    ) -> RuntimeCapabilitiesResponse:
         if self._scaffold is None:
             raise RuntimeError("Runtime scaffold is required for capabilities queries.")
         thread = self._session_store.get_thread(session_id)
         if thread is None:
             raise SessionNotFoundError(session_id)
         self._resolve_agent(thread.bound_agent_id)
-        return self._scaffold.build_capabilities_response(thread=thread)
+        tool_permission_resolver = RuntimeToolPermissionResolver.from_policy(tool_permission_policy)
+        return self._scaffold.build_capabilities_response(
+            thread=thread,
+            tool_permission_resolver=tool_permission_resolver,
+        )
 
     async def get_thinking_capability(
         self,
@@ -247,6 +264,22 @@ class RuntimeBridge:
         if run is None:
             raise RunNotFoundError(run_id)
         return run
+
+    def resolve_tool_approval(
+        self,
+        *,
+        request: RuntimeToolApprovalResolveRequest,
+    ) -> RuntimeToolApprovalResolveResponse:
+        resolution = self._approval_coordinator.resolve(
+            run_id=request.run_id,
+            tool_call_id=request.tool_call_id,
+            decision=cast(RuntimeToolApprovalDecision, request.decision),
+        )
+        if self._scaffold is None:
+            raise RuntimeError("Runtime scaffold is required for tool approval resolution.")
+        return self._scaffold.build_tool_approval_resolve_response(
+            resolution_payload=resolution.to_payload()
+        )
 
     async def prime_run_metadata(
         self,
@@ -544,6 +577,11 @@ class RuntimeBridge:
 
     def _to_stored_run_input(self, request: RuntimeRunStartRequest) -> RuntimeStoredRunInput:
         resolved_thinking_selection = request.policy.resolve_thinking_selection()
+        tool_permission_policy_payload = (
+            None
+            if request.policy.toolPermissionPolicy is None
+            else request.policy.toolPermissionPolicy.to_dict()
+        )
         return RuntimeStoredRunInput(
             message_role=cast(RuntimeMessageRole, request.message.role),
             message_content=request.message.content,
@@ -559,6 +597,7 @@ class RuntimeBridge:
                 if request.policy.thinkingCapabilityOverride is None
                 else dict(request.policy.thinkingCapabilityOverride),
                 enabled_tools=tuple(request.policy.enabledTools),
+                tool_permission_policy=tool_permission_policy_payload,
                 debug_mode_enabled=request.policy.debugModeEnabled,
                 request_options=dict(request.policy.requestOptions),
             ),
@@ -574,6 +613,17 @@ class RuntimeBridge:
         stored_route = stored_policy.model_route
         runtime_thinking_selection, legacy_fallback_used, rehydrate_error = _rehydrate_runtime_thinking_selection(
             stored_policy.thinking_selection
+        )
+        tool_permission_policy = (
+            None
+            if stored_policy.tool_permission_policy is None
+            else RuntimeToolPermissionPolicy(
+                schemaVersion=stored_policy.tool_permission_policy.get("schemaVersion", 1),
+                defaultMode=stored_policy.tool_permission_policy.get("defaultMode", "ask"),
+                toolModes=dict(stored_policy.tool_permission_policy.get("toolModes", {})),
+                toolTimeoutSeconds=dict(stored_policy.tool_permission_policy.get("toolTimeoutSeconds", {})),
+                toolTimeoutActions=dict(stored_policy.tool_permission_policy.get("toolTimeoutActions", {})),
+            )
         )
         return (
             RuntimeRunStartRequest(
@@ -593,6 +643,7 @@ class RuntimeBridge:
                     if stored_policy.thinking_capability_override is None
                     else dict(stored_policy.thinking_capability_override),
                     enabledTools=tuple(stored_policy.enabled_tools),
+                    toolPermissionPolicy=tool_permission_policy,
                     debugModeEnabled=stored_policy.debug_mode_enabled,
                     requestOptions=dict(stored_policy.request_options),
                 ),

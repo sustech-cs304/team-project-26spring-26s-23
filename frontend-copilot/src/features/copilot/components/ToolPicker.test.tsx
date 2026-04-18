@@ -5,6 +5,7 @@ import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../electron/settings-workspace/schema'
 import type { RuntimeToolDirectoryEntry } from '../chat-contract'
 import { ToolPicker } from './ToolPicker'
 
@@ -41,8 +42,8 @@ describe('ToolPicker', () => {
     const catalogOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
     const gradesOption = rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement
 
-    expect(fileOption.textContent).toContain('文件转换')
-    expect(fileOption.textContent).toContain('转换常见办公文档')
+    expect(fileOption.textContent).toContain('读取文件')
+    expect(fileOption.textContent).toContain('读取本地文本与文档内容')
     expect(catalogOption.textContent).toContain('课程目录搜索')
     expect(catalogOption.textContent).toContain('搜索 Blackboard 课程目录')
     expect(gradesOption.textContent).toContain('成绩获取')
@@ -51,10 +52,6 @@ describe('ToolPicker', () => {
     expect(panel.textContent).not.toContain('tool.file-convert')
     expect(panel.textContent).not.toContain('blackboard.course_catalog.search')
     expect(panel.textContent).not.toContain('tis.personal_grades.fetch')
-    expect(panel.textContent).not.toContain('File Convert')
-    expect(panel.textContent).not.toContain('Course Catalog Search')
-    expect(panel.textContent).not.toContain('Personal Grades Fetch')
-    expect(panel.textContent).not.toContain('Convert office files into other formats with a long English description')
     expect(panel.textContent).not.toContain('Search Blackboard course catalog with a long English description')
     expect(panel.textContent).not.toContain('Fetch personal grades from TIS with a long English description')
     expect(panel.textContent).not.toContain('builtin')
@@ -71,8 +68,8 @@ describe('ToolPicker', () => {
     const selectedCheck = fileOption.querySelector('.copilot-tool-picker__option-check')
     const unselectedCheck = catalogOption.querySelector('.copilot-tool-picker__option-check')
 
-    expect(fileName?.textContent).toBe('文件转换')
-    expect(fileDescription?.textContent).toBe('转换常见办公文档')
+    expect(fileName?.textContent).toBe('读取文件')
+    expect(fileDescription?.textContent).toBe('读取本地文本与文档内容')
     expect(catalogDescription?.textContent).toBe('搜索 Blackboard 课程目录')
     expect(selectedCheck?.textContent).toBe('✓')
     expect(unselectedCheck?.textContent).toBe('+')
@@ -192,17 +189,64 @@ describe('ToolPicker', () => {
 
     rendered.unmount()
   })
+
+  it('keeps denied tools focusable, blocks fresh selection, and still allows deselection', async () => {
+    const rendered = renderWithRoot(
+      <ToolPickerHarness
+        initialSelectedToolIds={['tool.file-convert', 'blackboard.calendar.refresh']}
+        toolPermissionPolicy={{
+          version: 1,
+          defaultMode: 'ask',
+          toolPermissions: {
+            'blackboard.calendar.refresh': { mode: 'deny' },
+          },
+        }}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
+    const normalOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
+    const blockedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(false)
+    expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.textContent).toContain('已禁用')
+    expect(deniedOption.textContent).toContain('当前策略：总是关闭')
+    expect(normalOption.disabled).toBe(false)
+
+    await clickElement(deniedOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert')
+
+    await clickElement(normalOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+      'tool.file-convert|blackboard.course_catalog.search',
+    )
+
+    expect(blockedOption.getAttribute('aria-disabled')).toBe('true')
+
+    await clickElement(blockedOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+      'tool.file-convert|blackboard.course_catalog.search',
+    )
+
+    rendered.unmount()
+  })
 })
 
 interface ToolPickerHarnessProps {
   initialSelectedToolIds?: string[]
   recommendedToolIds?: string[]
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   tools?: RuntimeToolDirectoryEntry[]
 }
 
 function ToolPickerHarness({
   initialSelectedToolIds = ['tool.file-convert'],
   recommendedToolIds = ['tool.file-convert', 'blackboard.course_catalog.search'],
+  toolPermissionPolicy = null,
   tools = createTools(),
 }: ToolPickerHarnessProps) {
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>(initialSelectedToolIds)
@@ -213,6 +257,7 @@ function ToolPickerHarness({
         tools={tools}
         selectedToolIds={selectedToolIds}
         recommendedToolIds={recommendedToolIds}
+        toolPermissionPolicy={toolPermissionPolicy}
         onChangeToolIds={setSelectedToolIds}
       />
       <output data-testid="chat-tool-picker-state">{selectedToolIds.join('|')}</output>
@@ -226,29 +271,29 @@ function createTools(): RuntimeToolDirectoryEntry[] {
       toolId: 'tool.file-convert',
       kind: 'builtin',
       availability: 'available',
-      displayName: 'File Convert',
-      description: 'Convert office files into other formats with a long English description',
+      displayName: '读取文件',
+      description: '读取本地文本与文档内容',
     },
     {
       toolId: 'blackboard.course_catalog.search',
       kind: 'external',
       availability: 'available',
-      displayName: 'Course Catalog Search',
-      description: 'Search Blackboard course catalog with a long English description',
+      displayName: '课程目录搜索',
+      description: '搜索 Blackboard 课程目录',
     },
     {
       toolId: 'blackboard.calendar.refresh',
       kind: 'external',
       availability: 'disabled-by-global-setting',
-      displayName: 'Calendar Refresh',
-      description: 'Refresh Blackboard course calendar with a long English description',
+      displayName: '日历刷新',
+      description: '刷新 Blackboard 课程日历',
     },
     {
       toolId: 'tis.personal_grades.fetch',
       kind: 'external',
       availability: 'unavailable',
-      displayName: 'Personal Grades Fetch',
-      description: 'Fetch personal grades from TIS with a long English description',
+      displayName: '成绩获取',
+      description: '获取个人成绩记录',
     },
   ]
 }

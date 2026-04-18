@@ -186,6 +186,12 @@ describe('parseRuntimeRunEventStream', () => {
             riskLevel: 'high',
             approvalMethod: 'accept_reject',
           },
+          approval: {
+            mode: 'delay',
+            timeoutAt: '2026-04-17T16:00:30Z',
+            timeoutSeconds: 30,
+            timeoutAction: 'deny',
+          },
         },
       },
       {
@@ -214,12 +220,55 @@ describe('parseRuntimeRunEventStream', () => {
         riskLevel: 'high',
         approvalMethod: 'accept_reject',
       })
+      expect(event0.payload.approval).toEqual({
+        mode: 'delay',
+        timeoutAt: '2026-04-17T16:00:30Z',
+        timeoutSeconds: 30,
+        timeoutAction: 'deny',
+      })
     }
 
     const event1 = events[1]
     expect(event1.type).toBe('tool_event')
     if (event1.type === 'tool_event') {
       expect(event1.payload.phase).toBe('cancelled')
+    }
+  })
+
+  it('parses waiting_approval approval payloads without timeoutAt', async () => {
+    const stream = createSseEventStream([
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          toolCallId: 'tool.weather-current:call-1',
+          toolId: 'tool.weather-current',
+          phase: 'waiting_approval',
+          title: '等待批准',
+          summary: '等待批准',
+          approval: {
+            mode: 'ask',
+            timeoutSeconds: null,
+            timeoutAction: null,
+          },
+        },
+      },
+    ])
+
+    const events = await collectEvents(stream)
+    expect(events).toHaveLength(1)
+
+    const event0 = events[0]
+    expect(event0.type).toBe('tool_event')
+    if (event0.type === 'tool_event') {
+      expect(event0.payload.phase).toBe('waiting_approval')
+      expect(event0.payload.approval).toEqual({
+        mode: 'ask',
+        timeoutSeconds: null,
+        timeoutAction: null,
+      })
     }
   })
 

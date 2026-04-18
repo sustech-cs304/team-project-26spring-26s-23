@@ -39,12 +39,27 @@ export interface RuntimeThreadCreateResponse {
   capabilities: Record<string, unknown>
 }
 
+export interface RuntimeToolPresentationGroup {
+  id: string
+  label: string
+  labelZh: string
+  labelEn: string
+  order: number
+  sourceKind: string
+}
+
 export interface RuntimeToolDirectoryEntry {
   toolId: string
   kind: string
   availability: string
   displayName: string | null
   description: string | null
+  prompt?: string | null
+  displayNameZh?: string | null
+  displayNameEn?: string | null
+  descriptionZh?: string | null
+  descriptionEn?: string | null
+  group?: RuntimeToolPresentationGroup | null
 }
 
 export interface RuntimeThreadGetResponse {
@@ -256,6 +271,16 @@ export interface RuntimeThinkingSelection {
   budgetTokens?: number | null
 }
 
+export type RuntimeToolPermissionMode = 'allow' | 'ask' | 'delay' | 'deny'
+
+export interface RuntimeToolPermissionPolicy {
+  schemaVersion: number
+  defaultMode: RuntimeToolPermissionMode
+  toolModes: Record<string, RuntimeToolPermissionMode>
+  toolTimeoutSeconds?: Record<string, number>
+  toolTimeoutActions?: Record<string, 'approve' | 'deny'>
+}
+
 export interface RuntimeRunView extends RuntimeRunThinkingMetadata {
   runId: string
   threadId: string
@@ -348,6 +373,13 @@ export interface RuntimeToolEventSecurity {
   approvalMethod?: 'accept_reject' | 'password'
 }
 
+export interface RuntimeToolEventApproval {
+  mode: RuntimeToolPermissionMode
+  timeoutAt?: string | null
+  timeoutSeconds?: number | null
+  timeoutAction?: 'approve' | 'deny' | null
+}
+
 export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
   toolCallId: string
   toolId: string
@@ -358,6 +390,7 @@ export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
   resultSummary?: string
   errorSummary?: string
   security?: RuntimeToolEventSecurity
+  approval?: RuntimeToolEventApproval
 }>
 
 export type RuntimeRunEvent =
@@ -517,6 +550,7 @@ export async function startRuntimeRun(input: {
   thinkingSelection?: RuntimeThinkingSelection | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
   enabledTools: string[]
+  toolPermissionPolicy?: RuntimeToolPermissionPolicy | null
   debugModeEnabled?: boolean
   requestOptions?: Record<string, unknown>
   fetchFn?: FetchLike
@@ -540,6 +574,9 @@ export async function startRuntimeRun(input: {
           ? {}
           : { thinkingCapabilityOverride: input.thinkingCapabilityOverride }),
         enabledTools: input.enabledTools,
+        ...(input.toolPermissionPolicy === undefined || input.toolPermissionPolicy === null
+          ? {}
+          : { toolPermissionPolicy: input.toolPermissionPolicy }),
         ...(input.debugModeEnabled === undefined
           ? {}
           : { debugModeEnabled: input.debugModeEnabled }),

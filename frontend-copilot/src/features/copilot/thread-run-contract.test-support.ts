@@ -698,6 +698,8 @@ export function createRuntimeToolEvent(
       ...(overrides.payload?.inputSummary === undefined ? { inputSummary: '{"location":"Shenzhen"}' } : { inputSummary: overrides.payload.inputSummary }),
       ...(overrides.payload?.resultSummary === undefined ? {} : { resultSummary: overrides.payload.resultSummary }),
       ...(overrides.payload?.errorSummary === undefined ? {} : { errorSummary: overrides.payload.errorSummary }),
+      ...(overrides.payload?.security === undefined ? {} : { security: overrides.payload.security }),
+      ...(overrides.payload?.approval === undefined ? {} : { approval: overrides.payload.approval }),
     },
   }
 }

@@ -38,6 +38,10 @@ export function createUnifiedConfigCenterPaths(
         rootDir,
         UNIFIED_CONFIG_DOMAIN_DEFINITIONS[UNIFIED_CONFIG_DOMAIN_KEYS.BACKEND_EXPOSED].fileName,
       ),
+      [UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL]: path.join(
+        rootDir,
+        UNIFIED_CONFIG_DOMAIN_DEFINITIONS[UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL].fileName,
+      ),
     },
     legacySettingsFiles: [
       hostedPaths.copilotSettingsFile,

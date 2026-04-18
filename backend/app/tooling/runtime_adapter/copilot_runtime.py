@@ -92,6 +92,26 @@ def get_current_runtime_tool_execution_context() -> RuntimeToolExecutionContext 
     return _CURRENT_RUNTIME_TOOL_EXECUTION_CONTEXT.get()
 
 
+
+def get_runtime_context_metadata_value(
+    key_path: str | tuple[str, ...],
+    *,
+    runtime_context: RuntimeToolExecutionContext | None = None,
+) -> Any:
+    """Resolve a nested metadata value from the active runtime context."""
+
+    context = runtime_context or get_current_runtime_tool_execution_context()
+    if context is None:
+        return None
+    metadata: Any = context.metadata
+    keys = (key_path,) if isinstance(key_path, str) else key_path
+    for key in keys:
+        if not isinstance(metadata, Mapping):
+            return None
+        metadata = metadata.get(key)
+    return metadata
+
+
 class RuntimeExecutableToolError(RuntimeError):
     """Stable runtime-tool failure raised by contract adapters before agent wrapping."""
 
@@ -263,6 +283,7 @@ def _build_invocation_context(
         if runtime_context is not None and runtime_context.tool_call_id is not None
         else f"{tool_id}:direct"
     )
+    metadata = {} if runtime_context is None else deepcopy(dict(runtime_context.metadata))
     return ToolInvocationContext(
         invocation_id=invocation_id,
         tool_id=tool_id,
@@ -274,7 +295,7 @@ def _build_invocation_context(
             else runtime_context.requested_at
         ),
         trace={} if runtime_context is None else runtime_context.trace,
-        metadata={} if runtime_context is None else runtime_context.metadata,
+        metadata={"runtimeContext": metadata} if metadata else {},
     )
 
 
@@ -319,5 +340,6 @@ __all__ = [
     "build_contract_runtime_binding",
     "build_default_contract_runtime_bindings",
     "get_current_runtime_tool_execution_context",
+    "get_runtime_context_metadata_value",
     "runtime_tool_execution_scope",
 ]

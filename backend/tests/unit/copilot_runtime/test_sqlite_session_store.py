@@ -88,6 +88,43 @@ def test_sqlite_session_store_persists_history_and_allocates_event_sequences(tmp
         second_store.dispose()
 
 
+def test_sqlite_session_store_persists_tool_permission_policy_round_trip(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-policy")
+        store.create_run(
+            thread_id="thread-policy",
+            run_id="run-policy",
+            request=_build_stored_run_input(
+                user_text="persist tool policy",
+                tool_permission_policy={
+                    "schemaVersion": 1,
+                    "defaultMode": "allow",
+                    "toolModes": {"tool.fs.read": "delay"},
+                    "toolTimeoutSeconds": {"tool.fs.read": 15},
+                    "toolTimeoutActions": {"tool.fs.read": "deny"},
+                },
+            ),
+        )
+    finally:
+        store.dispose()
+
+    restored = SQLiteSessionStore(db_path=db_path)
+    try:
+        restored_run = restored.get_run("run-policy")
+        assert restored_run.request.policy.tool_permission_policy == {
+            "schemaVersion": 1,
+            "defaultMode": "allow",
+            "toolModes": {"tool.fs.read": "delay"},
+            "toolTimeoutSeconds": {"tool.fs.read": 15},
+            "toolTimeoutActions": {"tool.fs.read": "deny"},
+        }
+    finally:
+        restored.dispose()
+
+
 
 def test_sqlite_session_store_supports_persistent_rename_and_duplicate(tmp_path: Path) -> None:
     db_path = tmp_path / "database" / "chat.db"
@@ -296,7 +333,11 @@ def test_sqlite_session_store_restricts_backup_restore_paths_to_backups_director
 
 
 
-def _build_stored_run_input(*, user_text: str) -> RuntimeStoredRunInput:
+def _build_stored_run_input(
+    *,
+    user_text: str,
+    tool_permission_policy: dict[str, object] | None = None,
+) -> RuntimeStoredRunInput:
     return RuntimeStoredRunInput(
         message_role="user",
         message_content=user_text,
@@ -310,6 +351,7 @@ def _build_stored_run_input(*, user_text: str) -> RuntimeStoredRunInput:
                 ),
             ),
             enabled_tools=(),
+            tool_permission_policy=None if tool_permission_policy is None else dict(tool_permission_policy),
             request_options={},
         ),
         agent_id="default",

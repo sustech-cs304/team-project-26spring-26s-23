@@ -749,6 +749,59 @@ describe('CopilotMessageList segment rendering', () => {
     expect(css).toContain('.copilot-chat__message-text--plain')
     expect(css).toContain('white-space: pre-wrap;')
   })
+  it('renders approval action buttons without the legacy waiting callout', () => {
+    const html = renderConversation({
+      phase: 'streaming',
+      runId: 'run-1',
+      threadId: 'session-1',
+      activeModelRoute: null,
+      resolvedModelId: null,
+      resolvedModelRoute: null,
+      resolvedToolIds: [],
+      requestOptions: {},
+      requestedThinkingSelection: null,
+      appliedThinkingSelection: null,
+      requestedThinkingLevel: null,
+      appliedThinkingLevel: null,
+      thinkingCapabilitySnapshot: null,
+      thinkingSeriesDecision: null,
+      reasoningSuppressionBasis: null,
+      reasoningSuppressed: false,
+      reasoningTraceState: 'not_observed',
+      diagnostic: null,
+      failure: null,
+      cancelReason: null,
+      segments: [{
+        id: 'tool:run-1:tool.weather-current:call-1',
+        kind: 'tool',
+        runId: 'run-1',
+        startedSequence: 2,
+        lastSequence: 2,
+        status: 'streaming',
+        toolCallId: 'tool.weather-current:call-1',
+        toolId: 'tool.weather-current',
+        toolPhase: 'waiting_approval',
+        title: '等待批准',
+        summary: '需要批准后继续。',
+        inputSummary: '{"location":"Shenzhen"}',
+        resultSummary: null,
+        errorSummary: null,
+        approval: {
+          mode: 'delay',
+          approvalMethod: 'accept_reject',
+          riskLevel: 'high',
+          timeoutAt: '2026-04-17T16:00:30Z',
+          timeoutSeconds: 30,
+          timeoutAction: 'deny',
+        },
+      }],
+    })
+
+    expect(html).toContain('拒绝（0s）')
+    expect(html).toContain('批准')
+    expect(html).not.toContain('等待批准')
+    expect(html).not.toContain('后自动拒绝')
+  })
 })
 
 function createTestModelCatalog() {

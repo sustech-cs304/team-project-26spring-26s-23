@@ -17,6 +17,9 @@ export function createMainProcessServices(
     async applyConfigCenterPublicPatch(patch) {
       return await accessors.getUnifiedConfigService().applyPublicPatch(patch)
     },
+    async loadToolCatalog() {
+      return await accessors.getToolCatalogService().load()
+    },
     async loadSettingsWorkspaceState() {
       return await accessors.getSettingsWorkspaceService().loadState()
     },

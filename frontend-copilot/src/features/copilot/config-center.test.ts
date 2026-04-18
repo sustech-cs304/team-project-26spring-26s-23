@@ -70,6 +70,9 @@ describe('config center public bridge', () => {
           backendExposed: {
             model: null,
           },
+          general: {
+            language: 'zh-CN',
+          },
         },
       },
     }
@@ -104,6 +107,9 @@ describe('config center public bridge', () => {
           },
           backendExposed: {
             model: null,
+          },
+          general: {
+            language: 'zh-CN',
           },
         },
       },
@@ -193,6 +199,9 @@ describe('config center public bridge', () => {
         backendExposed: {
           model: null,
         },
+        general: {
+          language: 'zh-CN',
+        },
       },
     })
 
@@ -213,6 +222,9 @@ describe('config center public bridge', () => {
         },
         backendExposed: {
           model: null,
+        },
+        general: {
+          language: 'zh-CN',
         },
       },
     })
@@ -240,6 +252,9 @@ describe('config center public bridge', () => {
         backendExposed: {
           model: null,
         },
+        general: {
+          language: 'zh-CN',
+        },
       },
     })).toBe('dark')
   })
@@ -261,6 +276,9 @@ describe('config center public bridge', () => {
         },
         backendExposed: {
           model: null,
+        },
+        general: {
+          language: 'zh-CN',
         },
       },
     })).toBe(false)

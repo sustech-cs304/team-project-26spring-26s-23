@@ -15,6 +15,7 @@ SESSION_NOT_FOUND_CODE = "session_not_found"
 AGENT_NOT_FOUND_CODE = "agent_not_found"
 AGENT_MISMATCH_CODE = "agent_mismatch"
 TOOL_NOT_FOUND_CODE = "tool_not_found"
+TOOL_APPROVAL_NOT_FOUND_CODE = "tool_approval_not_found"
 UNSUPPORTED_MESSAGE_SHAPE_CODE = "unsupported_message_shape"
 INVALID_MESSAGE_HISTORY_CODE = "invalid_message_history"
 MODEL_NOT_CONFIGURED_CODE = "model_not_configured"
@@ -157,6 +158,22 @@ def build_tool_not_found_error(
         scaffold=scaffold,
         requested_method=requested_method,
         details={"toolId": tool_id},
+    )
+
+
+def build_tool_approval_not_found_error(
+    *,
+    run_id: str,
+    tool_call_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=TOOL_APPROVAL_NOT_FOUND_CODE,
+        message=f"No pending tool approval exists for run '{run_id}' and tool call '{tool_call_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"runId": run_id, "toolCallId": tool_call_id},
     )
 
 

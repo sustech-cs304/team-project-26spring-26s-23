@@ -453,6 +453,76 @@
   gap: 0.45rem;
 }
 
+.copilot-chat__tool-approval {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.55rem;
+  padding-top: 0.1rem;
+}
+
+.copilot-chat__tool-approval-error {
+  margin: 0;
+}
+
+.copilot-chat__tool-approval-actions {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 0.6rem;
+}
+
+.copilot-chat__tool-approval-button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.62rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
+  background: color-mix(in srgb, var(--surface-bg) 92%, rgba(255, 255, 255, 0.35));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.copilot-chat__tool-approval-button:hover:enabled {
+  transform: translateY(-1px);
+}
+
+.copilot-chat__tool-approval-button:disabled {
+  cursor: progress;
+  opacity: 0.68;
+}
+
+.copilot-chat__tool-approval-button--approve {
+  border-color: color-mix(in srgb, var(--success-border, #86efac) 72%, var(--border-color) 28%);
+  background: color-mix(in srgb, var(--success-soft, rgba(134, 239, 172, 0.22)) 88%, var(--surface-bg) 12%);
+  color: color-mix(in srgb, var(--success-text, #166534) 88%, var(--text-primary) 12%);
+}
+
+.copilot-chat__tool-approval-button--approve:hover:enabled {
+  border-color: color-mix(in srgb, var(--success-border, #86efac) 84%, var(--border-color) 16%);
+  background: color-mix(in srgb, var(--success-soft, rgba(134, 239, 172, 0.28)) 94%, var(--surface-bg) 6%);
+}
+
+.copilot-chat__tool-approval-button--reject {
+  border-color: color-mix(in srgb, var(--danger-border, #fca5a5) 68%, var(--border-color) 32%);
+  background: color-mix(in srgb, var(--danger-soft, rgba(252, 165, 165, 0.18)) 84%, var(--surface-bg) 16%);
+  color: color-mix(in srgb, var(--danger-text, #b91c1c) 90%, var(--text-primary) 10%);
+}
+
+.copilot-chat__tool-approval-button--reject:hover:enabled {
+  border-color: color-mix(in srgb, var(--danger-border, #fca5a5) 80%, var(--border-color) 20%);
+  background: color-mix(in srgb, var(--danger-soft, rgba(252, 165, 165, 0.24)) 92%, var(--surface-bg) 8%);
+}
+
+.copilot-chat__tool-approval-error {
+  flex: 1 0 100%;
+  font-size: 0.74rem;
+  color: var(--danger-text, #b91c1c);
+}
+
 .copilot-chat__tool-section-label {
   margin: 0;
   font-size: 0.76rem;

@@ -43,6 +43,9 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
           backendExposed: {
             model: null,
           },
+          general: {
+            language: 'zh-CN',
+          },
         },
       },
       applyState,
@@ -75,6 +78,9 @@ describe('refreshCopilotBootstrapStateFromPublicSnapshot', () => {
           },
           backendExposed: {
             model: null,
+          },
+          general: {
+            language: 'zh-CN',
           },
         },
       },

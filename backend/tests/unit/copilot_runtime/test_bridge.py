@@ -5,14 +5,17 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
+from app.copilot_runtime import RuntimeToolApprovalCoordinator
 from app.copilot_runtime.agent_registry import AgentRegistry, build_default_agent_registry
 from app.copilot_runtime.bridge import AgentNotFoundError, RuntimeBridge, SessionNotFoundError
 from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
     RuntimeMessagePayload,
     RuntimeRunStartRequest,
+    RuntimeToolApprovalResolveRequest,
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
+    RuntimeToolPermissionPolicy,
     build_runtime_scaffold,
 )
 from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteRef
@@ -203,6 +206,96 @@ def test_start_run_stores_provider_specific_thinking_selection_value_payload_and
     assert legacy_fallback_used is False
     assert rehydrate_error is None
     assert run_start_request.policy.resolve_thinking_selection() == thinking_selection
+
+
+
+def test_start_run_round_trips_tool_permission_policy() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+
+    run = bridge.start_run(
+        request=_build_run_start_request(
+            thread_id="thread-1",
+            tool_permission_policy={
+                "schemaVersion": 1,
+                "defaultMode": "ask",
+                "toolModes": {"tool.weather-current": "delay"},
+                "toolTimeoutSeconds": {"tool.weather-current": 27},
+                "toolTimeoutActions": {"tool.weather-current": "approve"},
+            },
+        )
+    )
+
+    assert run.request.policy.tool_permission_policy == {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {"tool.weather-current": "delay"},
+        "toolTimeoutSeconds": {"tool.weather-current": 27},
+        "toolTimeoutActions": {"tool.weather-current": "approve"},
+    }
+
+    run_start_request, legacy_fallback_used, rehydrate_error = bridge._to_run_start_request(run)
+
+    assert legacy_fallback_used is False
+    assert rehydrate_error is None
+    assert run_start_request.policy.toolPermissionPolicy is not None
+    assert run_start_request.policy.toolPermissionPolicy.to_dict() == {
+        "schemaVersion": 1,
+        "defaultMode": "ask",
+        "toolModes": {"tool.weather-current": "delay"},
+        "toolTimeoutSeconds": {"tool.weather-current": 27},
+        "toolTimeoutActions": {"tool.weather-current": "approve"},
+    }
+
+
+
+def test_resolve_tool_approval_calls_coordinator_and_builds_response() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    approval_coordinator = RuntimeToolApprovalCoordinator(
+        _loop_provider=asyncio.new_event_loop,
+    )
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        approval_coordinator=approval_coordinator,
+    )
+    approval_coordinator.create_request(
+        run_id="run-approve",
+        tool_call_id="call-approve",
+        tool_id="tool.file-convert",
+        mode="ask",
+    )
+
+    response = bridge.resolve_tool_approval(
+        request=RuntimeToolApprovalResolveRequest(
+            run_id="run-approve",
+            tool_call_id="call-approve",
+            decision="approved",
+        )
+    )
+
+    payload = response.to_dict()
+    assert payload["ok"] is True
+    assert payload["runId"] == "run-approve"
+    assert payload["toolCallId"] == "call-approve"
+    assert payload["decision"] == "approved"
+    assert payload["status"] == "approved"
+    assert payload["source"] == "manual"
+    assert payload["details"] == {
+        "toolId": "tool.file-convert",
+        "mode": "ask",
+    }
+    assert payload["resolvedAt"]
 
 
 
@@ -584,8 +677,12 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.toolSelectionMode == "recommendation-only"
     assert capabilities.recommendedTools == ("tool.file-convert",)
     assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
-    assert capabilities.tools[0].toolId == "tool.file-convert"
-    assert capabilities.tools[0].displayName == "File Convert"
+    tool_ids = {tool.toolId for tool in capabilities.tools}
+    assert "tool.file-convert" in tool_ids
+    assert any(
+        tool.toolId == "tool.file-convert" and tool.displayName in {"File Convert", "文件转换"}
+        for tool in capabilities.tools
+    )
 
 
 
@@ -640,6 +737,7 @@ def _build_run_start_request(
     model_route: RuntimeModelRoute | None = None,
     thinking_selection: RuntimeThinkingSelection | None = None,
     thinking_capability_override: dict[str, object] | None = None,
+    tool_permission_policy: dict[str, object] | None = None,
 ) -> RuntimeRunStartRequest:
     return RuntimeRunStartRequest(
         thread_id=thread_id,
@@ -657,6 +755,15 @@ def _build_run_start_request(
             thinkingSelection=thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=(),
+            toolPermissionPolicy=None
+            if tool_permission_policy is None
+            else RuntimeToolPermissionPolicy(
+                schemaVersion=int(tool_permission_policy.get("schemaVersion", 1)),
+                defaultMode=str(tool_permission_policy.get("defaultMode", "ask")),
+                toolModes=dict(tool_permission_policy.get("toolModes", {})),
+                toolTimeoutSeconds=dict(tool_permission_policy.get("toolTimeoutSeconds", {})),
+                toolTimeoutActions=dict(tool_permission_policy.get("toolTimeoutActions", {})),
+            ),
             requestOptions={},
         ),
         agent_id="default",

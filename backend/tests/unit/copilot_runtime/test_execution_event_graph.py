@@ -5,6 +5,7 @@ import pytest
 from app.copilot_runtime.execution_event_graph import (
     TOOL_COMPLETED_EVENT_TYPE,
     TOOL_STARTED_EVENT_TYPE,
+    TOOL_WAITING_APPROVAL_EVENT_TYPE,
     RuntimeExecutionEvent,
     RuntimeExecutionEventBuffer,
     RuntimeExecutionEventFactory,
@@ -149,6 +150,26 @@ def test_runtime_projector_projects_interleaved_chain_without_early_terminal() -
     assert projected[-1].type in TERMINAL_RUNTIME_RUN_EVENT_TYPES
     assert all(event.type != "run_completed" for event in projected[:-1])
     assert [event.sequence for event in projected] == [1, 2, 3, 4, 5, 6]
+
+
+
+def test_runtime_projector_projects_waiting_approval_tool_event() -> None:
+    execution_factory = RuntimeExecutionEventFactory(run_id="run-1")
+    events = RuntimeRunEventFactory(session_id="session-1", run_id="run-1")
+    projector = RuntimeRunEventProjector(
+        events=events,
+        assistant_message_id="run-1:assistant",
+    )
+
+    projected = projector.project(
+        execution_factory.build(
+            TOOL_WAITING_APPROVAL_EVENT_TYPE,
+            payload=_build_tool_payload(phase="waiting_approval"),
+        )
+    )
+
+    assert [event.type for event in projected] == ["tool_event"]
+    assert projected[0].payload == _build_tool_payload(phase="waiting_approval")
 
 
 
