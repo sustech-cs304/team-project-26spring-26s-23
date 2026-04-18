@@ -6,7 +6,7 @@ import json
 import random
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 from pathlib import Path
 
@@ -88,6 +88,13 @@ WEATHER_CURRENT_TOOL_DESCRIPTION = (
 WEATHER_CURRENT_TOOL_PROMPT = (
     "Use this tool to retrieve a simple current weather summary for a location."
 )
+
+
+class FileConvertToolResult(TypedDict, total=False):
+    path: str
+    suffix: str
+    content: str
+    notice: str
 
 _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
     "zh-CN": {
@@ -460,15 +467,12 @@ async def _execute_default_file_convert_tool(
     file_path = payload.get("path")
     if not isinstance(file_path, str) or file_path.strip() == "":
         raise ValueError("path must be a non-empty string")
-    result = convert_file_to_str(file_path)
-    normalized = {
-        "path": result["path"],
-        "suffix": result["suffix"],
-        "content": result["content"],
+    normalized: FileConvertToolResult = {
+        "path": file_path,
+        "suffix": Path(file_path).suffix.lower(),
+        "content": convert_file_to_str(file_path),
     }
-    if "notice" in result:
-        normalized["notice"] = result["notice"]
-    return normalized
+    return dict(normalized)
 
 
 async def execute_weather_current_tool(
