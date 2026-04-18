@@ -271,12 +271,90 @@ def _normalized_error_with_details(
     )
 
 
+def _host_capability_error_details(
+    error: HostCapabilityOperationError,
+    *,
+    include_host_code: bool,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "capability": error.capability,
+        **error.details,
+    }
+    if include_host_code:
+        details["hostErrorCode"] = error.code
+    return details
+
+
+def _map_host_capability_operation_error(
+    error: HostCapabilityOperationError,
+) -> NormalizedToolError:
+    if error.code in {"unsupported_capability", "unsupported_operation"}:
+        return NormalizedToolError(
+            code="host_capability_missing",
+            message=error.message,
+            retryable=error.retryable,
+            details=_host_capability_error_details(error, include_host_code=True),
+        )
+
+    if error.code in {"temporarily_unavailable", "timeout"}:
+        return NormalizedToolError(
+            code=cast(NormalizedToolErrorCode, error.code),
+            message=error.message,
+            retryable=error.retryable,
+            details=_host_capability_error_details(error, include_host_code=False),
+        )
+
+    if error.code in {"permission_denied", "not_found", "conflict"}:
+        return NormalizedToolError(
+            code=cast(NormalizedToolErrorCode, error.code),
+            message=error.message,
+            retryable=error.retryable,
+            details=_host_capability_error_details(error, include_host_code=False),
+        )
+
+    return NormalizedToolError(
+        code="execution_failed",
+        message=error.message,
+        retryable=error.retryable,
+        details=_host_capability_error_details(error, include_host_code=True),
+    )
+
+
+def _map_http_status_error(error: httpx.HTTPStatusError) -> NormalizedToolError:
+    status_code = error.response.status_code
+    status_code_map: dict[int, NormalizedToolErrorCode] = {
+        401: "authentication_required",
+        403: "permission_denied",
+        404: "not_found",
+        409: "conflict",
+        429: "rate_limited",
+        502: "temporarily_unavailable",
+        503: "temporarily_unavailable",
+        504: "temporarily_unavailable",
+    }
+    code = status_code_map.get(status_code, "execution_failed")
+    return NormalizedToolError(
+        code=code,
+        message=_message_or_fallback(error, f"TIS request failed with {status_code}."),
+        details={"statusCode": status_code},
+    )
+
+
+def _map_runtime_error(error: RuntimeError) -> NormalizedToolError:
+    message = str(error)
+    if "CAS 登录" in message or "未认证" in message:
+        return NormalizedToolError(code="authentication_required", message=message)
+    return NormalizedToolError(
+        code="execution_failed",
+        message=_message_or_fallback(error, "TIS tool execution failed."),
+    )
+
+
 def _map_exception(
     error: Exception,
     *,
     diagnostic_context: Mapping[str, Any] | None = None,
 ) -> NormalizedToolError:
-    normalized: NormalizedToolError
     if isinstance(error, MissingHostCapabilityError):
         normalized = NormalizedToolError(
             code="host_capability_missing",
@@ -284,42 +362,7 @@ def _map_exception(
             details={"capability": error.capability},
         )
     elif isinstance(error, HostCapabilityOperationError):
-        if error.code in {"unsupported_capability", "unsupported_operation"}:
-            normalized = NormalizedToolError(
-                code="host_capability_missing",
-                message=error.message,
-                retryable=error.retryable,
-                details={
-                    "capability": error.capability,
-                    "hostErrorCode": error.code,
-                    **error.details,
-                },
-            )
-        elif error.code in {"temporarily_unavailable", "timeout"}:
-            normalized = NormalizedToolError(
-                code=cast(NormalizedToolErrorCode, error.code),
-                message=error.message,
-                retryable=error.retryable,
-                details={"capability": error.capability, **error.details},
-            )
-        elif error.code in {"permission_denied", "not_found", "conflict"}:
-            normalized = NormalizedToolError(
-                code=cast(NormalizedToolErrorCode, error.code),
-                message=error.message,
-                retryable=error.retryable,
-                details={"capability": error.capability, **error.details},
-            )
-        else:
-            normalized = NormalizedToolError(
-                code="execution_failed",
-                message=error.message,
-                retryable=error.retryable,
-                details={
-                    "capability": error.capability,
-                    "hostErrorCode": error.code,
-                    **error.details,
-                },
-            )
+        normalized = _map_host_capability_operation_error(error)
     elif isinstance(error, TISAuthenticationError):
         normalized = NormalizedToolError(
             code="authentication_required",
@@ -341,43 +384,14 @@ def _map_exception(
             message=_message_or_fallback(error, "TIS request timed out."),
         )
     elif isinstance(error, httpx.HTTPStatusError):
-        status_code = error.response.status_code
-        code: NormalizedToolErrorCode = "execution_failed"
-        if status_code == 401:
-            code = "authentication_required"
-        elif status_code == 403:
-            code = "permission_denied"
-        elif status_code == 404:
-            code = "not_found"
-        elif status_code == 409:
-            code = "conflict"
-        elif status_code == 429:
-            code = "rate_limited"
-        elif status_code in {502, 503, 504}:
-            code = "temporarily_unavailable"
-        normalized = NormalizedToolError(
-            code=code,
-            message=_message_or_fallback(
-                error, f"TIS request failed with {status_code}."
-            ),
-            details={"statusCode": status_code},
-        )
+        normalized = _map_http_status_error(error)
     elif isinstance(error, httpx.HTTPError):
         normalized = NormalizedToolError(
             code="temporarily_unavailable",
             message=_message_or_fallback(error, "TIS host is temporarily unavailable."),
         )
     elif isinstance(error, RuntimeError):
-        message = str(error)
-        if "CAS 登录" in message or "未认证" in message:
-            normalized = NormalizedToolError(
-                code="authentication_required", message=message
-            )
-        else:
-            normalized = NormalizedToolError(
-                code="execution_failed",
-                message=_message_or_fallback(error, "TIS tool execution failed."),
-            )
+        normalized = _map_runtime_error(error)
     else:
         normalized = NormalizedToolError(
             code="execution_failed",
