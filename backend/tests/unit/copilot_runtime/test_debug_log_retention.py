@@ -95,6 +95,43 @@ def test_retention_coordinator_respects_minimum_cleanup_interval(tmp_path: Path)
     assert audits[0].details["reason"] == "min_cleanup_interval_not_elapsed"
 
 
+def test_retention_coordinator_allows_immediate_retry_after_failed_cleanup(tmp_path: Path) -> None:
+    store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
+    _write_event(store, occurred_at=datetime(2026, 4, 1, 8, 0, tzinfo=UTC), event_name="expired.1")
+
+    delete_calls = 0
+    original_delete = store.delete_events_older_than
+
+    def flaky_delete(cutoff: datetime, *, limit: int) -> int:
+        nonlocal delete_calls
+        delete_calls += 1
+        if delete_calls == 1:
+            raise RuntimeError("database locked")
+        return original_delete(cutoff, limit=limit)
+
+    store.delete_events_older_than = flaky_delete  # type: ignore[method-assign]
+    coordinator = RetentionCoordinator(
+        store,
+        config=DebugLogRetentionConfig(
+            retention_days=7,
+            auto_cleanup_enabled=True,
+            min_cleanup_interval_seconds=3600,
+        ),
+        clock=lambda: datetime(2026, 4, 18, 8, 0, tzinfo=UTC),
+    )
+
+    first_result = coordinator.run_due_maintenance(trigger="startup")
+    second_result = coordinator.run_due_maintenance(trigger="startup")
+    audits = store.list_audit_records(limit=10, action="retention.cleanup")
+
+    assert first_result.status == "failed"
+    assert second_result.status == "succeeded"
+    assert delete_calls == 2
+    assert len(audits) == 2
+    assert audits[0].status == "succeeded"
+    assert audits[1].status == "failed"
+
+
 def _write_event(store: DebugLogStore, *, occurred_at: datetime, event_name: str) -> None:
     store.write_event(
         DebugLogEvent(

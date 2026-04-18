@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -15,6 +16,9 @@ from .contracts import (
     DebugLogLevel,
 )
 from .store import DebugLogStore
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _normalize_optional_text(value: object | None) -> str | None:
@@ -65,33 +69,39 @@ class RuntimeDebugLogWriter:
         if error is not None:
             exception_type, error_summary, exception_stack = _summarize_error(error)
 
-        self.store.write_event(
-            DebugLogEvent.create(
-                level=level,
-                category=category,
-                event_name=event_name,
-                message=message,
-                environment=self.environment,
-                context=DebugLogEventContext(
-                    phase=_normalize_optional_text(phase),
-                    run_id=_normalize_optional_text(run_id),
-                    thread_id=_normalize_optional_text(thread_id),
-                    request_id=_normalize_optional_text(request_id),
-                    correlation_id=_normalize_optional_text(correlation_id)
-                    or _normalize_optional_text(request_id)
-                    or _normalize_optional_text(run_id),
-                    session_id=_normalize_optional_text(session_id)
-                    or _normalize_optional_text(thread_id),
-                    component=_normalize_optional_text(component),
-                    operation=_normalize_optional_text(operation),
-                    tags={str(key): str(value) for key, value in (tags or {}).items()},
-                ),
-                summary=self.store.sanitizer.sanitize_summary(dict(summary or {})),
-                error_summary=error_summary,
-                exception_type=exception_type,
-                exception_stack=exception_stack,
+        try:
+            self.store.write_event(
+                DebugLogEvent.create(
+                    level=level,
+                    category=category,
+                    event_name=event_name,
+                    message=message,
+                    environment=self.environment,
+                    context=DebugLogEventContext(
+                        phase=_normalize_optional_text(phase),
+                        run_id=_normalize_optional_text(run_id),
+                        thread_id=_normalize_optional_text(thread_id),
+                        request_id=_normalize_optional_text(request_id),
+                        correlation_id=_normalize_optional_text(correlation_id)
+                        or _normalize_optional_text(request_id)
+                        or _normalize_optional_text(run_id),
+                        session_id=_normalize_optional_text(session_id)
+                        or _normalize_optional_text(thread_id),
+                        component=_normalize_optional_text(component),
+                        operation=_normalize_optional_text(operation),
+                        tags={str(key): str(value) for key, value in (tags or {}).items()},
+                    ),
+                    summary=self.store.sanitizer.sanitize_summary(dict(summary or {})),
+                    error_summary=error_summary,
+                    exception_type=exception_type,
+                    exception_stack=exception_stack,
+                )
             )
-        )
+        except Exception:
+            _LOGGER.exception(
+                "Runtime debug log persistence failed for event '%s'.",
+                event_name,
+            )
 
 
 __all__ = ["RuntimeDebugLogWriter"]

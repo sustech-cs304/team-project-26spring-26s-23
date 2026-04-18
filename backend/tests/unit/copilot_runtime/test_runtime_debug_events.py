@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
+from unittest.mock import Mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -145,7 +147,7 @@ def test_tool_debug_logs_capture_redacted_input_and_failure_details(tmp_path: Pa
 
     result = asyncio.run(
         executor._execute_bound_tool(
-            ctx,
+            cast(Any, ctx),
             tool_id=WEATHER_CURRENT_TOOL_ID,
             arguments={"location": "Shenzhen", "password": "super-secret"},
         )
@@ -219,3 +221,54 @@ def test_transport_debug_logs_cover_run_start_and_run_stream_failure(tmp_path: P
     failed = next(event for event in events if event.event_name == "transport.http.run_stream.failed")
     assert failed.request_id is not None
     assert failed.exception_type == "RunNotFoundError"
+
+
+def test_transport_request_succeeds_when_debug_log_write_fails(tmp_path: Path) -> None:
+    bridge, debug_store, executor = _build_bridge_and_writer(tmp_path)
+    runtime_store = bridge._session_store  # type: ignore[attr-defined]
+    tool_registry = build_default_tool_registry()
+    agent_registry = build_default_agent_registry(
+        executor_factory=lambda: executor,
+        toolset_name=tool_registry.get_default().name,
+    )
+    scaffold = build_runtime_scaffold(
+        session_store_type=runtime_store.storage_type,
+        model_configured=executor.model_configured,
+        model_environment_keys=executor.model_environment_keys,
+        agent_registry=agent_registry,
+        tool_registry=tool_registry,
+    )
+    writer = RuntimeDebugLogWriter(
+        store=debug_store,
+        environment=DebugLogEnvironmentMode.TEST,
+    )
+    debug_store.write_event = Mock(side_effect=RuntimeError("database locked"))  # type: ignore[method-assign]
+
+    app = FastAPI()
+    app.include_router(build_router(scaffold, bridge, writer))
+
+    with TestClient(app) as client:
+        thread_response = client.post("/", json={"method": "thread/create", "body": {"agentId": "default"}})
+        thread_id = thread_response.json()["threadId"]
+        start_response = client.post(
+            "/",
+            json={
+                "method": "run/start",
+                "body": {
+                    "threadId": thread_id,
+                    "agentId": "default",
+                    "message": {"role": "user", "content": "hello"},
+                    "policy": {
+                        "modelRoute": {
+                            "routeRef": {
+                                "routeKind": "provider-model",
+                                "profileId": "profile-1",
+                                "modelId": "gpt-4.1",
+                            },
+                        }
+                    },
+                },
+            },
+        )
+
+    assert start_response.status_code == 200

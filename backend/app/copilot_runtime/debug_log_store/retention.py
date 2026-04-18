@@ -75,7 +75,10 @@ class RetentionCoordinator:
                 extra_maintenance_performed=False,
             )
 
-        latest_audit = self._store.get_latest_audit_record(action=_RETENTION_AUDIT_ACTION)
+        latest_audit = self._store.get_latest_audit_record(
+            action=_RETENTION_AUDIT_ACTION,
+            status="succeeded",
+        )
         if latest_audit is not None and self._config.min_cleanup_interval_seconds > 0:
             next_allowed_at = latest_audit.occurred_at + timedelta(seconds=self._config.min_cleanup_interval_seconds)
             if now < next_allowed_at:
@@ -180,6 +183,8 @@ def build_retention_config_from_runtime_config(runtime_config: Any) -> DebugLogR
 def _normalize_optional_int(value: object | None) -> int | None:
     if value is None:
         return None
+    if not isinstance(value, int | str):
+        raise TypeError("Expected retention configuration value to be int, str, or None.")
     normalized = int(value)
     return normalized if normalized > 0 else None
 

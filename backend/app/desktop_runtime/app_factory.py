@@ -16,8 +16,6 @@ from ..copilot_runtime import PydanticAIAgentExecutor, build_default_runtime_dep
 from ..copilot_runtime.debug_log_store import (
     DebugLogCategory,
     DebugLogEnvironmentMode,
-    DebugLogEvent,
-    DebugLogEventContext,
     DebugLogLevel,
     DebugLogQueryService,
     DebugLogStore,
@@ -138,26 +136,19 @@ def create_app(
         app.state.copilot_runtime_debug_log_retention_coordinator = debug_log_retention_coordinator
         app.state.copilot_runtime_debug_log_query_service = debug_log_query_service
         app.state.copilot_runtime_debug_log_environment = debug_log_environment
-        debug_log_store.write_event(
-            DebugLogEvent.create(
-                level=DebugLogLevel.INFO,
-                category=DebugLogCategory.LIFECYCLE,
-                event_name="desktop_runtime.startup.initialized",
-                message="Desktop runtime debug log infrastructure initialized.",
-                environment=debug_log_environment,
-                context=DebugLogEventContext(
-                    phase="startup",
-                    component="desktop_runtime",
-                    operation="create_app",
-                ),
-                summary=debug_log_store.sanitizer.sanitize_summary(
-                    {
-                        "debugLogDatabaseFile": runtime_config.debug_log_database_file.as_posix(),
-                        "appMode": runtime_config.app_mode,
-                        "environment": runtime_config.environment,
-                    }
-                ),
-            )
+        runtime_debug_log_writer.write(
+            category=DebugLogCategory.LIFECYCLE,
+            level=DebugLogLevel.INFO,
+            event_name="desktop_runtime.startup.initialized",
+            message="Desktop runtime debug log infrastructure initialized.",
+            component="desktop_runtime",
+            operation="create_app",
+            phase="startup",
+            summary={
+                "debugLogDatabaseFile": runtime_config.debug_log_database_file.as_posix(),
+                "appMode": runtime_config.app_mode,
+                "environment": runtime_config.environment,
+            },
         )
         debug_log_retention_coordinator.run_due_maintenance(trigger="startup")
         lifecycle_manager.startup()
@@ -176,19 +167,14 @@ def create_app(
                         resource_name,
                     )
             try:
-                debug_log_store.write_event(
-                    DebugLogEvent.create(
-                        level=DebugLogLevel.INFO,
-                        category=DebugLogCategory.LIFECYCLE,
-                        event_name="desktop_runtime.shutdown.completed",
-                        message="Desktop runtime shutdown completed.",
-                        environment=debug_log_environment,
-                        context=DebugLogEventContext(
-                            phase="shutdown",
-                            component="desktop_runtime",
-                            operation="lifespan",
-                        ),
-                    )
+                runtime_debug_log_writer.write(
+                    category=DebugLogCategory.LIFECYCLE,
+                    level=DebugLogLevel.INFO,
+                    event_name="desktop_runtime.shutdown.completed",
+                    message="Desktop runtime shutdown completed.",
+                    component="desktop_runtime",
+                    operation="lifespan",
+                    phase="shutdown",
                 )
                 dispose = getattr(runtime_session_store, "dispose", None)
                 if callable(dispose):

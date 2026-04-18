@@ -14,7 +14,6 @@ from typing import Any
 from .contracts import (
     DebugLogCategory,
     DebugLogAuditRecord,
-    DebugLogAuditSummary,
     DebugLogEnvironmentMode,
     DebugLogEvent,
     DebugLogLevel,
@@ -182,12 +181,24 @@ class DebugLogStore:
             )
         return int(cursor.rowcount if cursor.rowcount is not None else 0)
 
-    def get_latest_audit_record(self, *, action: str | None = None) -> DebugLogAuditRecord | None:
-        where_sql = ""
-        parameters: tuple[object, ...] = ()
+    def get_latest_audit_record(
+        self,
+        *,
+        action: str | None = None,
+        status: str | None = None,
+    ) -> DebugLogAuditRecord | None:
+        where_clauses: list[str] = []
+        parameters: list[object] = []
         if action is not None:
-            where_sql = "WHERE action = ?"
-            parameters = (action,)
+            where_clauses.append("action = ?")
+            parameters.append(action)
+        if status is not None:
+            where_clauses.append("status = ?")
+            parameters.append(status)
+
+        where_sql = ""
+        if where_clauses:
+            where_sql = "WHERE " + " AND ".join(where_clauses)
 
         with self._connection() as connection:
             row = connection.execute(
@@ -198,7 +209,7 @@ class DebugLogStore:
                 ORDER BY occurred_at DESC, id DESC
                 LIMIT 1
                 """,
-                parameters,
+                tuple(parameters),
             ).fetchone()
         if row is None:
             return None
