@@ -40,9 +40,9 @@ _MCP_CAPABILITY_BRIDGE_NOTES: dict[HostCapabilityName, str] = {
         "Not directly satisfiable over a bare MCP tool boundary; "
         "requires a host-managed state bridge."
     ),
-    "secret_provider": (
+    "secret_provider": (  # nosec B105 - capability identifier/documentation note, not a credential literal
         "Not directly satisfiable over a bare MCP tool boundary; "
-        "requires explicit server-side secret wiring or a host auth bridge."
+        "requires explicit server-side credential wiring or a host auth bridge."
     ),
     "event_sink": (
         "Not directly satisfiable over a bare MCP tool boundary; "
