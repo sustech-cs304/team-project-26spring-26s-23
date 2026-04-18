@@ -2,13 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections.abc import Awaitable
 from pathlib import Path
+from typing import TypeVar
 
 from app.tooling.file_tools import FileToolError, FileToolImageReader, FileToolPathPolicy, FileToolPdfReader, ReadRequest
 from app.tooling.file_tools.runtime_bindings import build_file_tool_read_runtime_binding
 from app.tooling.file_tools.service import FileToolReadService
 from app.tooling.file_tools.text_reader import FileToolTextReader
 from app.tooling.runtime_adapter.copilot_runtime import RuntimeToolExecutionContext, runtime_tool_execution_scope
+
+
+_T = TypeVar("_T")
+
+
+async def _as_coroutine(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
+
 
 _MINIMAL_PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk6sAAAAASUVORK5CYII="
@@ -165,7 +175,7 @@ def test_runtime_binding_uses_runtime_model_vision_flag(tmp_path: Path) -> None:
     (workspace_root / "pixel.png").write_bytes(base64.b64decode(_MINIMAL_PNG_BASE64))
     binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
 
-    no_vision_result = asyncio.run(binding.execute({"path": "pixel.png"}))
+    no_vision_result = asyncio.run(_as_coroutine(binding.execute({"path": "pixel.png"})))
 
     assert no_vision_result["status"] == "error"
     assert no_vision_result["error"]["code"] == "execution_failed"
@@ -183,7 +193,7 @@ def test_runtime_binding_uses_runtime_model_vision_flag(tmp_path: Path) -> None:
             },
         )
     ):
-        vision_result = asyncio.run(binding.execute({"path": "pixel.png"}))
+        vision_result = asyncio.run(_as_coroutine(binding.execute({"path": "pixel.png"})))
 
     assert vision_result["status"] == "success"
     assert vision_result["output"]["data"]["kind"] == "image"
@@ -214,8 +224,8 @@ def test_media_runtime_binding_allows_absolute_image_and_pdf_paths(tmp_path: Pat
             },
         )
     ):
-        image_result = asyncio.run(binding.execute({"path": str(image_path)}))
-    pdf_result = asyncio.run(binding.execute({"path": str(pdf_path)}))
+        image_result = asyncio.run(_as_coroutine(binding.execute({"path": str(image_path)})))
+    pdf_result = asyncio.run(_as_coroutine(binding.execute({"path": str(pdf_path)})))
 
     assert image_result["status"] == "success"
     assert image_result["output"]["data"]["resolvedPath"] == image_path.resolve(strict=False).as_posix()

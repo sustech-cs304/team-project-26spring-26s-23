@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+from collections.abc import Awaitable
 from pathlib import Path
+from typing import TypeVar
 
 from app.copilot_runtime import build_default_tool_registry
 from app.tooling.file_tools import FileToolPathPolicy, NotebookEditOperation, NotebookEditRequest, ReadRequest
@@ -24,6 +26,11 @@ from app.tooling.file_tools.writer import _build_sha256
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
+_T = TypeVar("_T")
+
+
+async def _as_coroutine(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
 
 
 def _runtime_context(default_root: Path) -> RuntimeToolExecutionContext:
@@ -356,13 +363,15 @@ def test_runtime_bindings_expose_notebook_read_and_edit_schemas(tmp_path: Path) 
 
     read_binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
     edit_binding = build_file_tool_notebook_edit_runtime_binding(workspace_root=workspace_root)
-    read_result = asyncio.run(read_binding.execute({"path": "sample.ipynb"}))
+    read_result = asyncio.run(_as_coroutine(read_binding.execute({"path": "sample.ipynb"})))
     edit_result = asyncio.run(
-        edit_binding.execute(
-            {
-                "path": "sample.ipynb",
-                "operations": [{"kind": "replace", "cellId": "cell-a", "source": "updated\n"}],
-            }
+        _as_coroutine(
+            edit_binding.execute(
+                {
+                    "path": "sample.ipynb",
+                    "operations": [{"kind": "replace", "cellId": "cell-a", "source": "updated\n"}],
+                }
+            )
         )
     )
 
@@ -372,6 +381,7 @@ def test_runtime_bindings_expose_notebook_read_and_edit_schemas(tmp_path: Path) 
     assert read_result["output"]["data"]["kind"] == "notebook"
     assert edit_binding.tool_id == FILE_TOOL_NOTEBOOK_EDIT_ID
     assert edit_binding.function_name == FILE_TOOL_NOTEBOOK_EDIT_FUNCTION_NAME
+    assert edit_binding.parameters_json_schema is not None
     assert edit_binding.parameters_json_schema["properties"]["operations"]["items"]["properties"]["kind"]["enum"] == [
         "replace",
         "insert",
@@ -441,15 +451,17 @@ def test_notebook_runtime_bindings_allow_absolute_paths_and_runtime_default_root
 
     read_binding = build_file_tool_read_runtime_binding(workspace_root=workspace_root)
     edit_binding = build_file_tool_notebook_edit_runtime_binding(workspace_root=workspace_root)
-    absolute_result = asyncio.run(read_binding.execute({"path": str(target)}))
+    absolute_result = asyncio.run(_as_coroutine(read_binding.execute({"path": str(target)})))
     with runtime_tool_execution_scope(_runtime_context(runtime_root)):
-        relative_read_result = asyncio.run(read_binding.execute({"path": "sample.ipynb"}))
+        relative_read_result = asyncio.run(_as_coroutine(read_binding.execute({"path": "sample.ipynb"})))
         relative_edit_result = asyncio.run(
-            edit_binding.execute(
-                {
-                    "path": "sample.ipynb",
-                    "operations": [{"kind": "replace", "cellId": "cell-a", "source": "updated\n"}],
-                }
+            _as_coroutine(
+                edit_binding.execute(
+                    {
+                        "path": "sample.ipynb",
+                        "operations": [{"kind": "replace", "cellId": "cell-a", "source": "updated\n"}],
+                    }
+                )
             )
         )
 

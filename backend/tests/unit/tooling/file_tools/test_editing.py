@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Awaitable
 from pathlib import Path
+from typing import TypeVar
 
 from app.copilot_runtime import build_default_tool_registry
 from app.tooling.file_tools import FileToolPathPolicy
@@ -14,6 +16,13 @@ from app.tooling.file_tools.runtime_bindings import (
     build_file_tool_edit_runtime_binding,
 )
 from app.tooling.file_tools.service import FileToolEditService
+
+
+_T = TypeVar("_T")
+
+
+async def _as_coroutine(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
 
 
 def test_file_tool_edit_service_replaces_unique_match(tmp_path: Path) -> None:
@@ -173,7 +182,7 @@ def test_file_tool_edit_runtime_binding_exposes_schema_and_executes(tmp_path: Pa
 
     binding = build_file_tool_edit_runtime_binding(workspace_root=workspace_root)
     result = asyncio.run(
-        binding.execute({"path": "sample.txt", "oldString": "TODO", "newString": "DONE"})
+        _as_coroutine(binding.execute({"path": "sample.txt", "oldString": "TODO", "newString": "DONE"}))
     )
 
     assert binding.tool_id == FILE_TOOL_EDIT_ID
