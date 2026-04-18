@@ -15,6 +15,10 @@ dependencies = [
     "python-pptx>=1.0.2",
     "python-docx>=1.2.0",
     "alembic>=1.18.4",
+    "ruff>=0.15.11",
+    "bandit>=1.9.4",
+    "xenon>=0.9.3",
+    "pyright>=1.1.408",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +39,7 @@ packages = ["app"]
 [tool.pyright]
 include = ["app"]
 extraPaths = ["."]
+typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
 addopts = "-ra"
@@ -43,3 +48,9 @@ markers = [
     "live: requires real Blackboard credentials and network access",
     "e2e: end-to-end Blackboard snapshot sync verification",
 ]
+
+[tool.ruff]
+include = ["*.py"]
+
+[tool.ruff.format]
+quote-style = "double"
