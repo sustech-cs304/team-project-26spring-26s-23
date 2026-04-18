@@ -30,6 +30,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend-copilot/package-lock.json
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/.python-version
+
       - name: Install frontend dependencies
         run: npm ci
 
