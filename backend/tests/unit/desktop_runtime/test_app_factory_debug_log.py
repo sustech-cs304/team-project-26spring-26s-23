@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime.debug_log_store import DebugLogQueryService, RetentionCoordinator
+from app.copilot_runtime.agent import PydanticAIAgentExecutor
 from app.desktop_runtime.app_factory import create_app
-from app.desktop_runtime.config import parse_runtime_config
+from app.desktop_runtime.config import LOCAL_TOKEN_HEADER_NAME, parse_runtime_config
 
 
 def test_create_app_initializes_debug_log_store_and_writes_lifecycle_events(tmp_path: Path) -> None:
@@ -39,3 +41,62 @@ def test_create_app_initializes_debug_log_store_and_writes_lifecycle_events(tmp_
     event_names = [event.event_name for event in shutdown_events]
     assert "desktop_runtime.startup.initialized" in event_names
     assert "desktop_runtime.shutdown.completed" in event_names
+
+
+def test_create_app_supports_runtime_to_query_debug_log_regression_flow(tmp_path: Path) -> None:
+    config = parse_runtime_config(
+        [
+            "--database-dir",
+            str(tmp_path / "database"),
+            "--debug-log-database-file",
+            str(tmp_path / "database" / "runtime-debug.sqlite3"),
+            "--environment",
+            "test",
+            "--local-token",
+            "debug-token",
+        ],
+        env={},
+        cwd=tmp_path,
+    )
+    app = create_app(config, agent_executor=PydanticAIAgentExecutor(model=TestModel(custom_output_text="unused")))
+
+    with TestClient(app) as client:
+        thread_response = client.post("/", json={"method": "thread/create", "body": {"agentId": "default"}})
+        assert thread_response.status_code == 200
+        thread_id = thread_response.json()["threadId"]
+
+        run_start_response = client.post(
+            "/",
+            json={
+                "method": "run/start",
+                "body": {
+                    "threadId": thread_id,
+                    "agentId": "default",
+                    "message": {"role": "user", "content": "hello"},
+                    "policy": {
+                        "modelRoute": {
+                            "routeRef": {
+                                "routeKind": "provider-model",
+                                "profileId": "profile-1",
+                                "modelId": "gpt-4.1",
+                            }
+                        }
+                    },
+                },
+            },
+        )
+        assert run_start_response.status_code == 200
+        run_id = run_start_response.json()["run"]["runId"]
+
+        recent_response = client.get(
+            "/diagnostics/debug-logs/recent",
+            headers={LOCAL_TOKEN_HEADER_NAME: "debug-token"},
+            params={"runId": run_id},
+        )
+
+    assert recent_response.status_code == 200
+    payload = recent_response.json()
+    assert payload["ok"] is True
+    event_names = [event["eventName"] for event in payload["events"]]
+    assert "runtime.run.start.succeeded" in event_names
+    assert any(event_name.startswith("transport.http.run_start.") for event_name in event_names)

@@ -106,7 +106,9 @@ def create_app(
         environment=debug_log_environment,
     )
     runtime_bridge.set_debug_event_logger(runtime_debug_log_writer)
-    runtime_agent_executor.set_debug_event_logger(runtime_debug_log_writer)
+    set_debug_event_logger = getattr(runtime_agent_executor, "set_debug_event_logger", None)
+    if callable(set_debug_event_logger):
+        set_debug_event_logger(runtime_debug_log_writer)
     history_query_service_factory = getattr(runtime_session_store, "create_history_query_service", None)
     runtime_history_query_service = (
         history_query_service_factory(
