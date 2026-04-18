@@ -672,8 +672,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
             progress("fetching courses")
             progress("syncing sqlite")
         return _build_blackboard_snapshot_report(
-            db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path,
-            resource_course_limit=resource_course_limit,
+            db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path
         )
 
     monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
@@ -734,8 +733,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
     assert event_types[0] == "run_started"
     assert event_types[-1] == "run_completed"
     assert event_types.count("tool_event") == 2
-    assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
-    assert tool_events[1]["payload"]["errorSummary"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
+    assert [event["payload"]["phase"] for event in tool_events] == ["started", "completed"]
     tool_call_id = tool_events[0]["payload"]["toolCallId"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
@@ -743,6 +741,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
+        ("state", "put_value"),
+        ("artifact", "save_text"),
         ("event", "emit_event"),
     ]
     assert all(item["toolId"] == "blackboard.snapshot.sync" for item in captured_bridge_payloads)
@@ -757,12 +757,12 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         if (item["capability"], item["operation"]) == ("secret", "get_secret")
     ]
     assert started_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.started"
-    assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.failed"
+    assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.completed"
     assert [request["payload"]["secretName"] for request in secret_requests] == [
         "sustech.username",
         "sustech.casPassword",
     ]
-    assert completed_event_request["payload"]["message"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
+    assert completed_event_request["payload"]["message"] == "Completed blackboard.snapshot.sync."
 
 
 
@@ -799,8 +799,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
             progress("fetching courses")
             progress("syncing sqlite")
         return _build_blackboard_snapshot_report(
-            db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path,
-            resource_course_limit=resource_course_limit,
+            db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path
         )
 
     monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
@@ -858,8 +857,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
     assert event_types[0] == "run_started"
     assert event_types[-1] == "run_completed"
     assert event_types.count("tool_event") == 2
-    assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
-    assert tool_events[1]["payload"]["errorSummary"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
+    assert [event["payload"]["phase"] for event in tool_events] == ["started", "completed"]
     tool_call_id = tool_events[0]["payload"]["toolCallId"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
@@ -867,6 +865,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
+        ("state", "put_value"),
+        ("artifact", "save_text"),
         ("event", "emit_event"),
     ]
     database_request = next(
@@ -881,8 +881,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
     assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
     assert database_request["payload"]["relativePath"] == "blackboard/sustech.db"
     assert started_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.started"
-    assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.failed"
-    assert completed_event_request["payload"]["message"] == "BlackboardSnapshotFetchResult.__init__() got an unexpected keyword argument 'resource_course_limit'"
+    assert completed_event_request["payload"]["eventType"] == "blackboard.snapshot.sync.completed"
+    assert completed_event_request["payload"]["message"] == "Completed blackboard.snapshot.sync."
 
 
 
@@ -1396,7 +1396,6 @@ def _build_blackboard_log_event(source: str) -> BlackboardLogEvent:
 def _build_blackboard_snapshot_report(
     *,
     db_path: Path,
-    resource_course_limit: int,
 ) -> BlackboardSnapshotSyncReport:
     snapshot = BlackboardSnapshotFetchResult(
         courses=[CourseDTO(course_id="_course_1", name="CS305 Database Systems")],
@@ -1436,7 +1435,6 @@ def _build_blackboard_snapshot_report(
                 title="Welcome",
             )
         ],
-        resource_course_limit=resource_course_limit,
         logs=[_build_blackboard_log_event("integration.blackboard.fetch")],
     )
     payloads = BlackboardSyncPayloads(
@@ -1741,7 +1739,7 @@ def _create_recording_bridge_client(
 
 
 def _create_app(
-    executor: CapturingStreamingExecutor | None = None,
+    executor: PydanticAIAgentExecutor | CapturingStreamingExecutor | None = None,
     *,
     host_capability_bridge_client: DesktopCapabilityBridgeClient | None = None,
 ):

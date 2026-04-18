@@ -28,7 +28,6 @@ def test_blackboard_snapshot_sync_e2e(tmp_path: Path) -> None:
         password,
         db_path=db_path,
         reset_schema=True,
-        resource_course_limit=3,
         verify_second_sync=True,
     )
 
