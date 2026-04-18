@@ -5,6 +5,7 @@ import json
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, TypedDict
 
 import pytest
 from pydantic_ai.messages import (
@@ -28,6 +29,7 @@ from app.copilot_runtime.agent import (
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
 )
+from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.tool_approval_coordinator import (
     RuntimeToolApprovalCoordinator,
     ToolApprovalNotFoundError,
@@ -37,6 +39,17 @@ from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
+
+
+class CollectedEventStreamResult(TypedDict):
+    events: list[RuntimeExecutionEvent]
+    output: str | None
+    error: Exception | None
+
+
+def _require_payload_mapping(payload: dict[str, Any] | None) -> dict[str, Any]:
+    assert payload is not None
+    return payload
 
 
 def test_run_raises_model_not_configured_when_no_model_is_available() -> None:
@@ -747,12 +760,13 @@ def test_execute_bound_tool_ask_mode_waits_for_manual_approval_then_executes() -
     assert outcome["phases_before_resolution"] == ["started", "waiting_approval"]
     assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
     waiting_event = emitted_tool_events[1]
-    assert waiting_event.approval == {
+    approval = _require_payload_mapping(waiting_event.approval)
+    assert approval == {
         "mode": "ask",
         "timeoutSeconds": None,
         "timeoutAction": None,
     }
-    assert "timeoutAt" not in waiting_event.approval
+    assert "timeoutAt" not in approval
     assert approval_coordinator.snapshot() == ()
 
 
@@ -863,14 +877,16 @@ def test_execute_bound_tool_delay_mode_auto_approves_after_timeout() -> None:
     assert result["location"] == "Shenzhen"
     assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
     waiting_event = emitted_tool_events[1]
-    assert waiting_event.approval == {
+    approval = _require_payload_mapping(waiting_event.approval)
+    timeout_at = approval.get("timeoutAt")
+    assert isinstance(timeout_at, str)
+    assert approval == {
         "mode": "delay",
-        "timeoutAt": waiting_event.approval["timeoutAt"],
+        "timeoutAt": timeout_at,
         "timeoutSeconds": 1,
         "timeoutAction": "approve",
     }
-    assert isinstance(waiting_event.approval["timeoutAt"], str)
-    assert waiting_event.approval["timeoutAt"]
+    assert timeout_at
     assert approval_coordinator.snapshot() == ()
 
 
@@ -1546,8 +1562,8 @@ class _FakeRawStreamResult:
         return self._output
 
 
-async def _collect_event_stream(stream) -> dict[str, object]:
-    events = []
+async def _collect_event_stream(stream) -> CollectedEventStreamResult:
+    events: list[RuntimeExecutionEvent] = []
     output: str | None = None
     error: Exception | None = None
 
