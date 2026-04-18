@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from app.copilot_runtime.debug_log_store import (
@@ -10,6 +11,7 @@ from app.copilot_runtime.debug_log_store import (
     DebugLogEvent,
     DebugLogEventContext,
     DebugLogLevel,
+    DebugLogQueryFilter,
     DebugLogStore,
     Sanitizer,
     resolve_debug_log_database_path,
@@ -71,6 +73,28 @@ def test_sanitizer_matches_common_sensitive_key_variants() -> None:
     assert sanitized.content["API_KEY"] == "***REDACTED***"
     assert sanitized.content["session_id"] == "***REDACTED***"
     assert sanitized.redacted_keys == ("API_KEY", "access_token", "refresh-token", "session_id")
+
+
+def test_sanitizer_redacts_embedded_sensitive_text_in_string_summary_values() -> None:
+    sanitizer = Sanitizer(max_string_length=80)
+
+    sanitized = sanitizer.sanitize_summary(
+        {
+            "inputSummary": "Authorization: Bearer abc123 api_key=topsecret",
+            "errorSummary": "request failed session_id=opaque",
+            "message": "GET https://example.com?token=hunter2&x=1",
+        }
+    )
+
+    assert "abc123" not in sanitized.content["inputSummary"]
+    assert "topsecret" not in sanitized.content["inputSummary"]
+    assert "opaque" not in sanitized.content["errorSummary"]
+    assert "hunter2" not in sanitized.content["message"]
+    assert sanitized.content["inputSummary"].count("***REDACTED***") == 2
+    assert "***REDACTED***" in sanitized.content["errorSummary"]
+    assert "***REDACTED***" in sanitized.content["message"]
+    assert sanitized.truncated is True
+    assert {"inputSummary", "errorSummary", "message"}.issubset(set(sanitized.dropped_fields))
 
 
 def test_debug_log_store_initializes_schema_and_reads_recent_events(tmp_path: Path) -> None:
@@ -179,6 +203,71 @@ def test_debug_log_store_redacts_sensitive_error_summary_and_stack_before_persis
     assert "opaque" not in (persisted.exception_stack or "")
     assert "***REDACTED***" in (persisted.error_summary or "")
     assert "***REDACTED***" in (persisted.exception_stack or "")
+
+
+def test_debug_log_store_redacts_message_and_summary_strings_before_persisting(tmp_path: Path) -> None:
+    store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
+
+    store.write_event(
+        DebugLogEvent(
+            occurred_at=datetime(2026, 4, 18, 8, 0, tzinfo=UTC),
+            level=DebugLogLevel.WARN,
+            category=DebugLogCategory.RUNTIME,
+            event_name="runtime.warning",
+            message="Authorization: Bearer msg-secret",
+            environment=DebugLogEnvironmentMode.TEST,
+            summary=store.sanitizer.sanitize_summary(
+                {
+                    "inputSummary": "api_key=summary-secret",
+                    "errorSummary": "session_id=summary-session",
+                }
+            ),
+            error_summary="api_key=error-secret",
+        )
+    )
+
+    persisted = store.list_recent_events(limit=1)[0]
+
+    assert "msg-secret" not in persisted.message
+    assert "summary-secret" not in persisted.summary["inputSummary"]
+    assert "summary-session" not in persisted.summary["errorSummary"]
+    assert "error-secret" not in (persisted.error_summary or "")
+    assert "***REDACTED***" in persisted.message
+    assert "***REDACTED***" in persisted.summary["inputSummary"]
+    assert "***REDACTED***" in persisted.summary["errorSummary"]
+    assert "***REDACTED***" in (persisted.error_summary or "")
+
+
+def test_debug_log_store_normalizes_time_filters_to_utc(tmp_path: Path) -> None:
+    store = DebugLogStore(db_path=tmp_path / "debug-log.sqlite3")
+    event_time = datetime(2026, 4, 18, 6, 0, tzinfo=UTC)
+    store.write_event(
+        DebugLogEvent(
+            occurred_at=event_time,
+            level=DebugLogLevel.INFO,
+            category=DebugLogCategory.RUNTIME,
+            event_name="runtime.event",
+            message="normal event",
+            environment=DebugLogEnvironmentMode.TEST,
+        )
+    )
+
+    matching = store.query_events(
+        query_filter=DebugLogQueryFilter(
+            occurred_from=datetime(2026, 4, 18, 13, 59, tzinfo=timezone(timedelta(hours=8))),
+            occurred_to=datetime(2026, 4, 18, 8, 1, tzinfo=timezone(timedelta(hours=2))),
+            limit=10,
+        )
+    )
+    excluded = store.query_events(
+        query_filter=DebugLogQueryFilter(
+            occurred_from=datetime(2026, 4, 18, 14, 1, tzinfo=timezone(timedelta(hours=8))),
+            limit=10,
+        )
+    )
+
+    assert [event.event_name for event in matching] == ["runtime.event"]
+    assert excluded == ()
 
 
 def test_checkpoint_wal_rejects_unsupported_mode(tmp_path: Path) -> None:

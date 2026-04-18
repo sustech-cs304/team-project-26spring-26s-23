@@ -7,7 +7,7 @@ import os
 import sqlite3
 from collections.abc import Mapping
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +79,9 @@ class DebugLogStore:
         self._initialize_schema()
 
     def write_event(self, event: DebugLogEvent) -> None:
+        normalized_occurred_at = _format_datetime_for_storage(event.occurred_at)
+        sanitized_message, _message_changed = self.sanitizer.sanitize_text(event.message)
+        assert sanitized_message is not None  # pragma: no cover - sanitize_text() preserves non-None str inputs
         sanitized_error_summary = self.sanitizer.sanitize_error_text(event.error_summary)
         summary_stack, _stack_truncated = self.sanitizer.sanitize_stack(event.exception_stack)
         with self._connection() as connection:
@@ -110,11 +113,11 @@ class DebugLogStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    event.occurred_at.isoformat(),
+                    normalized_occurred_at,
                     event.level.value,
                     event.category.value,
                     event.event_name,
-                    event.message,
+                    sanitized_message,
                     event.environment.value,
                     event.context.phase,
                     event.context.run_id,
@@ -150,7 +153,7 @@ class DebugLogStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    record.occurred_at.isoformat(),
+                    _format_datetime_for_storage(record.occurred_at),
                     record.action,
                     record.trigger,
                     record.status,
@@ -179,7 +182,7 @@ class DebugLogStore:
                     LIMIT ?
                 )
                 """,
-                (cutoff.isoformat(), normalized_limit),
+                (_format_datetime_for_storage(cutoff), normalized_limit),
             )
         return int(cursor.rowcount if cursor.rowcount is not None else 0)
 
@@ -276,10 +279,10 @@ class DebugLogStore:
             parameters.append(query_filter.category.value)
         if query_filter.occurred_from is not None:
             where_clauses.append("occurred_at >= ?")
-            parameters.append(query_filter.occurred_from.isoformat())
+            parameters.append(_format_datetime_for_storage(query_filter.occurred_from))
         if query_filter.occurred_to is not None:
             where_clauses.append("occurred_at <= ?")
-            parameters.append(query_filter.occurred_to.isoformat())
+            parameters.append(_format_datetime_for_storage(query_filter.occurred_to))
 
         where_sql = ""
         if where_clauses:
@@ -472,6 +475,16 @@ def _normalize_optional_text(value: object | None) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_datetime_to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _format_datetime_for_storage(value: datetime) -> str:
+    return _normalize_datetime_to_utc(value).isoformat(timespec="microseconds")
 
 
 __all__ = [

@@ -28,12 +28,16 @@ _DEFAULT_SENSITIVE_KEYS = frozenset(
 )
 _SENSITIVE_TEXT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
-        r"(?P<prefix>(?:^|[?&\s,;])(?:access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|session[_-]?id)\s*=)"
+        r"(?P<prefix>(?:^|[?&\s,;])(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|session[_-]?id)\s*=)"
         r"(?P<secret>[^&\s,;]+)",
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?P<prefix>(?:^|[\s,;])(?:authorization|x-api-key|api-key|api[_-]?key|token|access[_-]?token|refresh[_-]?token|cookie|set-cookie|session[_-]?id)\s*[:=]\s*)"
+        r"(?P<prefix>(?:^|[\s,;])authorization\s*[:=]\s*Bearer\s+)(?P<secret>[A-Za-z0-9._\-+/=]+)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?P<prefix>(?:^|[\s,;])(?:x-api-key|api-key|api[_-]?key|token|access[_-]?token|refresh[_-]?token|cookie|set-cookie|session[_-]?id)\s*[:=]\s*)"
         r"(?P<secret>[^\r\n,;]+)",
         re.IGNORECASE,
     ),
@@ -128,9 +132,11 @@ class Sanitizer:
             return value, False, set()
 
         if isinstance(value, str):
-            if len(value) <= self.max_string_length:
-                return value, False, set()
-            return f"{value[: self.max_string_length]}…", True, {field_path}
+            sanitized_text, changed = self.sanitize_text(value)
+            assert sanitized_text is not None  # pragma: no cover - sanitize_text() preserves non-None str inputs
+            if changed:
+                return sanitized_text, True, {field_path}
+            return sanitized_text, False, set()
 
         if isinstance(value, Mapping):
             result: dict[str, Any] = {}
@@ -175,9 +181,11 @@ class Sanitizer:
             return result_list, truncated, dropped_fields
 
         text = repr(value)
-        if len(text) <= self.max_string_length:
-            return text, False, set()
-        return f"{text[: self.max_string_length]}…", True, {field_path}
+        sanitized_text, changed = self.sanitize_text(text)
+        assert sanitized_text is not None  # pragma: no cover - sanitize_text() preserves non-None str inputs
+        if changed:
+            return sanitized_text, True, {field_path}
+        return sanitized_text, False, set()
 
     def _is_sensitive_key(self, key: str) -> bool:
         normalized = self._normalize_sensitive_key(key)
