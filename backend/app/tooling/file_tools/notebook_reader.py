@@ -208,11 +208,8 @@ def _summarize_output(*, output: Any, index: int) -> NotebookOutputSummary:
             message="Notebook outputs must be objects.",
             details={"outputIndex": index},
         )
-    output_type = (
-        output.get("output_type")
-        if isinstance(output.get("output_type"), str)
-        else "unknown"
-    )
+    raw_output_type = output.get("output_type")
+    output_type = raw_output_type if isinstance(raw_output_type, str) else "unknown"
     text_parts: list[str] = []
     if "text" in output:
         text_parts.append(_normalize_source(output.get("text")))

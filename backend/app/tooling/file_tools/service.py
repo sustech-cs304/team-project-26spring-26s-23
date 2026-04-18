@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import perf_counter
-from typing import cast
-
 from .errors import FileToolError
 from .editor import FileToolTextEditor
 from .glob_search import FileToolGlobSearcher
@@ -13,12 +11,13 @@ from .grep_search import FileToolGrepSearcher
 from .image_reader import FileToolImageReader, is_supported_image_path
 from .notebook_editor import FileToolNotebookEditor
 from .notebook_reader import FileToolNotebookReader
-from .path_policy import FileToolPathPolicy
+from .path_policy import FileToolPathPolicy, PathResolution
 from .pdf_reader import FileToolPdfReader
 from .protocol import (
     EditRequest,
     FileToolCallMetadata,
     GlobRequest,
+    PathMetadata,
     GrepRequest,
     NotebookEditRequest,
     ReadRequest,
@@ -297,19 +296,15 @@ class FileToolSwitchRootService:
             )
 
 
-def _build_path_metadata(resolution: object) -> object:
-    from .path_policy import PathResolution
-    from .protocol import PathMetadata
-
-    normalized_resolution = cast(PathResolution, resolution)
+def _build_path_metadata(resolution: PathResolution) -> PathMetadata:
     return PathMetadata(
-        path=normalized_resolution.original_path,
-        resolved_path=normalized_resolution.resolved_path.as_posix(),
-        path_kind=normalized_resolution.path_kind,
-        effective_root=normalized_resolution.effective_root.as_posix(),
-        root_source=normalized_resolution.root_source,
-        root_policy=normalized_resolution.root_policy,
-        symlink_policy=normalized_resolution.symlink_policy,
+        path=resolution.original_path,
+        resolved_path=resolution.resolved_path.as_posix(),
+        path_kind=resolution.path_kind,
+        effective_root=resolution.effective_root.as_posix(),
+        root_source=resolution.root_source,
+        root_policy=resolution.root_policy,
+        symlink_policy=resolution.symlink_policy,
     )
 
 
