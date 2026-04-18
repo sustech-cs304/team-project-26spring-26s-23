@@ -1068,6 +1068,14 @@ class PydanticAIAgentExecutor:
             timeout_seconds=timeout_seconds if mode == "delay" else None,
             timeout_action=timeout_action if mode == "delay" else None,
         )
+        approval_payload: dict[str, Any] = {
+            "mode": request.mode,
+            "timeoutSeconds": request.timeout_seconds,
+            "timeoutAction": request.timeout_action,
+        }
+        if request.timeout_at is not None:
+            approval_payload["timeoutAt"] = request.timeout_at.isoformat()
+
         self._emit_tool_event(
             ctx,
             RuntimeToolLifecycleEvent(
@@ -1077,12 +1085,7 @@ class PydanticAIAgentExecutor:
                 title="工具等待审批",
                 summary="工具调用正在等待审批决议。",
                 input_summary=input_summary,
-                approval={
-                    "mode": request.mode,
-                    "timeoutAt": None if request.timeout_at is None else request.timeout_at.isoformat(),
-                    "timeoutSeconds": request.timeout_seconds,
-                    "timeoutAction": request.timeout_action,
-                },
+                approval=approval_payload,
             ),
         )
         resolution = await ctx.deps.approval_coordinator.wait_for_resolution(

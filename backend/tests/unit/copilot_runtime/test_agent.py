@@ -741,6 +741,13 @@ def test_execute_bound_tool_ask_mode_waits_for_manual_approval_then_executes() -
     assert outcome["result"]["location"] == "Shenzhen"
     assert outcome["phases_before_resolution"] == ["started", "waiting_approval"]
     assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
+    waiting_event = emitted_tool_events[1]
+    assert waiting_event.approval == {
+        "mode": "ask",
+        "timeoutSeconds": None,
+        "timeoutAction": None,
+    }
+    assert "timeoutAt" not in waiting_event.approval
     assert approval_coordinator.snapshot() == ()
 
 

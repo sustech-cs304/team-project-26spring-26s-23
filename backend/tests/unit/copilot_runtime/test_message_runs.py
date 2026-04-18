@@ -429,7 +429,6 @@ def test_stream_events_emits_waiting_approval_tool_event_without_unsupported_err
             input_summary='{"location": "Shenzhen"}',
             approval={
                 "mode": "ask",
-                "timeoutAt": None,
                 "timeoutSeconds": None,
                 "timeoutAction": None,
             },
@@ -486,7 +485,6 @@ def test_stream_events_emits_waiting_approval_tool_event_without_unsupported_err
     ]
     assert tool_event_payloads[1]["approval"] == {
         "mode": "ask",
-        "timeoutAt": None,
         "timeoutSeconds": None,
         "timeoutAction": None,
     }
