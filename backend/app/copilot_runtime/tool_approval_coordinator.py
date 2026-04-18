@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+from .debug_logging import log_runtime_chain_debug
 from .tool_permissions import ResolvedToolPermissionMode, ResolvedToolTimeoutAction
 
 RuntimeToolApprovalDecision = Literal["approved", "rejected"]
@@ -106,6 +107,7 @@ class _PendingApproval:
     resolved_at: datetime | None = None
     resolution: RuntimeToolApprovalResolution | None = None
     timeout_handle: asyncio.TimerHandle | None = None
+    debug_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -132,6 +134,7 @@ class RuntimeToolApprovalCoordinator:
         input_summary: str | None = None,
         timeout_seconds: int | None = None,
         timeout_action: ResolvedToolTimeoutAction | None = None,
+        debug_enabled: bool = False,
     ) -> tuple[RuntimeToolApprovalRequest, asyncio.Future[RuntimeToolApprovalResolution]]:
         requested_at = self._time_provider()
         resolved_timeout_seconds = timeout_seconds if timeout_seconds is not None else None
@@ -151,7 +154,7 @@ class RuntimeToolApprovalCoordinator:
             input_summary=input_summary,
         )
         future: asyncio.Future[RuntimeToolApprovalResolution] = self._loop_provider().create_future()
-        pending = _PendingApproval(request=request, future=future)
+        pending = _PendingApproval(request=request, future=future, debug_enabled=debug_enabled)
         if resolved_timeout_seconds is not None and resolved_timeout_action is not None:
             pending.timeout_handle = self._loop_provider().call_later(
                 resolved_timeout_seconds,
@@ -160,6 +163,19 @@ class RuntimeToolApprovalCoordinator:
                 tool_call_id,
             )
         self._pending_by_key[(run_id, tool_call_id)] = pending
+        log_runtime_chain_debug(
+            "tool.approval_request.created",
+            enabled=debug_enabled,
+            runId=run_id,
+            toolCallId=tool_call_id,
+            toolId=tool_id,
+            mode=mode,
+            timeoutSeconds=resolved_timeout_seconds,
+            timeoutAction=resolved_timeout_action,
+            timeoutAt=None if timeout_at is None else timeout_at.isoformat(),
+            timeoutScheduled=pending.timeout_handle is not None,
+            pendingCount=len(self._pending_by_key),
+        )
         return request, future
 
     async def wait_for_resolution(
@@ -169,7 +185,26 @@ class RuntimeToolApprovalCoordinator:
         tool_call_id: str,
     ) -> RuntimeToolApprovalResolution:
         pending = self._require_pending(run_id=run_id, tool_call_id=tool_call_id)
-        return await pending.future
+        log_runtime_chain_debug(
+            "tool.approval_request.waiting",
+            enabled=pending.debug_enabled,
+            runId=run_id,
+            toolCallId=tool_call_id,
+            toolId=pending.request.tool_id,
+            mode=pending.request.mode,
+            timeoutAt=(
+                None if pending.request.timeout_at is None else pending.request.timeout_at.isoformat()
+            ),
+        )
+        resolution = await pending.future
+        log_runtime_chain_debug(
+            "tool.approval_request.wait_resumed",
+            enabled=pending.debug_enabled,
+            runId=run_id,
+            toolCallId=tool_call_id,
+            resolution=resolution.to_payload(),
+        )
+        return resolution
 
     def resolve(
         self,
@@ -179,6 +214,14 @@ class RuntimeToolApprovalCoordinator:
         decision: RuntimeToolApprovalDecision,
     ) -> RuntimeToolApprovalResolution:
         pending = self._require_pending(run_id=run_id, tool_call_id=tool_call_id)
+        log_runtime_chain_debug(
+            "tool.approval_request.manual_resolution_requested",
+            enabled=pending.debug_enabled,
+            runId=run_id,
+            toolCallId=tool_call_id,
+            toolId=pending.request.tool_id,
+            decision=decision,
+        )
         return self._finalize_pending(
             pending,
             decision=decision,
@@ -199,13 +242,47 @@ class RuntimeToolApprovalCoordinator:
 
     def _resolve_from_timeout(self, run_id: str, tool_call_id: str) -> None:
         pending = self._pending_by_key.get((run_id, tool_call_id))
-        if pending is None or pending.status != "pending":
+        if pending is None:
+            log_runtime_chain_debug(
+                "tool.approval_request.timeout_skipped",
+                runId=run_id,
+                toolCallId=tool_call_id,
+                reason="missing_pending_request",
+            )
+            return
+        if pending.status != "pending":
+            log_runtime_chain_debug(
+                "tool.approval_request.timeout_skipped",
+                enabled=pending.debug_enabled,
+                runId=run_id,
+                toolCallId=tool_call_id,
+                toolId=pending.request.tool_id,
+                reason="request_not_pending",
+                status=pending.status,
+            )
             return
         timeout_action = pending.request.timeout_action
         if timeout_action is None:
+            log_runtime_chain_debug(
+                "tool.approval_request.timeout_skipped",
+                enabled=pending.debug_enabled,
+                runId=run_id,
+                toolCallId=tool_call_id,
+                toolId=pending.request.tool_id,
+                reason="timeout_action_missing",
+            )
             return
         decision: RuntimeToolApprovalDecision = (
             "approved" if timeout_action == "approve" else "rejected"
+        )
+        log_runtime_chain_debug(
+            "tool.approval_request.timeout_fired",
+            enabled=pending.debug_enabled,
+            runId=run_id,
+            toolCallId=tool_call_id,
+            toolId=pending.request.tool_id,
+            timeoutAction=timeout_action,
+            decision=decision,
         )
         self._finalize_pending(
             pending,
@@ -252,6 +329,15 @@ class RuntimeToolApprovalCoordinator:
         if not pending.future.done():
             pending.future.set_result(resolution)
         self._pending_by_key.pop((pending.request.run_id, pending.request.tool_call_id), None)
+        log_runtime_chain_debug(
+            "tool.approval_request.finalized",
+            enabled=pending.debug_enabled,
+            runId=pending.request.run_id,
+            toolCallId=pending.request.tool_call_id,
+            toolId=pending.request.tool_id,
+            resolution=resolution.to_payload(),
+            pendingCount=len(self._pending_by_key),
+        )
         return resolution
 
     def _require_pending(self, *, run_id: str, tool_call_id: str) -> _PendingApproval:

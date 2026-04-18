@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from types import TracebackType
 from typing import Any, Protocol, cast
@@ -14,6 +15,7 @@ from ..agent import AgentExecutionError
 from ..debug_logging import log_runtime_chain_debug, summarize_runtime_model_route
 from ..execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventFactory
 from ..model_routes import ResolvedRuntimeModelRoute
+from ..tool_permissions import RuntimeToolPermissionResolver
 
 
 class RuntimeAgentExecutionEventStream(Protocol):
@@ -50,6 +52,7 @@ class RuntimeStreamingAgentExecutor(Protocol):
         debug_enabled: bool = False,
         request_options: Mapping[str, Any] | None = None,
         model_settings: Mapping[str, Any] | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> RuntimeAgentExecutionEventStream:
         raise NotImplementedError
 
@@ -66,6 +69,7 @@ def open_execution_stream(
     debug_enabled: bool,
     request_options: Mapping[str, Any] | None,
     model_settings: Mapping[str, Any] | None,
+    tool_permission_resolver: RuntimeToolPermissionResolver | None,
 ) -> RuntimeAgentExecutionEventStream:
     open_event_stream = getattr(agent_executor, "open_event_stream", None)
     if not callable(open_event_stream):
@@ -74,37 +78,63 @@ def open_execution_stream(
         )
     log_runtime_chain_debug(
         "orchestrator.open_execution_stream",
+        enabled=debug_enabled,
         runId=run_id,
         agentName=agent_name,
         streamKind="event_stream",
         enabledToolIds=list(enabled_tools),
         modelRoute=summarize_runtime_model_route(model_route),
+        toolPermissionResolverProvided=tool_permission_resolver is not None,
     )
+    stream_kwargs: dict[str, Any] = {
+        "run_id": run_id,
+        "agent_name": agent_name,
+        "user_prompt": user_prompt,
+        "message_history": message_history,
+        "model_route": model_route,
+        "enabled_tools": enabled_tools,
+        "debug_enabled": debug_enabled,
+        "request_options": request_options,
+        "model_settings": model_settings,
+        "tool_permission_resolver": tool_permission_resolver,
+    }
+    supports_tool_permission_resolver: bool | None = None
     try:
-        stream = open_event_stream(
-            run_id=run_id,
-            agent_name=agent_name,
-            user_prompt=user_prompt,
-            message_history=message_history,
-            model_route=model_route,
-            enabled_tools=enabled_tools,
-            debug_enabled=debug_enabled,
-            request_options=request_options,
-            model_settings=model_settings,
+        signature = inspect.signature(open_event_stream)
+    except (TypeError, ValueError):
+        supported_stream_kwargs = stream_kwargs
+    else:
+        supports_var_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
         )
-    except TypeError as exc:
-        if "model_settings" not in str(exc):
-            raise
-        stream = open_event_stream(
-            run_id=run_id,
-            agent_name=agent_name,
-            user_prompt=user_prompt,
-            message_history=message_history,
-            model_route=model_route,
-            enabled_tools=enabled_tools,
-            debug_enabled=debug_enabled,
-            request_options=request_options,
+        supports_tool_permission_resolver = (
+            supports_var_kwargs or "tool_permission_resolver" in signature.parameters
         )
+        if supports_var_kwargs:
+            supported_stream_kwargs = stream_kwargs
+        else:
+            supported_stream_kwargs = {
+                key: value for key, value in stream_kwargs.items() if key in signature.parameters
+            }
+    log_runtime_chain_debug(
+        "orchestrator.open_execution_stream.forwarded_kwargs",
+        enabled=debug_enabled,
+        runId=run_id,
+        agentName=agent_name,
+        forwardedKwargKeys=sorted(supported_stream_kwargs.keys()),
+        executorSupportsToolPermissionResolver=supports_tool_permission_resolver,
+        toolPermissionResolver=(
+            None
+            if tool_permission_resolver is None
+            else {
+                "defaultMode": tool_permission_resolver.default_mode,
+                "toolModes": dict(tool_permission_resolver.tool_modes or {}),
+                "toolTimeoutSeconds": dict(tool_permission_resolver.tool_timeout_seconds or {}),
+                "toolTimeoutActions": dict(tool_permission_resolver.tool_timeout_actions or {}),
+            }
+        ),
+    )
+    stream = open_event_stream(**supported_stream_kwargs)
     return cast(RuntimeAgentExecutionEventStream, stream)
 
 

@@ -617,8 +617,14 @@ class PydanticAIAgentExecutor:
         self._model_override = model
         self._env = dict(env or {})
         self._tool_registry = tool_registry or build_default_tool_registry()
-        self._workspace_root = str(workspace_root or Path.cwd())
-        self._default_root = str(default_root or self._workspace_root)
+        resolved_workspace_root = Path(workspace_root) if workspace_root is not None else Path.cwd()
+        self._workspace_root = resolved_workspace_root.resolve(strict=False).as_posix()
+        resolved_default_root = (
+            Path(default_root).resolve(strict=False).as_posix()
+            if default_root is not None
+            else self._workspace_root
+        )
+        self._default_root = resolved_default_root
         self.provider_adapter_registry = provider_adapter_registry or build_default_provider_adapter_registry()
         self._approval_coordinator = approval_coordinator or RuntimeToolApprovalCoordinator()
         self._agent = self._build_runtime_agent(
@@ -650,6 +656,9 @@ class PydanticAIAgentExecutor:
         enabled_tools: Sequence[str] = (),
         request_options: Mapping[str, Any] | None = None,
     ) -> str:
+        resolved_model_override = self._resolved_explicit_model(model)
+        if resolved_model_override is None:
+            resolved_model_override = self.resolve_model()
         stream = self.open_event_stream(
             run_id="run-inline",
             agent_name=agent_name,
@@ -666,7 +675,7 @@ class PydanticAIAgentExecutor:
             ),
             enabled_tools=enabled_tools,
             request_options=request_options,
-            model_override=model,
+            model_override=resolved_model_override,
         )
         async with stream as opened:
             async for _event in opened.iter_events():
@@ -1005,6 +1014,17 @@ class PydanticAIAgentExecutor:
             status = result.get("status")
             if status == "error":
                 error_payload = result.get("error")
+                error_code = error_payload.get("code") if isinstance(error_payload, Mapping) else None
+                if not isinstance(error_code, str) or error_code.strip() == "":
+                    result = self._build_tool_failure_result(
+                        tool_id=tool_id,
+                        tool_call_id=tool_call_id,
+                        code="tool_execution_failed",
+                        message="Contract tool returned an error result without a valid error code.",
+                        details={"integrity": "invalid_error_code"},
+                        retryable=False,
+                    )
+                    error_payload = result["error"]
                 error_message = error_payload.get("message") if isinstance(error_payload, Mapping) else None
                 normalized_error_message = (
                     error_message.strip()
@@ -1059,6 +1079,16 @@ class PydanticAIAgentExecutor:
             return None
         timeout_seconds = ctx.deps.tool_permission_resolver.resolve_timeout_seconds(tool_id)
         timeout_action = ctx.deps.tool_permission_resolver.resolve_timeout_action(tool_id)
+        log_runtime_chain_debug(
+            "tool.approval_gate.enter",
+            enabled=ctx.deps.debug_enabled,
+            runId=ctx.deps.run_id,
+            toolCallId=tool_call_id,
+            toolId=tool_id,
+            mode=mode,
+            timeoutSeconds=timeout_seconds,
+            timeoutAction=timeout_action,
+        )
         request, _future = ctx.deps.approval_coordinator.create_request(
             run_id=ctx.deps.run_id or "run-unknown",
             tool_call_id=tool_call_id,
@@ -1067,6 +1097,15 @@ class PydanticAIAgentExecutor:
             input_summary=input_summary,
             timeout_seconds=timeout_seconds if mode == "delay" else None,
             timeout_action=timeout_action if mode == "delay" else None,
+            debug_enabled=ctx.deps.debug_enabled,
+        )
+        log_runtime_chain_debug(
+            "tool.approval_gate.request_created",
+            enabled=ctx.deps.debug_enabled,
+            runId=ctx.deps.run_id,
+            toolCallId=tool_call_id,
+            toolId=tool_id,
+            request=request.to_payload(),
         )
         approval_payload: dict[str, Any] = {
             "mode": request.mode,
@@ -1092,21 +1131,49 @@ class PydanticAIAgentExecutor:
             run_id=request.run_id,
             tool_call_id=request.tool_call_id,
         )
+        log_runtime_chain_debug(
+            "tool.approval_gate.resolution_received",
+            enabled=ctx.deps.debug_enabled,
+            runId=ctx.deps.run_id,
+            toolCallId=tool_call_id,
+            toolId=tool_id,
+            resolution=resolution.to_payload(),
+        )
         if resolution.decision == "approved":
+            log_runtime_chain_debug(
+                "tool.approval_gate.resume_execution",
+                enabled=ctx.deps.debug_enabled,
+                runId=ctx.deps.run_id,
+                toolCallId=tool_call_id,
+                toolId=tool_id,
+                source=resolution.source,
+                status=resolution.status,
+            )
             return None
+        rejection_message = self._build_rejection_message(resolution)
+        log_runtime_chain_debug(
+            "tool.approval_gate.reject_execution",
+            enabled=ctx.deps.debug_enabled,
+            runId=ctx.deps.run_id,
+            toolCallId=tool_call_id,
+            toolId=tool_id,
+            source=resolution.source,
+            status=resolution.status,
+            rejectionMessage=rejection_message,
+        )
         self._emit_failed_tool_event(
             ctx,
             tool_call_id=tool_call_id,
             tool_id=tool_id,
             summary="工具调用被拒绝。",
             input_summary=input_summary,
-            error_summary=self._build_rejection_message(resolution),
+            error_summary=rejection_message,
         )
         return self._build_tool_failure_result(
             tool_id=tool_id,
             tool_call_id=tool_call_id,
             code="tool_approval_rejected",
-            message=self._build_rejection_message(resolution),
+            message=rejection_message,
             details={
                 "decision": resolution.decision,
                 "source": resolution.source,

@@ -70,6 +70,7 @@ class RunModel(Base):
     thinking_capability_override_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     thinking_level_intent: Mapped[str | None] = mapped_column(String(32), nullable=True)
     enabled_tools_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    tool_permission_policy_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     resolved_tool_ids_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     request_options_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     debug_mode_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

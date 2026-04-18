@@ -394,6 +394,7 @@ class RuntimeMessageRunOrchestrator:
                 debug_enabled=context.debug_enabled,
                 request_options=request.policy.requestOptions,
                 model_settings=thinking_adaptation.model_settings,
+                tool_permission_resolver=tool_permission_resolver,
             ) as stream:
                 log_runtime_chain_debug(
                     "orchestrator.stream_opened",

@@ -41,6 +41,7 @@ import {
   markCopilotRunTransportFailed,
   registerCopilotRunStartResponse,
 } from './run-segment-reducer'
+import { appendCopilotDebugLog } from './debug-mode-log'
 import type {
   CopilotBootstrapState,
   CopilotRunState,
@@ -58,6 +59,13 @@ export interface CopilotMessageDispatchInput extends RuntimeMessageSendInput {
 export async function* dispatchCopilotMessage(
   input: CopilotMessageDispatchInput,
 ): AsyncGenerator<RuntimeRunEvent> {
+  const debugModeEnabled = input.debugModeEnabled === true
+  appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-run-start-requested', {
+    sessionId: input.sessionId,
+    enabledTools: [...input.enabledTools],
+    toolPermissionPolicy: input.toolPermissionPolicy ?? null,
+    requestOptions: input.requestOptions,
+  })
   const runStartResponse = await startRuntimeRun({
     runtimeUrl: input.runtimeUrl,
     threadId: input.sessionId,
@@ -74,8 +82,16 @@ export async function* dispatchCopilotMessage(
     signal: input.signal,
   })
 
+  appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-run-start-succeeded', {
+    sessionId: input.sessionId,
+    runId: runStartResponse.run.runId,
+    status: runStartResponse.run.status,
+  })
+
   input.onRunStart?.(runStartResponse)
 
+  let sawTerminalEvent = false
+  let lastEventType: RuntimeRunEvent['type'] | null = null
   for await (const event of streamRuntimeRun({
     runtimeUrl: input.runtimeUrl,
     runId: runStartResponse.run.runId,
@@ -88,8 +104,24 @@ export async function* dispatchCopilotMessage(
       )
     }
 
+    lastEventType = event.type
+    if (event.type === 'run_completed' || event.type === 'run_failed' || event.type === 'run_cancelled') {
+      sawTerminalEvent = true
+    }
+
+    appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-stream-event-received',
+      summarizeRuntimeRunEventForDebug(event),
+    )
+
     yield event
   }
+
+  appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-stream-ended', {
+    sessionId: input.sessionId,
+    runId: runStartResponse.run.runId,
+    sawTerminalEvent,
+    lastEventType,
+  })
 }
 
 export function getCopilotSendDisabledReason(input: {
@@ -143,6 +175,82 @@ export function getCopilotSendDisabledReason(input: {
   }
 
   return null
+}
+
+function summarizeRuntimeRunEventForDebug(event: RuntimeRunEvent): Record<string, unknown> {
+  switch (event.type) {
+    case 'run_started':
+      return {
+        runId: event.runId,
+        type: event.type,
+        assistantMessageId: event.payload.assistantMessageId,
+      }
+    case 'run_completed':
+      return {
+        runId: event.runId,
+        type: event.type,
+        assistantMessageId: event.payload.assistantMessageId,
+        resolvedToolIds: [...event.payload.resolvedToolIds],
+      }
+    case 'run_failed':
+      return {
+        runId: event.runId,
+        type: event.type,
+        code: event.payload.code,
+        message: event.payload.message,
+      }
+    case 'run_cancelled':
+      return {
+        runId: event.runId,
+        type: event.type,
+        reason: event.payload.reason,
+      }
+    case 'tool_event':
+      return {
+        runId: event.runId,
+        type: event.type,
+        toolCallId: event.payload.toolCallId,
+        toolId: event.payload.toolId,
+        phase: event.payload.phase,
+        approval: event.payload.approval ?? null,
+        errorSummary: event.payload.errorSummary ?? null,
+      }
+    case 'run_diagnostic':
+      return {
+        runId: event.runId,
+        type: event.type,
+        code: event.payload.code,
+        stage: event.payload.stage ?? null,
+      }
+    case 'text_delta':
+      return {
+        runId: event.runId,
+        type: event.type,
+        textDeltaLength: event.payload.delta.length,
+      }
+    case 'reasoning_delta':
+      return {
+        runId: event.runId,
+        type: event.type,
+        textDeltaLength: event.payload.delta.length,
+      }
+    case 'run_metadata':
+      return {
+        runId: event.runId,
+        type: event.type,
+        requestedThinkingSelection: event.payload.requestedThinkingSelection ?? null,
+        appliedThinkingSelection: event.payload.appliedThinkingSelection ?? null,
+        requestedThinkingLevel: event.payload.requestedThinkingLevel ?? null,
+        appliedThinkingLevel: event.payload.appliedThinkingLevel ?? null,
+        thinkingCapabilitySnapshot: event.payload.thinkingCapabilitySnapshot ?? null,
+        reasoningSuppressionBasis: event.payload.reasoningSuppressionBasis ?? null,
+      }
+    default:
+      return {
+        runId: event.runId,
+        type: event.type,
+      }
+  }
 }
 
 function createPreflightTransientErrorState(input: {

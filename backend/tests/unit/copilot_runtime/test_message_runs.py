@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from pydantic_ai.models.test import TestModel
 
-from app.copilot_runtime.agent import AgentExecutionError, RuntimeToolLifecycleEvent
+from app.copilot_runtime.agent import AgentExecutionError, PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.execution_support import ThreadNotFoundError
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
@@ -26,6 +27,7 @@ from app.copilot_runtime.contracts import (
 )
 from app.copilot_runtime.agent_registry import build_default_agent_registry
 from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.tool_approval_coordinator import RuntimeToolApprovalCoordinator
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 
 
@@ -489,6 +491,124 @@ def test_stream_events_emits_waiting_approval_tool_event_without_unsupported_err
         "timeoutAction": None,
     }
     assert events[-1].payload["assistantText"] == "Weather answer"
+
+
+def test_stream_events_delay_timeout_auto_approve_continues_tool_execution() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_registry = build_default_tool_registry()
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    executor = PydanticAIAgentExecutor(
+        model=TestModel(call_tools=["weather_current"], custom_output_text="Weather answer", seed=0),
+        tool_registry=tool_registry,
+        approval_coordinator=approval_coordinator,
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=tool_registry,
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                thread_id="thread-1",
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_policy=RuntimeToolPermissionPolicy(
+                    schemaVersion=1,
+                    defaultMode="allow",
+                    toolModes={WEATHER_CURRENT_TOOL_ID: "delay"},
+                    toolTimeoutSeconds={WEATHER_CURRENT_TOOL_ID: 1},
+                    toolTimeoutActions={WEATHER_CURRENT_TOOL_ID: "approve"},
+                ),
+            ),
+        )
+    )
+
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "completed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_event_payloads[1]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "approve",
+    }
+    assert isinstance(tool_event_payloads[1]["approval"]["timeoutAt"], str)
+    assert any(event.type == "text_delta" for event in events)
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == "Weather answer"
+    assert approval_coordinator.snapshot() == ()
+
+
+def test_stream_events_delay_timeout_auto_deny_reinjects_failure_result() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_registry = build_default_tool_registry()
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    executor = PydanticAIAgentExecutor(
+        model=TestModel(call_tools=["weather_current"], custom_output_text="Weather answer", seed=0),
+        tool_registry=tool_registry,
+        approval_coordinator=approval_coordinator,
+    )
+    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=tool_registry,
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                thread_id="thread-1",
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_policy=RuntimeToolPermissionPolicy(
+                    schemaVersion=1,
+                    defaultMode="allow",
+                    toolModes={WEATHER_CURRENT_TOOL_ID: "delay"},
+                    toolTimeoutSeconds={WEATHER_CURRENT_TOOL_ID: 1},
+                    toolTimeoutActions={WEATHER_CURRENT_TOOL_ID: "deny"},
+                ),
+            ),
+        )
+    )
+
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "failed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_event_payloads[1]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "deny",
+    }
+    assert tool_event_payloads[2]["errorSummary"] == "Tool approval timed out and was automatically rejected."
+    assert any(event.type == "text_delta" for event in events)
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == "Weather answer"
+    assert approval_coordinator.snapshot() == ()
 
 
 
