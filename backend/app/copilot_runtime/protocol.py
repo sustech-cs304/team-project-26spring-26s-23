@@ -149,12 +149,24 @@ class RuntimeProtocolParser:
         self,
         payload: dict[str, Any] | None,
     ) -> RuntimeCapabilitiesGetRequest:
+        request_body = self._require_payload_body(
+            payload,
+            requested_method=CAPABILITIES_GET_METHOD,
+        )
         session_id = self._extract_identifier_request(
             payload=payload,
             requested_method=CAPABILITIES_GET_METHOD,
             field_name="sessionId",
         )
-        return RuntimeCapabilitiesGetRequest(session_id=session_id)
+        tool_permission_policy = self._optional_tool_permission_policy(
+            request_body.get("toolPermissionPolicy"),
+            field_name="toolPermissionPolicy",
+            requested_method=CAPABILITIES_GET_METHOD,
+        )
+        return RuntimeCapabilitiesGetRequest(
+            session_id=session_id,
+            tool_permission_policy=tool_permission_policy,
+        )
 
     def extract_global_tool_catalog_get_request(
         self,

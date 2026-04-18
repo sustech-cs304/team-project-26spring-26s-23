@@ -539,7 +539,10 @@ def _handle_capabilities_get_request(
 ) -> JSONResponse:
     try:
         capabilities_request = dependencies.parser.extract_capabilities_get_request(payload)
-        capabilities = dependencies.runtime_bridge.get_capabilities(session_id=capabilities_request.session_id)
+        capabilities = dependencies.runtime_bridge.get_capabilities(
+            session_id=capabilities_request.session_id,
+            tool_permission_policy=capabilities_request.tool_permission_policy,
+        )
     except RuntimeProtocolError as exc:
         return protocol_error_response(exc)
     except SessionNotFoundError as exc:

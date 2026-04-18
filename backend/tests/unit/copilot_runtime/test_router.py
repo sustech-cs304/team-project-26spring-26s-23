@@ -988,6 +988,33 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
 
 
 
+def test_root_post_capabilities_get_routes_tool_permission_policy_to_bridge_catalog_filter() -> None:
+    app, _scaffold, store = _build_app()
+    thread = store.create_thread(bound_agent_id="default", thread_id="session-policy")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/",
+            json=_build_capabilities_get_request(
+                session_id=thread.session_id,
+                tool_permission_policy={
+                    "schemaVersion": 1,
+                    "defaultMode": "allow",
+                    "toolModes": {"tool.file-convert": "deny"},
+                },
+            ),
+        )
+
+    payload = response.json()
+
+    assert response.status_code == 200
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" not in tool_ids
+    assert "tool.weather-current" in tool_ids
+    assert payload["recommendedTools"] == []
+
+
+
 def test_scaffold_capabilities_response_filters_denied_tools_from_catalog() -> None:
     _app, scaffold, store = _build_app()
     thread = store.create_thread(bound_agent_id="default", thread_id="session-deny")
@@ -1368,12 +1395,19 @@ def _build_thread_get_request(*, thread_id: str) -> dict[str, Any]:
 
 
 
-def _build_capabilities_get_request(*, session_id: str) -> dict[str, Any]:
+def _build_capabilities_get_request(
+    *,
+    session_id: str,
+    tool_permission_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "sessionId": session_id,
+    }
+    if tool_permission_policy is not None:
+        body["toolPermissionPolicy"] = dict(tool_permission_policy)
     return {
         "method": "capabilities/get",
-        "body": {
-            "sessionId": session_id,
-        },
+        "body": body,
     }
 
 

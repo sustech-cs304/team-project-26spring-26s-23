@@ -296,6 +296,29 @@ def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_again
     assert events[-1].payload["assistantText"] == TEST_MODEL_REPLY
 
 
+
+def test_build_default_runtime_dependencies_capabilities_use_bridge_policy_as_single_visibility_source() -> None:
+    dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
+    thread = dependencies.session_store.create_thread(
+        bound_agent_id=DEFAULT_AGENT_NAME,
+        thread_id="thread-capabilities-policy",
+    )
+
+    payload = dependencies.runtime_bridge.get_capabilities(
+        session_id=thread.session_id,
+        tool_permission_policy=RuntimeToolPermissionPolicy(
+            schemaVersion=1,
+            defaultMode="allow",
+            toolModes={"tool.file-convert": "deny"},
+        ),
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in payload["tools"]]
+    assert "tool.file-convert" not in tool_ids
+    assert "tool.weather-current" in tool_ids
+    assert payload["recommendedTools"] == []
+
+
 def test_build_default_runtime_dependencies_default_executor_is_unconfigured_without_explicit_model(
     monkeypatch,
     tmp_path: Path,

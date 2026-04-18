@@ -1767,12 +1767,19 @@ def _build_thread_create_request(*, agent_id: str) -> dict[str, Any]:
     }
 
 
-def _build_capabilities_get_request(*, thread_id: str) -> dict[str, Any]:
+def _build_capabilities_get_request(
+    *,
+    thread_id: str,
+    tool_permission_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "sessionId": thread_id,
+    }
+    if tool_permission_policy is not None:
+        body["toolPermissionPolicy"] = dict(tool_permission_policy)
     return {
         "method": "capabilities/get",
-        "body": {
-            "sessionId": thread_id,
-        },
+        "body": body,
     }
 
 

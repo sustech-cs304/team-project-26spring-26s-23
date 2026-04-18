@@ -176,6 +176,7 @@ class RuntimeThreadGetRequest(RuntimeContract):
 @dataclass(frozen=True, slots=True)
 class RuntimeCapabilitiesGetRequest(RuntimeContract):
     session_id: str
+    tool_permission_policy: RuntimeToolPermissionPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)

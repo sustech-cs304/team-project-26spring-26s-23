@@ -92,6 +92,36 @@ def test_extract_capabilities_get_request_reads_session_id() -> None:
     )
 
     assert request.session_id == "session-123"
+    assert request.tool_permission_policy is None
+
+
+
+def test_extract_capabilities_get_request_reads_optional_tool_permission_policy() -> None:
+    parser = _build_parser()
+
+    request = parser.extract_capabilities_get_request(
+        {
+            "method": "capabilities/get",
+            "body": {
+                "sessionId": "session-123",
+                "toolPermissionPolicy": {
+                    "schemaVersion": 1,
+                    "defaultMode": "allow",
+                    "toolModes": {"tool.file-convert": "deny"},
+                },
+            },
+        }
+    )
+
+    assert request.session_id == "session-123"
+    assert request.tool_permission_policy is not None
+    assert request.tool_permission_policy.to_dict() == {
+        "schemaVersion": 1,
+        "defaultMode": "allow",
+        "toolModes": {"tool.file-convert": "deny"},
+        "toolTimeoutSeconds": {},
+        "toolTimeoutActions": {},
+    }
 
 
 
