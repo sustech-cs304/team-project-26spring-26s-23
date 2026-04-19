@@ -487,7 +487,8 @@ async def execute_weather_current_tool(
         if isinstance(raw_location, str) and raw_location.strip() != ""
         else DEFAULT_WEATHER_LOCATION
     )
-    selected_rng = rng or random.Random()
+    # Placeholder weather sampling is not security-sensitive.
+    selected_rng = rng or random.Random()  # nosec B311
     sample = selected_rng.choice(_WEATHER_SAMPLE_RESULTS)
     return {
         "location": location,
