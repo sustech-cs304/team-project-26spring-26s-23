@@ -16,7 +16,7 @@ class PageContents:
             parts.append("**Texts:**\n" + "\n".join(self.texts))
         for i, table in enumerate(self.tables):
             table_str = "\n".join(["|" + "|".join(row) + "|" for row in table])
-            parts.append(f"**Table {i+1}:**\n{table_str}")
+            parts.append(f"**Table {i + 1}:**\n{table_str}")
         return "\n\n".join(parts)
 
 
@@ -107,4 +107,4 @@ def convert_file_to_str(file: File, suffix: str | None = None) -> str:
     texts = [page.to_string() for page in convert_file(file, suffix)]
     if len(texts) == 1:
         return texts[0]
-    return "\n\n".join(f"# Page {i+1}:\n{text}" for i, text in enumerate(texts))
+    return "\n\n".join(f"# Page {i + 1}:\n{text}" for i, text in enumerate(texts))

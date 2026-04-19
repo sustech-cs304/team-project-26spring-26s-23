@@ -953,9 +953,7 @@ def _normalize_notebook_edit_operation_kind(
         return "insert"
     if normalized == "delete":
         return "delete"
-    raise ValueError(
-        f"{field_name} must be one of: replace, insert, delete."
-    )
+    raise ValueError(f"{field_name} must be one of: replace, insert, delete.")
 
 
 def _coerce_int(value: Any, *, field_name: str) -> int:
