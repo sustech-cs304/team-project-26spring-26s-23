@@ -135,6 +135,59 @@ write_output() {
   fi
 }
 
+prepend_colon_path() {
+  local new_entry="$1"
+  local existing_value="$2"
+
+  if [[ -z "$existing_value" ]]; then
+    echo "$new_entry"
+  else
+    echo "$new_entry:$existing_value"
+  fi
+}
+
+append_macos_source_dependency_flags() {
+  local formula="$1"
+  local dependency_prefix=''
+
+  dependency_prefix="$(brew --prefix "$formula" 2>/dev/null || true)"
+  if [[ -z "$dependency_prefix" || ! -d "$dependency_prefix" ]]; then
+    echo "[python-download] Homebrew dependency $formula is not available; continuing with system defaults."
+    return 0
+  fi
+
+  echo "[python-download] Using Homebrew dependency $formula from $dependency_prefix."
+  CPPFLAGS="-I$dependency_prefix/include ${CPPFLAGS:-}"
+  LDFLAGS="-L$dependency_prefix/lib ${LDFLAGS:-}"
+
+  if [[ -d "$dependency_prefix/lib/pkgconfig" ]]; then
+    PKG_CONFIG_PATH="$(prepend_colon_path "$dependency_prefix/lib/pkgconfig" "${PKG_CONFIG_PATH:-}")"
+  fi
+}
+
+configure_macos_source_build_environment() {
+  local openssl_prefix=''
+
+  configure_args+=(--disable-framework)
+
+  if ! command -v brew >/dev/null 2>&1; then
+    echo '[python-download] Homebrew is not available; continuing macOS source build with system defaults.'
+    return 0
+  fi
+
+  append_macos_source_dependency_flags 'openssl@3'
+  append_macos_source_dependency_flags 'readline'
+  append_macos_source_dependency_flags 'sqlite'
+  append_macos_source_dependency_flags 'xz'
+
+  openssl_prefix="$(brew --prefix openssl@3 2>/dev/null || true)"
+  if [[ -n "$openssl_prefix" && -d "$openssl_prefix" ]]; then
+    configure_args+=(--with-openssl="$openssl_prefix" --with-openssl-rpath=auto)
+  fi
+
+  export CPPFLAGS LDFLAGS PKG_CONFIG_PATH
+}
+
 resolve_macos_framework_source() {
   local expanded_pkg_root="$1"
   local python_major_minor="$2"
@@ -277,10 +330,16 @@ case "$archive_kind" in
     fi
 
     build_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+    configure_args=(--prefix="$runtime_root")
+
+    if [[ "$OSTYPE" == darwin* ]]; then
+      echo '[python-download] Configuring macOS CPython source build for regular prefix layout.'
+      configure_macos_source_build_environment
+    fi
 
     echo "[python-download] Building CPython from official source tarball."
     pushd "$source_root" > /dev/null
-    ./configure --prefix="$runtime_root"
+    ./configure "${configure_args[@]}"
     make -j"$build_jobs"
     make install
     popd > /dev/null
