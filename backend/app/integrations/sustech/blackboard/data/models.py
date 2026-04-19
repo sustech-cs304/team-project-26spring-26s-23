@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from sqlalchemy import (
@@ -21,17 +21,22 @@ class Base(DeclarativeBase):
     """SQLAlchemy declarative base."""
 
 
+def utc_now_naive() -> datetime:
+    """Return a naive UTC timestamp to preserve existing SQLite storage semantics."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class TimestampSoftDeleteMixin:
     """Common columns for all tables."""
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now_naive, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now_naive,
+        onupdate=utc_now_naive,
         nullable=False,
     )
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
