@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from pydantic import ConfigDict, Field
 
 from .contracts import RuntimeThinkingSelection, RuntimeThinkingValue
 from .model_routes import ResolvedRuntimeModelRoute
 from .provider_adapter_registry import (
     RuntimeProviderAdapterRegistry,
 )
+from .pydantic_contracts import RuntimeContractModel
 
 ThinkingCapabilityStatus = Literal[
     "verified-supported",
@@ -38,24 +40,37 @@ _SERIES_ID_ALIASES: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class ThinkingSeriesBudgetConfig:
+class _ThinkingAdapterModel(RuntimeContractModel):
+    """Strict Pydantic base for thinking configuration/capability documents."""
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+    )
+
+
+class ThinkingSeriesBudgetConfig(_ThinkingAdapterModel):
     min_tokens: int
     max_tokens: int
     step_tokens: int
     anchor_tokens: tuple[int, ...] = ()
+    details: dict[str, Any] = Field(default_factory=dict)
 
     def to_public_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "minTokens": self.min_tokens,
             "maxTokens": self.max_tokens,
             "stepTokens": self.step_tokens,
             "anchorTokens": list(self.anchor_tokens),
         }
+        if self.details:
+            payload["details"] = dict(self.details)
+        return payload
 
 
-@dataclass(frozen=True, slots=True)
-class ThinkingCapabilityOverrideInput:
+class ThinkingCapabilityOverrideInput(_ThinkingAdapterModel):
     supported: bool
     series: str | None = None
     source: str = _DEFAULT_OVERRIDE_SOURCE
@@ -64,10 +79,10 @@ class ThinkingCapabilityOverrideInput:
     default_value: RuntimeThinkingValue | None = None
     budget: ThinkingSeriesBudgetConfig | None = None
     visibility: dict[str, Any] | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class CanonicalThinkingCapability:
+class CanonicalThinkingCapability(_ThinkingAdapterModel):
     status: ThinkingCapabilityStatus
     source: ThinkingCapabilitySource
     series: str | None
@@ -77,8 +92,9 @@ class CanonicalThinkingCapability:
     default_value: RuntimeThinkingValue | None = None
     provider_builder_key: str | None = None
     reason_code: str = "unknown"
-    route_fingerprint: dict[str, str] = field(default_factory=dict)
+    route_fingerprint: dict[str, str] = Field(default_factory=dict)
     visibility: dict[str, Any] | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
 
     def to_public_dict(self) -> dict[str, Any]:
         payload = {
@@ -97,6 +113,8 @@ class CanonicalThinkingCapability:
         }
         if self.visibility is not None:
             payload["visibility"] = dict(self.visibility)
+        if self.details:
+            payload["details"] = dict(self.details)
         return payload
 
     def to_diagnostics(self) -> dict[str, Any]:
@@ -116,11 +134,12 @@ class CanonicalThinkingCapability:
         }
         if self.visibility is not None:
             payload["visibility"] = dict(self.visibility)
+        if self.details:
+            payload["details"] = dict(self.details)
         return payload
 
 
-@dataclass(frozen=True, slots=True)
-class ThinkingAdaptationResult:
+class ThinkingAdaptationResult(_ThinkingAdapterModel):
     requested_selection: RuntimeThinkingSelection | None
     applied_selection: RuntimeThinkingSelection | None
     applied: bool
@@ -130,7 +149,7 @@ class ThinkingAdaptationResult:
     provider_builder_key: str | None = None
     model_settings: dict[str, Any] | None = None
     mapping_reason_code: str | None = None
-    diagnostics: dict[str, Any] = field(default_factory=dict)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
     def to_public_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -160,8 +179,7 @@ class ThinkingAdaptationResult:
         return payload
 
 
-@dataclass(frozen=True, slots=True)
-class _SeriesSpec:
+class _SeriesSpec(_ThinkingAdapterModel):
     series_id: str
     label_zh: str
     editor_type: ThinkingSeriesEditorType
@@ -170,6 +188,7 @@ class _SeriesSpec:
     provider_builder_key: str | None
     budget: ThinkingSeriesBudgetConfig | None = None
     visibility: dict[str, Any] | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
 
     def build_capability(
         self,
@@ -196,6 +215,7 @@ class _SeriesSpec:
             reason_code=reason_code,
             route_fingerprint=dict(route_fingerprint),
             visibility=None if self.visibility is None else dict(self.visibility),
+            details=dict(self.details),
         )
 
 
@@ -512,6 +532,7 @@ def parse_thinking_capability_override(
         _normalize_optional_string(raw_override.get("source"))
         or _DEFAULT_OVERRIDE_SOURCE
     )
+    details = _normalize_mapping_details(raw_override.get("details"))
     visibility_record = (
         raw_override.get("visibility")
         if isinstance(raw_override.get("visibility"), Mapping)
@@ -529,7 +550,10 @@ def parse_thinking_capability_override(
         visibility = normalized_visibility or None
     if supported is False:
         return ThinkingCapabilityOverrideInput(
-            supported=False, source=source, visibility=visibility
+            supported=False,
+            source=source,
+            visibility=visibility,
+            details=details,
         )
 
     series = _normalize_series_id(
@@ -571,6 +595,7 @@ def parse_thinking_capability_override(
         default_value=default_value,
         budget=budget,
         visibility=visibility,
+        details=details,
     )
 
 
@@ -615,6 +640,7 @@ def resolve_canonical_thinking_capability(
             provider_builder_key=None,
             reason_code="override_template_invalid",
             route_fingerprint=route_fingerprint,
+            details=dict(override_input.details),
         )
 
     if override_input is not None and not override_input.supported:
@@ -629,6 +655,7 @@ def resolve_canonical_thinking_capability(
             provider_builder_key=None,
             reason_code="override_declares_unsupported",
             route_fingerprint=route_fingerprint,
+            details=dict(override_input.details),
         )
 
     return CanonicalThinkingCapability(
@@ -906,6 +933,7 @@ def _resolve_override_series_spec(
         provider_builder_key=provider_builder_key,
         budget=budget,
         visibility=None if visibility is None else dict(visibility),
+        details=dict(override_input.details),
     )
 
 
@@ -1243,11 +1271,13 @@ def _parse_budget_config(
     max_tokens = _normalize_non_negative_int(value.get("maxTokens"))
     step_tokens = _normalize_positive_int(value.get("stepTokens"))
     anchor_tokens_raw = value.get("anchorTokens")
+    details = _normalize_mapping_details(value.get("details"))
     if (
         min_tokens is None
         and max_tokens is None
         and step_tokens is None
         and not isinstance(anchor_tokens_raw, list)
+        and not details
     ):
         return fallback
     normalized_fallback = fallback or _budget_config()
@@ -1259,6 +1289,7 @@ def _parse_budget_config(
         max_tokens=max(min_value, max_value),
         step_tokens=max(1, step_value),
         anchor_tokens=_THINKING_BUDGET_FIXED_ANCHOR_TOKENS,
+        details=details,
     )
 
 
@@ -1314,6 +1345,12 @@ def _clamp_budget_tokens(value: int, config: ThinkingSeriesBudgetConfig) -> int:
         config.min_tokens + round((upper_bounded - config.min_tokens) / step) * step
     )
     return min(config.max_tokens, max(config.min_tokens, snapped))
+
+
+def _normalize_mapping_details(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): item for key, item in value.items()}
 
 
 def _normalize_optional_string(value: Any) -> str | None:

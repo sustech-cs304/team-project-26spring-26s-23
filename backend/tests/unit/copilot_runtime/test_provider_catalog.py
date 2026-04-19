@@ -17,17 +17,22 @@ def test_provider_catalog_documents_match_schema() -> None:
     Draft202012Validator.check_schema(schema)
     Draft202012Validator(schema).validate(registry)
     assert provider_catalog_root().name == "provider-catalog"
+    assert (
+        load_provider_catalog().model_dump()["providers"][0]["auth_schema"]["details"]
+        == {}
+    )
 
 
 def test_provider_catalog_includes_first_batch_enabled_providers() -> None:
     catalog = load_provider_catalog()
     enabled_provider_ids = {
-        entry.provider_id
-        for entry in list_entries(runtime_status="enabled")
+        entry.provider_id for entry in list_entries(runtime_status="enabled")
     }
 
     assert catalog.catalog_revision == "2026-04-06-provider-catalog-v1"
-    assert {"openai", "anthropic", "gemini", "ollama", "groq", "mistral"}.issubset(enabled_provider_ids)
+    assert {"openai", "anthropic", "gemini", "ollama", "groq", "mistral"}.issubset(
+        enabled_provider_ids
+    )
 
 
 def test_provider_catalog_distinguishes_runtime_statuses() -> None:
@@ -50,6 +55,8 @@ def test_provider_catalog_distinguishes_runtime_statuses() -> None:
     assert ollama_entry.runtime_status == "enabled"
     assert ollama_entry.auth_schema.default_kind == "none"
     assert ollama_entry.base_url_policy.default_base_url == "http://127.0.0.1:11434/v1"
+    assert ollama_entry.metadata == {}
+    assert ollama_entry.details == {}
 
 
 def test_provider_catalog_resolves_aliases() -> None:
