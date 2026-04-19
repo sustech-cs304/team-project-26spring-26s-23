@@ -135,6 +135,40 @@ write_output() {
   fi
 }
 
+resolve_macos_framework_source() {
+  local expanded_pkg_root="$1"
+  local python_major_minor="$2"
+  local framework_source=''
+  local payload_version_bin=''
+  local framework_package_info=''
+
+  framework_source="$(find "$expanded_pkg_root" -type d -path '*/Library/Frameworks/Python.framework' -print -quit)"
+  if [[ -n "$framework_source" && -d "$framework_source" ]]; then
+    echo "$framework_source"
+    return 0
+  fi
+
+  payload_version_bin="$(find "$expanded_pkg_root" -type d -path "*/Payload/Versions/$python_major_minor/bin" -print -quit)"
+  if [[ -n "$payload_version_bin" && -d "$payload_version_bin" ]]; then
+    framework_source="$(dirname "$(dirname "$(dirname "$payload_version_bin")")")"
+    if [[ -d "$framework_source" ]]; then
+      echo "$framework_source"
+      return 0
+    fi
+  fi
+
+  framework_package_info="$(find "$expanded_pkg_root" -type f -name 'PackageInfo' -exec grep -l '/Library/Frameworks/Python.framework' {} + 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$framework_package_info" ]]; then
+    framework_source="$(dirname "$framework_package_info")/Payload"
+    if [[ -d "$framework_source" ]]; then
+      echo "$framework_source"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 download_url=''
 archive_kind=''
 install_root=''
@@ -267,14 +301,20 @@ case "$archive_kind" in
     echo "[python-download] Extracting official macOS Python pkg payload."
     pkgutil --expand-full "$archive_path" "$expanded_pkg_root"
 
-    framework_source="$(find "$expanded_pkg_root" -type d -path '*/Library/Frameworks/Python.framework' -print -quit)"
-    if [[ -z "$framework_source" ]]; then
-      framework_source="$(find "$expanded_pkg_root" -type d -name 'Python.framework' -print -quit)"
-    fi
+    echo "[python-download] Expanded macOS pkg root: $expanded_pkg_root"
+    framework_source="$(resolve_macos_framework_source "$expanded_pkg_root" "$python_major_minor" || true)"
 
     if [[ -z "$framework_source" || ! -d "$framework_source" ]]; then
-      echo "Cannot find Python.framework inside expanded pkg payload at $expanded_pkg_root." >&2
+      echo '[python-download] Expanded macOS pkg contents (depth <= 3):' >&2
+      find "$expanded_pkg_root" -mindepth 1 -maxdepth 3 -print | sort | head -n 200 >&2 || true
+      echo "Cannot find Python.framework inside expanded macOS pkg at $expanded_pkg_root." >&2
       exit 1
+    fi
+
+    if [[ "$framework_source" == */Payload ]]; then
+      echo "[python-download] Using macOS framework component payload: $framework_source"
+    else
+      echo "[python-download] Using macOS framework directory: $framework_source"
     fi
 
     /usr/bin/ditto "$framework_source" "$runtime_root/Python.framework"
