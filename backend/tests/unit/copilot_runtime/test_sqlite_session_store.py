@@ -114,6 +114,7 @@ def test_sqlite_session_store_persists_tool_permission_policy_round_trip(tmp_pat
     restored = SQLiteSessionStore(db_path=db_path)
     try:
         restored_run = restored.get_run("run-policy")
+        assert restored_run is not None
         assert restored_run.request.policy.tool_permission_policy == {
             "schemaVersion": 1,
             "defaultMode": "allow",
