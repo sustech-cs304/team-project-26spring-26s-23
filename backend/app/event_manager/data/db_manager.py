@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -13,6 +13,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .dto import CourseEvent
 from .models import Base, CourseEventModel
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class DatabaseManager:
@@ -61,7 +65,7 @@ class DatabaseManager:
             session.close()
 
     def upsert_course_event(self, course_event: CourseEvent) -> bool:
-        now = datetime.utcnow()
+        now = _utc_now_naive()
         payload = course_event.to_dict()
         with self._session_scope() as session:
             course_event_id = course_event.id
