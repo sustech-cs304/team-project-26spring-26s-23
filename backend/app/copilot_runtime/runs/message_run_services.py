@@ -128,7 +128,9 @@ class RuntimeMessageRunOrchestrator:
         yield run_started
 
         try:
-            prepared = await self._prepare_stream_execution(context=context, request=request)
+            prepared = await self._prepare_stream_execution(
+                context=context, request=request
+            )
         except Exception as exc:  # pragma: no cover - consolidated fallback path
             async for projected in self._yield_failed_execution_from_exception(
                 context=context,
@@ -216,12 +218,10 @@ class RuntimeMessageRunOrchestrator:
             run_metadata,
             reasoning_suppression_basis_summary,
             preflight_failure,
-        ) = (
-            self._resolve_thinking_state(
-                context=context,
-                request=request,
-                resolved_model_route=resolved_model_route,
-            )
+        ) = self._resolve_thinking_state(
+            context=context,
+            request=request,
+            resolved_model_route=resolved_model_route,
         )
         agent_executor = self._build_streaming_executor(agent_descriptor)
         log_runtime_chain_debug(
@@ -254,7 +254,9 @@ class RuntimeMessageRunOrchestrator:
         context: Any,
         request: RuntimeRunStartRequest,
         resolved_model_route: Any,
-    ) -> tuple[Any, RuntimeRunEvent, dict[str, Any] | None, _FailureEventDetails | None]:
+    ) -> tuple[
+        Any, RuntimeRunEvent, dict[str, Any] | None, _FailureEventDetails | None
+    ]:
         requested_thinking_selection = request.policy.resolve_thinking_selection()
         thinking_adaptation = adapt_thinking_selection(
             selection=requested_thinking_selection,
@@ -285,8 +287,8 @@ class RuntimeMessageRunOrchestrator:
             capability=thinking_adaptation.capability.to_public_dict(),
             applied_selection=applied_thinking_selection,
         )
-        reasoning_suppression_basis_summary = summarize_runtime_reasoning_suppression_basis(
-            reasoning_suppression_basis
+        reasoning_suppression_basis_summary = (
+            summarize_runtime_reasoning_suppression_basis(reasoning_suppression_basis)
         )
         self._log_thinking_resolution(
             context=context,
@@ -409,7 +411,9 @@ class RuntimeMessageRunOrchestrator:
             threadId=request.thread_id,
             code=fail_fast_code,
             requestedThinkingSelection=requested_thinking_selection.to_dict(),
-            appliedThinkingSelection=self._selection_payload(applied_thinking_selection),
+            appliedThinkingSelection=self._selection_payload(
+                applied_thinking_selection
+            ),
             reason=thinking_adaptation.reason,
             capability=summarize_runtime_thinking_capability(
                 thinking_adaptation.capability
@@ -489,7 +493,9 @@ class RuntimeMessageRunOrchestrator:
                 )
                 result.completed = True
         except asyncio.CancelledError:
-            async for projected in self._yield_cancelled_execution(context=context, request=request):
+            async for projected in self._yield_cancelled_execution(
+                context=context, request=request
+            ):
                 yield projected
         except Exception as exc:  # pragma: no cover - consolidated fallback path
             async for projected in self._yield_failed_execution_from_exception(
@@ -544,10 +550,13 @@ class RuntimeMessageRunOrchestrator:
         reasoning_suppression_basis_summary: dict[str, Any] | None,
     ) -> None:
         suppression_basis = reasoning_suppression_basis_summary
-        if self._is_reasoning_suppressed_event(
-            event=event,
-            reasoning_suppression_basis_summary=suppression_basis,
-        ) and suppression_basis is not None:
+        if (
+            self._is_reasoning_suppressed_event(
+                event=event,
+                reasoning_suppression_basis_summary=suppression_basis,
+            )
+            and suppression_basis is not None
+        ):
             log_runtime_chain_debug(
                 "thinking.reasoning_suppressed",
                 enabled=context.debug_enabled,

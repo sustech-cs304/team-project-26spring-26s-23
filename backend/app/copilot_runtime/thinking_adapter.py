@@ -1057,9 +1057,9 @@ def _normalize_budget_candidate(
 ) -> RuntimeThinkingValue | None:
     if candidate is None or candidate.valueType != "budget":
         return None
-    return _normalize_non_token_budget_candidate(candidate) or _normalize_budget_token_value(
-        candidate, budget
-    )
+    return _normalize_non_token_budget_candidate(
+        candidate
+    ) or _normalize_budget_token_value(candidate, budget)
 
 
 def _normalize_non_token_budget_candidate(

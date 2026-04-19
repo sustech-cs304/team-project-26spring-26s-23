@@ -96,6 +96,7 @@ class FileConvertToolResult(TypedDict, total=False):
     content: str
     notice: str
 
+
 _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
     "zh-CN": {
         FILE_CONVERT_TOOL_ID: {

@@ -30,11 +30,11 @@ _ALLOWED_WAL_CHECKPOINT_MODES = frozenset({"PASSIVE", "FULL", "RESTART", "TRUNCA
 
 _LATEST_AUDIT_BASE_SQL = (
     "SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, "
-    'error_summary FROM debug_log_audit'
+    "error_summary FROM debug_log_audit"
 )
 _LIST_AUDIT_BASE_SQL = (
     "SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, "
-    'error_summary FROM debug_log_audit'
+    "error_summary FROM debug_log_audit"
 )
 _QUERY_EVENTS_BASE_SQL = """
 SELECT
