@@ -11,7 +11,6 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 
-
 from .dto import CourseEvent
 from .models import Base, CourseEventModel
 
@@ -82,7 +81,9 @@ class DatabaseManager:
                     setattr(course_event_model, key, value)
                 course_event_model.updated_at = now
             else:
-                course_event_model = CourseEventModel(**payload, created_at=now, updated_at=now)
+                course_event_model = CourseEventModel(
+                    **payload, created_at=now, updated_at=now
+                )
                 session.add(course_event_model)
                 session.flush()
                 course_event.id = course_event_model.id
@@ -91,15 +92,14 @@ class DatabaseManager:
                     course_event.course_group_id = course_event.id
                     course_event_model.course_group_id = course_event.id
             return True
-        
+
     def reschedule_course(
-        self,
-        old_event: CourseEvent,
-        old_week: int,
-        new_event: CourseEvent | None
+        self, old_event: CourseEvent, old_week: int, new_event: CourseEvent | None
     ) -> bool:
         if old_event.id is None or (new_event is not None and new_event.id is not None):
-            raise ValueError("Old event must have an ID and new event must not have an ID.")
+            raise ValueError(
+                "Old event must have an ID and new event must not have an ID."
+            )
         old_event.week_canceled.append(old_week)
         if not self.upsert_course_event(old_event):
             return False
@@ -108,7 +108,9 @@ class DatabaseManager:
         new_event.course_group_id = old_event.course_group_id
         return self.upsert_course_event(new_event)
 
-    def delete_course_event(self, course_event_id: int, delete_group: bool = False) -> bool:
+    def delete_course_event(
+        self, course_event_id: int, delete_group: bool = False
+    ) -> bool:
         with self._session_scope() as session:
             course_event_model = (
                 session.query(CourseEventModel)
@@ -131,7 +133,7 @@ class DatabaseManager:
             for model in course_event_models:
                 model.is_deleted = True
             return True
-    
+
     def get_all_course_events(self) -> list[CourseEvent]:
         with self._session_scope() as session:
             course_event_models = (
