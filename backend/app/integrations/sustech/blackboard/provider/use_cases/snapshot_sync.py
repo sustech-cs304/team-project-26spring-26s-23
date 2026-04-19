@@ -265,7 +265,9 @@ def _merge_assignment_attachment_resources(
                 if not isinstance(attachment, dict):
                     continue
 
-                title = str(attachment.get("title") or attachment.get("name") or "").strip()
+                title = str(
+                    attachment.get("title") or attachment.get("name") or ""
+                ).strip()
                 url = str(attachment.get("url") or "").strip()
                 resource_id = str(attachment.get("resource_id") or "").strip()
                 if not resource_id:
@@ -314,7 +316,9 @@ def _resolve_grade_assignment_match(
     assignment_id_match = _text_value(item, "assignment_id") or None
     if assignment_id_match:
         return assignment_id_match, "grade.assignment_id"
-    return assignment_title_indexes.get(course_id, {}).get(item_name), "assignment.title"
+    return assignment_title_indexes.get(course_id, {}).get(
+        item_name
+    ), "assignment.title"
 
 
 def _build_grade_payloads(
@@ -342,11 +346,13 @@ def _build_grade_payloads(
                 )
             score, total_score = split_score_text(_value(item, "score"))
 
-            assignment_id_match, assignment_match_source = _resolve_grade_assignment_match(
-                course_id,
-                item_name,
-                item,
-                assignment_title_indexes,
+            assignment_id_match, assignment_match_source = (
+                _resolve_grade_assignment_match(
+                    course_id,
+                    item_name,
+                    item,
+                    assignment_title_indexes,
+                )
             )
 
             if assignment_id_match and assignment_id_match not in valid_assignment_ids:
@@ -448,7 +454,9 @@ def _build_announcements_payload(
     courses: list[Any],
     valid_course_ids: set[str],
 ) -> list[dict[str, Any]]:
-    course_name_candidates, course_code_candidates = _build_course_match_candidates(courses)
+    course_name_candidates, course_code_candidates = _build_course_match_candidates(
+        courses
+    )
     announcements_payload: list[dict[str, Any]] = []
 
     for item in announcements:

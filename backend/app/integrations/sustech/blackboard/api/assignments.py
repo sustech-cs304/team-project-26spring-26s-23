@@ -104,7 +104,9 @@ class BlackboardAssignmentAPI:
     ) -> list[AssignmentDTO]:
         assignments: list[AssignmentDTO] = []
         for row in soup.select("div.sortable_item_row.row"):
-            assignment = self._build_assignment_from_row(course_id, page_url, row, seen_keys)
+            assignment = self._build_assignment_from_row(
+                course_id, page_url, row, seen_keys
+            )
             if assignment is not None:
                 assignments.append(assignment)
         return assignments
@@ -129,7 +131,9 @@ class BlackboardAssignmentAPI:
 
         detail_url = self._resolve_assignment_detail_url(page_url, row)
         assignment_id = self._extract_assignment_id(detail_url)
-        attachments = self._collect_row_assignment_attachments(page_url, row, detail_url)
+        attachments = self._collect_row_assignment_attachments(
+            page_url, row, detail_url
+        )
         attachments = self._merge_attachment_lists(
             attachments,
             self._extract_assignment_attachments(detail_url, page_url, assignment_id),
@@ -200,12 +204,16 @@ class BlackboardAssignmentAPI:
             return None
 
         title = normalize_assignment_title(link.get_text(strip=True) or text[:100])
-        detail_url = self.context.absolute_url(page_url, str(link.get("href") or "").strip())
+        detail_url = self.context.absolute_url(
+            page_url, str(link.get("href") or "").strip()
+        )
         if not detail_url:
             return None
 
         assignment_id = self._extract_assignment_id(detail_url)
-        attachments = self._extract_assignment_attachments(detail_url, page_url, assignment_id)
+        attachments = self._extract_assignment_attachments(
+            detail_url, page_url, assignment_id
+        )
         return self._build_assignment_dto(
             course_id=course_id,
             assignment_id=assignment_id,
@@ -240,7 +248,9 @@ class BlackboardAssignmentAPI:
             "due_date": due_date,
             "status": status,
             "summary": summary,
-            "attachments": [{"name": item.name, "url": item.url} for item in attachments],
+            "attachments": [
+                {"name": item.name, "url": item.url} for item in attachments
+            ],
             "source_page": page_url,
         }
         if not is_valid_assignment(
@@ -301,7 +311,9 @@ class BlackboardAssignmentAPI:
         for att in row.find_all("a", href=True):
             if not isinstance(att, Tag):
                 continue
-            att_href = self.context.absolute_url(page_url, str(att.get("href") or "").strip())
+            att_href = self.context.absolute_url(
+                page_url, str(att.get("href") or "").strip()
+            )
             if not att_href or att_href == detail_url:
                 continue
             if any(
@@ -315,7 +327,9 @@ class BlackboardAssignmentAPI:
                         "url": att_href,
                     }
                 )
-        return self._normalize_attachments(raw_attachments, self._extract_assignment_id(detail_url), page_url)
+        return self._normalize_attachments(
+            raw_attachments, self._extract_assignment_id(detail_url), page_url
+        )
 
     def _merge_attachment_lists(
         self,
@@ -469,7 +483,9 @@ class BlackboardAssignmentAPI:
         for link in scope.find_all("a", href=True):
             if not isinstance(link, Tag):
                 continue
-            href = self.context.absolute_url(base_url, str(link.get("href") or "").strip())
+            href = self.context.absolute_url(
+                base_url, str(link.get("href") or "").strip()
+            )
             if not href or href in seen_attachment_urls:
                 continue
             if any(
@@ -478,7 +494,8 @@ class BlackboardAssignmentAPI:
             ):
                 attachments.append(
                     AssignmentAttachmentDTO(
-                        name=link.get_text(strip=True) or Path(urlparse(href).path).name,
+                        name=link.get_text(strip=True)
+                        or Path(urlparse(href).path).name,
                         url=href,
                     )
                 )

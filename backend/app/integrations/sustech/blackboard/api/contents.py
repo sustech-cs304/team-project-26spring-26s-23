@@ -135,9 +135,7 @@ class BlackboardContentAPI:
         resources = self._collect_course_resources(course_id, merged_seed_urls)
         self._normalize_resource_ids(resources)
 
-        self.context.log(
-            f"✅ [Blackboard] 资源抓取完成: 资源数={len(resources)}"
-        )
+        self.context.log(f"✅ [Blackboard] 资源抓取完成: 资源数={len(resources)}")
         return resources
 
     def _collect_seed_urls(self, course_id: str) -> list[str]:

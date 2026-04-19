@@ -608,7 +608,9 @@ class BlackboardAnnouncementAPI:
 
         course_name = ""
         if len(cells) >= 3:
-            maybe_course = clean_field(cells[0].get_text(" ", strip=True), max_length=160)
+            maybe_course = clean_field(
+                cells[0].get_text(" ", strip=True), max_length=160
+            )
             if maybe_course != title and looks_like_course_name(maybe_course):
                 course_name = maybe_course
 
@@ -616,7 +618,9 @@ class BlackboardAnnouncementAPI:
         url = self.context.absolute_url(page_url, str(link.get("href") or "").strip())
         return self._build_announcement_payload(
             course_id=self._extract_course_id_from_announcement_block(row, page_url),
-            course_code=self._extract_course_code_from_announcement_block(row, page_url),
+            course_code=self._extract_course_code_from_announcement_block(
+                row, page_url
+            ),
             course_name=course_name,
             title=title,
             publish_time=publish_time,
@@ -686,7 +690,9 @@ class BlackboardAnnouncementAPI:
 
         body_node = block.select_one(".vtbegenerated")
         detail = clean_field(
-            body_node.get_text(" ", strip=True) if body_node else (details_text or block_text),
+            body_node.get_text(" ", strip=True)
+            if body_node
+            else (details_text or block_text),
             max_length=600,
         )
         dom_id = clean_field(str(block.get("id") or ""), max_length=120)
@@ -694,7 +700,9 @@ class BlackboardAnnouncementAPI:
 
         return self._build_announcement_payload(
             course_id=self._extract_course_id_from_announcement_block(block, page_url),
-            course_code=self._extract_course_code_from_announcement_block(block, page_url),
+            course_code=self._extract_course_code_from_announcement_block(
+                block, page_url
+            ),
             course_name=self._normalize_announcement_course_name(block, block_text),
             title=title,
             publish_time=publish_time,
