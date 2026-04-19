@@ -15,6 +15,7 @@ from app.desktop_runtime.capability_bridge_protocol import (
     DESKTOP_CAPABILITY_BRIDGE_RETRYABLE_ERROR_CODES,
     DesktopCapabilityArtifactDescriptor,
     DesktopCapabilityBridgeRequest,
+    DesktopCapabilityBridgeResponse,
     DesktopCapabilityName,
     DesktopCapabilityOperation,
     validate_desktop_capability_bridge_result,
@@ -519,10 +520,17 @@ class DesktopCapabilityBridgeClient:
                     detail="Success result must be an object when provided.",
                 )
             try:
+                response_model = DesktopCapabilityBridgeResponse.model_validate(
+                    {
+                        "requestId": request.request_id,
+                        "ok": True,
+                        "result": dict(raw_result),
+                    }
+                )
                 return validate_desktop_capability_bridge_result(
                     capability=capability,
                     operation=operation,
-                    result=raw_result,
+                    result=response_model.result or {},
                 )
             except ValueError as exc:
                 raise _build_invalid_response_error(
@@ -551,15 +559,41 @@ class DesktopCapabilityBridgeClient:
             details = _normalize_mapping(
                 details_value if isinstance(details_value, Mapping) else None
             )
-            details.setdefault("operation", operation)
+            try:
+                response_model = DesktopCapabilityBridgeResponse.model_validate(
+                    {
+                        "requestId": request.request_id,
+                        "ok": False,
+                        "errorCode": code,
+                        "errorMessage": message,
+                        "errorRetryable": retryable,
+                        "details": details,
+                    }
+                )
+            except ValueError as exc:
+                raise _build_invalid_response_error(
+                    capability=capability,
+                    operation=operation,
+                    detail=str(exc),
+                ) from exc
+
+            error = response_model.error
+            if error is None:  # pragma: no cover - invariant guarded by model
+                raise _build_invalid_response_error(
+                    capability=capability,
+                    operation=operation,
+                    detail="Failed bridge responses must include an error payload.",
+                )
+            error_details = _normalize_mapping(error.details)
+            error_details.setdefault("operation", operation)
             if raw_code is not None and raw_code != code:
-                details["bridgeErrorCode"] = raw_code
+                error_details["bridgeErrorCode"] = raw_code
             raise HostCapabilityOperationError(
                 capability=capability,
-                code=code,
-                message=message,
-                retryable=retryable,
-                details=details,
+                code=error.code,
+                message=error.message,
+                retryable=bool(error.retryable),
+                details=error_details,
             )
 
         raise _build_invalid_response_error(
@@ -572,17 +606,7 @@ class DesktopCapabilityBridgeClient:
 def _build_artifact_descriptor(
     payload: Mapping[str, Any],
 ) -> DesktopCapabilityArtifactDescriptor:
-    return DesktopCapabilityArtifactDescriptor(
-        artifact_id=str(payload["artifactId"]),
-        uri=_normalize_optional_text(payload.get("uri")),
-        name=_normalize_optional_text(payload.get("name")),
-        content_type=_normalize_optional_text(payload.get("contentType")),
-        metadata=_normalize_mapping(
-            payload.get("metadata")
-            if isinstance(payload.get("metadata"), Mapping)
-            else None
-        ),
-    )
+    return DesktopCapabilityArtifactDescriptor.model_validate(dict(payload))
 
 
 __all__ = [

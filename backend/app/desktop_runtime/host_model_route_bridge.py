@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.copilot_runtime.model_routes import (
     HostModelRouteAccessDeniedError,
@@ -27,6 +28,125 @@ _HOST_MODEL_ROUTE_BRIDGE_ACCESS_DENIED_ERROR_CODE = (
 _PROVIDER_NOT_FOUND_ERROR_CODE = "provider_profile_not_found"
 _PROVIDER_CREDENTIAL_MISSING_ERROR_CODE = "provider_secret_missing"
 _PROVIDER_MODEL_ROUTE_KIND = "provider-model"
+
+
+class _HostModelRouteBridgeModel(BaseModel):
+    """Shared Pydantic base for private host model-route bridge payloads."""
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="forbid",
+        frozen=True,
+        populate_by_name=True,
+    )
+
+
+class _HostModelRouteBridgeRouteRef(_HostModelRouteBridgeModel):
+    route_kind: str | None = Field(default=None, alias="routeKind")
+    profile_id: str | None = Field(default=None, alias="profileId")
+    model_id: str | None = Field(default=None, alias="modelId")
+
+    @field_validator("route_kind", "profile_id", "model_id", mode="before")
+    @classmethod
+    def _normalize_optional_route_text(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+
+class _HostModelRouteBridgeResolvedRoute(_HostModelRouteBridgeModel):
+    route_ref: _HostModelRouteBridgeRouteRef | None = Field(
+        default=None,
+        alias="routeRef",
+    )
+    provider_profile_id: str | None = Field(default=None, alias="providerProfileId")
+    provider: str | None = None
+    provider_id: str | None = Field(default=None, alias="providerId")
+    adapter_id: str | None = Field(default=None, alias="adapterId")
+    runtime_status: str | None = Field(default=None, alias="runtimeStatus")
+    catalog_revision: str | None = Field(default=None, alias="catalogRevision")
+    endpoint_family: str | None = Field(default=None, alias="endpointFamily")
+    endpoint_type: str | None = Field(default=None, alias="endpointType")
+    base_url: str | None = Field(default=None, alias="baseUrl")
+    model_id: str | None = Field(default=None, alias="modelId")
+    auth_kind: str | None = Field(default=None, alias="authKind")
+
+    @field_validator("route_ref", mode="before")
+    @classmethod
+    def _ignore_non_object_route_ref(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return value
+        return None
+
+    @field_validator(
+        "provider_profile_id",
+        "provider",
+        "provider_id",
+        "adapter_id",
+        "runtime_status",
+        "catalog_revision",
+        "endpoint_family",
+        "endpoint_type",
+        "base_url",
+        "model_id",
+        "auth_kind",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_route_text(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+
+class _HostModelRouteBridgeAuthPayload(_HostModelRouteBridgeModel):
+    api_key: str | None = Field(default=None, alias="apiKey")
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _normalize_api_key(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+
+class _HostModelRouteBridgePrivateAuth(_HostModelRouteBridgeModel):
+    auth_kind: str | None = Field(default=None, alias="authKind")
+    auth_payload: _HostModelRouteBridgeAuthPayload | None = Field(
+        default=None,
+        alias="authPayload",
+    )
+    api_key: str | None = Field(default=None, alias="apiKey")
+
+    @field_validator("auth_kind", "api_key", mode="before")
+    @classmethod
+    def _normalize_optional_auth_text(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+    @field_validator("auth_payload", mode="before")
+    @classmethod
+    def _ignore_non_object_auth_payload(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return value
+        return None
+
+
+class _HostModelRouteBridgeSuccessResponse(_HostModelRouteBridgeModel):
+    ok: Literal[True]
+    resolved_route: _HostModelRouteBridgeResolvedRoute = Field(alias="resolvedRoute")
+    private_auth: _HostModelRouteBridgePrivateAuth = Field(alias="privateAuth")
+
+
+class _HostModelRouteBridgeError(_HostModelRouteBridgeModel):
+    code: str | None = None
+    message: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("code", "message", mode="before")
+    @classmethod
+    def _normalize_optional_error_text(cls, value: Any) -> str | None:
+        return _normalize_optional_text(value)
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def _normalize_details(cls, value: Any) -> dict[str, Any]:
+        if isinstance(value, Mapping):
+            return dict(value)
+        return {}
 
 
 class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
@@ -128,26 +248,46 @@ def _parse_resolved_route_payload(
             detail="Host model route bridge success payload is missing 'privateAuth'."
         )
 
-    provider_profile_id = _require_non_empty_text(route, "providerProfileId")
-    model_id = _require_non_empty_text(route, "modelId")
+    try:
+        response = _HostModelRouteBridgeSuccessResponse.model_validate(payload)
+    except ValidationError as exc:
+        raise HostModelRouteUnavailableError(
+            detail=_validation_error_to_detail(exc)
+        ) from exc
+
+    return _build_resolved_route(response)
+
+
+def _build_resolved_route(
+    response: _HostModelRouteBridgeSuccessResponse,
+) -> ResolvedRuntimeModelRoute:
+    route = response.resolved_route
+    private_auth = response.private_auth
+    provider_profile_id = _require_non_empty_text_value(
+        route.provider_profile_id,
+        "providerProfileId",
+    )
+    model_id = _require_non_empty_text_value(route.model_id, "modelId")
     provider = _normalize_optional_text(
-        route.get("provider")
-    ) or _require_non_empty_text(route, "providerId")
+        route.provider
+    ) or _require_non_empty_text_value(
+        route.provider_id,
+        "providerId",
+    )
     route_ref = _parse_route_ref(
-        route.get("routeRef"),
+        route.route_ref,
         provider_profile_id=provider_profile_id,
         model_id=model_id,
     )
 
     auth_kind = (
-        _normalize_optional_text(private_auth.get("authKind"))
-        or _normalize_optional_text(route.get("authKind"))
+        _normalize_optional_text(private_auth.auth_kind)
+        or _normalize_optional_text(route.auth_kind)
         or "none"
     )
-    auth_payload = private_auth.get("authPayload")
     api_key = ""
-    if isinstance(auth_payload, Mapping):
-        api_key = _normalize_optional_text(auth_payload.get("apiKey")) or ""
+    if private_auth.auth_payload is not None:
+        api_key = _normalize_optional_text(private_auth.auth_payload.api_key) or ""
 
     if auth_kind == "none":
         api_key = ""
@@ -159,14 +299,15 @@ def _parse_resolved_route_payload(
     return ResolvedRuntimeModelRoute(
         provider_profile_id=provider_profile_id,
         provider=provider,
-        provider_id=_normalize_optional_text(route.get("providerId")) or provider,
-        adapter_id=_normalize_optional_text(route.get("adapterId")) or "",
-        runtime_status=_normalize_optional_text(route.get("runtimeStatus"))
-        or "enabled",
-        catalog_revision=_normalize_optional_text(route.get("catalogRevision")) or "",
-        endpoint_family=_normalize_optional_text(route.get("endpointFamily")) or "",
-        endpoint_type=_require_non_empty_text(route, "endpointType"),
-        base_url=_require_non_empty_text(route, "baseUrl"),
+        provider_id=_normalize_optional_text(route.provider_id) or provider,
+        adapter_id=_normalize_optional_text(route.adapter_id) or "",
+        runtime_status=_normalize_optional_text(route.runtime_status) or "enabled",
+        catalog_revision=_normalize_optional_text(route.catalog_revision) or "",
+        endpoint_family=_normalize_optional_text(route.endpoint_family) or "",
+        endpoint_type=_require_non_empty_text_value(
+            route.endpoint_type, "endpointType"
+        ),
+        base_url=_require_non_empty_text_value(route.base_url, "baseUrl"),
         model_id=model_id,
         auth_kind=auth_kind,
         api_key=api_key,
@@ -175,17 +316,15 @@ def _parse_resolved_route_payload(
 
 
 def _parse_route_ref(
-    value: Any,
+    value: _HostModelRouteBridgeRouteRef | None,
     *,
     provider_profile_id: str,
     model_id: str,
 ) -> RuntimeModelRouteRef:
-    if isinstance(value, Mapping):
-        route_kind = _parse_route_kind(value.get("routeKind"))
-        profile_id = (
-            _normalize_optional_text(value.get("profileId")) or provider_profile_id
-        )
-        resolved_model_id = _normalize_optional_text(value.get("modelId")) or model_id
+    if value is not None:
+        route_kind = _parse_route_kind(value.route_kind)
+        profile_id = _normalize_optional_text(value.profile_id) or provider_profile_id
+        resolved_model_id = _normalize_optional_text(value.model_id) or model_id
         return RuntimeModelRouteRef(
             route_kind=route_kind,
             profile_id=profile_id,
@@ -222,9 +361,13 @@ def _build_resolution_error(
             detail="Host model route bridge returned an invalid error payload."
         )
 
-    code = _normalize_optional_text(error_payload.get("code"))
-    details_value = error_payload.get("details")
-    details = dict(details_value) if isinstance(details_value, Mapping) else {}
+    try:
+        error = _HostModelRouteBridgeError.model_validate(error_payload)
+    except ValidationError as exc:
+        return HostModelRouteUnavailableError(detail=_validation_error_to_detail(exc))
+
+    code = error.code
+    details = dict(error.details)
     provider_profile_id = (
         _normalize_optional_text(details.get("providerProfileId"))
         or fallback_provider_profile_id
@@ -237,10 +380,7 @@ def _build_resolution_error(
     if code == _PROVIDER_CREDENTIAL_MISSING_ERROR_CODE:
         return ProviderSecretMissingError(provider_profile_id=provider_profile_id)
 
-    message = (
-        _normalize_optional_text(error_payload.get("message"))
-        or "Host model route bridge request failed."
-    )
+    message = error.message or "Host model route bridge request failed."
     return RuntimeModelRouteResolutionError(
         code=code or "host_model_route_request_failed",
         message=message,
@@ -248,13 +388,13 @@ def _build_resolution_error(
     )
 
 
-def _require_non_empty_text(mapping: Mapping[str, Any], field_name: str) -> str:
-    value = _normalize_optional_text(mapping.get(field_name))
-    if value is None:
+def _require_non_empty_text_value(value: Any, field_name: str) -> str:
+    normalized = _normalize_optional_text(value)
+    if normalized is None:
         raise HostModelRouteUnavailableError(
             detail=f"Host model route bridge payload field '{field_name}' is missing."
         )
-    return value
+    return normalized
 
 
 def _normalize_optional_text(value: Any) -> str | None:
@@ -262,6 +402,15 @@ def _normalize_optional_text(value: Any) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _validation_error_to_detail(exc: ValidationError) -> str:
+    errors = exc.errors()
+    if errors:
+        message = errors[0].get("msg")
+        if isinstance(message, str):
+            return f"Host model route bridge returned an invalid response payload: {message}"
+    return "Host model route bridge returned an invalid response payload."
 
 
 __all__ = [
