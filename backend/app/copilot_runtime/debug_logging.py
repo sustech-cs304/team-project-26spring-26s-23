@@ -179,73 +179,224 @@ def summarize_runtime_thinking_selection(
     return summary
 
 
+def _summarize_runtime_thinking_options(values: Any) -> list[dict[str, Any]]:
+    if not isinstance(values, Sequence) or isinstance(values, str):
+        return []
+    return [
+        summarized
+        for value in values
+        for summarized in [summarize_runtime_thinking_selection(value)]
+        if summarized is not None
+    ]
+
+
+
+def _summarize_runtime_thinking_budget_value(
+    budget: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        key: _sanitize_value(budget[key])
+        for key in ("minTokens", "maxTokens", "stepTokens")
+        if key in budget
+    }
+
+
+
+def _summarize_runtime_thinking_budget_fields(
+    control_spec: Any,
+) -> dict[str, Any]:
+    budget_fields = (
+        ("minTokens", "budget_min_tokens", "budgetMinTokens"),
+        ("maxTokens", "budget_max_tokens", "budgetMaxTokens"),
+        ("stepTokens", "budget_step_tokens", "budgetStepTokens"),
+    )
+    budget_summary: dict[str, Any] = {}
+    for output_key, attr_name, key_name in budget_fields:
+        field_value = _lookup_value(control_spec, attr_name=attr_name, key_name=key_name)
+        if field_value is not None:
+            budget_summary[output_key] = _sanitize_value(field_value)
+    return budget_summary
+
+
+
+def _summarize_runtime_thinking_budget(control_spec: Any) -> dict[str, Any]:
+    budget_value = _lookup_value(control_spec, attr_name="budget", key_name="budget")
+    if isinstance(budget_value, Mapping):
+        return _summarize_runtime_thinking_budget_value(budget_value)
+    return _summarize_runtime_thinking_budget_fields(control_spec)
+
+
+
+def _resolve_runtime_thinking_selection_kind(control_spec: Any) -> Any:
+    selection_kind = _lookup_value(
+        control_spec,
+        attr_name="selection_kind",
+        key_name="selectionKind",
+    )
+    if selection_kind is not None:
+        return selection_kind
+    kind = _lookup_value(control_spec, attr_name="kind", key_name="kind")
+    return "budget" if kind == "budget" else "preset"
+
+
+
+def _resolve_runtime_fixed_thinking_selection(
+    control_spec: Any,
+    *,
+    kind: Any,
+    preset_options: Sequence[dict[str, Any]],
+) -> dict[str, Any] | None:
+    fixed_selection = summarize_runtime_thinking_selection(
+        _lookup_value(
+            control_spec,
+            attr_name="fixed_selection",
+            key_name="fixedSelection",
+        )
+    )
+    if fixed_selection is not None:
+        return fixed_selection
+    if kind == "fixed" and len(preset_options) > 0:
+        return preset_options[0]
+    return None
+
+
+
 def summarize_runtime_thinking_control_spec(
     control_spec: Any | None,
 ) -> dict[str, Any] | None:
     if control_spec is None:
         return None
+    kind = _lookup_value(control_spec, attr_name="kind", key_name="kind")
     summary = {
-        "kind": _lookup_value(control_spec, attr_name="kind", key_name="kind"),
-        "selectionKind": _lookup_value(
-            control_spec, attr_name="selection_kind", key_name="selectionKind"
-        ),
+        "kind": kind,
+        "selectionKind": _resolve_runtime_thinking_selection_kind(control_spec),
     }
-    if summary["selectionKind"] is None:
-        summary["selectionKind"] = "budget" if summary["kind"] == "budget" else "preset"
-
-    preset_options = _lookup_value(
-        control_spec, attr_name="preset_options", key_name="presetOptions"
+    preset_options = _summarize_runtime_thinking_options(
+        _lookup_value(control_spec, attr_name="preset_options", key_name="presetOptions")
     )
-    summarized_preset_options: list[dict[str, Any]] = []
-    if isinstance(preset_options, Sequence) and not isinstance(preset_options, str):
-        summarized_preset_options = [
-            summarized
-            for option in preset_options
-            for summarized in [summarize_runtime_thinking_selection(option)]
-            if summarized is not None
-        ]
-        summary["presetOptions"] = summarized_preset_options
-
-    fixed_selection = summarize_runtime_thinking_selection(
-        _lookup_value(
-            control_spec, attr_name="fixed_selection", key_name="fixedSelection"
-        )
+    if len(preset_options) > 0:
+        summary["presetOptions"] = preset_options
+    fixed_selection = _resolve_runtime_fixed_thinking_selection(
+        control_spec,
+        kind=kind,
+        preset_options=preset_options,
     )
-    if (
-        fixed_selection is None
-        and summary["kind"] == "fixed"
-        and len(summarized_preset_options) > 0
-    ):
-        fixed_selection = summarized_preset_options[0]
     if fixed_selection is not None:
         summary["fixedSelection"] = fixed_selection
-
-    budget_value = _lookup_value(control_spec, attr_name="budget", key_name="budget")
-    budget = budget_value if isinstance(budget_value, Mapping) else None
-    budget_summary: dict[str, Any] = {}
-    if budget is not None:
-        for key in ("minTokens", "maxTokens", "stepTokens"):
-            if key in budget:
-                budget_summary[key] = _sanitize_value(budget[key])
-    else:
-        min_tokens = _lookup_value(
-            control_spec, attr_name="budget_min_tokens", key_name="budgetMinTokens"
-        )
-        max_tokens = _lookup_value(
-            control_spec, attr_name="budget_max_tokens", key_name="budgetMaxTokens"
-        )
-        step_tokens = _lookup_value(
-            control_spec, attr_name="budget_step_tokens", key_name="budgetStepTokens"
-        )
-        if min_tokens is not None:
-            budget_summary["minTokens"] = _sanitize_value(min_tokens)
-        if max_tokens is not None:
-            budget_summary["maxTokens"] = _sanitize_value(max_tokens)
-        if step_tokens is not None:
-            budget_summary["stepTokens"] = _sanitize_value(step_tokens)
+    budget_summary = _summarize_runtime_thinking_budget(control_spec)
     if len(budget_summary) > 0:
         summary["budget"] = budget_summary
     return summary
+
+
+
+def _build_runtime_thinking_capability_base_summary(
+    capability: Any,
+) -> dict[str, Any]:
+    field_specs = (
+        ("status", "status", "status"),
+        ("source", "source", "source"),
+        ("supported", "supported", "supported"),
+        ("series", "series", "series"),
+        ("seriesLabelZh", "series_label_zh", "seriesLabelZh"),
+        ("editorType", "editor_type", "editorType"),
+        ("defaultLevel", "default_level", "defaultLevel"),
+        ("reasonCode", "reason_code", "reasonCode"),
+        ("providerHint", "provider_hint", "providerHint"),
+        ("providerBuilderKey", "provider_builder_key", "providerBuilderKey"),
+    )
+    return {
+        output_key: _lookup_value(capability, attr_name=attr_name, key_name=key_name)
+        for output_key, attr_name, key_name in field_specs
+    }
+
+
+
+def _summarize_runtime_thinking_value_list(values: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(values, Sequence) or isinstance(values, str):
+        return None
+    return [
+        summarized
+        for value in values
+        for summarized in [summarize_runtime_thinking_value(value)]
+        if summarized is not None
+    ]
+
+
+
+def _sanitize_sequence_summary(values: Any) -> list[Any] | None:
+    if not isinstance(values, Sequence) or isinstance(values, str):
+        return None
+    return [_sanitize_value(value) for value in values]
+
+
+
+def _summarize_runtime_thinking_provenance(provenance: Any) -> Any:
+    if isinstance(provenance, Mapping):
+        return _sanitize_value(provenance)
+    if provenance is None:
+        return None
+    route_status = _lookup_value(
+        provenance,
+        attr_name="route_status",
+        key_name="routeStatus",
+    )
+    override = {
+        "present": _lookup_value(
+            provenance,
+            attr_name="override_present",
+            key_name="present",
+        ),
+        "applied": _lookup_value(
+            provenance,
+            attr_name="override_applied",
+            key_name="applied",
+        ),
+        "source": _lookup_value(
+            provenance,
+            attr_name="override_source",
+            key_name="source",
+        ),
+        "format": _lookup_value(
+            provenance,
+            attr_name="override_format",
+            key_name="format",
+        ),
+    }
+    return {
+        "routeStatus": _sanitize_value(route_status),
+        "override": _sanitize_value(override),
+    }
+
+
+
+def _summarize_runtime_thinking_visibility(visibility: Any) -> Any:
+    if isinstance(visibility, Mapping):
+        return _sanitize_value(visibility)
+    if visibility is None:
+        return None
+    return {
+        "reasoning": _sanitize_value(
+            _lookup_value(visibility, attr_name="reasoning", key_name="reasoning")
+        ),
+        "supportsSuppression": _sanitize_value(
+            _lookup_value(
+                visibility,
+                attr_name="supports_suppression",
+                key_name="supportsSuppression",
+            )
+        ),
+    }
+
+
+
+def _summarize_runtime_route_fingerprint(route_fingerprint: Any) -> dict[str, Any] | None:
+    if not isinstance(route_fingerprint, Mapping):
+        return None
+    return {
+        str(key): _sanitize_value(value) for key, value in route_fingerprint.items()
+    }
+
 
 
 def summarize_runtime_thinking_capability(
@@ -253,125 +404,55 @@ def summarize_runtime_thinking_capability(
 ) -> dict[str, Any] | None:
     if capability is None:
         return None
-    summary = {
-        "status": _lookup_value(capability, attr_name="status", key_name="status"),
-        "source": _lookup_value(capability, attr_name="source", key_name="source"),
-        "supported": _lookup_value(
-            capability, attr_name="supported", key_name="supported"
+    summary = _build_runtime_thinking_capability_base_summary(capability)
+    optional_values = {
+        "controlSpec": summarize_runtime_thinking_control_spec(
+            _lookup_value(capability, attr_name="control_spec", key_name="controlSpec")
         ),
-        "series": _lookup_value(capability, attr_name="series", key_name="series"),
-        "seriesLabelZh": _lookup_value(
-            capability, attr_name="series_label_zh", key_name="seriesLabelZh"
+        "defaultSelection": summarize_runtime_thinking_selection(
+            _lookup_value(
+                capability,
+                attr_name="default_selection",
+                key_name="defaultSelection",
+            )
         ),
-        "editorType": _lookup_value(
-            capability, attr_name="editor_type", key_name="editorType"
+        "allowedValues": _summarize_runtime_thinking_value_list(
+            _lookup_value(capability, attr_name="allowed_values", key_name="allowedValues")
         ),
-        "defaultLevel": _lookup_value(
-            capability, attr_name="default_level", key_name="defaultLevel"
+        "defaultValue": summarize_runtime_thinking_value(
+            _lookup_value(capability, attr_name="default_value", key_name="defaultValue")
         ),
-        "reasonCode": _lookup_value(
-            capability, attr_name="reason_code", key_name="reasonCode"
+        "supportedLevels": _sanitize_sequence_summary(
+            _lookup_value(
+                capability,
+                attr_name="supported_levels",
+                key_name="supportedLevels",
+            )
         ),
-        "providerHint": _lookup_value(
-            capability, attr_name="provider_hint", key_name="providerHint"
+        "routeFingerprint": _summarize_runtime_route_fingerprint(
+            _lookup_value(
+                capability,
+                attr_name="route_fingerprint",
+                key_name="routeFingerprint",
+            )
         ),
-        "providerBuilderKey": _lookup_value(
-            capability, attr_name="provider_builder_key", key_name="providerBuilderKey"
+        "provenance": _summarize_runtime_thinking_provenance(
+            _lookup_value(capability, attr_name="provenance", key_name="provenance")
+        ),
+        "visibility": _summarize_runtime_thinking_visibility(
+            _lookup_value(capability, attr_name="visibility", key_name="visibility")
+        ),
+        "overrideLevels": _sanitize_sequence_summary(
+            _lookup_value(
+                capability,
+                attr_name="override_levels",
+                key_name="overrideLevels",
+            )
         ),
     }
-    control_spec = summarize_runtime_thinking_control_spec(
-        _lookup_value(capability, attr_name="control_spec", key_name="controlSpec")
+    summary.update(
+        {key: value for key, value in optional_values.items() if value is not None}
     )
-    if control_spec is not None:
-        summary["controlSpec"] = control_spec
-    default_selection = summarize_runtime_thinking_selection(
-        _lookup_value(
-            capability, attr_name="default_selection", key_name="defaultSelection"
-        )
-    )
-    if default_selection is not None:
-        summary["defaultSelection"] = default_selection
-    allowed_values = _lookup_value(
-        capability, attr_name="allowed_values", key_name="allowedValues"
-    )
-    if isinstance(allowed_values, Sequence) and not isinstance(allowed_values, str):
-        summary["allowedValues"] = [
-            summarized
-            for value in allowed_values
-            for summarized in [summarize_runtime_thinking_value(value)]
-            if summarized is not None
-        ]
-    default_value = summarize_runtime_thinking_value(
-        _lookup_value(capability, attr_name="default_value", key_name="defaultValue")
-    )
-    if default_value is not None:
-        summary["defaultValue"] = default_value
-    supported_levels = _lookup_value(
-        capability, attr_name="supported_levels", key_name="supportedLevels"
-    )
-    if isinstance(supported_levels, Sequence) and not isinstance(supported_levels, str):
-        summary["supportedLevels"] = [
-            _sanitize_value(level) for level in supported_levels
-        ]
-    route_fingerprint = _lookup_value(
-        capability, attr_name="route_fingerprint", key_name="routeFingerprint"
-    )
-    if isinstance(route_fingerprint, Mapping):
-        summary["routeFingerprint"] = {
-            str(key): _sanitize_value(value) for key, value in route_fingerprint.items()
-        }
-    provenance = _lookup_value(
-        capability, attr_name="provenance", key_name="provenance"
-    )
-    if isinstance(provenance, Mapping):
-        summary["provenance"] = _sanitize_value(provenance)
-    elif provenance is not None:
-        route_status = _lookup_value(
-            provenance, attr_name="route_status", key_name="routeStatus"
-        )
-        override = {
-            "present": _lookup_value(
-                provenance, attr_name="override_present", key_name="present"
-            ),
-            "applied": _lookup_value(
-                provenance, attr_name="override_applied", key_name="applied"
-            ),
-            "source": _lookup_value(
-                provenance, attr_name="override_source", key_name="source"
-            ),
-            "format": _lookup_value(
-                provenance, attr_name="override_format", key_name="format"
-            ),
-        }
-        summary["provenance"] = {
-            "routeStatus": _sanitize_value(route_status),
-            "override": _sanitize_value(override),
-        }
-    visibility = _lookup_value(
-        capability, attr_name="visibility", key_name="visibility"
-    )
-    if isinstance(visibility, Mapping):
-        summary["visibility"] = _sanitize_value(visibility)
-    elif visibility is not None:
-        summary["visibility"] = {
-            "reasoning": _sanitize_value(
-                _lookup_value(visibility, attr_name="reasoning", key_name="reasoning")
-            ),
-            "supportsSuppression": _sanitize_value(
-                _lookup_value(
-                    visibility,
-                    attr_name="supports_suppression",
-                    key_name="supportsSuppression",
-                )
-            ),
-        }
-    override_levels = _lookup_value(
-        capability, attr_name="override_levels", key_name="overrideLevels"
-    )
-    if isinstance(override_levels, Sequence) and not isinstance(override_levels, str):
-        summary["overrideLevels"] = [
-            _sanitize_value(level) for level in override_levels
-        ]
     return {key: value for key, value in summary.items() if value is not None}
 
 

@@ -914,70 +914,115 @@ def _coerce_runtime_thinking_selection(value: Any) -> RuntimeThinkingSelection |
     return None
 
 
+def _extract_runtime_thinking_value_fields(
+    value: Any,
+) -> tuple[Any, Any, Any, Any, Any]:
+    if isinstance(value, dict):
+        return (
+            value.get("valueType"),
+            value.get("code"),
+            value.get("mode"),
+            value.get("budgetTokens"),
+            value.get("labelZh"),
+        )
+    return (
+        getattr(value, "valueType", getattr(value, "value_type", None)),
+        getattr(value, "code", None),
+        getattr(value, "mode", None),
+        getattr(value, "budgetTokens", getattr(value, "budget_tokens", None)),
+        getattr(value, "labelZh", getattr(value, "label_zh", None)),
+    )
+
+
+
+def _normalize_optional_runtime_thinking_label(value: Any) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() != "" else None
+
+
+
+def _coerce_runtime_code_thinking_value(
+    code: Any,
+    *,
+    label_zh: str | None,
+) -> RuntimeThinkingValue | None:
+    if not isinstance(code, str) or code.strip() == "":
+        return None
+    return RuntimeThinkingValue(
+        valueType="code",
+        code=code.strip(),
+        labelZh=label_zh,
+    )
+
+
+
+def _coerce_runtime_budget_thinking_value(
+    mode: Any,
+    budget_tokens: Any,
+    *,
+    label_zh: str | None,
+) -> RuntimeThinkingValue | None:
+    normalized_mode = (
+        mode.strip()
+        if isinstance(mode, str) and mode.strip() in _BUDGET_VALUE_MODES
+        else None
+    )
+    normalized_budget_tokens = (
+        budget_tokens
+        if isinstance(budget_tokens, int)
+        and not isinstance(budget_tokens, bool)
+        and budget_tokens >= 0
+        else None
+    )
+    if normalized_mode is None:
+        return None
+    if normalized_mode == "budget" and normalized_budget_tokens is None:
+        return None
+    return RuntimeThinkingValue(
+        valueType="budget",
+        mode=normalized_mode,
+        budgetTokens=normalized_budget_tokens,
+        labelZh=label_zh,
+    )
+
+
+
+def _coerce_runtime_fixed_thinking_value(
+    code: Any,
+    *,
+    label_zh: str | None,
+) -> RuntimeThinkingValue | None:
+    normalized_code = (
+        code.strip() if isinstance(code, str) and code.strip() != "" else "fixed"
+    )
+    if normalized_code != "fixed":
+        return None
+    return RuntimeThinkingValue(
+        valueType="fixed",
+        code="fixed",
+        labelZh=label_zh,
+    )
+
+
+
 def _coerce_runtime_thinking_value(value: Any) -> RuntimeThinkingValue | None:
     if isinstance(value, RuntimeThinkingValue):
         return value
-    if isinstance(value, dict):
-        value_type = value.get("valueType")
-        code = value.get("code")
-        mode = value.get("mode")
-        budget_tokens = value.get("budgetTokens")
-        label_zh = value.get("labelZh")
-    else:
-        value_type = getattr(value, "valueType", getattr(value, "value_type", None))
-        code = getattr(value, "code", None)
-        mode = getattr(value, "mode", None)
-        budget_tokens = getattr(
-            value, "budgetTokens", getattr(value, "budget_tokens", None)
-        )
-        label_zh = getattr(value, "labelZh", getattr(value, "label_zh", None))
-
-    normalized_label = (
-        label_zh.strip()
-        if isinstance(label_zh, str) and label_zh.strip() != ""
-        else None
+    value_type, code, mode, budget_tokens, label_zh = (
+        _extract_runtime_thinking_value_fields(value)
     )
+    normalized_label = _normalize_optional_runtime_thinking_label(label_zh)
     if value_type == "code":
-        if not isinstance(code, str) or code.strip() == "":
-            return None
-        return RuntimeThinkingValue(
-            valueType="code",
-            code=code.strip(),
-            labelZh=normalized_label,
-        )
+        return _coerce_runtime_code_thinking_value(code, label_zh=normalized_label)
     if value_type == "budget":
-        normalized_mode = (
-            mode.strip()
-            if isinstance(mode, str) and mode.strip() in _BUDGET_VALUE_MODES
-            else None
-        )
-        normalized_budget_tokens = (
-            budget_tokens
-            if isinstance(budget_tokens, int)
-            and not isinstance(budget_tokens, bool)
-            and budget_tokens >= 0
-            else None
-        )
-        if normalized_mode is None:
-            return None
-        if normalized_mode == "budget" and normalized_budget_tokens is None:
-            return None
-        return RuntimeThinkingValue(
-            valueType="budget",
-            mode=normalized_mode,
-            budgetTokens=normalized_budget_tokens,
-            labelZh=normalized_label,
+        return _coerce_runtime_budget_thinking_value(
+            mode,
+            budget_tokens,
+            label_zh=normalized_label,
         )
     if value_type == "fixed":
-        normalized_code = (
-            code.strip() if isinstance(code, str) and code.strip() != "" else "fixed"
-        )
-        if normalized_code != "fixed":
-            return None
-        return RuntimeThinkingValue(
-            valueType="fixed",
-            code="fixed",
-            labelZh=normalized_label,
+        return _coerce_runtime_fixed_thinking_value(
+            code,
+            label_zh=normalized_label,
         )
     return None
 
