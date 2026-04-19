@@ -5,7 +5,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.groq import GroqProvider
@@ -13,7 +13,10 @@ from pydantic_ai.providers.mistral import MistralProvider
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.copilot_runtime.agent import PydanticAIAgentExecutor, ProviderAdapterExecutionError
+from app.copilot_runtime.agent import (
+    PydanticAIAgentExecutor,
+    ProviderAdapterExecutionError,
+)
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 
 
@@ -36,7 +39,7 @@ from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
             "https://api.openai.com/v1",
             "api-key",
             "test-openai-key",
-            OpenAIModel,
+            OpenAIChatModel,
             OpenAIProvider,
         ),
         (
@@ -66,7 +69,7 @@ from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
             "http://127.0.0.1:11434/v1",
             "none",
             "",
-            OpenAIModel,
+            OpenAIChatModel,
             OllamaProvider,
         ),
         (
@@ -161,7 +164,9 @@ def test_pydantic_ai_agent_executor_build_stream_model_rejects_non_enabled_catal
     assert exc_info.value.code == expected_code
 
 
-def test_pydantic_ai_agent_executor_build_stream_model_rejects_unknown_provider() -> None:
+def test_pydantic_ai_agent_executor_build_stream_model_rejects_unknown_provider() -> (
+    None
+):
     executor = PydanticAIAgentExecutor(env={})
 
     with pytest.raises(ProviderAdapterExecutionError) as exc_info:
@@ -178,7 +183,9 @@ def test_pydantic_ai_agent_executor_build_stream_model_rejects_unknown_provider(
     assert exc_info.value.code == "provider_unknown"
 
 
-def test_pydantic_ai_agent_executor_build_stream_model_rejects_missing_openai_api_key() -> None:
+def test_pydantic_ai_agent_executor_build_stream_model_rejects_missing_openai_api_key() -> (
+    None
+):
     executor = PydanticAIAgentExecutor(env={})
 
     with pytest.raises(ProviderAdapterExecutionError) as exc_info:
@@ -196,7 +203,9 @@ def test_pydantic_ai_agent_executor_build_stream_model_rejects_missing_openai_ap
     assert exc_info.value.code == "provider_auth_missing"
 
 
-def test_pydantic_ai_agent_executor_build_stream_model_rejects_mismatched_adapter_id() -> None:
+def test_pydantic_ai_agent_executor_build_stream_model_rejects_mismatched_adapter_id() -> (
+    None
+):
     executor = PydanticAIAgentExecutor(env={})
 
     with pytest.raises(ProviderAdapterExecutionError) as exc_info:

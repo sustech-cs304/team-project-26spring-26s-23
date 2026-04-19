@@ -8,7 +8,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.groq import GroqProvider
@@ -527,12 +527,12 @@ def build_default_provider_adapter_registry() -> RuntimeProviderAdapterRegistry:
 def _build_openai_model(
     model_route: ResolvedRuntimeModelRoute,
     _catalog_entry: ProviderCatalogEntry,
-) -> OpenAIModel:
+) -> OpenAIChatModel:
     provider = OpenAIProvider(
         base_url=model_route.base_url,
         api_key=_normalize_optional_text(model_route.api_key),
     )
-    return OpenAIModel(model_route.model_id, provider=provider)
+    return OpenAIChatModel(model_route.model_id, provider=provider)
 
 
 def _build_anthropic_model(
@@ -561,12 +561,12 @@ def _build_gemini_model(
 def _build_ollama_model(
     model_route: ResolvedRuntimeModelRoute,
     _catalog_entry: ProviderCatalogEntry,
-) -> OpenAIModel:
+) -> OpenAIChatModel:
     provider = OllamaProvider(
         base_url=model_route.base_url,
         api_key=_normalize_optional_text(model_route.api_key),
     )
-    return OpenAIModel(model_route.model_id, provider=provider)
+    return OpenAIChatModel(model_route.model_id, provider=provider)
 
 
 def _build_groq_model(
