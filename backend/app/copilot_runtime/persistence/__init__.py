@@ -32,7 +32,12 @@ from .query_dtos import (
     PersistedThreadSummaryDTO,
 )
 from .queries import PersistedChatQueryService
-from .redaction import DEFAULT_REDACTION_VERSION, REDACTED_VALUE, RedactionResult, redact_payload
+from .redaction import (
+    DEFAULT_REDACTION_VERSION,
+    REDACTED_VALUE,
+    RedactionResult,
+    redact_payload,
+)
 from .store import SQLiteSessionStore
 
 __all__ = [

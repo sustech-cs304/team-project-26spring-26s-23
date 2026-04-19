@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
 from app.tooling.contract import ToolContract, ToolInvocationContext
-from app.tooling.contract.errors import NormalizedToolError
+from app.tooling.contract.errors import NormalizedToolError, NormalizedToolErrorCode
 from app.tooling.contract.metadata import ToolMetadata
-from app.tooling.contract.results import ToolResultEnvelope as ContractToolResultEnvelope
+from app.tooling.contract.results import (
+    ToolResultEnvelope as ContractToolResultEnvelope,
+)
 from app.tooling.contract.schema import ToolSchema
 from app.tooling.host_capabilities import ToolHostCapabilities
 from app.tooling.runtime_adapter.copilot_runtime import (
@@ -31,6 +33,7 @@ from .protocol import (
     GlobRequest,
     GrepRequest,
     NotebookEditOperation,
+    NotebookEditOperationKind,
     NotebookEditRequest,
     ReadRequest,
     SwitchRootRequest,
@@ -211,11 +214,17 @@ _FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA = ToolSchema(
                     "type": "object",
                     "additionalProperties": False,
                     "properties": {
-                        "kind": {"type": "string", "enum": ["replace", "insert", "delete"]},
+                        "kind": {
+                            "type": "string",
+                            "enum": ["replace", "insert", "delete"],
+                        },
                         "cellId": {"type": "string", "minLength": 1},
                         "source": {"type": "string"},
                         "afterCellId": {"type": "string", "minLength": 1},
-                        "cellType": {"type": "string", "enum": ["code", "markdown", "raw"]},
+                        "cellType": {
+                            "type": "string",
+                            "enum": ["code", "markdown", "raw"],
+                        },
                     },
                     "required": ["kind"],
                 },
@@ -257,21 +266,80 @@ _FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA = ToolSchema(
     }
 )
 
+_RUNTIME_FILE_TOOL_READ_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_READ_ID,
+    display_name="File Read",
+    description="Read UTF-8 text files from the workspace with line-based pagination.",
+    kind="operation",
+    input_schema=_FILE_TOOL_READ_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-read"},
+)
+_RUNTIME_FILE_TOOL_WRITE_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_WRITE_ID,
+    display_name="File Write",
+    description="Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics.",
+    kind="operation",
+    input_schema=_FILE_TOOL_WRITE_INPUT_SCHEMA,
+    idempotent=False,
+    annotations={"stage": "phase2-write"},
+)
+_RUNTIME_FILE_TOOL_EDIT_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_EDIT_ID,
+    display_name="File Edit",
+    description="Edit UTF-8 text files in the workspace using exact replacement semantics.",
+    kind="operation",
+    input_schema=_FILE_TOOL_EDIT_INPUT_SCHEMA,
+    idempotent=False,
+    annotations={"stage": "phase2-edit"},
+)
+_RUNTIME_FILE_TOOL_GLOB_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_GLOB_ID,
+    display_name="File Glob",
+    description="Discover workspace files and directories by glob pattern without reading contents.",
+    kind="operation",
+    input_schema=_FILE_TOOL_GLOB_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-glob"},
+)
+_RUNTIME_FILE_TOOL_GREP_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_GREP_ID,
+    display_name="File Grep",
+    description="Search workspace text files by literal or regex pattern with bounded line context.",
+    kind="operation",
+    input_schema=_FILE_TOOL_GREP_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-grep"},
+)
+_RUNTIME_FILE_TOOL_SWITCH_ROOT_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_SWITCH_ROOT_ID,
+    display_name="File Switch Root",
+    description="Validate and resolve a new default file root directory for later tool calls.",
+    kind="operation",
+    input_schema=_FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA,
+    idempotent=True,
+    annotations={"stage": "phase1-switch-root"},
+)
+_RUNTIME_FILE_TOOL_NOTEBOOK_EDIT_METADATA = ToolMetadata(
+    tool_id=FILE_TOOL_NOTEBOOK_EDIT_ID,
+    display_name="Notebook Edit",
+    description="Edit workspace notebooks with transactional cell operations.",
+    kind="operation",
+    input_schema=_FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA,
+    idempotent=False,
+    annotations={"stage": "phase3-notebook-edit"},
+)
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeFileToolReadContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file text Read tool."""
 
     service: FileToolReadService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_READ_ID,
-        display_name="File Read",
-        description="Read UTF-8 text files from the workspace with line-based pagination.",
-        kind="operation",
-        input_schema=_FILE_TOOL_READ_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-read"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_READ_METADATA
 
     async def invoke(
         self,
@@ -308,15 +376,10 @@ class RuntimeFileToolWriteContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file text Write tool."""
 
     service: FileToolWriteService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_WRITE_ID,
-        display_name="File Write",
-        description="Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics.",
-        kind="operation",
-        input_schema=_FILE_TOOL_WRITE_INPUT_SCHEMA,
-        idempotent=False,
-        annotations={"stage": "phase2-write"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_WRITE_METADATA
 
     async def invoke(
         self,
@@ -352,15 +415,10 @@ class RuntimeFileToolEditContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file text Edit tool."""
 
     service: FileToolEditService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_EDIT_ID,
-        display_name="File Edit",
-        description="Edit UTF-8 text files in the workspace using exact replacement semantics.",
-        kind="operation",
-        input_schema=_FILE_TOOL_EDIT_INPUT_SCHEMA,
-        idempotent=False,
-        annotations={"stage": "phase2-edit"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_EDIT_METADATA
 
     async def invoke(
         self,
@@ -396,15 +454,10 @@ class RuntimeFileToolGlobContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file discovery Glob tool."""
 
     service: FileToolGlobService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_GLOB_ID,
-        display_name="File Glob",
-        description="Discover workspace files and directories by glob pattern without reading contents.",
-        kind="operation",
-        input_schema=_FILE_TOOL_GLOB_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-glob"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_GLOB_METADATA
 
     async def invoke(
         self,
@@ -440,15 +493,10 @@ class RuntimeFileToolGrepContract(ToolContract):
     """Runtime-agnostic contract wrapper for the staged file grep tool."""
 
     service: FileToolGrepService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_GREP_ID,
-        display_name="File Grep",
-        description="Search workspace text files by literal or regex pattern with bounded line context.",
-        kind="operation",
-        input_schema=_FILE_TOOL_GREP_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-grep"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_GREP_METADATA
 
     async def invoke(
         self,
@@ -484,15 +532,10 @@ class RuntimeFileToolSwitchRootContract(ToolContract):
     """Runtime-agnostic contract wrapper for switching the file-tool default root."""
 
     service: FileToolSwitchRootService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_SWITCH_ROOT_ID,
-        display_name="File Switch Root",
-        description="Validate and resolve a new default file root directory for later tool calls.",
-        kind="operation",
-        input_schema=_FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA,
-        idempotent=True,
-        annotations={"stage": "phase1-switch-root"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_SWITCH_ROOT_METADATA
 
     async def invoke(
         self,
@@ -528,15 +571,10 @@ class RuntimeFileToolNotebookEditContract(ToolContract):
     """Runtime-agnostic contract wrapper for staged notebook cell editing."""
 
     service: FileToolNotebookEditService
-    metadata: ToolMetadata = ToolMetadata(
-        tool_id=FILE_TOOL_NOTEBOOK_EDIT_ID,
-        display_name="Notebook Edit",
-        description="Edit workspace notebooks with transactional cell operations.",
-        kind="operation",
-        input_schema=_FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA,
-        idempotent=False,
-        annotations={"stage": "phase3-notebook-edit"},
-    )
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _RUNTIME_FILE_TOOL_NOTEBOOK_EDIT_METADATA
 
     async def invoke(
         self,
@@ -567,7 +605,20 @@ class RuntimeFileToolNotebookEditContract(ToolContract):
         )
 
 
-def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+RuntimeFileToolContract: TypeAlias = (
+    RuntimeFileToolReadContract
+    | RuntimeFileToolWriteContract
+    | RuntimeFileToolEditContract
+    | RuntimeFileToolGlobContract
+    | RuntimeFileToolGrepContract
+    | RuntimeFileToolSwitchRootContract
+    | RuntimeFileToolNotebookEditContract
+)
+
+
+def build_file_tool_read_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolReadContract(
         service=FileToolReadService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -582,7 +633,9 @@ def build_file_tool_read_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_write_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_write_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolWriteContract(
         service=FileToolWriteService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -596,7 +649,9 @@ def build_file_tool_write_runtime_binding(*, workspace_root: Path) -> RuntimeExe
     )
 
 
-def build_file_tool_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_edit_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolEditContract(
         service=FileToolEditService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -610,7 +665,9 @@ def build_file_tool_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_glob_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolGlobContract(
         service=FileToolGlobService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -624,7 +681,9 @@ def build_file_tool_glob_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_grep_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_grep_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolGrepContract(
         service=FileToolGrepService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -638,7 +697,9 @@ def build_file_tool_grep_runtime_binding(*, workspace_root: Path) -> RuntimeExec
     )
 
 
-def build_file_tool_notebook_edit_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_notebook_edit_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolNotebookEditContract(
         service=FileToolNotebookEditService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -652,7 +713,9 @@ def build_file_tool_notebook_edit_runtime_binding(*, workspace_root: Path) -> Ru
     )
 
 
-def build_file_tool_switch_root_runtime_binding(*, workspace_root: Path) -> RuntimeExecutableToolBinding:
+def build_file_tool_switch_root_runtime_binding(
+    *, workspace_root: Path
+) -> RuntimeExecutableToolBinding:
     contract = RuntimeFileToolSwitchRootContract(
         service=FileToolSwitchRootService(
             path_policy=FileToolPathPolicy(workspace_root=workspace_root),
@@ -665,7 +728,9 @@ def build_file_tool_switch_root_runtime_binding(*, workspace_root: Path) -> Runt
     )
 
 
-def _build_read_request(arguments: Mapping[str, Any] | None, *, vision_enabled: bool = False) -> ReadRequest:
+def _build_read_request(
+    arguments: Mapping[str, Any] | None, *, vision_enabled: bool = False
+) -> ReadRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
     audit = _build_audit_metadata(audit_payload)
@@ -673,8 +738,12 @@ def _build_read_request(arguments: Mapping[str, Any] | None, *, vision_enabled: 
         path=_require_string(payload.get("path"), field_name="path"),
         offset=_coerce_int(payload.get("offset", 1), field_name="offset"),
         limit=_coerce_int(payload.get("limit", 2000), field_name="limit"),
-        include_metadata=_coerce_bool(payload.get("includeMetadata", True), field_name="includeMetadata"),
-        parser_hint=_optional_string(payload.get("parserHint"), field_name="parserHint"),
+        include_metadata=_coerce_bool(
+            payload.get("includeMetadata", True), field_name="includeMetadata"
+        ),
+        parser_hint=_optional_string(
+            payload.get("parserHint"), field_name="parserHint"
+        ),
         pages=_coerce_optional_pages(payload.get("pages"), field_name="pages"),
         vision_enabled=vision_enabled,
         audit=audit,
@@ -688,9 +757,13 @@ def _build_write_request(arguments: Mapping[str, Any] | None) -> WriteRequest:
     return WriteRequest(
         path=_require_string(payload.get("path"), field_name="path"),
         content=_require_plain_string(payload.get("content"), field_name="content"),
-        encoding=_require_string(payload.get("encoding", "utf-8"), field_name="encoding"),
+        encoding=_require_string(
+            payload.get("encoding", "utf-8"), field_name="encoding"
+        ),
         overwrite=_coerce_bool(payload.get("overwrite", True), field_name="overwrite"),
-        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        expected_hash=_optional_string(
+            payload.get("expectedHash"), field_name="expectedHash"
+        ),
         atomic=_coerce_bool(payload.get("atomic", True), field_name="atomic"),
         audit=audit,
     )
@@ -703,10 +776,18 @@ def _build_edit_request(arguments: Mapping[str, Any] | None) -> EditRequest:
     return EditRequest(
         path=_require_string(payload.get("path"), field_name="path"),
         old_string=_require_string(payload.get("oldString"), field_name="oldString"),
-        new_string=_require_plain_string(payload.get("newString"), field_name="newString"),
-        replace_all=_coerce_bool(payload.get("replaceAll", False), field_name="replaceAll"),
-        expected_occurrences=_coerce_optional_int(payload.get("expectedOccurrences"), field_name="expectedOccurrences"),
-        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        new_string=_require_plain_string(
+            payload.get("newString"), field_name="newString"
+        ),
+        replace_all=_coerce_bool(
+            payload.get("replaceAll", False), field_name="replaceAll"
+        ),
+        expected_occurrences=_coerce_optional_int(
+            payload.get("expectedOccurrences"), field_name="expectedOccurrences"
+        ),
+        expected_hash=_optional_string(
+            payload.get("expectedHash"), field_name="expectedHash"
+        ),
         audit=audit,
     )
 
@@ -718,8 +799,12 @@ def _build_glob_request(arguments: Mapping[str, Any] | None) -> GlobRequest:
     return GlobRequest(
         base_path=_require_string(payload.get("basePath", "."), field_name="basePath"),
         pattern=_require_string(payload.get("pattern"), field_name="pattern"),
-        include_hidden=_coerce_bool(payload.get("includeHidden", False), field_name="includeHidden"),
-        max_results=_coerce_optional_int(payload.get("maxResults"), field_name="maxResults"),
+        include_hidden=_coerce_bool(
+            payload.get("includeHidden", False), field_name="includeHidden"
+        ),
+        max_results=_coerce_optional_int(
+            payload.get("maxResults"), field_name="maxResults"
+        ),
         audit=audit,
     )
 
@@ -731,33 +816,51 @@ def _build_grep_request(arguments: Mapping[str, Any] | None) -> GrepRequest:
     return GrepRequest(
         base_path=_require_string(payload.get("basePath", "."), field_name="basePath"),
         pattern=_require_string(payload.get("pattern"), field_name="pattern"),
-        file_glob=_require_string(payload.get("fileGlob", "**/*"), field_name="fileGlob"),
+        file_glob=_require_string(
+            payload.get("fileGlob", "**/*"), field_name="fileGlob"
+        ),
         is_regex=_coerce_bool(payload.get("isRegex", False), field_name="isRegex"),
-        case_sensitive=_coerce_bool(payload.get("caseSensitive", False), field_name="caseSensitive"),
-        context_lines=_coerce_non_negative_int(payload.get("contextLines", 0), field_name="contextLines"),
-        include_hidden=_coerce_bool(payload.get("includeHidden", False), field_name="includeHidden"),
-        max_results=_coerce_optional_int(payload.get("maxResults"), field_name="maxResults"),
+        case_sensitive=_coerce_bool(
+            payload.get("caseSensitive", False), field_name="caseSensitive"
+        ),
+        context_lines=_coerce_non_negative_int(
+            payload.get("contextLines", 0), field_name="contextLines"
+        ),
+        include_hidden=_coerce_bool(
+            payload.get("includeHidden", False), field_name="includeHidden"
+        ),
+        max_results=_coerce_optional_int(
+            payload.get("maxResults"), field_name="maxResults"
+        ),
         audit=audit,
     )
 
 
-def _build_notebook_edit_request(arguments: Mapping[str, Any] | None) -> NotebookEditRequest:
+def _build_notebook_edit_request(
+    arguments: Mapping[str, Any] | None,
+) -> NotebookEditRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
     audit = _build_audit_metadata(audit_payload)
     operations_payload = payload.get("operations")
     if not isinstance(operations_payload, list):
         raise ValueError("operations must be an array.")
-    operations = tuple(_build_notebook_edit_operation(item) for item in operations_payload)
+    operations = tuple(
+        _build_notebook_edit_operation(item) for item in operations_payload
+    )
     return NotebookEditRequest(
         path=_require_string(payload.get("path"), field_name="path"),
         operations=operations,
-        expected_hash=_optional_string(payload.get("expectedHash"), field_name="expectedHash"),
+        expected_hash=_optional_string(
+            payload.get("expectedHash"), field_name="expectedHash"
+        ),
         audit=audit,
     )
 
 
-def _build_switch_root_request(arguments: Mapping[str, Any] | None) -> SwitchRootRequest:
+def _build_switch_root_request(
+    arguments: Mapping[str, Any] | None,
+) -> SwitchRootRequest:
     payload = dict(arguments or {})
     audit_payload = payload.get("audit")
     audit = _build_audit_metadata(audit_payload)
@@ -767,17 +870,24 @@ def _build_switch_root_request(arguments: Mapping[str, Any] | None) -> SwitchRoo
     )
 
 
-
 def _build_notebook_edit_operation(value: Any) -> NotebookEditOperation:
     if not isinstance(value, Mapping):
         raise ValueError("operations entries must be objects.")
     payload = dict(value)
     return NotebookEditOperation(
-        kind=_require_string(payload.get("kind"), field_name="operations.kind"),
+        kind=_normalize_notebook_edit_operation_kind(
+            payload.get("kind"), field_name="operations.kind"
+        ),
         cell_id=_optional_string(payload.get("cellId"), field_name="operations.cellId"),
-        source=_optional_plain_string(payload.get("source"), field_name="operations.source"),
-        after_cell_id=_optional_string(payload.get("afterCellId"), field_name="operations.afterCellId"),
-        cell_type=_optional_string(payload.get("cellType"), field_name="operations.cellType"),
+        source=_optional_plain_string(
+            payload.get("source"), field_name="operations.source"
+        ),
+        after_cell_id=_optional_string(
+            payload.get("afterCellId"), field_name="operations.afterCellId"
+        ),
+        cell_type=_optional_string(
+            payload.get("cellType"), field_name="operations.cellType"
+        ),
     )
 
 
@@ -795,7 +905,9 @@ def _build_audit_metadata(value: Any) -> AuditMetadata | None:
     return AuditMetadata(
         actor=_optional_string(payload.get("actor"), field_name="audit.actor"),
         intent=_optional_string(payload.get("intent"), field_name="audit.intent"),
-        session_id=_optional_string(payload.get("sessionId"), field_name="audit.sessionId"),
+        session_id=_optional_string(
+            payload.get("sessionId"), field_name="audit.sessionId"
+        ),
         trace_id=_optional_string(payload.get("traceId"), field_name="audit.traceId"),
         reason=_optional_string(payload.get("reason"), field_name="audit.reason"),
         extra=extras,
@@ -831,6 +943,19 @@ def _optional_plain_string(value: Any, *, field_name: str) -> str | None:
     return value
 
 
+def _normalize_notebook_edit_operation_kind(
+    value: Any, *, field_name: str
+) -> NotebookEditOperationKind:
+    normalized = _require_string(value, field_name=field_name)
+    if normalized == "replace":
+        return "replace"
+    if normalized == "insert":
+        return "insert"
+    if normalized == "delete":
+        return "delete"
+    raise ValueError(f"{field_name} must be one of: replace, insert, delete.")
+
+
 def _coerce_int(value: Any, *, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{field_name} must be an integer.")
@@ -854,7 +979,9 @@ def _coerce_optional_pages(value: Any, *, field_name: str) -> tuple[int, int] | 
     if value is None:
         return None
     if not isinstance(value, list) or len(value) != 2:
-        raise ValueError(f"{field_name} must be an array of exactly two integers when provided.")
+        raise ValueError(
+            f"{field_name} must be an array of exactly two integers when provided."
+        )
     return (
         _coerce_int(value[0], field_name=f"{field_name}[0]"),
         _coerce_int(value[1], field_name=f"{field_name}[1]"),
@@ -869,11 +996,13 @@ def _coerce_bool(value: Any, *, field_name: str) -> bool:
 
 def _build_runtime_aware_binding(
     *,
-    contract: ToolContract,
+    contract: RuntimeFileToolContract,
     workspace_root: Path,
     function_name: str,
 ) -> RuntimeExecutableToolBinding:
-    binding = build_contract_runtime_binding(contract, kind="builtin", function_name=function_name)
+    binding = build_contract_runtime_binding(
+        contract, kind="builtin", function_name=function_name
+    )
     base_execute = binding.execute
     resolved_workspace_root = workspace_root.resolve(strict=False)
 
@@ -904,16 +1033,43 @@ def _build_runtime_aware_binding(
     )
 
 
-def _clone_contract_with_workspace_root(*, contract: ToolContract, workspace_root: Path) -> ToolContract:
+def _clone_contract_with_workspace_root(
+    *, contract: RuntimeFileToolContract, workspace_root: Path
+) -> RuntimeFileToolContract:
     runtime_root = workspace_root.resolve(strict=False)
+    if isinstance(contract, RuntimeFileToolReadContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolReadContract(service=service)
+    if isinstance(contract, RuntimeFileToolWriteContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolWriteContract(service=service)
+    if isinstance(contract, RuntimeFileToolEditContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolEditContract(service=service)
+    if isinstance(contract, RuntimeFileToolGlobContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolGlobContract(service=service)
+    if isinstance(contract, RuntimeFileToolGrepContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolGrepContract(service=service)
+    if isinstance(contract, RuntimeFileToolSwitchRootContract):
+        path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
+        service = replace(contract.service, path_policy=path_policy)
+        return RuntimeFileToolSwitchRootContract(service=service)
     path_policy = replace(contract.service.path_policy, workspace_root=runtime_root)
     service = replace(contract.service, path_policy=path_policy)
-    return replace(contract, service=service)
-
+    return RuntimeFileToolNotebookEditContract(service=service)
 
 
 def _get_runtime_default_root() -> Path | None:
-    default_root_value = get_runtime_context_metadata_value(("fileSystemState", "defaultRoot"))
+    default_root_value = get_runtime_context_metadata_value(
+        ("fileSystemState", "defaultRoot")
+    )
     if not isinstance(default_root_value, str):
         default_root_value = get_runtime_context_metadata_value("defaultRoot")
     if not isinstance(default_root_value, str):
@@ -922,7 +1078,6 @@ def _get_runtime_default_root() -> Path | None:
     if normalized == "":
         return None
     return Path(normalized).resolve(strict=False)
-
 
 
 def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
@@ -946,8 +1101,14 @@ def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
         if "vision" in normalized_tags or "multimodal" in normalized_tags:
             return True
     model_id = str(resolved_model_route.get("modelId") or "").lower()
-    provider = str(resolved_model_route.get("providerId") or resolved_model_route.get("provider") or "").lower()
-    if provider == "openai" and any(token in model_id for token in ("gpt-4.1", "gpt-4o", "o4")):
+    provider = str(
+        resolved_model_route.get("providerId")
+        or resolved_model_route.get("provider")
+        or ""
+    ).lower()
+    if provider == "openai" and any(
+        token in model_id for token in ("gpt-4.1", "gpt-4o", "o4")
+    ):
         return True
     if provider == "google" and "gemini" in model_id:
         return True
@@ -956,8 +1117,10 @@ def _runtime_context_supports_vision(context: ToolInvocationContext) -> bool:
 
 def _map_file_tool_error(error: Any) -> NormalizedToolError:
     if error is None:
-        return NormalizedToolError(code="execution_failed", message="File tool execution failed.")
-    code_map = {
+        return NormalizedToolError(
+            code="execution_failed", message="File tool execution failed."
+        )
+    code_map: dict[str, NormalizedToolErrorCode] = {
         "invalid_request": "invalid_input",
         "path_out_of_bounds": "permission_denied",
         "file_not_found": "not_found",
@@ -974,17 +1137,20 @@ def _map_file_tool_error(error: Any) -> NormalizedToolError:
         "permission_denied": "permission_denied",
         "already_exists": "conflict",
         "hash_mismatch": "conflict",
-        "vision_required": "unsupported_operation",
+        "vision_required": "execution_failed",
         "invalid_pages": "invalid_input",
         "page_range_required": "invalid_input",
     }
-    normalized_code = code_map.get(error.code, "execution_failed")
+    normalized_code = code_map.get(error.code, _DEFAULT_NORMALIZED_TOOL_ERROR_CODE)
     return NormalizedToolError(
         code=normalized_code,
         message=error.message,
         details=error.details,
         retryable=error.retryable,
     )
+
+
+_DEFAULT_NORMALIZED_TOOL_ERROR_CODE: Literal["execution_failed"] = "execution_failed"
 
 
 __all__ = [

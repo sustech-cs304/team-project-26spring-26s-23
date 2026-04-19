@@ -39,7 +39,6 @@ class RuntimeErrorResponse(RuntimeContract):
     error: RuntimeErrorDetail
 
 
-
 def build_invalid_request_error(
     *,
     message: str,
@@ -54,7 +53,6 @@ def build_invalid_request_error(
         requested_method=requested_method,
         details=details,
     )
-
 
 
 def build_thread_not_found_error(
@@ -72,7 +70,6 @@ def build_thread_not_found_error(
     )
 
 
-
 def build_run_not_found_error(
     *,
     run_id: str,
@@ -86,7 +83,6 @@ def build_run_not_found_error(
         requested_method=requested_method,
         details={"runId": run_id},
     )
-
 
 
 def build_session_not_found_error(
@@ -104,7 +100,6 @@ def build_session_not_found_error(
     )
 
 
-
 def build_agent_not_found_error(
     *,
     agent_name: str,
@@ -118,7 +113,6 @@ def build_agent_not_found_error(
         requested_method=requested_method,
         details={"agentName": agent_name},
     )
-
 
 
 def build_agent_mismatch_error(
@@ -143,7 +137,6 @@ def build_agent_mismatch_error(
             "requestedAgentId": requested_agent_id,
         },
     )
-
 
 
 def build_tool_not_found_error(
@@ -177,7 +170,6 @@ def build_tool_approval_not_found_error(
     )
 
 
-
 def build_unsupported_message_shape_error(
     *,
     message: str,
@@ -192,7 +184,6 @@ def build_unsupported_message_shape_error(
         requested_method=requested_method,
         details=details,
     )
-
 
 
 def build_invalid_message_history_error(
@@ -211,7 +202,6 @@ def build_invalid_message_history_error(
     )
 
 
-
 def build_model_not_configured_error(
     *,
     message: str,
@@ -225,7 +215,6 @@ def build_model_not_configured_error(
         requested_method=requested_method,
         details={"modelEnvironmentKeys": list(scaffold.model_environment_keys)},
     )
-
 
 
 def build_runtime_operation_error(
@@ -245,7 +234,6 @@ def build_runtime_operation_error(
     )
 
 
-
 def build_agent_execution_failed_error(
     *,
     message: str,
@@ -260,7 +248,6 @@ def build_agent_execution_failed_error(
         requested_method=requested_method,
         details=details,
     )
-
 
 
 def build_internal_server_error(
@@ -278,13 +265,14 @@ def build_internal_server_error(
     )
 
 
-
 def build_method_not_implemented_error(
     *,
     requested_method: str,
     scaffold: RuntimeScaffold,
 ) -> RuntimeErrorResponse:
-    supported_methods = _format_supported_methods_for_message(scaffold.supported_methods)
+    supported_methods = _format_supported_methods_for_message(
+        scaffold.supported_methods
+    )
     return _build_runtime_error(
         code=METHOD_NOT_IMPLEMENTED_CODE,
         message=(
@@ -295,7 +283,6 @@ def build_method_not_implemented_error(
         requested_method=requested_method,
         details={},
     )
-
 
 
 def _format_supported_methods_for_message(supported_methods: tuple[str, ...]) -> str:
@@ -309,7 +296,6 @@ def _format_supported_methods_for_message(supported_methods: tuple[str, ...]) ->
         return f"{supported_methods[0]} and {supported_methods[1]}"
 
     return f"{', '.join(supported_methods[:-1])}, and {supported_methods[-1]}"
-
 
 
 def _build_runtime_error(

@@ -42,11 +42,17 @@ def to_runtime_thinking_selection(
         preset_value = selection.get("value")
     else:
         kind = getattr(selection, "kind", None)
-        budget_tokens = getattr(selection, "budget_tokens", getattr(selection, "budgetTokens", None))
+        budget_tokens = getattr(
+            selection, "budget_tokens", getattr(selection, "budgetTokens", None)
+        )
         preset_value = getattr(selection, "value", None)
 
     if kind == "budget":
-        if not isinstance(budget_tokens, int) or isinstance(budget_tokens, bool) or budget_tokens < 0:
+        if (
+            not isinstance(budget_tokens, int)
+            or isinstance(budget_tokens, bool)
+            or budget_tokens < 0
+        ):
             return None
         return RuntimeThinkingSelection(
             series=series,
@@ -84,18 +90,12 @@ def build_thinking_fail_fast_message(
             "请求已在执行前终止。"
         )
     if code == "thinking_series_value_not_allowed":
-        return (
-            f"Thinking 系列 '{requested_selection.series}' 的请求值 {requested_value} 不在当前模型路由允许集合中。"
-        )
+        return f"Thinking 系列 '{requested_selection.series}' 的请求值 {requested_value} 不在当前模型路由允许集合中。"
     if code == "thinking_series_builder_missing":
-        return (
-            f"当前模型路由缺少 Thinking 系列 '{requested_selection.series}' 的 provider builder。"
-        )
+        return f"当前模型路由缺少 Thinking 系列 '{requested_selection.series}' 的 provider builder。"
     if code == "thinking_series_unknown_without_override":
         return "当前模型路由未解析出 Thinking 系列，且未提供 override 系列模板，无法发送 Thinking 请求。"
-    return (
-        f"Thinking 系列 '{requested_selection.series}' 不适用于当前模型路由，请求已终止。"
-    )
+    return f"Thinking 系列 '{requested_selection.series}' 不适用于当前模型路由，请求已终止。"
 
 
 __all__ = [

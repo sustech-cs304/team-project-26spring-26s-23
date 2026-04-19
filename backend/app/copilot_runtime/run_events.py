@@ -74,7 +74,9 @@ def encode_runtime_run_event(event: RuntimeRunEvent) -> str:
     return f"data: {json.dumps(event.to_dict())}\n\n"
 
 
-async def encode_runtime_run_events(events: AsyncIterable[RuntimeRunEvent]) -> AsyncIterator[str]:
+async def encode_runtime_run_events(
+    events: AsyncIterable[RuntimeRunEvent],
+) -> AsyncIterator[str]:
     async for event in events:
         yield encode_runtime_run_event(event)
 

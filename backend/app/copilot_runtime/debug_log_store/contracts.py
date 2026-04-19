@@ -69,7 +69,9 @@ class DebugLogEvent:
     message: str
     environment: DebugLogEnvironmentMode
     context: DebugLogEventContext = field(default_factory=DebugLogEventContext)
-    summary: SanitizedPayload = field(default_factory=lambda: SanitizedPayload(content={}))
+    summary: SanitizedPayload = field(
+        default_factory=lambda: SanitizedPayload(content={})
+    )
     error_summary: str | None = None
     exception_type: str | None = None
     exception_stack: str | None = None
@@ -308,5 +310,7 @@ class DebugLogMaintenanceStatus:
                 "totalEvents": self.total_events,
                 "databaseFileSizeBytes": self.database_file_size_bytes,
             },
-            "lastCleanup": self.last_cleanup.to_dict() if self.last_cleanup is not None else None,
+            "lastCleanup": self.last_cleanup.to_dict()
+            if self.last_cleanup is not None
+            else None,
         }

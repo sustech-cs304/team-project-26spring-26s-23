@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from app.tooling import (
     NormalizedToolError,
@@ -60,7 +61,7 @@ class _RecordingContractTool:
     async def invoke(
         self,
         *,
-        arguments: dict[str, Any] | None,
+        arguments: Mapping[str, Any] | None,
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> ToolResultEnvelope:
@@ -93,13 +94,19 @@ class _RecordingContractTool:
         )
 
 
+def _run_binding_execute(
+    binding_execute: Coroutine[Any, Any, dict[str, Any]],
+) -> dict[str, Any]:
+    return asyncio.run(binding_execute)
+
+
 def test_build_contract_runtime_binding_maps_success_and_runtime_context() -> None:
     contract_tool = _RecordingContractTool()
     captured_runtime_contexts: list[RuntimeToolExecutionContext | None] = []
     captured_invocation_contexts: list[ToolInvocationContext] = []
 
     def host_factory(
-        tool: _RecordingContractTool,
+        tool: Any,
         invocation_context: ToolInvocationContext,
         runtime_context: RuntimeToolExecutionContext | None,
     ) -> ToolHostCapabilities:
@@ -122,7 +129,9 @@ def test_build_contract_runtime_binding_maps_success_and_runtime_context() -> No
     )
 
     with runtime_tool_execution_scope(runtime_context):
-        result = asyncio.run(binding.execute({"keyword": "数据库"}))
+        result = _run_binding_execute(
+            cast(Coroutine[Any, Any, dict[str, Any]], binding.execute({"keyword": "数据库"}))
+        )
 
     assert binding.tool_id == "campus.course-search"
     assert binding.kind == CONTRACT_RUNTIME_TOOL_KIND
@@ -170,7 +179,9 @@ def test_build_contract_runtime_binding_returns_failure_envelope_for_contract_er
     contract_tool = _RecordingContractTool(fail=True)
     binding = build_contract_runtime_binding(contract_tool)
 
-    result = asyncio.run(binding.execute({"keyword": ""}))
+    result = _run_binding_execute(
+        cast(Coroutine[Any, Any, dict[str, Any]], binding.execute({"keyword": ""}))
+    )
 
     assert result == {
         "status": "error",
@@ -207,7 +218,7 @@ def test_build_contract_runtime_binding_returns_failure_for_missing_error_payloa
         async def invoke(
             self,
             *,
-            arguments: dict[str, Any] | None,
+            arguments: Mapping[str, Any] | None,
             context: ToolInvocationContext,
             host: ToolHostCapabilities,
         ) -> ToolResultEnvelope:
@@ -223,7 +234,9 @@ def test_build_contract_runtime_binding_returns_failure_for_missing_error_payloa
     contract_tool = _BrokenContractTool()
     binding = build_contract_runtime_binding(contract_tool)
 
-    result = asyncio.run(binding.execute({"keyword": "数据库"}))
+    result = _run_binding_execute(
+        cast(Coroutine[Any, Any, dict[str, Any]], binding.execute({"keyword": "数据库"}))
+    )
 
     assert result == {
         "status": "error",
@@ -244,7 +257,7 @@ def test_build_contract_runtime_binding_normalizes_unhandled_invoke_exceptions()
         async def invoke(
             self,
             *,
-            arguments: dict[str, Any] | None,
+            arguments: Mapping[str, Any] | None,
             context: ToolInvocationContext,
             host: ToolHostCapabilities,
         ) -> ToolResultEnvelope:
@@ -260,7 +273,9 @@ def test_build_contract_runtime_binding_normalizes_unhandled_invoke_exceptions()
     contract_tool = _ExplodingContractTool()
     binding = build_contract_runtime_binding(contract_tool)
 
-    result = asyncio.run(binding.execute({"keyword": "数据库"}))
+    result = _run_binding_execute(
+        cast(Coroutine[Any, Any, dict[str, Any]], binding.execute({"keyword": "数据库"}))
+    )
 
     assert result["status"] == "error"
     assert result["metadata"] == {"toolId": "campus.course-search"}

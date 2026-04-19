@@ -8,8 +8,14 @@ from urllib.parse import urljoin
 
 import httpx
 
-from app.integrations.sustech.blackboard.shared import extract_blackboard_ids_from_url, extract_course_id_from_url
-from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger, LogLevel
+from app.integrations.sustech.blackboard.shared import (
+    extract_blackboard_ids_from_url,
+    extract_course_id_from_url,
+)
+from app.integrations.sustech.blackboard.shared.logging import (
+    BlackboardLogger,
+    LogLevel,
+)
 
 
 class BlackboardHTTPClient(Protocol):
@@ -37,12 +43,16 @@ class BlackboardAPIContext:
     def get(self, url: str, *, label: str = "GET") -> httpx.Response:
         """执行 GET 请求并记录最小调试状态。"""
         if self.logger is not None:
-            self.logger.debug("📤 发起 Blackboard GET 请求", context={"label": label, "url": url})
+            self.logger.debug(
+                "📤 发起 Blackboard GET 请求", context={"label": label, "url": url}
+            )
         response = self.client.get(url)
         self._record_response(label, response)
         return response
 
-    def post(self, url: str, *, data: dict[str, Any] | None = None, label: str = "POST") -> httpx.Response:
+    def post(
+        self, url: str, *, data: dict[str, Any] | None = None, label: str = "POST"
+    ) -> httpx.Response:
         """执行 POST 请求并记录最小调试状态。"""
         if self.logger is not None:
             self.logger.debug(
@@ -87,7 +97,9 @@ class BlackboardAPIContext:
         id_types: tuple[str, ...] | None = None,
     ) -> dict[str, str | None]:
         """统一提取 Blackboard URL 中的各类 ID。"""
-        return extract_blackboard_ids_from_url(url, id_types=id_types, base_url=self.base_url)
+        return extract_blackboard_ids_from_url(
+            url, id_types=id_types, base_url=self.base_url
+        )
 
     def extract_course_id(self, url: str) -> str:
         """从 URL 中提取课程 ID。"""
@@ -110,9 +122,12 @@ class BlackboardAPIContext:
                 "url": str(response.url),
             }
             if response.status_code >= 400:
-                self.logger.warning("❌ Blackboard HTTP 响应异常", context=request_context)
+                self.logger.warning(
+                    "❌ Blackboard HTTP 响应异常", context=request_context
+                )
             else:
-                self.logger.debug("✅ Blackboard HTTP 响应完成", context=request_context)
+                self.logger.debug(
+                    "✅ Blackboard HTTP 响应完成", context=request_context
+                )
         if self.response_logger is not None:
             self.response_logger(label, response)
-

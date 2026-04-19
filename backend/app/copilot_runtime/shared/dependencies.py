@@ -16,7 +16,6 @@ class RuntimeTransportDependencies:
     parser: RuntimeProtocolParser
 
 
-
 def build_runtime_transport_dependencies(
     scaffold: RuntimeScaffold,
     runtime_bridge: RuntimeBridge,

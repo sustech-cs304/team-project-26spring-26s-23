@@ -33,12 +33,16 @@ class FileToolPathPolicy:
     symlink_policy: SymlinkPolicy = "deny_escape"
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "workspace_root", self.workspace_root.resolve(strict=False))
+        object.__setattr__(
+            self, "workspace_root", self.workspace_root.resolve(strict=False)
+        )
 
     def resolve_path(self, path: str) -> PathResolution:
         normalized = path.strip()
         if normalized == "":
-            raise FileToolError(code="invalid_request", message="path must be a non-empty string.")
+            raise FileToolError(
+                code="invalid_request", message="path must be a non-empty string."
+            )
 
         requested = Path(normalized)
         path_kind: PathKind = "absolute" if requested.is_absolute() else "relative"
@@ -53,7 +57,9 @@ class FileToolPathPolicy:
 
         resolved = candidate.resolve(strict=False)
         if path_kind == "relative":
-            ensure_within_workspace(resolved_path=resolved, workspace_root=self.workspace_root)
+            ensure_within_workspace(
+                resolved_path=resolved, workspace_root=self.workspace_root
+            )
         return PathResolution(
             original_path=normalized,
             requested_path=requested,

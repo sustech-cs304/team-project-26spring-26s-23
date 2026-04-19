@@ -66,7 +66,11 @@ def extract_date_text(value: str | None) -> str:
     )
     if label_match:
         candidate = label_match.group(1).strip()
-        if re.search(r"20\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec", candidate, re.IGNORECASE):
+        if re.search(
+            r"20\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec",
+            candidate,
+            re.IGNORECASE,
+        ):
             return candidate
 
     return ""
@@ -115,7 +119,9 @@ def resolve_tzinfo(tzid: str | None) -> tzinfo:
         return fallback_offsets.get(normalized.upper(), UTC)
 
 
-def parse_ics_datetime(value: str | None, params: dict[str, str] | None = None) -> tuple[datetime | None, bool]:
+def parse_ics_datetime(
+    value: str | None, params: dict[str, str] | None = None
+) -> tuple[datetime | None, bool]:
     """解析 ICS 日期字段，并统一转为 UTC aware datetime。"""
     raw = str(value or "").strip()
     if not raw:

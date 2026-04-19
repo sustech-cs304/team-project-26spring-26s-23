@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from .contracts import GLOBAL_TOOL_CATALOG_GET_METHOD, RuntimeGlobalToolCatalogResponse, RuntimeScaffold
+from .contracts import (
+    GLOBAL_TOOL_CATALOG_GET_METHOD,
+    RuntimeGlobalToolCatalogResponse,
+    RuntimeScaffold,
+)
 from .tool_registry import normalize_tool_catalog_language
+
 
 def build_global_tool_catalog_response(
     scaffold: RuntimeScaffold,

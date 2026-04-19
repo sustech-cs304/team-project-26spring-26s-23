@@ -5,8 +5,10 @@ import json
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, TypedDict, cast
 
 import pytest
+from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
     ModelRequest,
     PartDeltaEvent,
@@ -28,6 +30,7 @@ from app.copilot_runtime.agent import (
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
 )
+from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.tool_approval_coordinator import (
     RuntimeToolApprovalCoordinator,
     ToolApprovalNotFoundError,
@@ -37,6 +40,28 @@ from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
+
+
+class CollectedEventStreamResult(TypedDict):
+    events: list[RuntimeExecutionEvent]
+    output: str | None
+    error: Exception | None
+
+
+def _require_payload_mapping(payload: dict[str, Any] | None) -> dict[str, Any]:
+    assert payload is not None
+    return payload
+
+
+def _build_tool_run_context(
+    *,
+    tool_call_id: str,
+    deps: Any,
+) -> RunContext[Any]:
+    return cast(
+        RunContext[Any],
+        SimpleNamespace(tool_call_id=tool_call_id, deps=deps),
+    )
 
 
 def test_run_raises_model_not_configured_when_no_model_is_available() -> None:
@@ -581,7 +606,7 @@ def test_execute_bound_tool_returns_tool_not_found_failure_without_raising() -> 
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id="tool.missing:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -622,7 +647,7 @@ def test_execute_bound_tool_returns_tool_not_enabled_failure_without_raising() -
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -666,7 +691,7 @@ def test_execute_bound_tool_allow_mode_skips_waiting_approval() -> None:
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     approval_coordinator = RuntimeToolApprovalCoordinator()
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-allow",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -700,7 +725,7 @@ def test_execute_bound_tool_ask_mode_waits_for_manual_approval_then_executes() -
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     approval_coordinator = RuntimeToolApprovalCoordinator()
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-approved",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -747,12 +772,13 @@ def test_execute_bound_tool_ask_mode_waits_for_manual_approval_then_executes() -
     assert outcome["phases_before_resolution"] == ["started", "waiting_approval"]
     assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
     waiting_event = emitted_tool_events[1]
-    assert waiting_event.approval == {
+    approval = _require_payload_mapping(waiting_event.approval)
+    assert approval == {
         "mode": "ask",
         "timeoutSeconds": None,
         "timeoutAction": None,
     }
-    assert "timeoutAt" not in waiting_event.approval
+    assert "timeoutAt" not in approval
     assert approval_coordinator.snapshot() == ()
 
 
@@ -762,7 +788,7 @@ def test_execute_bound_tool_ask_mode_returns_failure_when_rejected() -> None:
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     approval_coordinator = RuntimeToolApprovalCoordinator()
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-rejected",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -830,7 +856,7 @@ def test_execute_bound_tool_delay_mode_auto_approves_after_timeout() -> None:
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     approval_coordinator = RuntimeToolApprovalCoordinator()
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-approve",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -863,14 +889,16 @@ def test_execute_bound_tool_delay_mode_auto_approves_after_timeout() -> None:
     assert result["location"] == "Shenzhen"
     assert [event.phase for event in emitted_tool_events] == ["started", "waiting_approval", "completed"]
     waiting_event = emitted_tool_events[1]
-    assert waiting_event.approval == {
+    approval = _require_payload_mapping(waiting_event.approval)
+    timeout_at = approval.get("timeoutAt")
+    assert isinstance(timeout_at, str)
+    assert approval == {
         "mode": "delay",
-        "timeoutAt": waiting_event.approval["timeoutAt"],
+        "timeoutAt": timeout_at,
         "timeoutSeconds": 1,
         "timeoutAction": "approve",
     }
-    assert isinstance(waiting_event.approval["timeoutAt"], str)
-    assert waiting_event.approval["timeoutAt"]
+    assert timeout_at
     assert approval_coordinator.snapshot() == ()
 
 
@@ -880,7 +908,7 @@ def test_execute_bound_tool_delay_mode_auto_rejects_after_timeout_without_crashi
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     approval_coordinator = RuntimeToolApprovalCoordinator()
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-deny",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -939,7 +967,7 @@ def test_execute_bound_tool_delay_mode_manual_resolution_wins_before_timeout() -
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     approval_coordinator = RuntimeToolApprovalCoordinator()
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=f"{WEATHER_CURRENT_TOOL_ID}:call-delay-manual",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -1026,6 +1054,8 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
             field=field,
             operator=operator,
             limit=limit,
+            fetch_mode=fetch_mode,
+            max_pages=max_pages,
             results=[
                 CourseCatalogResultDTO(
                     course_id="_course_1",
@@ -1042,7 +1072,7 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id="blackboard.course_catalog.search:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -1076,13 +1106,13 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
         "fetch_mode": "full",
         "max_pages": 30,
     }
-    assert result["status"] == "error"
-    assert result["error"]["code"] == "execution_failed"
-    assert result["error"]["message"] == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
+    assert result["status"] == "success"
+    assert result["output"]["fetchMode"] == "full"
+    assert result["output"]["maxPages"] == 30
     assert result["metadata"]["toolId"] == "blackboard.course_catalog.search"
-    assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
+    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
     assert all(event.tool_id == "blackboard.course_catalog.search" for event in emitted_tool_events)
-    assert emitted_tool_events[-1].error_summary == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
+    assert emitted_tool_events[-1].result_summary is not None
 
 
 
@@ -1108,7 +1138,7 @@ def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id="blackboard.course_catalog.search:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -1163,7 +1193,7 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id="blackboard.course_catalog.search:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -1240,7 +1270,7 @@ def test_execute_bound_tool_returns_contract_integrity_failure_without_raising(
 
     monkeypatch.setattr(registry, "resolve_tool", resolve_tool)
 
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id="contract.invalid:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -1296,7 +1326,7 @@ def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id="tool.fs.glob:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -1363,28 +1393,28 @@ def test_execute_bound_tool_persists_switched_default_root_within_same_run(tmp_p
 
     switch_result = asyncio.run(
         executor._execute_bound_tool(
-            SimpleNamespace(tool_call_id=f"{FILE_TOOL_SWITCH_ROOT_ID}:call-1", deps=deps),
+            _build_tool_run_context(tool_call_id=f"{FILE_TOOL_SWITCH_ROOT_ID}:call-1", deps=deps),
             tool_id=FILE_TOOL_SWITCH_ROOT_ID,
             arguments={"path": str(switched_root)},
         )
     )
     glob_result = asyncio.run(
         executor._execute_bound_tool(
-            SimpleNamespace(tool_call_id="tool.fs.glob:call-2", deps=deps),
+            _build_tool_run_context(tool_call_id="tool.fs.glob:call-2", deps=deps),
             tool_id="tool.fs.glob",
             arguments={"basePath": ".", "pattern": "*.txt"},
         )
     )
     read_result = asyncio.run(
         executor._execute_bound_tool(
-            SimpleNamespace(tool_call_id="tool.fs.read:call-3", deps=deps),
+            _build_tool_run_context(tool_call_id="tool.fs.read:call-3", deps=deps),
             tool_id="tool.fs.read",
             arguments={"path": "sample.txt"},
         )
     )
     absolute_result = asyncio.run(
         executor._execute_bound_tool(
-            SimpleNamespace(tool_call_id="tool.fs.read:call-4", deps=deps),
+            _build_tool_run_context(tool_call_id="tool.fs.read:call-4", deps=deps),
             tool_id="tool.fs.read",
             arguments={"path": str(workspace_root / "missing.txt")},
         )
@@ -1463,7 +1493,7 @@ def test_execute_bound_tool_cancellation_discards_pending_approval_request() -> 
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     approval_coordinator = RuntimeToolApprovalCoordinator()
     tool_call_id = f"{WEATHER_CURRENT_TOOL_ID}:call-cancelled"
-    ctx = SimpleNamespace(
+    ctx = _build_tool_run_context(
         tool_call_id=tool_call_id,
         deps=SimpleNamespace(
             tool_registry=registry,
@@ -1546,8 +1576,8 @@ class _FakeRawStreamResult:
         return self._output
 
 
-async def _collect_event_stream(stream) -> dict[str, object]:
-    events = []
+async def _collect_event_stream(stream) -> CollectedEventStreamResult:
+    events: list[RuntimeExecutionEvent] = []
     output: str | None = None
     error: Exception | None = None
 

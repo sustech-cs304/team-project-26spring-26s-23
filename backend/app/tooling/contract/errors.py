@@ -82,11 +82,9 @@ _INLINE_SENSITIVE_TEXT_PATTERN = re.compile(
 )
 
 
-
 def _is_sensitive_error_key(key: str) -> bool:
     normalized = key.strip().casefold()
     return any(marker in normalized for marker in _SENSITIVE_ERROR_FIELD_MARKERS)
-
 
 
 def _redact_sensitive_text(value: str) -> str:
@@ -104,7 +102,6 @@ def _redact_sensitive_text(value: str) -> str:
         lambda match: f"{match.group(1)}{_REDACTED_TOOL_ERROR_VALUE}",
         redacted,
     )
-
 
 
 def redact_tool_error_value(value: Any) -> Any:
@@ -126,7 +123,6 @@ def redact_tool_error_value(value: Any) -> Any:
     if isinstance(value, str):
         return _redact_sensitive_text(value)
     return value
-
 
 
 def _stringify_exception_message(error: BaseException) -> str:

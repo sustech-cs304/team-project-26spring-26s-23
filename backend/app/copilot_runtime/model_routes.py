@@ -67,10 +67,16 @@ class ResolvedRuntimeModelRoute:
         )
         object.__setattr__(self, "route_ref", normalized_route_ref)
 
-        normalized_provider_id = _normalize_optional_text(self.provider_id) or _normalize_optional_text(self.provider) or ""
+        normalized_provider_id = (
+            _normalize_optional_text(self.provider_id)
+            or _normalize_optional_text(self.provider)
+            or ""
+        )
         object.__setattr__(self, "provider_id", normalized_provider_id)
 
-        normalized_endpoint_family = _normalize_optional_text(self.endpoint_family) or _resolve_endpoint_family(self.endpoint_type)
+        normalized_endpoint_family = _normalize_optional_text(
+            self.endpoint_family
+        ) or _resolve_endpoint_family(self.endpoint_type)
         object.__setattr__(self, "endpoint_family", normalized_endpoint_family)
 
         normalized_auth_kind = _normalize_optional_text(self.auth_kind)
@@ -83,7 +89,9 @@ class ResolvedRuntimeModelRoute:
 
     def to_resolved_route_dict(self) -> dict[str, object]:
         return {
-            "routeRef": self.route_ref.to_dict() if self.route_ref is not None else {
+            "routeRef": self.route_ref.to_dict()
+            if self.route_ref is not None
+            else {
                 "routeKind": "provider-model",
                 "profileId": self.provider_profile_id,
                 "modelId": self.model_id,
@@ -103,11 +111,15 @@ class ResolvedRuntimeModelRoute:
 
 
 class RuntimeModelRouteResolver(Protocol):
-    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute: ...
+    async def resolve(
+        self, model_route: RuntimeModelRoute
+    ) -> ResolvedRuntimeModelRoute: ...
 
 
 class RuntimeModelRouteResolutionError(RuntimeError):
-    def __init__(self, *, code: str, message: str, details: dict[str, object] | None = None) -> None:
+    def __init__(
+        self, *, code: str, message: str, details: dict[str, object] | None = None
+    ) -> None:
         self.code = code
         self.details = dict(details or {})
         super().__init__(message)

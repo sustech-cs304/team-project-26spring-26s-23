@@ -72,10 +72,12 @@ class Sanitizer:
                 redacted_keys.add(normalized_key)
                 content[normalized_key] = self.mask
                 continue
-            sanitized_value, value_truncated, value_dropped_fields = self._sanitize_value(
-                value,
-                depth=0,
-                field_path=normalized_key,
+            sanitized_value, value_truncated, value_dropped_fields = (
+                self._sanitize_value(
+                    value,
+                    depth=0,
+                    field_path=normalized_key,
+                )
             )
             content[normalized_key] = sanitized_value
             truncated = truncated or value_truncated
@@ -103,14 +105,20 @@ class Sanitizer:
     def _sanitize_text_content(self, text: str) -> str:
         sanitized = text
         for pattern in _SENSITIVE_TEXT_PATTERNS:
-            sanitized = pattern.sub(lambda match: f"{match.group('prefix')}{self.mask}", sanitized)
+            sanitized = pattern.sub(
+                lambda match: f"{match.group('prefix')}{self.mask}", sanitized
+            )
         return sanitized
 
     def _normalize_sensitive_key(self, key: str) -> str:
-        return "".join(character for character in key.strip().lower() if character.isalnum())
+        return "".join(
+            character for character in key.strip().lower() if character.isalnum()
+        )
 
     def normalized_sensitive_keys(self) -> frozenset[str]:
-        return frozenset(self._normalize_sensitive_key(key) for key in self.sensitive_keys)
+        return frozenset(
+            self._normalize_sensitive_key(key) for key in self.sensitive_keys
+        )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "sensitive_keys", self.normalized_sensitive_keys())
@@ -133,7 +141,10 @@ class Sanitizer:
 
         if isinstance(value, str):
             sanitized_text, changed = self.sanitize_text(value)
-            assert sanitized_text is not None  # pragma: no cover - sanitize_text() preserves non-None str inputs
+            if sanitized_text is None:  # pragma: no cover - defensive invariant guard
+                raise RuntimeError(
+                    "sanitize_text() returned None for a non-None string input"
+                )
             if changed:
                 return sanitized_text, True, {field_path}
             return sanitized_text, False, set()
@@ -153,27 +164,33 @@ class Sanitizer:
                 if self._is_sensitive_key(normalized_key):
                     result[normalized_key] = self.mask
                     continue
-                sanitized_value, nested_truncated, nested_dropped = self._sanitize_value(
-                    nested_value,
-                    depth=depth + 1,
-                    field_path=nested_path,
+                sanitized_value, nested_truncated, nested_dropped = (
+                    self._sanitize_value(
+                        nested_value,
+                        depth=depth + 1,
+                        field_path=nested_path,
+                    )
                 )
                 result[normalized_key] = sanitized_value
                 truncated = truncated or nested_truncated
                 dropped_fields.update(nested_dropped)
             return result, truncated, dropped_fields
 
-        if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        if isinstance(value, Sequence) and not isinstance(
+            value, str | bytes | bytearray
+        ):
             items = list(value)
             limited_items = items[: self.max_collection_items]
             result_list: list[Any] = []
             truncated = len(items) > self.max_collection_items
             dropped_fields: set[str] = {field_path} if truncated else set()
             for index, item in enumerate(limited_items):
-                sanitized_value, nested_truncated, nested_dropped = self._sanitize_value(
-                    item,
-                    depth=depth + 1,
-                    field_path=f"{field_path}[{index}]",
+                sanitized_value, nested_truncated, nested_dropped = (
+                    self._sanitize_value(
+                        item,
+                        depth=depth + 1,
+                        field_path=f"{field_path}[{index}]",
+                    )
                 )
                 result_list.append(sanitized_value)
                 truncated = truncated or nested_truncated
@@ -182,7 +199,10 @@ class Sanitizer:
 
         text = repr(value)
         sanitized_text, changed = self.sanitize_text(text)
-        assert sanitized_text is not None  # pragma: no cover - sanitize_text() preserves non-None str inputs
+        if sanitized_text is None:  # pragma: no cover - defensive invariant guard
+            raise RuntimeError(
+                "sanitize_text() returned None for repr()-derived string input"
+            )
         if changed:
             return sanitized_text, True, {field_path}
         return sanitized_text, False, set()

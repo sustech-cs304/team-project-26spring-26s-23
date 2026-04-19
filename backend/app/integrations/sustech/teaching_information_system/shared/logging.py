@@ -51,9 +51,13 @@ class TISLogEvent:
         headline = f"[{self.timestamp}] {self.level.upper():<7} [{self.layer}] {self.source}: {self.message}"
         segments: list[str] = []
         if self.context:
-            segments.append(f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True, default=str)}")
+            segments.append(
+                f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True, default=str)}"
+            )
         if self.payload:
-            segments.append(f"payload={json.dumps(self.payload, ensure_ascii=False, sort_keys=True, default=str)}")
+            segments.append(
+                f"payload={json.dumps(self.payload, ensure_ascii=False, sort_keys=True, default=str)}"
+            )
         if not segments:
             return headline
         return f"{headline} | {'; '.join(segments)}"
@@ -79,7 +83,9 @@ class TISConsoleSink:
     writer: TISLogWriter | None = None
 
     def emit(self, event: TISLogEvent) -> None:
-        if _TIS_LEVEL_VALUES.get(str(event.level), 100) < _TIS_LEVEL_VALUES.get(self.min_level, 20):
+        if _TIS_LEVEL_VALUES.get(str(event.level), 100) < _TIS_LEVEL_VALUES.get(
+            self.min_level, 20
+        ):
             return
         output = self.writer or print
         output(event.format_console_line())
@@ -132,16 +138,40 @@ class TISLogger:
                 cast(TISLogSinkCallable, sink)(event)
         return event
 
-    def debug(self, message: str, *, payload: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> TISLogEvent:
+    def debug(
+        self,
+        message: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> TISLogEvent:
         return self.log("debug", message, payload=payload, context=context)
 
-    def info(self, message: str, *, payload: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> TISLogEvent:
+    def info(
+        self,
+        message: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> TISLogEvent:
         return self.log("info", message, payload=payload, context=context)
 
-    def warning(self, message: str, *, payload: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> TISLogEvent:
+    def warning(
+        self,
+        message: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> TISLogEvent:
         return self.log("warning", message, payload=payload, context=context)
 
-    def error(self, message: str, *, payload: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> TISLogEvent:
+    def error(
+        self,
+        message: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> TISLogEvent:
         return self.log("error", message, payload=payload, context=context)
 
     def exception(
@@ -167,11 +197,18 @@ class TISLogSession:
     collector: TISLogCollector = field(default_factory=TISLogCollector)
     console_sink: TISConsoleSink | None = None
 
-    def make_logger(self, *, layer: str, source: str, context: dict[str, Any] | None = None) -> TISLogger:
+    def make_logger(
+        self, *, layer: str, source: str, context: dict[str, Any] | None = None
+    ) -> TISLogger:
         sinks: list[TISLogSink | TISLogSinkCallable] = [self.collector]
         if self.console_sink is not None:
             sinks.append(self.console_sink)
-        return TISLogger(layer=layer, source=source, sinks=tuple(sinks), context=_normalize_mapping(context))
+        return TISLogger(
+            layer=layer,
+            source=source,
+            sinks=tuple(sinks),
+            context=_normalize_mapping(context),
+        )
 
     def snapshot(self) -> list[TISLogEvent]:
         return self.collector.snapshot()
@@ -186,7 +223,9 @@ def create_tis_log_session(
     min_level: TISLogLevel = "info",
     writer: TISLogWriter | None = None,
 ) -> TISLogSession:
-    console_sink = TISConsoleSink(min_level=min_level, writer=writer) if console else None
+    console_sink = (
+        TISConsoleSink(min_level=min_level, writer=writer) if console else None
+    )
     return TISLogSession(console_sink=console_sink)
 
 

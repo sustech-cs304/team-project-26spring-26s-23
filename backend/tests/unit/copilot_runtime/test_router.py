@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from pydantic_ai.messages import ModelMessage
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.requests import Request
@@ -16,9 +17,6 @@ from app.copilot_runtime import (
     RuntimeToolApprovalCoordinator,
     RuntimeScaffold,
     RuntimeToolPermissionPolicy,
-    ToolDescriptor,
-    ToolRegistry,
-    ToolsetDescriptor,
     build_default_agent_registry,
     build_default_tool_registry,
     build_router,
@@ -553,7 +551,8 @@ def test_root_post_run_start_serialization_failure_returns_structured_error_and_
     assert serialize_logs[0]["runId"] == runs[0].run_id
     assert serialize_logs[0]["runtimeMethod"] == "run/start"
     assert serialize_logs[0]["exceptionType"] == "RuntimeError"
-    assert serialize_logs[0]["exception"]["message"] == "forced run/start serialization failure"
+    exception_payload = cast(dict[str, object], serialize_logs[0]["exception"])
+    assert exception_payload["message"] == "forced run/start serialization failure"
 
 
 def test_log_run_start_stage_skips_chain_logs_when_request_debug_disabled(
@@ -561,11 +560,14 @@ def test_log_run_start_stage_skips_chain_logs_when_request_debug_disabled(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
-    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    response_mappers = __import__(
+        "app.copilot_runtime.transport.response_mappers",
+        fromlist=["log_run_start_stage"],
+    )
     request = _build_http_request(debug_mode_enabled=False)
 
     with caplog.at_level("INFO", logger="uvicorn.error"):
-        router_module._log_run_start_stage(request, "run_start.request_received")
+        response_mappers.log_run_start_stage(request, "run_start.request_received")
 
     chain_logs = [
         record.getMessage()
@@ -582,11 +584,14 @@ def test_log_run_start_stage_emits_chain_logs_when_request_debug_enabled(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.delenv("COPILOT_RUNTIME_CHAIN_DEBUG", raising=False)
-    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    response_mappers = __import__(
+        "app.copilot_runtime.transport.response_mappers",
+        fromlist=["log_run_start_stage"],
+    )
     request = _build_http_request(debug_mode_enabled=True)
 
     with caplog.at_level("INFO", logger="uvicorn.error"):
-        router_module._log_run_start_stage(request, "run_start.request_received")
+        response_mappers.log_run_start_stage(request, "run_start.request_received")
 
     chain_logs = [
         record.getMessage()
@@ -608,11 +613,14 @@ def test_log_run_start_stage_uses_service_debug_default_when_request_debug_omitt
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
-    router_module = __import__("app.copilot_runtime.router", fromlist=["_log_run_start_stage"])
+    response_mappers = __import__(
+        "app.copilot_runtime.transport.response_mappers",
+        fromlist=["log_run_start_stage"],
+    )
     request = _build_http_request(debug_mode_enabled=None)
 
     with caplog.at_level("INFO", logger="uvicorn.error"):
-        router_module._log_run_start_stage(request, "run_start.request_received")
+        response_mappers.log_run_start_stage(request, "run_start.request_received")
 
     chain_logs = [
         record.getMessage()
@@ -1450,10 +1458,13 @@ def _build_http_request(*, debug_mode_enabled: bool | None) -> Request:
             "root_path": "",
         }
     )
-    router_module = __import__("app.copilot_runtime.router", fromlist=["_set_runtime_request_context"])
+    request_mappers = __import__(
+        "app.copilot_runtime.transport.request_mappers",
+        fromlist=["set_runtime_request_context"],
+    )
     if debug_mode_enabled is not None:
         request.state.copilot_runtime_debug_mode_enabled = debug_mode_enabled
-    router_module._set_runtime_request_context(
+    request_mappers.set_runtime_request_context(
         request,
         runtime_method="run/start",
         thread_id="thread-1",

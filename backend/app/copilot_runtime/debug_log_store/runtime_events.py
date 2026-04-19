@@ -91,7 +91,9 @@ class RuntimeDebugLogWriter:
                         or _normalize_optional_text(thread_id),
                         component=_normalize_optional_text(component),
                         operation=_normalize_optional_text(operation),
-                        tags={str(key): str(value) for key, value in (tags or {}).items()},
+                        tags={
+                            str(key): str(value) for key, value in (tags or {}).items()
+                        },
                     ),
                     summary=self.store.sanitizer.sanitize_summary(dict(summary or {})),
                     error_summary=error_summary,

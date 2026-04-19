@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Literal, TypedDict, cast
 
 import pytest
 
@@ -36,6 +37,15 @@ from app.copilot_runtime.session_store import (
     RuntimeStoredThinkingSelection,
 )
 from app.copilot_runtime.tool_registry import build_default_tool_registry
+from app.copilot_runtime.runs.message_run_services import RuntimeMessageRunOrchestrator
+
+
+class _ToolPermissionPolicyPayload(TypedDict):
+    schemaVersion: int
+    defaultMode: Literal["allow", "ask", "delay", "deny"]
+    toolModes: dict[str, Literal["allow", "ask", "delay", "deny"]]
+    toolTimeoutSeconds: dict[str, int | str]
+    toolTimeoutActions: dict[str, Literal["approve", "deny"]]
 
 
 class _StubMessageRunOrchestrator:
@@ -51,7 +61,7 @@ class _StubMessageRunOrchestrator:
         request: RuntimeRunStartRequest,
         is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
         run_id: str | None = None,
-    ):
+    ) -> AsyncIterator[RuntimeRunEvent]:
         self.received_requests.append(request)
         self.received_run_ids.append(run_id)
         self.received_disconnect_callbacks.append(is_client_disconnected)
@@ -68,9 +78,9 @@ class _CancelAwareMessageRunOrchestrator:
         self,
         *,
         request: RuntimeRunStartRequest,
-        is_client_disconnected=None,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None = None,
         run_id: str | None = None,
-    ):
+    ) -> AsyncIterator[RuntimeRunEvent]:
         assistant_message_id = f"{self._events.run_id}:assistant"
         yield self._events.build(
             RUN_STARTED_EVENT_TYPE,
@@ -121,7 +131,7 @@ def test_stream_run_delegates_to_orchestrator_and_preserves_request() -> None:
         session_store=store,
         agent_registry=registry,
         scaffold=scaffold,
-        message_run_orchestrator=orchestrator,
+        message_run_orchestrator=cast(RuntimeMessageRunOrchestrator, orchestrator),
     )
 
     disconnected = False
@@ -145,13 +155,13 @@ def test_stream_run_delegates_to_orchestrator_and_preserves_request() -> None:
     checker = orchestrator.received_disconnect_callbacks[0]
     assert checker is not None
     assert checker is not is_client_disconnected
-    assert asyncio.run(checker()) is False
+    assert asyncio.run(_invoke_disconnect_callback(checker)) is False
 
     disconnected = True
-    assert asyncio.run(checker()) is True
+    assert asyncio.run(_invoke_disconnect_callback(checker)) is True
 
     disconnected = False
-    assert asyncio.run(checker()) is False
+    assert asyncio.run(_invoke_disconnect_callback(checker)) is False
 
 
 def test_start_run_stores_provider_specific_thinking_selection_value_payload_and_rehydrates_request() -> None:
@@ -553,7 +563,7 @@ def test_stream_run_updates_run_record_and_projects_compat_messages() -> None:
         session_store=store,
         agent_registry=registry,
         scaffold=scaffold,
-        message_run_orchestrator=orchestrator,
+        message_run_orchestrator=cast(RuntimeMessageRunOrchestrator, orchestrator),
     )
 
     events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
@@ -642,7 +652,7 @@ def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
         session_store=store,
         agent_registry=registry,
         scaffold=scaffold,
-        message_run_orchestrator=orchestrator,
+        message_run_orchestrator=cast(RuntimeMessageRunOrchestrator, orchestrator),
     )
 
     events = asyncio.run(_collect_events(bridge.stream_run(run_id=run.run_id)))
@@ -718,6 +728,12 @@ async def _collect_events(events) -> list[RuntimeRunEvent]:
     return [event async for event in events]
 
 
+async def _invoke_disconnect_callback(
+    callback: Callable[[], Awaitable[bool]],
+) -> bool:
+    return await callback()
+
+
 def _build_scaffold(
     *,
     agent_registry: AgentRegistry,
@@ -737,8 +753,19 @@ def _build_run_start_request(
     model_route: RuntimeModelRoute | None = None,
     thinking_selection: RuntimeThinkingSelection | None = None,
     thinking_capability_override: dict[str, object] | None = None,
-    tool_permission_policy: dict[str, object] | None = None,
+    tool_permission_policy: _ToolPermissionPolicyPayload | None = None,
 ) -> RuntimeRunStartRequest:
+    resolved_tool_permission_policy = (
+        None
+        if tool_permission_policy is None
+        else RuntimeToolPermissionPolicy(
+            schemaVersion=tool_permission_policy["schemaVersion"],
+            defaultMode=tool_permission_policy["defaultMode"],
+            toolModes=dict(tool_permission_policy["toolModes"]),
+            toolTimeoutSeconds=dict(tool_permission_policy["toolTimeoutSeconds"]),
+            toolTimeoutActions=dict(tool_permission_policy["toolTimeoutActions"]),
+        )
+    )
     return RuntimeRunStartRequest(
         thread_id=thread_id,
         message=RuntimeMessagePayload(role="user", content="Hello"),
@@ -755,15 +782,7 @@ def _build_run_start_request(
             thinkingSelection=thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=(),
-            toolPermissionPolicy=None
-            if tool_permission_policy is None
-            else RuntimeToolPermissionPolicy(
-                schemaVersion=int(tool_permission_policy.get("schemaVersion", 1)),
-                defaultMode=str(tool_permission_policy.get("defaultMode", "ask")),
-                toolModes=dict(tool_permission_policy.get("toolModes", {})),
-                toolTimeoutSeconds=dict(tool_permission_policy.get("toolTimeoutSeconds", {})),
-                toolTimeoutActions=dict(tool_permission_policy.get("toolTimeoutActions", {})),
-            ),
+            toolPermissionPolicy=resolved_tool_permission_policy,
             requestOptions={},
         ),
         agent_id="default",

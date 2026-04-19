@@ -51,7 +51,9 @@ def _extract_response_auth_markers(
     final_url = str(response.url)
     parsed_url = urlparse(final_url)
     parsed_base_url = urlparse(str(base_url or _DEFAULT_TIS_BASE_URL))
-    title_match = re.search(r"<title[^>]*>(.*?)</title>", body, flags=re.IGNORECASE | re.DOTALL)
+    title_match = re.search(
+        r"<title[^>]*>(.*?)</title>", body, flags=re.IGNORECASE | re.DOTALL
+    )
     title = _clean_text(title_match.group(1)) if title_match else ""
     is_root_homepage = (
         parsed_url.netloc == parsed_base_url.netloc
@@ -73,7 +75,8 @@ def _extract_response_auth_markers(
         "is_cas_login": is_cas_login,
         "has_login_form": has_login_form,
         "contains_grcjcx": contains_grcjcx,
-        "has_grade_keyword": contains_grcjcx or _contains_keyword(body, _GRADE_MENU_KEYWORDS),
+        "has_grade_keyword": contains_grcjcx
+        or _contains_keyword(body, _GRADE_MENU_KEYWORDS),
     }
 
 

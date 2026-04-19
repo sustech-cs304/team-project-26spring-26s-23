@@ -63,7 +63,10 @@ from .session_store import (
 )
 
 
-from .thinking_adapter import adapt_thinking_selection, resolve_canonical_thinking_capability
+from .thinking_adapter import (
+    adapt_thinking_selection,
+    resolve_canonical_thinking_capability,
+)
 from .tool_approval_coordinator import RuntimeToolApprovalCoordinator
 from .tool_permissions import RuntimeToolPermissionResolver
 
@@ -93,7 +96,9 @@ class RuntimeBridge:
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
-        self._approval_coordinator = approval_coordinator or RuntimeToolApprovalCoordinator()
+        self._approval_coordinator = (
+            approval_coordinator or RuntimeToolApprovalCoordinator()
+        )
         self._debug_event_logger: RuntimeDebugLogWriter | None = None
 
     def set_debug_event_logger(self, logger: RuntimeDebugLogWriter | None) -> None:
@@ -221,7 +226,9 @@ class RuntimeBridge:
         if thread is None:
             raise SessionNotFoundError(session_id)
         self._resolve_agent(thread.bound_agent_id)
-        tool_permission_resolver = RuntimeToolPermissionResolver.from_policy(tool_permission_policy)
+        tool_permission_resolver = RuntimeToolPermissionResolver.from_policy(
+            tool_permission_policy
+        )
         return self._scaffold.build_capabilities_response(
             thread=thread,
             tool_permission_resolver=tool_permission_resolver,
@@ -235,7 +242,9 @@ class RuntimeBridge:
         thinking_capability_override: dict[str, Any] | None = None,
     ) -> RuntimeThinkingCapabilityResponse:
         if self._scaffold is None:
-            raise RuntimeError("Runtime scaffold is required for thinking capability queries.")
+            raise RuntimeError(
+                "Runtime scaffold is required for thinking capability queries."
+            )
         thread = self._session_store.get_thread(session_id)
         if thread is None:
             raise SessionNotFoundError(session_id)
@@ -276,7 +285,9 @@ class RuntimeBridge:
             decision=cast(RuntimeToolApprovalDecision, request.decision),
         )
         if self._scaffold is None:
-            raise RuntimeError("Runtime scaffold is required for tool approval resolution.")
+            raise RuntimeError(
+                "Runtime scaffold is required for tool approval resolution."
+            )
         return self._scaffold.build_tool_approval_resolve_response(
             resolution_payload=resolution.to_payload()
         )
@@ -384,7 +395,9 @@ class RuntimeBridge:
                 yield event
             return
 
-        request, _legacy_fallback_used, _rehydrate_error = self._to_run_start_request(run)
+        request, _legacy_fallback_used, _rehydrate_error = self._to_run_start_request(
+            run
+        )
         self._session_store.mark_run_streaming(
             run.run_id,
             metadata={"assistant_message_id": f"{run.run_id}:assistant"},
@@ -399,9 +412,15 @@ class RuntimeBridge:
                 is_client_disconnected=is_client_disconnected,
             ),
         ):
-            event = self._augment_run_event_with_metadata(run_id=run.run_id, event=raw_event)
+            event = self._augment_run_event_with_metadata(
+                run_id=run.run_id, event=raw_event
+            )
             self._update_run_state_from_event(run_id=run.run_id, event=event)
-            if event.type in {RUN_COMPLETED_EVENT_TYPE, RUN_FAILED_EVENT_TYPE, RUN_CANCELLED_EVENT_TYPE}:
+            if event.type in {
+                RUN_COMPLETED_EVENT_TYPE,
+                RUN_FAILED_EVENT_TYPE,
+                RUN_CANCELLED_EVENT_TYPE,
+            }:
                 terminal_seen = True
             yield event
 
@@ -478,7 +497,9 @@ class RuntimeBridge:
         )
         yield event
 
-    def _update_run_state_from_event(self, *, run_id: str, event: RuntimeRunEvent) -> None:
+    def _update_run_state_from_event(
+        self, *, run_id: str, event: RuntimeRunEvent
+    ) -> None:
         self._session_store.record_run_event(
             run_id,
             event_type=event.type,
@@ -496,26 +517,46 @@ class RuntimeBridge:
             )
             return
         if event.type == RUN_COMPLETED_EVENT_TYPE:
-            self._write_terminal_debug_event(run_id=run_id, event=event, status="completed", level=DebugLogLevel.INFO)
+            self._write_terminal_debug_event(
+                run_id=run_id, event=event, status="completed", level=DebugLogLevel.INFO
+            )
             assistant_text = event.payload.get("assistantText")
             self._session_store.mark_run_completed(
                 run_id,
-                assistant_text=assistant_text if isinstance(assistant_text, str) else None,
-                metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
+                assistant_text=assistant_text
+                if isinstance(assistant_text, str)
+                else None,
+                metadata={
+                    **metadata,
+                    "terminal_event": event.type,
+                    "terminal_payload": dict(event.payload),
+                },
             )
             return
         if event.type == RUN_FAILED_EVENT_TYPE:
-            self._write_terminal_debug_event(run_id=run_id, event=event, status="failed", level=DebugLogLevel.ERROR)
+            self._write_terminal_debug_event(
+                run_id=run_id, event=event, status="failed", level=DebugLogLevel.ERROR
+            )
             self._session_store.mark_run_failed(
                 run_id,
-                metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
+                metadata={
+                    **metadata,
+                    "terminal_event": event.type,
+                    "terminal_payload": dict(event.payload),
+                },
             )
             return
         if event.type == RUN_CANCELLED_EVENT_TYPE:
-            self._write_terminal_debug_event(run_id=run_id, event=event, status="cancelled", level=DebugLogLevel.WARN)
+            self._write_terminal_debug_event(
+                run_id=run_id, event=event, status="cancelled", level=DebugLogLevel.WARN
+            )
             self._session_store.mark_run_cancelled(
                 run_id,
-                metadata={**metadata, "terminal_event": event.type, "terminal_payload": dict(event.payload)},
+                metadata={
+                    **metadata,
+                    "terminal_event": event.type,
+                    "terminal_payload": dict(event.payload),
+                },
             )
             return
         if event.type == "run_started":
@@ -524,7 +565,10 @@ class RuntimeBridge:
                 metadata={
                     **metadata,
                     "assistant_message_id": str(
-                        event.payload.get("assistantMessageId", self._assistant_message_id_from_run_id(run_id))
+                        event.payload.get(
+                            "assistantMessageId",
+                            self._assistant_message_id_from_run_id(run_id),
+                        )
                     ),
                     **self._extract_thinking_metadata_from_payload(event.payload),
                 },
@@ -575,7 +619,9 @@ class RuntimeBridge:
     def _assistant_message_id_from_run_id(self, run_id: str) -> str:
         return f"{run_id}:assistant"
 
-    def _to_stored_run_input(self, request: RuntimeRunStartRequest) -> RuntimeStoredRunInput:
+    def _to_stored_run_input(
+        self, request: RuntimeRunStartRequest
+    ) -> RuntimeStoredRunInput:
         resolved_thinking_selection = request.policy.resolve_thinking_selection()
         tool_permission_policy_payload = (
             None
@@ -591,7 +637,9 @@ class RuntimeBridge:
                     route_ref=request.policy.modelRoute.route_ref,
                     catalog_revision=request.policy.modelRoute.catalog_revision,
                 ),
-                thinking_selection=_to_stored_thinking_selection(resolved_thinking_selection),
+                thinking_selection=_to_stored_thinking_selection(
+                    resolved_thinking_selection
+                ),
                 thinking_level_intent=None,
                 thinking_capability_override=None
                 if request.policy.thinkingCapabilityOverride is None
@@ -611,18 +659,28 @@ class RuntimeBridge:
         stored_request = run.request
         stored_policy = stored_request.policy
         stored_route = stored_policy.model_route
-        runtime_thinking_selection, legacy_fallback_used, rehydrate_error = _rehydrate_runtime_thinking_selection(
-            stored_policy.thinking_selection
+        runtime_thinking_selection, legacy_fallback_used, rehydrate_error = (
+            _rehydrate_runtime_thinking_selection(stored_policy.thinking_selection)
         )
         tool_permission_policy = (
             None
             if stored_policy.tool_permission_policy is None
             else RuntimeToolPermissionPolicy(
-                schemaVersion=stored_policy.tool_permission_policy.get("schemaVersion", 1),
-                defaultMode=stored_policy.tool_permission_policy.get("defaultMode", "ask"),
-                toolModes=dict(stored_policy.tool_permission_policy.get("toolModes", {})),
-                toolTimeoutSeconds=dict(stored_policy.tool_permission_policy.get("toolTimeoutSeconds", {})),
-                toolTimeoutActions=dict(stored_policy.tool_permission_policy.get("toolTimeoutActions", {})),
+                schemaVersion=stored_policy.tool_permission_policy.get(
+                    "schemaVersion", 1
+                ),
+                defaultMode=stored_policy.tool_permission_policy.get(
+                    "defaultMode", "ask"
+                ),
+                toolModes=dict(
+                    stored_policy.tool_permission_policy.get("toolModes", {})
+                ),
+                toolTimeoutSeconds=dict(
+                    stored_policy.tool_permission_policy.get("toolTimeoutSeconds", {})
+                ),
+                toolTimeoutActions=dict(
+                    stored_policy.tool_permission_policy.get("toolTimeoutActions", {})
+                ),
             )
         )
         return (
@@ -664,8 +722,12 @@ class RuntimeBridge:
         requested_thinking_selection = request.policy.resolve_thinking_selection()
         if rehydrate_error is not None:
             rehydrate_error_summary = summarize_exception(rehydrate_error) or {}
-            exception_type = str(rehydrate_error_summary.get("type") or type(rehydrate_error).__name__)
-            exception_message = str(rehydrate_error_summary.get("message") or str(rehydrate_error))
+            exception_type = str(
+                rehydrate_error_summary.get("type") or type(rehydrate_error).__name__
+            )
+            exception_message = str(
+                rehydrate_error_summary.get("message") or str(rehydrate_error)
+            )
             _RUNTIME_LOGGER.warning(
                 "thinking selection rehydrate skipped request_id=%s runtime_method=%s thread_id=%s run_id=%s phase=%s legacy_fallback_used=%s exception_type=%s exception_summary=%s",
                 request_id or "",
@@ -691,7 +753,9 @@ class RuntimeBridge:
             )
         metadata: dict[str, Any] = {
             "requestedThinkingSelection": (
-                None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                None
+                if requested_thinking_selection is None
+                else requested_thinking_selection.to_dict()
             ),
         }
         resolver = self._model_route_resolver
@@ -728,7 +792,9 @@ class RuntimeBridge:
             metadata.update(
                 {
                     "appliedThinkingSelection": (
-                        None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                        None
+                        if applied_thinking_selection is None
+                        else applied_thinking_selection.to_dict()
                     ),
                     "resolvedModelRoute": resolved_model_route.to_resolved_route_dict(),
                     "thinkingCapabilitySnapshot": capability_snapshot,
@@ -745,13 +811,19 @@ class RuntimeBridge:
                 threadId=run.thread_id,
                 phase="prime_run_metadata",
                 requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                    None
+                    if requested_thinking_selection is None
+                    else requested_thinking_selection.to_dict()
                 ),
                 appliedThinkingSelection=(
-                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
+                    None
+                    if applied_thinking_selection is None
+                    else applied_thinking_selection.to_dict()
                 ),
                 capability=summarize_runtime_thinking_capability(adaptation.capability),
-                selectionResult=summarize_runtime_thinking_selection_result(thinking_series_decision),
+                selectionResult=summarize_runtime_thinking_selection_result(
+                    thinking_series_decision
+                ),
                 reasoningSuppressionBasis=summarize_runtime_reasoning_suppression_basis(
                     reasoning_suppression_basis
                 ),
@@ -770,7 +842,9 @@ class RuntimeBridge:
                 threadId=run.thread_id,
                 phase="prime_run_metadata",
                 requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
+                    None
+                    if requested_thinking_selection is None
+                    else requested_thinking_selection.to_dict()
                 ),
                 overrideInput=request.policy.thinkingCapabilityOverride,
                 legacyFallbackUsed=legacy_fallback_used,
@@ -828,7 +902,9 @@ class RuntimeBridge:
         payload = self._extract_thinking_metadata_from_payload(run.metadata)
         return {key: value for key, value in payload.items() if value is not None}
 
-    def _extract_thinking_metadata_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _extract_thinking_metadata_from_payload(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         requested_thinking_selection = payload.get("requestedThinkingSelection")
         applied_thinking_selection = payload.get("appliedThinkingSelection")
         thinking_capability_snapshot = payload.get("thinkingCapabilitySnapshot")
@@ -879,7 +955,6 @@ class RuntimeBridge:
         return descriptor
 
 
-
 def _to_stored_thinking_selection(
     selection: RuntimeThinkingSelection | None,
 ) -> RuntimeStoredThinkingSelection | None:
@@ -894,13 +969,11 @@ def _to_stored_thinking_selection(
     )
 
 
-
 def _to_runtime_thinking_selection(
     selection: RuntimeStoredThinkingSelection | None,
 ) -> RuntimeThinkingSelection | None:
     rehydrated_selection, _, _ = _rehydrate_runtime_thinking_selection(selection)
     return rehydrated_selection
-
 
 
 def _rehydrate_runtime_thinking_selection(
@@ -930,23 +1003,36 @@ def _rehydrate_runtime_thinking_selection(
         )
         if legacy_selection is not None:
             return legacy_selection, True, None
-        return None, True, ValueError("Stored legacy thinkingSelection payload is invalid.")
+        return (
+            None,
+            True,
+            ValueError("Stored legacy thinkingSelection payload is invalid."),
+        )
 
     if isinstance(selection.value_payload, dict):
-        return None, False, ValueError("Stored provider-specific thinkingSelection payload is invalid.")
+        return (
+            None,
+            False,
+            ValueError(
+                "Stored provider-specific thinkingSelection payload is invalid."
+            ),
+        )
     return None, False, ValueError("Stored thinkingSelection payload is incomplete.")
 
 
-
-def _stored_thinking_selection_has_legacy_fields(selection: RuntimeStoredThinkingSelection) -> bool:
-    return selection.mode is not None or selection.level is not None or selection.budget_tokens is not None
-
+def _stored_thinking_selection_has_legacy_fields(
+    selection: RuntimeStoredThinkingSelection,
+) -> bool:
+    return (
+        selection.mode is not None
+        or selection.level is not None
+        or selection.budget_tokens is not None
+    )
 
 
 def _normalize_thinking_selection_payload(value: Any) -> dict[str, Any] | None:
     selection = _coerce_runtime_thinking_selection(value)
     return None if selection is None else selection.to_dict()
-
 
 
 def _resolve_runtime_applied_thinking_selection(
@@ -958,13 +1044,15 @@ def _resolve_runtime_applied_thinking_selection(
 ) -> RuntimeThinkingSelection | None:
     if applied_selection_payload is None:
         return None
-    if requested_selection is not None and applied_selection_payload == requested_selection_payload:
+    if (
+        requested_selection is not None
+        and applied_selection_payload == requested_selection_payload
+    ):
         return requested_selection
     return _to_runtime_thinking_selection_payload(
         selection=applied_selection_payload,
         series=capability_series,
     )
-
 
 
 def _to_runtime_thinking_selection_payload(
@@ -975,7 +1063,11 @@ def _to_runtime_thinking_selection_payload(
     kind = getattr(selection, "kind", None)
     if kind == "budget":
         budget_tokens = getattr(selection, "budget_tokens", None)
-        if not isinstance(budget_tokens, int) or isinstance(budget_tokens, bool) or budget_tokens < 0:
+        if (
+            not isinstance(budget_tokens, int)
+            or isinstance(budget_tokens, bool)
+            or budget_tokens < 0
+        ):
             return None
         return RuntimeThinkingSelection(
             series=series,
@@ -994,7 +1086,6 @@ def _to_runtime_thinking_selection_payload(
         level=cast(Any, value),
         budgetTokens=None,
     )
-
 
 
 __all__ = [

@@ -7,15 +7,17 @@ from pathlib import Path
 from typing import Any
 import base64
 import imghdr
+import re
 import struct
-from xml.etree import ElementTree
 
 from .errors import FileToolError
 from .path_policy import PathResolution
 from .protocol import PathMetadata, ReadRequest, ReadResult
 from .text_reader import _build_sha256
 
-_SUPPORTED_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"})
+_SUPPORTED_IMAGE_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+)
 _RASTER_MIME_BY_SUFFIX = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -38,7 +40,9 @@ class ImageReadPayload:
 class FileToolImageReader:
     """Read image files into a structured payload, but only when vision is enabled."""
 
-    def read_image(self, *, request: ReadRequest, resolution: PathResolution) -> ImageReadPayload:
+    def read_image(
+        self, *, request: ReadRequest, resolution: PathResolution
+    ) -> ImageReadPayload:
         target_path = resolution.resolved_path
         if not target_path.exists():
             raise FileToolError(
@@ -68,7 +72,9 @@ class FileToolImageReader:
         file_size = len(raw)
         suffix = target_path.suffix.lower()
         mime_type = _resolve_mime_type(path=target_path, raw=raw)
-        width, height = _resolve_dimensions(path=target_path, raw=raw, mime_type=mime_type)
+        width, height = _resolve_dimensions(
+            path=target_path, raw=raw, mime_type=mime_type
+        )
         path_metadata = PathMetadata(
             path=request.path,
             resolved_path=target_path.as_posix(),
@@ -130,7 +136,9 @@ def _resolve_mime_type(*, path: Path, raw: bytes) -> str:
     return _RASTER_MIME_BY_SUFFIX.get(suffix, "application/octet-stream")
 
 
-def _resolve_dimensions(*, path: Path, raw: bytes, mime_type: str) -> tuple[int | None, int | None]:
+def _resolve_dimensions(
+    *, path: Path, raw: bytes, mime_type: str
+) -> tuple[int | None, int | None]:
     try:
         if mime_type == "image/png":
             return _read_png_dimensions(raw)
@@ -144,7 +152,7 @@ def _resolve_dimensions(*, path: Path, raw: bytes, mime_type: str) -> tuple[int 
             return _read_jpeg_dimensions(raw)
         if mime_type == _SVG_MIME:
             return _read_svg_dimensions(path)
-    except (OSError, ValueError, ElementTree.ParseError):
+    except (OSError, ValueError):
         return None, None
     return None, None
 
@@ -206,25 +214,40 @@ def _read_jpeg_dimensions(raw: bytes) -> tuple[int | None, int | None]:
             continue
         if index + 2 > len(raw):
             break
-        segment_length = struct.unpack(">H", raw[index:index + 2])[0]
+        segment_length = struct.unpack(">H", raw[index : index + 2])[0]
         if segment_length < 2 or index + segment_length > len(raw):
             break
-        if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+        if marker in {
+            0xC0,
+            0xC1,
+            0xC2,
+            0xC3,
+            0xC5,
+            0xC6,
+            0xC7,
+            0xC9,
+            0xCA,
+            0xCB,
+            0xCD,
+            0xCE,
+            0xCF,
+        }:
             if index + 7 > len(raw):
                 break
-            height, width = struct.unpack(">HH", raw[index + 3:index + 7])
+            height, width = struct.unpack(">HH", raw[index + 3 : index + 7])
             return int(width), int(height)
         index += segment_length
     return None, None
 
 
 def _read_svg_dimensions(path: Path) -> tuple[int | None, int | None]:
-    root = ElementTree.fromstring(path.read_text(encoding="utf-8"))
-    width = _parse_svg_length(root.attrib.get("width"))
-    height = _parse_svg_length(root.attrib.get("height"))
+    svg_text = path.read_text(encoding="utf-8")
+    root_attributes = _extract_svg_root_attributes(svg_text)
+    width = _parse_svg_length(root_attributes.get("width"))
+    height = _parse_svg_length(root_attributes.get("height"))
     if width is not None and height is not None:
         return width, height
-    view_box = root.attrib.get("viewBox")
+    view_box = root_attributes.get("viewBox")
     if view_box is None:
         return None, None
     parts = [part for part in view_box.replace(",", " ").split() if part]
@@ -234,6 +257,20 @@ def _read_svg_dimensions(path: Path) -> tuple[int | None, int | None]:
         return int(float(parts[2])), int(float(parts[3]))
     except ValueError:
         return None, None
+
+
+def _extract_svg_root_attributes(svg_text: str) -> dict[str, str]:
+    root_match = re.search(r"<svg\b(?P<attrs>[^>]*)>", svg_text, flags=re.IGNORECASE)
+    if root_match is None:
+        return {}
+
+    attributes: dict[str, str] = {}
+    for key, double_quoted, single_quoted in re.findall(
+        r"([:\w.-]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')",
+        root_match.group("attrs"),
+    ):
+        attributes[key] = double_quoted or single_quoted
+    return attributes
 
 
 def _parse_svg_length(value: str | None) -> int | None:

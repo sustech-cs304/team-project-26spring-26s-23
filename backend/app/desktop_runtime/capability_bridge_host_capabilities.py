@@ -7,9 +7,25 @@ from pathlib import Path
 from typing import Any
 
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
-from app.tooling import HostArtifact, HostEvent, ToolContract, ToolHostCapabilities, ToolInvocationContext
-from app.tooling.host_capabilities import ArtifactStore, DatabaseResolver, EventSink, SecretProvider, StateStore, WorkspaceResolver
-from app.tooling.runtime_adapter.copilot_runtime import RuntimeToolExecutionContext, ToolHostCapabilitiesFactory
+from app.tooling import (
+    HostArtifact,
+    HostEvent,
+    ToolContract,
+    ToolHostCapabilities,
+    ToolInvocationContext,
+)
+from app.tooling.host_capabilities import (
+    ArtifactStore,
+    DatabaseResolver,
+    EventSink,
+    SecretProvider,
+    StateStore,
+    WorkspaceResolver,
+)
+from app.tooling.runtime_adapter.copilot_runtime import (
+    RuntimeToolExecutionContext,
+    ToolHostCapabilitiesFactory,
+)
 
 _STATE_SCOPE_RUN_PREFIX = "run:"
 _STATE_SCOPE_TOOL = "tool"
@@ -255,7 +271,9 @@ def _build_state_address(
     namespace_for_key = normalized_namespace
     if normalized_namespace.startswith(_STATE_SCOPE_RUN_PREFIX):
         scope = _STATE_SCOPE_RUN
-        namespace_for_key = normalized_namespace[len(_STATE_SCOPE_RUN_PREFIX) :].strip() or "default"
+        namespace_for_key = (
+            normalized_namespace[len(_STATE_SCOPE_RUN_PREFIX) :].strip() or "default"
+        )
 
     return scope, f"{invocation_context.tool_id}:{namespace_for_key}:{normalized_key}"
 

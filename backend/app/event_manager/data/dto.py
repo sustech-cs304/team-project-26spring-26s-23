@@ -3,11 +3,14 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from typing import Any
 
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.isoformat(timespec="seconds")
-        return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return (
+            value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        )
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
@@ -21,17 +24,17 @@ class EventDTO:
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))
-    
+
     @classmethod
     def from_obj(cls, obj: Any):
         class_fields = fields(cls)
         obj_dict = {}
-        for field in class_fields:
-            name = field.name
+        for class_field in class_fields:
+            name = class_field.name
             if hasattr(obj, name):
                 obj_dict[name] = getattr(obj, name)
         return cls(**obj_dict)
-    
+
 
 @dataclass(slots=True)
 class CourseEvent(EventDTO):
@@ -59,9 +62,11 @@ class CourseEvent(EventDTO):
         return week not in self.week_canceled
 
     def get_all_weeks(self):
-        all_weeks = list(range(self.week_start, self.week_start+1))
+        all_weeks = list(range(self.week_start, self.week_start + 1))
         if self.week_type != 2:
             all_weeks = list(filter(lambda week: week % 2 == self.week_type, all_weeks))
         if len(self.week_canceled) != 0:
-            all_weeks = list(filter(lambda week: week not in self.week_canceled, all_weeks))
+            all_weeks = list(
+                filter(lambda week: week not in self.week_canceled, all_weeks)
+            )
         return all_weeks

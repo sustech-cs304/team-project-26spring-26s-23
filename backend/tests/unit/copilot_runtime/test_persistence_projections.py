@@ -179,12 +179,14 @@ def test_projection_service_refreshes_thread_and_run_projections(tmp_path: Path)
                 "completed",
             ]
             assert (run_projection.diagnostic_blocks_json or [])[0]["code"] == "tool_latency"
-            assert run_projection.terminal_state_json == {
+            terminal_state = run_projection.terminal_state_json
+            assert terminal_state is not None
+            assert terminal_state == {
                 "status": "completed",
                 "eventType": "run_completed",
                 "assistantText": "Shenzhen 晴 / 24°C",
                 "payload": completed_payload,
-                "endedAt": run_projection.terminal_state_json["endedAt"],
+                "endedAt": terminal_state["endedAt"],
                 "failureCode": None,
                 "failureMessage": None,
                 "cancelReason": None,

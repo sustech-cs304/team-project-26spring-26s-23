@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -815,10 +815,7 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
 
     app = create_app(
         _build_config(tmp_path),
-        agent_executor=_StreamingExecutor(
-            reply="Hello from the desktop runtime test model.",
-            model_configured=False,
-        ),
+        agent_executor=_build_test_agent_executor(model_configured=False),
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
@@ -1042,8 +1039,20 @@ def _assert_supported_methods(supported_methods: list[str]) -> None:
 
 
 
-def _build_test_agent_executor() -> _StreamingExecutor:
-    return _StreamingExecutor(reply="Hello from the desktop runtime test model.")
+def _build_test_agent_executor(
+    *,
+    reply: str = "Hello from the desktop runtime test model.",
+    model_configured: bool = True,
+    model_environment_keys: tuple[str, ...] = (),
+) -> PydanticAIAgentExecutor:
+    return cast(
+        PydanticAIAgentExecutor,
+        _StreamingExecutor(
+            reply=reply,
+            model_configured=model_configured,
+            model_environment_keys=model_environment_keys,
+        ),
+    )
 
 
 

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import random
+from collections.abc import Awaitable
 from pathlib import Path
+from typing import TypeVar
 
 import pytest
 
 from app.copilot_runtime import (
-    ToolDescriptor,
     ToolRegistry,
     ToolsetDescriptor,
     build_default_tool_registry,
@@ -37,9 +38,7 @@ from app.copilot_runtime.tool_registry import (
 )
 from app.tooling.file_tools import (
     FILE_TOOL_GLOB_FUNCTION_NAME,
-    FILE_TOOL_GLOB_ID,
     FILE_TOOL_GREP_FUNCTION_NAME,
-    FILE_TOOL_GREP_ID,
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
     FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME,
@@ -54,6 +53,16 @@ CONTRACT_TOOL_IDS = tuple(
     contract.metadata.tool_id
     for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
 )
+
+_T = TypeVar("_T")
+
+
+async def _await_value(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
+
+
+def _run_awaitable(awaitable: Awaitable[_T]) -> _T:
+    return asyncio.run(_await_value(awaitable))
 
 
 def test_tool_registry_returns_registered_default_toolset() -> None:
@@ -317,7 +326,9 @@ def test_default_tool_registry_exposes_file_read_runtime_binding_metadata_and_ex
     target.write_text("first\nsecond\n", encoding="utf-8")
 
     resolved_tool = registry.resolve_tool(FILE_TOOL_READ_ID)
-    result = asyncio.run(resolved_tool.execute({"path": "readme.txt", "offset": 2, "limit": 1}))
+    result = _run_awaitable(
+        resolved_tool.execute({"path": "readme.txt", "offset": 2, "limit": 1})
+    )
 
     assert resolved_tool.descriptor.kind == "builtin"
     assert resolved_tool.function_name == FILE_TOOL_READ_FUNCTION_NAME
@@ -331,7 +342,7 @@ def test_default_tool_registry_exposes_file_write_runtime_binding_metadata_and_e
     registry = build_default_tool_registry(workspace_root=tmp_path)
 
     resolved_tool = registry.resolve_tool(FILE_TOOL_WRITE_ID)
-    result = asyncio.run(resolved_tool.execute({"path": "readme.txt", "content": "second"}))
+    result = _run_awaitable(resolved_tool.execute({"path": "readme.txt", "content": "second"}))
 
     assert resolved_tool.descriptor.kind == "builtin"
     assert resolved_tool.function_name == FILE_TOOL_WRITE_FUNCTION_NAME
@@ -348,7 +359,9 @@ def test_default_tool_registry_exposes_file_glob_runtime_binding_metadata_and_ex
     (docs_dir / "readme.md").write_text("alpha", encoding="utf-8")
 
     resolved_tool = registry.resolve_tool(FILE_TOOL_GLOB_ID)
-    result = asyncio.run(resolved_tool.execute({"basePath": "docs", "pattern": "*.md"}))
+    result = _run_awaitable(
+        resolved_tool.execute({"basePath": "docs", "pattern": "*.md"})
+    )
 
     assert resolved_tool.descriptor.kind == "builtin"
     assert resolved_tool.function_name == FILE_TOOL_GLOB_FUNCTION_NAME
@@ -364,7 +377,7 @@ def test_default_tool_registry_exposes_file_grep_runtime_binding_metadata_and_ex
     target.write_text("alpha\nTODO item\nomega\n", encoding="utf-8")
 
     resolved_tool = registry.resolve_tool(FILE_TOOL_GREP_ID)
-    result = asyncio.run(
+    result = _run_awaitable(
         resolved_tool.execute({
             "basePath": ".",
             "pattern": "TODO",
@@ -388,7 +401,7 @@ def test_default_tool_registry_exposes_file_switch_root_runtime_binding_metadata
     target_root.mkdir()
 
     resolved_tool = registry.resolve_tool(FILE_TOOL_SWITCH_ROOT_ID)
-    result = asyncio.run(resolved_tool.execute({"path": str(target_root)}))
+    result = _run_awaitable(resolved_tool.execute({"path": str(target_root)}))
 
     assert resolved_tool.descriptor.kind == "builtin"
     assert resolved_tool.function_name == FILE_TOOL_SWITCH_ROOT_FUNCTION_NAME

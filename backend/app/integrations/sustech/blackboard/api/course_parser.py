@@ -10,7 +10,11 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from app.integrations.sustech.blackboard.api.dto import CourseDTO
-from app.integrations.sustech.blackboard.shared import DEFAULT_BLACKBOARD_BASE_URL, clean_text, extract_course_id_from_url
+from app.integrations.sustech.blackboard.shared import (
+    DEFAULT_BLACKBOARD_BASE_URL,
+    clean_text,
+    extract_course_id_from_url,
+)
 
 
 class BlackboardCourseParser:
@@ -19,7 +23,9 @@ class BlackboardCourseParser:
     def __init__(self, *, base_url: str = DEFAULT_BLACKBOARD_BASE_URL) -> None:
         self.base_url = base_url
 
-    def extract_course_meta(self, course_name: str, context_text: str) -> dict[str, str | None]:
+    def extract_course_meta(
+        self, course_name: str, context_text: str
+    ) -> dict[str, str | None]:
         """从课程名及周边文本提取 ``code`` / ``term`` / ``instructor``。"""
         normalized = re.sub(r"\s+", " ", str(context_text or "")).strip()
         normalized_name = clean_text(course_name, max_length=500)
@@ -28,9 +34,13 @@ class BlackboardCourseParser:
         if code_match is None:
             code_match = re.search(r"\b([A-Z]{2,}\d{2,}[A-Z]?)\b", normalized)
 
-        term_match = re.search(r"\b(Spring|Summer|Fall|Winter)\s+\d{4}\b", normalized_name, re.IGNORECASE)
+        term_match = re.search(
+            r"\b(Spring|Summer|Fall|Winter)\s+\d{4}\b", normalized_name, re.IGNORECASE
+        )
         if term_match is None:
-            term_match = re.search(r"\b(Spring|Summer|Fall|Winter)\s+\d{4}\b", normalized, re.IGNORECASE)
+            term_match = re.search(
+                r"\b(Spring|Summer|Fall|Winter)\s+\d{4}\b", normalized, re.IGNORECASE
+            )
 
         instructor = ""
         for pattern in (
@@ -73,7 +83,9 @@ class BlackboardCourseParser:
         season = ""
         year = 0
 
-        en_match = re.search(r"\b(Spring|Summer|Fall|Winter)\s+(\d{4})\b", normalized, re.IGNORECASE)
+        en_match = re.search(
+            r"\b(Spring|Summer|Fall|Winter)\s+(\d{4})\b", normalized, re.IGNORECASE
+        )
         if en_match:
             season = en_match.group(1).capitalize()
             year = int(en_match.group(2))
@@ -82,9 +94,13 @@ class BlackboardCourseParser:
             zh_match_2 = re.search(r"([春夏秋冬])\s*(20\d{2})", normalized)
             if zh_match_1:
                 year = int(zh_match_1.group(1))
-                season = {"春": "Spring", "夏": "Summer", "秋": "Fall", "冬": "Winter"}[zh_match_1.group(2)]
+                season = {"春": "Spring", "夏": "Summer", "秋": "Fall", "冬": "Winter"}[
+                    zh_match_1.group(2)
+                ]
             elif zh_match_2:
-                season = {"春": "Spring", "夏": "Summer", "秋": "Fall", "冬": "Winter"}[zh_match_2.group(1)]
+                season = {"春": "Spring", "夏": "Summer", "秋": "Fall", "冬": "Winter"}[
+                    zh_match_2.group(1)
+                ]
                 year = int(zh_match_2.group(2))
 
         if not season or year <= 0:
@@ -124,7 +140,9 @@ class BlackboardCourseParser:
         while sibling is not None:
             if isinstance(sibling, Tag):
                 sibling_classes = {str(item) for item in (sibling.get("class") or [])}
-                if sibling.name == "h3" and any("termHeading" in item for item in sibling_classes):
+                if sibling.name == "h3" and any(
+                    "termHeading" in item for item in sibling_classes
+                ):
                     return self.normalize_term_label(sibling.get_text(" ", strip=True))
             sibling = sibling.previous_sibling
 
@@ -134,7 +152,11 @@ class BlackboardCourseParser:
     def is_course_entry_link(href: str) -> bool:
         """判断链接是否像课程入口。"""
         lower_href = str(href or "").strip().lower()
-        if not lower_href or lower_href.startswith("#") or lower_href.startswith("javascript:"):
+        if (
+            not lower_href
+            or lower_href.startswith("#")
+            or lower_href.startswith("javascript:")
+        ):
             return False
 
         if "launcher?type=course" in lower_href:
@@ -169,7 +191,11 @@ class BlackboardCourseParser:
 
             full_url = urljoin(self.base_url, href)
             parent = link.find_parent(["li", "tr", "div"])
-            context_text = parent.get_text(" ", strip=True) if isinstance(parent, Tag) else course_name
+            context_text = (
+                parent.get_text(" ", strip=True)
+                if isinstance(parent, Tag)
+                else course_name
+            )
             meta = self.extract_course_meta(course_name, context_text)
             if meta["term"] is None:
                 meta["term"] = self.find_term_heading_for_link(link)
@@ -188,6 +214,3 @@ class BlackboardCourseParser:
             )
 
         return courses
-
-
-

@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -18,7 +27,9 @@ def _utc_now_naive() -> datetime:
 
 class TimestampSoftDeleteMixin:
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now_naive, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utc_now_naive, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=_utc_now_naive,
@@ -32,7 +43,13 @@ class TimestampSoftDeleteMixin:
 class TISPersonalGrade(TimestampSoftDeleteMixin, Base):
     __tablename__ = "tis_personal_grades"
     __table_args__ = (
-        UniqueConstraint("owner_key", "course_name", "course_code", "term", name="uq_tis_personal_grade_owner_course_term"),
+        UniqueConstraint(
+            "owner_key",
+            "course_name",
+            "course_code",
+            "term",
+            name="uq_tis_personal_grade_owner_course_term",
+        ),
         Index("idx_tis_personal_grades_owner_deleted", "owner_key", "is_deleted"),
         Index("idx_tis_personal_grades_term", "term"),
     )
@@ -62,7 +79,9 @@ class TISCreditGPASummaryModel(TimestampSoftDeleteMixin, Base):
 class TISCreditGPATermModel(TimestampSoftDeleteMixin, Base):
     __tablename__ = "tis_credit_gpa_terms"
     __table_args__ = (
-        UniqueConstraint("owner_key", "academic_year_term", name="uq_tis_credit_gpa_term_owner_term"),
+        UniqueConstraint(
+            "owner_key", "academic_year_term", name="uq_tis_credit_gpa_term_owner_term"
+        ),
         Index("idx_tis_credit_gpa_terms_owner_deleted", "owner_key", "is_deleted"),
     )
 
@@ -78,7 +97,9 @@ class TISCreditGPATermModel(TimestampSoftDeleteMixin, Base):
 class TISCreditGPAYearModel(TimestampSoftDeleteMixin, Base):
     __tablename__ = "tis_credit_gpa_years"
     __table_args__ = (
-        UniqueConstraint("owner_key", "academic_year", name="uq_tis_credit_gpa_year_owner_year"),
+        UniqueConstraint(
+            "owner_key", "academic_year", name="uq_tis_credit_gpa_year_owner_year"
+        ),
         Index("idx_tis_credit_gpa_years_owner_deleted", "owner_key", "is_deleted"),
     )
 
@@ -98,7 +119,12 @@ class TISSelectedCourse(TimestampSoftDeleteMixin, Base):
             "course_sequence_number",
             name="uq_tis_selected_course_owner_semester_course_seq",
         ),
-        Index("idx_tis_selected_courses_owner_semester_deleted", "owner_key", "semester_id", "is_deleted"),
+        Index(
+            "idx_tis_selected_courses_owner_semester_deleted",
+            "owner_key",
+            "semester_id",
+            "is_deleted",
+        ),
     )
 
     owner_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -106,7 +132,9 @@ class TISSelectedCourse(TimestampSoftDeleteMixin, Base):
     course_code: Mapped[str] = mapped_column(String(64), nullable=False)
     course_name: Mapped[str] = mapped_column(String(255), nullable=False)
     task_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    course_sequence_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    course_sequence_number: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
     course_nature: Mapped[str | None] = mapped_column(String(64), nullable=True)
     course_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     credits: Mapped[float | None] = mapped_column(Float, nullable=True)

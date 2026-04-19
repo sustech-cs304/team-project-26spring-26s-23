@@ -277,6 +277,8 @@ def test_canonical_sustech_integration_roots_are_importable() -> None:
     blackboard = importlib.import_module("app.integrations.sustech.blackboard")
     tis = importlib.import_module("app.integrations.sustech.teaching_information_system")
 
+    assert blackboard.__file__ is not None
+    assert tis.__file__ is not None
     assert Path(blackboard.__file__).as_posix().endswith(
         "app/integrations/sustech/blackboard/__init__.py"
     )

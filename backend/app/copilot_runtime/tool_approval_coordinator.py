@@ -25,13 +25,17 @@ class ToolApprovalNotFoundError(ToolApprovalError):
     def __init__(self, *, run_id: str, tool_call_id: str) -> None:
         self.run_id = run_id
         self.tool_call_id = tool_call_id
-        super().__init__(f"No pending approval exists for run '{run_id}' and tool call '{tool_call_id}'.")
+        super().__init__(
+            f"No pending approval exists for run '{run_id}' and tool call '{tool_call_id}'."
+        )
 
 
 class ToolApprovalConflictError(ToolApprovalError):
     """Raised when an approval decision targets a non-pending request."""
 
-    def __init__(self, *, run_id: str, tool_call_id: str, status: RuntimeToolApprovalStatus) -> None:
+    def __init__(
+        self, *, run_id: str, tool_call_id: str, status: RuntimeToolApprovalStatus
+    ) -> None:
         self.run_id = run_id
         self.tool_call_id = tool_call_id
         self.status = status
@@ -122,7 +126,9 @@ class RuntimeToolApprovalCoordinator:
         default=asyncio.get_running_loop,
         repr=False,
     )
-    _pending_by_key: dict[tuple[str, str], _PendingApproval] = field(default_factory=dict, init=False)
+    _pending_by_key: dict[tuple[str, str], _PendingApproval] = field(
+        default_factory=dict, init=False
+    )
 
     def create_request(
         self,
@@ -135,9 +141,13 @@ class RuntimeToolApprovalCoordinator:
         timeout_seconds: int | None = None,
         timeout_action: ResolvedToolTimeoutAction | None = None,
         debug_enabled: bool = False,
-    ) -> tuple[RuntimeToolApprovalRequest, asyncio.Future[RuntimeToolApprovalResolution]]:
+    ) -> tuple[
+        RuntimeToolApprovalRequest, asyncio.Future[RuntimeToolApprovalResolution]
+    ]:
         requested_at = self._time_provider()
-        resolved_timeout_seconds = timeout_seconds if timeout_seconds is not None else None
+        resolved_timeout_seconds = (
+            timeout_seconds if timeout_seconds is not None else None
+        )
         resolved_timeout_action = timeout_action if timeout_action is not None else None
         timeout_at = None
         if resolved_timeout_seconds is not None:
@@ -153,8 +163,12 @@ class RuntimeToolApprovalCoordinator:
             timeout_at=timeout_at,
             input_summary=input_summary,
         )
-        future: asyncio.Future[RuntimeToolApprovalResolution] = self._loop_provider().create_future()
-        pending = _PendingApproval(request=request, future=future, debug_enabled=debug_enabled)
+        future: asyncio.Future[RuntimeToolApprovalResolution] = (
+            self._loop_provider().create_future()
+        )
+        pending = _PendingApproval(
+            request=request, future=future, debug_enabled=debug_enabled
+        )
         if resolved_timeout_seconds is not None and resolved_timeout_action is not None:
             pending.timeout_handle = self._loop_provider().call_later(
                 resolved_timeout_seconds,
@@ -193,7 +207,9 @@ class RuntimeToolApprovalCoordinator:
             toolId=pending.request.tool_id,
             mode=pending.request.mode,
             timeoutAt=(
-                None if pending.request.timeout_at is None else pending.request.timeout_at.isoformat()
+                None
+                if pending.request.timeout_at is None
+                else pending.request.timeout_at.isoformat()
             ),
         )
         try:
@@ -370,7 +386,9 @@ class RuntimeToolApprovalCoordinator:
             pending.timeout_handle = None
         if not pending.future.done():
             pending.future.set_result(resolution)
-        self._pending_by_key.pop((pending.request.run_id, pending.request.tool_call_id), None)
+        self._pending_by_key.pop(
+            (pending.request.run_id, pending.request.tool_call_id), None
+        )
         log_runtime_chain_debug(
             "tool.approval_request.finalized",
             enabled=pending.debug_enabled,

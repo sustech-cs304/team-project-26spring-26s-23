@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from app.tooling.file_tools import FILE_TOOL_ERROR_CODES, FileToolError
@@ -24,5 +26,7 @@ def test_file_tool_error_exposes_stable_codes_and_serialization() -> None:
 
 
 def test_file_tool_error_rejects_unknown_error_code() -> None:
+    invalid_code = cast(Any, "unknown")
+
     with pytest.raises(ValueError, match="Unknown file tool error code"):
-        FileToolError(code="unknown", message="boom")
+        FileToolError(code=invalid_code, message="boom")

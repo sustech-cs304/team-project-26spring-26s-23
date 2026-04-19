@@ -7,7 +7,11 @@ import re
 from datetime import datetime
 
 from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
-from app.integrations.sustech.blackboard.shared import extract_blackboard_token_from_text, parse_ics_datetime, to_utc_naive
+from app.integrations.sustech.blackboard.shared import (
+    extract_blackboard_token_from_text,
+    parse_ics_datetime,
+    to_utc_naive,
+)
 
 
 class BlackboardCalendarICSParser:
@@ -15,7 +19,9 @@ class BlackboardCalendarICSParser:
 
     @staticmethod
     def unfold_lines(ics_text: str) -> list[str]:
-        lines = str(ics_text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        lines = (
+            str(ics_text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        )
         unfolded: list[str] = []
         for line in lines:
             if not line:
@@ -66,11 +72,15 @@ class BlackboardCalendarICSParser:
     def stable_uid(raw_uid: str | None, title: str, end_at: datetime | None) -> str:
         canonical_raw_uid = BlackboardCalendarICSParser.canonicalize_raw_uid(raw_uid)
         if canonical_raw_uid:
-            digest = hashlib.sha1(canonical_raw_uid.encode("utf-8")).hexdigest()[:20]
+            digest = hashlib.sha1(
+                canonical_raw_uid.encode("utf-8"), usedforsecurity=False
+            ).hexdigest()[:20]
             return f"ics_{digest}"
 
         fallback = f"{title.strip()}::{end_at.isoformat() if end_at else '<none>'}"
-        digest = hashlib.sha1(fallback.encode("utf-8")).hexdigest()[:20]
+        digest = hashlib.sha1(
+            fallback.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()[:20]
         return f"ics_{digest}"
 
     @staticmethod
@@ -115,9 +125,16 @@ class BlackboardCalendarICSParser:
         normalized_map: dict[str, CalendarEventDTO] = {}
 
         for item in events_raw:
-            summary = self.unescape_ics_text(str(item.get("SUMMARY", ({}, ""))[1] or "")) or "(No Title)"
-            description = self.unescape_ics_text(str(item.get("DESCRIPTION", ({}, ""))[1] or ""))
-            location = self.unescape_ics_text(str(item.get("LOCATION", ({}, ""))[1] or ""))
+            summary = (
+                self.unescape_ics_text(str(item.get("SUMMARY", ({}, ""))[1] or ""))
+                or "(No Title)"
+            )
+            description = self.unescape_ics_text(
+                str(item.get("DESCRIPTION", ({}, ""))[1] or "")
+            )
+            location = self.unescape_ics_text(
+                str(item.get("LOCATION", ({}, ""))[1] or "")
+            )
             raw_uid = self.unescape_ics_text(str(item.get("UID", ({}, ""))[1] or ""))
 
             dtstart_params, dtstart_value = item.get("DTSTART", ({}, ""))
@@ -134,7 +151,9 @@ class BlackboardCalendarICSParser:
             end_at = to_utc_naive(end_at_raw)
 
             uid = self.stable_uid(raw_uid, summary, end_at)
-            course_id = self.extract_course_id(summary, description or "", location or "")
+            course_id = self.extract_course_id(
+                summary, description or "", location or ""
+            )
 
             normalized_map[uid] = CalendarEventDTO(
                 uid=uid,
@@ -149,6 +168,3 @@ class BlackboardCalendarICSParser:
             )
 
         return list(normalized_map.values())
-
-
-

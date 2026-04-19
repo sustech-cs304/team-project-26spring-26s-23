@@ -63,10 +63,11 @@ class ToolInvocationContext:
         )
         object.__setattr__(self, "run_id", _normalize_optional_text(self.run_id))
         object.__setattr__(self, "thread_id", _normalize_optional_text(self.thread_id))
-        object.__setattr__(self, "request_id", _normalize_optional_text(self.request_id))
+        object.__setattr__(
+            self, "request_id", _normalize_optional_text(self.request_id)
+        )
         if self.requested_at is not None and (
-            self.requested_at.tzinfo is None
-            or self.requested_at.utcoffset() is None
+            self.requested_at.tzinfo is None or self.requested_at.utcoffset() is None
         ):
             raise ValueError("requested_at must be timezone-aware when provided.")
         object.__setattr__(self, "trace", _normalize_trace(self.trace))

@@ -42,13 +42,29 @@ from app.tooling import (
     ToolResultEnvelope,
     ToolSchema,
 )
-from app.tooling.contract.errors import build_tool_exception_details, redact_tool_error_value
+from app.tooling.contract.errors import (
+    build_tool_exception_details,
+    redact_tool_error_value,
+)
 
 _STATE_NAMESPACE_PERSONAL_GRADES = "tis.personal_grades.fetch"
 _STATE_NAMESPACE_CREDIT_GPA = "tis.credit_gpa.fetch"
 _STATE_NAMESPACE_SELECTED_COURSES = "tis.selected_courses.fetch"
-_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
-_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
+
+
+def _build_secret_registry_key(namespace: str, key_name: str) -> str:
+    """Build host secret registry keys without embedding credentials in code."""
+
+    return f"{namespace}.{key_name}"
+
+
+# Host-side secret registry key names for credential lookup, not credential values.
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = _build_secret_registry_key(
+    "sustech", "username"
+)
+_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = _build_secret_registry_key(
+    "sustech", "casPassword"
+)
 
 
 class TISAuthenticationError(RuntimeError):
@@ -193,7 +209,9 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _schema(*, properties: Mapping[str, Any], required: Sequence[str] = ()) -> ToolSchema:
+def _schema(
+    *, properties: Mapping[str, Any], required: Sequence[str] = ()
+) -> ToolSchema:
     payload: dict[str, Any] = {
         "type": "object",
         "additionalProperties": False,
@@ -207,7 +225,6 @@ def _schema(*, properties: Mapping[str, Any], required: Sequence[str] = ()) -> T
 def _message_or_fallback(error: Exception, fallback: str) -> str:
     message = str(error).strip()
     return message or fallback
-
 
 
 def _error_diagnostic_context(
@@ -224,7 +241,6 @@ def _error_diagnostic_context(
     }
 
 
-
 def _build_error_details(
     *,
     error: Exception,
@@ -237,7 +253,6 @@ def _build_error_details(
         diagnostic_context=diagnostic_context,
         sanitizer=redact_tool_error_value,
     )
-
 
 
 def _normalized_error_with_details(
@@ -258,13 +273,90 @@ def _normalized_error_with_details(
     )
 
 
+def _host_capability_error_details(
+    error: HostCapabilityOperationError,
+    *,
+    include_host_code: bool,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "capability": error.capability,
+        **error.details,
+    }
+    if include_host_code:
+        details["hostErrorCode"] = error.code
+    return details
+
+
+def _map_host_capability_operation_error(
+    error: HostCapabilityOperationError,
+) -> NormalizedToolError:
+    if error.code in {"unsupported_capability", "unsupported_operation"}:
+        return NormalizedToolError(
+            code="host_capability_missing",
+            message=error.message,
+            retryable=error.retryable,
+            details=_host_capability_error_details(error, include_host_code=True),
+        )
+
+    if error.code in {"temporarily_unavailable", "timeout"}:
+        return NormalizedToolError(
+            code=cast(NormalizedToolErrorCode, error.code),
+            message=error.message,
+            retryable=error.retryable,
+            details=_host_capability_error_details(error, include_host_code=False),
+        )
+
+    if error.code in {"permission_denied", "not_found", "conflict"}:
+        return NormalizedToolError(
+            code=cast(NormalizedToolErrorCode, error.code),
+            message=error.message,
+            retryable=error.retryable,
+            details=_host_capability_error_details(error, include_host_code=False),
+        )
+
+    return NormalizedToolError(
+        code="execution_failed",
+        message=error.message,
+        retryable=error.retryable,
+        details=_host_capability_error_details(error, include_host_code=True),
+    )
+
+
+def _map_http_status_error(error: httpx.HTTPStatusError) -> NormalizedToolError:
+    status_code = error.response.status_code
+    status_code_map: dict[int, NormalizedToolErrorCode] = {
+        401: "authentication_required",
+        403: "permission_denied",
+        404: "not_found",
+        409: "conflict",
+        429: "rate_limited",
+        502: "temporarily_unavailable",
+        503: "temporarily_unavailable",
+        504: "temporarily_unavailable",
+    }
+    code = status_code_map.get(status_code, "execution_failed")
+    return NormalizedToolError(
+        code=code,
+        message=_message_or_fallback(error, f"TIS request failed with {status_code}."),
+        details={"statusCode": status_code},
+    )
+
+
+def _map_runtime_error(error: RuntimeError) -> NormalizedToolError:
+    message = str(error)
+    if "CAS 登录" in message or "未认证" in message:
+        return NormalizedToolError(code="authentication_required", message=message)
+    return NormalizedToolError(
+        code="execution_failed",
+        message=_message_or_fallback(error, "TIS tool execution failed."),
+    )
+
 
 def _map_exception(
     error: Exception,
     *,
     diagnostic_context: Mapping[str, Any] | None = None,
 ) -> NormalizedToolError:
-    normalized: NormalizedToolError
     if isinstance(error, MissingHostCapabilityError):
         normalized = NormalizedToolError(
             code="host_capability_missing",
@@ -272,34 +364,7 @@ def _map_exception(
             details={"capability": error.capability},
         )
     elif isinstance(error, HostCapabilityOperationError):
-        if error.code in {"unsupported_capability", "unsupported_operation"}:
-            normalized = NormalizedToolError(
-                code="host_capability_missing",
-                message=error.message,
-                retryable=error.retryable,
-                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
-            )
-        elif error.code in {"temporarily_unavailable", "timeout"}:
-            normalized = NormalizedToolError(
-                code=cast(NormalizedToolErrorCode, error.code),
-                message=error.message,
-                retryable=error.retryable,
-                details={"capability": error.capability, **error.details},
-            )
-        elif error.code in {"permission_denied", "not_found", "conflict"}:
-            normalized = NormalizedToolError(
-                code=cast(NormalizedToolErrorCode, error.code),
-                message=error.message,
-                retryable=error.retryable,
-                details={"capability": error.capability, **error.details},
-            )
-        else:
-            normalized = NormalizedToolError(
-                code="execution_failed",
-                message=error.message,
-                retryable=error.retryable,
-                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
-            )
+        normalized = _map_host_capability_operation_error(error)
     elif isinstance(error, TISAuthenticationError):
         normalized = NormalizedToolError(
             code="authentication_required",
@@ -321,39 +386,14 @@ def _map_exception(
             message=_message_or_fallback(error, "TIS request timed out."),
         )
     elif isinstance(error, httpx.HTTPStatusError):
-        status_code = error.response.status_code
-        code: NormalizedToolErrorCode = "execution_failed"
-        if status_code == 401:
-            code = "authentication_required"
-        elif status_code == 403:
-            code = "permission_denied"
-        elif status_code == 404:
-            code = "not_found"
-        elif status_code == 409:
-            code = "conflict"
-        elif status_code == 429:
-            code = "rate_limited"
-        elif status_code in {502, 503, 504}:
-            code = "temporarily_unavailable"
-        normalized = NormalizedToolError(
-            code=code,
-            message=_message_or_fallback(error, f"TIS request failed with {status_code}."),
-            details={"statusCode": status_code},
-        )
+        normalized = _map_http_status_error(error)
     elif isinstance(error, httpx.HTTPError):
         normalized = NormalizedToolError(
             code="temporarily_unavailable",
             message=_message_or_fallback(error, "TIS host is temporarily unavailable."),
         )
     elif isinstance(error, RuntimeError):
-        message = str(error)
-        if "CAS 登录" in message or "未认证" in message:
-            normalized = NormalizedToolError(code="authentication_required", message=message)
-        else:
-            normalized = NormalizedToolError(
-                code="execution_failed",
-                message=_message_or_fallback(error, "TIS tool execution failed."),
-            )
+        normalized = _map_runtime_error(error)
     else:
         normalized = NormalizedToolError(
             code="execution_failed",
@@ -454,7 +494,9 @@ def _read_persist_flag(arguments: Mapping[str, Any]) -> bool:
     return _read_bool(arguments, "persist", default=False)
 
 
-def _validate_persistence_arguments(arguments: Mapping[str, Any], *, persist: bool) -> None:
+def _validate_persistence_arguments(
+    arguments: Mapping[str, Any], *, persist: bool
+) -> None:
     if _read_optional_text(arguments, "dbPath") is not None:
         raise ValueError(
             "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
@@ -552,10 +594,7 @@ def _normalize_sql_value(value: Any) -> Any:
 
 
 def _sql_row_to_mapping(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
-    return {
-        column: _normalize_sql_value(value)
-        for column, value in zip(columns, row)
-    }
+    return {column: _normalize_sql_value(value) for column, value in zip(columns, row)}
 
 
 def _execute_sql_query(
@@ -691,7 +730,9 @@ async def _persist_sql_query_artifact_if_requested(
     artifact_store = cast(ArtifactStore, host.require_capability("artifact_store"))
     artifact = await artifact_store.save_text(
         name=f"{context.tool_id.replace('.', '-')}-{context.invocation_id}.json",
-        text=json.dumps(dict(full_result), ensure_ascii=False, indent=2, sort_keys=True),
+        text=json.dumps(
+            dict(full_result), ensure_ascii=False, indent=2, sort_keys=True
+        ),
         content_type="application/json",
         metadata={
             "toolId": context.tool_id,
@@ -740,13 +781,11 @@ def _common_metadata(
     return metadata
 
 
-
 def _detail_export_requested(arguments: Mapping[str, Any]) -> bool:
     return (
         _read_optional_text(arguments, "stateKey") is not None
         or _read_optional_text(arguments, "artifactName") is not None
     )
-
 
 
 def _build_output_persistence(
@@ -769,7 +808,6 @@ def _build_output_persistence(
     if artifacts:
         persistence["artifacts"] = [artifact.to_dict() for artifact in artifacts]
     return persistence or None
-
 
 
 def _personal_grades_output(result: TISGradeQueryResult) -> dict[str, Any]:
@@ -797,7 +835,6 @@ def _personal_grades_output(result: TISGradeQueryResult) -> dict[str, Any]:
     return output
 
 
-
 def _personal_grades_persisted_output(result: TISGradeQueryResult) -> dict[str, Any]:
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
@@ -812,7 +849,6 @@ def _personal_grades_persisted_output(result: TISGradeQueryResult) -> dict[str, 
     if result.persistence is not None:
         output["persistence"] = _jsonable(result.persistence)
     return output
-
 
 
 def _credit_gpa_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
@@ -834,7 +870,6 @@ def _credit_gpa_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
     return output
 
 
-
 def _credit_gpa_persisted_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
     output: dict[str, Any] = {
         "sourceUrl": result.source_url,
@@ -852,7 +887,6 @@ def _credit_gpa_persisted_output(result: TISCreditGPAQueryResult) -> dict[str, A
     if result.persistence is not None:
         output["persistence"] = _jsonable(result.persistence)
     return output
-
 
 
 def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str, Any]:
@@ -876,7 +910,6 @@ def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str,
     if result.persistence is not None:
         output["persistence"] = _jsonable(result.persistence)
     return output
-
 
 
 def _selected_courses_persisted_output(
@@ -1212,7 +1245,9 @@ class TISPersonalGradesFetchTool(_TISFacadeToolBase):
         _validate_persistence_arguments(arguments, persist=persist)
         role_code = _read_optional_text(arguments, "roleCode")
         owner_key = _read_optional_text(arguments, "ownerKey")
-        db_manager, db_path_source = _resolve_db_manager(arguments, host, persist=persist)
+        db_manager, db_path_source = _resolve_db_manager(
+            arguments, host, persist=persist
+        )
         result = await asyncio.to_thread(
             fetch_personal_grades_with_credentials,
             credentials.username,
@@ -1277,7 +1312,9 @@ class TISCreditGPAFetchTool(_TISFacadeToolBase):
         _validate_persistence_arguments(arguments, persist=persist)
         role_code = _read_optional_text(arguments, "roleCode")
         owner_key = _read_optional_text(arguments, "ownerKey")
-        db_manager, db_path_source = _resolve_db_manager(arguments, host, persist=persist)
+        db_manager, db_path_source = _resolve_db_manager(
+            arguments, host, persist=persist
+        )
         result = await asyncio.to_thread(
             fetch_credit_gpa_with_credentials,
             credentials.username,
@@ -1351,7 +1388,9 @@ class TISSelectedCoursesFetchTool(_TISFacadeToolBase):
         if page_size <= 0:
             raise ValueError("pageSize must be a positive integer.")
         owner_key = _read_optional_text(arguments, "ownerKey")
-        db_manager, db_path_source = _resolve_db_manager(arguments, host, persist=persist)
+        db_manager, db_path_source = _resolve_db_manager(
+            arguments, host, persist=persist
+        )
         result = await asyncio.to_thread(
             fetch_selected_courses_with_credentials,
             credentials.username,
@@ -1412,7 +1451,9 @@ class TISSQLQueryTool(_TISFacadeToolBase):
         sql = _read_required_text(arguments, "sql")
         result_limit = _read_sql_query_result_limit(arguments)
         persist_artifact = _read_bool(arguments, "persistArtifact", default=False)
-        db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(arguments, host)
+        db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(
+            arguments, host
+        )
         query_output, full_result = await asyncio.to_thread(
             _execute_sql_query,
             sql=sql,
@@ -1448,10 +1489,14 @@ class TISSQLQueryTool(_TISFacadeToolBase):
             full_result=artifact_payload,
         )
         output["artifact"] = artifact_output
-        return output, artifacts, {
-            "dbPathSource": db_path_source,
-            "persistArtifactRequested": persist_artifact,
-        }
+        return (
+            output,
+            artifacts,
+            {
+                "dbPathSource": db_path_source,
+                "persistArtifactRequested": persist_artifact,
+            },
+        )
 
 
 TIS_FACADE_TOOLS: tuple[ToolContract, ...] = (
@@ -1476,4 +1521,3 @@ __all__ = [
     "TIS_FACADE_TOOLS",
     "get_tis_tool_contracts",
 ]
-

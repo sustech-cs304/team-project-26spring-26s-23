@@ -29,12 +29,24 @@ RuntimeExecutionEventType = Literal[
     "run_cancelled",
 ]
 
-ASSISTANT_SEGMENT_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "assistant_segment_started"
-ASSISTANT_SEGMENT_DELTA_EVENT_TYPE: RuntimeExecutionEventType = "assistant_segment_delta"
-ASSISTANT_SEGMENT_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "assistant_segment_completed"
-REASONING_SEGMENT_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_started"
-REASONING_SEGMENT_DELTA_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_delta"
-REASONING_SEGMENT_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "reasoning_segment_completed"
+ASSISTANT_SEGMENT_STARTED_EVENT_TYPE: RuntimeExecutionEventType = (
+    "assistant_segment_started"
+)
+ASSISTANT_SEGMENT_DELTA_EVENT_TYPE: RuntimeExecutionEventType = (
+    "assistant_segment_delta"
+)
+ASSISTANT_SEGMENT_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = (
+    "assistant_segment_completed"
+)
+REASONING_SEGMENT_STARTED_EVENT_TYPE: RuntimeExecutionEventType = (
+    "reasoning_segment_started"
+)
+REASONING_SEGMENT_DELTA_EVENT_TYPE: RuntimeExecutionEventType = (
+    "reasoning_segment_delta"
+)
+REASONING_SEGMENT_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = (
+    "reasoning_segment_completed"
+)
 TOOL_STARTED_EVENT_TYPE: RuntimeExecutionEventType = "tool_started"
 TOOL_WAITING_APPROVAL_EVENT_TYPE: RuntimeExecutionEventType = "tool_waiting_approval"
 TOOL_COMPLETED_EVENT_TYPE: RuntimeExecutionEventType = "tool_completed"

@@ -14,11 +14,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[4]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
-from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
+from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO  # noqa: E402
+from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (  # noqa: E402
     refresh_calendar_ics_subscription,
 )
-from app.integrations.sustech.blackboard.shared import create_log_session
+from app.integrations.sustech.blackboard.shared import create_log_session  # noqa: E402
 
 ENV_FEED_KEYS = ("BLACKBOARD_CALENDAR_FEED_URL", "CALENDAR_FEED_URL")
 ENV_DB_PATH_KEY = "SUSTECH_DB_PATH"
@@ -59,7 +59,9 @@ def _to_json_value(value: Any) -> Any:
     return value
 
 
-def _save_json_report(*, feed_url: str, stats: dict[str, Any], events: list[CalendarEventDTO]) -> Path:
+def _save_json_report(
+    *, feed_url: str, stats: dict[str, Any], events: list[CalendarEventDTO]
+) -> Path:
     report_dir = BACKEND_DIR / "data" / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -70,7 +72,9 @@ def _save_json_report(*, feed_url: str, stats: dict[str, Any], events: list[Cale
         "run_at": datetime.now().isoformat(timespec="seconds"),
         "feed_url": feed_url,
         "stats": {k: _to_json_value(v) for k, v in stats.items()},
-        "events": [{k: _to_json_value(v) for k, v in row.to_dict().items()} for row in events],
+        "events": [
+            {k: _to_json_value(v) for k, v in row.to_dict().items()} for row in events
+        ],
     }
 
     with out_path.open("w", encoding="utf-8") as f:
@@ -190,4 +194,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

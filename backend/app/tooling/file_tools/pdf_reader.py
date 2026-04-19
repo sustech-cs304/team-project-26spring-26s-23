@@ -27,12 +27,18 @@ class PdfReadPayload:
 class FileToolPdfReader:
     """Read PDF files with bounded page extraction."""
 
-    def __init__(self, *, page_range_required_threshold: int = _DEFAULT_MAX_INLINE_PAGES) -> None:
+    def __init__(
+        self, *, page_range_required_threshold: int = _DEFAULT_MAX_INLINE_PAGES
+    ) -> None:
         if page_range_required_threshold < 0:
-            raise ValueError("page_range_required_threshold must be greater than or equal to 0.")
+            raise ValueError(
+                "page_range_required_threshold must be greater than or equal to 0."
+            )
         self._page_range_required_threshold = page_range_required_threshold
 
-    def read_pdf(self, *, request: ReadRequest, resolution: PathResolution) -> PdfReadPayload:
+    def read_pdf(
+        self, *, request: ReadRequest, resolution: PathResolution
+    ) -> PdfReadPayload:
         target_path = resolution.resolved_path
         if not target_path.exists():
             raise FileToolError(
@@ -110,7 +116,9 @@ class FileToolPdfReader:
         )
 
 
-def _resolve_page_range(*, request: ReadRequest, total_pages: int, threshold: int) -> tuple[int, int]:
+def _resolve_page_range(
+    *, request: ReadRequest, total_pages: int, threshold: int
+) -> tuple[int, int]:
     if total_pages < 1:
         raise FileToolError(
             code="invalid_request",
@@ -147,7 +155,10 @@ def _resolve_page_range(*, request: ReadRequest, total_pages: int, threshold: in
         raise FileToolError(
             code="invalid_pages",
             message="PDF reads are limited to at most 20 pages per request.",
-            details={"pages": [start_page, end_page], "maxPagesPerRead": _MAX_READABLE_PAGES},
+            details={
+                "pages": [start_page, end_page],
+                "maxPagesPerRead": _MAX_READABLE_PAGES,
+            },
         )
     return start_page, end_page
 

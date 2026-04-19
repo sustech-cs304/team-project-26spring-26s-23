@@ -104,7 +104,9 @@ class ToolMetadata:
             _normalize_capability_requirements(self.capability_requirements),
         )
         object.__setattr__(self, "tags", _normalize_tags(self.tags))
-        object.__setattr__(self, "annotations", _normalize_annotations(self.annotations))
+        object.__setattr__(
+            self, "annotations", _normalize_annotations(self.annotations)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {

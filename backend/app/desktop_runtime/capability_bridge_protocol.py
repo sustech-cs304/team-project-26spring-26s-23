@@ -370,13 +370,11 @@ def _normalize_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
     return deepcopy(dict(value))
 
 
-
 def _require_non_empty_text(value: str, *, field_name: str) -> str:
     normalized = value.strip()
     if normalized == "":
         raise ValueError(f"{field_name} must be a non-empty string.")
     return normalized
-
 
 
 def _normalize_optional_text(value: Any, *, field_name: str) -> str | None:
@@ -386,7 +384,6 @@ def _normalize_optional_text(value: Any, *, field_name: str) -> str | None:
         raise ValueError(f"{field_name} must be a string when provided.")
     normalized = value.strip()
     return normalized or None
-
 
 
 def _normalize_capability_name(value: str) -> DesktopCapabilityName:
@@ -399,7 +396,6 @@ def _normalize_capability_name(value: str) -> DesktopCapabilityName:
     return cast(DesktopCapabilityName, normalized)
 
 
-
 def _normalize_operation_name(value: str) -> DesktopCapabilityOperation:
     normalized = value.strip()
     if normalized not in DESKTOP_CAPABILITY_OPERATIONS:
@@ -410,7 +406,6 @@ def _normalize_operation_name(value: str) -> DesktopCapabilityOperation:
     return cast(DesktopCapabilityOperation, normalized)
 
 
-
 def _normalize_state_scope(value: str) -> DesktopCapabilityStateScope:
     normalized = value.strip()
     if normalized not in DESKTOP_CAPABILITY_STATE_SCOPES:
@@ -419,7 +414,6 @@ def _normalize_state_scope(value: str) -> DesktopCapabilityStateScope:
             f"'{value}'. Expected one of {', '.join(DESKTOP_CAPABILITY_STATE_SCOPES)}."
         )
     return cast(DesktopCapabilityStateScope, normalized)
-
 
 
 def _normalize_error_code(value: str) -> DesktopCapabilityBridgeErrorCode:
@@ -433,16 +427,16 @@ def _normalize_error_code(value: str) -> DesktopCapabilityBridgeErrorCode:
     return cast(DesktopCapabilityBridgeErrorCode, normalized)
 
 
-
 def _normalize_operation_key(
     capability: str,
     operation: str,
 ) -> DesktopCapabilityBridgeOperationKey:
     normalized_capability = _normalize_capability_name(capability)
     normalized_operation = _normalize_operation_name(operation)
-    if normalized_operation not in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY[
-        normalized_capability
-    ]:
+    if (
+        normalized_operation
+        not in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY[normalized_capability]
+    ):
         raise ValueError(
             f"Operation '{normalized_operation}' is not supported for capability "
             f"'{normalized_capability}'."
@@ -450,12 +444,10 @@ def _normalize_operation_key(
     return normalized_capability, normalized_operation
 
 
-
 def _require_mapping(value: Any, *, field_name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{field_name} must be an object mapping.")
     return value
-
 
 
 def _assert_allowed_fields(
@@ -468,7 +460,6 @@ def _assert_allowed_fields(
     if unexpected_fields:
         formatted = ", ".join(unexpected_fields)
         raise ValueError(f"{field_name} contains unsupported field(s): {formatted}.")
-
 
 
 def _require_string_field(
@@ -488,7 +479,6 @@ def _require_string_field(
     )
 
 
-
 def _normalize_optional_text_field(
     value: Mapping[str, Any],
     field_name: str,
@@ -499,7 +489,6 @@ def _normalize_optional_text_field(
     )
 
 
-
 def _normalize_optional_mapping_field(
     value: Mapping[str, Any],
     field_name: str,
@@ -508,9 +497,10 @@ def _normalize_optional_mapping_field(
     if raw_value is None:
         return None
     if not isinstance(raw_value, Mapping):
-        raise ValueError(f"payload field '{field_name}' must be an object when provided.")
+        raise ValueError(
+            f"payload field '{field_name}' must be an object when provided."
+        )
     return _normalize_mapping(raw_value)
-
 
 
 def _require_mapping_field(value: Mapping[str, Any], field_name: str) -> dict[str, Any]:
@@ -520,13 +510,11 @@ def _require_mapping_field(value: Mapping[str, Any], field_name: str) -> dict[st
     return _normalize_mapping(raw_value)
 
 
-
 def _require_boolean_field(value: Mapping[str, Any], field_name: str) -> bool:
     raw_value = value.get(field_name)
     if not isinstance(raw_value, bool):
         raise ValueError(f"result field '{field_name}' must be a boolean.")
     return raw_value
-
 
 
 def _require_state_scope_field(
@@ -542,13 +530,11 @@ def _require_state_scope_field(
     return _normalize_state_scope(raw_value)
 
 
-
 def get_desktop_capability_operations(
     capability: DesktopCapabilityName,
 ) -> tuple[DesktopCapabilityOperation, ...]:
     normalized_capability = _normalize_capability_name(capability)
     return DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY[normalized_capability]
-
 
 
 def is_supported_desktop_capability_operation(
@@ -563,7 +549,6 @@ def is_supported_desktop_capability_operation(
     return True
 
 
-
 def get_desktop_capability_bridge_request_payload_schema(
     *,
     capability: str,
@@ -573,7 +558,6 @@ def get_desktop_capability_bridge_request_payload_schema(
     return deepcopy(DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS[operation_key])
 
 
-
 def get_desktop_capability_bridge_result_schema(
     *,
     capability: str,
@@ -581,7 +565,6 @@ def get_desktop_capability_bridge_result_schema(
 ) -> dict[str, Any]:
     operation_key = _normalize_operation_key(capability, operation)
     return deepcopy(DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS[operation_key])
-
 
 
 def validate_desktop_capability_bridge_payload(
@@ -615,7 +598,9 @@ def validate_desktop_capability_bridge_payload(
             allowed_fields={"relativePath"},
             field_name="payload",
         )
-        relative_path = _normalize_optional_text_field(normalized_payload, "relativePath")
+        relative_path = _normalize_optional_text_field(
+            normalized_payload, "relativePath"
+        )
         return {} if relative_path is None else {"relativePath": relative_path}
 
     if operation_key == ("workspace", "ensure_directory"):
@@ -732,8 +717,9 @@ def validate_desktop_capability_bridge_payload(
             result["data"] = data
         return result
 
-    raise AssertionError(f"Unhandled desktop capability bridge operation {operation_key!r}.")
-
+    raise AssertionError(
+        f"Unhandled desktop capability bridge operation {operation_key!r}."
+    )
 
 
 def validate_desktop_capability_bridge_result(
@@ -785,7 +771,9 @@ def validate_desktop_capability_bridge_result(
             artifact_id=_require_string_field(normalized_result, "artifactId"),
             uri=_normalize_optional_text_field(normalized_result, "uri"),
             name=_normalize_optional_text_field(normalized_result, "name"),
-            content_type=_normalize_optional_text_field(normalized_result, "contentType"),
+            content_type=_normalize_optional_text_field(
+                normalized_result, "contentType"
+            ),
             metadata=_require_mapping_field(normalized_result, "metadata"),
         )
         _assert_allowed_fields(
@@ -813,9 +801,7 @@ def validate_desktop_capability_bridge_result(
                 "value": _normalize_mapping(value),
             }
         if value is not None:
-            raise ValueError(
-                "result field 'value' must be null when 'found' is false."
-            )
+            raise ValueError("result field 'value' must be null when 'found' is false.")
         return {"found": False, "value": None}
 
     if operation_key in {
@@ -830,7 +816,9 @@ def validate_desktop_capability_bridge_result(
         )
         return {}
 
-    raise AssertionError(f"Unhandled desktop capability bridge operation {operation_key!r}.")
+    raise AssertionError(
+        f"Unhandled desktop capability bridge operation {operation_key!r}."
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1018,13 +1006,9 @@ class DesktopCapabilityBridgeResponse:
                 "Successful bridge responses cannot include an error payload."
             )
         if not self.ok and self.error is None:
-            raise ValueError(
-                "Failed bridge responses must include an error payload."
-            )
+            raise ValueError("Failed bridge responses must include an error payload.")
         if not self.ok and self.result is not None:
-            raise ValueError(
-                "Failed bridge responses cannot include a result payload."
-            )
+            raise ValueError("Failed bridge responses cannot include a result payload.")
         if self.result is not None:
             object.__setattr__(self, "result", _normalize_mapping(self.result))
 

@@ -23,7 +23,9 @@ _RUNTIME_ERROR_LOGGER = logging.getLogger("uvicorn.error")
 
 
 class DesktopNullOriginMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         origin = request.headers.get("origin")
         if origin is None:
             return await call_next(request)
@@ -31,8 +33,13 @@ class DesktopNullOriginMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         is_preflight_request = is_cors_preflight_request(request)
-        if not is_packaged_electron_request(request) or not is_loopback_client_request(request):
-            return Response(status_code=status.HTTP_400_BAD_REQUEST, content="Disallowed CORS origin")
+        if not is_packaged_electron_request(request) or not is_loopback_client_request(
+            request
+        ):
+            return Response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content="Disallowed CORS origin",
+            )
 
         if is_preflight_request:
             response = Response(status_code=status.HTTP_200_OK)
@@ -49,7 +56,9 @@ class DesktopNullOriginMiddleware(BaseHTTPMiddleware):
 
 
 class DesktopRuntimeFailureEnvelopeMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         request_id = uuid4().hex
         request.state.copilot_runtime_request_id = request_id
         request.scope["copilot_runtime_request_id"] = request_id
@@ -57,7 +66,9 @@ class DesktopRuntimeFailureEnvelopeMiddleware(BaseHTTPMiddleware):
         try:
             return await call_next(request)
         except Exception as exc:
-            _log_unexpected_runtime_exception(request=request, request_id=request_id, exc=exc)
+            _log_unexpected_runtime_exception(
+                request=request, request_id=request_id, exc=exc
+            )
             error = build_internal_server_error(
                 scaffold=_get_runtime_scaffold(request),
                 requested_method=_get_runtime_requested_method(request),
@@ -88,10 +99,17 @@ def _log_unexpected_runtime_exception(
 ) -> None:
     origin = request.headers.get("origin")
     runtime_method = _get_runtime_requested_method(request) or "unknown"
-    thread_id = _get_runtime_request_context_value(request, "copilot_runtime_thread_id") or ""
-    agent_id = _get_runtime_request_context_value(request, "copilot_runtime_agent_id") or ""
+    thread_id = (
+        _get_runtime_request_context_value(request, "copilot_runtime_thread_id") or ""
+    )
+    agent_id = (
+        _get_runtime_request_context_value(request, "copilot_runtime_agent_id") or ""
+    )
     run_id = _get_runtime_request_context_value(request, "copilot_runtime_run_id") or ""
-    phase = _get_runtime_request_context_value(request, "copilot_runtime_phase") or "unknown"
+    phase = (
+        _get_runtime_request_context_value(request, "copilot_runtime_phase")
+        or "unknown"
+    )
     exception_summary = summarize_exception(exc) or {}
     exception_type = str(exception_summary.get("type") or type(exc).__name__)
     exception_message = str(exception_summary.get("message") or str(exc))

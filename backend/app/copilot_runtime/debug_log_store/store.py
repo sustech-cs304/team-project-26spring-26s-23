@@ -28,6 +28,56 @@ ENV_DEBUG_LOG_DATABASE_PATH = "COPILOT_RUNTIME_DEBUG_LOG_DATABASE_PATH"
 ENV_DESKTOP_DATABASE_DIR = "COPILOT_DESKTOP_RUNTIME_DATABASE_DIR"
 _ALLOWED_WAL_CHECKPOINT_MODES = frozenset({"PASSIVE", "FULL", "RESTART", "TRUNCATE"})
 
+_LATEST_AUDIT_BASE_SQL = (
+    "SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, "
+    "error_summary FROM debug_log_audit"
+)
+_LIST_AUDIT_BASE_SQL = (
+    "SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, "
+    "error_summary FROM debug_log_audit"
+)
+_QUERY_EVENTS_BASE_SQL = """
+SELECT
+    id,
+    occurred_at,
+    level,
+    category,
+    event_name,
+    message,
+    environment,
+    phase,
+    run_id,
+    thread_id,
+    request_id,
+    correlation_id,
+    session_id,
+    component,
+    operation,
+    tags_json,
+    summary_json,
+    summary_truncated,
+    summary_redacted_keys_json,
+    summary_dropped_fields_json,
+    error_summary,
+    exception_type,
+    exception_stack
+FROM debug_log_events
+""".strip()
+
+
+def _require_non_null_sanitized_text(value: str | None, *, context: str) -> str:
+    if value is None:  # pragma: no cover - defensive invariant guard
+        raise RuntimeError(f"sanitize_text() returned None for {context}")
+    return value
+
+
+def _append_where_clause(base_sql: str, where_clauses: list[str]) -> str:
+    if not where_clauses:
+        return base_sql
+    # nosec B608: all fragments come from fixed allowlisted clause literals in this module;
+    # user-controlled values stay in DB-API parameters and are never interpolated into SQL text.
+    return base_sql + " WHERE " + " AND ".join(where_clauses)
+
 
 def resolve_debug_log_database_path(
     *,
@@ -39,17 +89,28 @@ def resolve_debug_log_database_path(
     if db_path is not None:
         candidate = Path(db_path)
     else:
-        explicit_path = _normalize_optional_text(env_map.get(ENV_DEBUG_LOG_DATABASE_PATH))
+        explicit_path = _normalize_optional_text(
+            env_map.get(ENV_DEBUG_LOG_DATABASE_PATH)
+        )
         if explicit_path is not None:
             candidate = Path(explicit_path)
-        elif runtime_config is not None and getattr(runtime_config, "debug_log_database_file", None) is not None:
+        elif (
+            runtime_config is not None
+            and getattr(runtime_config, "debug_log_database_file", None) is not None
+        ):
             candidate = Path(runtime_config.debug_log_database_file)
         elif runtime_config is not None:
-            candidate = Path(runtime_config.database_dir) / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME
+            candidate = (
+                Path(runtime_config.database_dir) / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME
+            )
         else:
-            configured_database_dir = _normalize_optional_text(env_map.get(ENV_DESKTOP_DATABASE_DIR))
+            configured_database_dir = _normalize_optional_text(
+                env_map.get(ENV_DESKTOP_DATABASE_DIR)
+            )
             if configured_database_dir is not None:
-                candidate = Path(configured_database_dir) / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME
+                candidate = (
+                    Path(configured_database_dir) / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME
+                )
             else:
                 from app.desktop_runtime.config import BACKEND_DIR
 
@@ -74,16 +135,26 @@ class DebugLogStore:
         db_path: str | Path | None = None,
         sanitizer: Sanitizer | None = None,
     ) -> None:
-        self.db_path = resolve_debug_log_database_path(runtime_config=runtime_config, db_path=db_path)
+        self.db_path = resolve_debug_log_database_path(
+            runtime_config=runtime_config, db_path=db_path
+        )
         self.sanitizer = sanitizer or Sanitizer()
         self._initialize_schema()
 
     def write_event(self, event: DebugLogEvent) -> None:
         normalized_occurred_at = _format_datetime_for_storage(event.occurred_at)
-        sanitized_message, _message_changed = self.sanitizer.sanitize_text(event.message)
-        assert sanitized_message is not None  # pragma: no cover - sanitize_text() preserves non-None str inputs
-        sanitized_error_summary = self.sanitizer.sanitize_error_text(event.error_summary)
-        summary_stack, _stack_truncated = self.sanitizer.sanitize_stack(event.exception_stack)
+        sanitized_message, _message_changed = self.sanitizer.sanitize_text(
+            event.message
+        )
+        sanitized_message = _require_non_null_sanitized_text(
+            sanitized_message, context="DebugLogEvent.message"
+        )
+        sanitized_error_summary = self.sanitizer.sanitize_error_text(
+            event.error_summary
+        )
+        summary_stack, _stack_truncated = self.sanitizer.sanitize_stack(
+            event.exception_stack
+        )
         with self._connection() as connection:
             connection.execute(
                 """
@@ -128,7 +199,9 @@ class DebugLogStore:
                     event.context.component,
                     event.context.operation,
                     json.dumps(event.context.tags, ensure_ascii=False, sort_keys=True),
-                    json.dumps(event.summary.content, ensure_ascii=False, sort_keys=True),
+                    json.dumps(
+                        event.summary.content, ensure_ascii=False, sort_keys=True
+                    ),
                     int(event.summary.truncated),
                     json.dumps(list(event.summary.redacted_keys), ensure_ascii=False),
                     json.dumps(list(event.summary.dropped_fields), ensure_ascii=False),
@@ -165,7 +238,9 @@ class DebugLogStore:
 
     def count_events(self) -> int:
         with self._connection() as connection:
-            row = connection.execute("SELECT COUNT(*) AS total FROM debug_log_events").fetchone()
+            row = connection.execute(
+                "SELECT COUNT(*) AS total FROM debug_log_events"
+            ).fetchone()
         return int(row["total"])
 
     def delete_events_older_than(self, cutoff: datetime, *, limit: int) -> int:
@@ -200,44 +275,35 @@ class DebugLogStore:
         if status is not None:
             where_clauses.append("status = ?")
             parameters.append(status)
-
-        where_sql = ""
-        if where_clauses:
-            where_sql = "WHERE " + " AND ".join(where_clauses)
+        query_sql = _append_where_clause(_LATEST_AUDIT_BASE_SQL, where_clauses)
+        query_sql += " ORDER BY occurred_at DESC, id DESC LIMIT 1"
 
         with self._connection() as connection:
             row = connection.execute(
-                f"""
-                SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, error_summary
-                FROM debug_log_audit
-                {where_sql}
-                ORDER BY occurred_at DESC, id DESC
-                LIMIT 1
-                """,
+                query_sql,
                 tuple(parameters),
             ).fetchone()
         if row is None:
             return None
         return self._row_to_audit_record(row)
 
-    def list_audit_records(self, *, limit: int = 20, action: str | None = None) -> tuple[DebugLogAuditRecord, ...]:
+    def list_audit_records(
+        self, *, limit: int = 20, action: str | None = None
+    ) -> tuple[DebugLogAuditRecord, ...]:
         normalized_limit = max(int(limit), 1)
-        where_sql = ""
-        parameters: tuple[object, ...] = (normalized_limit,)
+        where_clauses: list[str] = []
+        parameters: list[object] = []
         if action is not None:
-            where_sql = "WHERE action = ?"
-            parameters = (action, normalized_limit)
+            where_clauses.append("action = ?")
+            parameters.append(action)
+        query_sql = _append_where_clause(_LIST_AUDIT_BASE_SQL, where_clauses)
+        query_sql += " ORDER BY occurred_at DESC, id DESC LIMIT ?"
+        parameters.append(normalized_limit)
 
         with self._connection() as connection:
             rows = connection.execute(
-                f"""
-                SELECT occurred_at, action, trigger_reason, status, deleted_rows, details_json, error_summary
-                FROM debug_log_audit
-                {where_sql}
-                ORDER BY occurred_at DESC, id DESC
-                LIMIT ?
-                """,
-                parameters,
+                query_sql,
+                tuple(parameters),
             ).fetchall()
         return tuple(self._row_to_audit_record(row) for row in rows)
 
@@ -256,7 +322,9 @@ class DebugLogStore:
     def list_recent_events(self, *, limit: int = 20) -> tuple[DebugLogQueryResult, ...]:
         return self.query_events(DebugLogQueryFilter(limit=limit))
 
-    def query_events(self, query_filter: DebugLogQueryFilter) -> tuple[DebugLogQueryResult, ...]:
+    def query_events(
+        self, query_filter: DebugLogQueryFilter
+    ) -> tuple[DebugLogQueryResult, ...]:
         normalized_limit = max(int(query_filter.limit), 1)
         where_clauses: list[str] = []
         parameters: list[object] = []
@@ -284,42 +352,12 @@ class DebugLogStore:
             where_clauses.append("occurred_at <= ?")
             parameters.append(_format_datetime_for_storage(query_filter.occurred_to))
 
-        where_sql = ""
-        if where_clauses:
-            where_sql = "WHERE " + " AND ".join(where_clauses)
+        query_sql = _append_where_clause(_QUERY_EVENTS_BASE_SQL, where_clauses)
+        query_sql += " ORDER BY occurred_at DESC, id DESC LIMIT ?"
 
         with self._connection() as connection:
             rows = connection.execute(
-                f"""
-                SELECT
-                    id,
-                    occurred_at,
-                    level,
-                    category,
-                    event_name,
-                    message,
-                    environment,
-                    phase,
-                    run_id,
-                    thread_id,
-                    request_id,
-                    correlation_id,
-                    session_id,
-                    component,
-                    operation,
-                    tags_json,
-                    summary_json,
-                    summary_truncated,
-                    summary_redacted_keys_json,
-                    summary_dropped_fields_json,
-                    error_summary,
-                    exception_type,
-                    exception_stack
-                FROM debug_log_events
-                {where_sql}
-                ORDER BY occurred_at DESC, id DESC
-                LIMIT ?
-                """,
+                query_sql,
                 (*parameters, normalized_limit),
             ).fetchall()
         return tuple(self._row_to_query_result(row) for row in rows)
@@ -452,7 +490,9 @@ class DebugLogStore:
             summary=json.loads(row["summary_json"]),
             summary_truncated=bool(row["summary_truncated"]),
             summary_redacted_keys=tuple(json.loads(row["summary_redacted_keys_json"])),
-            summary_dropped_fields=tuple(json.loads(row["summary_dropped_fields_json"])),
+            summary_dropped_fields=tuple(
+                json.loads(row["summary_dropped_fields_json"])
+            ),
             error_summary=row["error_summary"],
             exception_type=row["exception_type"],
             exception_stack=row["exception_stack"],

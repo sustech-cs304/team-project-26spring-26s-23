@@ -211,8 +211,9 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
     assert request.policy.modelRoute.route_ref.profile_id == "provider-1"
     assert request.policy.modelRoute.route_ref.model_id == "gpt-4.1"
     assert request.policy.modelRoute.catalog_revision == "2026-04-06-provider-catalog-v1"
-    assert request.policy.resolve_thinking_selection() is not None
-    assert request.policy.resolve_thinking_selection().to_dict() == {
+    thinking_selection = request.policy.resolve_thinking_selection()
+    assert thinking_selection is not None
+    assert thinking_selection.to_dict() == {
         "series": "compat-discrete-selection-v1",
         "value": {
             "valueType": "code",

@@ -19,7 +19,9 @@ class TextEditPayload:
 class FileToolTextEditor:
     """Edit UTF-8 text files via exact string replacement with optimistic guards."""
 
-    def edit_text(self, *, request: EditRequest, resolution: PathResolution) -> TextEditPayload:
+    def edit_text(
+        self, *, request: EditRequest, resolution: PathResolution
+    ) -> TextEditPayload:
         target_path = resolution.resolved_path
         if not target_path.exists():
             raise FileToolError(
@@ -77,7 +79,10 @@ class FileToolTextEditor:
                 },
             )
 
-        if request.expected_occurrences is not None and match_count != request.expected_occurrences:
+        if (
+            request.expected_occurrences is not None
+            and match_count != request.expected_occurrences
+        ):
             raise FileToolError(
                 code="occurrence_mismatch",
                 message="Target file occurrence count does not match expected_occurrences.",
@@ -105,7 +110,9 @@ class FileToolTextEditor:
             updated_text = existing_text.replace(request.old_string, request.new_string)
             replacements = match_count
         else:
-            updated_text = existing_text.replace(request.old_string, request.new_string, 1)
+            updated_text = existing_text.replace(
+                request.old_string, request.new_string, 1
+            )
             replacements = 1
 
         updated_raw = updated_text.encode("utf-8")

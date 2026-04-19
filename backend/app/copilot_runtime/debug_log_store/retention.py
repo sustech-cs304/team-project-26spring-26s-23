@@ -51,7 +51,11 @@ class RetentionCoordinator:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> "RetentionCoordinator":
-        return cls(store, config=build_retention_config_from_runtime_config(runtime_config), clock=clock)
+        return cls(
+            store,
+            config=build_retention_config_from_runtime_config(runtime_config),
+            clock=clock,
+        )
 
     def run_due_maintenance(self, *, trigger: str = "startup") -> RetentionRunResult:
         now = _normalize_utc(self._clock())
@@ -70,7 +74,11 @@ class RetentionCoordinator:
                 trigger=trigger,
                 status="skipped",
                 deleted_rows=0,
-                details={**base_details, "reason": "auto_cleanup_disabled", "extraMaintenancePerformed": False},
+                details={
+                    **base_details,
+                    "reason": "auto_cleanup_disabled",
+                    "extraMaintenancePerformed": False,
+                },
             )
             return RetentionRunResult(
                 status="skipped",
@@ -84,7 +92,9 @@ class RetentionCoordinator:
             status="succeeded",
         )
         if latest_audit is not None and self._config.min_cleanup_interval_seconds > 0:
-            next_allowed_at = latest_audit.occurred_at + timedelta(seconds=self._config.min_cleanup_interval_seconds)
+            next_allowed_at = latest_audit.occurred_at + timedelta(
+                seconds=self._config.min_cleanup_interval_seconds
+            )
             if now < next_allowed_at:
                 self._write_audit(
                     trigger=trigger,
@@ -109,7 +119,9 @@ class RetentionCoordinator:
         extra_maintenance_performed = False
         try:
             while True:
-                deleted_batch = self._store.delete_events_older_than(cutoff_at, limit=self._config.delete_batch_size)
+                deleted_batch = self._store.delete_events_older_than(
+                    cutoff_at, limit=self._config.delete_batch_size
+                )
                 deleted_rows += deleted_batch
                 if deleted_batch < self._config.delete_batch_size:
                     break
@@ -183,11 +195,22 @@ class RetentionCoordinator:
             )
 
 
-def build_retention_config_from_runtime_config(runtime_config: Any) -> DebugLogRetentionConfig:
+def build_retention_config_from_runtime_config(
+    runtime_config: Any,
+) -> DebugLogRetentionConfig:
     return DebugLogRetentionConfig(
-        retention_days=max(int(getattr(runtime_config, "debug_log_retention_days", 14)), 1),
-        auto_cleanup_enabled=bool(getattr(runtime_config, "debug_log_auto_cleanup_enabled", True)),
-        min_cleanup_interval_seconds=max(int(getattr(runtime_config, "debug_log_min_cleanup_interval_seconds", 21600)), 0),
+        retention_days=max(
+            int(getattr(runtime_config, "debug_log_retention_days", 14)), 1
+        ),
+        auto_cleanup_enabled=bool(
+            getattr(runtime_config, "debug_log_auto_cleanup_enabled", True)
+        ),
+        min_cleanup_interval_seconds=max(
+            int(
+                getattr(runtime_config, "debug_log_min_cleanup_interval_seconds", 21600)
+            ),
+            0,
+        ),
         detailed_snapshot_retention_days=_normalize_optional_int(
             getattr(runtime_config, "debug_log_snapshot_retention_days", None)
         ),
@@ -198,7 +221,9 @@ def _normalize_optional_int(value: object | None) -> int | None:
     if value is None:
         return None
     if not isinstance(value, int | str):
-        raise TypeError("Expected retention configuration value to be int, str, or None.")
+        raise TypeError(
+            "Expected retention configuration value to be int, str, or None."
+        )
     normalized = int(value)
     return normalized if normalized > 0 else None
 

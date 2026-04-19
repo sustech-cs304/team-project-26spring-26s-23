@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict, cast
 
 import pytest
 
 from app.tooling.file_tools import FileToolPathPolicy, GrepRequest
 from app.tooling.file_tools.errors import FileToolError
 from app.tooling.file_tools.grep_search import FileToolGrepSearcher
+
+
+class _SerializedGrepMatch(TypedDict):
+    path: str
+    matchText: str
+
 
 
 def test_grep_search_supports_literal_case_and_context(tmp_path: Path) -> None:
@@ -68,9 +75,11 @@ def test_grep_search_supports_regex_and_max_results(tmp_path: Path) -> None:
     )
 
     result = payload.to_dict()
+    serialized_matches = cast(list[_SerializedGrepMatch], result["matches"])
+
     assert result["truncated"] is True
-    assert [match["path"] for match in result["matches"]] == ["src/a.py", "src/a.py"]
-    assert [match["matchText"] for match in result["matches"]] == ["TODO one", "TODO two"]
+    assert [match["path"] for match in serialized_matches] == ["src/a.py", "src/a.py"]
+    assert [match["matchText"] for match in serialized_matches] == ["TODO one", "TODO two"]
 
 
 def test_grep_search_respects_case_sensitivity(tmp_path: Path) -> None:

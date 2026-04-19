@@ -1,6 +1,9 @@
 """Shared transport helpers for Copilot runtime."""
 
-from .dependencies import RuntimeTransportDependencies, build_runtime_transport_dependencies
+from .dependencies import (
+    RuntimeTransportDependencies,
+    build_runtime_transport_dependencies,
+)
 from .errors import (
     agent_execution_failed_response,
     agent_not_found_response,

@@ -19,10 +19,13 @@ from app.copilot_runtime.model_routes import (
     RuntimeModelRouteResolver,
 )
 
-HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME = "X-Host-Model-Route-Token"
-_INVALID_TOKEN_ERROR_CODE = "invalid_host_model_route_bridge_token"
+_HOST_MODEL_ROUTE_BRIDGE_AUTH_HEADER_NAME = "X-Host-Model-Route-Token"
+HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME = _HOST_MODEL_ROUTE_BRIDGE_AUTH_HEADER_NAME
+_HOST_MODEL_ROUTE_BRIDGE_ACCESS_DENIED_ERROR_CODE = (
+    "invalid_host_model_route_bridge_token"
+)
 _PROVIDER_NOT_FOUND_ERROR_CODE = "provider_profile_not_found"
-_SECRET_MISSING_ERROR_CODE = "provider_secret_missing"
+_PROVIDER_CREDENTIAL_MISSING_ERROR_CODE = "provider_secret_missing"
 _PROVIDER_MODEL_ROUTE_KIND = "provider-model"
 
 
@@ -38,7 +41,10 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
     ) -> None:
         self._bridge_url = _normalize_optional_text(bridge_url)
         self._bridge_token = _normalize_optional_text(bridge_token)
-        self._header_name = _normalize_optional_text(header_name) or HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME
+        self._header_name = (
+            _normalize_optional_text(header_name)
+            or HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME
+        )
         self._transport = transport
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
@@ -50,7 +56,9 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
         self._client = None
         await client.aclose()
 
-    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+    async def resolve(
+        self, model_route: RuntimeModelRoute
+    ) -> ResolvedRuntimeModelRoute:
         if self._bridge_url is None or self._bridge_token is None:
             raise HostModelRouteUnavailableError(
                 detail="Host model route bridge bootstrap is not configured."
@@ -105,7 +113,9 @@ class HostModelRouteBridgeClient(RuntimeModelRouteResolver):
         return client
 
 
-def _parse_resolved_route_payload(payload: Mapping[str, Any]) -> ResolvedRuntimeModelRoute:
+def _parse_resolved_route_payload(
+    payload: Mapping[str, Any],
+) -> ResolvedRuntimeModelRoute:
     route = payload.get("resolvedRoute")
     if not isinstance(route, Mapping):
         raise HostModelRouteUnavailableError(
@@ -120,10 +130,20 @@ def _parse_resolved_route_payload(payload: Mapping[str, Any]) -> ResolvedRuntime
 
     provider_profile_id = _require_non_empty_text(route, "providerProfileId")
     model_id = _require_non_empty_text(route, "modelId")
-    provider = _normalize_optional_text(route.get("provider")) or _require_non_empty_text(route, "providerId")
-    route_ref = _parse_route_ref(route.get("routeRef"), provider_profile_id=provider_profile_id, model_id=model_id)
+    provider = _normalize_optional_text(
+        route.get("provider")
+    ) or _require_non_empty_text(route, "providerId")
+    route_ref = _parse_route_ref(
+        route.get("routeRef"),
+        provider_profile_id=provider_profile_id,
+        model_id=model_id,
+    )
 
-    auth_kind = _normalize_optional_text(private_auth.get("authKind")) or _normalize_optional_text(route.get("authKind")) or "none"
+    auth_kind = (
+        _normalize_optional_text(private_auth.get("authKind"))
+        or _normalize_optional_text(route.get("authKind"))
+        or "none"
+    )
     auth_payload = private_auth.get("authPayload")
     api_key = ""
     if isinstance(auth_payload, Mapping):
@@ -141,7 +161,8 @@ def _parse_resolved_route_payload(payload: Mapping[str, Any]) -> ResolvedRuntime
         provider=provider,
         provider_id=_normalize_optional_text(route.get("providerId")) or provider,
         adapter_id=_normalize_optional_text(route.get("adapterId")) or "",
-        runtime_status=_normalize_optional_text(route.get("runtimeStatus")) or "enabled",
+        runtime_status=_normalize_optional_text(route.get("runtimeStatus"))
+        or "enabled",
         catalog_revision=_normalize_optional_text(route.get("catalogRevision")) or "",
         endpoint_family=_normalize_optional_text(route.get("endpointFamily")) or "",
         endpoint_type=_require_non_empty_text(route, "endpointType"),
@@ -161,7 +182,9 @@ def _parse_route_ref(
 ) -> RuntimeModelRouteRef:
     if isinstance(value, Mapping):
         route_kind = _parse_route_kind(value.get("routeKind"))
-        profile_id = _normalize_optional_text(value.get("profileId")) or provider_profile_id
+        profile_id = (
+            _normalize_optional_text(value.get("profileId")) or provider_profile_id
+        )
         resolved_model_id = _normalize_optional_text(value.get("modelId")) or model_id
         return RuntimeModelRouteRef(
             route_kind=route_kind,
@@ -202,16 +225,22 @@ def _build_resolution_error(
     code = _normalize_optional_text(error_payload.get("code"))
     details_value = error_payload.get("details")
     details = dict(details_value) if isinstance(details_value, Mapping) else {}
-    provider_profile_id = _normalize_optional_text(details.get("providerProfileId")) or fallback_provider_profile_id
+    provider_profile_id = (
+        _normalize_optional_text(details.get("providerProfileId"))
+        or fallback_provider_profile_id
+    )
 
-    if code == _INVALID_TOKEN_ERROR_CODE:
+    if code == _HOST_MODEL_ROUTE_BRIDGE_ACCESS_DENIED_ERROR_CODE:
         return HostModelRouteAccessDeniedError(header_name=header_name)
     if code == _PROVIDER_NOT_FOUND_ERROR_CODE:
         return ProviderProfileNotFoundError(provider_profile_id=provider_profile_id)
-    if code == _SECRET_MISSING_ERROR_CODE:
+    if code == _PROVIDER_CREDENTIAL_MISSING_ERROR_CODE:
         return ProviderSecretMissingError(provider_profile_id=provider_profile_id)
 
-    message = _normalize_optional_text(error_payload.get("message")) or "Host model route bridge request failed."
+    message = (
+        _normalize_optional_text(error_payload.get("message"))
+        or "Host model route bridge request failed."
+    )
     return RuntimeModelRouteResolutionError(
         code=code or "host_model_route_request_failed",
         message=message,

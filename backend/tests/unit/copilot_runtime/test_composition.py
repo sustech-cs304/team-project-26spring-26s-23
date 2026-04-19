@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import cast
 
 from pydantic_ai.models.test import TestModel
 
@@ -200,8 +201,12 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
 
 
 def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -> None:
+    streaming_executor = cast(
+        PydanticAIAgentExecutor,
+        _StreamingExecutor(output=TEST_MODEL_REPLY),
+    )
     dependencies = build_default_runtime_dependencies(
-        agent_executor=_StreamingExecutor(output=TEST_MODEL_REPLY),
+        agent_executor=streaming_executor,
         model_route_resolver=_ResolvedRouteResolver(),
     )
     dependencies.session_store.create_thread(bound_agent_id=DEFAULT_AGENT_NAME, thread_id="thread-1")

@@ -6,7 +6,7 @@ import json
 import random
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 from pathlib import Path
 
@@ -44,34 +44,58 @@ DEFAULT_TOOL_CATALOG_LANGUAGE = "zh-CN"
 FILE_CONVERT_TOOL_ID = "tool.file-convert"
 FILE_CONVERT_TOOL_DISPLAY_NAME = "File Convert"
 FILE_CONVERT_TOOL_DESCRIPTION = "Convert DOCX, PDF, and PPTX files into text."
-FILE_CONVERT_TOOL_PROMPT = "Use this tool to convert DOCX, PDF, or PPTX files into plain text before analysis."
+FILE_CONVERT_TOOL_PROMPT = (
+    "Use this tool to convert DOCX, PDF, or PPTX files into plain text before analysis."
+)
 WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 FILE_TOOL_READ_DISPLAY_NAME = "File Read"
-FILE_TOOL_READ_DESCRIPTION = "Read UTF-8 text files from the workspace with line-based pagination."
+FILE_TOOL_READ_DESCRIPTION = (
+    "Read UTF-8 text files from the workspace with line-based pagination."
+)
 FILE_TOOL_READ_PROMPT = "Use this tool to inspect workspace text files in paginated line ranges before making edits."
 FILE_TOOL_WRITE_DISPLAY_NAME = "File Write"
 FILE_TOOL_WRITE_DESCRIPTION = "Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics."
 FILE_TOOL_WRITE_PROMPT = "Use this tool to create or replace a workspace text file when you know the full target content."
 FILE_TOOL_EDIT_DISPLAY_NAME = "File Edit"
-FILE_TOOL_EDIT_DESCRIPTION = "Edit UTF-8 text files in the workspace using exact replacement semantics."
+FILE_TOOL_EDIT_DESCRIPTION = (
+    "Edit UTF-8 text files in the workspace using exact replacement semantics."
+)
 FILE_TOOL_EDIT_PROMPT = "Use this tool to replace exact text in a workspace UTF-8 file when you know the current snippet to match."
 FILE_TOOL_GLOB_DISPLAY_NAME = "File Glob"
-FILE_TOOL_GLOB_DESCRIPTION = "Discover workspace files and directories by glob pattern without reading contents."
+FILE_TOOL_GLOB_DESCRIPTION = (
+    "Discover workspace files and directories by glob pattern without reading contents."
+)
 FILE_TOOL_GLOB_PROMPT = "Use this tool to discover workspace files or folders by glob pattern before reading them."
 FILE_TOOL_GREP_DISPLAY_NAME = "File Grep"
-FILE_TOOL_GREP_DESCRIPTION = "Search workspace text files by literal or regex pattern with bounded line context."
+FILE_TOOL_GREP_DESCRIPTION = (
+    "Search workspace text files by literal or regex pattern with bounded line context."
+)
 FILE_TOOL_GREP_PROMPT = "Use this tool to search workspace text files and inspect nearby lines before reading or editing."
 FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME = "Notebook Edit"
-FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION = "Edit workspace notebooks with transactional cell operations."
+FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION = (
+    "Edit workspace notebooks with transactional cell operations."
+)
 FILE_TOOL_NOTEBOOK_EDIT_PROMPT = "Use this tool to replace, insert, or delete notebook cells transactionally after inspecting notebook structure."
 FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME = "File Switch Root"
-FILE_TOOL_SWITCH_ROOT_DESCRIPTION = "Validate and resolve a new default file root directory for later tool calls."
+FILE_TOOL_SWITCH_ROOT_DESCRIPTION = (
+    "Validate and resolve a new default file root directory for later tool calls."
+)
 FILE_TOOL_SWITCH_ROOT_PROMPT = "Use this tool to validate a directory as the next default root for subsequent file tool calls."
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
     "Return a placeholder current-weather result for a requested location."
 )
-WEATHER_CURRENT_TOOL_PROMPT = "Use this tool to retrieve a simple current weather summary for a location."
+WEATHER_CURRENT_TOOL_PROMPT = (
+    "Use this tool to retrieve a simple current weather summary for a location."
+)
+
+
+class FileConvertToolResult(TypedDict, total=False):
+    path: str
+    suffix: str
+    content: str
+    notice: str
+
 
 _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
     "zh-CN": {
@@ -221,7 +245,9 @@ class ToolPresentationGroup:
     def build_catalog_view(self, language: str | None = None) -> dict[str, Any]:
         return {
             "id": self.group_id,
-            "label": self.label_en if normalize_tool_catalog_language(language) == "en-US" else self.label_zh,
+            "label": self.label_en
+            if normalize_tool_catalog_language(language) == "en-US"
+            else self.label_zh,
             "labelZh": self.label_zh,
             "labelEn": self.label_en,
             "order": self.order,
@@ -239,8 +265,16 @@ class ToolPresentation:
 
     def build_catalog_view(self, language: str | None = None) -> dict[str, Any]:
         normalized_language = normalize_tool_catalog_language(language)
-        display_name = self.display_name_en if normalized_language == "en-US" else self.display_name_zh
-        description = self.description_en if normalized_language == "en-US" else self.description_zh
+        display_name = (
+            self.display_name_en
+            if normalized_language == "en-US"
+            else self.display_name_zh
+        )
+        description = (
+            self.description_en
+            if normalized_language == "en-US"
+            else self.description_zh
+        )
         entry: dict[str, Any] = {
             "displayNameZh": self.display_name_zh,
             "displayNameEn": self.display_name_en,
@@ -284,7 +318,9 @@ class ToolDescriptor:
             entry.update(self.presentation.build_catalog_view())
         return entry
 
-    def build_catalog_entry_for_language(self, language: str | None = None) -> dict[str, Any]:
+    def build_catalog_entry_for_language(
+        self, language: str | None = None
+    ) -> dict[str, Any]:
         entry = self.build_catalog_entry()
         if self.kind == DEFAULT_TOOL_KIND:
             localized_fields = _resolve_builtin_tool_locale(self.tool_id, language)
@@ -304,7 +340,9 @@ class ToolDescriptor:
             "description": self.description,
             "prompt": self.prompt,
             "presentation": (
-                None if self.presentation is None else self.presentation.build_catalog_view()
+                None
+                if self.presentation is None
+                else self.presentation.build_catalog_view()
             ),
         }
 
@@ -369,15 +407,23 @@ class ToolRegistry:
             raise LookupError("No default toolset is registered.")
         return self._toolsets[self._default_name]
 
-    def resolve_tool(self, tool_id: str, *, toolset_name: str | None = None) -> ExecutableTool:
-        toolset = self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+    def resolve_tool(
+        self, tool_id: str, *, toolset_name: str | None = None
+    ) -> ExecutableTool:
+        toolset = (
+            self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        )
         for tool in toolset.tools:
             if tool.tool_id == tool_id:
                 return tool
-        raise LookupError(f"Tool '{tool_id}' is not registered in toolset '{toolset.name}'.")
+        raise LookupError(
+            f"Tool '{tool_id}' is not registered in toolset '{toolset.name}'."
+        )
 
     def list_tool_ids(self, *, toolset_name: str | None = None) -> tuple[str, ...]:
-        toolset = self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        toolset = (
+            self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        )
         return tuple(tool.tool_id for tool in toolset.tools)
 
     def build_view(self) -> dict[str, dict[str, Any]]:
@@ -396,7 +442,9 @@ class ToolRegistry:
         *,
         language: str | None = None,
     ) -> list[dict[str, Any]]:
-        toolset = self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        toolset = (
+            self.get_default() if toolset_name is None else self._toolsets[toolset_name]
+        )
         catalog: list[dict[str, Any]] = []
         for tool in toolset.tools:
             catalog.append(tool.descriptor.build_catalog_entry_for_language(language))
@@ -407,24 +455,25 @@ class ToolRegistry:
             "available_toolsets": list(self._toolsets.keys()),
             "default_toolset": self._default_name,
             "tool_directory_version": DEFAULT_TOOL_DIRECTORY_VERSION,
-            "toolset_summaries": [toolset.build_summary() for toolset in self._toolsets.values()],
+            "toolset_summaries": [
+                toolset.build_summary() for toolset in self._toolsets.values()
+            ],
         }
 
 
-async def _execute_default_file_convert_tool(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
+async def _execute_default_file_convert_tool(
+    arguments: Mapping[str, Any] | None,
+) -> dict[str, Any]:
     payload = dict(arguments or {})
     file_path = payload.get("path")
     if not isinstance(file_path, str) or file_path.strip() == "":
         raise ValueError("path must be a non-empty string")
-    result = convert_file_to_str(file_path)
-    normalized = {
-        "path": result["path"],
-        "suffix": result["suffix"],
-        "content": result["content"],
+    normalized: FileConvertToolResult = {
+        "path": file_path,
+        "suffix": Path(file_path).suffix.lower(),
+        "content": convert_file_to_str(file_path),
     }
-    if "notice" in result:
-        normalized["notice"] = result["notice"]
-    return normalized
+    return dict(normalized)
 
 
 async def execute_weather_current_tool(
@@ -439,7 +488,8 @@ async def execute_weather_current_tool(
         if isinstance(raw_location, str) and raw_location.strip() != ""
         else DEFAULT_WEATHER_LOCATION
     )
-    selected_rng = rng or random.Random()
+    # Placeholder weather sampling is not security-sensitive.
+    selected_rng = rng or random.Random()  # nosec B311
     sample = selected_rng.choice(_WEATHER_SAMPLE_RESULTS)
     return {
         "location": location,
@@ -450,7 +500,9 @@ async def execute_weather_current_tool(
     }
 
 
-async def _execute_default_weather_tool(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
+async def _execute_default_weather_tool(
+    arguments: Mapping[str, Any] | None,
+) -> dict[str, Any]:
     return await execute_weather_current_tool(arguments)
 
 
@@ -750,7 +802,9 @@ def build_default_tool_registry(
                         description=FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
                         availability=DEFAULT_TOOL_AVAILABILITY,
                         prompt=FILE_TOOL_NOTEBOOK_EDIT_PROMPT,
-                        presentation=_TOOL_PRESENTATION_BY_ID[FILE_TOOL_NOTEBOOK_EDIT_ID],
+                        presentation=_TOOL_PRESENTATION_BY_ID[
+                            FILE_TOOL_NOTEBOOK_EDIT_ID
+                        ],
                     ),
                     execute=file_notebook_edit_binding.execute,
                     function_name=file_notebook_edit_binding.function_name,
@@ -858,7 +912,9 @@ def _sanitize_tool_argument_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_sanitize_tool_argument_value(item) for item in value)
     if isinstance(value, str):
-        return _truncate_tool_argument_text(value, limit=_MAX_TOOL_ARGUMENT_VALUE_LENGTH)
+        return _truncate_tool_argument_text(
+            value, limit=_MAX_TOOL_ARGUMENT_VALUE_LENGTH
+        )
     return value
 
 

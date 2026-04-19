@@ -43,13 +43,17 @@ from app.tooling import (
     ToolResultEnvelope,
     ToolSchema,
 )
-from app.tooling.contract.errors import build_tool_exception_details, redact_tool_error_value
+from app.tooling.contract.errors import (
+    build_tool_exception_details,
+    redact_tool_error_value,
+)
 
 _STATE_NAMESPACE_CALENDAR_REFRESH = "blackboard.calendar_refresh"
 _STATE_NAMESPACE_SNAPSHOT_SYNC = "blackboard.snapshot_sync"
 _STATE_NAMESPACE_COURSE_RESOURCES_SYNC = "blackboard.course_resources_sync"
-_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
-_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
+# Bandit B105 false positive: these are config/secret registry key names, not credentials.
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"  # nosec B105
+_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"  # nosec B105
 
 
 class BlackboardAuthenticationError(RuntimeError):
@@ -161,7 +165,9 @@ def _read_optional_int(arguments: Mapping[str, Any], field_name: str) -> int | N
         raise ValueError(f"{field_name} must be an integer.") from ex
 
 
-def _read_required_string_list(arguments: Mapping[str, Any], field_name: str) -> list[str]:
+def _read_required_string_list(
+    arguments: Mapping[str, Any], field_name: str
+) -> list[str]:
     value = arguments.get(field_name)
     if not isinstance(value, list):
         raise ValueError(f"{field_name} must be an array of non-empty strings.")
@@ -213,7 +219,9 @@ def _read_choice(
     lowered = normalized.lower()
     normalized_choices = tuple(str(item).lower() for item in choices)
     if lowered not in normalized_choices:
-        raise ValueError(f"{field_name} must be one of: {', '.join(normalized_choices)}.")
+        raise ValueError(
+            f"{field_name} must be one of: {', '.join(normalized_choices)}."
+        )
     return lowered
 
 
@@ -233,7 +241,9 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _schema(*, properties: Mapping[str, Any], required: Sequence[str] = ()) -> ToolSchema:
+def _schema(
+    *, properties: Mapping[str, Any], required: Sequence[str] = ()
+) -> ToolSchema:
     payload: dict[str, Any] = {
         "type": "object",
         "additionalProperties": False,
@@ -247,7 +257,6 @@ def _schema(*, properties: Mapping[str, Any], required: Sequence[str] = ()) -> T
 def _message_or_fallback(error: Exception, fallback: str) -> str:
     message = str(error).strip()
     return message or fallback
-
 
 
 def _error_diagnostic_context(
@@ -264,7 +273,6 @@ def _error_diagnostic_context(
     }
 
 
-
 def _build_error_details(
     *,
     error: Exception,
@@ -277,7 +285,6 @@ def _build_error_details(
         diagnostic_context=diagnostic_context,
         sanitizer=redact_tool_error_value,
     )
-
 
 
 def _normalized_error_with_details(
@@ -298,7 +305,6 @@ def _normalized_error_with_details(
     )
 
 
-
 def _map_exception(
     error: Exception,
     *,
@@ -317,7 +323,11 @@ def _map_exception(
                 code="host_capability_missing",
                 message=error.message,
                 retryable=error.retryable,
-                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
+                details={
+                    "capability": error.capability,
+                    "hostErrorCode": error.code,
+                    **error.details,
+                },
             )
         elif error.code in {"temporarily_unavailable", "timeout"}:
             normalized = NormalizedToolError(
@@ -338,7 +348,11 @@ def _map_exception(
                 code="execution_failed",
                 message=error.message,
                 retryable=error.retryable,
-                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
+                details={
+                    "capability": error.capability,
+                    "hostErrorCode": error.code,
+                    **error.details,
+                },
             )
     elif isinstance(error, BlackboardAuthenticationError):
         normalized = NormalizedToolError(
@@ -377,16 +391,22 @@ def _map_exception(
             code = "temporarily_unavailable"
         normalized = NormalizedToolError(
             code=code,
-            message=_message_or_fallback(error, f"Blackboard request failed with {status_code}."),
+            message=_message_or_fallback(
+                error, f"Blackboard request failed with {status_code}."
+            ),
             details={"statusCode": status_code},
         )
     elif isinstance(error, httpx.HTTPError):
         normalized = NormalizedToolError(
             code="temporarily_unavailable",
-            message=_message_or_fallback(error, "Blackboard host is temporarily unavailable."),
+            message=_message_or_fallback(
+                error, "Blackboard host is temporarily unavailable."
+            ),
         )
     elif isinstance(error, RuntimeError) and "CAS 登录失败" in str(error):
-        normalized = NormalizedToolError(code="authentication_required", message=str(error))
+        normalized = NormalizedToolError(
+            code="authentication_required", message=str(error)
+        )
     else:
         normalized = NormalizedToolError(
             code="execution_failed",
@@ -564,10 +584,7 @@ def _normalize_sql_value(value: Any) -> Any:
 
 
 def _sql_row_to_mapping(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
-    return {
-        column: _normalize_sql_value(value)
-        for column, value in zip(columns, row)
-    }
+    return {column: _normalize_sql_value(value) for column, value in zip(columns, row)}
 
 
 def _execute_sql_query(
@@ -703,7 +720,9 @@ async def _persist_sql_query_artifact_if_requested(
     artifact_store = cast(ArtifactStore, host.require_capability("artifact_store"))
     artifact = await artifact_store.save_text(
         name=f"{context.tool_id.replace('.', '-')}-{context.invocation_id}.json",
-        text=json.dumps(dict(full_result), ensure_ascii=False, indent=2, sort_keys=True),
+        text=json.dumps(
+            dict(full_result), ensure_ascii=False, indent=2, sort_keys=True
+        ),
         content_type="application/json",
         metadata={
             "toolId": context.tool_id,
@@ -738,7 +757,6 @@ def _course_catalog_output(
     }
 
 
-
 def _calendar_refresh_output(result: CalendarICSSyncResult) -> dict[str, Any]:
     return {
         "feedUrl": result.feed_url,
@@ -752,13 +770,13 @@ def _calendar_refresh_output(result: CalendarICSSyncResult) -> dict[str, Any]:
         "logs": _jsonable(result.logs),
     }
 
+
 def _compact_sync_stats(stats: Mapping[str, Any]) -> dict[str, int]:
     return {
         "inserted": int(stats.get("inserted", 0)),
         "updated": int(stats.get("updated", 0)),
         "deleted": int(stats.get("deleted", 0)),
     }
-
 
 
 def _compact_sync_stats_by_table(
@@ -768,7 +786,6 @@ def _compact_sync_stats_by_table(
         str(table): _compact_sync_stats(stats)
         for table, stats in stats_by_table.items()
     }
-
 
 
 def _snapshot_sync_output(
@@ -799,7 +816,6 @@ def _snapshot_sync_output(
     return output
 
 
-
 def _build_output_persistence_summary(
     *,
     state_payload: Mapping[str, Any] | None,
@@ -817,7 +833,6 @@ def _build_output_persistence_summary(
     if artifacts:
         summary["artifacts"] = [artifact.to_dict() for artifact in artifacts]
     return summary or None
-
 
 
 def _snapshot_sync_persisted_output(
@@ -864,7 +879,6 @@ def _course_resources_sync_output(
     if persistence:
         output["persistence"] = _jsonable(persistence)
     return output
-
 
 
 def _course_resources_sync_persisted_output(
@@ -1277,7 +1291,9 @@ class BlackboardCourseCatalogSearchTool(_BlackboardFacadeToolBase):
         keyword = _read_required_text(arguments, "keyword")
         field = _read_optional_text(arguments, "field") or "CourseName"
         operator = _read_optional_text(arguments, "operator") or "Contains"
-        fetch_mode = _read_choice(arguments, "fetchMode", choices=("quick", "full"), default="full")
+        fetch_mode = _read_choice(
+            arguments, "fetchMode", choices=("quick", "full"), default="full"
+        )
         raw_max_pages = _read_optional_int(arguments, "maxPages")
         max_pages = 30 if raw_max_pages is None else raw_max_pages
         if max_pages <= 0:
@@ -1313,7 +1329,9 @@ class BlackboardCalendarRefreshTool(_BlackboardFacadeToolBase):
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
         feed_url = _read_required_text(arguments, "feedUrl")
-        refresh_mode = _read_choice(arguments, "refreshMode", choices=("auto", "force"), default="auto")
+        refresh_mode = _read_choice(
+            arguments, "refreshMode", choices=("auto", "force"), default="auto"
+        )
         db_path = _resolve_db_path(arguments, host)
         reset_schema = _read_bool(arguments, "resetSchema", default=False)
         result = await asyncio.to_thread(
@@ -1438,13 +1456,17 @@ class BlackboardCourseResourcesSyncTool(_BlackboardFacadeToolBase):
             reset_schema=reset_schema,
             progress=progress_messages.append,
         )
-        output = _course_resources_sync_output(report, progress_messages=progress_messages)
+        output = _course_resources_sync_output(
+            report, progress_messages=progress_messages
+        )
         persist_details = (
             _read_optional_text(arguments, "stateKey") is not None
             or _read_optional_text(arguments, "artifactName") is not None
         )
         persisted_output = (
-            _course_resources_sync_persisted_output(report, progress_messages=progress_messages)
+            _course_resources_sync_persisted_output(
+                report, progress_messages=progress_messages
+            )
             if persist_details
             else output
         )
@@ -1492,7 +1514,9 @@ class BlackboardSQLQueryTool(_BlackboardFacadeToolBase):
         sql = _read_required_text(arguments, "sql")
         result_limit = _read_sql_query_result_limit(arguments)
         persist_artifact = _read_bool(arguments, "persistArtifact", default=False)
-        db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(arguments, host)
+        db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(
+            arguments, host
+        )
         query_output, full_result = await asyncio.to_thread(
             _execute_sql_query,
             sql=sql,
@@ -1528,10 +1552,14 @@ class BlackboardSQLQueryTool(_BlackboardFacadeToolBase):
             full_result=artifact_payload,
         )
         output["artifact"] = artifact_output
-        return output, artifacts, {
-            "dbPathSource": db_path_source,
-            "persistArtifactRequested": persist_artifact,
-        }
+        return (
+            output,
+            artifacts,
+            {
+                "dbPathSource": db_path_source,
+                "persistArtifactRequested": persist_artifact,
+            },
+        )
 
 
 BLACKBOARD_FACADE_TOOLS: tuple[ToolContract, ...] = (
@@ -1558,4 +1586,3 @@ __all__ = [
     "BlackboardSQLQueryTool",
     "get_blackboard_tool_contracts",
 ]
-

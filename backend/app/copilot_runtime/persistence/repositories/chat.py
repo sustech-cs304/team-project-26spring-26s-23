@@ -26,7 +26,13 @@ from app.copilot_runtime.session_store import (
 )
 
 from ..db import session_scope
-from ..models.chat import RunEventModel, RunModel, RunProjectionModel, ThreadModel, ThreadProjectionModel
+from ..models.chat import (
+    RunEventModel,
+    RunModel,
+    RunProjectionModel,
+    ThreadModel,
+    ThreadProjectionModel,
+)
 from ..redaction import redact_payload
 
 
@@ -79,7 +85,9 @@ class ThreadRepository:
         self._session.flush()
         return model
 
-    def apply_runtime_record(self, model: ThreadModel, thread: RuntimeThreadRecord) -> ThreadModel:
+    def apply_runtime_record(
+        self, model: ThreadModel, thread: RuntimeThreadRecord
+    ) -> ThreadModel:
         model.bound_agent_id = thread.bound_agent_id
         model.metadata_json = dict(thread.metadata)
         model.last_run_id = thread.last_run_id
@@ -172,12 +180,20 @@ class RunRepository:
                 message_role=_coerce_runtime_message_role(model.request_message_role),
                 message_content=model.request_message_text,
                 policy=RuntimeStoredRunPolicy(
-                    model_route=_deserialize_model_route(model.selected_model_route_json),
-                    thinking_selection=_deserialize_thinking_selection(model.requested_thinking_json),
+                    model_route=_deserialize_model_route(
+                        model.selected_model_route_json
+                    ),
+                    thinking_selection=_deserialize_thinking_selection(
+                        model.requested_thinking_json
+                    ),
                     thinking_level_intent=model.thinking_level_intent,
-                    thinking_capability_override=_copy_mapping(model.thinking_capability_override_json),
+                    thinking_capability_override=_copy_mapping(
+                        model.thinking_capability_override_json
+                    ),
                     enabled_tools=_deserialize_string_tuple(model.enabled_tools_json),
-                    tool_permission_policy=_copy_mapping(model.tool_permission_policy_json),
+                    tool_permission_policy=_copy_mapping(
+                        model.tool_permission_policy_json
+                    ),
                     debug_mode_enabled=model.debug_mode_enabled,
                     request_options=_copy_mapping(model.request_options_json),
                 ),
@@ -223,7 +239,9 @@ class RunEventRepository:
             event_type=event_type,
             payload_json=payload_json,
             payload_text_search=_build_payload_text_search(payload_json),
-            tool_call_id=_extract_optional_string(payload_json, "toolCallId", "tool_call_id"),
+            tool_call_id=_extract_optional_string(
+                payload_json, "toolCallId", "tool_call_id"
+            ),
             tool_id=_extract_optional_string(payload_json, "toolId", "tool_id"),
             phase=_extract_optional_string(payload_json, "phase"),
             created_at=datetime.now(UTC),
@@ -249,14 +267,18 @@ class RunEventRepository:
         run_id: str,
         created_at: datetime,
     ) -> RunEventModel:
-        payload_json = _rewrite_cloned_event_payload(dict(source_event.payload_json or {}), run_id=run_id)
+        payload_json = _rewrite_cloned_event_payload(
+            dict(source_event.payload_json or {}), run_id=run_id
+        )
         model = RunEventModel(
             run_id=run_id,
             seq=source_event.seq,
             event_type=source_event.event_type,
             payload_json=payload_json,
             payload_text_search=_build_payload_text_search(payload_json),
-            tool_call_id=_extract_optional_string(payload_json, "toolCallId", "tool_call_id"),
+            tool_call_id=_extract_optional_string(
+                payload_json, "toolCallId", "tool_call_id"
+            ),
             tool_id=_extract_optional_string(payload_json, "toolId", "tool_id"),
             phase=_extract_optional_string(payload_json, "phase"),
             created_at=_coerce_datetime(created_at),
@@ -269,26 +291,33 @@ class RunEventRepository:
 
     def _next_sequence(self, run_id: str) -> int:
         result = self._session.execute(
-            select(func.coalesce(func.max(RunEventModel.seq), 0)).where(RunEventModel.run_id == run_id)
+            select(func.coalesce(func.max(RunEventModel.seq), 0)).where(
+                RunEventModel.run_id == run_id
+            )
         )
         current_max = int(result.scalar_one())
         return current_max + 1
 
 
-def _rewrite_cloned_event_payload(payload: dict[str, Any], *, run_id: str) -> dict[str, Any]:
+def _rewrite_cloned_event_payload(
+    payload: dict[str, Any], *, run_id: str
+) -> dict[str, Any]:
     assistant_message_id = payload.get("assistantMessageId")
     if isinstance(assistant_message_id, str) and assistant_message_id.strip() != "":
         payload["assistantMessageId"] = f"{run_id}:assistant"
 
     tool_call_id = payload.get("toolCallId")
     if isinstance(tool_call_id, str) and tool_call_id.strip() != "":
-        payload["toolCallId"] = _rewrite_run_scoped_identifier(tool_call_id, run_id=run_id, fallback_suffix="tool-call")
+        payload["toolCallId"] = _rewrite_run_scoped_identifier(
+            tool_call_id, run_id=run_id, fallback_suffix="tool-call"
+        )
 
     return payload
 
 
-
-def _rewrite_run_scoped_identifier(value: str, *, run_id: str, fallback_suffix: str) -> str:
+def _rewrite_run_scoped_identifier(
+    value: str, *, run_id: str, fallback_suffix: str
+) -> str:
     suffix = value.split(":", 1)[1].strip() if ":" in value else value.strip()
     normalized_suffix = suffix if suffix != "" else fallback_suffix
     return f"{run_id}:{normalized_suffix}"
@@ -325,8 +354,12 @@ class ProjectionRepository:
         projection.last_activity_at = _coerce_optional_datetime(last_activity_at)
         projection.display_title = display_title
         projection.display_summary = display_summary
-        projection.last_effective_model_snapshot_json = _copy_mapping(last_effective_model_snapshot_json)
-        projection.last_effective_tools_snapshot_json = _copy_mapping(last_effective_tools_snapshot_json)
+        projection.last_effective_model_snapshot_json = _copy_mapping(
+            last_effective_model_snapshot_json
+        )
+        projection.last_effective_tools_snapshot_json = _copy_mapping(
+            last_effective_tools_snapshot_json
+        )
         projection.drift_summary_json = _copy_mapping(drift_summary_json)
         projection.timeline_preview_json = _copy_mapping_list(timeline_preview_json)
         projection.updated_at = datetime.now(UTC)
@@ -357,21 +390,26 @@ class ProjectionRepository:
         return projection
 
 
-
 def _build_run_column_values(run: RuntimeRunRecord) -> dict[str, Any]:
     terminal_payload = run.metadata.get("terminal_payload")
-    terminal_payload_dict = terminal_payload if isinstance(terminal_payload, Mapping) else {}
+    terminal_payload_dict = (
+        terminal_payload if isinstance(terminal_payload, Mapping) else {}
+    )
     resolved_model_route = run.metadata.get("resolvedModelRoute")
     resolved_model_route_json = _copy_mapping(resolved_model_route)
     selected_model_route_json = _serialize_model_route(run.request.policy.model_route)
     requested_thinking_json = _normalize_dict(
         run.metadata.get("requestedThinkingSelection")
     ) or _serialize_thinking_selection(run.request.policy.thinking_selection)
-    applied_thinking_json = _normalize_dict(run.metadata.get("appliedThinkingSelection"))
-    request_options_json = _normalize_dict(terminal_payload_dict.get("requestOptions")) or dict(
-        run.request.policy.request_options
+    applied_thinking_json = _normalize_dict(
+        run.metadata.get("appliedThinkingSelection")
     )
-    resolved_tool_ids_json = _normalize_string_list(terminal_payload_dict.get("resolvedToolIds"))
+    request_options_json = _normalize_dict(
+        terminal_payload_dict.get("requestOptions")
+    ) or dict(run.request.policy.request_options)
+    resolved_tool_ids_json = _normalize_string_list(
+        terminal_payload_dict.get("resolvedToolIds")
+    )
     failure_details_json = _normalize_dict(terminal_payload_dict.get("details"))
     return {
         "agent_id": run.request.agent_id,
@@ -391,7 +429,9 @@ def _build_run_column_values(run: RuntimeRunRecord) -> dict[str, Any]:
         ),
         "thinking_level_intent": run.request.policy.thinking_level_intent,
         "enabled_tools_json": list(run.request.policy.enabled_tools),
-        "tool_permission_policy_json": _copy_mapping(run.request.policy.tool_permission_policy),
+        "tool_permission_policy_json": _copy_mapping(
+            run.request.policy.tool_permission_policy
+        ),
         "resolved_tool_ids_json": resolved_tool_ids_json,
         "request_options_json": request_options_json,
         "debug_mode_enabled": run.request.policy.debug_mode_enabled,
@@ -407,19 +447,22 @@ def _build_run_column_values(run: RuntimeRunRecord) -> dict[str, Any]:
     }
 
 
-
 def _serialize_model_route(model_route: RuntimeStoredModelRoute) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "providerProfileId": model_route.provider_profile_id,
         "routeRef": model_route.route_ref.to_dict(),
     }
-    if model_route.catalog_revision is not None and model_route.catalog_revision.strip() != "":
+    if (
+        model_route.catalog_revision is not None
+        and model_route.catalog_revision.strip() != ""
+    ):
         payload["catalogRevision"] = model_route.catalog_revision.strip()
     return payload
 
 
-
-def _deserialize_model_route(payload: Mapping[str, Any] | None) -> RuntimeStoredModelRoute:
+def _deserialize_model_route(
+    payload: Mapping[str, Any] | None,
+) -> RuntimeStoredModelRoute:
     normalized_payload = dict(payload or {})
     route_ref_payload = normalized_payload.get("routeRef")
     if not isinstance(route_ref_payload, Mapping):
@@ -430,7 +473,9 @@ def _deserialize_model_route(payload: Mapping[str, Any] | None) -> RuntimeStored
         or ""
     ).strip()
     if provider_profile_id == "":
-        raise ValueError("Stored selected_model_route_json is missing providerProfileId.")
+        raise ValueError(
+            "Stored selected_model_route_json is missing providerProfileId."
+        )
     route_ref = RuntimeModelRouteRef(
         route_kind=str(route_ref_payload.get("routeKind") or "provider-model"),
         profile_id=provider_profile_id,
@@ -439,9 +484,10 @@ def _deserialize_model_route(payload: Mapping[str, Any] | None) -> RuntimeStored
     return RuntimeStoredModelRoute(
         provider_profile_id=provider_profile_id,
         route_ref=route_ref,
-        catalog_revision=_normalize_optional_string(normalized_payload.get("catalogRevision")),
+        catalog_revision=_normalize_optional_string(
+            normalized_payload.get("catalogRevision")
+        ),
     )
-
 
 
 def _serialize_thinking_selection(
@@ -454,9 +500,10 @@ def _serialize_thinking_selection(
         "mode": selection.mode,
         "level": selection.level,
         "budgetTokens": selection.budget_tokens,
-        "value": None if selection.value_payload is None else dict(selection.value_payload),
+        "value": None
+        if selection.value_payload is None
+        else dict(selection.value_payload),
     }
-
 
 
 def _deserialize_thinking_selection(
@@ -473,9 +520,10 @@ def _deserialize_thinking_selection(
         mode=_normalize_optional_string(payload.get("mode")),
         level=_normalize_optional_string(payload.get("level")),
         budget_tokens=_normalize_optional_int(payload.get("budgetTokens")),
-        value_payload=dict(value_payload) if isinstance(value_payload, Mapping) else None,
+        value_payload=dict(value_payload)
+        if isinstance(value_payload, Mapping)
+        else None,
     )
-
 
 
 def _resolve_model_id(payload: Mapping[str, Any] | None, fallback: str) -> str:
@@ -491,26 +539,28 @@ def _resolve_model_id(payload: Mapping[str, Any] | None, fallback: str) -> str:
     return fallback
 
 
-
-def _extract_failure_code(status: str, terminal_payload: Mapping[str, Any]) -> str | None:
+def _extract_failure_code(
+    status: str, terminal_payload: Mapping[str, Any]
+) -> str | None:
     if status != "failed":
         return None
     return _normalize_optional_string(terminal_payload.get("code"))
 
 
-
-def _extract_failure_message(status: str, terminal_payload: Mapping[str, Any]) -> str | None:
+def _extract_failure_message(
+    status: str, terminal_payload: Mapping[str, Any]
+) -> str | None:
     if status != "failed":
         return None
     return _normalize_optional_string(terminal_payload.get("message"))
 
 
-
-def _extract_cancel_reason(status: str, terminal_payload: Mapping[str, Any]) -> str | None:
+def _extract_cancel_reason(
+    status: str, terminal_payload: Mapping[str, Any]
+) -> str | None:
     if status != "cancelled":
         return None
     return _normalize_optional_string(terminal_payload.get("reason"))
-
 
 
 def _build_payload_text_search(payload: Mapping[str, Any]) -> str:
@@ -518,7 +568,6 @@ def _build_payload_text_search(payload: Mapping[str, Any]) -> str:
     if len(flattened) == 0:
         return ""
     return " ".join(flattened)
-
 
 
 def _flatten_payload_values(value: Any) -> list[str]:
@@ -545,7 +594,6 @@ def _flatten_payload_values(value: Any) -> list[str]:
     return [] if text == "" else [text]
 
 
-
 def _extract_optional_string(payload: Mapping[str, Any], *keys: str) -> str | None:
     for key in keys:
         normalized = _normalize_optional_string(payload.get(key))
@@ -554,10 +602,8 @@ def _extract_optional_string(payload: Mapping[str, Any], *keys: str) -> str | No
     return None
 
 
-
 def _normalize_dict(value: Any) -> dict[str, Any] | None:
     return dict(value) if isinstance(value, Mapping) else None
-
 
 
 def _normalize_string_list(value: Any) -> list[str] | None:
@@ -571,23 +617,21 @@ def _normalize_string_list(value: Any) -> list[str] | None:
     return normalized
 
 
-
 def _deserialize_string_tuple(value: Any) -> tuple[str, ...]:
     normalized = _normalize_string_list(value)
     return tuple(normalized or [])
-
 
 
 def _copy_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return {} if value is None else dict(value)
 
 
-
-def _copy_mapping_list(value: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]] | None:
+def _copy_mapping_list(
+    value: Sequence[Mapping[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
     if value is None:
         return None
     return [dict(item) for item in value]
-
 
 
 def _coerce_datetime(value: datetime) -> datetime:
@@ -596,12 +640,10 @@ def _coerce_datetime(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-
 def _coerce_optional_datetime(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return _coerce_datetime(value)
-
 
 
 def _normalize_optional_string(value: object | None) -> str | None:
@@ -611,7 +653,6 @@ def _normalize_optional_string(value: object | None) -> str | None:
     return text or None
 
 
-
 def _coerce_runtime_message_role(value: object | None) -> RuntimeMessageRole:
     normalized = _normalize_optional_string(value)
     if normalized in {"user", "assistant"}:
@@ -619,13 +660,18 @@ def _coerce_runtime_message_role(value: object | None) -> RuntimeMessageRole:
     raise ValueError(f"Stored request_message_role is invalid: {value!r}")
 
 
-
 def _coerce_runtime_run_status(value: object | None) -> RuntimeRunStatus:
     normalized = _normalize_optional_string(value)
-    if normalized in {"pending", "streaming", "cancellation_requested", "completed", "failed", "cancelled"}:
+    if normalized in {
+        "pending",
+        "streaming",
+        "cancellation_requested",
+        "completed",
+        "failed",
+        "cancelled",
+    }:
         return cast(RuntimeRunStatus, normalized)
     raise ValueError(f"Stored run status is invalid: {value!r}")
-
 
 
 def _normalize_optional_int(value: object | None) -> int | None:
@@ -644,7 +690,6 @@ def _normalize_optional_int(value: object | None) -> int | None:
         except ValueError:
             return None
     return None
-
 
 
 def _build_preview(value: str | None, *, limit: int = 160) -> str | None:

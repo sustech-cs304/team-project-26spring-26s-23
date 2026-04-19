@@ -44,16 +44,23 @@ class ProjectionService:
     def rebuild_all(self) -> ProjectionRebuildStats:
         with run_lifecycle_transaction(self._session_factory) as repositories:
             run_ids = tuple(
-                repositories.session.execute(select(RunModel.id).order_by(RunModel.created_at.asc(), RunModel.id.asc()))
-                .scalars()
+                repositories.session.execute(
+                    select(RunModel.id).order_by(
+                        RunModel.created_at.asc(), RunModel.id.asc()
+                    )
+                ).scalars()
             )
             thread_ids = tuple(
                 repositories.session.execute(
-                    select(ThreadModel.id).order_by(ThreadModel.created_at.asc(), ThreadModel.id.asc())
+                    select(ThreadModel.id).order_by(
+                        ThreadModel.created_at.asc(), ThreadModel.id.asc()
+                    )
                 ).scalars()
             )
             for run_id in run_ids:
-                self.refresh_run_in_transaction(repositories, run_id, refresh_thread=False)
+                self.refresh_run_in_transaction(
+                    repositories, run_id, refresh_thread=False
+                )
             for thread_id in thread_ids:
                 self.refresh_thread_in_transaction(repositories, thread_id)
             return ProjectionRebuildStats(
@@ -89,17 +96,23 @@ class ProjectionService:
     ) -> None:
         thread = repositories.threads.require(thread_id)
         runs = repositories.runs.list_for_thread(thread_id)
-        latest_run = _resolve_latest_thread_run(repositories, thread_id, runs=runs, last_run_id=thread.last_run_id)
+        latest_run = _resolve_latest_thread_run(
+            repositories, thread_id, runs=runs, last_run_id=thread.last_run_id
+        )
         latest_projection = None
         if latest_run is not None:
-            latest_projection = repositories.projections.get_run_projection(latest_run.id)
+            latest_projection = repositories.projections.get_run_projection(
+                latest_run.id
+            )
             if latest_projection is None:
                 ProjectionService.refresh_run_in_transaction(
                     repositories,
                     latest_run.id,
                     refresh_thread=False,
                 )
-                latest_projection = repositories.projections.get_run_projection(latest_run.id)
+                latest_projection = repositories.projections.get_run_projection(
+                    latest_run.id
+                )
 
         title_candidate = _build_title_candidate(thread=thread, runs=runs)
         summary_candidate = _build_summary_candidate(thread=thread, runs=runs)
@@ -118,7 +131,11 @@ class ProjectionService:
             else thread.updated_at
         )
         display_title = thread.title if thread.title is not None else title_candidate
-        display_summary = thread.summary_text if thread.summary_text is not None else summary_candidate
+        display_summary = (
+            thread.summary_text
+            if thread.summary_text is not None
+            else summary_candidate
+        )
         repositories.projections.upsert_thread_projection(
             thread_id=thread_id,
             last_run_status=None if latest_run is None else latest_run.status,
@@ -217,7 +234,10 @@ def _build_run_projection_payload(
                     assistant_text_segments.append(text)
                 timeline_entries.append(
                     _TimelineEntry(
-                        order_key=(int(assistant_block["sequenceStart"]), str(assistant_block["createdAt"])),
+                        order_key=(
+                            int(assistant_block["sequenceStart"]),
+                            str(assistant_block["createdAt"]),
+                        ),
                         item=assistant_block,
                     )
                 )
@@ -234,7 +254,10 @@ def _build_run_projection_payload(
             if reasoning_block is not None:
                 timeline_entries.append(
                     _TimelineEntry(
-                        order_key=(int(reasoning_block["sequenceStart"]), str(reasoning_block["createdAt"])),
+                        order_key=(
+                            int(reasoning_block["sequenceStart"]),
+                            str(reasoning_block["createdAt"]),
+                        ),
                         item=reasoning_block,
                     )
                 )
@@ -248,17 +271,28 @@ def _build_run_projection_payload(
                     "kind": _TOOL_CALL_BLOCK_KIND,
                     "runId": run.id,
                     "threadId": run.thread_id,
-                    "toolCallId": _normalize_optional_string(event.tool_call_id) or tool_call_key,
+                    "toolCallId": _normalize_optional_string(event.tool_call_id)
+                    or tool_call_key,
                     "toolId": _normalize_optional_string(event.tool_id)
                     or _normalize_optional_string(event.payload_json.get("toolId")),
                     "sequenceStart": event.seq,
                     "sequenceEnd": event.seq,
                     "createdAt": _serialize_datetime(event.created_at),
-                    "title": _normalize_optional_string(event.payload_json.get("title")),
-                    "summary": _normalize_optional_string(event.payload_json.get("summary")),
-                    "inputSummary": _normalize_optional_string(event.payload_json.get("inputSummary")),
-                    "resultSummary": _normalize_optional_string(event.payload_json.get("resultSummary")),
-                    "errorSummary": _normalize_optional_string(event.payload_json.get("errorSummary")),
+                    "title": _normalize_optional_string(
+                        event.payload_json.get("title")
+                    ),
+                    "summary": _normalize_optional_string(
+                        event.payload_json.get("summary")
+                    ),
+                    "inputSummary": _normalize_optional_string(
+                        event.payload_json.get("inputSummary")
+                    ),
+                    "resultSummary": _normalize_optional_string(
+                        event.payload_json.get("resultSummary")
+                    ),
+                    "errorSummary": _normalize_optional_string(
+                        event.payload_json.get("errorSummary")
+                    ),
                     "phases": [],
                 }
                 tool_call_blocks_by_key[tool_call_key] = block
@@ -281,7 +315,9 @@ def _build_run_projection_payload(
                 "sequenceEnd": event.seq,
                 "createdAt": _serialize_datetime(event.created_at),
                 "code": _normalize_optional_string(event.payload_json.get("code")),
-                "message": _normalize_optional_string(event.payload_json.get("message")),
+                "message": _normalize_optional_string(
+                    event.payload_json.get("message")
+                ),
                 "stage": _normalize_optional_string(event.payload_json.get("stage")),
                 "details": _copy_mapping(event.payload_json.get("details")),
             }
@@ -314,7 +350,9 @@ def _build_run_projection_payload(
             continue
         index += 1
 
-    assistant_text_final = _normalize_text(run.assistant_text) or _normalize_text("".join(assistant_text_segments))
+    assistant_text_final = _normalize_text(run.assistant_text) or _normalize_text(
+        "".join(assistant_text_segments)
+    )
     if terminal_state is None and run.status in {"completed", "failed", "cancelled"}:
         terminal_state = _build_terminal_state(run=run, event=None)
         timeline_entries.append(
@@ -379,7 +417,9 @@ def _consume_delta_group(
 def _apply_tool_event_to_block(*, block: dict[str, Any], event: RunEventModel) -> None:
     block["sequenceStart"] = min(int(block["sequenceStart"]), event.seq)
     block["sequenceEnd"] = max(int(block["sequenceEnd"]), event.seq)
-    block["toolId"] = block.get("toolId") or _normalize_optional_string(event.payload_json.get("toolId"))
+    block["toolId"] = block.get("toolId") or _normalize_optional_string(
+        event.payload_json.get("toolId")
+    )
     for field_name, payload_key in (
         ("title", "title"),
         ("summary", "summary"),
@@ -393,14 +433,21 @@ def _apply_tool_event_to_block(*, block: dict[str, Any], event: RunEventModel) -
     phases = block.setdefault("phases", [])
     phases.append(
         {
-            "phase": _normalize_optional_string(event.payload_json.get("phase")) or "unknown",
+            "phase": _normalize_optional_string(event.payload_json.get("phase"))
+            or "unknown",
             "sequence": event.seq,
             "createdAt": _serialize_datetime(event.created_at),
             "title": _normalize_optional_string(event.payload_json.get("title")),
             "summary": _normalize_optional_string(event.payload_json.get("summary")),
-            "inputSummary": _normalize_optional_string(event.payload_json.get("inputSummary")),
-            "resultSummary": _normalize_optional_string(event.payload_json.get("resultSummary")),
-            "errorSummary": _normalize_optional_string(event.payload_json.get("errorSummary")),
+            "inputSummary": _normalize_optional_string(
+                event.payload_json.get("inputSummary")
+            ),
+            "resultSummary": _normalize_optional_string(
+                event.payload_json.get("resultSummary")
+            ),
+            "errorSummary": _normalize_optional_string(
+                event.payload_json.get("errorSummary")
+            ),
         }
     )
 
@@ -409,7 +456,9 @@ def _tool_call_key(event: RunEventModel) -> str:
     normalized_tool_call_id = _normalize_optional_string(event.tool_call_id)
     if normalized_tool_call_id is not None:
         return normalized_tool_call_id
-    payload_tool_call_id = _normalize_optional_string(event.payload_json.get("toolCallId"))
+    payload_tool_call_id = _normalize_optional_string(
+        event.payload_json.get("toolCallId")
+    )
     if payload_tool_call_id is not None:
         return payload_tool_call_id
     return f"tool-event-{event.seq}"
@@ -420,14 +469,25 @@ def _build_terminal_state(
     run: RunModel,
     event: RunEventModel | None,
 ) -> dict[str, Any]:
-    payload = dict(event.payload_json) if event is not None else _copy_mapping(run.metadata_json.get("terminal_payload")) or {}
-    event_type = event.event_type if event is not None else _normalize_optional_string(run.metadata_json.get("terminal_event"))
+    payload = (
+        dict(event.payload_json)
+        if event is not None
+        else _copy_mapping(run.metadata_json.get("terminal_payload")) or {}
+    )
+    event_type = (
+        event.event_type
+        if event is not None
+        else _normalize_optional_string(run.metadata_json.get("terminal_event"))
+    )
     return {
         "status": run.status,
         "eventType": event_type,
-        "assistantText": _normalize_optional_string(payload.get("assistantText")) or _normalize_optional_string(run.assistant_text),
+        "assistantText": _normalize_optional_string(payload.get("assistantText"))
+        or _normalize_optional_string(run.assistant_text),
         "payload": payload,
-        "endedAt": _serialize_datetime(run.ended_at) if run.ended_at is not None else None,
+        "endedAt": _serialize_datetime(run.ended_at)
+        if run.ended_at is not None
+        else None,
         "failureCode": _normalize_optional_string(run.failure_code),
         "failureMessage": _normalize_optional_string(run.failure_message),
         "cancelReason": _normalize_optional_string(run.cancel_reason),
@@ -440,7 +500,9 @@ def _apply_thread_display_candidates(
     title_candidate: str | None,
     summary_candidate: str | None,
 ) -> None:
-    if title_candidate is not None and _should_apply_deterministic_value(thread.title_source, thread.title):
+    if title_candidate is not None and _should_apply_deterministic_value(
+        thread.title_source, thread.title
+    ):
         thread.title = title_candidate
         thread.title_source = _DETERMINISTIC_SOURCE
     if summary_candidate is not None and _should_apply_deterministic_value(
@@ -459,7 +521,9 @@ def _should_apply_deterministic_value(source: str | None, value: str | None) -> 
     return normalized_source in {None, _DETERMINISTIC_SOURCE}
 
 
-def _build_title_candidate(*, thread: ThreadModel, runs: tuple[RunModel, ...]) -> str | None:
+def _build_title_candidate(
+    *, thread: ThreadModel, runs: tuple[RunModel, ...]
+) -> str | None:
     for run in runs:
         text = _normalize_text(run.request_message_text)
         if text is not None:
@@ -467,8 +531,9 @@ def _build_title_candidate(*, thread: ThreadModel, runs: tuple[RunModel, ...]) -
     return _truncate_text(thread.last_user_message_preview, limit=80)
 
 
-
-def _build_summary_candidate(*, thread: ThreadModel, runs: tuple[RunModel, ...]) -> str | None:
+def _build_summary_candidate(
+    *, thread: ThreadModel, runs: tuple[RunModel, ...]
+) -> str | None:
     for run in reversed(runs):
         assistant_text = _normalize_text(run.assistant_text)
         if assistant_text is not None:
@@ -476,7 +541,11 @@ def _build_summary_candidate(*, thread: ThreadModel, runs: tuple[RunModel, ...])
         user_text = _normalize_text(run.request_message_text)
         if user_text is not None:
             return _truncate_text(user_text, limit=160)
-    return _truncate_text(thread.last_assistant_message_preview or thread.last_user_message_preview, limit=160)
+    return _truncate_text(
+        thread.last_assistant_message_preview or thread.last_user_message_preview,
+        limit=160,
+    )
+
 
 def _build_model_snapshot(run: RunModel | None) -> dict[str, Any] | None:
     if run is None:
@@ -485,8 +554,12 @@ def _build_model_snapshot(run: RunModel | None) -> dict[str, Any] | None:
         "selectedModelRoute": dict(run.selected_model_route_json or {}),
         "resolvedModelRoute": dict(run.resolved_model_route_json or {}),
         "resolvedModelId": run.resolved_model_id,
-        "requestedThinkingSelection": dict(run.requested_thinking_json or {}) if run.requested_thinking_json else None,
-        "appliedThinkingSelection": dict(run.applied_thinking_json or {}) if run.applied_thinking_json else None,
+        "requestedThinkingSelection": dict(run.requested_thinking_json or {})
+        if run.requested_thinking_json
+        else None,
+        "appliedThinkingSelection": dict(run.applied_thinking_json or {})
+        if run.applied_thinking_json
+        else None,
         "thinkingCapabilityOverride": (
             dict(run.thinking_capability_override_json)
             if run.thinking_capability_override_json not in (None, {})
@@ -512,7 +585,9 @@ def _build_drift_placeholder(run: RunModel | None) -> dict[str, Any] | None:
     return {
         "status": _NOT_EVALUATED_DRIFT_STATUS,
         "historicalModelId": run.resolved_model_id,
-        "historicalToolIds": list(run.resolved_tool_ids_json or run.enabled_tools_json or []),
+        "historicalToolIds": list(
+            run.resolved_tool_ids_json or run.enabled_tools_json or []
+        ),
     }
 
 

@@ -53,7 +53,9 @@ class ToolNotFoundError(LookupError):
         super().__init__(f"Unknown tool '{tool_id}'.")
 
 
-def build_message_history(messages: tuple[RuntimeTextMessage, ...]) -> list[ModelMessage]:
+def build_message_history(
+    messages: tuple[RuntimeTextMessage, ...],
+) -> list[ModelMessage]:
     history: list[ModelMessage] = []
     expected_roles = ("user", "assistant")
     for index, message in enumerate(messages):
@@ -80,7 +82,11 @@ def extract_unknown_tool_id(error: LookupError) -> str:
 
     prefix = "Unknown tool '"
     suffix = "'."
-    if message.startswith(prefix) and message.endswith(suffix) and len(message) > len(prefix) + len(suffix):
+    if (
+        message.startswith(prefix)
+        and message.endswith(suffix)
+        and len(message) > len(prefix) + len(suffix)
+    ):
         return message[len(prefix) : -len(suffix)]
 
     return message
@@ -90,8 +96,12 @@ def to_model_message(message: RuntimeTextMessage) -> ModelMessage:
     if message.role == "user":
         return cast(ModelMessage, ModelRequest.user_text_prompt(message.content))
     if message.role == "assistant":
-        return cast(ModelMessage, ModelResponse(parts=[TextPart(content=message.content)]))
-    raise InvalidSessionHistoryError(f"Unsupported stored message role '{message.role}'.")
+        return cast(
+            ModelMessage, ModelResponse(parts=[TextPart(content=message.content)])
+        )
+    raise InvalidSessionHistoryError(
+        f"Unsupported stored message role '{message.role}'."
+    )
 
 
 __all__ = [

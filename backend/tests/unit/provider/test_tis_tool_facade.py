@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,10 @@ class StubSecretProvider:
         self.requests.append(name)
         return self.values.get(name)
 
+    async def has_secret(self, *, name: str) -> bool:
+        self.requests.append(name)
+        return name in self.values
+
 
 class StubDatabaseResolver:
     def __init__(self, root: Path) -> None:
@@ -63,7 +68,7 @@ class StubStateStore:
     async def get(self, *, namespace: str, key: str) -> dict[str, Any] | None:
         return self.values.get((namespace, key))
 
-    async def put(self, *, namespace: str, key: str, value: dict[str, Any]) -> None:
+    async def put(self, *, namespace: str, key: str, value: Mapping[str, Any]) -> None:
         self.values[(namespace, key)] = dict(value)
 
     async def delete(self, *, namespace: str, key: str) -> None:
@@ -73,6 +78,7 @@ class StubStateStore:
 class StubArtifactStore:
     def __init__(self) -> None:
         self.saved_texts: list[dict[str, Any]] = []
+        self.artifacts: dict[str, HostArtifact] = {}
 
     async def save_text(
         self,
@@ -80,7 +86,7 @@ class StubArtifactStore:
         name: str,
         text: str,
         content_type: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> HostArtifact:
         self.saved_texts.append(
             {
@@ -90,13 +96,15 @@ class StubArtifactStore:
                 "metadata": {} if metadata is None else dict(metadata),
             }
         )
-        return HostArtifact(
+        artifact = HostArtifact(
             artifact_id="artifact-1",
             uri="artifact://tis/result.json",
             name=name,
             content_type=content_type,
             metadata={} if metadata is None else dict(metadata),
         )
+        self.artifacts[artifact.artifact_id] = artifact
+        return artifact
 
     async def save_bytes(
         self,
@@ -104,9 +112,12 @@ class StubArtifactStore:
         name: str,
         content: bytes,
         content_type: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> HostArtifact:
         raise AssertionError(f"save_bytes should not be called in these tests: {name}, {len(content)}")
+
+    async def describe_artifact(self, *, artifact_id: str) -> HostArtifact:
+        return self.artifacts[artifact_id]
 
 
 class StubEventSink:

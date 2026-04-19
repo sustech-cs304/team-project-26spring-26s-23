@@ -14,7 +14,10 @@ from ..bridge import (
     SessionNotFoundError,
     ThreadNotFoundError,
 )
-from ..tool_approval_coordinator import ToolApprovalConflictError, ToolApprovalNotFoundError
+from ..tool_approval_coordinator import (
+    ToolApprovalConflictError,
+    ToolApprovalNotFoundError,
+)
 from ..contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
@@ -32,7 +35,10 @@ from ..debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWr
 from ..model_routes import RuntimeModelRouteResolutionError
 from ..protocol import RuntimeProtocolError
 from ..provider_adapter_registry import RuntimeProviderAdapterError
-from ..shared.dependencies import RuntimeTransportDependencies, build_runtime_transport_dependencies
+from ..shared.dependencies import (
+    RuntimeTransportDependencies,
+    build_runtime_transport_dependencies,
+)
 from ..shared.errors import (
     agent_execution_failed_response,
     agent_not_found_response,
@@ -58,7 +64,6 @@ from .response_mappers import (
 )
 
 
-
 def build_router(
     scaffold: RuntimeScaffold,
     runtime_bridge: RuntimeBridge,
@@ -78,7 +83,9 @@ def build_router(
             return protocol_error_response(exc)
 
         if requested_method == AGENTS_LIST_METHOD:
-            return JSONResponse(content=dependencies.scaffold.build_agents_list_response().to_dict())
+            return JSONResponse(
+                content=dependencies.scaffold.build_agents_list_response().to_dict()
+            )
 
         if requested_method == THREAD_CREATE_METHOD:
             return _handle_thread_create_request(
@@ -146,15 +153,18 @@ def build_router(
     return router
 
 
-
 def _handle_thread_create_request(
     *,
     dependencies: RuntimeTransportDependencies,
     payload: dict[str, Any] | None,
 ) -> JSONResponse:
     try:
-        thread_create_request = dependencies.parser.extract_thread_create_request(payload)
-        thread_record = dependencies.runtime_bridge.create_thread(agent_id=thread_create_request.agent_id)
+        thread_create_request = dependencies.parser.extract_thread_create_request(
+            payload
+        )
+        thread_record = dependencies.runtime_bridge.create_thread(
+            agent_id=thread_create_request.agent_id
+        )
     except RuntimeProtocolError as exc:
         return protocol_error_response(exc)
     except AgentNotFoundError as exc:
@@ -165,9 +175,10 @@ def _handle_thread_create_request(
         )
 
     return JSONResponse(
-        content=dependencies.scaffold.build_thread_create_response(thread=thread_record).to_dict()
+        content=dependencies.scaffold.build_thread_create_response(
+            thread=thread_record
+        ).to_dict()
     )
-
 
 
 def _handle_thread_get_request(
@@ -177,7 +188,9 @@ def _handle_thread_get_request(
 ) -> JSONResponse:
     try:
         thread_get_request = dependencies.parser.extract_thread_get_request(payload)
-        thread = dependencies.runtime_bridge.get_thread(thread_id=thread_get_request.thread_id)
+        thread = dependencies.runtime_bridge.get_thread(
+            thread_id=thread_get_request.thread_id
+        )
     except RuntimeProtocolError as exc:
         return protocol_error_response(exc)
     except ThreadNotFoundError as exc:
@@ -193,8 +206,9 @@ def _handle_thread_get_request(
             requested_method=THREAD_GET_METHOD,
         )
 
-    return JSONResponse(content=dependencies.scaffold.build_thread_get_response(thread=thread).to_dict())
-
+    return JSONResponse(
+        content=dependencies.scaffold.build_thread_get_response(thread=thread).to_dict()
+    )
 
 
 async def _handle_run_start_request(
@@ -207,7 +221,9 @@ async def _handle_run_start_request(
     request_id = ensure_runtime_request_id(http_request)
     try:
         run_start_request = dependencies.parser.extract_run_start_request(payload)
-        http_request.state.copilot_runtime_debug_mode_enabled = run_start_request.policy.debugModeEnabled
+        http_request.state.copilot_runtime_debug_mode_enabled = (
+            run_start_request.policy.debugModeEnabled
+        )
         set_runtime_request_context(
             http_request,
             runtime_method=RUN_START_METHOD,
@@ -248,12 +264,18 @@ async def _handle_run_start_request(
         set_runtime_request_context(http_request, phase="build_run_start_response")
         log_run_start_stage(http_request, "run_start.build_run_start_response.enter")
         response = dependencies.scaffold.build_run_start_response(run=run)
-        log_run_start_stage(http_request, "run_start.build_run_start_response.succeeded")
+        log_run_start_stage(
+            http_request, "run_start.build_run_start_response.succeeded"
+        )
         set_runtime_request_context(http_request, phase="serialize_run_start_response")
-        log_run_start_stage(http_request, "run_start.serialize_run_start_response.enter")
+        log_run_start_stage(
+            http_request, "run_start.serialize_run_start_response.enter"
+        )
         serialized_response = response.to_dict()
         json_response = JSONResponse(content=serialized_response)
-        log_run_start_stage(http_request, "run_start.serialize_run_start_response.succeeded")
+        log_run_start_stage(
+            http_request, "run_start.serialize_run_start_response.succeeded"
+        )
         _write_transport_event(
             debug_event_logger,
             level=DebugLogLevel.INFO,
@@ -312,7 +334,11 @@ async def _handle_run_start_request(
             operation="run_start",
             phase="agent_lookup",
             request_id=request_id,
-            summary={"runtimeMethod": RUN_START_METHOD, "agentId": exc.agent_name, "status": "failed"},
+            summary={
+                "runtimeMethod": RUN_START_METHOD,
+                "agentId": exc.agent_name,
+                "status": "failed",
+            },
             error=exc,
         )
         return agent_not_found_response(
@@ -327,18 +353,22 @@ async def _handle_run_start_request(
             event_name="transport.http.run_start.failed",
             message="Runtime HTTP run/start request failed unexpectedly.",
             operation="run_start",
-            phase=get_request_state_text(http_request, "copilot_runtime_phase") or "unknown",
+            phase=get_request_state_text(http_request, "copilot_runtime_phase")
+            or "unknown",
             request_id=request_id,
             run_id=get_request_state_text(http_request, "copilot_runtime_run_id"),
             thread_id=get_request_state_text(http_request, "copilot_runtime_thread_id"),
-            session_id=get_request_state_text(http_request, "copilot_runtime_session_id"),
+            session_id=get_request_state_text(
+                http_request, "copilot_runtime_session_id"
+            ),
             summary={"runtimeMethod": RUN_START_METHOD, "status": "failed"},
             error=exc,
         )
         log_run_start_stage(
             http_request,
             build_run_start_failed_event_name(
-                get_request_state_text(http_request, "copilot_runtime_phase") or "unknown"
+                get_request_state_text(http_request, "copilot_runtime_phase")
+                or "unknown"
             ),
             exc=exc,
         )
@@ -349,7 +379,6 @@ async def _handle_run_start_request(
         )
 
     return json_response
-
 
 
 async def _handle_run_stream_request(
@@ -473,7 +502,6 @@ def _write_transport_event(
     )
 
 
-
 def _handle_run_cancel_request(
     *,
     dependencies: RuntimeTransportDependencies,
@@ -481,7 +509,9 @@ def _handle_run_cancel_request(
 ) -> JSONResponse:
     try:
         run_cancel_request = dependencies.parser.extract_run_cancel_request(payload)
-        run, cancel_accepted = dependencies.runtime_bridge.cancel_run(run_id=run_cancel_request.run_id)
+        run, cancel_accepted = dependencies.runtime_bridge.cancel_run(
+            run_id=run_cancel_request.run_id
+        )
     except RuntimeProtocolError as exc:
         return protocol_error_response(exc)
     except RunNotFoundError as exc:
@@ -499,15 +529,18 @@ def _handle_run_cancel_request(
     )
 
 
-
 def _handle_tool_approval_resolve_request(
     *,
     dependencies: RuntimeTransportDependencies,
     payload: dict[str, Any] | None,
 ) -> JSONResponse:
     try:
-        approval_request = dependencies.parser.extract_tool_approval_resolve_request(payload)
-        response = dependencies.runtime_bridge.resolve_tool_approval(request=approval_request)
+        approval_request = dependencies.parser.extract_tool_approval_resolve_request(
+            payload
+        )
+        response = dependencies.runtime_bridge.resolve_tool_approval(
+            request=approval_request
+        )
     except RuntimeProtocolError as exc:
         return protocol_error_response(exc)
     except ToolApprovalNotFoundError as exc:
@@ -533,14 +566,15 @@ def _handle_tool_approval_resolve_request(
     return JSONResponse(content=response.to_dict())
 
 
-
 def _handle_capabilities_get_request(
     *,
     dependencies: RuntimeTransportDependencies,
     payload: dict[str, Any] | None,
 ) -> JSONResponse:
     try:
-        capabilities_request = dependencies.parser.extract_capabilities_get_request(payload)
+        capabilities_request = dependencies.parser.extract_capabilities_get_request(
+            payload
+        )
         capabilities = dependencies.runtime_bridge.get_capabilities(
             session_id=capabilities_request.session_id,
             tool_permission_policy=capabilities_request.tool_permission_policy,
@@ -563,7 +597,6 @@ def _handle_capabilities_get_request(
     return JSONResponse(content=capabilities.to_dict())
 
 
-
 def _handle_global_tool_catalog_get_request(
     *,
     dependencies: RuntimeTransportDependencies,
@@ -575,9 +608,10 @@ def _handle_global_tool_catalog_get_request(
         return protocol_error_response(exc)
 
     return JSONResponse(
-        content=dependencies.scaffold.build_global_tool_catalog_response(language=language).to_dict()
+        content=dependencies.scaffold.build_global_tool_catalog_response(
+            language=language
+        ).to_dict()
     )
-
 
 
 async def _handle_thinking_capability_get_request(
@@ -586,7 +620,9 @@ async def _handle_thinking_capability_get_request(
     payload: dict[str, Any] | None,
 ) -> JSONResponse:
     try:
-        thinking_request = dependencies.parser.extract_thinking_capability_get_request(payload)
+        thinking_request = dependencies.parser.extract_thinking_capability_get_request(
+            payload
+        )
         response = await dependencies.runtime_bridge.get_thinking_capability(
             session_id=thinking_request.session_id,
             model_route=thinking_request.model_route,

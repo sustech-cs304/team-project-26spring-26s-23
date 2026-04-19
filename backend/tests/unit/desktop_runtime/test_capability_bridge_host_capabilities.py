@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
 from pydantic_ai.models.test import TestModel
@@ -18,11 +19,23 @@ from app.desktop_runtime.capability_bridge_host_capabilities import (
 from app.desktop_runtime.capability_bridge_protocol import (
     DesktopCapabilityArtifactDescriptor,
 )
+from app.tooling.contract.metadata import ToolMetadata
+from app.tooling.contract.results import ToolResultEnvelope
 from app.tooling import HostEvent, ToolInvocationContext
 from app.tooling.runtime_adapter.copilot_runtime import (
     RuntimeToolExecutionContext,
     runtime_tool_execution_scope,
 )
+
+_T = TypeVar("_T")
+
+
+async def _await_value(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
+
+
+def _run_awaitable(awaitable: Awaitable[_T]) -> _T:
+    return asyncio.run(_await_value(awaitable))
 
 
 class _RecordingBridgeClient:
@@ -218,7 +231,17 @@ class _RecordingBridgeClient:
 
 
 class _StubContractTool:
-    metadata = None
+    metadata = ToolMetadata(tool_id="blackboard.snapshot.sync")
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: Any,
+    ) -> ToolResultEnvelope:
+        _ = (arguments, context, host)
+        raise NotImplementedError
 
 
 
@@ -259,8 +282,8 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     assert host.state_store is not None
     assert host.event_sink is not None
 
-    secret_value = asyncio.run(host.secret_provider.get_secret(name="cas.password"))
-    has_secret = asyncio.run(cast(Any, host.secret_provider).has_secret(name="cas.password"))
+    secret_value = _run_awaitable(host.secret_provider.get_secret(name="cas.password"))
+    has_secret = _run_awaitable(cast(Any, host.secret_provider).has_secret(name="cas.password"))
     workspace_path = host.workspace_resolver.resolve_workspace_path(
         relative_path="backend/data/calendar.db"
     )
@@ -270,7 +293,7 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     ensured_path = cast(Any, host.workspace_resolver).ensure_workspace_directory(
         relative_path="artifacts/reports"
     )
-    artifact = asyncio.run(
+    artifact = _run_awaitable(
         host.artifact_store.save_text(
             name="snapshot.json",
             text="{}",
@@ -278,36 +301,36 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
             metadata={"toolId": invocation_context.tool_id},
         )
     )
-    described_artifact = asyncio.run(
+    described_artifact = _run_awaitable(
         cast(Any, host.artifact_store).describe_artifact(artifact_id="artifact-1")
     )
-    asyncio.run(
+    _run_awaitable(
         host.state_store.put(
             namespace="blackboard.snapshot_sync",
             key="latest",
             value={"ok": True},
         )
     )
-    asyncio.run(
+    _run_awaitable(
         host.state_store.put(
             namespace="run:progress",
             key="step-1",
             value={"done": False},
         )
     )
-    tool_state = asyncio.run(
+    tool_state = _run_awaitable(
         host.state_store.get(
             namespace="blackboard.snapshot_sync",
             key="latest",
         )
     )
-    run_state = asyncio.run(
+    run_state = _run_awaitable(
         host.state_store.get(
             namespace="run:progress",
             key="step-1",
         )
     )
-    asyncio.run(
+    _run_awaitable(
         host.state_store.delete(
             namespace="blackboard.snapshot_sync",
             key="latest",
@@ -427,6 +450,8 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
             field=field,
             operator=operator,
             limit=limit,
+            fetch_mode=fetch_mode,
+            max_pages=max_pages,
             results=[
                 CourseCatalogResultDTO(
                     course_id="_course_1",
@@ -454,7 +479,7 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
     )
 
     with runtime_tool_execution_scope(runtime_context):
-        result = asyncio.run(
+        result = _run_awaitable(
             tool.execute(
                 {
                     "keyword": "数据库",
@@ -475,11 +500,32 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
         "fetch_mode": "full",
         "max_pages": 30,
     }
-    assert result["status"] == "error"
-    assert result["error"]["code"] == "execution_failed"
-    assert result["error"]["message"] == "CourseCatalogSearchResult.__init__() missing 2 required positional arguments: 'fetch_mode' and 'max_pages'"
+    assert result["status"] == "success"
+    assert result["output"] == {
+        "keyword": "数据库",
+        "field": "CourseName",
+        "operator": "Contains",
+        "fetchMode": "full",
+        "maxPages": 30,
+        "limit": None,
+        "total": 1,
+        "results": [
+            {
+                "course_id": "_course_1",
+                "course_identifier": "CS305",
+                "course_name": "数据库系统",
+                "instructor": "张老师",
+                "term": None,
+                "url": None,
+                "description": None,
+            }
+        ],
+        "logSummary": {"total": 0, "by_level": {}, "by_layer": {}, "by_source": {}},
+        "logs": [],
+    }
     assert result["metadata"] == {
         "toolId": "blackboard.course_catalog.search",
+        "credentialSource": "host_secrets",
     }
     assert bridge_client.secret_requests == [
         (
@@ -497,7 +543,7 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
     ]
     assert [event["eventType"] for event in bridge_client.events] == [
         "blackboard.course_catalog.search.started",
-        "blackboard.course_catalog.search.failed",
+        "blackboard.course_catalog.search.completed",
     ]
     assert all(
         event["invocationId"] == "blackboard.course_catalog.search:call-1"

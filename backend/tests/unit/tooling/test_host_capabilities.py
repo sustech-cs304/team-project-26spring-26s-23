@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -23,6 +25,9 @@ class StubWorkspaceResolver:
             return self.root
         return self.root / relative_path
 
+    def ensure_workspace_directory(self, *, relative_path: str) -> Path:
+        return self.root / relative_path
+
 
 class StubDatabaseResolver:
     def __init__(self, root: Path) -> None:
@@ -41,7 +46,7 @@ class StubArtifactStore:
         name: str,
         text: str,
         content_type: str | None = None,
-        metadata: dict[str, object] | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> HostArtifact:
         _ = (text, content_type, metadata)
         return HostArtifact(artifact_id="artifact-text", name=name)
@@ -52,20 +57,23 @@ class StubArtifactStore:
         name: str,
         content: bytes,
         content_type: str | None = None,
-        metadata: dict[str, object] | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> HostArtifact:
         _ = (content, content_type, metadata)
         return HostArtifact(artifact_id="artifact-bytes", name=name)
 
+    async def describe_artifact(self, *, artifact_id: str) -> HostArtifact:
+        return HostArtifact(artifact_id=artifact_id, name="described-artifact")
+
 
 class StubStateStore:
     def __init__(self) -> None:
-        self.values: dict[tuple[str, str], dict[str, object]] = {}
+        self.values: dict[tuple[str, str], dict[str, Any]] = {}
 
-    async def get(self, *, namespace: str, key: str) -> dict[str, object] | None:
+    async def get(self, *, namespace: str, key: str) -> dict[str, Any] | None:
         return self.values.get((namespace, key))
 
-    async def put(self, *, namespace: str, key: str, value: dict[str, object]) -> None:
+    async def put(self, *, namespace: str, key: str, value: Mapping[str, Any]) -> None:
         self.values[(namespace, key)] = dict(value)
 
     async def delete(self, *, namespace: str, key: str) -> None:
@@ -75,6 +83,9 @@ class StubStateStore:
 class StubSecretProvider:
     async def get_secret(self, *, name: str) -> str | None:
         return f"secret:{name}"
+
+    async def has_secret(self, *, name: str) -> bool:
+        return bool(name)
 
 
 class StubEventSink:
