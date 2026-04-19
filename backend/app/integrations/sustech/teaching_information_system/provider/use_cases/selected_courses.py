@@ -46,10 +46,14 @@ from app.integrations.sustech.teaching_information_system.shared import (
     _clean_text,
     create_tis_log_session,
 )
-from app.integrations.sustech.teaching_information_system.shared.logging import TISLogger
+from app.integrations.sustech.teaching_information_system.shared.logging import (
+    TISLogger,
+)
 
 
-def _normalize_selected_courses_credentials(username: str, password: str) -> tuple[str, str]:
+def _normalize_selected_courses_credentials(
+    username: str, password: str
+) -> tuple[str, str]:
     normalized_username = _clean_text(username)
     normalized_password = str(password or "").strip()
     if not normalized_username or not normalized_password:

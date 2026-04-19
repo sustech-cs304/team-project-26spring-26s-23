@@ -225,7 +225,9 @@ def _build_selected_course_status_fields(
     item: dict[str, Any],
 ) -> tuple[bool | None, str | None]:
     effective_raw = item.get("cqzt")
-    return _to_bool_or_none(effective_raw), _clean_text(item.get("cqms") or effective_raw) or None
+    return _to_bool_or_none(effective_raw), _clean_text(
+        item.get("cqms") or effective_raw
+    ) or None
 
 
 def _build_selected_course_raw_payload(item: dict[str, Any]) -> dict[str, Any]:
@@ -288,7 +290,9 @@ def build_selected_course_summary(
     credit_values = [course.credits for course in courses if course.credits is not None]
     hour_values = [course.hours for course in courses if course.hours is not None]
     effective_course_count = sum(course.effective_flag is True for course in courses)
-    raw_keys = sorted(str(key) for key in payload.keys()) if isinstance(payload, dict) else []
+    raw_keys = (
+        sorted(str(key) for key in payload.keys()) if isinstance(payload, dict) else []
+    )
     return TISSelectedCourseSummary(
         course_count=len(courses),
         total_credits=round(sum(credit_values), 3) if credit_values else None,

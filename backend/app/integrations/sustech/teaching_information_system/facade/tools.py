@@ -59,7 +59,9 @@ def _build_secret_registry_key(namespace: str, key_name: str) -> str:
 
 
 # Host-side secret registry key names for credential lookup, not credential values.
-_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = _build_secret_registry_key("sustech", "username")
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = _build_secret_registry_key(
+    "sustech", "username"
+)
 _DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = _build_secret_registry_key(
     "sustech", "casPassword"
 )

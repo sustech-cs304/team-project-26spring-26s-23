@@ -57,7 +57,11 @@ def _prepare_credit_gpa_inputs(
     normalized_password = str(password or "").strip()
     if not normalized_username or not normalized_password:
         raise ValueError("缺少 TIS/CAS 用户名或密码")
-    return normalized_username, normalized_password, config or DEFAULT_TIS_SERVICE_CONFIG
+    return (
+        normalized_username,
+        normalized_password,
+        config or DEFAULT_TIS_SERVICE_CONFIG,
+    )
 
 
 def _resolve_credit_gpa_homepage_html(
@@ -93,7 +97,9 @@ def _resolve_credit_gpa_homepage(
         "ℹ 已补全 TIS RoleCode",
         payload={
             "resolved_role_code": tis_client.context.role_code,
-            "source": "homepage" if homepage.role_codes else "default-student-grade-role",
+            "source": "homepage"
+            if homepage.role_codes
+            else "default-student-grade-role",
         },
     )
     return homepage
@@ -144,7 +150,9 @@ def _probe_credit_gpa_api(
 
 def _extract_credit_gpa_payload(
     api_response: Any,
-) -> tuple[TISCreditGPASummary, list[TISCreditGPATermRecord], list[TISCreditGPAYearRecord]]:
+) -> tuple[
+    TISCreditGPASummary, list[TISCreditGPATermRecord], list[TISCreditGPAYearRecord]
+]:
     payload = _safe_parse_json_response(api_response)
     if not isinstance(payload, dict):
         raise RuntimeError("TIS 学分绩查询接口返回的响应不是有效 JSON")
@@ -254,8 +262,8 @@ def fetch_credit_gpa_with_credentials(
     db_manager: TISDatabaseManager | None = None,
     owner_key: str | None = None,
 ) -> TISCreditGPAQueryResult:
-    normalized_username, normalized_password, service_config = _prepare_credit_gpa_inputs(
-        username, password, config
+    normalized_username, normalized_password, service_config = (
+        _prepare_credit_gpa_inputs(username, password, config)
     )
     log_session = create_tis_log_session(console=enable_console_logging)
     logger = log_session.make_logger(
