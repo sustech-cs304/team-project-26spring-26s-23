@@ -132,62 +132,51 @@ def normalize_assignment_title(raw: str) -> str:
     return text
 
 
-def is_valid_assignment(
-    assignment: dict[str, Any],
+def _log_filtered_assignment(
+    logger: BlackboardLogger | None,
+    reason: str,
     *,
-    logger: BlackboardLogger | None = None,
-) -> bool:
-    """判断是否为有效作业（非噪音数据）。"""
-    title = str(assignment.get("title") or "").strip()
-    url = str(assignment.get("url") or "").strip()
-    due_date = str(assignment.get("due_date") or "").strip()
-    status = str(assignment.get("status") or "").strip()
-    summary = str(assignment.get("summary") or "").strip()
+    payload: dict[str, Any] | None = None,
+) -> None:
+    if logger is not None:
+        logger.debug(
+            "🗑 过滤作业噪音",
+            payload={"reason": reason, **(payload or {})},
+        )
 
-    def _log_filtered(reason: str, *, payload: dict[str, Any] | None = None) -> None:
-        if logger is not None:
-            logger.debug(
-                "🗑 过滤作业噪音",
-                payload={"reason": reason, **(payload or {})},
-            )
 
-    if not title:
-        _log_filtered("empty_title")
-        return False
 
+def _assignment_noise_reason(title: str, url: str) -> str | None:
     lower_title = title.lower()
-    lower_url = url.lower()
-
     if any(token in title for token in ("失败", "错误")) or "error" in lower_title:
-        _log_filtered("error_message", payload={"title": title})
-        return False
-
+        return "error_message"
     if re.fullmatch(r"https?://\S+", title, flags=re.IGNORECASE):
-        _log_filtered("title_is_url", payload={"title": title})
-        return False
-
+        return "title_is_url"
     if any(token in title for token in ("活动标签", "课程(", "课程（")):
-        _log_filtered("navigation_title", payload={"title": title})
-        return False
-
-    if lower_url.startswith("javascript:"):
-        _log_filtered("javascript_url", payload={"url": url})
-        return False
-
+        return "navigation_title"
+    if url.lower().startswith("javascript:"):
+        return "javascript_url"
     if any(
         token in lower_title
         for token in ("course menu", "menu management options", "top frame tabs")
     ):
-        _log_filtered("navigation_text", payload={"title": title})
-        return False
+        return "navigation_text"
+    return None
 
-    if due_date:
+
+
+def _assignment_has_signal(
+    *,
+    title: str,
+    url: str,
+    due_date: str,
+    status: str,
+    summary: str,
+) -> bool:
+    if due_date or extract_grade_text(f"{status} {summary}"):
         return True
 
-    grade_signal = extract_grade_text(f"{status} {summary}")
-    if grade_signal:
-        return True
-
+    lower_title = title.lower()
     assignment_title_tokens = (
         "assignment",
         "homework",
@@ -203,13 +192,41 @@ def is_valid_assignment(
     if any(token in lower_title for token in assignment_title_tokens):
         return True
 
-    if any(
+    lower_url = url.lower()
+    return any(
         token in lower_url
         for token in ("/webapps/assignment/", "/bb-assignment-", "/bb-mygrades-")
+    )
+
+
+
+def is_valid_assignment(
+    assignment: dict[str, Any],
+    *,
+    logger: BlackboardLogger | None = None,
+) -> bool:
+    """判断是否为有效作业（非噪音数据）。"""
+    title = str(assignment.get("title") or "").strip()
+    if not title:
+        _log_filtered_assignment(logger, "empty_title")
+        return False
+
+    url = str(assignment.get("url") or "").strip()
+    noise_reason = _assignment_noise_reason(title, url)
+    if noise_reason is not None:
+        _log_filtered_assignment(logger, noise_reason, payload={"title": title, "url": url})
+        return False
+
+    if _assignment_has_signal(
+        title=title,
+        url=url,
+        due_date=str(assignment.get("due_date") or "").strip(),
+        status=str(assignment.get("status") or "").strip(),
+        summary=str(assignment.get("summary") or "").strip(),
     ):
         return True
 
-    _log_filtered("missing_signal", payload={"title": title, "url": url})
+    _log_filtered_assignment(logger, "missing_signal", payload={"title": title, "url": url})
     return False
 
 

@@ -102,170 +102,242 @@ class BlackboardGradeAPI:
     ) -> AllGradesDTO:
         """获取“我的成绩”页面中的所有课程成绩汇总。"""
         self.context.log("🔍 [Blackboard] 开始获取所有课程成绩汇总")
+        if course_grade_loader is None:
+            course_grade_loader = self.get_course_grades
 
-        candidate_urls = [
+        selected_source_url, discovered_courses, seen_course_ids = (
+            self._discover_courses_from_all_grades_pages()
+        )
+        self._extend_fallback_grade_courses(
+            discovered_courses,
+            seen_course_ids,
+            fallback_course_loader,
+        )
+        result = self._build_all_grades_result(
+            selected_source_url,
+            discovered_courses,
+            course_grade_loader,
+        )
+        self.context.log(
+            f"✅ [Blackboard] 汇总成绩解析完成，课程数={len(result.courses)}"
+        )
+        return result
+
+    def _all_grades_candidate_urls(self) -> list[str]:
+        return [
             f"{self.context.base_url}/webapps/gradebook/do/student/viewGrades",
             f"{self.context.base_url}/webapps/bb-mygrades-BBLEARN/myGrades?stream_name=mygrades&is_stream=false",
         ]
 
+    def _load_all_grades_page(self, page_url: str) -> tuple[str, BeautifulSoup] | None:
+        try:
+            response = self.context.get(page_url, label="All-Grades")
+            response.raise_for_status()
+        except Exception as ex:
+            self.context.log(
+                f"⚠️ [Blackboard] 访问汇总成绩页面失败: {page_url} - {ex}"
+            )
+            return None
+
+        selected_source_url = str(response.url)
+        self.context.log(f"🔍 [Blackboard] 解析汇总成绩页面: {selected_source_url}")
+        return selected_source_url, BeautifulSoup(response.text, "html.parser")
+
+    def _all_grades_candidate_links(self, soup: BeautifulSoup) -> list[Tag]:
+        scoped_links: list[Tag] = []
+        for container_selector in (
+            "#courses",
+            "#course_list",
+            ".courseList",
+            ".myGrades",
+            ".gradesList",
+            "#grades_wrapper",
+            "#contentPanel",
+        ):
+            for container in soup.select(container_selector):
+                scoped_links.extend(container.find_all("a", href=True))
+        return scoped_links or soup.find_all("a", href=True)
+
+    def _is_grade_course_link(self, href: str) -> bool:
+        lower_href = href.lower()
+        return (
+            "course_id=" in lower_href
+            or "viewgrades" in lower_href
+            or "mygrades" in lower_href
+        )
+
+    def _all_grades_link_text(self, link: Tag) -> str:
+        raw_text = link.get_text(" ", strip=True)
+        parent_block = link.find_parent(["li", "tr", "div"])
+        parent_text = parent_block.get_text(" ", strip=True) if parent_block else ""
+        if parent_text and len(parent_text) > len(raw_text):
+            return parent_text
+        return raw_text
+
+    def _extract_discovered_grade_course(
+        self,
+        link: Tag,
+        seen_course_ids: set[str],
+    ) -> dict[str, str] | None:
+        href = str(link.get("href") or "").strip()
+        if not href or not self._is_grade_course_link(href):
+            return None
+
+        course_id = self.context.extract_course_id(href)
+        if not course_id or course_id in seen_course_ids:
+            return None
+
+        raw_text = self._all_grades_link_text(link)
+        course_name, listed_grade = extract_course_name_and_listed_grade(raw_text)
+        if not course_name:
+            course_name = link.get_text(" ", strip=True)
+        if not course_name:
+            return None
+
+        return {
+            "course_id": course_id,
+            "course_name": course_name,
+            "listed_grade": listed_grade,
+        }
+
+    def _discover_grade_courses_from_soup(
+        self,
+        soup: BeautifulSoup,
+        seen_course_ids: set[str],
+    ) -> list[dict[str, str]]:
+        candidate_links = self._all_grades_candidate_links(soup)
+        self.context.log(f"🔍 [Blackboard] 汇总成绩页候选链接数: {len(candidate_links)}")
+        discovered_courses: list[dict[str, str]] = []
+        for link in candidate_links:
+            course = self._extract_discovered_grade_course(link, seen_course_ids)
+            if course is None:
+                continue
+            seen_course_ids.add(course["course_id"])
+            discovered_courses.append(course)
+            self.context.log(
+                "🔍 [Blackboard] 发现课程: "
+                f"id='{course['course_id']}', "
+                f"name='{course['course_name']}', "
+                f"listed_grade='{course['listed_grade']}'"
+            )
+        return discovered_courses
+
+    def _discover_courses_from_all_grades_pages(
+        self,
+    ) -> tuple[str, list[dict[str, str]], set[str]]:
         selected_source_url = ""
         discovered_courses: list[dict[str, str]] = []
         seen_course_ids: set[str] = set()
 
-        for page_url in candidate_urls:
-            try:
-                response = self.context.get(page_url, label="All-Grades")
-                response.raise_for_status()
-            except Exception as ex:
-                self.context.log(
-                    f"⚠️ [Blackboard] 访问汇总成绩页面失败: {page_url} - {ex}"
-                )
+        for page_url in self._all_grades_candidate_urls():
+            page = self._load_all_grades_page(page_url)
+            if page is None:
                 continue
-
-            selected_source_url = str(response.url)
-            soup = BeautifulSoup(response.text, "html.parser")
-            self.context.log(f"🔍 [Blackboard] 解析汇总成绩页面: {selected_source_url}")
-
-            scoped_links: list[Tag] = []
-            for container_selector in (
-                "#courses",
-                "#course_list",
-                ".courseList",
-                ".myGrades",
-                ".gradesList",
-                "#grades_wrapper",
-                "#contentPanel",
-            ):
-                for container in soup.select(container_selector):
-                    scoped_links.extend(container.find_all("a", href=True))
-
-            candidate_links = scoped_links or soup.find_all("a", href=True)
-            self.context.log(
-                f"🔍 [Blackboard] 汇总成绩页候选链接数: {len(candidate_links)}"
+            selected_source_url, soup = page
+            discovered_courses = self._discover_grade_courses_from_soup(
+                soup,
+                seen_course_ids,
             )
-
-            for link in candidate_links:
-                href = str(link.get("href") or "").strip()
-                if not href:
-                    continue
-
-                lower_href = href.lower()
-                if (
-                    "course_id=" not in lower_href
-                    and "viewgrades" not in lower_href
-                    and "mygrades" not in lower_href
-                ):
-                    continue
-
-                course_id = self.context.extract_course_id(href)
-                if not course_id or course_id in seen_course_ids:
-                    continue
-
-                raw_text = link.get_text(" ", strip=True)
-                parent_block = link.find_parent(["li", "tr", "div"])
-                parent_text = (
-                    parent_block.get_text(" ", strip=True) if parent_block else ""
-                )
-                if parent_text and len(parent_text) > len(raw_text):
-                    raw_text = parent_text
-
-                course_name, listed_grade = extract_course_name_and_listed_grade(
-                    raw_text
-                )
-                if not course_name:
-                    course_name = link.get_text(" ", strip=True)
-
-                if not course_name:
-                    continue
-
-                seen_course_ids.add(course_id)
-                discovered_courses.append(
-                    {
-                        "course_id": course_id,
-                        "course_name": course_name,
-                        "listed_grade": listed_grade,
-                    }
-                )
-                self.context.log(
-                    f"🔍 [Blackboard] 发现课程: id='{course_id}', name='{course_name}', listed_grade='{listed_grade}'"
-                )
-
             if discovered_courses:
                 break
 
-        if not discovered_courses and fallback_course_loader is not None:
-            self.context.log(
-                "⚠️ [Blackboard] 未在'我的成绩'页面解析到课程列表，回退到课程模块列表"
+        return selected_source_url, discovered_courses, seen_course_ids
+
+    def _extend_fallback_grade_courses(
+        self,
+        discovered_courses: list[dict[str, str]],
+        seen_course_ids: set[str],
+        fallback_course_loader: Callable[[], Sequence[object]] | None,
+    ) -> None:
+        if discovered_courses or fallback_course_loader is None:
+            return
+
+        self.context.log(
+            "⚠️ [Blackboard] 未在'我的成绩'页面解析到课程列表，回退到课程模块列表"
+        )
+        for course in fallback_course_loader():
+            course_id = self._course_field(course, "course_id", "id")
+            course_name = self._course_field(course, "name", "course_name")
+            if not course_id or course_id in seen_course_ids:
+                continue
+            seen_course_ids.add(course_id)
+            discovered_courses.append(
+                {
+                    "course_id": course_id,
+                    "course_name": course_name,
+                    "listed_grade": "",
+                }
             )
-            for course in fallback_course_loader():
-                course_id = self._course_field(course, "course_id", "id")
-                course_name = self._course_field(course, "name", "course_name")
-                if not course_id or course_id in seen_course_ids:
-                    continue
-                seen_course_ids.add(course_id)
-                discovered_courses.append(
-                    {
-                        "course_id": course_id,
-                        "course_name": course_name,
-                        "listed_grade": "",
-                    }
-                )
 
-        if course_grade_loader is None:
-            course_grade_loader = self.get_course_grades
-
-        courses_result: dict[str, AllGradesCourseDTO] = {}
-        course_order: list[str] = []
-        empty_stats: dict[str, int | float | None] = {
+    def _empty_course_grade_stats(self) -> dict[str, int | float | None]:
+        return {
             "total_items": 0,
             "graded_items": 0,
             "average_score": None,
         }
 
-        for item in discovered_courses:
-            course_id = str(item.get("course_id") or "").strip()
-            course_name = str(item.get("course_name") or "").strip()
-            listed_grade = str(item.get("listed_grade") or "").strip()
-            if not course_id:
-                continue
-
-            try:
-                grade_detail = course_grade_loader(course_id)
-            except Exception as ex:
-                self.context.log(
-                    f"⚠️ [Blackboard] 获取课程成绩详情失败: {course_id} - {ex}"
-                )
-                grade_detail = CourseGradesDTO(
-                    course_id=course_id,
-                    total_grade="",
-                    items=[],
-                    stats=dict(empty_stats),
-                    source_url="",
-                )
-
-            if course_id not in courses_result:
-                course_order.append(course_id)
-
-            courses_result[course_id] = AllGradesCourseDTO(
+    def _load_course_grade_detail(
+        self,
+        course_id: str,
+        course_grade_loader: Callable[[str], CourseGradesDTO],
+    ) -> CourseGradesDTO:
+        try:
+            return course_grade_loader(course_id)
+        except Exception as ex:
+            self.context.log(
+                f"⚠️ [Blackboard] 获取课程成绩详情失败: {course_id} - {ex}"
+            )
+            return CourseGradesDTO(
                 course_id=course_id,
-                course_name=course_name,
-                listed_grade=listed_grade,
-                total_grade=grade_detail.total_grade or listed_grade,
-                items=list(grade_detail.items),
-                stats=dict(grade_detail.stats or empty_stats),
-                source_url=grade_detail.source_url,
+                total_grade="",
+                items=[],
+                stats=self._empty_course_grade_stats(),
+                source_url="",
             )
 
-        result = AllGradesDTO(
+    def _build_all_grades_course_dto(
+        self,
+        item: Mapping[str, str],
+        grade_detail: CourseGradesDTO,
+    ) -> AllGradesCourseDTO:
+        listed_grade = str(item.get("listed_grade") or "").strip()
+        return AllGradesCourseDTO(
+            course_id=str(item.get("course_id") or "").strip(),
+            course_name=str(item.get("course_name") or "").strip(),
+            listed_grade=listed_grade,
+            total_grade=grade_detail.total_grade or listed_grade,
+            items=list(grade_detail.items),
+            stats=dict(grade_detail.stats or self._empty_course_grade_stats()),
+            source_url=grade_detail.source_url,
+        )
+
+    def _build_all_grades_result(
+        self,
+        selected_source_url: str,
+        discovered_courses: Sequence[Mapping[str, str]],
+        course_grade_loader: Callable[[str], CourseGradesDTO],
+    ) -> AllGradesDTO:
+        courses_result: dict[str, AllGradesCourseDTO] = {}
+        course_order: list[str] = []
+
+        for item in discovered_courses:
+            course_id = str(item.get("course_id") or "").strip()
+            if not course_id:
+                continue
+            grade_detail = self._load_course_grade_detail(course_id, course_grade_loader)
+            if course_id not in courses_result:
+                course_order.append(course_id)
+            courses_result[course_id] = self._build_all_grades_course_dto(
+                item,
+                grade_detail,
+            )
+
+        return AllGradesDTO(
             source_url=selected_source_url,
             total_courses=len(courses_result),
             course_order=course_order,
             courses=courses_result,
         )
-        self.context.log(
-            f"✅ [Blackboard] 汇总成绩解析完成，课程数={len(courses_result)}"
-        )
-        return result
 
     def _course_field(self, item: object, *names: str) -> str:
         if isinstance(item, Mapping):
