@@ -190,7 +190,6 @@ def _summarize_runtime_thinking_options(values: Any) -> list[dict[str, Any]]:
     ]
 
 
-
 def _summarize_runtime_thinking_budget_value(
     budget: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -199,7 +198,6 @@ def _summarize_runtime_thinking_budget_value(
         for key in ("minTokens", "maxTokens", "stepTokens")
         if key in budget
     }
-
 
 
 def _summarize_runtime_thinking_budget_fields(
@@ -212,11 +210,12 @@ def _summarize_runtime_thinking_budget_fields(
     )
     budget_summary: dict[str, Any] = {}
     for output_key, attr_name, key_name in budget_fields:
-        field_value = _lookup_value(control_spec, attr_name=attr_name, key_name=key_name)
+        field_value = _lookup_value(
+            control_spec, attr_name=attr_name, key_name=key_name
+        )
         if field_value is not None:
             budget_summary[output_key] = _sanitize_value(field_value)
     return budget_summary
-
 
 
 def _summarize_runtime_thinking_budget(control_spec: Any) -> dict[str, Any]:
@@ -224,7 +223,6 @@ def _summarize_runtime_thinking_budget(control_spec: Any) -> dict[str, Any]:
     if isinstance(budget_value, Mapping):
         return _summarize_runtime_thinking_budget_value(budget_value)
     return _summarize_runtime_thinking_budget_fields(control_spec)
-
 
 
 def _resolve_runtime_thinking_selection_kind(control_spec: Any) -> Any:
@@ -237,7 +235,6 @@ def _resolve_runtime_thinking_selection_kind(control_spec: Any) -> Any:
         return selection_kind
     kind = _lookup_value(control_spec, attr_name="kind", key_name="kind")
     return "budget" if kind == "budget" else "preset"
-
 
 
 def _resolve_runtime_fixed_thinking_selection(
@@ -260,7 +257,6 @@ def _resolve_runtime_fixed_thinking_selection(
     return None
 
 
-
 def summarize_runtime_thinking_control_spec(
     control_spec: Any | None,
 ) -> dict[str, Any] | None:
@@ -272,7 +268,9 @@ def summarize_runtime_thinking_control_spec(
         "selectionKind": _resolve_runtime_thinking_selection_kind(control_spec),
     }
     preset_options = _summarize_runtime_thinking_options(
-        _lookup_value(control_spec, attr_name="preset_options", key_name="presetOptions")
+        _lookup_value(
+            control_spec, attr_name="preset_options", key_name="presetOptions"
+        )
     )
     if len(preset_options) > 0:
         summary["presetOptions"] = preset_options
@@ -287,7 +285,6 @@ def summarize_runtime_thinking_control_spec(
     if len(budget_summary) > 0:
         summary["budget"] = budget_summary
     return summary
-
 
 
 def _build_runtime_thinking_capability_base_summary(
@@ -311,7 +308,6 @@ def _build_runtime_thinking_capability_base_summary(
     }
 
 
-
 def _summarize_runtime_thinking_value_list(values: Any) -> list[dict[str, Any]] | None:
     if not isinstance(values, Sequence) or isinstance(values, str):
         return None
@@ -323,12 +319,10 @@ def _summarize_runtime_thinking_value_list(values: Any) -> list[dict[str, Any]] 
     ]
 
 
-
 def _sanitize_sequence_summary(values: Any) -> list[Any] | None:
     if not isinstance(values, Sequence) or isinstance(values, str):
         return None
     return [_sanitize_value(value) for value in values]
-
 
 
 def _summarize_runtime_thinking_provenance(provenance: Any) -> Any:
@@ -369,7 +363,6 @@ def _summarize_runtime_thinking_provenance(provenance: Any) -> Any:
     }
 
 
-
 def _summarize_runtime_thinking_visibility(visibility: Any) -> Any:
     if isinstance(visibility, Mapping):
         return _sanitize_value(visibility)
@@ -389,14 +382,14 @@ def _summarize_runtime_thinking_visibility(visibility: Any) -> Any:
     }
 
 
-
-def _summarize_runtime_route_fingerprint(route_fingerprint: Any) -> dict[str, Any] | None:
+def _summarize_runtime_route_fingerprint(
+    route_fingerprint: Any,
+) -> dict[str, Any] | None:
     if not isinstance(route_fingerprint, Mapping):
         return None
     return {
         str(key): _sanitize_value(value) for key, value in route_fingerprint.items()
     }
-
 
 
 def summarize_runtime_thinking_capability(
@@ -417,10 +410,14 @@ def summarize_runtime_thinking_capability(
             )
         ),
         "allowedValues": _summarize_runtime_thinking_value_list(
-            _lookup_value(capability, attr_name="allowed_values", key_name="allowedValues")
+            _lookup_value(
+                capability, attr_name="allowed_values", key_name="allowedValues"
+            )
         ),
         "defaultValue": summarize_runtime_thinking_value(
-            _lookup_value(capability, attr_name="default_value", key_name="defaultValue")
+            _lookup_value(
+                capability, attr_name="default_value", key_name="defaultValue"
+            )
         ),
         "supportedLevels": _sanitize_sequence_summary(
             _lookup_value(

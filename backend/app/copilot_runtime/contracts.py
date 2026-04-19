@@ -934,10 +934,8 @@ def _extract_runtime_thinking_value_fields(
     )
 
 
-
 def _normalize_optional_runtime_thinking_label(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() != "" else None
-
 
 
 def _coerce_runtime_code_thinking_value(
@@ -952,7 +950,6 @@ def _coerce_runtime_code_thinking_value(
         code=code.strip(),
         labelZh=label_zh,
     )
-
 
 
 def _coerce_runtime_budget_thinking_value(
@@ -985,7 +982,6 @@ def _coerce_runtime_budget_thinking_value(
     )
 
 
-
 def _coerce_runtime_fixed_thinking_value(
     code: Any,
     *,
@@ -1001,7 +997,6 @@ def _coerce_runtime_fixed_thinking_value(
         code="fixed",
         labelZh=label_zh,
     )
-
 
 
 def _coerce_runtime_thinking_value(value: Any) -> RuntimeThinkingValue | None:

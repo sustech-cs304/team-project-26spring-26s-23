@@ -42,6 +42,7 @@ def _normalize_query_mapping(raw_query: str) -> dict[str, list[str]]:
         normalized[str(key)] = [str(item) for item in values]
     return normalized
 
+
 def _first_query_value(query: dict[str, list[str]], key: str) -> str | None:
     values = query.get(key)
     if not values:
@@ -50,22 +51,18 @@ def _first_query_value(query: dict[str, list[str]], key: str) -> str | None:
     return str(first) if first is not None else None
 
 
-
 def _requested_blackboard_id_types(
     id_types: Iterable[str] | None,
 ) -> tuple[str, ...]:
     return tuple(id_types or DEFAULT_ID_TYPES)
 
 
-
 def _resolve_blackboard_url(raw: str, base_url: str) -> str:
     return str(urljoin(base_url, raw))
 
 
-
 def _fallback_candidate_texts(raw: str) -> tuple[str, str]:
     return raw, unquote(raw)
-
 
 
 def _empty_blackboard_id_result(
@@ -76,10 +73,8 @@ def _empty_blackboard_id_result(
     return result
 
 
-
 def _id_variants(id_type: str) -> tuple[str, str]:
     return id_type, id_type.replace("_", "")
-
 
 
 def _store_extracted_id(
@@ -101,7 +96,6 @@ def _store_extracted_id(
         result["source"] = source
 
 
-
 def _extract_query_ids(
     query: dict[str, list[str]],
     requested_types: tuple[str, ...],
@@ -118,7 +112,6 @@ def _extract_query_ids(
                     source="query",
                 )
                 break
-
 
 
 def _extract_path_ids(
@@ -143,7 +136,6 @@ def _extract_path_ids(
                 )
 
 
-
 def _extract_fragment_ids(
     parsed_fragment: str,
     requested_types: tuple[str, ...],
@@ -162,7 +154,6 @@ def _extract_fragment_ids(
                 raw_value=fragment_id,
                 source="fragment",
             )
-
 
 
 def _extract_fallback_ids(
@@ -188,7 +179,6 @@ def _extract_fallback_ids(
                     break
 
 
-
 def extract_blackboard_ids_from_url(
     url: str | None,
     *,
@@ -203,7 +193,9 @@ def extract_blackboard_ids_from_url(
         return result
 
     parsed = urlparse(_resolve_blackboard_url(raw, base_url))
-    _extract_query_ids(_normalize_query_mapping(str(parsed.query)), requested_types, result)
+    _extract_query_ids(
+        _normalize_query_mapping(str(parsed.query)), requested_types, result
+    )
     _extract_path_ids(str(parsed.path), requested_types, result)
     _extract_fragment_ids(str(parsed.fragment), requested_types, result)
     _extract_fallback_ids(_fallback_candidate_texts(raw), requested_types, result)

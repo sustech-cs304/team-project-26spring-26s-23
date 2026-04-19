@@ -967,7 +967,10 @@ class PydanticAIAgentExecutor:
         )
         if failure_result is not None:
             return failure_result
-        assert tool is not None
+        if tool is None:
+            raise RuntimeError(
+                "Bound tool resolution returned no tool without a failure result."
+            )
 
         display_name = tool.descriptor.display_name or tool_id
         self._emit_started_bound_tool_event(
@@ -1292,7 +1295,9 @@ class PydanticAIAgentExecutor:
         result: dict[str, Any],
     ) -> dict[str, Any]:
         error_payload = result.get("error")
-        error_code = error_payload.get("code") if isinstance(error_payload, Mapping) else None
+        error_code = (
+            error_payload.get("code") if isinstance(error_payload, Mapping) else None
+        )
         if not isinstance(error_code, str) or error_code.strip() == "":
             integrity_message = (
                 "Contract tool returned an error result without a valid error code."

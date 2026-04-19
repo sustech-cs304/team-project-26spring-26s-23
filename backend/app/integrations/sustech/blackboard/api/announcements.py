@@ -25,18 +25,15 @@ def _announcement_info_nodes(block: Tag) -> list[Tag]:
     return list(block.select(".announcementInfo p"))
 
 
-
 def _clean_tag_text(node: Tag | None, *, max_length: int) -> str:
     if not isinstance(node, Tag):
         return ""
     return clean_field(node.get_text(" ", strip=True), max_length=max_length)
 
 
-
 def _first_link_with_href(block: Tag) -> Tag | None:
     link = block.find("a", href=True)
     return link if isinstance(link, Tag) else None
-
 
 
 def _announcement_link_url(
@@ -49,12 +46,10 @@ def _announcement_link_url(
     return context.absolute_url(page_url, str(link.get("href") or "").strip())
 
 
-
 def _trim_announcement_detail(detail: str, title: str) -> str:
     if title and detail.startswith(title):
         return detail[len(title) :].strip()
     return detail
-
 
 
 def _announcement_details_node(block: Tag) -> Tag | None:
@@ -62,11 +57,9 @@ def _announcement_details_node(block: Tag) -> Tag | None:
     return node if isinstance(node, Tag) else None
 
 
-
 def _announcement_body_node(block: Tag) -> Tag | None:
     node = block.select_one(".vtbegenerated")
     return node if isinstance(node, Tag) else None
-
 
 
 def _course_code_from_query(query: Mapping[str, list[str]]) -> str | None:
@@ -75,7 +68,6 @@ def _course_code_from_query(query: Mapping[str, list[str]]) -> str | None:
         if values and values[0]:
             return str(values[0]).replace(" ", "").upper()
     return None
-
 
 
 def _parent_block_hint(parent: Tag) -> str:

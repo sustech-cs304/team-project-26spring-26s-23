@@ -126,13 +126,11 @@ _COURSE_CATALOG_HEADER_TOKENS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-
 def _resolve_catalog_column_key(header: str) -> str | None:
     for key, tokens in _COURSE_CATALOG_HEADER_TOKENS:
         if any(token in header for token in tokens):
             return key
     return None
-
 
 
 def _build_course_catalog_column_map(headers: list[str]) -> dict[str, int]:
@@ -144,13 +142,11 @@ def _build_course_catalog_column_map(headers: list[str]) -> dict[str, int]:
     return column_map
 
 
-
 def _course_catalog_rows(table: Tag) -> list[Tag]:
     rows = table.select("tbody tr")
     if rows:
         return rows
     return [row for row in table.select("tr") if row.find_all("td")]
-
 
 
 def _course_catalog_cell_text(cell: Tag | None) -> str:
@@ -174,7 +170,6 @@ def _course_catalog_cell_text(cell: Tag | None) -> str:
     return re.sub(pattern, "", raw, count=1, flags=re.IGNORECASE)
 
 
-
 def _course_catalog_row_cells(row: Tag) -> list[Tag]:
     direct_cells = [
         cell
@@ -184,7 +179,6 @@ def _course_catalog_row_cells(row: Tag) -> list[Tag]:
     if direct_cells:
         return direct_cells
     return [cell for cell in row.find_all(["th", "td"]) if isinstance(cell, Tag)]
-
 
 
 def _course_catalog_pick_cell(
@@ -198,7 +192,6 @@ def _course_catalog_pick_cell(
     return None
 
 
-
 def _course_catalog_default_indices(cells: list[Tag]) -> dict[str, int]:
     return {
         "course_identifier": 0,
@@ -206,7 +199,6 @@ def _course_catalog_default_indices(cells: list[Tag]) -> dict[str, int]:
         "instructor": 2 if len(cells) > 2 else 0,
         "description": 3 if len(cells) > 3 else len(cells) - 1,
     }
-
 
 
 def _extract_course_catalog_row_id(row: Tag) -> str | None:
@@ -221,7 +213,6 @@ def _extract_course_catalog_row_id(row: Tag) -> str | None:
     return None
 
 
-
 def _course_catalog_identifier_text(cell: Tag | None) -> str:
     if isinstance(cell, Tag) and cell.name == "th":
         th_link = cell.select_one("a")
@@ -230,7 +221,6 @@ def _course_catalog_identifier_text(cell: Tag | None) -> str:
             if value:
                 return value
     return _course_catalog_cell_text(cell)
-
 
 
 def _parse_course_catalog_row(
@@ -276,7 +266,6 @@ def _parse_course_catalog_row(
         instructor=instructor or None,
         description=description or None,
     )
-
 
 
 def parse_course_catalog_table(html: str) -> list[CourseCatalogResultDTO]:

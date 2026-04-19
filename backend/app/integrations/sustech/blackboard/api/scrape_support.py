@@ -145,7 +145,6 @@ def _log_filtered_assignment(
         )
 
 
-
 def _assignment_noise_reason(title: str, url: str) -> str | None:
     lower_title = title.lower()
     if any(token in title for token in ("失败", "错误")) or "error" in lower_title:
@@ -162,7 +161,6 @@ def _assignment_noise_reason(title: str, url: str) -> str | None:
     ):
         return "navigation_text"
     return None
-
 
 
 def _assignment_has_signal(
@@ -199,7 +197,6 @@ def _assignment_has_signal(
     )
 
 
-
 def is_valid_assignment(
     assignment: dict[str, Any],
     *,
@@ -214,7 +211,9 @@ def is_valid_assignment(
     url = str(assignment.get("url") or "").strip()
     noise_reason = _assignment_noise_reason(title, url)
     if noise_reason is not None:
-        _log_filtered_assignment(logger, noise_reason, payload={"title": title, "url": url})
+        _log_filtered_assignment(
+            logger, noise_reason, payload={"title": title, "url": url}
+        )
         return False
 
     if _assignment_has_signal(
@@ -226,7 +225,9 @@ def is_valid_assignment(
     ):
         return True
 
-    _log_filtered_assignment(logger, "missing_signal", payload={"title": title, "url": url})
+    _log_filtered_assignment(
+        logger, "missing_signal", payload={"title": title, "url": url}
+    )
     return False
 
 

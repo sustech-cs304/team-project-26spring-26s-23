@@ -134,9 +134,7 @@ class BlackboardGradeAPI:
             response = self.context.get(page_url, label="All-Grades")
             response.raise_for_status()
         except Exception as ex:
-            self.context.log(
-                f"⚠️ [Blackboard] 访问汇总成绩页面失败: {page_url} - {ex}"
-            )
+            self.context.log(f"⚠️ [Blackboard] 访问汇总成绩页面失败: {page_url} - {ex}")
             return None
 
         selected_source_url = str(response.url)
@@ -206,7 +204,9 @@ class BlackboardGradeAPI:
         seen_course_ids: set[str],
     ) -> list[dict[str, str]]:
         candidate_links = self._all_grades_candidate_links(soup)
-        self.context.log(f"🔍 [Blackboard] 汇总成绩页候选链接数: {len(candidate_links)}")
+        self.context.log(
+            f"🔍 [Blackboard] 汇总成绩页候选链接数: {len(candidate_links)}"
+        )
         discovered_courses: list[dict[str, str]] = []
         for link in candidate_links:
             course = self._extract_discovered_grade_course(link, seen_course_ids)
@@ -284,9 +284,7 @@ class BlackboardGradeAPI:
         try:
             return course_grade_loader(course_id)
         except Exception as ex:
-            self.context.log(
-                f"⚠️ [Blackboard] 获取课程成绩详情失败: {course_id} - {ex}"
-            )
+            self.context.log(f"⚠️ [Blackboard] 获取课程成绩详情失败: {course_id} - {ex}")
             return CourseGradesDTO(
                 course_id=course_id,
                 total_grade="",
@@ -324,7 +322,9 @@ class BlackboardGradeAPI:
             course_id = str(item.get("course_id") or "").strip()
             if not course_id:
                 continue
-            grade_detail = self._load_course_grade_detail(course_id, course_grade_loader)
+            grade_detail = self._load_course_grade_detail(
+                course_id, course_grade_loader
+            )
             if course_id not in courses_result:
                 course_order.append(course_id)
             courses_result[course_id] = self._build_all_grades_course_dto(
