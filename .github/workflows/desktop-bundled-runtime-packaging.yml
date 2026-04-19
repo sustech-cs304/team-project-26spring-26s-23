@@ -338,8 +338,8 @@ jobs:
           retention-days: 14
           path: |
             frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/${{ matrix.installer_pattern }}
+            frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/*.blockmap
+            frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/builder-debug.yml
+            frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/latest*.yml
             !frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/*-unpacked/**
             !frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/*unpacked*/**
-            !frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/*.blockmap
-            !frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/builder-debug.yml
-            !frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/latest*.yml
