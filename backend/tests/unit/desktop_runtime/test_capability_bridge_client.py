@@ -262,7 +262,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     assert all(item["toolId"] == context.tool_id for item in captured_payloads)
     assert all(item["runId"] == context.run_id for item in captured_payloads)
     assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads)
-    assert base64.b64decode(captured_payloads[6]["payload"]["contentBase64"]).decode("utf-8") == "payload-bytes"
+    save_bytes_payload = captured_payloads[6]["payload"]
+    assert isinstance(save_bytes_payload, dict)
+    assert base64.b64decode(save_bytes_payload["contentBase64"]).decode("utf-8") == "payload-bytes"
 
 
 def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:
