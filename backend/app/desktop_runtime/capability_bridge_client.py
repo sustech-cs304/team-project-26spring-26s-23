@@ -22,7 +22,8 @@ from app.desktop_runtime.capability_bridge_protocol import (
 from app.tooling import ToolInvocationContext
 from app.tooling.host_capabilities import HostCapabilityOperationError
 
-HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME = "X-Host-Capability-Bridge-Token"
+_HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME = "X-Host-Capability-Bridge-Token"
+HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME = _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME
 _DEFAULT_TIMEOUT = 5.0
 
 

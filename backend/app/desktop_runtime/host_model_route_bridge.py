@@ -19,10 +19,13 @@ from app.copilot_runtime.model_routes import (
     RuntimeModelRouteResolver,
 )
 
-HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME = "X-Host-Model-Route-Token"
-_INVALID_TOKEN_ERROR_CODE = "invalid_host_model_route_bridge_token"
+_HOST_MODEL_ROUTE_BRIDGE_AUTH_HEADER_NAME = "X-Host-Model-Route-Token"
+HOST_MODEL_ROUTE_BRIDGE_TOKEN_HEADER_NAME = _HOST_MODEL_ROUTE_BRIDGE_AUTH_HEADER_NAME
+_HOST_MODEL_ROUTE_BRIDGE_ACCESS_DENIED_ERROR_CODE = (
+    "invalid_host_model_route_bridge_token"
+)
 _PROVIDER_NOT_FOUND_ERROR_CODE = "provider_profile_not_found"
-_SECRET_MISSING_ERROR_CODE = "provider_secret_missing"
+_PROVIDER_CREDENTIAL_MISSING_ERROR_CODE = "provider_secret_missing"
 _PROVIDER_MODEL_ROUTE_KIND = "provider-model"
 
 
@@ -227,11 +230,11 @@ def _build_resolution_error(
         or fallback_provider_profile_id
     )
 
-    if code == _INVALID_TOKEN_ERROR_CODE:
+    if code == _HOST_MODEL_ROUTE_BRIDGE_ACCESS_DENIED_ERROR_CODE:
         return HostModelRouteAccessDeniedError(header_name=header_name)
     if code == _PROVIDER_NOT_FOUND_ERROR_CODE:
         return ProviderProfileNotFoundError(provider_profile_id=provider_profile_id)
-    if code == _SECRET_MISSING_ERROR_CODE:
+    if code == _PROVIDER_CREDENTIAL_MISSING_ERROR_CODE:
         return ProviderSecretMissingError(provider_profile_id=provider_profile_id)
 
     message = (
