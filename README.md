@@ -1,6 +1,6 @@
 <h1 align="center">
   <a href="https://github.com/sustech-cs304/team-project-26spring-26s-23">
-    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/docs/media/banner.jpg?raw=true" alt="banner" /><br>
+    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/docs/media/banner.jpg?raw=true" alt="banner" /><br>
   </a>
 </h1>
 
@@ -14,19 +14,19 @@ Any star 🌟 for us is a encouragement to our team!
 
 <h1 align="center">
   <a href="https://github.com/sustech-cs304/team-project-26spring-26s-23">
-    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/docs/media/captures/01.png?raw=true" alt="banner" /><br>
+    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/docs/media/captures/01.png?raw=true" alt="banner" /><br>
   </a>
 </h1>
 
 <h1 align="center">
   <a href="https://github.com/sustech-cs304/team-project-26spring-26s-23">
-    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/docs/media/captures/02.png?raw=true" alt="banner" /><br>
+    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/docs/media/captures/02.png?raw=true" alt="banner" /><br>
   </a>
 </h1>
 
 <h1 align="center">
   <a href="https://github.com/sustech-cs304/team-project-26spring-26s-23">
-    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/docs/media/captures/03.png?raw=true" alt="banner" /><br>
+    <img src="https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/docs/media/captures/03.png?raw=true" alt="banner" /><br>
   </a>
 </h1>
 
