@@ -1,0 +1,340 @@
+name: desktop-bundled-runtime-packaging
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/desktop-bundled-runtime-packaging.yml
+      - .github/scripts/**
+      - frontend-copilot/**
+      - backend/app/**
+      - backend/pyproject.toml
+      - backend/uv.lock
+      - backend/.python-version
+  pull_request:
+    paths:
+      - .github/workflows/desktop-bundled-runtime-packaging.yml
+      - .github/scripts/**
+      - frontend-copilot/**
+      - backend/app/**
+      - backend/pyproject.toml
+      - backend/uv.lock
+      - backend/.python-version
+
+permissions:
+  contents: read
+
+jobs:
+  package-desktop:
+    name: Desktop bundled runtime packaging (${{ matrix.target_id }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_id: windows-x64
+            runner: windows-2022
+            platform: windows
+            arch: x64
+            electron_arch: x64
+            python_version: 3.12.10
+            python_download_url: https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.zip
+            python_archive_kind: zip
+            installer_pattern: CanDue-Windows-*-Setup.exe
+          - target_id: linux-x64
+            runner: ubuntu-22.04
+            platform: linux
+            arch: x64
+            electron_arch: x64
+            python_version: 3.12.10
+            python_download_url: https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tar.xz
+            python_archive_kind: source-tar-xz
+            installer_pattern: CanDue-Linux-*.AppImage
+          - target_id: macos-x64
+            runner: macos-15-intel
+            platform: macos
+            arch: x64
+            electron_arch: x64
+            python_version: 3.12.10
+            python_download_url: https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg
+            python_archive_kind: macos-pkg
+            installer_pattern: CanDue-Mac-*-Installer.dmg
+          - target_id: macos-arm64
+            runner: macos-14
+            platform: macos
+            arch: arm64
+            electron_arch: arm64
+            python_version: 3.12.10
+            python_download_url: https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg
+            python_archive_kind: macos-pkg
+            installer_pattern: CanDue-Mac-*-Installer.dmg
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-copilot/package-lock.json
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Linux build dependencies for official CPython source build
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libssl-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            libreadline-dev \
+            libsqlite3-dev \
+            libffi-dev \
+            liblzma-dev \
+            xz-utils \
+            tk-dev \
+            libncursesw5-dev \
+            libgdbm-dev \
+            libgdbm-compat-dev \
+            libnss3-dev \
+            uuid-dev \
+            libdb-dev \
+            libfuse2
+
+      - name: Install frontend dependencies
+        working-directory: frontend-copilot
+        run: npm ci
+
+      - name: Read frontend package version
+        id: package_version
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $version = node -p "JSON.parse(require('node:fs').readFileSync('./package.json', 'utf8')).version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
+      - name: Clean previous packaging outputs
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          foreach ($path in @('.bundled-runtime', 'release')) {
+            if (Test-Path $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+
+      - name: Prepare diagnostics directory
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+
+      - name: Download official distributable Python (Windows)
+        id: download_python_windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $output = & ./.github/scripts/download-distributable-python.ps1 `
+            -DownloadUrl '${{ matrix.python_download_url }}' `
+            -ArchiveKind '${{ matrix.python_archive_kind }}' `
+            -InstallRoot '${{ github.workspace }}\.github\python-runtime\${{ matrix.target_id }}' `
+            -PythonVersion '${{ matrix.python_version }}' `
+            -ExpectedArch '${{ matrix.arch }}' `
+            -PythonVersionFile '${{ github.workspace }}\backend\.python-version' `
+            -PyprojectFile '${{ github.workspace }}\backend\pyproject.toml' 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath 'frontend-copilot/.bundled-runtime/diagnostics/download-python.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Download official distributable Python (POSIX)
+        id: download_python_posix
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./.github/scripts/download-distributable-python.sh \
+            --download-url '${{ matrix.python_download_url }}' \
+            --archive-kind '${{ matrix.python_archive_kind }}' \
+            --install-root '${{ github.workspace }}/.github/python-runtime/${{ matrix.target_id }}' \
+            --python-version '${{ matrix.python_version }}' \
+            --expected-arch '${{ matrix.arch }}' \
+            --python-version-file '${{ github.workspace }}/backend/.python-version' \
+            --pyproject-file '${{ github.workspace }}/backend/pyproject.toml' \
+            2>&1 | tee frontend-copilot/.bundled-runtime/diagnostics/download-python.log
+
+      - name: Export bundled runtime environment variables
+        shell: pwsh
+        run: |
+          $pythonDir = if ('${{ matrix.platform }}' -eq 'windows') { '${{ steps.download_python_windows.outputs.python_dir }}' } else { '${{ steps.download_python_posix.outputs.python_dir }}' }
+          $pythonExecutableRelative = if ('${{ matrix.platform }}' -eq 'windows') { '${{ steps.download_python_windows.outputs.python_executable_relative }}' } else { '${{ steps.download_python_posix.outputs.python_executable_relative }}' }
+          $pythonVersion = if ('${{ matrix.platform }}' -eq 'windows') { '${{ steps.download_python_windows.outputs.python_version }}' } else { '${{ steps.download_python_posix.outputs.python_version }}' }
+          $pythonArch = if ('${{ matrix.platform }}' -eq 'windows') { '${{ steps.download_python_windows.outputs.python_arch }}' } else { '${{ steps.download_python_posix.outputs.python_arch }}' }
+          $pythonSourceLabel = if ('${{ matrix.platform }}' -eq 'windows') { '${{ steps.download_python_windows.outputs.python_source_label }}' } else { '${{ steps.download_python_posix.outputs.python_source_label }}' }
+
+          @(
+            "CANDUE_BUNDLED_PYTHON_DIR=$pythonDir"
+            "CANDUE_BUNDLED_PYTHON_EXECUTABLE_RELATIVE=$pythonExecutableRelative"
+            "CANDUE_BUNDLED_PYTHON_VERSION=$pythonVersion"
+            "CANDUE_BUNDLED_PYTHON_ARCH=$pythonArch"
+            "CANDUE_BUNDLED_PYTHON_SOURCE_LABEL=$pythonSourceLabel"
+          ) | ForEach-Object { Add-Content -Path $env:GITHUB_ENV -Value $_ }
+
+      - name: Record toolchain diagnostics
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          @(
+            "target_id=${{ matrix.target_id }}"
+            "runner=${{ matrix.runner }}"
+            "platform=${{ matrix.platform }}"
+            "arch=${{ matrix.arch }}"
+            "node=$(node --version)"
+            "uv=$(uv --version)"
+            "python_dir=$env:CANDUE_BUNDLED_PYTHON_DIR"
+            "python_executable_relative=$env:CANDUE_BUNDLED_PYTHON_EXECUTABLE_RELATIVE"
+            "python_version=$env:CANDUE_BUNDLED_PYTHON_VERSION"
+            "python_arch=$env:CANDUE_BUNDLED_PYTHON_ARCH"
+            "python_source_label=$env:CANDUE_BUNDLED_PYTHON_SOURCE_LABEL"
+          ) | Set-Content '.bundled-runtime/diagnostics/toolchain.txt'
+
+      - name: Stage bundled runtime
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & npm run stage:bundled-runtime 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/stage-bundled-runtime.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Capture staging tree summary
+        if: always()
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          if (Test-Path '.bundled-runtime/staging') {
+            Get-ChildItem '.bundled-runtime/staging' -Recurse -Force |
+              Select-Object -ExpandProperty FullName |
+              Set-Content '.bundled-runtime/diagnostics/staging-tree.txt'
+          }
+
+      - name: Verify staged bundled runtime layout
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & node ./scripts/verify-bundled-runtime-layout.mjs --mode staging 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/verify-staging.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Run desktop packaging smoke
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & npm run package:desktop:smoke -- --${{ matrix.electron_arch }} 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/package-desktop-smoke.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Capture unpacked release tree summary
+        if: always()
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          $releaseRoot = Join-Path 'release' '${{ steps.package_version.outputs.version }}'
+          if (Test-Path $releaseRoot) {
+            Get-ChildItem $releaseRoot -Recurse -Force |
+              Select-Object -ExpandProperty FullName |
+              Set-Content '.bundled-runtime/diagnostics/release-tree-smoke.txt'
+          }
+
+      - name: Verify unpacked bundled runtime layout
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & node ./scripts/verify-bundled-runtime-layout.mjs --mode unpacked --search-root "./release/${{ steps.package_version.outputs.version }}" 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/verify-unpacked.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Export full desktop installer
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & npm run package:desktop -- --publish never --${{ matrix.electron_arch }} 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/package-desktop.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Assert expected installer artifacts exist
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $releaseRoot = Join-Path 'release' '${{ steps.package_version.outputs.version }}'
+          if (-not (Test-Path $releaseRoot)) {
+            throw "Release output directory is missing: $releaseRoot"
+          }
+
+          $matches = Get-ChildItem $releaseRoot -Recurse -File | Where-Object { $_.Name -like '${{ matrix.installer_pattern }}' }
+          if (-not $matches) {
+            throw "Cannot find installer artifact matching pattern '${{ matrix.installer_pattern }}' under $releaseRoot."
+          }
+
+          $matches.FullName | Set-Content '.bundled-runtime/diagnostics/final-artifacts.txt'
+
+      - name: Capture final release tree summary
+        if: always()
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          $releaseRoot = Join-Path 'release' '${{ steps.package_version.outputs.version }}'
+          if (Test-Path $releaseRoot) {
+            Get-ChildItem $releaseRoot -Recurse -Force |
+              Select-Object -ExpandProperty FullName |
+              Set-Content '.bundled-runtime/diagnostics/release-tree-final.txt'
+          }
+
+      - name: Upload bundled runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-bundled-runtime-${{ matrix.target_id }}-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            frontend-copilot/.bundled-runtime/diagnostics
+            frontend-copilot/.bundled-runtime/staging/backend-runtime-manifest.json
+            frontend-copilot/.bundled-runtime/staging/metadata/backend-requirements.txt
+
+      - name: Upload desktop packaging outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-bundled-runtime-${{ matrix.target_id }}-release
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            frontend-copilot/release/${{ steps.package_version.outputs.version }}
