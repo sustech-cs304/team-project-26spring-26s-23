@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, Self
+
+from pydantic import Field, model_validator
+
+from .pydantic_contracts import RuntimeContractModel
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeModelRouteRef:
-    route_kind: str
-    profile_id: str
-    model_id: str
+class RuntimeModelRouteRef(RuntimeContractModel):
+    route_kind: str = Field(validation_alias="routeKind")
+    profile_id: str = Field(validation_alias="profileId")
+    model_id: str = Field(validation_alias="modelId")
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -18,17 +21,21 @@ class RuntimeModelRouteRef:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeModelRoute:
-    provider_profile_id: str
-    route_ref: RuntimeModelRouteRef
-    catalog_revision: str | None = None
+class RuntimeModelRoute(RuntimeContractModel):
+    provider_profile_id: str = Field(validation_alias="providerProfileId")
+    route_ref: RuntimeModelRouteRef = Field(validation_alias="routeRef")
+    catalog_revision: str | None = Field(
+        default=None,
+        validation_alias="catalogRevision",
+    )
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_route_ref(self) -> Self:
         if self.route_ref.profile_id != self.provider_profile_id:
             raise ValueError(
                 "RuntimeModelRoute.provider_profile_id must match route_ref.profile_id."
             )
+        return self
 
     @property
     def model_id(self) -> str:

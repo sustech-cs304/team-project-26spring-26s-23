@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterable, AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
+from pydantic import Field
+
 from .contracts import RuntimeContract
+from .pydantic_contracts import RuntimeContractModel
 
 RuntimeRunEventType = Literal[
     "run_started",
@@ -39,13 +42,12 @@ TERMINAL_RUNTIME_RUN_EVENT_TYPES = frozenset(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunEvent(RuntimeContract):
+class RuntimeRunEvent(RuntimeContractModel, RuntimeContract):
     type: RuntimeRunEventType
     runId: str
     sessionId: str
     sequence: int
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass(slots=True)
