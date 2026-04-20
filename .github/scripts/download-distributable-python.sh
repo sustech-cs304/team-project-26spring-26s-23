@@ -188,6 +188,132 @@ configure_macos_source_build_environment() {
   export CPPFLAGS LDFLAGS PKG_CONFIG_PATH
 }
 
+sanitize_macos_source_build_symlinks() {
+  local runtime_root="$1"
+  local python_executable_path="$2"
+
+  echo '[python-download] Inspecting macOS CPython source install symlinks before bundling.'
+  "$python_executable_path" - "$runtime_root" <<'PY'
+import os
+import shutil
+import sys
+from pathlib import Path
+
+runtime_root = Path(sys.argv[1]).resolve(strict=True)
+
+
+def relative_to_runtime(path: Path) -> str:
+    return path.relative_to(runtime_root).as_posix()
+
+
+def is_inside_runtime(path: Path) -> bool:
+    try:
+        return os.path.commonpath([str(runtime_root), str(path)]) == str(runtime_root)
+    except ValueError:
+        return False
+
+
+def collect_symlinks() -> list[Path]:
+    symlinks: list[Path] = []
+
+    for current_root, dirnames, filenames in os.walk(runtime_root, topdown=True, followlinks=False):
+        current_path = Path(current_root)
+
+        for name in list(dirnames) + list(filenames):
+            candidate = current_path / name
+            if candidate.is_symlink():
+                symlinks.append(candidate)
+
+    return sorted(symlinks, key=relative_to_runtime)
+
+
+def fail(message: str, details: list[str]) -> None:
+    print(f'[python-download] {message}', file=sys.stderr)
+    for detail in details:
+        print(f'[python-download]   {detail}', file=sys.stderr)
+    sys.exit(1)
+
+
+symlinks = collect_symlinks()
+if not symlinks:
+    print('[python-download] No symlinks found in the macOS Python runtime.')
+    sys.exit(0)
+
+print(f'[python-download] Found {len(symlinks)} symlink(s) in the macOS Python runtime:')
+for link_path in symlinks:
+    print(f'[python-download]   {relative_to_runtime(link_path)} -> {os.readlink(link_path)}')
+
+safe_links: list[tuple[Path, str, Path]] = []
+violations: list[str] = []
+for link_path in symlinks:
+    raw_target = os.readlink(link_path)
+    configured_target = Path(raw_target)
+    target_path = configured_target if configured_target.is_absolute() else link_path.parent / configured_target
+
+    try:
+        resolved_target = target_path.resolve(strict=True)
+    except OSError as error:
+        violations.append(f'{relative_to_runtime(link_path)} -> {raw_target} (cannot resolve target: {error})')
+        continue
+
+    if not is_inside_runtime(resolved_target):
+        violations.append(
+            f'{relative_to_runtime(link_path)} -> {raw_target} '
+            f'(resolves outside runtime root: {resolved_target})'
+        )
+        continue
+
+    if resolved_target.is_dir():
+        link_parent = link_path.parent.resolve(strict=True)
+        if os.path.commonpath([str(resolved_target), str(link_parent)]) == str(resolved_target):
+            violations.append(
+                f'{relative_to_runtime(link_path)} -> {raw_target} '
+                '(directory target contains the link location; refusing to materialize a recursive copy)'
+            )
+            continue
+
+    safe_links.append((link_path, raw_target, resolved_target))
+
+if violations:
+    fail(
+        'Refusing to bundle macOS Python runtime because it contains non-relocatable symlinks.',
+        violations,
+    )
+
+materialized: list[str] = []
+for link_path, raw_target, resolved_target in safe_links:
+    display_path = relative_to_runtime(link_path)
+    link_path.unlink()
+
+    if resolved_target.is_dir():
+        shutil.copytree(resolved_target, link_path, symlinks=False)
+    elif resolved_target.is_file():
+        shutil.copy2(resolved_target, link_path)
+    else:
+        violations.append(
+            f'{display_path} -> {raw_target} '
+            f'(resolved target is neither a regular file nor a directory: {resolved_target})'
+        )
+        continue
+
+    materialized.append(f'{display_path} -> {raw_target}')
+
+if violations:
+    fail('Failed to materialize one or more macOS Python runtime symlinks.', violations)
+
+remaining_symlinks = collect_symlinks()
+if remaining_symlinks:
+    fail(
+        'macOS Python runtime still contains symlinks after materialization.',
+        [f'{relative_to_runtime(path)} -> {os.readlink(path)}' for path in remaining_symlinks],
+    )
+
+print(f'[python-download] Materialized {len(materialized)} macOS Python runtime symlink(s) as regular files/directories:')
+for entry in materialized:
+    print(f'[python-download]   {entry}')
+PY
+}
+
 resolve_macos_framework_source() {
   local expanded_pkg_root="$1"
   local python_major_minor="$2"
@@ -346,6 +472,16 @@ case "$archive_kind" in
 
     if [[ -z "$python_executable_relative" ]]; then
       python_executable_relative='bin/python3'
+    fi
+
+    python_executable_path="$runtime_root/$python_executable_relative"
+    if [[ ! -f "$python_executable_path" ]]; then
+      echo "Cannot find Python executable at $python_executable_path." >&2
+      exit 1
+    fi
+
+    if [[ "$OSTYPE" == darwin* ]]; then
+      sanitize_macos_source_build_symlinks "$runtime_root" "$python_executable_path"
     fi
     ;;
   macos-pkg)
