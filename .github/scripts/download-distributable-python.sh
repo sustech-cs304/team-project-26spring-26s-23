@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -186,6 +188,14 @@ configure_macos_source_build_environment() {
   fi
 
   export CPPFLAGS LDFLAGS PKG_CONFIG_PATH
+}
+
+relocate_macos_source_build_dynamic_dependencies() {
+  local runtime_root="$1"
+  local python_executable_path="$2"
+
+  echo '[python-download] Rewriting macOS CPython runtime dynamic-library references for relocatable bundling.'
+  "$python_executable_path" "$script_dir/macos_python_runtime_relocator.py" --runtime-root "$runtime_root"
 }
 
 sanitize_macos_source_build_symlinks() {
@@ -482,6 +492,7 @@ case "$archive_kind" in
 
     if [[ "$OSTYPE" == darwin* ]]; then
       sanitize_macos_source_build_symlinks "$runtime_root" "$python_executable_path"
+      relocate_macos_source_build_dynamic_dependencies "$runtime_root" "$python_executable_path"
     fi
     ;;
   macos-pkg)

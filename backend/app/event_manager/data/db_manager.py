@@ -19,22 +19,27 @@ from .models import Base, CourseEventModel
 
 
 _DEFAULT_EVENT_MANAGER_DB_RELATIVE_PATH = Path("event_manager") / "sustech.db"
+_DEFAULT_REPO_EVENT_MANAGER_DB_PATH = (
+    Path(__file__).resolve().parents[3] / "data" / "sustech.db"
+)
 
 
 def resolve_default_event_manager_db_path(database_dir: str | Path | None = None) -> Path:
     resolved_database_dir = _resolve_runtime_database_dir(database_dir)
+    if resolved_database_dir is None:
+        return _DEFAULT_REPO_EVENT_MANAGER_DB_PATH
+
     return resolved_database_dir / _DEFAULT_EVENT_MANAGER_DB_RELATIVE_PATH
 
 
-def _resolve_runtime_database_dir(database_dir: str | Path | None = None) -> Path:
+def _resolve_runtime_database_dir(database_dir: str | Path | None = None) -> Path | None:
     if database_dir is not None:
         return Path(database_dir)
 
     configured_database_dir = str(os.environ.get(ENV_DATABASE_DIR) or "").strip()
     if configured_database_dir == "":
-        raise RuntimeError(
-            "Event manager database path requires the desktop runtime database directory."
-        )
+        return None
+
     return Path(configured_database_dir)
 
 

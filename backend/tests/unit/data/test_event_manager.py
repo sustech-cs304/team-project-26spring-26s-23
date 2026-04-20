@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.desktop_runtime.config import ENV_DATABASE_DIR
+from app.event_manager.data import db_manager as event_db_manager
 from app.event_manager.data.db_manager import (
     DatabaseManager,
     resolve_default_event_manager_db_path,
@@ -56,13 +57,37 @@ def test_resolve_default_event_manager_db_path_uses_runtime_database_dir_env(
 
 
 
-def test_resolve_default_event_manager_db_path_requires_runtime_database_dir(
+def test_resolve_default_event_manager_db_path_falls_back_to_repo_relative_default(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.delenv(ENV_DATABASE_DIR, raising=False)
+    monkeypatch.setattr(
+        event_db_manager,
+        "_DEFAULT_REPO_EVENT_MANAGER_DB_PATH",
+        tmp_path / "repo-default-data" / "sustech.db",
+    )
 
-    with pytest.raises(RuntimeError, match="desktop runtime database directory"):
-        resolve_default_event_manager_db_path()
+    resolved = resolve_default_event_manager_db_path()
+
+    assert resolved == tmp_path / "repo-default-data" / "sustech.db"
+
+
+def test_database_manager_uses_repo_relative_default_when_runtime_database_dir_env_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv(ENV_DATABASE_DIR, raising=False)
+    monkeypatch.setattr(
+        event_db_manager,
+        "_DEFAULT_REPO_EVENT_MANAGER_DB_PATH",
+        tmp_path / "repo-default-data" / "sustech.db",
+    )
+
+    db_manager = DatabaseManager(reset_schema=True)
+    db_manager.engine.dispose()
+
+    assert db_manager.db_path == tmp_path / "repo-default-data" / "sustech.db"
 
 
 
