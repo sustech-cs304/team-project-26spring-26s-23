@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { access, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -10,10 +10,12 @@ const __dirname = path.dirname(__filename)
 const FRONTEND_ROOT = path.resolve(__dirname, '..')
 const WORKSPACE_ROOT = path.resolve(FRONTEND_ROOT, '..')
 const BACKEND_ROOT = path.join(WORKSPACE_ROOT, 'backend')
+const PROVIDER_CATALOG_ROOT = path.join(WORKSPACE_ROOT, 'provider-catalog')
 const STAGING_ROOT = path.join(FRONTEND_ROOT, '.bundled-runtime', 'staging')
 
 const PYTHON_RUNTIME_DIRECTORY_NAME = 'python'
 const BACKEND_DIRECTORY_NAME = 'backend'
+const PROVIDER_CATALOG_DIRECTORY_NAME = 'provider-catalog'
 const PYTHON_PACKAGES_DIRECTORY_NAME = 'python-packages'
 const METADATA_DIRECTORY_NAME = 'metadata'
 const MANIFEST_FILE_NAME = 'backend-runtime-manifest.json'
@@ -38,13 +40,13 @@ async function main() {
 
   const stagedPythonRoot = path.join(STAGING_ROOT, PYTHON_RUNTIME_DIRECTORY_NAME)
   const stagedBackendRoot = path.join(STAGING_ROOT, BACKEND_DIRECTORY_NAME)
+  const stagedProviderCatalogRoot = path.join(STAGING_ROOT, PROVIDER_CATALOG_DIRECTORY_NAME)
   const stagedPythonPackagesRoot = path.join(STAGING_ROOT, PYTHON_PACKAGES_DIRECTORY_NAME)
   const stagedMetadataRoot = path.join(STAGING_ROOT, METADATA_DIRECTORY_NAME)
   const stagedManifestPath = path.join(STAGING_ROOT, MANIFEST_FILE_NAME)
   const stagedRequirementsPath = path.join(stagedMetadataRoot, REQUIREMENTS_FILE_NAME)
 
   await Promise.all([
-    mkdir(stagedBackendRoot, { recursive: true }),
     mkdir(stagedPythonPackagesRoot, { recursive: true }),
     mkdir(stagedMetadataRoot, { recursive: true }),
   ])
@@ -90,11 +92,25 @@ async function main() {
     description: 'install backend dependencies into staging',
   })
 
-  console.info('[bundled-runtime] Copying backend application sources into staging.')
-  await cp(path.join(BACKEND_ROOT, 'app'), path.join(stagedBackendRoot, 'app'), {
-    recursive: true,
-    force: true,
-  })
+  console.info('[bundled-runtime] Copying backend runtime resources into staging.')
+  await mkdir(stagedBackendRoot, { recursive: true })
+  await Promise.all([
+    cp(path.join(BACKEND_ROOT, 'app'), path.join(stagedBackendRoot, 'app'), {
+      recursive: true,
+      force: true,
+    }),
+    cp(path.join(BACKEND_ROOT, 'alembic.ini'), path.join(stagedBackendRoot, 'alembic.ini'), {
+      force: true,
+    }),
+    cp(path.join(BACKEND_ROOT, 'alembic'), path.join(stagedBackendRoot, 'alembic'), {
+      recursive: true,
+      force: true,
+    }),
+    cp(PROVIDER_CATALOG_ROOT, stagedProviderCatalogRoot, {
+      recursive: true,
+      force: true,
+    }),
+  ])
 
   const pythonVersion = resolvePythonVersion(stagedPythonExecutable)
 
@@ -223,11 +239,16 @@ async function verifyStagedRuntimeLayout(input) {
     'backend working directory',
   )
 
+  const providerCatalogRoot = path.join(stagingRoot, PROVIDER_CATALOG_DIRECTORY_NAME)
+
   await Promise.all([
     assertPathExists(pythonExecutablePath, 'manifest Python executable'),
     assertPathExists(backendWorkingDirectory, 'manifest backend working directory'),
     assertPathExists(path.join(backendWorkingDirectory, 'app', 'desktop_runtime', '__main__.py'), 'desktop runtime entry module'),
     assertPathExists(requirementsPath, 'exported backend requirements file'),
+    assertPathExists(providerCatalogRoot, 'bundled provider catalog root'),
+    assertPathExists(path.join(providerCatalogRoot, 'schema.json'), 'bundled provider catalog schema'),
+    assertPathExists(path.join(providerCatalogRoot, 'registry.json'), 'bundled provider catalog registry'),
     ...manifest.backend.pythonPathRelativePaths.map((relativePath) => assertPathExists(
       resolveManifestRelativePath(stagingRoot, relativePath, 'bundled Python path entry'),
       `bundled Python path entry "${relativePath}"`,
@@ -237,6 +258,37 @@ async function verifyStagedRuntimeLayout(input) {
       `bundled site-packages path "${relativePath}"`,
     )),
   ])
+
+  await assertDirectoryNotEmpty(providerCatalogRoot, 'bundled provider catalog root')
+
+  const alembicIniPath = path.join(backendWorkingDirectory, 'alembic.ini')
+  await assertPathExists(alembicIniPath, 'bundled Alembic configuration file')
+
+  const alembicScriptRoot = await resolveAlembicScriptLocation(alembicIniPath)
+  await assertPathExists(alembicScriptRoot, 'bundled Alembic script location')
+  await assertDirectoryNotEmpty(alembicScriptRoot, 'bundled Alembic script location')
+
+  const alembicVersionsDirectory = path.join(alembicScriptRoot, 'versions')
+  await assertPathExists(alembicVersionsDirectory, 'bundled Alembic versions directory')
+  await assertDirectoryNotEmpty(alembicVersionsDirectory, 'bundled Alembic versions directory')
+}
+
+async function resolveAlembicScriptLocation(alembicIniPath) {
+  const alembicIniContent = await readFile(alembicIniPath, 'utf8')
+  const scriptLocationMatch = alembicIniContent.match(/^\s*script_location\s*=\s*(.+)$/m)
+
+  if (scriptLocationMatch === null) {
+    throw new Error(`Bundled Alembic configuration must define script_location: "${alembicIniPath}"`)
+  }
+
+  const configuredScriptLocation = normalizeOptionalString(scriptLocationMatch[1])
+
+  if (configuredScriptLocation === null) {
+    throw new Error(`Bundled Alembic configuration script_location must be non-empty: "${alembicIniPath}"`)
+  }
+
+  const expandedScriptLocation = configuredScriptLocation.replaceAll('%(here)s', path.dirname(alembicIniPath))
+  return path.resolve(path.dirname(alembicIniPath), expandedScriptLocation)
 }
 
 function resolveManifestRelativePath(rootDirectory, relativePath, description) {
@@ -328,6 +380,14 @@ async function assertPathExists(filePath, description) {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`Cannot resolve ${description} at "${filePath}": ${detail}`)
+  }
+}
+
+async function assertDirectoryNotEmpty(directoryPath, description) {
+  const entries = await readdir(directoryPath)
+
+  if (entries.length === 0) {
+    throw new Error(`Cannot resolve ${description} at "${directoryPath}": directory is empty`)
   }
 }
 

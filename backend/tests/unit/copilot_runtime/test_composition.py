@@ -339,6 +339,26 @@ def test_build_default_runtime_dependencies_default_executor_is_unconfigured_wit
     assert dependencies.scaffold.model_environment_keys == ()
 
 
+def test_build_default_runtime_dependencies_uses_runtime_root_for_file_tools(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+
+    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+    deps = dependencies.agent_executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-runtime-root",
+    )
+
+    expected_workspace_root = runtime_config.runtime_root_dir.resolve(
+        strict=False
+    ).as_posix()
+    assert dependencies.tool_registry.workspace_root == runtime_config.runtime_root_dir
+    assert deps.workspace_root == expected_workspace_root
+    assert deps.default_root == expected_workspace_root
+
+
 async def _collect_events(events):
     return [event async for event in events]
 

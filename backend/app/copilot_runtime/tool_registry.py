@@ -379,9 +379,17 @@ class ToolsetDescriptor:
 
 
 class ToolRegistry:
-    def __init__(self, toolsets: Iterable[ToolsetDescriptor] | None = None) -> None:
+    def __init__(
+        self,
+        toolsets: Iterable[ToolsetDescriptor] | None = None,
+        *,
+        workspace_root: Path | None = None,
+    ) -> None:
         self._toolsets: dict[str, ToolsetDescriptor] = {}
         self._default_name: str | None = None
+        self._workspace_root = (
+            None if workspace_root is None else workspace_root.resolve(strict=False)
+        )
         if toolsets is not None:
             for toolset in toolsets:
                 self.register(toolset)
@@ -389,6 +397,10 @@ class ToolRegistry:
     @property
     def directory_version(self) -> str:
         return DEFAULT_TOOL_DIRECTORY_VERSION
+
+    @property
+    def workspace_root(self) -> Path | None:
+        return self._workspace_root
 
     def register(self, toolset: ToolsetDescriptor) -> None:
         if toolset.name in self._toolsets:
@@ -716,7 +728,7 @@ def build_default_tool_registry(
     file_switch_root_binding = build_file_tool_switch_root_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
-    registry = ToolRegistry()
+    registry = ToolRegistry(workspace_root=resolved_workspace_root)
     registry.register(
         ToolsetDescriptor(
             name=DEFAULT_TOOLSET_NAME,
