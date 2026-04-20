@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -43,6 +45,7 @@ ENV_LOGS_DIR = "COPILOT_DESKTOP_RUNTIME_LOGS_DIR"
 ENV_DATABASE_DIR = "COPILOT_DESKTOP_RUNTIME_DATABASE_DIR"
 ENV_STATE_DIR = "COPILOT_DESKTOP_RUNTIME_STATE_DIR"
 ENV_DEBUG_LOG_DATABASE_FILE = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_DATABASE_FILE"
+ENV_BACKEND_VERSION = "COPILOT_DESKTOP_RUNTIME_BACKEND_VERSION"
 ENV_DEBUG_LOG_RETENTION_DAYS = "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_RETENTION_DAYS"
 ENV_DEBUG_LOG_AUTO_CLEANUP_ENABLED = (
     "COPILOT_DESKTOP_RUNTIME_DEBUG_LOG_AUTO_CLEANUP_ENABLED"
@@ -226,21 +229,47 @@ class DesktopRuntimeConfig:
 
 
 def get_backend_version() -> str:
-    """优先从已安装包读取版本，回退到 backend/pyproject.toml。"""
+    """优先从已安装包、bundled manifest 或显式运行时元数据读取版本。"""
+
+    configured_version = _normalize_optional_text(os.environ.get(ENV_BACKEND_VERSION))
+    if configured_version is not None:
+        return configured_version
 
     try:
         return read_package_version("backend")
     except PackageNotFoundError:
-        pyproject_path = BACKEND_DIR / "pyproject.toml"
-        if pyproject_path.exists():
-            with pyproject_path.open("rb") as handle:
-                data = tomllib.load(handle)
-            project = data.get("project", {})
-            version = project.get("version")
-            if isinstance(version, str) and version.strip():
-                return version.strip()
-        return "0.1.0"
+        return (
+            _read_bundled_runtime_manifest_version(
+                BACKEND_DIR.parent / "backend-runtime-manifest.json"
+            )
+            or _read_backend_project_version(BACKEND_DIR / "pyproject.toml")
+            or "0.1.0"
+        )
 
+
+
+def _read_bundled_runtime_manifest_version(manifest_path: Path) -> str | None:
+    if not manifest_path.exists():
+        return None
+    with manifest_path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        return None
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    return _normalize_optional_text(metadata.get("backendVersion"))
+
+
+
+def _read_backend_project_version(pyproject_path: Path) -> str | None:
+    if not pyproject_path.exists():
+        return None
+    with pyproject_path.open("rb") as handle:
+        data = tomllib.load(handle)
+    project = data.get("project", {})
+    version = project.get("version")
+    return _normalize_optional_text(version)
 
 def build_runtime_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="启动桌面宿主使用的本地 HTTP 运行时")

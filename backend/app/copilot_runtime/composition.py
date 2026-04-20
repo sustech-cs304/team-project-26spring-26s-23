@@ -66,17 +66,21 @@ def build_default_runtime_dependencies(
     resolved_model_route_resolver = (
         model_route_resolver or _UnavailableRuntimeModelRouteResolver()
     )
+    runtime_workspace_root = (
+        runtime_config.runtime_root_dir if runtime_config is not None else None
+    )
     tool_registry = build_default_tool_registry(
         host_capabilities_factory=host_capabilities_factory,
-        workspace_root=(
-            runtime_config.backend_dir.parent if runtime_config is not None else None
-        ),
+        workspace_root=runtime_workspace_root,
     )
+    executor_workspace_root = tool_registry.workspace_root or runtime_workspace_root
     shared_approval_coordinator: RuntimeToolApprovalCoordinator | None = None
     if agent_executor is None:
         shared_approval_coordinator = RuntimeToolApprovalCoordinator()
         resolved_agent_executor = PydanticAIAgentExecutor(
             tool_registry=tool_registry,
+            workspace_root=executor_workspace_root,
+            default_root=executor_workspace_root,
             approval_coordinator=shared_approval_coordinator,
         )
     else:

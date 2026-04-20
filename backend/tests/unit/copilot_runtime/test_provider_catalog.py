@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import app.copilot_runtime.provider_catalog as provider_catalog_module
 from app.copilot_runtime.provider_catalog import (
     get_provider_catalog_entry,
     list_provider_catalog_entries,
@@ -17,6 +20,40 @@ def test_provider_catalog_documents_match_schema() -> None:
     Draft202012Validator.check_schema(schema)
     Draft202012Validator(schema).validate(registry)
     assert provider_catalog_root().name == "provider-catalog"
+
+
+def test_provider_catalog_root_prefers_bundled_adjacent_catalog(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundled_root = tmp_path / "python-runtime" / "provider-catalog"
+    dev_root = tmp_path / "repo" / "provider-catalog"
+    for root in (bundled_root, dev_root):
+        root.mkdir(parents=True)
+        (root / "schema.json").write_text("{}", encoding="utf-8")
+        (root / "registry.json").write_text("{}", encoding="utf-8")
+
+    provider_catalog_module.provider_catalog_root.cache_clear()
+    provider_catalog_module.load_provider_catalog_documents.cache_clear()
+    provider_catalog_module.load_provider_catalog.cache_clear()
+    monkeypatch.setattr(
+        provider_catalog_module,
+        "_bundled_provider_catalog_root",
+        lambda: bundled_root,
+    )
+    monkeypatch.setattr(
+        provider_catalog_module,
+        "_search_dev_repo_provider_catalog_root",
+        lambda: dev_root,
+    )
+
+    try:
+        assert provider_catalog_root() == bundled_root.resolve(strict=False)
+    finally:
+        provider_catalog_module.provider_catalog_root.cache_clear()
+        provider_catalog_module.load_provider_catalog_documents.cache_clear()
+        provider_catalog_module.load_provider_catalog.cache_clear()
+
 
 
 def test_provider_catalog_includes_first_batch_enabled_providers() -> None:

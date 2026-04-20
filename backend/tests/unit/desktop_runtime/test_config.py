@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import app.desktop_runtime.config as runtime_config_module
 from app.desktop_runtime.config import (
     DEFAULT_APP_MODE,
     DEFAULT_BACKEND_STDERR_LOG_FILE_NAME,
@@ -24,6 +25,7 @@ from app.desktop_runtime.config import (
     DEFAULT_USER_DATA_DIR,
     ENV_APP_MODE,
     ENV_DATABASE_DIR,
+    ENV_BACKEND_VERSION,
     ENV_DEBUG_LOG_DATABASE_FILE,
     ENV_ENVIRONMENT,
     ENV_HOST,
@@ -34,8 +36,10 @@ from app.desktop_runtime.config import (
     ENV_PORT,
     ENV_ROOT_DIR,
     ENV_USER_DATA_DIR,
+    get_backend_version,
     parse_runtime_config,
 )
+from importlib.metadata import PackageNotFoundError
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
@@ -221,6 +225,42 @@ def test_parse_runtime_config_ignores_retired_model_environment_variables(
     )
 
     assert "model" not in config.sanitized_summary()
+
+
+
+def test_get_backend_version_prefers_explicit_runtime_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENV_BACKEND_VERSION, " 9.8.7 ")
+
+    assert get_backend_version() == "9.8.7"
+
+
+
+def test_get_backend_version_reads_bundled_manifest_when_package_metadata_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend_dir = tmp_path / "python-runtime" / "backend"
+    backend_dir.mkdir(parents=True)
+    manifest_path = backend_dir.parent / "backend-runtime-manifest.json"
+    manifest_path.write_text(
+        '{"metadata":{"backendVersion":"2.3.4"}}',
+        encoding="utf-8",
+    )
+
+    def raise_package_not_found(_package_name: str) -> str:
+        raise PackageNotFoundError("backend")
+
+    monkeypatch.delenv(ENV_BACKEND_VERSION, raising=False)
+    monkeypatch.setattr(runtime_config_module, "BACKEND_DIR", backend_dir)
+    monkeypatch.setattr(
+        runtime_config_module,
+        "read_package_version",
+        raise_package_not_found,
+    )
+
+    assert get_backend_version() == "2.3.4"
 
 
 

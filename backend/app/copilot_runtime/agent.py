@@ -649,10 +649,14 @@ class PydanticAIAgentExecutor:
         self._model_override = model
         self._env = dict(env or {})
         self._tool_registry = tool_registry or build_default_tool_registry()
-        resolved_workspace_root = (
-            Path(workspace_root) if workspace_root is not None else Path.cwd()
+        configured_workspace_root = (
+            Path(workspace_root)
+            if workspace_root is not None
+            else self._tool_registry.workspace_root or Path.cwd()
         )
-        self._workspace_root = resolved_workspace_root.resolve(strict=False).as_posix()
+        self._workspace_root = (
+            configured_workspace_root.resolve(strict=False).as_posix()
+        )
         resolved_default_root = (
             Path(default_root).resolve(strict=False).as_posix()
             if default_root is not None

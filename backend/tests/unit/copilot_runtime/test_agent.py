@@ -1370,6 +1370,23 @@ def test_build_runtime_deps_initializes_file_roots_to_workspace_root() -> None:
 
 
 
+def test_executor_inherits_default_workspace_root_from_tool_registry(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "runtime-workspace"
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+
+    deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-tool-registry-root",
+    )
+
+    expected_workspace_root = workspace_root.resolve(strict=False).as_posix()
+    assert deps.workspace_root == expected_workspace_root
+    assert deps.default_root == expected_workspace_root
+
+
+
 def test_execute_bound_tool_persists_switched_default_root_within_same_run(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     switched_root = tmp_path / "switched-root"

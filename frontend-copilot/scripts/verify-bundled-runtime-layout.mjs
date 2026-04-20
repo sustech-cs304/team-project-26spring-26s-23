@@ -12,6 +12,9 @@ const RELEASE_ROOT = path.join(FRONTEND_ROOT, 'release')
 
 const MANIFEST_FILE_NAME = 'backend-runtime-manifest.json'
 const EXPECTED_ENTRY_MODULE = 'app.desktop_runtime'
+const PROVIDER_CATALOG_DIRECTORY_NAME = 'provider-catalog'
+const PROVIDER_CATALOG_SCHEMA_FILE_NAME = 'schema.json'
+const PROVIDER_CATALOG_REGISTRY_FILE_NAME = 'registry.json'
 
 async function main() {
   const options = parseArguments(process.argv.slice(2))
@@ -134,6 +137,9 @@ async function verifyRuntimeRoot(input) {
     pythonExecutablePath: null,
     backendWorkingDirectory: null,
     requirementsPath: null,
+    providerCatalogRootPath: null,
+    providerCatalogSchemaPath: null,
+    providerCatalogRegistryPath: null,
     manifestEntryModule: null,
     pythonVersion: null,
     pythonPathEntries: [],
@@ -190,6 +196,14 @@ async function verifyRuntimeRoot(input) {
     missingItems: result.missingItems,
   })
 
+  result.providerCatalogRootPath = path.join(runtimeRoot, PROVIDER_CATALOG_DIRECTORY_NAME)
+  result.providerCatalogSchemaPath = path.join(result.providerCatalogRootPath, PROVIDER_CATALOG_SCHEMA_FILE_NAME)
+  result.providerCatalogRegistryPath = path.join(result.providerCatalogRootPath, PROVIDER_CATALOG_REGISTRY_FILE_NAME)
+
+  await verifyRequiredPath(result.providerCatalogRootPath, 'bundled provider catalog root', result.missingItems)
+  await verifyRequiredPath(result.providerCatalogSchemaPath, 'bundled provider catalog schema', result.missingItems)
+  await verifyRequiredPath(result.providerCatalogRegistryPath, 'bundled provider catalog registry', result.missingItems)
+
   if (result.manifestEntryModule !== EXPECTED_ENTRY_MODULE) {
     result.missingItems.push(
       `Bundled runtime manifest entry module must remain "${EXPECTED_ENTRY_MODULE}", received "${result.manifestEntryModule ?? 'null'}".`,
@@ -221,6 +235,12 @@ async function verifyRuntimeRoot(input) {
   }
 
   return result
+}
+
+async function verifyRequiredPath(filePath, description, missingItems) {
+  if (!await pathExists(filePath)) {
+    missingItems.push(`Cannot resolve ${description} at "${filePath}".`)
+  }
 }
 
 async function resolveAndValidateManifestPath(input) {
