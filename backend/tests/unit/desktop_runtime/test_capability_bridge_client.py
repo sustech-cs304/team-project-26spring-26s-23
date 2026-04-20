@@ -7,6 +7,10 @@ import json
 import httpx
 import pytest
 
+import app.desktop_runtime.capability_bridge_client as capability_bridge_client_module
+from app.desktop_runtime.capability_bridge_protocol import (
+    DesktopCapabilityBridgeResponse as ProtocolDesktopCapabilityBridgeResponse,
+)
 from app.desktop_runtime.capability_bridge_client import (
     HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME,
     DesktopCapabilityBridgeClient,
@@ -14,7 +18,9 @@ from app.desktop_runtime.capability_bridge_client import (
 from app.tooling import HostCapabilityOperationError, ToolInvocationContext
 
 
-def _build_invocation_context(*, tool_id: str = "blackboard.snapshot.sync") -> ToolInvocationContext:
+def _build_invocation_context(
+    *, tool_id: str = "blackboard.snapshot.sync"
+) -> ToolInvocationContext:
     return ToolInvocationContext(
         invocation_id=f"{tool_id}:call-1",
         tool_id=tool_id,
@@ -28,7 +34,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     captured_payloads: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_headers.append(request.headers.get(HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME))
+        captured_headers.append(
+            request.headers.get(HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME)
+        )
         payload = json.loads(request.content.decode("utf-8"))
         captured_payloads.append(payload)
         request_id = payload["requestId"]
@@ -57,7 +65,11 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
             )
         if (capability, operation) == ("workspace", "resolve_path"):
             relative_path = payload["payload"].get("relativePath")
-            suffix = "workspace-root" if relative_path is None else f"workspace-root/{relative_path}"
+            suffix = (
+                "workspace-root"
+                if relative_path is None
+                else f"workspace-root/{relative_path}"
+            )
             return httpx.Response(
                 200,
                 json={
@@ -69,7 +81,11 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
             )
         if (capability, operation) == ("database", "resolve_path"):
             relative_path = payload["payload"].get("relativePath")
-            suffix = "database-root" if relative_path is None else f"database-root/{relative_path}"
+            suffix = (
+                "database-root"
+                if relative_path is None
+                else f"database-root/{relative_path}"
+            )
             return httpx.Response(
                 200,
                 json={
@@ -85,7 +101,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                 json={
                     "requestId": request_id,
                     "ok": True,
-                    "result": {"path": f"workspace-root/{payload['payload']['relativePath']}"},
+                    "result": {
+                        "path": f"workspace-root/{payload['payload']['relativePath']}"
+                    },
                 },
                 request=request,
             )
@@ -99,7 +117,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                         "artifactId": "artifact-text",
                         "uri": "artifact://desktop/artifact-text",
                         "name": payload["payload"]["name"],
-                        "contentType": payload["payload"].get("contentType", "text/plain"),
+                        "contentType": payload["payload"].get(
+                            "contentType", "text/plain"
+                        ),
                         "metadata": payload["payload"].get("metadata", {}),
                     },
                 },
@@ -115,7 +135,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                         "artifactId": "artifact-bytes",
                         "uri": "artifact://desktop/artifact-bytes",
                         "name": payload["payload"]["name"],
-                        "contentType": payload["payload"].get("contentType", "application/octet-stream"),
+                        "contentType": payload["payload"].get(
+                            "contentType", "application/octet-stream"
+                        ),
                         "metadata": payload["payload"].get("metadata", {}),
                     },
                 },
@@ -261,10 +283,15 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     ]
     assert all(item["toolId"] == context.tool_id for item in captured_payloads)
     assert all(item["runId"] == context.run_id for item in captured_payloads)
-    assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads)
+    assert all(
+        item["toolCallId"] == context.invocation_id for item in captured_payloads
+    )
     save_bytes_payload = captured_payloads[6]["payload"]
     assert isinstance(save_bytes_payload, dict)
-    assert base64.b64decode(save_bytes_payload["contentBase64"]).decode("utf-8") == "payload-bytes"
+    assert (
+        base64.b64decode(save_bytes_payload["contentBase64"]).decode("utf-8")
+        == "payload-bytes"
+    )
 
 
 def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:
@@ -304,11 +331,80 @@ def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:
     assert exc_info.value.details == {"reason": "todo", "operation": "save_text"}
 
 
-def test_desktop_capability_bridge_client_reports_missing_bootstrap_as_unavailable() -> None:
+def test_desktop_capability_bridge_client_wraps_invalid_error_envelope_validation_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _RaisingBridgeResponse:
+        @classmethod
+        def model_validate(cls, value: object) -> object:
+            if isinstance(value, dict) and value.get("ok") is False:
+                ProtocolDesktopCapabilityBridgeResponse.model_validate(
+                    {
+                        "requestId": "request-1",
+                        "ok": False,
+                        "errorCode": "timeout",
+                    }
+                )
+            return ProtocolDesktopCapabilityBridgeResponse.model_validate(value)
+
+    monkeypatch.setattr(
+        capability_bridge_client_module,
+        "DesktopCapabilityBridgeResponse",
+        _RaisingBridgeResponse,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "requestId": payload["requestId"],
+                "ok": False,
+                "errorCode": "timeout",
+                "errorMessage": "Host bridge timed out.",
+                "errorRetryable": True,
+                "details": {"timeoutMs": 5000},
+            },
+            request=request,
+        )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HostCapabilityOperationError) as exc_info:
+        asyncio.run(
+            client.save_text(
+                context=_build_invocation_context(),
+                name="report.json",
+                text="{}",
+            )
+        )
+
+    assert exc_info.value.capability == "artifact"
+    assert exc_info.value.code == "internal_error"
+    assert (
+        exc_info.value.message
+        == "Desktop capability bridge returned an invalid response payload."
+    )
+    assert exc_info.value.details["operation"] == "save_text"
+    assert (
+        "Failed bridge responses must include an error payload."
+        in exc_info.value.details["detail"]
+    )
+
+
+def test_desktop_capability_bridge_client_reports_missing_bootstrap_as_unavailable() -> (
+    None
+):
     client = DesktopCapabilityBridgeClient(bridge_url=None, bridge_token=None)
 
     with pytest.raises(HostCapabilityOperationError) as exc_info:
-        asyncio.run(client.get_secret(context=_build_invocation_context(), name="bb.password"))
+        asyncio.run(
+            client.get_secret(context=_build_invocation_context(), name="bb.password")
+        )
 
     assert exc_info.value.capability == "secret"
     assert exc_info.value.code == "temporarily_unavailable"

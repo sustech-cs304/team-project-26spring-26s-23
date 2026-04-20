@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Self, cast
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .model_routes import RuntimeModelRoute
@@ -319,7 +319,10 @@ class RuntimeRunStartRequest(RuntimeContractModel, RuntimeContract):
     thread_id: str = Field(validation_alias="threadId")
     message: RuntimeMessagePayload
     policy: RuntimeMessageExecutionPolicy
-    agent_id: str | None = Field(default=None, validation_alias="agent")
+    agent_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("agentId", "agent"),
+    )
 
 
 class RuntimeRunStreamRequest(RuntimeContractModel, RuntimeContract):

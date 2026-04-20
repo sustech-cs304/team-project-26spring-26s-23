@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+from pydantic import ValidationError
 
 from app.desktop_runtime.capability_bridge_protocol import (
     DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES,
@@ -532,7 +533,7 @@ class DesktopCapabilityBridgeClient:
                     operation=operation,
                     result=response_model.result or {},
                 )
-            except ValueError as exc:
+            except (ValidationError, ValueError) as exc:
                 raise _build_invalid_response_error(
                     capability=capability,
                     operation=operation,
@@ -570,7 +571,7 @@ class DesktopCapabilityBridgeClient:
                         "details": details,
                     }
                 )
-            except ValueError as exc:
+            except ValidationError as exc:
                 raise _build_invalid_response_error(
                     capability=capability,
                     operation=operation,

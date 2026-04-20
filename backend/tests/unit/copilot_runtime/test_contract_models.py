@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.copilot_runtime.contracts import (
     RuntimeCapabilitiesGetRequest,
+    RuntimeRunStartRequest,
     RuntimeRunStartResponse,
     RuntimeRunView,
     RuntimeThreadCreateRequest,
@@ -52,6 +53,33 @@ def test_runtime_simple_request_models_accept_protocol_aliases() -> None:
         "tool_call_id": "call-1",
         "decision": "approved",
     }
+
+
+def test_runtime_run_start_request_accepts_agent_id_and_legacy_agent_aliases() -> None:
+    payload = {
+        "threadId": "thread-1",
+        "message": {"role": "user", "content": "hello"},
+        "policy": {
+            "modelRoute": {
+                "providerProfileId": "provider-1",
+                "routeRef": {
+                    "routeKind": "provider-model",
+                    "profileId": "provider-1",
+                    "modelId": "gpt-4.1",
+                },
+            }
+        },
+    }
+
+    request = RuntimeRunStartRequest.model_validate({**payload, "agentId": "default"})
+    legacy_request = RuntimeRunStartRequest.model_validate(
+        {**payload, "agent": "default"}
+    )
+
+    assert request.thread_id == "thread-1"
+    assert request.agent_id == "default"
+    assert request.policy.modelRoute.provider_profile_id == "provider-1"
+    assert legacy_request.agent_id == "default"
 
 
 def test_runtime_model_route_accepts_alias_input_and_preserves_public_shape() -> None:

@@ -277,30 +277,33 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
         )
 
 
-with pytest.raises(
-    ValueError,
-    match="result field 'value' must be null when 'found' is false",
-):
-    validate_desktop_capability_bridge_result(
-        capability="state",
-        operation="get_value",
-        result={
-            "found": False,
-            "value": {"unexpected": True},
-        },
-    )
+def test_state_get_value_result_rejects_non_null_value_when_not_found() -> None:
+    with pytest.raises(
+        ValueError,
+        match="result field 'value' must be null when 'found' is false",
+    ):
+        validate_desktop_capability_bridge_result(
+            capability="state",
+            operation="get_value",
+            result={
+                "found": False,
+                "value": {"unexpected": True},
+            },
+        )
 
-with pytest.raises(ValueError, match="Field required"):
-    validate_desktop_capability_bridge_result(
-        capability="artifact",
-        operation="describe_artifact",
-        result={
-            "artifactId": "artifact-1",
-            "name": "diagnostic.json",
-            "contentType": "application/json",
-            "uri": "artifact://diagnostic.json",
-        },
-    )
+
+def test_artifact_describe_result_requires_metadata() -> None:
+    with pytest.raises(ValueError, match="Field required"):
+        validate_desktop_capability_bridge_result(
+            capability="artifact",
+            operation="describe_artifact",
+            result={
+                "artifactId": "artifact-1",
+                "name": "diagnostic.json",
+                "contentType": "application/json",
+                "uri": "artifact://diagnostic.json",
+            },
+        )
 
 
 def test_artifact_descriptor_round_trips_with_tool_artifact_reference() -> None:
