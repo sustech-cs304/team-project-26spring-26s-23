@@ -247,7 +247,6 @@ def get_backend_version() -> str:
         )
 
 
-
 def _read_bundled_runtime_manifest_version(manifest_path: Path) -> str | None:
     if not manifest_path.exists():
         return None
@@ -261,7 +260,6 @@ def _read_bundled_runtime_manifest_version(manifest_path: Path) -> str | None:
     return _normalize_optional_text(metadata.get("backendVersion"))
 
 
-
 def _read_backend_project_version(pyproject_path: Path) -> str | None:
     if not pyproject_path.exists():
         return None
@@ -270,6 +268,7 @@ def _read_backend_project_version(pyproject_path: Path) -> str | None:
     project = data.get("project", {})
     version = project.get("version")
     return _normalize_optional_text(version)
+
 
 def build_runtime_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="启动桌面宿主使用的本地 HTTP 运行时")

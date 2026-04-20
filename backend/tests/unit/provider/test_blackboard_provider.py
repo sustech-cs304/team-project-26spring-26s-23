@@ -188,6 +188,8 @@ END:VCALENDAR
     _assert_equal(result.feed_url, "https://example.local/provider.ics", "feed url")
     _assert_equal(result.refresh_mode, "auto", "default refresh mode")
     _assert_equal(int(result.stats.get("inserted", 0)), 1, "inserted stats")
+    _assert_true(isinstance(result.stats.get("refreshed_at"), datetime), "refreshed_at should remain datetime")
+    _assert_equal(result.stats["refreshed_at"].tzinfo, None, "refreshed_at should remain naive UTC")
     _assert_equal(result.active_event_count, 1, "active event count")
     _assert_equal(result.active_events[0].title, "Provider Event", "event title")
     _assert_true(bool(result.logs), "calendar ics use case should collect logs")

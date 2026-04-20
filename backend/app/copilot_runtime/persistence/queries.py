@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -20,17 +21,27 @@ from .projections import ProjectionService, _resolve_latest_thread_run
 from .query_dtos import (
     PersistedDatabaseBackupResponse,
     PersistedDatabaseRestoreResponse,
+    PersistedDiagnosticBlockDTO,
     PersistedRunEventDTO,
+    PersistedRunHistoricalSnapshotDTO,
     PersistedRunReplayResponse,
     PersistedRunSummaryDTO,
+    PersistedTerminalBlockDTO,
+    PersistedTerminalStateDTO,
+    PersistedThreadConfigurationSnapshotDTO,
     PersistedThreadDeleteResponse,
     PersistedThreadDetailResponse,
     PersistedThreadDuplicateResponse,
     PersistedThreadListResponse,
     PersistedThreadRenameResponse,
     PersistedThreadSummaryDTO,
+    PersistedTimelineItemDTO,
+    PersistedTimelineMessageItemDTO,
+    PersistedToolCallBlockDTO,
 )
 from .repositories import PersistenceRepositories, run_lifecycle_transaction
+
+_HISTORY_QUERY_LOGGER = logging.getLogger("uvicorn.error")
 
 if TYPE_CHECKING:
     from ..agent_registry import AgentRegistry
@@ -90,14 +101,14 @@ class PersistedChatQueryService:
             )
             thread_projection = _ensure_thread_projection(repositories, thread_model.id)
             run_models = repositories.runs.list_for_thread(thread_id)
-            timeline_items: list[dict[str, Any]] = []
+            timeline_items: list[PersistedTimelineItemDTO] = []
             run_summaries: list[PersistedRunSummaryDTO] = []
             for run_model in run_models:
                 run_summaries.append(_build_run_summary(run_model))
                 run_projection = _ensure_run_projection(repositories, run_model.id)
                 if run_projection is not None:
                     timeline_items.extend(
-                        _copy_mapping_list(run_projection.timeline_items_json)
+                        _build_timeline_items(run_projection.timeline_items_json)
                     )
             latest_run = run_models[-1] if run_models else None
             availability_drift = None
@@ -135,21 +146,17 @@ class PersistedChatQueryService:
                 orderedEvents=tuple(
                     _build_run_event(event_model) for event_model in event_models
                 ),
-                toolCallBlocks=tuple(
-                    _copy_mapping_list(
-                        None
-                        if run_projection is None
-                        else run_projection.tool_call_blocks_json
-                    )
+                toolCallBlocks=_build_tool_call_blocks(
+                    None
+                    if run_projection is None
+                    else run_projection.tool_call_blocks_json
                 ),
-                diagnosticBlocks=tuple(
-                    _copy_mapping_list(
-                        None
-                        if run_projection is None
-                        else run_projection.diagnostic_blocks_json
-                    )
+                diagnosticBlocks=_build_diagnostic_blocks(
+                    None
+                    if run_projection is None
+                    else run_projection.diagnostic_blocks_json
                 ),
-                terminalState=_copy_mapping(
+                terminalState=_build_terminal_state_snapshot(
                     None
                     if run_projection is None
                     else run_projection.terminal_state_json
@@ -292,50 +299,127 @@ def _build_thread_configuration_snapshot(
     *,
     latest_run: RunModel | None,
     thread_projection: ThreadProjectionModel | None,
-) -> dict[str, Any] | None:
+) -> PersistedThreadConfigurationSnapshotDTO | None:
     if latest_run is None and thread_projection is None:
         return None
-    return {
-        "runId": None if latest_run is None else latest_run.id,
-        "modelSnapshot": _copy_mapping(
-            None
-            if thread_projection is None
-            else thread_projection.last_effective_model_snapshot_json
-        ),
-        "toolsSnapshot": _copy_mapping(
-            None
-            if thread_projection is None
-            else thread_projection.last_effective_tools_snapshot_json
-        ),
-    }
+    return PersistedThreadConfigurationSnapshotDTO.model_validate(
+        {
+            "runId": None if latest_run is None else latest_run.id,
+            "modelSnapshot": _copy_mapping(
+                None
+                if thread_projection is None
+                else thread_projection.last_effective_model_snapshot_json
+            ),
+            "toolsSnapshot": _copy_mapping(
+                None
+                if thread_projection is None
+                else thread_projection.last_effective_tools_snapshot_json
+            ),
+        }
+    )
 
 
-def _build_run_historical_snapshot(run_model: RunModel) -> dict[str, Any]:
-    return {
-        "requestMessage": {
-            "role": run_model.request_message_role,
-            "content": run_model.request_message_text,
-        },
-        "selectedModelRoute": dict(run_model.selected_model_route_json or {}),
-        "resolvedModelRoute": dict(run_model.resolved_model_route_json or {}),
-        "resolvedModelId": run_model.resolved_model_id,
-        "requestedThinkingSelection": _copy_mapping(run_model.requested_thinking_json),
-        "appliedThinkingSelection": _copy_mapping(run_model.applied_thinking_json),
-        "thinkingCapabilitySnapshot": _copy_mapping(
-            run_model.metadata_json.get("thinkingCapabilitySnapshot")
-        ),
-        "thinkingSeriesDecision": _copy_mapping(
-            run_model.metadata_json.get("thinkingSeriesDecision")
-            or run_model.metadata_json.get("thinkingSelectionResult")
-        ),
-        "reasoningSuppressionBasis": _copy_mapping(
-            run_model.metadata_json.get("reasoningSuppressionBasis")
-        ),
-        "enabledToolIds": list(run_model.enabled_tools_json or []),
-        "resolvedToolIds": list(run_model.resolved_tool_ids_json or []),
-        "requestOptions": dict(run_model.request_options_json or {}),
-        "debugModeEnabled": run_model.debug_mode_enabled,
-    }
+def _build_run_historical_snapshot(
+    run_model: RunModel,
+) -> PersistedRunHistoricalSnapshotDTO:
+    return PersistedRunHistoricalSnapshotDTO.model_validate(
+        {
+            "requestMessage": {
+                "role": run_model.request_message_role,
+                "content": run_model.request_message_text,
+            },
+            "selectedModelRoute": dict(run_model.selected_model_route_json or {}),
+            "resolvedModelRoute": dict(run_model.resolved_model_route_json or {}),
+            "resolvedModelId": run_model.resolved_model_id,
+            "requestedThinkingSelection": _copy_mapping(
+                run_model.requested_thinking_json
+            ),
+            "appliedThinkingSelection": _copy_mapping(run_model.applied_thinking_json),
+            "thinkingCapabilitySnapshot": _copy_mapping(
+                run_model.metadata_json.get("thinkingCapabilitySnapshot")
+            ),
+            "thinkingSeriesDecision": _copy_mapping(
+                run_model.metadata_json.get("thinkingSeriesDecision")
+                or run_model.metadata_json.get("thinkingSelectionResult")
+            ),
+            "reasoningSuppressionBasis": _copy_mapping(
+                run_model.metadata_json.get("reasoningSuppressionBasis")
+            ),
+            "enabledToolIds": list(run_model.enabled_tools_json or []),
+            "resolvedToolIds": list(run_model.resolved_tool_ids_json or []),
+            "requestOptions": dict(run_model.request_options_json or {}),
+            "debugModeEnabled": run_model.debug_mode_enabled,
+        }
+    )
+
+
+def _build_timeline_items(value: Any) -> tuple[PersistedTimelineItemDTO, ...]:
+    if not isinstance(value, list):
+        return ()
+
+    timeline_items: list[PersistedTimelineItemDTO] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            _log_skipped_timeline_item(
+                index, item, reason="timeline item is not an object"
+            )
+            continue
+        try:
+            timeline_items.append(_build_timeline_item(item))
+        except Exception as exc:  # noqa: BLE001 - legacy history reads must fail soft.
+            _log_skipped_timeline_item(index, item, reason=str(exc), exc_info=exc)
+    return tuple(timeline_items)
+
+
+def _build_timeline_item(item: dict[str, Any]) -> PersistedTimelineItemDTO:
+    kind = _normalize_optional_string(item.get("kind"))
+    if kind in {"user_message", "assistant_message", "reasoning_block"}:
+        return cast(
+            PersistedTimelineItemDTO,
+            PersistedTimelineMessageItemDTO.model_validate(item),
+        )
+    if kind == "tool_call_block":
+        return cast(
+            PersistedTimelineItemDTO,
+            PersistedToolCallBlockDTO.model_validate(item),
+        )
+    if kind == "diagnostic_block":
+        return cast(
+            PersistedTimelineItemDTO,
+            PersistedDiagnosticBlockDTO.model_validate(item),
+        )
+    if kind == "terminal_block":
+        return cast(
+            PersistedTimelineItemDTO,
+            PersistedTerminalBlockDTO.model_validate(item),
+        )
+    raise ValueError(f"Unsupported timeline item kind: {kind!r}")
+
+
+def _build_tool_call_blocks(value: Any) -> tuple[PersistedToolCallBlockDTO, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        PersistedToolCallBlockDTO.model_validate(item)
+        for item in value
+        if isinstance(item, dict)
+    )
+
+
+def _build_diagnostic_blocks(value: Any) -> tuple[PersistedDiagnosticBlockDTO, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        PersistedDiagnosticBlockDTO.model_validate(item)
+        for item in value
+        if isinstance(item, dict)
+    )
+
+
+def _build_terminal_state_snapshot(value: Any) -> PersistedTerminalStateDTO | None:
+    if not isinstance(value, dict):
+        return None
+    return PersistedTerminalStateDTO.model_validate(value)
 
 
 def _ensure_thread_projection(
@@ -371,8 +455,32 @@ def _optional_projection_value(
     return value if isinstance(value, str) else None
 
 
+def _log_skipped_timeline_item(
+    index: int,
+    item: Any,
+    *,
+    reason: str,
+    exc_info: BaseException | None = None,
+) -> None:
+    kind = item.get("kind") if isinstance(item, dict) else None
+    _HISTORY_QUERY_LOGGER.warning(
+        "chat history timeline item skipped: index=%s kind=%r reason=%s",
+        index,
+        kind,
+        reason,
+        exc_info=exc_info,
+    )
+
+
 def _copy_mapping(value: Any) -> dict[str, Any] | None:
     return dict(value) if isinstance(value, dict) else None
+
+
+def _normalize_optional_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _copy_mapping_list(value: Any) -> list[dict[str, Any]]:

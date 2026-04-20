@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -24,7 +24,13 @@ _DEFAULT_REPO_EVENT_MANAGER_DB_PATH = (
 )
 
 
-def resolve_default_event_manager_db_path(database_dir: str | Path | None = None) -> Path:
+def _utc_now_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def resolve_default_event_manager_db_path(
+    database_dir: str | Path | None = None,
+) -> Path:
     resolved_database_dir = _resolve_runtime_database_dir(database_dir)
     if resolved_database_dir is None:
         return _DEFAULT_REPO_EVENT_MANAGER_DB_PATH
@@ -32,7 +38,9 @@ def resolve_default_event_manager_db_path(database_dir: str | Path | None = None
     return resolved_database_dir / _DEFAULT_EVENT_MANAGER_DB_RELATIVE_PATH
 
 
-def _resolve_runtime_database_dir(database_dir: str | Path | None = None) -> Path | None:
+def _resolve_runtime_database_dir(
+    database_dir: str | Path | None = None,
+) -> Path | None:
     if database_dir is not None:
         return Path(database_dir)
 
@@ -94,7 +102,7 @@ class DatabaseManager:
             session.close()
 
     def upsert_course_event(self, course_event: CourseEvent) -> bool:
-        now = datetime.utcnow()
+        now = _utc_now_naive()
         payload = course_event.to_dict()
         with self._session_scope() as session:
             course_event_id = course_event.id

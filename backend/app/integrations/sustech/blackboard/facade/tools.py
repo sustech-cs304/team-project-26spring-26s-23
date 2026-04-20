@@ -9,10 +9,17 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
+from pydantic import Field, field_validator
 
+from app.integrations.sustech.facade_contract_models import (
+    ResolvedCredentialContract,
+    SustechToolArgumentsModel,
+    SustechToolBoundaryModel,
+    parse_tool_arguments,
+)
 from app.integrations.sustech.blackboard.data.db_manager import DatabaseManager
 from app.integrations.sustech.blackboard.provider.results import (
     BlackboardCourseResourcesSyncReport,
@@ -254,6 +261,409 @@ def _schema(
     return ToolSchema(schema=payload)
 
 
+JsonObject = dict[str, Any]
+JsonArray = list[Any]
+BlackboardFetchMode = Literal["quick", "full"]
+BlackboardCalendarRefreshMode = Literal["auto", "force"]
+
+
+def _normalize_optional_text_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _normalize_required_text_value(value: Any, field_name: str) -> str:
+    normalized = _normalize_optional_text_value(value)
+    if normalized is None:
+        raise ValueError(f"{field_name} must be a non-empty string.")
+    return normalized
+
+
+def _normalize_optional_int_value(value: Any, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer.")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as ex:
+        raise ValueError(f"{field_name} must be an integer.") from ex
+
+
+def _normalize_bool_value(value: Any, field_name: str, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    raise ValueError(f"{field_name} must be a boolean.")
+
+
+def _normalize_choice_value(
+    value: Any,
+    field_name: str,
+    *,
+    choices: Sequence[str],
+    default: str,
+) -> str:
+    normalized = _normalize_optional_text_value(value)
+    if normalized is None:
+        return default
+
+    lowered = normalized.lower()
+    normalized_choices = tuple(str(item).lower() for item in choices)
+    if lowered not in normalized_choices:
+        raise ValueError(
+            f"{field_name} must be one of: {', '.join(normalized_choices)}."
+        )
+    return lowered
+
+
+def _normalize_required_string_list_value(
+    value: Any,
+    field_name: str,
+) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be an array of non-empty strings.")
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        text = str(item or "").strip()
+        if not text:
+            raise ValueError(f"{field_name} must contain only non-empty strings.")
+        if text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+
+    if not normalized:
+        raise ValueError(f"{field_name} must contain at least one non-empty string.")
+    return normalized
+
+
+class _BlackboardToolArguments(SustechToolArgumentsModel):
+    username: str | None = None
+    password: str | None = None
+    usernameSecretName: str | None = None
+    passwordSecretName: str | None = None
+    dbRelativePath: str | None = None
+    dbPath: str | None = None
+    stateKey: str | None = None
+    artifactName: str | None = None
+
+    @field_validator(
+        "username",
+        "password",
+        "usernameSecretName",
+        "passwordSecretName",
+        "dbRelativePath",
+        "dbPath",
+        "stateKey",
+        "artifactName",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_text_fields(cls, value: Any) -> str | None:
+        return _normalize_optional_text_value(value)
+
+
+class _BlackboardCourseCatalogSearchArguments(_BlackboardToolArguments):
+    keyword: str = Field(default="", validate_default=True)
+    field: str = "CourseName"
+    operator: str = "Contains"
+    fetchMode: BlackboardFetchMode = "full"
+    maxPages: int = 30
+    limit: int | None = None
+
+    @field_validator("keyword", mode="before")
+    @classmethod
+    def _normalize_keyword(cls, value: Any) -> str:
+        return _normalize_required_text_value(value, "keyword")
+
+    @field_validator("field", mode="before")
+    @classmethod
+    def _normalize_field(cls, value: Any) -> str:
+        return _normalize_optional_text_value(value) or "CourseName"
+
+    @field_validator("operator", mode="before")
+    @classmethod
+    def _normalize_operator(cls, value: Any) -> str:
+        return _normalize_optional_text_value(value) or "Contains"
+
+    @field_validator("fetchMode", mode="before")
+    @classmethod
+    def _normalize_fetch_mode(cls, value: Any) -> BlackboardFetchMode:
+        return cast(
+            BlackboardFetchMode,
+            _normalize_choice_value(
+                value, "fetchMode", choices=("quick", "full"), default="full"
+            ),
+        )
+
+    @field_validator("maxPages", mode="before")
+    @classmethod
+    def _normalize_max_pages(cls, value: Any) -> int:
+        normalized = _normalize_optional_int_value(value, "maxPages")
+        return 30 if normalized is None else normalized
+
+    @field_validator("maxPages")
+    @classmethod
+    def _validate_max_pages(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("maxPages must be a positive integer.")
+        return value
+
+    @field_validator("limit", mode="before")
+    @classmethod
+    def _normalize_limit(cls, value: Any) -> int | None:
+        normalized = _normalize_optional_int_value(value, "limit")
+        return normalized if normalized is not None and normalized > 0 else None
+
+
+class _BlackboardCalendarRefreshArguments(_BlackboardToolArguments):
+    feedUrl: str = Field(default="", validate_default=True)
+    refreshMode: BlackboardCalendarRefreshMode = "auto"
+    resetSchema: bool = False
+
+    @field_validator("feedUrl", mode="before")
+    @classmethod
+    def _normalize_feed_url(cls, value: Any) -> str:
+        return _normalize_required_text_value(value, "feedUrl")
+
+    @field_validator("refreshMode", mode="before")
+    @classmethod
+    def _normalize_refresh_mode(cls, value: Any) -> BlackboardCalendarRefreshMode:
+        return cast(
+            BlackboardCalendarRefreshMode,
+            _normalize_choice_value(
+                value, "refreshMode", choices=("auto", "force"), default="auto"
+            ),
+        )
+
+    @field_validator("resetSchema", mode="before")
+    @classmethod
+    def _normalize_reset_schema(cls, value: Any) -> bool:
+        return _normalize_bool_value(value, "resetSchema", default=False)
+
+
+class _BlackboardSnapshotSyncArguments(_BlackboardToolArguments):
+    resetSchema: bool = False
+    verifySecondSync: bool = True
+
+    @field_validator("resetSchema", mode="before")
+    @classmethod
+    def _normalize_reset_schema(cls, value: Any) -> bool:
+        return _normalize_bool_value(value, "resetSchema", default=False)
+
+    @field_validator("verifySecondSync", mode="before")
+    @classmethod
+    def _normalize_verify_second_sync(cls, value: Any) -> bool:
+        return _normalize_bool_value(value, "verifySecondSync", default=True)
+
+
+class _BlackboardCourseResourcesSyncArguments(_BlackboardToolArguments):
+    courseIds: list[str] | None = Field(default=None, validate_default=True)
+    resetSchema: bool = False
+
+    @field_validator("courseIds", mode="before")
+    @classmethod
+    def _normalize_course_ids(cls, value: Any) -> list[str]:
+        return _normalize_required_string_list_value(value, "courseIds")
+
+    @field_validator("resetSchema", mode="before")
+    @classmethod
+    def _normalize_reset_schema(cls, value: Any) -> bool:
+        return _normalize_bool_value(value, "resetSchema", default=False)
+
+
+class _BlackboardSQLQueryArguments(_BlackboardToolArguments):
+    sql: str = Field(default="", validate_default=True)
+    resultLimit: int = 50
+    persistArtifact: bool = False
+
+    @field_validator("sql", mode="before")
+    @classmethod
+    def _normalize_sql(cls, value: Any) -> str:
+        return _normalize_required_text_value(value, "sql")
+
+    @field_validator("resultLimit", mode="before")
+    @classmethod
+    def _normalize_result_limit(cls, value: Any) -> int:
+        normalized = _normalize_optional_int_value(value, "resultLimit")
+        return 50 if normalized is None else normalized
+
+    @field_validator("resultLimit")
+    @classmethod
+    def _validate_result_limit(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("resultLimit must be a positive integer.")
+        return value
+
+    @field_validator("persistArtifact", mode="before")
+    @classmethod
+    def _normalize_persist_artifact(cls, value: Any) -> bool:
+        return _normalize_bool_value(value, "persistArtifact", default=False)
+
+
+class _SyncStatsSummary(SustechToolBoundaryModel):
+    inserted: int
+    updated: int
+    deleted: int
+
+
+class _PersistenceStateSummary(SustechToolBoundaryModel):
+    namespace: str
+    key: str
+
+
+class _PersistenceSummary(SustechToolBoundaryModel):
+    state: _PersistenceStateSummary | None = None
+    artifacts: list[JsonObject] = Field(default_factory=list)
+
+    def to_optional_contract_dict(self) -> dict[str, Any] | None:
+        if self.state is None and not self.artifacts:
+            return None
+        exclude: set[str] = set()
+        if self.state is None:
+            exclude.add("state")
+        if not self.artifacts:
+            exclude.add("artifacts")
+        return self.to_contract_dict(exclude=exclude)
+
+
+class _BlackboardCourseCatalogOutput(SustechToolBoundaryModel):
+    keyword: str
+    field: str
+    operator: str
+    fetchMode: BlackboardFetchMode
+    maxPages: int
+    limit: int | None
+    total: int
+    results: JsonArray
+    logSummary: JsonObject
+    logs: JsonArray
+
+
+class _BlackboardCalendarRefreshOutput(SustechToolBoundaryModel):
+    feedUrl: str
+    refreshMode: BlackboardCalendarRefreshMode
+    dbPath: str
+    stats: JsonObject
+    activeEventCount: int
+    allEventCount: int
+    activeEvents: JsonArray
+    logSummary: JsonObject
+    logs: JsonArray
+
+
+class _BlackboardSnapshotSyncOutput(SustechToolBoundaryModel):
+    dbPath: str
+    scrapedCounts: JsonObject
+    firstSyncStats: dict[str, _SyncStatsSummary]
+    secondSyncStats: dict[str, _SyncStatsSummary] | None
+    tableCounts: JsonObject
+    expectedActiveCounts: JsonObject
+    integrityOk: bool
+    secondSyncHasNoNewRecords: bool
+    secondSyncHasNoDeletedRecords: bool
+    logSummary: JsonObject
+    persistence: JsonObject | None = None
+
+
+class _BlackboardSnapshotSyncPersistedOutput(SustechToolBoundaryModel):
+    dbPath: str
+    scrapedCounts: JsonObject
+    firstSyncStats: JsonObject
+    secondSyncStats: JsonObject | None
+    tableCounts: JsonObject
+    expectedActiveCounts: JsonObject
+    integrityOk: bool
+    secondSyncHasNoNewRecords: bool
+    secondSyncHasNoDeletedRecords: bool
+    logSummary: JsonObject
+    logs: JsonArray
+    progressMessages: list[str] = Field(default_factory=list)
+
+    def to_persisted_contract_dict(self) -> dict[str, Any]:
+        exclude: set[str] = set()
+        if not self.progressMessages:
+            exclude.add("progressMessages")
+        return self.to_contract_dict(exclude=exclude)
+
+
+class _BlackboardCourseResourcesSyncOutput(SustechToolBoundaryModel):
+    dbPath: str
+    requestedCourseIds: list[str]
+    processedCourseIds: list[str]
+    missingCourseIds: list[str]
+    failedCourseIds: list[str]
+    scrapedCounts: JsonObject
+    syncStats: dict[str, _SyncStatsSummary]
+    tableCounts: JsonObject
+    logSummary: JsonObject
+    persistence: JsonObject | None = None
+
+
+class _BlackboardCourseResourcesSyncPersistedOutput(SustechToolBoundaryModel):
+    dbPath: str
+    requestedCourseIds: list[str]
+    processedCourseIds: list[str]
+    missingCourseIds: list[str]
+    failedCourseIds: list[str]
+    scrapedCounts: JsonObject
+    syncStats: JsonObject
+    tableCounts: JsonObject
+    resourcePayloadsByCourse: JsonObject
+    logSummary: JsonObject
+    logs: JsonArray
+    progressMessages: list[str] = Field(default_factory=list)
+
+    def to_persisted_contract_dict(self) -> dict[str, Any]:
+        exclude: set[str] = set()
+        if not self.progressMessages:
+            exclude.add("progressMessages")
+        return self.to_contract_dict(exclude=exclude)
+
+
+class _SQLDatabaseSummary(SustechToolBoundaryModel):
+    path: str
+    source: str
+
+
+class _BlackboardSQLQueryOutput(SustechToolBoundaryModel):
+    sql: str
+    database: _SQLDatabaseSummary
+    usedDefaultDatabase: bool
+    hasResultSet: bool
+    columns: list[str]
+    rowsPreview: JsonArray
+    truncated: bool
+    rowCount: int | None
+    executionSummary: JsonObject
+    artifact: JsonObject | None
+
+
+class _BlackboardSQLQueryArtifactPayload(SustechToolBoundaryModel):
+    sql: str
+    database: _SQLDatabaseSummary
+    usedDefaultDatabase: bool
+    hasResultSet: bool
+    columns: list[str]
+    rows: JsonArray
+    rowCount: int
+    executionSummary: JsonObject
+
+
 def _message_or_fallback(error: Exception, fallback: str) -> str:
     message = str(error).strip()
     return message or fallback
@@ -443,20 +853,13 @@ def _emit_event(
         return
 
 
-class _ResolvedCredentials:
-    def __init__(self, *, username: str, password: str, source: str) -> None:
-        self.username = username
-        self.password = password
-        self.source = source
-
-
 async def _resolve_credentials(
     arguments: Mapping[str, Any],
     host: ToolHostCapabilities,
     *,
     default_username_secret_name: str | None = None,
     default_password_secret_name: str | None = None,
-) -> _ResolvedCredentials:
+) -> ResolvedCredentialContract:
     username = _read_optional_text(arguments, "username")
     password = _read_optional_text(arguments, "password")
     username_secret_name = _read_optional_text(arguments, "usernameSecretName")
@@ -493,7 +896,9 @@ async def _resolve_credentials(
         source = "host_secrets"
     elif used_sources == {"arguments", "host_secrets"}:
         source = "mixed"
-    return _ResolvedCredentials(username=username, password=password, source=source)
+    return ResolvedCredentialContract(
+        username=username, password=password, source=source
+    )
 
 
 def _normalize_secret(value: Any) -> str | None:
@@ -743,32 +1148,32 @@ async def _persist_sql_query_artifact_if_requested(
 def _course_catalog_output(
     result: CourseCatalogSearchResult,
 ) -> dict[str, Any]:
-    return {
-        "keyword": result.keyword,
-        "field": result.field,
-        "operator": result.operator,
-        "fetchMode": result.fetch_mode,
-        "maxPages": result.max_pages,
-        "limit": result.limit,
-        "total": result.total,
-        "results": _jsonable(result.results),
-        "logSummary": _jsonable(result.log_summary),
-        "logs": _jsonable(result.logs),
-    }
+    return _BlackboardCourseCatalogOutput(
+        keyword=result.keyword,
+        field=result.field,
+        operator=result.operator,
+        fetchMode=cast(BlackboardFetchMode, result.fetch_mode),
+        maxPages=result.max_pages,
+        limit=result.limit,
+        total=result.total,
+        results=_jsonable(result.results),
+        logSummary=_jsonable(result.log_summary),
+        logs=_jsonable(result.logs),
+    ).to_contract_dict()
 
 
 def _calendar_refresh_output(result: CalendarICSSyncResult) -> dict[str, Any]:
-    return {
-        "feedUrl": result.feed_url,
-        "refreshMode": result.refresh_mode,
-        "dbPath": result.db_path.as_posix(),
-        "stats": _jsonable(result.stats),
-        "activeEventCount": result.active_event_count,
-        "allEventCount": result.all_event_count,
-        "activeEvents": _jsonable(result.active_events),
-        "logSummary": _jsonable(result.log_summary),
-        "logs": _jsonable(result.logs),
-    }
+    return _BlackboardCalendarRefreshOutput(
+        feedUrl=result.feed_url,
+        refreshMode=cast(BlackboardCalendarRefreshMode, result.refresh_mode),
+        dbPath=result.db_path.as_posix(),
+        stats=_jsonable(result.stats),
+        activeEventCount=result.active_event_count,
+        allEventCount=result.all_event_count,
+        activeEvents=_jsonable(result.active_events),
+        logSummary=_jsonable(result.log_summary),
+        logs=_jsonable(result.logs),
+    ).to_contract_dict()
 
 
 def _compact_sync_stats(stats: Mapping[str, Any]) -> dict[str, int]:
@@ -788,6 +1193,15 @@ def _compact_sync_stats_by_table(
     }
 
 
+def _sync_stats_summary_models(
+    stats_by_table: Mapping[str, Mapping[str, Any]],
+) -> dict[str, _SyncStatsSummary]:
+    return {
+        str(table): _SyncStatsSummary(**_compact_sync_stats(stats))
+        for table, stats in stats_by_table.items()
+    }
+
+
 def _snapshot_sync_output(
     report: BlackboardSnapshotSyncReport,
     *,
@@ -795,25 +1209,27 @@ def _snapshot_sync_output(
     persistence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _ = progress_messages
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
-        "firstSyncStats": _compact_sync_stats_by_table(report.first_sync_stats),
-        "secondSyncStats": (
+    model = _BlackboardSnapshotSyncOutput(
+        dbPath=report.db_path.as_posix(),
+        scrapedCounts=_jsonable(report.snapshot.scraped_counts()),
+        firstSyncStats=_sync_stats_summary_models(report.first_sync_stats),
+        secondSyncStats=(
             None
             if report.second_sync_stats is None
-            else _compact_sync_stats_by_table(report.second_sync_stats)
+            else _sync_stats_summary_models(report.second_sync_stats)
         ),
-        "tableCounts": _jsonable(report.table_counts),
-        "expectedActiveCounts": _jsonable(report.expected_active_counts),
-        "integrityOk": report.integrity_ok,
-        "secondSyncHasNoNewRecords": report.second_sync_has_no_new_records(),
-        "secondSyncHasNoDeletedRecords": report.second_sync_has_no_deleted_records(),
-        "logSummary": _jsonable(report.log_summary),
-    }
-    if persistence:
-        output["persistence"] = _jsonable(persistence)
-    return output
+        tableCounts=_jsonable(report.table_counts),
+        expectedActiveCounts=_jsonable(report.expected_active_counts),
+        integrityOk=report.integrity_ok,
+        secondSyncHasNoNewRecords=report.second_sync_has_no_new_records(),
+        secondSyncHasNoDeletedRecords=report.second_sync_has_no_deleted_records(),
+        logSummary=_jsonable(report.log_summary),
+        persistence=_jsonable(persistence) if persistence else None,
+    )
+    exclude: set[str] = set()
+    if not persistence:
+        exclude.add("persistence")
+    return model.to_contract_dict(exclude=exclude)
 
 
 def _build_output_persistence_summary(
@@ -821,18 +1237,19 @@ def _build_output_persistence_summary(
     state_payload: Mapping[str, Any] | None,
     artifacts: Sequence[ToolArtifactReference],
 ) -> dict[str, Any] | None:
-    summary: dict[str, Any] = {}
+    state_summary: _PersistenceStateSummary | None = None
     if isinstance(state_payload, Mapping):
         state_namespace = state_payload.get("stateNamespace")
         state_key = state_payload.get("stateKey")
         if isinstance(state_namespace, str) and isinstance(state_key, str):
-            summary["state"] = {
-                "namespace": state_namespace,
-                "key": state_key,
-            }
-    if artifacts:
-        summary["artifacts"] = [artifact.to_dict() for artifact in artifacts]
-    return summary or None
+            state_summary = _PersistenceStateSummary(
+                namespace=state_namespace,
+                key=state_key,
+            )
+    return _PersistenceSummary(
+        state=state_summary,
+        artifacts=[artifact.to_dict() for artifact in artifacts],
+    ).to_optional_contract_dict()
 
 
 def _snapshot_sync_persisted_output(
@@ -840,22 +1257,20 @@ def _snapshot_sync_persisted_output(
     *,
     progress_messages: Sequence[str],
 ) -> dict[str, Any]:
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
-        "firstSyncStats": _jsonable(report.first_sync_stats),
-        "secondSyncStats": _jsonable(report.second_sync_stats),
-        "tableCounts": _jsonable(report.table_counts),
-        "expectedActiveCounts": _jsonable(report.expected_active_counts),
-        "integrityOk": report.integrity_ok,
-        "secondSyncHasNoNewRecords": report.second_sync_has_no_new_records(),
-        "secondSyncHasNoDeletedRecords": report.second_sync_has_no_deleted_records(),
-        "logSummary": _jsonable(report.log_summary),
-        "logs": _jsonable(report.logs),
-    }
-    if progress_messages:
-        output["progressMessages"] = list(progress_messages)
-    return output
+    return _BlackboardSnapshotSyncPersistedOutput(
+        dbPath=report.db_path.as_posix(),
+        scrapedCounts=_jsonable(report.snapshot.scraped_counts()),
+        firstSyncStats=_jsonable(report.first_sync_stats),
+        secondSyncStats=_jsonable(report.second_sync_stats),
+        tableCounts=_jsonable(report.table_counts),
+        expectedActiveCounts=_jsonable(report.expected_active_counts),
+        integrityOk=report.integrity_ok,
+        secondSyncHasNoNewRecords=report.second_sync_has_no_new_records(),
+        secondSyncHasNoDeletedRecords=report.second_sync_has_no_deleted_records(),
+        logSummary=_jsonable(report.log_summary),
+        logs=_jsonable(report.logs),
+        progressMessages=list(progress_messages),
+    ).to_persisted_contract_dict()
 
 
 def _course_resources_sync_output(
@@ -865,20 +1280,22 @@ def _course_resources_sync_output(
     persistence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _ = progress_messages
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "requestedCourseIds": list(report.requested_course_ids),
-        "processedCourseIds": list(report.processed_course_ids),
-        "missingCourseIds": list(report.missing_course_ids),
-        "failedCourseIds": list(report.failed_course_ids),
-        "scrapedCounts": _jsonable(report.scraped_counts()),
-        "syncStats": _compact_sync_stats_by_table(report.sync_stats),
-        "tableCounts": _jsonable(report.table_counts),
-        "logSummary": _jsonable(report.log_summary),
-    }
-    if persistence:
-        output["persistence"] = _jsonable(persistence)
-    return output
+    model = _BlackboardCourseResourcesSyncOutput(
+        dbPath=report.db_path.as_posix(),
+        requestedCourseIds=list(report.requested_course_ids),
+        processedCourseIds=list(report.processed_course_ids),
+        missingCourseIds=list(report.missing_course_ids),
+        failedCourseIds=list(report.failed_course_ids),
+        scrapedCounts=_jsonable(report.scraped_counts()),
+        syncStats=_sync_stats_summary_models(report.sync_stats),
+        tableCounts=_jsonable(report.table_counts),
+        logSummary=_jsonable(report.log_summary),
+        persistence=_jsonable(persistence) if persistence else None,
+    )
+    exclude: set[str] = set()
+    if not persistence:
+        exclude.add("persistence")
+    return model.to_contract_dict(exclude=exclude)
 
 
 def _course_resources_sync_persisted_output(
@@ -886,22 +1303,20 @@ def _course_resources_sync_persisted_output(
     *,
     progress_messages: Sequence[str],
 ) -> dict[str, Any]:
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "requestedCourseIds": list(report.requested_course_ids),
-        "processedCourseIds": list(report.processed_course_ids),
-        "missingCourseIds": list(report.missing_course_ids),
-        "failedCourseIds": list(report.failed_course_ids),
-        "scrapedCounts": _jsonable(report.scraped_counts()),
-        "syncStats": _jsonable(report.sync_stats),
-        "tableCounts": _jsonable(report.table_counts),
-        "resourcePayloadsByCourse": _jsonable(report.resource_payloads_by_course),
-        "logSummary": _jsonable(report.log_summary),
-        "logs": _jsonable(report.logs),
-    }
-    if progress_messages:
-        output["progressMessages"] = list(progress_messages)
-    return output
+    return _BlackboardCourseResourcesSyncPersistedOutput(
+        dbPath=report.db_path.as_posix(),
+        requestedCourseIds=list(report.requested_course_ids),
+        processedCourseIds=list(report.processed_course_ids),
+        missingCourseIds=list(report.missing_course_ids),
+        failedCourseIds=list(report.failed_course_ids),
+        scrapedCounts=_jsonable(report.scraped_counts()),
+        syncStats=_jsonable(report.sync_stats),
+        tableCounts=_jsonable(report.table_counts),
+        resourcePayloadsByCourse=_jsonable(report.resource_payloads_by_course),
+        logSummary=_jsonable(report.log_summary),
+        logs=_jsonable(report.logs),
+        progressMessages=list(progress_messages),
+    ).to_persisted_contract_dict()
 
 
 _SQL_QUERY_METADATA = ToolMetadata(
@@ -1287,29 +1702,22 @@ class BlackboardCourseCatalogSearchTool(_BlackboardFacadeToolBase):
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
         _ = context
-        credentials = await _resolve_credentials(arguments, host)
-        keyword = _read_required_text(arguments, "keyword")
-        field = _read_optional_text(arguments, "field") or "CourseName"
-        operator = _read_optional_text(arguments, "operator") or "Contains"
-        fetch_mode = _read_choice(
-            arguments, "fetchMode", choices=("quick", "full"), default="full"
+        parsed_arguments = parse_tool_arguments(
+            _BlackboardCourseCatalogSearchArguments,
+            arguments,
         )
-        raw_max_pages = _read_optional_int(arguments, "maxPages")
-        max_pages = 30 if raw_max_pages is None else raw_max_pages
-        if max_pages <= 0:
-            raise ValueError("maxPages must be a positive integer.")
-        raw_limit = _read_optional_int(arguments, "limit")
-        limit = raw_limit if raw_limit is not None and raw_limit > 0 else None
+        normalized_arguments = parsed_arguments.to_contract_dict()
+        credentials = await _resolve_credentials(normalized_arguments, host)
         result = await asyncio.to_thread(
             search_course_catalog_with_credentials,
             credentials.username,
             credentials.password,
-            keyword=keyword,
-            field=field,
-            operator=operator,
-            limit=limit,
-            fetch_mode=fetch_mode,
-            max_pages=max_pages,
+            keyword=parsed_arguments.keyword,
+            field=parsed_arguments.field,
+            operator=parsed_arguments.operator,
+            limit=parsed_arguments.limit,
+            fetch_mode=parsed_arguments.fetchMode,
+            max_pages=parsed_arguments.maxPages,
         )
         return (
             _course_catalog_output(result),
@@ -1328,27 +1736,27 @@ class BlackboardCalendarRefreshTool(_BlackboardFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        feed_url = _read_required_text(arguments, "feedUrl")
-        refresh_mode = _read_choice(
-            arguments, "refreshMode", choices=("auto", "force"), default="auto"
+        parsed_arguments = parse_tool_arguments(
+            _BlackboardCalendarRefreshArguments,
+            arguments,
         )
-        db_path = _resolve_db_path(arguments, host)
-        reset_schema = _read_bool(arguments, "resetSchema", default=False)
+        normalized_arguments = parsed_arguments.to_contract_dict()
+        db_path = _resolve_db_path(normalized_arguments, host)
         result = await asyncio.to_thread(
             refresh_calendar_ics_subscription,
-            feed_url,
+            parsed_arguments.feedUrl,
             db_path=db_path,
-            reset_schema=reset_schema,
-            refresh_mode=refresh_mode,
+            reset_schema=parsed_arguments.resetSchema,
+            refresh_mode=parsed_arguments.refreshMode,
         )
         output = _calendar_refresh_output(result)
         metadata = {
-            "dbPathSource": _db_path_source(arguments),
+            "dbPathSource": _db_path_source(normalized_arguments),
         }
         metadata.update(
             await _persist_state_if_requested(
                 namespace=_STATE_NAMESPACE_CALENDAR_REFRESH,
-                arguments=arguments,
+                arguments=normalized_arguments,
                 context=context,
                 host=host,
                 output=output,
@@ -1367,29 +1775,32 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(
+        parsed_arguments = parse_tool_arguments(
+            _BlackboardSnapshotSyncArguments,
             arguments,
+        )
+        normalized_arguments = parsed_arguments.to_contract_dict()
+        credentials = await _resolve_credentials(
+            normalized_arguments,
             host,
             default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
             default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
         )
-        db_path = _resolve_db_path(arguments, host)
-        reset_schema = _read_bool(arguments, "resetSchema", default=False)
-        verify_second_sync = _read_bool(arguments, "verifySecondSync", default=True)
+        db_path = _resolve_db_path(normalized_arguments, host)
         progress_messages: list[str] = []
         report = await asyncio.to_thread(
             run_blackboard_snapshot_sync,
             credentials.username,
             credentials.password,
             db_path=db_path,
-            reset_schema=reset_schema,
-            verify_second_sync=verify_second_sync,
+            reset_schema=parsed_arguments.resetSchema,
+            verify_second_sync=parsed_arguments.verifySecondSync,
             progress=progress_messages.append,
         )
         output = _snapshot_sync_output(report, progress_messages=progress_messages)
         persist_details = (
-            _read_optional_text(arguments, "stateKey") is not None
-            or _read_optional_text(arguments, "artifactName") is not None
+            parsed_arguments.stateKey is not None
+            or parsed_arguments.artifactName is not None
         )
         persisted_output = (
             _snapshot_sync_persisted_output(report, progress_messages=progress_messages)
@@ -1398,18 +1809,18 @@ class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
         )
         metadata = {
             "credentialSource": credentials.source,
-            "dbPathSource": _db_path_source(arguments),
+            "dbPathSource": _db_path_source(normalized_arguments),
         }
         state_payload = await _persist_state_if_requested(
             namespace=_STATE_NAMESPACE_SNAPSHOT_SYNC,
-            arguments=arguments,
+            arguments=normalized_arguments,
             context=context,
             host=host,
             output=persisted_output,
         )
         metadata.update(state_payload)
         artifacts = await _persist_artifact_if_requested(
-            arguments=arguments,
+            arguments=normalized_arguments,
             context=context,
             host=host,
             output=persisted_output,
@@ -1437,15 +1848,21 @@ class BlackboardCourseResourcesSyncTool(_BlackboardFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(
+        parsed_arguments = parse_tool_arguments(
+            _BlackboardCourseResourcesSyncArguments,
             arguments,
+        )
+        normalized_arguments = parsed_arguments.to_contract_dict()
+        credentials = await _resolve_credentials(
+            normalized_arguments,
             host,
             default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
             default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
         )
-        course_ids = _read_required_string_list(arguments, "courseIds")
-        db_path = _resolve_db_path(arguments, host)
-        reset_schema = _read_bool(arguments, "resetSchema", default=False)
+        db_path = _resolve_db_path(normalized_arguments, host)
+        course_ids = parsed_arguments.courseIds
+        if course_ids is None:  # pragma: no cover - guarded by Pydantic validation
+            raise ValueError("courseIds must be an array of non-empty strings.")
         progress_messages: list[str] = []
         report = await asyncio.to_thread(
             run_blackboard_course_resources_sync,
@@ -1453,15 +1870,15 @@ class BlackboardCourseResourcesSyncTool(_BlackboardFacadeToolBase):
             credentials.password,
             course_ids=course_ids,
             db_path=db_path,
-            reset_schema=reset_schema,
+            reset_schema=parsed_arguments.resetSchema,
             progress=progress_messages.append,
         )
         output = _course_resources_sync_output(
             report, progress_messages=progress_messages
         )
         persist_details = (
-            _read_optional_text(arguments, "stateKey") is not None
-            or _read_optional_text(arguments, "artifactName") is not None
+            parsed_arguments.stateKey is not None
+            or parsed_arguments.artifactName is not None
         )
         persisted_output = (
             _course_resources_sync_persisted_output(
@@ -1472,18 +1889,18 @@ class BlackboardCourseResourcesSyncTool(_BlackboardFacadeToolBase):
         )
         metadata = {
             "credentialSource": credentials.source,
-            "dbPathSource": _db_path_source(arguments),
+            "dbPathSource": _db_path_source(normalized_arguments),
         }
         state_payload = await _persist_state_if_requested(
             namespace=_STATE_NAMESPACE_COURSE_RESOURCES_SYNC,
-            arguments=arguments,
+            arguments=normalized_arguments,
             context=context,
             host=host,
             output=persisted_output,
         )
         metadata.update(state_payload)
         artifacts = await _persist_artifact_if_requested(
-            arguments=arguments,
+            arguments=normalized_arguments,
             context=context,
             host=host,
             output=persisted_output,
@@ -1511,53 +1928,66 @@ class BlackboardSQLQueryTool(_BlackboardFacadeToolBase):
         context: ToolInvocationContext,
         host: ToolHostCapabilities,
     ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        sql = _read_required_text(arguments, "sql")
-        result_limit = _read_sql_query_result_limit(arguments)
-        persist_artifact = _read_bool(arguments, "persistArtifact", default=False)
+        parsed_arguments = parse_tool_arguments(
+            _BlackboardSQLQueryArguments,
+            arguments,
+        )
+        normalized_arguments = parsed_arguments.to_contract_dict()
         db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(
-            arguments, host
+            normalized_arguments,
+            host,
         )
         query_output, full_result = await asyncio.to_thread(
             _execute_sql_query,
-            sql=sql,
+            sql=parsed_arguments.sql,
             db_path=db_path,
-            result_limit=result_limit,
+            result_limit=parsed_arguments.resultLimit,
         )
-        output: dict[str, Any] = {
-            "sql": sql,
-            "database": {
-                "path": db_path.as_posix(),
-                "source": db_path_source,
-            },
-            "usedDefaultDatabase": used_default_database,
-            **query_output,
-            "artifact": None,
-        }
+        database_summary = _SQLDatabaseSummary(
+            path=db_path.as_posix(),
+            source=db_path_source,
+        )
+        output_model = _BlackboardSQLQueryOutput(
+            sql=parsed_arguments.sql,
+            database=database_summary,
+            usedDefaultDatabase=used_default_database,
+            hasResultSet=bool(query_output["hasResultSet"]),
+            columns=cast(list[str], query_output["columns"]),
+            rowsPreview=cast(JsonArray, query_output["rowsPreview"]),
+            truncated=bool(query_output["truncated"]),
+            rowCount=cast(int | None, query_output["rowCount"]),
+            executionSummary=cast(JsonObject, query_output["executionSummary"]),
+            artifact=None,
+        )
+        output = output_model.to_contract_dict()
         artifact_payload: dict[str, Any] | None = None
         if full_result is not None:
-            artifact_payload = {
-                "sql": sql,
-                "database": {
-                    "path": db_path.as_posix(),
-                    "source": db_path_source,
-                },
-                "usedDefaultDatabase": used_default_database,
-                **full_result,
-            }
+            artifact_payload = _BlackboardSQLQueryArtifactPayload(
+                sql=parsed_arguments.sql,
+                database=database_summary,
+                usedDefaultDatabase=used_default_database,
+                hasResultSet=bool(full_result["hasResultSet"]),
+                columns=cast(list[str], full_result["columns"]),
+                rows=cast(JsonArray, full_result["rows"]),
+                rowCount=cast(int, full_result["rowCount"]),
+                executionSummary=cast(JsonObject, full_result["executionSummary"]),
+            ).to_contract_dict()
         artifact_output, artifacts = await _persist_sql_query_artifact_if_requested(
-            persist_artifact=persist_artifact,
+            persist_artifact=parsed_arguments.persistArtifact,
             context=context,
             host=host,
             output=output,
             full_result=artifact_payload,
         )
-        output["artifact"] = artifact_output
+        output = output_model.model_copy(
+            update={"artifact": artifact_output}
+        ).to_contract_dict()
         return (
             output,
             artifacts,
             {
                 "dbPathSource": db_path_source,
-                "persistArtifactRequested": persist_artifact,
+                "persistArtifactRequested": parsed_arguments.persistArtifact,
             },
         )
 

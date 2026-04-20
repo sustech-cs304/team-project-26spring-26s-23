@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator
+from pydantic import ValidationError
 
 import app.copilot_runtime.provider_catalog as provider_catalog_module
+from app.copilot_runtime.provider_catalog import ProviderCatalogAuthSchema
 
 
 def test_provider_catalog_documents_match_schema() -> None:
@@ -13,11 +16,17 @@ def test_provider_catalog_documents_match_schema() -> None:
     Draft202012Validator.check_schema(schema)
     Draft202012Validator(schema).validate(registry)
     assert provider_catalog_module.provider_catalog_root().name == "provider-catalog"
+    assert (
+        provider_catalog_module.load_provider_catalog().model_dump()["providers"][0][
+            "auth_schema"
+        ]["details"]
+        == {}
+    )
 
 
 def test_provider_catalog_root_prefers_bundled_adjacent_catalog(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bundled_root = tmp_path / "python-runtime" / "provider-catalog"
     dev_root = tmp_path / "repo" / "provider-catalog"
@@ -48,7 +57,6 @@ def test_provider_catalog_root_prefers_bundled_adjacent_catalog(
         provider_catalog_module.load_provider_catalog.cache_clear()
 
 
-
 def test_provider_catalog_includes_first_batch_enabled_providers() -> None:
     catalog = provider_catalog_module.load_provider_catalog()
     enabled_provider_ids = {
@@ -57,7 +65,9 @@ def test_provider_catalog_includes_first_batch_enabled_providers() -> None:
     }
 
     assert catalog.catalog_revision == "2026-04-06-provider-catalog-v1"
-    assert {"openai", "anthropic", "gemini", "ollama", "groq", "mistral"}.issubset(enabled_provider_ids)
+    assert {"openai", "anthropic", "gemini", "ollama", "groq", "mistral"}.issubset(
+        enabled_provider_ids
+    )
 
 
 def test_provider_catalog_distinguishes_runtime_statuses() -> None:
@@ -80,6 +90,8 @@ def test_provider_catalog_distinguishes_runtime_statuses() -> None:
     assert ollama_entry.runtime_status == "enabled"
     assert ollama_entry.auth_schema.default_kind == "none"
     assert ollama_entry.base_url_policy.default_base_url == "http://127.0.0.1:11434/v1"
+    assert ollama_entry.metadata == {}
+    assert ollama_entry.details == {}
 
 
 def test_provider_catalog_resolves_aliases() -> None:
@@ -93,3 +105,17 @@ def test_provider_catalog_resolves_aliases() -> None:
     assert xai_entry is not None
     assert xai_entry.provider_id == "xai"
     assert xai_entry.endpoint_type == "xai-native"
+
+
+def test_provider_catalog_secret_field_names_report_actual_constraints() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="authSchema.secretFields must start with a letter and contain only letters and digits.",
+    ):
+        ProviderCatalogAuthSchema.model_validate(
+            {
+                "defaultKind": "api-key",
+                "supportedKinds": ["api-key"],
+                "secretFields": ["api_key"],
+            }
+        )

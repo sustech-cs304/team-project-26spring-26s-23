@@ -12,6 +12,7 @@ from app.integrations.sustech.blackboard.api.calendar_ics_parser import (
 from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
 from app.integrations.sustech.blackboard.provider.results import CalendarICSSyncResult
 from app.integrations.sustech.blackboard.data import DatabaseManager
+from app.integrations.sustech.blackboard.data.models import utc_now_naive
 from app.integrations.sustech.blackboard.shared import (
     BlackboardLogEvent,
     BlackboardLogSession,
@@ -121,7 +122,7 @@ def refresh_calendar_ics_subscription(
         if previous.get("last_modified"):
             headers["If-Modified-Since"] = str(previous["last_modified"])
 
-    now = datetime.utcnow()
+    now = utc_now_naive()
 
     try:
         logger.info(
@@ -241,7 +242,7 @@ def refresh_calendar_ics_subscription_from_text(
         _event_rows(events),
         logger=logger.child("provider.use_cases.calendar_ics.data.calendar_events"),
     )
-    now = datetime.utcnow()
+    now = utc_now_naive()
     db_manager.upsert_calendar_subscription(
         normalized_feed_url,
         etag=etag,

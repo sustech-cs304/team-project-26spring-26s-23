@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import base64
-import imghdr
 import re
 import struct
 
@@ -122,18 +121,24 @@ def _resolve_mime_type(*, path: Path, raw: bytes) -> str:
     suffix = path.suffix.lower()
     if suffix == ".svg":
         return _SVG_MIME
-    detected = imghdr.what(None, raw)
-    if detected == "jpeg":
-        return "image/jpeg"
-    if detected == "png":
-        return "image/png"
-    if detected == "gif":
-        return "image/gif"
-    if detected == "bmp":
-        return "image/bmp"
-    if detected == "webp":
-        return "image/webp"
+    detected = _detect_raster_image_format(raw)
+    if detected is not None:
+        return _RASTER_MIME_BY_SUFFIX[f".{detected}" if detected != "jpeg" else ".jpeg"]
     return _RASTER_MIME_BY_SUFFIX.get(suffix, "application/octet-stream")
+
+
+def _detect_raster_image_format(raw: bytes) -> str | None:
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if raw[:6] in {b"GIF87a", b"GIF89a"}:
+        return "gif"
+    if raw.startswith(b"BM"):
+        return "bmp"
+    if len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "webp"
+    if raw.startswith(b"\xff\xd8"):
+        return "jpeg"
+    return None
 
 
 def _resolve_dimensions(

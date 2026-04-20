@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal, Self, cast
+
+from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .model_routes import RuntimeModelRoute
+from .pydantic_contracts import (
+    RuntimeContractModel,
+    contract_to_dict,
+    to_jsonable_contract,
+)
 from .session_store import RuntimeRunRecord, RuntimeThreadRecord
 from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import ToolRegistry, build_default_tool_registry
@@ -50,11 +57,10 @@ def normalize_thinking_level_intent(value: Any) -> ThinkingLevelIntent | None:
 
 class RuntimeContract:
     def to_dict(self) -> dict[str, Any]:
-        return cast(dict[str, Any], _jsonable(asdict(cast(Any, self))))
+        return contract_to_dict(self)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThinkingValue(RuntimeContract):
+class RuntimeThinkingValue(RuntimeContractModel, RuntimeContract):
     valueType: ThinkingSeriesValueType
     code: str | None = None
     mode: str | None = None
@@ -76,8 +82,7 @@ class RuntimeThinkingValue(RuntimeContract):
         return None
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class RuntimeThinkingSelection(RuntimeContract):
+class RuntimeThinkingSelection(RuntimeContractModel, RuntimeContract):
     series: str
     value: RuntimeThinkingValue
 
@@ -102,8 +107,24 @@ class RuntimeThinkingSelection(RuntimeContract):
         )
         if normalized_value is None:
             raise ValueError("RuntimeThinkingSelection requires a valid series value.")
-        object.__setattr__(self, "series", normalized_series)
-        object.__setattr__(self, "value", normalized_value)
+        self.__pydantic_validator__.validate_python(
+            {"series": normalized_series, "value": normalized_value},
+            self_instance=self,
+        )
+
+    @field_validator("series")
+    @classmethod
+    def _validate_series(cls, value: str) -> str:
+        normalized_series = value.strip()
+        if normalized_series == "":
+            raise ValueError("RuntimeThinkingSelection.series must be non-empty.")
+        return normalized_series
+
+    @model_validator(mode="after")
+    def _validate_value(self) -> Self:
+        if self.value is None:
+            raise ValueError("RuntimeThinkingSelection requires a valid series value.")
+        return self
 
     @classmethod
     def from_legacy_level_intent(
@@ -136,8 +157,7 @@ class RuntimeThinkingSelection(RuntimeContract):
         return self.value.budgetTokens if self.value.valueType == "budget" else None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeAgentDirectoryEntry(RuntimeContract):
+class RuntimeAgentDirectoryEntry(RuntimeContractModel, RuntimeContract):
     agentId: str
     status: str
     recommendedTools: tuple[str, ...] = ()
@@ -146,8 +166,7 @@ class RuntimeAgentDirectoryEntry(RuntimeContract):
     iconKey: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeBoundAgent(RuntimeContract):
+class RuntimeBoundAgent(RuntimeContractModel, RuntimeContract):
     agentId: str
     status: str
     displayName: str | None = None
@@ -155,39 +174,39 @@ class RuntimeBoundAgent(RuntimeContract):
     iconKey: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeAgentsListResponse(RuntimeContract):
+class RuntimeAgentsListResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     directoryVersion: str
     defaultAgentId: str
     agents: tuple[RuntimeAgentDirectoryEntry, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadCreateRequest(RuntimeContract):
-    agent_id: str
+class RuntimeThreadCreateRequest(RuntimeContractModel, RuntimeContract):
+    agent_id: str = Field(validation_alias="agentId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadGetRequest(RuntimeContract):
-    thread_id: str
+class RuntimeThreadGetRequest(RuntimeContractModel, RuntimeContract):
+    thread_id: str = Field(validation_alias="threadId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeCapabilitiesGetRequest(RuntimeContract):
-    session_id: str
-    tool_permission_policy: RuntimeToolPermissionPolicy | None = None
+class RuntimeCapabilitiesGetRequest(RuntimeContractModel, RuntimeContract):
+    session_id: str = Field(validation_alias="sessionId")
+    tool_permission_policy: RuntimeToolPermissionPolicy | None = Field(
+        default=None,
+        validation_alias="toolPermissionPolicy",
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThinkingCapabilityGetRequest(RuntimeContract):
-    session_id: str
-    model_route: RuntimeModelRoute
-    thinking_capability_override: dict[str, Any] | None = None
+class RuntimeThinkingCapabilityGetRequest(RuntimeContractModel, RuntimeContract):
+    session_id: str = Field(validation_alias="sessionId")
+    model_route: RuntimeModelRoute = Field(validation_alias="modelRoute")
+    thinking_capability_override: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias="thinkingCapabilityOverride",
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeToolPresentationGroup(RuntimeContract):
+class RuntimeToolPresentationGroup(RuntimeContractModel, RuntimeContract):
     id: str
     label: str
     labelZh: str
@@ -196,8 +215,7 @@ class RuntimeToolPresentationGroup(RuntimeContract):
     sourceKind: str
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeToolDirectoryEntry(RuntimeContract):
+class RuntimeToolDirectoryEntry(RuntimeContractModel, RuntimeContract):
     toolId: str
     kind: str
     availability: str
@@ -211,19 +229,17 @@ class RuntimeToolDirectoryEntry(RuntimeContract):
     group: RuntimeToolPresentationGroup | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadCreateResponse(RuntimeContract):
+class RuntimeThreadCreateResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     threadId: str
     boundAgent: RuntimeBoundAgent
     createdAt: datetime
     updatedAt: datetime
     recommendedTools: tuple[str, ...] = ()
-    capabilities: dict[str, Any] = field(default_factory=dict)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadGetResponse(RuntimeContract):
+class RuntimeThreadGetResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     threadId: str
     boundAgent: RuntimeBoundAgent
@@ -236,8 +252,7 @@ class RuntimeThreadGetResponse(RuntimeContract):
     latestRunId: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeCapabilitiesResponse(RuntimeContract):
+class RuntimeCapabilitiesResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     sessionId: str
     boundAgent: RuntimeBoundAgent
@@ -247,8 +262,7 @@ class RuntimeCapabilitiesResponse(RuntimeContract):
     toolSelectionMode: str = "recommendation-only"
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeGlobalToolCatalogResponse(RuntimeContract):
+class RuntimeGlobalToolCatalogResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     directoryVersion: str
     defaultToolset: str
@@ -256,16 +270,14 @@ class RuntimeGlobalToolCatalogResponse(RuntimeContract):
     tools: tuple[RuntimeToolDirectoryEntry, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThinkingCapabilityResponse(RuntimeContract):
+class RuntimeThinkingCapabilityResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     sessionId: str
     capabilitySchemaVersion: str = THINKING_CAPABILITY_SCHEMA_VERSION
-    capability: dict[str, Any] = field(default_factory=dict)
+    capability: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeMessagePayload(RuntimeContract):
+class RuntimeMessagePayload(RuntimeContractModel, RuntimeContract):
     role: str
     content: str
 
@@ -276,26 +288,24 @@ RuntimeToolApprovalStatus = Literal["pending", "approved", "rejected", "timed_ou
 RuntimeToolTimeoutAction = Literal["approve", "deny"]
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeToolPermissionPolicy(RuntimeContract):
+class RuntimeToolPermissionPolicy(RuntimeContractModel, RuntimeContract):
     schemaVersion: int
     defaultMode: RuntimeToolPermissionMode
-    toolModes: dict[str, RuntimeToolPermissionMode] = field(default_factory=dict)
-    toolTimeoutSeconds: dict[str, int | str] = field(default_factory=dict)
-    toolTimeoutActions: dict[str, RuntimeToolTimeoutAction] = field(
+    toolModes: dict[str, RuntimeToolPermissionMode] = Field(default_factory=dict)
+    toolTimeoutSeconds: dict[str, int | str] = Field(default_factory=dict)
+    toolTimeoutActions: dict[str, RuntimeToolTimeoutAction] = Field(
         default_factory=dict
     )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeMessageExecutionPolicy(RuntimeContract):
+class RuntimeMessageExecutionPolicy(RuntimeContractModel, RuntimeContract):
     modelRoute: RuntimeModelRoute
     thinkingSelection: RuntimeThinkingSelection | None = None
     thinkingCapabilityOverride: dict[str, Any] | None = None
     enabledTools: tuple[str, ...] = ()
     toolPermissionPolicy: RuntimeToolPermissionPolicy | None = None
     debugModeEnabled: bool | None = None
-    requestOptions: dict[str, Any] = field(default_factory=dict)
+    requestOptions: dict[str, Any] = Field(default_factory=dict)
 
     def resolve_thinking_selection(self) -> RuntimeThinkingSelection | None:
         return self.thinkingSelection
@@ -305,33 +315,31 @@ class RuntimeMessageExecutionPolicy(RuntimeContract):
         return None if selection is None else selection.to_legacy_level_intent()
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunStartRequest(RuntimeContract):
-    thread_id: str
+class RuntimeRunStartRequest(RuntimeContractModel, RuntimeContract):
+    thread_id: str = Field(validation_alias="threadId")
     message: RuntimeMessagePayload
     policy: RuntimeMessageExecutionPolicy
-    agent_id: str | None = None
+    agent_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("agentId", "agent"),
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunStreamRequest(RuntimeContract):
-    run_id: str
+class RuntimeRunStreamRequest(RuntimeContractModel, RuntimeContract):
+    run_id: str = Field(validation_alias="runId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunCancelRequest(RuntimeContract):
-    run_id: str
+class RuntimeRunCancelRequest(RuntimeContractModel, RuntimeContract):
+    run_id: str = Field(validation_alias="runId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeToolApprovalResolveRequest(RuntimeContract):
-    run_id: str
-    tool_call_id: str
+class RuntimeToolApprovalResolveRequest(RuntimeContractModel, RuntimeContract):
+    run_id: str = Field(validation_alias="runId")
+    tool_call_id: str = Field(validation_alias="toolCallId")
     decision: RuntimeToolApprovalDecision
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeToolApprovalResolveResponse(RuntimeContract):
+class RuntimeToolApprovalResolveResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     runId: str
     toolCallId: str
@@ -339,11 +347,10 @@ class RuntimeToolApprovalResolveResponse(RuntimeContract):
     status: RuntimeToolApprovalStatus
     resolvedAt: datetime
     source: str
-    details: dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunView(RuntimeContract):
+class RuntimeRunView(RuntimeContractModel, RuntimeContract):
     runId: str
     threadId: str
     status: str
@@ -371,17 +378,15 @@ class RuntimeRunView(RuntimeContract):
         return self.appliedThinkingSelection.to_legacy_level_intent()
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunStartResponse(RuntimeContract):
+class RuntimeRunStartResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     run: RuntimeRunView
     assistantMessageId: str
-    stream: dict[str, Any] = field(default_factory=dict)
-    cancel: dict[str, Any] = field(default_factory=dict)
+    stream: dict[str, Any] = Field(default_factory=dict)
+    cancel: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunCancelResponse(RuntimeContract):
+class RuntimeRunCancelResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     run: RuntimeRunView
     cancelAccepted: bool
@@ -1135,10 +1140,4 @@ def _build_reasoning_suppression_basis(
 
 
 def _jsonable(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return value.isoformat(timespec="seconds")
-    if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_jsonable(item) for item in value]
-    return value
+    return to_jsonable_contract(value)

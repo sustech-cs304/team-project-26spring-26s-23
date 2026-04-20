@@ -18,6 +18,7 @@ from app.integrations.sustech.blackboard.data.models import (
     Course,
     Grade,
     Resource,
+    utc_now_naive,
 )
 
 from .results import SyncStats, empty_sync_stats
@@ -700,7 +701,7 @@ def upsert_calendar_subscription(
     if not normalized_feed_url:
         return
 
-    now = datetime.utcnow()
+    now = utc_now_naive()
     row = (
         session.query(CalendarSubscription)
         .filter(CalendarSubscription.feed_url == normalized_feed_url)
@@ -916,7 +917,7 @@ def sync_calendar_events(
         if (payload := _normalize_calendar_event_record(normalized_feed_url, item))
         is not None
     ]
-    now = datetime.utcnow()
+    now = utc_now_naive()
     _ensure_calendar_subscription(session, normalized_feed_url, now)
     existing_map = _load_calendar_event_map(session, normalized_feed_url)
     incoming_map = {row["uid"]: row for row in normalized}

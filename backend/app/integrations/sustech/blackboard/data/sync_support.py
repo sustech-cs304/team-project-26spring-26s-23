@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Callable
 
 from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
@@ -14,6 +13,7 @@ from app.integrations.sustech.blackboard.data.models import (
     Assignment,
     Course,
     Resource,
+    utc_now_naive,
 )
 
 from .results import SyncStats, empty_sync_stats
@@ -46,7 +46,7 @@ def sync_records(
     logger: BlackboardLogger | None = None,
 ) -> SyncStats:
     stats = empty_sync_stats()
-    now = datetime.utcnow()
+    now = utc_now_naive()
 
     query = session.query(model)
     if scope_filter:
@@ -129,7 +129,7 @@ def refresh_course_stats(session: Session, course_id: str) -> None:
         )
         .count()
     )
-    course.last_synced_at = datetime.utcnow()
+    course.last_synced_at = utc_now_naive()
 
 
 def upsert_assignment_attachments(
@@ -143,7 +143,7 @@ def upsert_assignment_attachments(
     stable_id: Callable[..., str],
     guess_resource_type_from_url: Callable[[str], str],
 ) -> None:
-    now = datetime.utcnow()
+    now = utc_now_naive()
     for att in attachments:
         name = str(att.get("name") or "").strip()
         url = normalize_url(att.get("url"))

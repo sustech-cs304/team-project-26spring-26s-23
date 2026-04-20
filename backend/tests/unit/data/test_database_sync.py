@@ -163,6 +163,59 @@ def test_sync_courses_soft_delete_and_revive_via_facade(tmp_path: Path) -> None:
     assert manager.get_table_counts()["courses"] == {"total": 2, "active": 2}
 
 
+def test_sync_courses_preserves_naive_utc_timestamps(tmp_path: Path) -> None:
+    manager = DatabaseManager(_db_path(tmp_path, "test_courses_naive_utc"), reset_schema=True)
+    course_id = "course_ts"
+
+    manager.sync_courses(
+        [
+            {
+                "course_id": course_id,
+                "name": "Course Timestamp Regression",
+                "url": None,
+            }
+        ]
+    )
+
+    session = manager.SessionLocal()
+    try:
+        inserted = session.query(Course).filter(Course.course_id == course_id).one()
+        created_at = inserted.created_at
+        updated_at = inserted.updated_at
+        last_synced_at = inserted.last_synced_at
+    finally:
+        session.close()
+
+    assert created_at.tzinfo is None
+    assert updated_at.tzinfo is None
+    assert last_synced_at is not None
+    assert last_synced_at.tzinfo is None
+    assert created_at == updated_at
+
+    manager.sync_courses(
+        [
+            {
+                "course_id": course_id,
+                "name": "Course Timestamp Regression",
+                "instructor": "Teacher Timestamp",
+                "url": None,
+            }
+        ]
+    )
+
+    session = manager.SessionLocal()
+    try:
+        updated = session.query(Course).filter(Course.course_id == course_id).one()
+        assert updated.created_at == created_at
+        assert updated.updated_at.tzinfo is None
+        assert updated.updated_at >= updated_at
+        assert updated.last_synced_at is not None
+        assert updated.last_synced_at.tzinfo is None
+        assert updated.last_synced_at >= last_synced_at
+    finally:
+        session.close()
+
+
 def test_sync_announcements_upsert_only_and_course_name_resolution(tmp_path: Path) -> None:
     manager = DatabaseManager(_db_path(tmp_path, "test_announcements_upsert_only"), reset_schema=True)
     course_id = "course_ann"

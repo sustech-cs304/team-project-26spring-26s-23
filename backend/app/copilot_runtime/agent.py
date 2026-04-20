@@ -654,9 +654,9 @@ class PydanticAIAgentExecutor:
             if workspace_root is not None
             else self._tool_registry.workspace_root or Path.cwd()
         )
-        self._workspace_root = (
-            configured_workspace_root.resolve(strict=False).as_posix()
-        )
+        self._workspace_root = configured_workspace_root.resolve(
+            strict=False
+        ).as_posix()
         resolved_default_root = (
             Path(default_root).resolve(strict=False).as_posix()
             if default_root is not None

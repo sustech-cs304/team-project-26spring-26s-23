@@ -10,7 +10,9 @@ from app.copilot_runtime.thinking_adapter import (
 
 
 def test_resolve_verified_openai_6_level_series_for_gpt5_route() -> None:
-    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-5")).to_public_dict()
+    capability = resolve_canonical_thinking_capability(
+        model_route=_route(model_id="gpt-5")
+    ).to_public_dict()
 
     assert capability == {
         "status": "verified-supported",
@@ -19,12 +21,48 @@ def test_resolve_verified_openai_6_level_series_for_gpt5_route() -> None:
         "seriesLabelZh": "OpenAI 6 档总超集",
         "editorType": "discrete",
         "allowedValues": [
-            {"valueType": "code", "code": "none", "labelZh": "无", "mode": None, "budgetTokens": None},
-            {"valueType": "code", "code": "minimal", "labelZh": "极简", "mode": None, "budgetTokens": None},
-            {"valueType": "code", "code": "low", "labelZh": "低", "mode": None, "budgetTokens": None},
-            {"valueType": "code", "code": "medium", "labelZh": "中", "mode": None, "budgetTokens": None},
-            {"valueType": "code", "code": "high", "labelZh": "高", "mode": None, "budgetTokens": None},
-            {"valueType": "code", "code": "xhigh", "labelZh": "超高", "mode": None, "budgetTokens": None},
+            {
+                "valueType": "code",
+                "code": "none",
+                "labelZh": "无",
+                "mode": None,
+                "budgetTokens": None,
+            },
+            {
+                "valueType": "code",
+                "code": "minimal",
+                "labelZh": "极简",
+                "mode": None,
+                "budgetTokens": None,
+            },
+            {
+                "valueType": "code",
+                "code": "low",
+                "labelZh": "低",
+                "mode": None,
+                "budgetTokens": None,
+            },
+            {
+                "valueType": "code",
+                "code": "medium",
+                "labelZh": "中",
+                "mode": None,
+                "budgetTokens": None,
+            },
+            {
+                "valueType": "code",
+                "code": "high",
+                "labelZh": "高",
+                "mode": None,
+                "budgetTokens": None,
+            },
+            {
+                "valueType": "code",
+                "code": "xhigh",
+                "labelZh": "超高",
+                "mode": None,
+                "budgetTokens": None,
+            },
         ],
         "defaultValue": {
             "valueType": "code",
@@ -46,7 +84,9 @@ def test_resolve_verified_openai_6_level_series_for_gpt5_route() -> None:
 
 
 def test_resolve_verified_openai_4_level_series_for_gpt41_route() -> None:
-    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-4.1")).to_public_dict()
+    capability = resolve_canonical_thinking_capability(
+        model_route=_route(model_id="gpt-4.1")
+    ).to_public_dict()
 
     assert capability["series"] == "openai-4-level-minimal-v1"
     assert capability["seriesLabelZh"] == "OpenAI 4 档 Minimal 系"
@@ -61,8 +101,12 @@ def test_resolve_verified_openai_4_level_series_for_gpt41_route() -> None:
 
 
 def test_openai_6_level_and_4_level_are_different_series() -> None:
-    gpt5_capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-5"))
-    gpt41_capability = resolve_canonical_thinking_capability(model_route=_route(model_id="gpt-4.1"))
+    gpt5_capability = resolve_canonical_thinking_capability(
+        model_route=_route(model_id="gpt-5")
+    )
+    gpt41_capability = resolve_canonical_thinking_capability(
+        model_route=_route(model_id="gpt-4.1")
+    )
 
     assert gpt5_capability.series == "openai-6-level-superset-v1"
     assert gpt41_capability.series == "openai-4-level-minimal-v1"
@@ -70,7 +114,9 @@ def test_openai_6_level_and_4_level_are_different_series() -> None:
 
 
 def test_resolve_unknown_route_without_override_returns_empty_series_snapshot() -> None:
-    capability = resolve_canonical_thinking_capability(model_route=_route(model_id="unknown-model")).to_public_dict()
+    capability = resolve_canonical_thinking_capability(
+        model_route=_route(model_id="unknown-model")
+    ).to_public_dict()
 
     assert capability == {
         "status": "unknown-without-override",
@@ -126,8 +172,20 @@ def test_parse_thinking_capability_override_accepts_series_template_shape() -> N
     assert override.source == "settings-page"
     assert override.editor_type == "budget"
     assert [value.to_dict() for value in override.allowed_values] == [
-        {"valueType": "budget", "code": None, "mode": "off", "budgetTokens": None, "labelZh": "关闭"},
-        {"valueType": "budget", "code": None, "mode": "dynamic", "budgetTokens": None, "labelZh": "动态"},
+        {
+            "valueType": "budget",
+            "code": None,
+            "mode": "off",
+            "budgetTokens": None,
+            "labelZh": "关闭",
+        },
+        {
+            "valueType": "budget",
+            "code": None,
+            "mode": "dynamic",
+            "budgetTokens": None,
+            "labelZh": "动态",
+        },
     ]
     assert override.default_value is not None
     assert override.default_value.to_dict() == {
@@ -158,7 +216,11 @@ def test_resolve_unknown_route_with_override_uses_override_series_template() -> 
                     {"valueType": "code", "code": "false", "labelZh": "关闭"},
                     {"valueType": "code", "code": "true", "labelZh": "开启"},
                 ],
-                "defaultValue": {"valueType": "code", "code": "true", "labelZh": "开启"},
+                "defaultValue": {
+                    "valueType": "code",
+                    "code": "true",
+                    "labelZh": "开启",
+                },
             },
         },
     ).to_public_dict()
@@ -241,6 +303,7 @@ def test_adapt_thinking_selection_uses_override_budget_builder() -> None:
         thinking_capability_override={
             "supported": True,
             "series": "gemini-2.5-budget-v1",
+            "details": {"owner": "unit-test"},
             "template": {
                 "editorType": "budget",
                 "allowedValues": [
@@ -258,6 +321,7 @@ def test_adapt_thinking_selection_uses_override_budget_builder() -> None:
                     "maxTokens": 32768,
                     "stepTokens": 1024,
                     "anchorTokens": [0, 4096, 8192],
+                    "details": {"source": "settings"},
                 },
             },
         },
@@ -276,9 +340,13 @@ def test_adapt_thinking_selection_uses_override_budget_builder() -> None:
             }
         }
     }
+    assert result.capability.details == {"owner": "unit-test"}
+    assert result.diagnostics["details"] == {"owner": "unit-test"}
 
 
-def _route(*, model_id: str, base_url: str = "https://example.com/v1") -> ResolvedRuntimeModelRoute:
+def _route(
+    *, model_id: str, base_url: str = "https://example.com/v1"
+) -> ResolvedRuntimeModelRoute:
     return ResolvedRuntimeModelRoute(
         provider_profile_id="provider-1",
         provider="openai",
