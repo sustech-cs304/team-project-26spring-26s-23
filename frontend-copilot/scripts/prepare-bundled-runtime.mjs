@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { access, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -90,11 +90,20 @@ async function main() {
     description: 'install backend dependencies into staging',
   })
 
-  console.info('[bundled-runtime] Copying backend application sources into staging.')
-  await cp(path.join(BACKEND_ROOT, 'app'), path.join(stagedBackendRoot, 'app'), {
-    recursive: true,
-    force: true,
-  })
+  console.info('[bundled-runtime] Copying backend runtime resources into staging.')
+  await Promise.all([
+    cp(path.join(BACKEND_ROOT, 'app'), path.join(stagedBackendRoot, 'app'), {
+      recursive: true,
+      force: true,
+    }),
+    cp(path.join(BACKEND_ROOT, 'alembic.ini'), path.join(stagedBackendRoot, 'alembic.ini'), {
+      force: true,
+    }),
+    cp(path.join(BACKEND_ROOT, 'alembic'), path.join(stagedBackendRoot, 'alembic'), {
+      recursive: true,
+      force: true,
+    }),
+  ])
 
   const pythonVersion = resolvePythonVersion(stagedPythonExecutable)
 
@@ -237,6 +246,35 @@ async function verifyStagedRuntimeLayout(input) {
       `bundled site-packages path "${relativePath}"`,
     )),
   ])
+
+  const alembicIniPath = path.join(backendWorkingDirectory, 'alembic.ini')
+  await assertPathExists(alembicIniPath, 'bundled Alembic configuration file')
+
+  const alembicScriptRoot = await resolveAlembicScriptLocation(alembicIniPath)
+  await assertPathExists(alembicScriptRoot, 'bundled Alembic script location')
+  await assertDirectoryNotEmpty(alembicScriptRoot, 'bundled Alembic script location')
+
+  const alembicVersionsDirectory = path.join(alembicScriptRoot, 'versions')
+  await assertPathExists(alembicVersionsDirectory, 'bundled Alembic versions directory')
+  await assertDirectoryNotEmpty(alembicVersionsDirectory, 'bundled Alembic versions directory')
+}
+
+async function resolveAlembicScriptLocation(alembicIniPath) {
+  const alembicIniContent = await readFile(alembicIniPath, 'utf8')
+  const scriptLocationMatch = alembicIniContent.match(/^\s*script_location\s*=\s*(.+)$/m)
+
+  if (scriptLocationMatch === null) {
+    throw new Error(`Bundled Alembic configuration must define script_location: "${alembicIniPath}"`)
+  }
+
+  const configuredScriptLocation = normalizeOptionalString(scriptLocationMatch[1])
+
+  if (configuredScriptLocation === null) {
+    throw new Error(`Bundled Alembic configuration script_location must be non-empty: "${alembicIniPath}"`)
+  }
+
+  const expandedScriptLocation = configuredScriptLocation.replaceAll('%(here)s', path.dirname(alembicIniPath))
+  return path.resolve(path.dirname(alembicIniPath), expandedScriptLocation)
 }
 
 function resolveManifestRelativePath(rootDirectory, relativePath, description) {
@@ -328,6 +366,14 @@ async function assertPathExists(filePath, description) {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`Cannot resolve ${description} at "${filePath}": ${detail}`)
+  }
+}
+
+async function assertDirectoryNotEmpty(directoryPath, description) {
+  const entries = await readdir(directoryPath)
+
+  if (entries.length === 0) {
+    throw new Error(`Cannot resolve ${description} at "${directoryPath}": directory is empty`)
   }
 }
 
