@@ -1,4 +1,4 @@
-import { access, readFile, readdir } from 'node:fs/promises'
+import { access, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -71,6 +71,7 @@ function parseArguments(argv) {
 
 async function resolveUnpackedRuntimeRoot(options) {
   const searchRoot = path.resolve(process.cwd(), options.input ?? options.searchRoot ?? RELEASE_ROOT)
+  await assertDirectoryExists(searchRoot, 'unpacked bundled runtime search root')
   const runtimeRoots = await findBundledRuntimeRoots(searchRoot)
 
   if (runtimeRoots.length === 0) {
@@ -240,6 +241,20 @@ async function verifyRuntimeRoot(input) {
 async function verifyRequiredPath(filePath, description, missingItems) {
   if (!await pathExists(filePath)) {
     missingItems.push(`Cannot resolve ${description} at "${filePath}".`)
+  }
+}
+
+async function assertDirectoryExists(directoryPath, description) {
+  let directoryStats
+
+  try {
+    directoryStats = await stat(directoryPath)
+  } catch (error) {
+    throw new Error(`Cannot locate ${description} at "${directoryPath}": ${formatError(error)}`)
+  }
+
+  if (!directoryStats.isDirectory()) {
+    throw new Error(`Cannot locate ${description} at "${directoryPath}": path exists but is not a directory.`)
   }
 }
 

@@ -47,7 +47,6 @@ async function main() {
   const stagedRequirementsPath = path.join(stagedMetadataRoot, REQUIREMENTS_FILE_NAME)
 
   await Promise.all([
-    mkdir(stagedBackendRoot, { recursive: true }),
     mkdir(stagedPythonPackagesRoot, { recursive: true }),
     mkdir(stagedMetadataRoot, { recursive: true }),
   ])
@@ -94,6 +93,7 @@ async function main() {
   })
 
   console.info('[bundled-runtime] Copying backend runtime resources into staging.')
+  await mkdir(stagedBackendRoot, { recursive: true })
   await Promise.all([
     cp(path.join(BACKEND_ROOT, 'app'), path.join(stagedBackendRoot, 'app'), {
       recursive: true,
