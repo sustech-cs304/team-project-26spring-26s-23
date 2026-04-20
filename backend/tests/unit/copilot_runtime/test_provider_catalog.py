@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import pytest
+from jsonschema import Draft202012Validator
+from pydantic import ValidationError
+
 from app.copilot_runtime.provider_catalog import (
+    ProviderCatalogAuthSchema,
     get_provider_catalog_entry,
     list_provider_catalog_entries,
     list_provider_catalog_entries as list_entries,
@@ -8,7 +13,6 @@ from app.copilot_runtime.provider_catalog import (
     load_provider_catalog_documents,
     provider_catalog_root,
 )
-from jsonschema import Draft202012Validator
 
 
 def test_provider_catalog_documents_match_schema() -> None:
@@ -70,3 +74,17 @@ def test_provider_catalog_resolves_aliases() -> None:
     assert xai_entry is not None
     assert xai_entry.provider_id == "xai"
     assert xai_entry.endpoint_type == "xai-native"
+
+
+def test_provider_catalog_secret_field_names_report_actual_constraints() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="authSchema.secretFields must start with a letter and contain only letters and digits.",
+    ):
+        ProviderCatalogAuthSchema.model_validate(
+            {
+                "defaultKind": "api-key",
+                "supportedKinds": ["api-key"],
+                "secretFields": ["api_key"],
+            }
+        )

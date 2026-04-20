@@ -982,7 +982,7 @@ class _ArtifactDescriptorFields(_DesktopCapabilityBridgeModel):
         serialization_alias="contentType",
         min_length=1,
     )
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any]
 
     @field_validator("artifact_id", mode="before")
     @classmethod

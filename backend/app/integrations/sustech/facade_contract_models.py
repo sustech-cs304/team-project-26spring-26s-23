@@ -99,12 +99,22 @@ def to_jsonable_tool_contract(value: Any) -> Any:
         return {
             str(key): to_jsonable_tool_contract(item) for key, item in value.items()
         }
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, set):
+        return [
+            to_jsonable_tool_contract(item)
+            for item in sorted(value, key=_stable_jsonable_sort_key)
+        ]
+    if isinstance(value, (list, tuple)):
         return [to_jsonable_tool_contract(item) for item in value]
     to_dict = getattr(value, "to_dict", None)
     if callable(to_dict):
         return to_jsonable_tool_contract(to_dict())
     return value
+
+
+def _stable_jsonable_sort_key(value: Any) -> tuple[str, str]:
+    jsonable_value = to_jsonable_tool_contract(value)
+    return (type(jsonable_value).__name__, repr(jsonable_value))
 
 
 def _validation_error_message(error: ValidationError) -> str:

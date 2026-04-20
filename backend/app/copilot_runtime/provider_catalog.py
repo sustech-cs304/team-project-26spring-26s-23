@@ -286,7 +286,9 @@ def _optional_string(value: Any) -> str | None:
 def _require_secret_field_name(value: Any, *, label: str) -> str:
     normalized = _require_non_empty_string(value, label=label)
     if not normalized[0].isalpha() or not normalized.isalnum():
-        raise ValueError(f"{label} must be a camelCase identifier.")
+        raise ValueError(
+            f"{label} must start with a letter and contain only letters and digits."
+        )
     return normalized
 
 

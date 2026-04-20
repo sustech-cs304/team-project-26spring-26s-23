@@ -13,7 +13,6 @@ from app.copilot_runtime.pydantic_contracts import RuntimeContractModel
 HISTORY_QUERY_DTO_VERSION = "chat-history-v1"
 
 JsonObject: TypeAlias = dict[str, Any]
-JsonArray: TypeAlias = list[Any]
 
 
 class PersistedHistoryReadModel(RuntimeContractModel, RuntimeContract):

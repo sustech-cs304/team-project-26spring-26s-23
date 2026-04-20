@@ -101,3 +101,11 @@ def test_to_jsonable_tool_contract_serializes_paths_datetimes_dataclasses_and_mo
             },
         },
     }
+
+
+def test_to_jsonable_tool_contract_serializes_sets_in_stable_order() -> None:
+    payload = {"toolIds": {"tool.weather", "tool.blackboard", "tool.calendar"}}
+
+    assert to_jsonable_tool_contract(payload) == {
+        "toolIds": ["tool.blackboard", "tool.calendar", "tool.weather"]
+    }

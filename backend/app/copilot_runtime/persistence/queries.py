@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
@@ -39,6 +40,8 @@ from .query_dtos import (
     PersistedToolCallBlockDTO,
 )
 from .repositories import PersistenceRepositories, run_lifecycle_transaction
+
+_HISTORY_QUERY_LOGGER = logging.getLogger("uvicorn.error")
 
 if TYPE_CHECKING:
     from ..agent_registry import AgentRegistry
@@ -353,7 +356,19 @@ def _build_run_historical_snapshot(
 def _build_timeline_items(value: Any) -> tuple[PersistedTimelineItemDTO, ...]:
     if not isinstance(value, list):
         return ()
-    return tuple(_build_timeline_item(item) for item in value if isinstance(item, dict))
+
+    timeline_items: list[PersistedTimelineItemDTO] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            _log_skipped_timeline_item(
+                index, item, reason="timeline item is not an object"
+            )
+            continue
+        try:
+            timeline_items.append(_build_timeline_item(item))
+        except Exception as exc:  # noqa: BLE001 - legacy history reads must fail soft.
+            _log_skipped_timeline_item(index, item, reason=str(exc), exc_info=exc)
+    return tuple(timeline_items)
 
 
 def _build_timeline_item(item: dict[str, Any]) -> PersistedTimelineItemDTO:
@@ -438,6 +453,23 @@ def _optional_projection_value(
         return None
     value = getattr(projection, field_name)
     return value if isinstance(value, str) else None
+
+
+def _log_skipped_timeline_item(
+    index: int,
+    item: Any,
+    *,
+    reason: str,
+    exc_info: BaseException | None = None,
+) -> None:
+    kind = item.get("kind") if isinstance(item, dict) else None
+    _HISTORY_QUERY_LOGGER.warning(
+        "chat history timeline item skipped: index=%s kind=%r reason=%s",
+        index,
+        kind,
+        reason,
+        exc_info=exc_info,
+    )
 
 
 def _copy_mapping(value: Any) -> dict[str, Any] | None:
