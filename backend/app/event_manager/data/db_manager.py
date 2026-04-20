@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -10,23 +11,59 @@ from typing import Any, Iterator
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.desktop_runtime.config import ENV_DATABASE_DIR
+
 
 from .dto import CourseEvent
 from .models import Base, CourseEventModel
+
+
+_DEFAULT_EVENT_MANAGER_DB_RELATIVE_PATH = Path("event_manager") / "sustech.db"
+_DEFAULT_REPO_EVENT_MANAGER_DB_PATH = (
+    Path(__file__).resolve().parents[3] / "data" / "sustech.db"
+)
 
 
 def _utc_now_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def resolve_default_event_manager_db_path(
+    database_dir: str | Path | None = None,
+) -> Path:
+    resolved_database_dir = _resolve_runtime_database_dir(database_dir)
+    if resolved_database_dir is None:
+        return _DEFAULT_REPO_EVENT_MANAGER_DB_PATH
+
+    return resolved_database_dir / _DEFAULT_EVENT_MANAGER_DB_RELATIVE_PATH
+
+
+def _resolve_runtime_database_dir(
+    database_dir: str | Path | None = None,
+) -> Path | None:
+    if database_dir is not None:
+        return Path(database_dir)
+
+    configured_database_dir = str(os.environ.get(ENV_DATABASE_DIR) or "").strip()
+    if configured_database_dir == "":
+        return None
+
+    return Path(configured_database_dir)
+
+
 class DatabaseManager:
     """SQLite 数据库管理器"""
+
+    DEFAULT_DB_RELATIVE_PATH = _DEFAULT_EVENT_MANAGER_DB_RELATIVE_PATH
 
     def __init__(
         self, db_path: str | Path | None = None, *, reset_schema: bool = False
     ) -> None:
-        backend_dir = Path(__file__).resolve().parents[3]
-        self.db_path = Path(db_path) if db_path else backend_dir / "data" / "sustech.db"
+        self.db_path = (
+            Path(db_path)
+            if db_path is not None
+            else resolve_default_event_manager_db_path()
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         if reset_schema and self.db_path.exists():

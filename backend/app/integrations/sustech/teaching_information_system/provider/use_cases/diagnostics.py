@@ -185,7 +185,7 @@ def _record_request_history(summary: dict[str, Any], tis_client: TISClient) -> N
 def _resolve_env_path(env_path: str | None) -> Path:
     if env_path:
         return Path(env_path)
-    return Path(__file__).resolve().parents[4] / ".env"
+    raise RuntimeError("TIS diagnostics from env requires an explicit env_path.")
 
 
 def _load_env_credentials(

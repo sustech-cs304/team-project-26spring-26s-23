@@ -13,9 +13,9 @@ from .pydantic_contracts import RuntimeContractModel
 ProviderRuntimeStatus = Literal["enabled", "catalog-only", "legacy-unsupported"]
 ProviderAuthKind = Literal["api-key", "none"]
 
-_PROVIDER_CATALOG_ROOT = Path(__file__).resolve().parents[3] / "provider-catalog"
-_PROVIDER_CATALOG_SCHEMA_PATH = _PROVIDER_CATALOG_ROOT / "schema.json"
-_PROVIDER_CATALOG_REGISTRY_PATH = _PROVIDER_CATALOG_ROOT / "registry.json"
+_PROVIDER_CATALOG_DIRECTORY_NAME = "provider-catalog"
+_PROVIDER_CATALOG_SCHEMA_FILE_NAME = "schema.json"
+_PROVIDER_CATALOG_REGISTRY_FILE_NAME = "registry.json"
 
 
 class _ProviderCatalogModel(RuntimeContractModel):
@@ -150,8 +150,58 @@ class ProviderCatalog(_ProviderCatalogModel):
         return self
 
 
+def _bundled_provider_catalog_root() -> Path:
+    backend_root = Path(__file__).resolve().parents[2]
+    return backend_root.parent / _PROVIDER_CATALOG_DIRECTORY_NAME
+
+
+def _search_dev_repo_provider_catalog_root(
+    start_directory: Path | None = None,
+) -> Path | None:
+    current_directory = (start_directory or Path.cwd()).resolve(strict=False)
+    for candidate_root in (current_directory, *current_directory.parents):
+        provider_catalog_root = candidate_root / _PROVIDER_CATALOG_DIRECTORY_NAME
+        backend_root = candidate_root / "backend"
+        if (
+            provider_catalog_root.is_dir()
+            and (backend_root / "pyproject.toml").is_file()
+        ):
+            return provider_catalog_root
+    return None
+
+
+def _provider_catalog_document_paths(root: Path) -> tuple[Path, Path]:
+    return (
+        root / _PROVIDER_CATALOG_SCHEMA_FILE_NAME,
+        root / _PROVIDER_CATALOG_REGISTRY_FILE_NAME,
+    )
+
+
+def _provider_catalog_root_has_documents(root: Path) -> bool:
+    schema_path, registry_path = _provider_catalog_document_paths(root)
+    return schema_path.is_file() and registry_path.is_file()
+
+
+@lru_cache(maxsize=1)
 def provider_catalog_root() -> Path:
-    return _PROVIDER_CATALOG_ROOT
+    candidates = [_bundled_provider_catalog_root()]
+    dev_repo_root = _search_dev_repo_provider_catalog_root()
+    if dev_repo_root is not None:
+        candidates.append(dev_repo_root)
+
+    checked_candidates: list[Path] = []
+    for candidate in candidates:
+        resolved_candidate = candidate.resolve(strict=False)
+        if resolved_candidate in checked_candidates:
+            continue
+        checked_candidates.append(resolved_candidate)
+        if _provider_catalog_root_has_documents(resolved_candidate):
+            return resolved_candidate
+
+    searched_locations = ", ".join(path.as_posix() for path in checked_candidates)
+    raise FileNotFoundError(
+        f"Cannot resolve provider catalog documents. Searched: {searched_locations}"
+    )
 
 
 @lru_cache(maxsize=1)
@@ -164,9 +214,12 @@ def load_provider_catalog() -> ProviderCatalog:
 
 @lru_cache(maxsize=1)
 def load_provider_catalog_documents() -> tuple[dict[str, Any], dict[str, Any]]:
+    schema_path, registry_path = _provider_catalog_document_paths(
+        provider_catalog_root()
+    )
     return (
-        _load_json_document(_PROVIDER_CATALOG_SCHEMA_PATH),
-        _load_json_document(_PROVIDER_CATALOG_REGISTRY_PATH),
+        _load_json_document(schema_path),
+        _load_json_document(registry_path),
     )
 
 
