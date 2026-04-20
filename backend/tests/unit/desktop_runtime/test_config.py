@@ -1,105 +1,81 @@
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 import pytest
 
 import app.desktop_runtime.config as runtime_config_module
-from app.desktop_runtime.config import (
-    DEFAULT_APP_MODE,
-    DEFAULT_BACKEND_STDERR_LOG_FILE_NAME,
-    DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME,
-    DEFAULT_CONFIG_DIR_NAME,
-    DEFAULT_COPILOT_SETTINGS_FILE_NAME,
-    DEFAULT_DATABASE_DIR_NAME,
-    DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME,
-    DEFAULT_ENVIRONMENT,
-    DEFAULT_HOST,
-    DEFAULT_HOST_LOG_FILE_NAME,
-    DEFAULT_LAST_FAILURE_FILE_NAME,
-    DEFAULT_LOGS_DIR_NAME,
-    DEFAULT_PORT,
-    DEFAULT_RUNTIME_ROOT_DIR_NAME,
-    DEFAULT_RUNTIME_SNAPSHOT_FILE_NAME,
-    DEFAULT_STATE_DIR_NAME,
-    DEFAULT_USER_DATA_DIR,
-    ENV_APP_MODE,
-    ENV_DATABASE_DIR,
-    ENV_BACKEND_VERSION,
-    ENV_DEBUG_LOG_DATABASE_FILE,
-    ENV_ENVIRONMENT,
-    ENV_HOST,
-    ENV_HOST_CAPABILITY_BRIDGE_TOKEN,
-    ENV_HOST_CAPABILITY_BRIDGE_URL,
-    ENV_LOCAL_TOKEN,
-    ENV_LOGS_DIR,
-    ENV_PORT,
-    ENV_ROOT_DIR,
-    ENV_USER_DATA_DIR,
-    get_backend_version,
-    parse_runtime_config,
-)
-from importlib.metadata import PackageNotFoundError
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
 
 def test_parse_runtime_config_defaults_to_loopback_and_backend_data_dir() -> None:
-    config = parse_runtime_config([], env={}, cwd=BACKEND_DIR)
+    config = runtime_config_module.parse_runtime_config([], env={}, cwd=BACKEND_DIR)
 
-    assert config.host == DEFAULT_HOST
-    assert config.port == DEFAULT_PORT
+    assert config.host == runtime_config_module.DEFAULT_HOST
+    assert config.port == runtime_config_module.DEFAULT_PORT
     assert config.local_token is None
     assert config.host_model_route_bridge_url is None
     assert config.host_model_route_bridge_token is None
     assert config.host_capability_bridge_url is None
     assert config.host_capability_bridge_token is None
-    assert config.app_mode == DEFAULT_APP_MODE
-    assert config.environment == DEFAULT_ENVIRONMENT
-    assert config.user_data_dir == DEFAULT_USER_DATA_DIR.resolve()
-    assert config.runtime_root_dir == config.user_data_dir / DEFAULT_RUNTIME_ROOT_DIR_NAME
-    assert config.config_dir == config.runtime_root_dir / DEFAULT_CONFIG_DIR_NAME
-    assert config.logs_dir == config.runtime_root_dir / DEFAULT_LOGS_DIR_NAME
-    assert config.database_dir == config.runtime_root_dir / DEFAULT_DATABASE_DIR_NAME
-    assert config.state_dir == config.runtime_root_dir / DEFAULT_STATE_DIR_NAME
-    assert config.debug_log_database_file == config.database_dir / DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME
-    assert config.copilot_settings_file == config.config_dir / DEFAULT_COPILOT_SETTINGS_FILE_NAME
-    assert config.host_log_file == config.logs_dir / DEFAULT_HOST_LOG_FILE_NAME
-    assert config.backend_stdout_log_file == config.logs_dir / DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME
-    assert config.backend_stderr_log_file == config.logs_dir / DEFAULT_BACKEND_STDERR_LOG_FILE_NAME
-    assert config.runtime_snapshot_file == config.state_dir / DEFAULT_RUNTIME_SNAPSHOT_FILE_NAME
-    assert config.last_failure_file == config.state_dir / DEFAULT_LAST_FAILURE_FILE_NAME
+    assert config.app_mode == runtime_config_module.DEFAULT_APP_MODE
+    assert config.environment == runtime_config_module.DEFAULT_ENVIRONMENT
+    assert config.user_data_dir == runtime_config_module.DEFAULT_USER_DATA_DIR.resolve()
+    assert config.runtime_root_dir == config.user_data_dir / runtime_config_module.DEFAULT_RUNTIME_ROOT_DIR_NAME
+    assert config.config_dir == config.runtime_root_dir / runtime_config_module.DEFAULT_CONFIG_DIR_NAME
+    assert config.logs_dir == config.runtime_root_dir / runtime_config_module.DEFAULT_LOGS_DIR_NAME
+    assert config.database_dir == config.runtime_root_dir / runtime_config_module.DEFAULT_DATABASE_DIR_NAME
+    assert config.state_dir == config.runtime_root_dir / runtime_config_module.DEFAULT_STATE_DIR_NAME
+    assert config.debug_log_database_file == (
+        config.database_dir / runtime_config_module.DEFAULT_DEBUG_LOG_DATABASE_FILE_NAME
+    )
+    assert config.copilot_settings_file == (
+        config.config_dir / runtime_config_module.DEFAULT_COPILOT_SETTINGS_FILE_NAME
+    )
+    assert config.host_log_file == config.logs_dir / runtime_config_module.DEFAULT_HOST_LOG_FILE_NAME
+    assert config.backend_stdout_log_file == (
+        config.logs_dir / runtime_config_module.DEFAULT_BACKEND_STDOUT_LOG_FILE_NAME
+    )
+    assert config.backend_stderr_log_file == (
+        config.logs_dir / runtime_config_module.DEFAULT_BACKEND_STDERR_LOG_FILE_NAME
+    )
+    assert config.runtime_snapshot_file == (
+        config.state_dir / runtime_config_module.DEFAULT_RUNTIME_SNAPSHOT_FILE_NAME
+    )
+    assert config.last_failure_file == config.state_dir / runtime_config_module.DEFAULT_LAST_FAILURE_FILE_NAME
     assert config.sanitized_summary()["host_capability_bridge_configured"] is False
     assert "model" not in config.sanitized_summary()
 
 
 def test_parse_runtime_config_reads_environment_values() -> None:
     env = {
-        ENV_HOST: "localhost",
-        ENV_PORT: "9988",
-        ENV_LOCAL_TOKEN: "env-secret",
-        ENV_USER_DATA_DIR: "runtime-state",
-        ENV_ROOT_DIR: "runtime-state/runtime-root",
-        ENV_LOGS_DIR: "runtime-state/logs-custom",
-        ENV_DATABASE_DIR: "runtime-state/db-custom",
-        ENV_DEBUG_LOG_DATABASE_FILE: "runtime-state/db-custom/debug-events.sqlite3",
-        ENV_APP_MODE: "desktop-bundled",
-        ENV_ENVIRONMENT: "production",
-        ENV_HOST_CAPABILITY_BRIDGE_URL: "http://127.0.0.1:45678/host/private/capability-bridge",
-        ENV_HOST_CAPABILITY_BRIDGE_TOKEN: "capability-token-123",
+        runtime_config_module.ENV_HOST: "localhost",
+        runtime_config_module.ENV_PORT: "9988",
+        runtime_config_module.ENV_LOCAL_TOKEN: "env-secret",
+        runtime_config_module.ENV_USER_DATA_DIR: "runtime-state",
+        runtime_config_module.ENV_ROOT_DIR: "runtime-state/runtime-root",
+        runtime_config_module.ENV_LOGS_DIR: "runtime-state/logs-custom",
+        runtime_config_module.ENV_DATABASE_DIR: "runtime-state/db-custom",
+        runtime_config_module.ENV_DEBUG_LOG_DATABASE_FILE: "runtime-state/db-custom/debug-events.sqlite3",
+        runtime_config_module.ENV_APP_MODE: "desktop-bundled",
+        runtime_config_module.ENV_ENVIRONMENT: "production",
+        runtime_config_module.ENV_HOST_CAPABILITY_BRIDGE_URL: "http://127.0.0.1:45678/host/private/capability-bridge",
+        runtime_config_module.ENV_HOST_CAPABILITY_BRIDGE_TOKEN: "capability-token-123",
     }
 
-    config = parse_runtime_config([], env=env, cwd=BACKEND_DIR)
+    config = runtime_config_module.parse_runtime_config([], env=env, cwd=BACKEND_DIR)
 
     assert config.host == "localhost"
     assert config.port == 9988
     assert config.local_token == "env-secret"
     assert config.user_data_dir == (BACKEND_DIR / "runtime-state").resolve()
     assert config.runtime_root_dir == (BACKEND_DIR / "runtime-state" / "runtime-root").resolve()
-    assert config.config_dir == config.runtime_root_dir / DEFAULT_CONFIG_DIR_NAME
+    assert config.config_dir == config.runtime_root_dir / runtime_config_module.DEFAULT_CONFIG_DIR_NAME
     assert config.logs_dir == (BACKEND_DIR / "runtime-state" / "logs-custom").resolve()
     assert config.database_dir == (BACKEND_DIR / "runtime-state" / "db-custom").resolve()
-    assert config.state_dir == config.runtime_root_dir / DEFAULT_STATE_DIR_NAME
+    assert config.state_dir == config.runtime_root_dir / runtime_config_module.DEFAULT_STATE_DIR_NAME
     assert config.debug_log_database_file == (
         BACKEND_DIR / "runtime-state" / "db-custom" / "debug-events.sqlite3"
     ).resolve()
@@ -112,11 +88,11 @@ def test_parse_runtime_config_reads_environment_values() -> None:
 
 
 def test_parse_runtime_config_formats_ipv6_loopback_base_url() -> None:
-    config = parse_runtime_config(
+    config = runtime_config_module.parse_runtime_config(
         [],
         env={
-            ENV_HOST: "::1",
-            ENV_PORT: "9988",
+            runtime_config_module.ENV_HOST: "::1",
+            runtime_config_module.ENV_PORT: "9988",
         },
         cwd=BACKEND_DIR,
     )
@@ -128,16 +104,16 @@ def test_parse_runtime_config_formats_ipv6_loopback_base_url() -> None:
 
 def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
     env = {
-        ENV_HOST: "localhost",
-        ENV_PORT: "9988",
-        ENV_LOCAL_TOKEN: "env-secret",
-        ENV_USER_DATA_DIR: str(tmp_path / "env-data"),
-        ENV_ROOT_DIR: str(tmp_path / "env-root"),
-        ENV_APP_MODE: "env-mode",
-        ENV_ENVIRONMENT: "env-environment",
+        runtime_config_module.ENV_HOST: "localhost",
+        runtime_config_module.ENV_PORT: "9988",
+        runtime_config_module.ENV_LOCAL_TOKEN: "env-secret",
+        runtime_config_module.ENV_USER_DATA_DIR: str(tmp_path / "env-data"),
+        runtime_config_module.ENV_ROOT_DIR: str(tmp_path / "env-root"),
+        runtime_config_module.ENV_APP_MODE: "env-mode",
+        runtime_config_module.ENV_ENVIRONMENT: "env-environment",
     }
 
-    config = parse_runtime_config(
+    config = runtime_config_module.parse_runtime_config(
         [
             "--host",
             "127.0.0.1",
@@ -215,7 +191,7 @@ def test_cli_arguments_override_environment_values(tmp_path: Path) -> None:
 def test_parse_runtime_config_ignores_retired_model_environment_variables(
     tmp_path: Path,
 ) -> None:
-    config = parse_runtime_config(
+    config = runtime_config_module.parse_runtime_config(
         [],
         env={
             "COPILOT_RUNTIME_MODEL": "runtime-model",
@@ -231,9 +207,9 @@ def test_parse_runtime_config_ignores_retired_model_environment_variables(
 def test_get_backend_version_prefers_explicit_runtime_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(ENV_BACKEND_VERSION, " 9.8.7 ")
+    monkeypatch.setenv(runtime_config_module.ENV_BACKEND_VERSION, " 9.8.7 ")
 
-    assert get_backend_version() == "9.8.7"
+    assert runtime_config_module.get_backend_version() == "9.8.7"
 
 
 
@@ -252,7 +228,7 @@ def test_get_backend_version_reads_bundled_manifest_when_package_metadata_absent
     def raise_package_not_found(_package_name: str) -> str:
         raise PackageNotFoundError("backend")
 
-    monkeypatch.delenv(ENV_BACKEND_VERSION, raising=False)
+    monkeypatch.delenv(runtime_config_module.ENV_BACKEND_VERSION, raising=False)
     monkeypatch.setattr(runtime_config_module, "BACKEND_DIR", backend_dir)
     monkeypatch.setattr(
         runtime_config_module,
@@ -260,16 +236,16 @@ def test_get_backend_version_reads_bundled_manifest_when_package_metadata_absent
         raise_package_not_found,
     )
 
-    assert get_backend_version() == "2.3.4"
+    assert runtime_config_module.get_backend_version() == "2.3.4"
 
 
 
 def test_parse_runtime_config_rejects_retired_model_flag(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
-        parse_runtime_config(["--model", "cli-model"], env={}, cwd=tmp_path)
+        runtime_config_module.parse_runtime_config(["--model", "cli-model"], env={}, cwd=tmp_path)
 
 
 
 def test_parse_runtime_config_rejects_non_loopback_host() -> None:
     with pytest.raises(ValueError, match="loopback"):
-        parse_runtime_config(["--host", "0.0.0.0"], env={}, cwd=BACKEND_DIR)
+        runtime_config_module.parse_runtime_config(["--host", "0.0.0.0"], env={}, cwd=BACKEND_DIR)

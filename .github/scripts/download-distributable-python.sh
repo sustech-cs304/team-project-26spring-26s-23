@@ -531,6 +531,11 @@ if [[ ! -f "$python_executable_path" ]]; then
 fi
 
 actual_python_version="$(resolve_version_from_output "$python_executable_path")"
+if [[ "$actual_python_version" != "$python_version" ]]; then
+  echo "Resolved Python version $actual_python_version does not match requested version $python_version." >&2
+  exit 1
+fi
+
 actual_arch="$("$python_executable_path" -c 'import platform; print(platform.machine())')"
 actual_arch="$(normalize_architecture "$actual_arch")"
 assert_version_constraints "$actual_python_version" "$python_version_file" "$pyproject_file"

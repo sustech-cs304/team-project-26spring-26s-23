@@ -5,14 +5,11 @@ from pathlib import Path
 import pytest
 
 import app.integrations.sustech.teaching_information_system.provider.use_cases.diagnostics as diagnostics_module
-from app.integrations.sustech.teaching_information_system.provider.use_cases.diagnostics import (
-    run_tis_link_diagnostic_from_env,
-)
 
 
 def test_run_tis_link_diagnostic_from_env_requires_explicit_env_path() -> None:
     with pytest.raises(RuntimeError, match="explicit env_path"):
-        run_tis_link_diagnostic_from_env()
+        diagnostics_module.run_tis_link_diagnostic_from_env()
 
 
 
@@ -55,7 +52,7 @@ def test_run_tis_link_diagnostic_from_env_reads_credentials_from_explicit_path(
         fake_run_tis_link_diagnostic,
     )
 
-    result = run_tis_link_diagnostic_from_env(
+    result = diagnostics_module.run_tis_link_diagnostic_from_env(
         env_path=str(env_path),
         enable_console_logging=True,
         max_probe_count=4,

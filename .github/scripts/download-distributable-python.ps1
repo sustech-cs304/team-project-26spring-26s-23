@@ -186,6 +186,10 @@ if ($exitCode -ne 0) {
 }
 
 $actualVersion = (($versionOutput | Select-Object -First 1) -replace '^Python\s+', '').Trim()
+if ($actualVersion -ne $PythonVersion) {
+  throw "Resolved Python version $actualVersion does not match requested version $PythonVersion."
+}
+
 $actualArchitectureOutput = & $pythonExecutablePath -c 'import platform; print(platform.machine())' 2>&1
 $exitCode = $LASTEXITCODE
 if ($exitCode -ne 0) {
