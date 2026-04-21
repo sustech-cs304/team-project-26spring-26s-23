@@ -1,4 +1,5 @@
 import type {
+  McpConnectionPhase,
   McpConnectionState,
   McpErrorSummary,
   McpServerRecord,
@@ -114,67 +115,45 @@ export function createInitializeParams(): Record<string, unknown> {
   }
 }
 
-export function encodeJsonRpcContentLengthMessage(payload: unknown): Buffer {
-  const body = Buffer.from(JSON.stringify(payload), 'utf8')
-  return Buffer.concat([
-    Buffer.from(`Content-Length: ${body.byteLength}\r\n\r\n`, 'utf8'),
-    body,
-  ])
+export function encodeJsonRpcMessageLine(payload: unknown): Buffer {
+  return Buffer.from(`${JSON.stringify(payload)}\n`, 'utf8')
 }
 
-export class JsonRpcContentLengthParser {
-  private buffer = Buffer.alloc(0)
+export class JsonRpcMessageLineParser {
+  private buffer = ''
 
-  push(chunk: Buffer | string): unknown[] {
-    const chunkBuffer = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk
-    this.buffer = Buffer.concat([this.buffer, chunkBuffer])
+  push(chunk: Buffer | string): JsonRpcResponsePayload[] {
+    const chunkText = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    this.buffer += chunkText
 
-    const messages: unknown[] = []
-    let keepParsing = true
-    while (keepParsing) {
-      const header = this.readHeader()
-      if (header === null) {
-        keepParsing = false
+    const messages: JsonRpcResponsePayload[] = []
+    for (;;) {
+      const newlineIndex = this.buffer.indexOf('\n')
+      if (newlineIndex === -1) {
+        break
+      }
+
+      const line = this.buffer.slice(0, newlineIndex).replace(/\r$/u, '')
+      this.buffer = this.buffer.slice(newlineIndex + 1)
+      if (line.trim() === '') {
         continue
       }
 
-      const contentLength = parseContentLength(header.headerText)
-      if (contentLength === null) {
-        throw new Error('MCP stdio response is missing a valid Content-Length header.')
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(line) as unknown
+      } catch {
+        throw createJsonRpcLineParseError(line)
       }
 
-      const totalLength = header.bodyOffset + contentLength
-      if (this.buffer.byteLength < totalLength) {
-        keepParsing = false
-        continue
+      if (!isPlainRecord(parsed)) {
+        throw createJsonRpcLineParseError(line)
       }
 
-      const body = this.buffer.subarray(header.bodyOffset, totalLength).toString('utf8')
-      this.buffer = this.buffer.subarray(totalLength)
-      messages.push(JSON.parse(body) as unknown)
+      messages.push(parsed)
     }
 
     return messages
-  }
-
-  private readHeader(): { headerText: string, bodyOffset: number } | null {
-    const crlfIndex = this.buffer.indexOf('\r\n\r\n')
-    if (crlfIndex !== -1) {
-      return {
-        headerText: this.buffer.subarray(0, crlfIndex).toString('utf8'),
-        bodyOffset: crlfIndex + 4,
-      }
-    }
-
-    const lfIndex = this.buffer.indexOf('\n\n')
-    if (lfIndex !== -1) {
-      return {
-        headerText: this.buffer.subarray(0, lfIndex).toString('utf8'),
-        bodyOffset: lfIndex + 2,
-      }
-    }
-
-    return null
   }
 }
 
@@ -273,16 +252,19 @@ export function createConnectorSuccess(
   tools: readonly McpRemoteToolSummary[],
   now: () => string,
   transportState: McpTransportStateSummary,
-  overrides: Partial<McpServerStateSummary> = {},
+  overrides: Partial<McpServerStateSummary> & {
+    warnings?: string[]
+  } = {},
 ): McpConnectorOperationSuccess {
   const clonedTools = cloneRemoteTools(tools)
   return {
     ok: true,
     tools: clonedTools,
-    warnings: [],
+    warnings: overrides.warnings ?? [],
     state: createConnectorState(server, 'connected', clonedTools.length, now, {
       transportState,
       lastError: null,
+      lastPhase: overrides.lastPhase ?? null,
       lastHandshakeAt: overrides.lastHandshakeAt ?? now(),
       lastCatalogSyncAt: overrides.lastCatalogSyncAt ?? now(),
       reconnectAttempt: overrides.reconnectAttempt ?? 0,
@@ -299,6 +281,7 @@ export function createConnectorFailure(
     previousTools?: readonly McpRemoteToolSummary[]
     reconnectAttempt?: number
     connectionState?: McpConnectionState
+    lastPhase?: McpConnectionPhase | null
     lastHandshakeAt?: string | null
     lastCatalogSyncAt?: string | null
     warnings?: string[]
@@ -317,6 +300,7 @@ export function createConnectorFailure(
       transportState,
       lastError: error,
       reconnectAttempt: options.reconnectAttempt ?? 0,
+      lastPhase: options.lastPhase ?? null,
       lastHandshakeAt: options.lastHandshakeAt ?? null,
       lastCatalogSyncAt: options.lastCatalogSyncAt ?? null,
     }),
@@ -332,6 +316,7 @@ export function createConnectorState(
     transportState?: McpTransportStateSummary | null
     lastError?: McpErrorSummary | null
     reconnectAttempt?: number
+    lastPhase?: McpConnectionPhase | null
     lastHandshakeAt?: string | null
     lastCatalogSyncAt?: string | null
   } = {},
@@ -342,6 +327,7 @@ export function createConnectorState(
     enabled: server.enabled,
     connectionState: resolvedConnectionState,
     toolCount: resolvedConnectionState === 'disabled' ? 0 : Math.max(0, toolCount),
+    lastPhase: options.lastPhase ?? null,
     lastHandshakeAt: options.lastHandshakeAt ?? null,
     lastCatalogSyncAt: options.lastCatalogSyncAt ?? null,
     lastError: options.lastError === undefined ? null : cloneNullableError(options.lastError),
@@ -507,17 +493,6 @@ export function withTimeout<T>(
   })
 }
 
-function parseContentLength(headerText: string): number | null {
-  for (const line of headerText.split(/\r?\n/g)) {
-    const match = /^Content-Length:\s*(\d+)$/iu.exec(line.trim())
-    if (match !== null) {
-      return Number.parseInt(match[1], 10)
-    }
-  }
-
-  return null
-}
-
 function normalizeToolEntry(entry: unknown, index: number): McpRemoteToolSummary {
   if (!isPlainRecord(entry) || typeof entry.name !== 'string' || entry.name.trim() === '') {
     throw new McpConnectorError(createMcpErrorSummary(
@@ -584,6 +559,17 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 
 function cloneRecord(record: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(record)) as Record<string, unknown>
+}
+
+function createJsonRpcLineParseError(line: string): McpConnectorError {
+  const excerpt = line.length > 240 ? `${line.slice(0, 237)}...` : line
+  return new McpConnectorError(createMcpErrorSummary(
+    'protocol_parse_failed',
+    'The MCP stdio server returned unrecognized stdout output.',
+    false,
+    () => new Date().toISOString(),
+    { stdoutLine: excerpt },
+  ))
 }
 
 function extractToolCallErrorMessage(content: unknown[]): string {

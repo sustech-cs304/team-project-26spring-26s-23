@@ -170,6 +170,8 @@ export function createMcpTestConnectionSuccessFixture(transportKind: 'stdio' | '
     transportKind,
     toolCount: transportKind === 'stdio' ? 1 : 2,
     durationMs: transportKind === 'stdio' ? 46 : 71,
+    phase: null,
+    diagnosticSummary: null,
     error: null,
     warnings: [],
   }

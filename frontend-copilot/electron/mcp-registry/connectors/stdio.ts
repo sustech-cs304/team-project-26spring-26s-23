@@ -1,13 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { once } from 'node:events'
 
-import type { McpServerRecord, McpToolCallResult } from '../types'
+import type { McpConnectionPhase, McpServerRecord, McpToolCallResult } from '../types'
 import {
   MCP_INITIALIZE_METHOD,
   MCP_INITIALIZED_NOTIFICATION_METHOD,
   MCP_TOOLS_CALL_METHOD,
   MCP_TOOLS_LIST_METHOD,
-  JsonRpcContentLengthParser,
+  JsonRpcMessageLineParser,
   McpConnectorError,
   type JsonRpcResponsePayload,
   type McpConnectorContext,
@@ -25,7 +25,7 @@ import {
   createJsonRpcRequest,
   createMcpErrorSummary,
   delay,
-  encodeJsonRpcContentLengthMessage,
+  encodeJsonRpcMessageLine,
   isJsonRpcResponseForId,
   normalizeConnectorError,
   normalizeToolsCallResult,
@@ -36,6 +36,7 @@ import {
 
 const STDIO_CONNECT_TIMEOUT_MS = 5_000
 const STDIO_REQUEST_TIMEOUT_MESSAGE = 'Timed out while waiting for the MCP stdio server response.'
+const STDERR_SUMMARY_MAX_LINES = 3
 
 export interface CreateStdioMcpServerConnectorOptions {
   server: McpServerRecord
@@ -53,13 +54,14 @@ export function createStdioMcpServerConnector(
   const transportConfig = options.server.transportConfig
   const context = options.context
   let child: ChildProcessWithoutNullStreams | null = null
-  let parser = new JsonRpcContentLengthParser()
+  let parser = new JsonRpcMessageLineParser()
   let nextRequestId = 1
   let sessionReady = false
   let tools: McpRemoteToolSummary[] = []
   let lastExitCode: number | null = null
   let lastExitSignal: string | null = null
-  let lastStderrLine: string | null = null
+  let currentPhase: McpConnectionPhase | null = null
+  const stderrLines: string[] = []
   let state = createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, context.now)
   const pending = new Map<number, {
     resolve: (value: JsonRpcResponsePayload) => void
@@ -82,8 +84,9 @@ export function createStdioMcpServerConnector(
   async function start(): Promise<McpConnectorOperationResult> {
     sessionReady = false
     await disposeChild()
-    parser = new JsonRpcContentLengthParser()
-    lastStderrLine = null
+    parser = new JsonRpcMessageLineParser()
+    currentPhase = 'spawn'
+    stderrLines.splice(0)
     state = createConnectorState(server, 'connecting', tools.length, context.now, {
       transportState: {
         kind: 'stdio',
@@ -91,7 +94,8 @@ export function createStdioMcpServerConnector(
         pid: null,
         lastExitCode,
         lastExitSignal,
-      },
+        },
+      lastPhase: currentPhase,
       lastHandshakeAt: state.lastHandshakeAt ?? null,
       lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
       lastError: null,
@@ -118,6 +122,7 @@ export function createStdioMcpServerConnector(
           lastExitCode,
           lastExitSignal,
         },
+        lastPhase: currentPhase,
         lastHandshakeAt: state.lastHandshakeAt ?? null,
         lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
         lastError: null,
@@ -125,9 +130,10 @@ export function createStdioMcpServerConnector(
       await emitState()
 
       await performHandshake()
-      const nextTools = await requestToolsList()
+      const nextTools = await requestToolsList(true)
       sessionReady = true
       tools = cloneRemoteTools(nextTools)
+      currentPhase = null
       const success = createConnectorSuccess(server, nextTools, context.now, {
         kind: 'stdio',
         processStatus: 'running',
@@ -135,8 +141,10 @@ export function createStdioMcpServerConnector(
         lastExitCode,
         lastExitSignal,
       }, {
+        lastPhase: null,
         lastHandshakeAt: context.now(),
         lastCatalogSyncAt: context.now(),
+        warnings: getWarnings(),
       })
       state = cloneStateSummary(success.state)
       await emitState()
@@ -152,7 +160,7 @@ export function createStdioMcpServerConnector(
     }
 
     try {
-      const nextTools = await requestToolsList()
+      const nextTools = await requestToolsList(false)
       tools = cloneRemoteTools(nextTools)
       const success = createConnectorSuccess(server, nextTools, context.now, {
         kind: 'stdio',
@@ -161,8 +169,10 @@ export function createStdioMcpServerConnector(
         lastExitCode,
         lastExitSignal,
       }, {
+        lastPhase: null,
         lastHandshakeAt: state.lastHandshakeAt ?? context.now(),
         lastCatalogSyncAt: context.now(),
+        warnings: getWarnings(),
       })
       state = cloneStateSummary(success.state)
       await emitState()
@@ -175,6 +185,7 @@ export function createStdioMcpServerConnector(
   async function stop(): Promise<void> {
     sessionReady = false
     await disposeChild()
+    currentPhase = null
     state = createConnectorState(server, 'idle', 0, context.now, {
       transportState: {
         kind: 'stdio',
@@ -183,6 +194,7 @@ export function createStdioMcpServerConnector(
         lastExitCode,
         lastExitSignal,
       },
+      lastPhase: null,
       lastHandshakeAt: state.lastHandshakeAt ?? null,
       lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
       lastError: null,
@@ -221,8 +233,7 @@ export function createStdioMcpServerConnector(
       const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
       const normalized = text.trim()
       if (normalized !== '') {
-        const lines = normalized.split(/\r?\n/g)
-        lastStderrLine = lines[lines.length - 1] ?? normalized
+        recordStderr(normalized)
       }
     })
 
@@ -257,12 +268,20 @@ export function createStdioMcpServerConnector(
   }
 
   async function performHandshake(): Promise<void> {
+    await updatePhase('initialize')
     const initializeResponse = await sendRequest(MCP_INITIALIZE_METHOD, createInitializeParams())
     unwrapJsonRpcResponse(initializeResponse, context.now)
+    await updatePhase('initialized')
     await sendNotification(MCP_INITIALIZED_NOTIFICATION_METHOD, {})
   }
 
-  async function requestToolsList(): Promise<McpRemoteToolSummary[]> {
+  async function requestToolsList(updatePhaseState: boolean): Promise<McpRemoteToolSummary[]> {
+    if (updatePhaseState) {
+      await updatePhase('tools/list')
+    } else {
+      currentPhase = 'tools/list'
+    }
+
     const response = await sendRequest(MCP_TOOLS_LIST_METHOD, {})
     const result = unwrapJsonRpcResponse(response, context.now)
     return normalizeToolsListResult(result)
@@ -341,7 +360,7 @@ export function createStdioMcpServerConnector(
 
     const responsePromise = new Promise<JsonRpcResponsePayload>((resolve, reject) => {
       pending.set(requestId, { resolve, reject })
-      activeChild.stdin.write(encodeJsonRpcContentLengthMessage(createJsonRpcRequest(requestId, method, params)), (error) => {
+      activeChild.stdin.write(encodeJsonRpcMessageLine(createJsonRpcRequest(requestId, method, params)), (error) => {
         if (error === undefined || error === null) {
           return
         }
@@ -360,7 +379,7 @@ export function createStdioMcpServerConnector(
       responsePromise,
       context.timeoutMs > 0 ? context.timeoutMs : STDIO_CONNECT_TIMEOUT_MS,
       context.now,
-      STDIO_REQUEST_TIMEOUT_MESSAGE,
+      createPhaseTimeoutMessage(currentPhase),
     )
   }
 
@@ -376,7 +395,7 @@ export function createStdioMcpServerConnector(
     }
 
     await new Promise<void>((resolve, reject) => {
-      activeChild.stdin.write(encodeJsonRpcContentLengthMessage(createJsonRpcNotification(method, params)), (error) => {
+      activeChild.stdin.write(encodeJsonRpcMessageLine(createJsonRpcNotification(method, params)), (error) => {
         if (error === undefined || error === null) {
           resolve()
           return
@@ -388,7 +407,7 @@ export function createStdioMcpServerConnector(
   }
 
   async function applyFailure(error: unknown): Promise<McpConnectorOperationResult> {
-    const summary = normalizeConnectorError(error, context.now, 'stdio_connection_failed')
+    const summary = enrichFailureSummary(normalizeConnectorError(error, context.now, 'stdio_connection_failed'))
     await disposeChild()
     sessionReady = false
     const failure = createConnectorFailure(server, summary, context.now, {
@@ -398,10 +417,11 @@ export function createStdioMcpServerConnector(
       lastExitCode,
       lastExitSignal,
     }, {
+      lastPhase: currentPhase,
       previousTools: tools,
       lastHandshakeAt: state.lastHandshakeAt ?? null,
       lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
-      warnings: lastStderrLine === null ? [] : [lastStderrLine],
+      warnings: getWarnings(),
     })
     state = cloneStateSummary(failure.state)
     await emitState()
@@ -409,7 +429,7 @@ export function createStdioMcpServerConnector(
   }
 
   async function applyUnexpectedDisconnect(error: unknown): Promise<void> {
-    const summary = normalizeConnectorError(error, context.now, 'stdio_disconnected')
+    const summary = enrichFailureSummary(normalizeConnectorError(error, context.now, 'stdio_disconnected'))
     const failure = createConnectorFailure(server, summary, context.now, {
       kind: 'stdio',
       processStatus: 'exited',
@@ -417,9 +437,11 @@ export function createStdioMcpServerConnector(
       lastExitCode,
       lastExitSignal,
     }, {
+      lastPhase: currentPhase,
       previousTools: tools,
       lastHandshakeAt: state.lastHandshakeAt ?? null,
       lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
+      warnings: getWarnings(),
     })
     state = cloneStateSummary(failure.state)
     await emitState()
@@ -457,10 +479,11 @@ export function createStdioMcpServerConnector(
   }
 
   function createProcessExitSummary(code: number | null, signal: NodeJS.Signals | null) {
+    const stderrSummary = getStderrSummary()
     const detailParts = [
       code === null ? null : `exit code ${code}`,
       signal === null ? null : `signal ${signal}`,
-      lastStderrLine,
+      stderrSummary,
     ].filter((value): value is string => value !== null)
 
     const suffix = detailParts.length === 0 ? '' : ` (${detailParts.join(', ')})`
@@ -472,6 +495,8 @@ export function createStdioMcpServerConnector(
       {
         exitCode: code,
         exitSignal: signal,
+        phase: currentPhase,
+        stderrSummary,
       },
     )
   }
@@ -479,4 +504,117 @@ export function createStdioMcpServerConnector(
   async function emitState(): Promise<void> {
     await context.onStateChange?.(cloneStateSummary(state))
   }
+
+  async function updatePhase(phase: McpConnectionPhase): Promise<void> {
+    currentPhase = phase
+    state = createConnectorState(server, 'connecting', tools.length, context.now, {
+      transportState: child === null
+        ? {
+            kind: 'stdio',
+            processStatus: 'starting',
+            pid: null,
+            lastExitCode,
+            lastExitSignal,
+          }
+        : {
+            kind: 'stdio',
+            processStatus: 'running',
+            pid: child.pid ?? null,
+            lastExitCode,
+            lastExitSignal,
+          },
+      lastPhase: phase,
+      lastHandshakeAt: state.lastHandshakeAt ?? null,
+      lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
+      lastError: null,
+    })
+    await emitState()
+  }
+
+  function recordStderr(text: string): void {
+    for (const line of text.split(/\r?\n/gu)) {
+      const normalized = line.trim()
+      if (normalized === '') {
+        continue
+      }
+
+      stderrLines.push(normalized)
+      while (stderrLines.length > STDERR_SUMMARY_MAX_LINES) {
+        stderrLines.shift()
+      }
+    }
+  }
+
+  function getStderrSummary(): string | null {
+    return stderrLines.length === 0 ? null : stderrLines.join(' | ')
+  }
+
+  function getWarnings(): string[] {
+    const stderrSummary = getStderrSummary()
+    return stderrSummary === null ? [] : [stderrSummary]
+  }
+
+  function enrichFailureSummary(summary: ReturnType<typeof normalizeConnectorError>): ReturnType<typeof normalizeConnectorError> {
+    const phase = currentPhase
+    const stderrSummary = getStderrSummary()
+    const diagnosticSummary = buildDiagnosticSummary(phase, stderrSummary)
+    const nextDetails = {
+      ...(summary.details ?? {}),
+      phase,
+      command: transportConfig.command,
+      args: [...transportConfig.args],
+      cwd: transportConfig.cwd ?? null,
+      stderrSummary,
+      diagnosticSummary,
+    }
+
+    return {
+      ...summary,
+      message: createPhaseAwareMessage(summary, phase),
+      details: nextDetails,
+    }
+  }
+
+  function buildDiagnosticSummary(phase: McpConnectionPhase | null, stderrSummary: string | null): string {
+    const parts = [
+      phase === null ? null : `phase=${phase}`,
+      `command=${transportConfig.command}`,
+      transportConfig.args.length === 0 ? null : `args=${transportConfig.args.join(' ')}`,
+      transportConfig.cwd ? `cwd=${transportConfig.cwd}` : null,
+      stderrSummary === null ? null : `stderr=${stderrSummary}`,
+    ].filter((value): value is string => value !== null)
+
+    return parts.join('; ')
+  }
+
+  function createPhaseAwareMessage(
+    summary: ReturnType<typeof normalizeConnectorError>,
+    phase: McpConnectionPhase | null,
+  ): string {
+    if (phase === null) {
+      return summary.message
+    }
+
+    if (summary.code === 'timeout') {
+      return createPhaseTimeoutMessage(phase)
+    }
+
+    if (summary.code === 'protocol_parse_failed') {
+      return `The MCP stdio server returned unrecognized stdout output during ${phase}.`
+    }
+
+    if (summary.code === 'mcp_remote_error') {
+      return `The MCP stdio server returned an error during ${phase}: ${summary.message}`
+    }
+
+    return summary.message
+  }
+}
+
+function createPhaseTimeoutMessage(phase: McpConnectionPhase | null): string {
+  if (phase === null) {
+    return STDIO_REQUEST_TIMEOUT_MESSAGE
+  }
+
+  return `Timed out while waiting for the MCP stdio server response during ${phase}.`
 }

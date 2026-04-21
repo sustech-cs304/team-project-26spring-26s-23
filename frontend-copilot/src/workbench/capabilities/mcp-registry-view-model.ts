@@ -197,7 +197,7 @@ export function formatMcpTestConnectionMessage(result: McpTestConnectionResult):
     return `测试连接成功，可用工具 ${result.toolCount} 个。`
   }
 
-  const detail = result.error?.message ?? result.warnings?.[0] ?? '测试连接未成功。'
+  const detail = result.error?.message ?? result.diagnosticSummary ?? result.warnings?.[0] ?? '测试连接未成功。'
   return `测试连接失败：${detail}`
 }
 

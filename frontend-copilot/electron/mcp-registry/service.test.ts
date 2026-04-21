@@ -110,6 +110,8 @@ function createFakeConnectorHub(): FakeConnectorHub {
         transportKind: server.transportKind,
         toolCount: server.enabled ? STUB_TOOLS.length : 0,
         durationMs: 12,
+        phase: server.enabled ? null : 'initialize',
+        diagnosticSummary: server.enabled ? null : 'phase=initialize; command=stub-mcp-server',
         error: server.enabled ? null : {
           code: 'disabled',
           message: 'The server is disabled.',
@@ -387,6 +389,8 @@ describe('createMcpRegistryService', () => {
       transportKind: 'stdio',
       toolCount: 1,
       durationMs: expect.any(Number),
+      phase: null,
+      diagnosticSummary: null,
       error: null,
       warnings: [],
     })
@@ -478,6 +482,77 @@ describe('createMcpRegistryService', () => {
         observedAt: '2026-04-21T12:00:00.000Z',
         details: { snapshotRevision: 1 },
       },
+    })
+  })
+
+  it('returns connection test phase and diagnostic summaries and emits a targeted failure log', async () => {
+    const fixture = await createRegistryServiceFixture('test-connection-diagnostics')
+    const appendLog = vi.fn()
+    const service = createMcpRegistryService({
+      store: fixture.store,
+      connectorHub: {
+        ...fixture.connectorHub,
+        async testConnection(server) {
+          return {
+            success: false,
+            transportKind: server.transportKind,
+            toolCount: 0,
+            durationMs: 9,
+            phase: 'initialize',
+            diagnosticSummary: 'phase=initialize; command=uvx mcp-server-fetch; stderr=booting',
+            error: {
+              code: 'timeout',
+              message: 'Timed out while waiting for the MCP stdio server response during initialize.',
+              retryable: true,
+              observedAt: '2026-04-21T12:00:00.000Z',
+              details: {
+                phase: 'initialize',
+                stderrSummary: 'booting',
+              },
+            },
+            warnings: ['booting'],
+          }
+        },
+      },
+      snapshotSink: fixture.snapshotSink,
+      publishEvent: fixture.publishEvent,
+      appendLog,
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    await fixture.store.saveServers([createMcpStdioStubServerFixture()])
+    const result = await service.testConnection({
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      success: false,
+      transportKind: 'stdio',
+      toolCount: 0,
+      durationMs: expect.any(Number),
+      phase: 'initialize',
+      diagnosticSummary: 'phase=initialize; command=uvx mcp-server-fetch; stderr=booting',
+      error: {
+        code: 'timeout',
+        message: 'Timed out while waiting for the MCP stdio server response during initialize.',
+        retryable: true,
+        observedAt: '2026-04-21T12:00:00.000Z',
+        details: {
+          phase: 'initialize',
+          stderrSummary: 'booting',
+        },
+      },
+      warnings: ['booting'],
+    })
+    expect(appendLog).toHaveBeenCalledWith('warn', '[mcp-registry] MCP testConnection failed.', {
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      transportKind: 'stdio',
+      phase: 'initialize',
+      errorCode: 'timeout',
+      retryable: true,
+      diagnosticSummary: 'phase=initialize; command=uvx mcp-server-fetch; stderr=booting',
+      stderrSummary: 'booting',
     })
   })
 })

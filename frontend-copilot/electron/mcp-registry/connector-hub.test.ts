@@ -258,6 +258,51 @@ describe('createMcpConnectorHub', () => {
       },
     ])
   })
+
+  it('returns the last connection phase and diagnostic summary for connection test failures', async () => {
+    const stdioServer = createMcpStdioStubServerFixture()
+
+    const hub = createMcpConnectorHub({
+      now: () => '2026-04-21T12:00:00.000Z',
+      createConnector(server, context) {
+        return createFakeConnector(server, context, {
+          startResults: [createConnectorFailure(server, createMcpErrorSummary(
+            'timeout',
+            'Timed out while waiting for the MCP stdio server response during initialize.',
+            true,
+            () => '2026-04-21T12:00:00.000Z',
+            {
+              phase: 'initialize',
+              diagnosticSummary: 'phase=initialize; command=uvx mcp-server-fetch; stderr=booting',
+            },
+          ), () => '2026-04-21T12:00:00.000Z', {
+            kind: 'stdio',
+            processStatus: 'running',
+            pid: 4102,
+            lastExitCode: null,
+            lastExitSignal: null,
+          }, {
+            lastPhase: 'initialize',
+            warnings: ['booting'],
+          })],
+        })
+      },
+    })
+
+    await expect(hub.testConnection(stdioServer)).resolves.toEqual({
+      success: false,
+      transportKind: 'stdio',
+      toolCount: 0,
+      durationMs: expect.any(Number),
+      phase: 'initialize',
+      diagnosticSummary: 'phase=initialize; command=uvx mcp-server-fetch; stderr=booting',
+      error: expect.objectContaining({
+        code: 'timeout',
+        message: 'Timed out while waiting for the MCP stdio server response during initialize.',
+      }),
+      warnings: ['booting'],
+    })
+  })
 })
 
 function createFakeConnector(

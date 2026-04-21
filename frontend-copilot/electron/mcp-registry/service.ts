@@ -293,12 +293,28 @@ export function createMcpRegistryService(
       }
 
       const result = await connectorHub.testConnection(resolved.server)
+      if (!result.success) {
+        await options.appendLog?.('warn', '[mcp-registry] MCP testConnection failed.', {
+          serverId: resolved.server.serverId,
+          transportKind: result.transportKind,
+          phase: result.phase,
+          errorCode: result.error?.code ?? null,
+          retryable: result.error?.retryable ?? null,
+          diagnosticSummary: result.diagnosticSummary,
+          stderrSummary: typeof result.error?.details?.stderrSummary === 'string'
+            ? result.error.details.stderrSummary
+            : null,
+        })
+      }
+
       return {
         ok: true,
         success: result.success,
         transportKind: result.transportKind,
         toolCount: result.toolCount,
         durationMs: Math.max(result.durationMs, Date.now() - startedAt),
+        phase: result.phase,
+        diagnosticSummary: result.diagnosticSummary,
         error: result.error,
         warnings: result.warnings,
       }

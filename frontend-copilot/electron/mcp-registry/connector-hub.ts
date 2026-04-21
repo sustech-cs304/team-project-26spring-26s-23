@@ -1,4 +1,5 @@
 import type {
+  McpConnectionPhase,
   McpErrorSummary,
   McpRegistrySubscriptionEvent,
   McpServerRecord,
@@ -46,6 +47,8 @@ export interface McpConnectorHubTestConnectionResult {
   transportKind: McpTransportKind
   toolCount: number
   durationMs: number
+  phase: McpConnectionPhase | null
+  diagnosticSummary: string | null
   error: McpErrorSummary | null
   warnings: string[]
 }
@@ -166,27 +169,35 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
     async testConnection(server) {
       const startedAt = Date.now()
       const capturedStates: McpServerStateSummary[] = []
-      const connector = server.transportKind === 'stdio'
-        ? createStdioMcpServerConnector({
-            server,
-            context: {
-              timeoutMs,
-              now,
-              onStateChange(state) {
-                capturedStates.push(cloneStateSummary(state))
-              },
+      const connector = options.createConnector !== undefined
+        ? options.createConnector(server, {
+            timeoutMs,
+            now,
+            onStateChange(state) {
+              capturedStates.push(cloneStateSummary(state))
             },
           })
-        : createHttpSseMcpServerConnector({
-            server,
-            context: {
-              timeoutMs,
-              now,
-              onStateChange(state) {
-                capturedStates.push(cloneStateSummary(state))
+        : server.transportKind === 'stdio'
+          ? createStdioMcpServerConnector({
+              server,
+              context: {
+                timeoutMs,
+                now,
+                onStateChange(state) {
+                  capturedStates.push(cloneStateSummary(state))
+                },
               },
-            },
-          })
+            })
+          : createHttpSseMcpServerConnector({
+              server,
+              context: {
+                timeoutMs,
+                now,
+                onStateChange(state) {
+                  capturedStates.push(cloneStateSummary(state))
+                },
+              },
+            })
 
       try {
         const result = await connector.start()
@@ -196,6 +207,8 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
           transportKind: server.transportKind,
           toolCount: result.tools.length,
           durationMs,
+          phase: resolveTestConnectionPhase(result, capturedStates),
+          diagnosticSummary: resolveDiagnosticSummary(result),
           error: result.ok ? null : result.error,
           warnings: result.warnings,
         }
@@ -429,6 +442,40 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
       transportState: createDefaultTransportState(server),
     })
   }
+}
+
+function resolveTestConnectionPhase(
+  result: McpConnectorOperationResult,
+  capturedStates: readonly McpServerStateSummary[],
+): McpConnectionPhase | null {
+  if (typeof result.state.lastPhase === 'string') {
+    return result.state.lastPhase
+  }
+
+  const errorPhase = result.ok ? null : result.error.details?.phase
+  if (typeof errorPhase === 'string') {
+    return errorPhase as McpConnectionPhase
+  }
+
+  for (let index = capturedStates.length - 1; index >= 0; index -= 1) {
+    const phase = capturedStates[index]?.lastPhase
+    if (typeof phase === 'string') {
+      return phase
+    }
+  }
+
+  return null
+}
+
+function resolveDiagnosticSummary(result: McpConnectorOperationResult): string | null {
+  if (result.ok) {
+    return null
+  }
+
+  const diagnosticSummary = result.error.details?.diagnosticSummary
+  return typeof diagnosticSummary === 'string' && diagnosticSummary.trim() !== ''
+    ? diagnosticSummary
+    : null
 }
 
 function isSameServerConfig(left: McpServerRecord, right: McpServerRecord): boolean {
