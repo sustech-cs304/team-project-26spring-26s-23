@@ -200,6 +200,58 @@ describe('createHttpSseMcpServerConnector', () => {
       retryable: true,
     })
   })
+
+  it('rejects duplicate tool names from HTTP/SSE servers as protocol failures', async () => {
+    const server = createMcpHttpSseStubServerFixture()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'fixture' } } }))
+      .mockResolvedValueOnce(createEmptyResponse())
+      .mockResolvedValueOnce(createSseProbeResponse())
+      .mockResolvedValueOnce(createJsonResponse({
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          tools: [
+            {
+              name: 'fetch-calendar',
+              title: 'Fetch Calendar',
+              description: 'Fetch the course calendar.',
+              inputSchema: { type: 'object' },
+            },
+            {
+              name: 'fetch-calendar',
+              title: 'Fetch Calendar Duplicate',
+              description: 'Duplicate metadata.',
+              inputSchema: { type: 'object' },
+            },
+          ],
+        },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const connector = createHttpSseMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 1_000,
+      },
+    })
+
+    const result = await connector.start()
+
+    expect(result.ok).toBe(false)
+    if (result.ok) {
+      throw new Error('Expected duplicate tool metadata failure result.')
+    }
+    expect(result.error).toMatchObject({
+      code: 'protocol_parse_failed',
+      retryable: false,
+      details: { remoteToolName: 'fetch-calendar' },
+    })
+    expect(result.state.connectionState).toBe('error')
+    expect(result.tools).toEqual([])
+    expect(connector.getTools()).toEqual([])
+  })
 })
 
 function createJsonResponse(payload: unknown) {

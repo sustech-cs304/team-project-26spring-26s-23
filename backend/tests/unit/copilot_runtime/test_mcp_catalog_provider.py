@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from app.copilot_runtime.mcp_catalog_provider import (
     McpCatalogProvider,
     build_mcp_catalog_entries,
     create_mcp_catalog_provider,
 )
-from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot
+from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot, McpSnapshotProvider
 
 _FIXTURE_ROOT = (
     Path(__file__).resolve().parents[4]
@@ -96,14 +97,18 @@ def test_build_mcp_catalog_entries_falls_back_to_server_group_metadata() -> None
 
 
 def test_mcp_catalog_provider_returns_empty_catalog_when_snapshot_is_missing() -> None:
-    provider = create_mcp_catalog_provider(_SnapshotProvider(snapshot=None))
+    provider = create_mcp_catalog_provider(
+        cast(McpSnapshotProvider, _SnapshotProvider(snapshot=None))
+    )
 
     assert provider.load_catalog_entries(language="zh-CN") == ()
 
 
 def test_mcp_catalog_provider_loads_snapshot_entries_without_parallel_catalog_path() -> None:
     snapshot = _load_snapshot_fixture()
-    provider = McpCatalogProvider(snapshot_provider=_SnapshotProvider(snapshot=snapshot))
+    provider = McpCatalogProvider(
+        snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot=snapshot))
+    )
 
     entries = provider.load_catalog_entries(language="en-US")
 

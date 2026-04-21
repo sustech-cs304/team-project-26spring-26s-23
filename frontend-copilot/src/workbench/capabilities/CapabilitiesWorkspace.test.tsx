@@ -503,6 +503,7 @@ describe('CapabilitiesWorkspace', () => {
     expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('2026-04-21 12:00:00Z')
 
     rendered.unmount()
+    expect(activeMcpRegistryListener).toBeNull()
   })
 
   it('renders hosted backend builtin and contract tools instead of collapsing to the empty state', async () => {
@@ -734,6 +735,8 @@ describe('CapabilitiesWorkspace', () => {
 
     expect(dialog.getAttribute('aria-label')).toBe('编辑 MCP 服务器 JSON')
     expect(textarea.value).toContain('"mcp-stdio-stub"')
+    expect(dialog.textContent).toContain('密码类字段暂不提供安全存储')
+    expect(dialog.textContent).toContain('HTTP/SSE 401、403、404 认证失败不会自动重试')
     expect(document.activeElement).toBe(textarea)
     expect(getExactButton(dialog, '取消')).toBeTruthy()
     expect(getExactButton(dialog, '确定')).toBeTruthy()

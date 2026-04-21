@@ -413,6 +413,30 @@ def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool
 
 
 
+def test_build_default_runtime_dependencies_ignores_mcp_executor_when_snapshot_is_missing(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    bridge_client = _RecordingMcpBridgeClient()
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
+
+    tool_ids = [tool.tool_id for tool in dependencies.tool_registry.get_default().tools]
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()["tools"]
+    ]
+    assert "tool.fs.read" in tool_ids
+    assert "tool.fs.read" in catalog_tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
+    assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
+    assert bridge_client.calls == []
+
+
+
 def test_build_default_runtime_dependencies_registers_executable_mcp_tools_with_bridge_client(
     tmp_path: Path,
 ) -> None:

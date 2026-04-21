@@ -154,9 +154,43 @@ describe('createStdioMcpServerConnector', () => {
 
     await connector.stop()
   })
+
+  it('rejects duplicate tool names from stdio servers as protocol failures', async () => {
+    const fixture = await createStdioServerFixture('duplicate-tools', 'duplicate-tools')
+    const server = createMcpStdioStubServerFixture({
+      transportConfig: {
+        kind: 'stdio',
+        command: process.execPath,
+        args: [fixture.scriptFile],
+        cwd: fixture.tempRoot,
+      },
+    })
+    const connector = createStdioMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 1_000,
+      },
+    })
+
+    const result = await connector.start()
+
+    expect(result.ok).toBe(false)
+    if (result.ok) {
+      throw new Error('Expected duplicate tool metadata failure result.')
+    }
+    expect(result.error).toMatchObject({
+      code: 'protocol_parse_failed',
+      retryable: false,
+      details: { remoteToolName: 'search-campus' },
+    })
+    expect(result.state.connectionState).toBe('error')
+    expect(result.tools).toEqual([])
+    expect(connector.getTools()).toEqual([])
+  })
 })
 
-async function createStdioServerFixture(name: string, mode: 'success' | 'fail-list-after-first') {
+async function createStdioServerFixture(name: string, mode: 'success' | 'fail-list-after-first' | 'duplicate-tools') {
   const tempRoot = await mkdtemp(path.join(tmpdir(), `candue-mcp-stdio-${name}-`))
   activeTempRoots.push(tempRoot)
   const scriptFile = path.join(tempRoot, 'stdio-mcp-server.mjs')
@@ -164,7 +198,7 @@ async function createStdioServerFixture(name: string, mode: 'success' | 'fail-li
   return { tempRoot, scriptFile }
 }
 
-function createStdioServerScript(mode: 'success' | 'fail-list-after-first'): string {
+function createStdioServerScript(mode: 'success' | 'fail-list-after-first' | 'duplicate-tools'): string {
   return `
 let buffer = Buffer.alloc(0);
 let listCalls = 0;
@@ -201,6 +235,13 @@ function handle(payload) {
     listCalls += 1;
     if (${JSON.stringify(mode)} === 'fail-list-after-first' && listCalls > 1) {
       send({ jsonrpc: '2.0', id: payload.id, error: { code: -32000, message: 'temporary list failure' } });
+      return;
+    }
+    if (${JSON.stringify(mode)} === 'duplicate-tools') {
+      send({ jsonrpc: '2.0', id: payload.id, result: { tools: [
+        { name: 'search-campus', title: 'Search Campus', description: 'Search the campus knowledge base.', inputSchema: { type: 'object' } },
+        { name: 'search-campus', title: 'Search Campus Duplicate', description: 'Duplicate metadata.', inputSchema: { type: 'object' } }
+      ] } });
       return;
     }
     send({ jsonrpc: '2.0', id: payload.id, result: { tools: [{ name: 'search-campus', title: 'Search Campus', description: 'Search the campus knowledge base.', inputSchema: { type: 'object' } }] } });

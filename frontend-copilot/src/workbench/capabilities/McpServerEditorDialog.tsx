@@ -94,6 +94,10 @@ export function McpServerEditorDialog({
               ) : null}
             </div>
           ) : null}
+
+          <p className="capabilities-dialog__hint" aria-live="polite">
+            首期限制：普通配置、请求头和环境变量会直接保存在本地配置文件；密码类字段暂不提供安全存储，请勿在此录入真实 secret；HTTP/SSE 401、403、404 认证失败不会自动重试。
+          </p>
         </div>
 
         <footer className="capabilities-dialog__footer">

@@ -53,20 +53,29 @@ export function createElectronMcpRegistryService(
   let servicePromise: Promise<McpRegistryService> | null = null
 
   const getService = async (): Promise<McpRegistryService> => {
-    servicePromise ??= (async () => {
-      const runtimePaths = await options.prepareRuntimePaths()
-      return createMcpRegistryService({
-        store: createMcpRegistryStore({
-          paths: createMcpRegistryPaths(runtimePaths),
-        }),
-        snapshotSink: createMcpCapabilitySnapshotSink({
-          runtimePaths,
-        }),
-        now: options.now,
-        publishEvent: options.publishRegistryEvent,
-        appendLog: options.appendLog,
+    if (servicePromise === null) {
+      const nextServicePromise = (async () => {
+        const runtimePaths = await options.prepareRuntimePaths()
+        return createMcpRegistryService({
+          store: createMcpRegistryStore({
+            paths: createMcpRegistryPaths(runtimePaths),
+          }),
+          snapshotSink: createMcpCapabilitySnapshotSink({
+            runtimePaths,
+          }),
+          now: options.now,
+          publishEvent: options.publishRegistryEvent,
+          appendLog: options.appendLog,
+        })
+      })()
+
+      servicePromise = nextServicePromise
+      void nextServicePromise.catch(() => {
+        if (servicePromise === nextServicePromise) {
+          servicePromise = null
+        }
       })
-    })()
+    }
 
     return await servicePromise
   }

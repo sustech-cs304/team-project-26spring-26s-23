@@ -137,6 +137,55 @@ describe('createMcpConnectorHub', () => {
     ]))
   })
 
+  it('ignores stale reconnect work after a server entry is replaced during reconciliation', async () => {
+    vi.useFakeTimers()
+
+    const stdioServer = createMcpStdioStubServerFixture()
+    const replacementServer = createMcpStdioStubServerFixture({
+      transportConfig: stdioServer.transportConfig.kind === 'stdio'
+        ? {
+            ...stdioServer.transportConfig,
+            args: [...stdioServer.transportConfig.args, '--replacement'],
+          }
+        : stdioServer.transportConfig,
+      updatedAt: '2026-04-21T12:05:00.000Z',
+    })
+    const startCalls: string[] = []
+
+    const hub = createMcpConnectorHub({
+      now: () => '2026-04-21T12:00:00.000Z',
+      reconnectDelayMs: 10,
+      createConnector(server, context) {
+        const connectorLabel = server.transportConfig.kind === 'stdio' && server.transportConfig.args.includes('--replacement')
+          ? 'replacement'
+          : 'original'
+        return createFakeConnector(server, context, {
+          startResults: connectorLabel === 'original'
+            ? [
+                createRetryableFailure(server, 'process_exited'),
+                createSuccessfulResult(server),
+              ]
+            : [createSuccessfulResult(server)],
+        }, {
+          onStart() {
+            startCalls.push(connectorLabel)
+          },
+        })
+      },
+    })
+
+    await hub.reconcile([stdioServer], { registryRevision: 7, snapshotRevision: 10 })
+    await hub.reconcile([replacementServer], { registryRevision: 8, snapshotRevision: 10 })
+    await vi.advanceTimersByTimeAsync(20)
+    await Promise.resolve()
+
+    expect(startCalls).toEqual(['original', 'replacement'])
+    expect(hub.getState(stdioServer.serverId)).toMatchObject({
+      connectionState: 'connected',
+      reconnectAttempt: 0,
+    })
+  })
+
   it('routes tool calls to managed connectors and rejects tools missing from the current catalog', async () => {
     const stdioServer = createMcpStdioStubServerFixture()
     const capturedRequests: Array<{ toolId: string, remoteToolName: string, arguments: Record<string, unknown> }> = []

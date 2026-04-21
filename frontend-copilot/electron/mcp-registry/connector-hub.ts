@@ -395,7 +395,7 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
     void (async () => {
       await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs * attempt))
       entry.restarting = false
-      if (!entries.has(entry.server.serverId)) {
+      if (entries.get(entry.server.serverId) !== entry) {
         return
       }
 

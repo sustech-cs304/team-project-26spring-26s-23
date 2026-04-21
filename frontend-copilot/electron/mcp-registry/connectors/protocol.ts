@@ -386,7 +386,8 @@ export function normalizeToolsListResult(result: unknown): McpRemoteToolSummary[
     ))
   }
 
-  return result.tools.map((entry, index) => normalizeToolEntry(entry, index))
+  const tools = result.tools.map((entry, index) => normalizeToolEntry(entry, index))
+  return ensureUniqueToolNames(tools)
 }
 
 export function normalizeToolsCallResult(input: {
@@ -538,6 +539,26 @@ function normalizeToolEntry(entry: unknown, index: number): McpRemoteToolSummary
     description: typeof entry.description === 'string' && entry.description.trim() !== '' ? entry.description.trim() : null,
     inputSchema,
   }
+}
+
+function ensureUniqueToolNames(tools: readonly McpRemoteToolSummary[]): McpRemoteToolSummary[] {
+  const seenToolNames = new Set<string>()
+
+  for (const tool of tools) {
+    if (seenToolNames.has(tool.name)) {
+      throw new McpConnectorError(createMcpErrorSummary(
+        'protocol_parse_failed',
+        `The MCP server returned duplicate tool metadata for '${tool.name}'.`,
+        false,
+        () => new Date().toISOString(),
+        { remoteToolName: tool.name },
+      ))
+    }
+
+    seenToolNames.add(tool.name)
+  }
+
+  return cloneRemoteTools(tools)
 }
 
 function classifyNodeError(error: NodeJS.ErrnoException, now: () => string, fallbackCode: string): McpErrorSummary {
