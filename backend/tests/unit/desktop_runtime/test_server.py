@@ -34,7 +34,10 @@ from app.copilot_runtime.contracts import (
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
-from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID
+from app.copilot_runtime.tool_registry import (
+    CAMPUS_INFO_SEARCH_TOOL_ID,
+    FILE_CONVERT_TOOL_ID,
+)
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 
@@ -218,8 +221,8 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         contract.metadata.tool_id
         for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
     ]
-    assert toolset_summary["toolCount"] == 2 + len(expected_contract_tool_ids)
-    assert len(toolset_summary["tools"]) == 2 + len(expected_contract_tool_ids)
+    assert toolset_summary["toolCount"] == 3 + len(expected_contract_tool_ids)
+    assert len(toolset_summary["tools"]) == 3 + len(expected_contract_tool_ids)
     assert toolset_summary["tools"][0] == {
         "toolId": FILE_CONVERT_TOOL_ID,
         "kind": "builtin",
@@ -234,8 +237,21 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         "displayName": "Current Weather",
         "description": "Return a placeholder current-weather result for a requested location.",
     }
-    assert [tool["toolId"] for tool in toolset_summary["tools"][2:]] == expected_contract_tool_ids
-    assert all(tool["kind"] == "contract" for tool in toolset_summary["tools"][2:])
+    assert [
+        tool["toolId"]
+        for tool in toolset_summary["tools"][2 : 2 + len(expected_contract_tool_ids)]
+    ] == expected_contract_tool_ids
+    assert all(
+        tool["kind"] == "contract"
+        for tool in toolset_summary["tools"][2 : 2 + len(expected_contract_tool_ids)]
+    )
+    assert toolset_summary["tools"][-1] == {
+        "toolId": CAMPUS_INFO_SEARCH_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Campus Info Search",
+        "description": "Search indexed campus official documents and return cited snippets.",
+    }
 
 
 

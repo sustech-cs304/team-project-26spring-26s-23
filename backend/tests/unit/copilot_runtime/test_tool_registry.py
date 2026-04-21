@@ -59,7 +59,12 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
 
 def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
-    expected_tool_ids = (FILE_CONVERT_TOOL_ID, WEATHER_CURRENT_TOOL_ID, *CONTRACT_TOOL_IDS)
+    expected_tool_ids = (
+        FILE_CONVERT_TOOL_ID,
+        WEATHER_CURRENT_TOOL_ID,
+        *CONTRACT_TOOL_IDS,
+        CAMPUS_INFO_SEARCH_TOOL_ID,
+    )
     catalog = registry.build_tool_catalog()
     catalog_by_id = {entry["toolId"]: entry for entry in catalog}
 
@@ -83,6 +88,13 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "availability": "available",
         "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
         "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
+    }
+    assert catalog_by_id[CAMPUS_INFO_SEARCH_TOOL_ID] == {
+        "toolId": CAMPUS_INFO_SEARCH_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
+        "description": CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
     }
     for tool_id in CONTRACT_TOOL_IDS:
         assert catalog_by_id[tool_id]["toolId"] == tool_id

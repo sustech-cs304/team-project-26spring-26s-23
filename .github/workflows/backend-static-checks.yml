@@ -64,7 +64,7 @@ jobs:
       - name: Run Blackboard pyright
         run: |
           uv run --project backend pyright -p pyrightconfig.json \
-            backend/app/blackboard
+            backend/app/integrations/sustech/blackboard
 
       - name: Run Blackboard pytest
         run: |
