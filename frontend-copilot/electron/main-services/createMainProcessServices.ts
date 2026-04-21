@@ -2,6 +2,10 @@ import type {
   CreateMainProcessServicesOptions,
   MainProcessServices,
 } from './MainProcessServiceTypes'
+import {
+  createEmptyMcpRegistryLoadSuccess,
+  createMcpRegistryApiFailure,
+} from '../mcp-registry/ipc'
 import { createMainProcessServiceAccessors } from './MainProcessServiceAccessors'
 
 export function createMainProcessServices(
@@ -9,6 +13,9 @@ export function createMainProcessServices(
 ): MainProcessServices {
   const accessors = createMainProcessServiceAccessors(options)
   const copilotHistoryService = options.createCopilotHistoryService()
+  const createMcpNotImplementedFailure = () => {
+    return createMcpRegistryApiFailure('MCP registry service is intentionally left as a P0 contract stub.')
+  }
 
   return {
     async loadConfigCenterPublicSnapshot() {
@@ -43,6 +50,24 @@ export function createMainProcessServices(
     },
     async clearSettingsWorkspaceSustechCasSecret() {
       return await accessors.getSettingsWorkspaceService().clearSustechCasSecret()
+    },
+    async loadMcpRegistry() {
+      return createEmptyMcpRegistryLoadSuccess()
+    },
+    async saveMcpServer() {
+      return createMcpNotImplementedFailure()
+    },
+    async deleteMcpServer() {
+      return createMcpNotImplementedFailure()
+    },
+    async setMcpServerEnabled() {
+      return createMcpNotImplementedFailure()
+    },
+    async testMcpConnection() {
+      return createMcpNotImplementedFailure()
+    },
+    async refreshMcpCatalog() {
+      return createMcpNotImplementedFailure()
     },
     async listCopilotHistoryThreads() {
       return await copilotHistoryService.listThreads()

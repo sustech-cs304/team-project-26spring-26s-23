@@ -1,6 +1,21 @@
 import type { ConfigCenterPublicSnapshot } from './config-center/public-snapshot'
 import type { CopilotRuntimeSnapshot } from './copilot-runtime'
 import type { SettingsWorkspaceEditableState } from './settings-workspace/state-schema'
+export {
+  createMcpCapabilitySnapshotFixture,
+  createMcpDeleteServerSuccessFixture,
+  createMcpDirectoryDriftToolCallFailureFixture,
+  createMcpHttpSseStubServerFixture,
+  createMcpRefreshCatalogSuccessFixture,
+  createMcpRegistryLoadResultFixture,
+  createMcpRegistrySubscriptionEventFixture,
+  createMcpSaveServerSuccessFixture,
+  createMcpSetServerEnabledSuccessFixture,
+  createMcpStdioStubServerFixture,
+  createMcpTestConnectionSuccessFixture,
+  createMcpToolCallRequestFixture,
+  createMcpToolCallSuccessFixture,
+} from './mcp-registry/test-support'
 
 export interface ConfigCenterPublicSnapshotFixtureOptions {
   theme?: 'light' | 'dark'

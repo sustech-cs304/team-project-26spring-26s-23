@@ -1,0 +1,11 @@
+{
+  "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+  "serverId": "mcp-stdio-stub",
+  "remoteToolName": "search-campus",
+  "arguments": {
+    "keyword": "library"
+  },
+  "runId": "run-1",
+  "toolCallId": "tool-call-1",
+  "snapshotRevision": 8
+}

@@ -32,6 +32,19 @@ import type {
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
 import type { DesktopNotificationRequest } from '../desktop-notification'
+import type {
+  McpDeleteServerResult,
+  McpRefreshCatalogRequest,
+  McpRefreshCatalogResult,
+  McpRegistryLoadRequest,
+  McpRegistryLoadResult,
+  McpSaveServerResult,
+  McpSetServerEnabledRequest,
+  McpSetServerEnabledResult,
+  McpTestConnectionRequest,
+  McpTestConnectionResult,
+} from '../mcp-registry/ipc'
+import type { McpServerDraft } from '../mcp-registry/types'
 import type { ToolCatalogLoadRequest, ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export interface RendererIpcHandlers {
@@ -53,6 +66,12 @@ export interface RendererIpcHandlers {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  loadMcpRegistry: (request?: McpRegistryLoadRequest) => Promise<McpRegistryLoadResult>
+  saveMcpServer: (draft: McpServerDraft) => Promise<McpSaveServerResult>
+  deleteMcpServer: (serverId: string) => Promise<McpDeleteServerResult>
+  setMcpServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>
+  testMcpConnection: (request: McpTestConnectionRequest) => Promise<McpTestConnectionResult>
+  refreshMcpCatalog: (request?: McpRefreshCatalogRequest) => Promise<McpRefreshCatalogResult>
   listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
   getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>

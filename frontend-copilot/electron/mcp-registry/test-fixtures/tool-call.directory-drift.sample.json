@@ -1,0 +1,17 @@
+{
+  "ok": false,
+  "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+  "serverId": "mcp-stdio-stub",
+  "remoteToolName": "search-campus",
+  "snapshotRevision": 8,
+  "error": {
+    "code": "directory_drift",
+    "message": "The requested MCP tool no longer exists in the current snapshot.",
+    "retryable": false,
+    "observedAt": "2026-04-21T08:40:00Z",
+    "details": {
+      "expectedSnapshotRevision": 8,
+      "observedSnapshotRevision": 9
+    }
+  }
+}

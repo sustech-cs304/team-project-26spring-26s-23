@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "registryRevision": 3,
+  "snapshotRevision": 8,
+  "generatedAt": "2026-04-21T08:15:00Z",
+  "servers": [
+    {
+      "serverId": "mcp-stdio-stub",
+      "displayName": "stdio stub server",
+      "transportKind": "stdio",
+      "connectionState": "connected",
+      "toolCount": 1,
+      "lastHandshakeAt": "2026-04-21T08:10:00Z",
+      "lastCatalogSyncAt": "2026-04-21T08:12:00Z",
+      "lastError": null
+    },
+    {
+      "serverId": "mcp-http-sse-stub",
+      "displayName": "http sse stub server",
+      "transportKind": "http-sse",
+      "connectionState": "connected",
+      "toolCount": 1,
+      "lastHandshakeAt": "2026-04-21T08:11:00Z",
+      "lastCatalogSyncAt": "2026-04-21T08:13:00Z",
+      "lastError": null
+    }
+  ],
+  "tools": [
+    {
+      "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+      "serverId": "mcp-stdio-stub",
+      "remoteToolName": "search-campus",
+      "displayName": "Search Campus",
+      "description": "Search the campus knowledge base.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keyword": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "sourceKind": "mcp",
+      "availability": "available",
+      "groupId": "mcp-search",
+      "groupLabel": "Search"
+    },
+    {
+      "toolId": "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e",
+      "serverId": "mcp-http-sse-stub",
+      "remoteToolName": "fetch-calendar",
+      "displayName": "Fetch Calendar",
+      "description": "Fetch the current course calendar.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "sourceKind": "mcp",
+      "availability": "available",
+      "groupId": "mcp-productivity",
+      "groupLabel": "Productivity"
+    }
+  ],
+  "groups": [
+    {
+      "groupId": "mcp-search",
+      "displayName": "Search",
+      "sourceKind": "mcp",
+      "toolIds": [
+        "mcp.mcp-stdio-stub.search-campus.00004d8d"
+      ]
+    },
+    {
+      "groupId": "mcp-productivity",
+      "displayName": "Productivity",
+      "sourceKind": "mcp",
+      "toolIds": [
+        "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e"
+      ]
+    }
+  ]
+}

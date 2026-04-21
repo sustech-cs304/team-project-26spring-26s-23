@@ -12,6 +12,8 @@ const PRELOAD_BRIDGE_KEYS = [
   'configCenterPublicPatch',
   'settingsWorkspaceState',
   'settingsWorkspaceSecrets',
+  'mcpRegistry',
+  'mcpRegistrySubscription',
   'toolCatalog',
   'desktopNotification',
   'bootstrapWindow',

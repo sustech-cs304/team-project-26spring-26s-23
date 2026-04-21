@@ -69,6 +69,7 @@ vi.mock('./tool-catalog/service', () => ({
 
 import {
   createConfigCenterPublicSnapshotFixture,
+  createMcpStdioStubServerFixture,
   createSettingsWorkspaceStateFixture,
 } from './renderer-ipc.test-support'
 import { createMainProcessServices } from './main-services'
@@ -96,6 +97,7 @@ describe('createMainProcessServices', () => {
     } as const
     const settingsState = createSettingsWorkspaceStateFixture()
     const saveInput = normalizeSettingsWorkspaceStateValues(settingsState)
+    const mcpServerDraft = createMcpStdioStubServerFixture()
     const loadToolCatalogResult = {
       ok: true,
       tools: [
@@ -321,6 +323,38 @@ describe('createMainProcessServices', () => {
     await expect(services.saveSettingsWorkspaceState(saveInput)).resolves.toEqual(saveStateResult)
     await expect(services.loadSettingsWorkspaceSecretStates({ profileIds: ['openrouter'] })).resolves.toEqual(loadSecretStatesResult)
     await expect(services.loadSettingsWorkspaceSustechCasSecret()).resolves.toEqual(loadSustechCasSecretResult)
+    await expect(services.loadMcpRegistry()).resolves.toEqual({
+      ok: true,
+      registryRevision: 0,
+      snapshotRevision: 0,
+      servers: [],
+      states: [],
+    })
+    await expect(services.saveMcpServer(mcpServerDraft)).resolves.toEqual({
+      ok: false,
+      error: 'MCP registry service is intentionally left as a P0 contract stub.',
+      code: 'not_implemented',
+    })
+    await expect(services.deleteMcpServer(mcpServerDraft.serverId)).resolves.toEqual({
+      ok: false,
+      error: 'MCP registry service is intentionally left as a P0 contract stub.',
+      code: 'not_implemented',
+    })
+    await expect(services.setMcpServerEnabled({ serverId: mcpServerDraft.serverId, enabled: false })).resolves.toEqual({
+      ok: false,
+      error: 'MCP registry service is intentionally left as a P0 contract stub.',
+      code: 'not_implemented',
+    })
+    await expect(services.testMcpConnection({ draft: mcpServerDraft })).resolves.toEqual({
+      ok: false,
+      error: 'MCP registry service is intentionally left as a P0 contract stub.',
+      code: 'not_implemented',
+    })
+    await expect(services.refreshMcpCatalog({ serverId: mcpServerDraft.serverId })).resolves.toEqual({
+      ok: false,
+      error: 'MCP registry service is intentionally left as a P0 contract stub.',
+      code: 'not_implemented',
+    })
     await expect(services.saveSettingsWorkspaceProfileSecret({
       profileId: 'openrouter',
       apiKey: 'draft-secret',

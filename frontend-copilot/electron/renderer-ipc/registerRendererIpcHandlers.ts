@@ -62,6 +62,25 @@ import {
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from '../bootstrap-window'
 import {
+  MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+  MCP_REGISTRY_LOAD_CHANNEL,
+  MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+  MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+  MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+  MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+  type McpDeleteServerResult,
+  type McpRefreshCatalogRequest,
+  type McpRefreshCatalogResult,
+  type McpRegistryLoadRequest,
+  type McpRegistryLoadResult,
+  type McpSaveServerResult,
+  type McpSetServerEnabledRequest,
+  type McpSetServerEnabledResult,
+  type McpTestConnectionRequest,
+  type McpTestConnectionResult,
+} from '../mcp-registry/ipc'
+import type { McpServerDraft } from '../mcp-registry/types'
+import {
   TOOL_CATALOG_LOAD_CHANNEL,
   type ToolCatalogLoadRequest,
   type ToolCatalogLoadResult,
@@ -81,6 +100,12 @@ const RENDERER_IPC_CHANNELS = [
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  MCP_REGISTRY_LOAD_CHANNEL,
+  MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+  MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+  MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+  MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+  MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
@@ -174,6 +199,48 @@ export function registerRendererIpcHandlers(
     SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
     async (): Promise<SettingsWorkspaceSustechCasSecretMutationResult> => {
       return await handlers.clearSettingsWorkspaceSustechCasSecret()
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_LOAD_CHANNEL,
+    async (_event, request?: McpRegistryLoadRequest): Promise<McpRegistryLoadResult> => {
+      return await handlers.loadMcpRegistry(request)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+    async (_event, draft: McpServerDraft): Promise<McpSaveServerResult> => {
+      return await handlers.saveMcpServer(draft)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+    async (_event, serverId: string): Promise<McpDeleteServerResult> => {
+      return await handlers.deleteMcpServer(serverId)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+    async (_event, request: McpSetServerEnabledRequest): Promise<McpSetServerEnabledResult> => {
+      return await handlers.setMcpServerEnabled(request)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+    async (_event, request: McpTestConnectionRequest): Promise<McpTestConnectionResult> => {
+      return await handlers.testMcpConnection(request)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+    async (_event, request?: McpRefreshCatalogRequest): Promise<McpRefreshCatalogResult> => {
+      return await handlers.refreshMcpCatalog(request)
     },
   )
 
