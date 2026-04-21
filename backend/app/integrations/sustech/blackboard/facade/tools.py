@@ -1328,10 +1328,23 @@ _SQL_QUERY_METADATA = ToolMetadata(
     ),
     input_schema=_schema(
         properties={
-            "sql": {"type": "string", "minLength": 1},
-            "dbRelativePath": {"type": "string"},
-            "resultLimit": {"type": "integer"},
-            "persistArtifact": {"type": "boolean"},
+            "sql": {
+                "type": "string",
+                "minLength": 1,
+                "description": "SQL statement to execute against the local Blackboard SQLite database.",
+            },
+            "dbRelativePath": {
+                "type": "string",
+                "description": "Optional path, relative to the host database directory, of the SQLite database to query; omit to use the default Blackboard database.",
+            },
+            "resultLimit": {
+                "type": "integer",
+                "description": "Maximum number of rows returned inline in rowsPreview before truncation; defaults to 50.",
+            },
+            "persistArtifact": {
+                "type": "boolean",
+                "description": "When true and the inline preview is truncated, save the full SQL result as a JSON artifact.",
+            },
         },
         required=("sql",),
     ),
@@ -1394,9 +1407,19 @@ _COURSE_CATALOG_SEARCH_METADATA = ToolMetadata(
     ),
     input_schema=_schema(
         properties={
-            "keyword": {"type": "string", "minLength": 1},
-            "field": {"type": "string"},
-            "operator": {"type": "string"},
+            "keyword": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Search keyword sent to the Blackboard course catalog.",
+            },
+            "field": {
+                "type": "string",
+                "description": "Catalog field to search against. Defaults to `CourseName`.",
+            },
+            "operator": {
+                "type": "string",
+                "description": "Catalog comparison operator. Defaults to `Contains`.",
+            },
             "fetchMode": {
                 "type": "string",
                 "enum": ["quick", "full"],
@@ -1412,11 +1435,26 @@ _COURSE_CATALOG_SEARCH_METADATA = ToolMetadata(
                 "default": 30,
                 "description": "Maximum number of result pages to continue fetching before stopping.",
             },
-            "limit": {"type": "integer"},
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
+            "limit": {
+                "type": "integer",
+                "description": "Optional cap on the number of catalog results returned after fetching.",
+            },
+            "username": {
+                "type": "string",
+                "description": "Blackboard/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "password": {
+                "type": "string",
+                "description": "Blackboard/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "usernameSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS username. Usually omit it to use the default secret `sustech.username`.",
+            },
+            "passwordSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
+            },
         },
         required=("keyword",),
     ),
@@ -1473,7 +1511,11 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
     ),
     input_schema=_schema(
         properties={
-            "feedUrl": {"type": "string", "minLength": 1},
+            "feedUrl": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Blackboard ICS subscription URL to refresh and sync into the local calendar database.",
+            },
             "refreshMode": {
                 "type": "string",
                 "enum": ["auto", "force"],
@@ -1483,9 +1525,18 @@ _CALENDAR_REFRESH_METADATA = ToolMetadata(
                     "force ignores cached validators and fetches the ICS payload again."
                 ),
             },
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "stateKey": {"type": "string"},
+            "dbRelativePath": {
+                "type": "string",
+                "description": "SQLite path relative to the host database directory. Omit it to use the default Blackboard database path.",
+            },
+            "resetSchema": {
+                "type": "boolean",
+                "description": "When true, recreate the target SQLite schema before refreshing the calendar feed.",
+            },
+            "stateKey": {
+                "type": "string",
+                "description": "If provided, save the refresh result under this key in the host state store.",
+            },
         },
         required=("feedUrl",),
     ),
@@ -1540,15 +1591,42 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
     description="Fetch a Blackboard base snapshot and sync it into the existing SQLite store.",
     input_schema=_schema(
         properties={
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "verifySecondSync": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-            "artifactName": {"type": "string"},
+            "username": {
+                "type": "string",
+                "description": "Blackboard/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "password": {
+                "type": "string",
+                "description": "Blackboard/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "usernameSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS username. Usually omit it to use the default secret `sustech.username`.",
+            },
+            "passwordSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
+            },
+            "dbRelativePath": {
+                "type": "string",
+                "description": "SQLite path relative to the host database directory. Omit it to use the default Blackboard database path.",
+            },
+            "resetSchema": {
+                "type": "boolean",
+                "description": "When true, recreate the target SQLite schema before running the snapshot sync.",
+            },
+            "verifySecondSync": {
+                "type": "boolean",
+                "description": "When true, run a second sync pass to verify that no unexpected new or deleted records appear. Defaults to true.",
+            },
+            "stateKey": {
+                "type": "string",
+                "description": "If provided, save the sync result under this key in the host state store.",
+            },
+            "artifactName": {
+                "type": "string",
+                "description": "If provided, export the sync result JSON to the host artifact store using this artifact name.",
+            },
         },
     ),
     output_schema=_schema(
@@ -1621,15 +1699,40 @@ _RESOURCE_SYNC_METADATA = ToolMetadata(
                 "items": {"type": "string", "minLength": 1},
                 "minItems": 1,
                 "uniqueItems": True,
+                "description": "Explicit Blackboard course IDs whose resources should be fetched and synced.",
             },
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-            "artifactName": {"type": "string"},
+            "username": {
+                "type": "string",
+                "description": "Blackboard/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "password": {
+                "type": "string",
+                "description": "Blackboard/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "usernameSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS username. Usually omit it to use the default secret `sustech.username`.",
+            },
+            "passwordSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
+            },
+            "dbRelativePath": {
+                "type": "string",
+                "description": "SQLite path relative to the host database directory. Omit it to use the default Blackboard database path.",
+            },
+            "resetSchema": {
+                "type": "boolean",
+                "description": "When true, recreate the target SQLite schema before syncing course resources.",
+            },
+            "stateKey": {
+                "type": "string",
+                "description": "If provided, save the sync result under this key in the host state store.",
+            },
+            "artifactName": {
+                "type": "string",
+                "description": "If provided, export the sync result JSON to the host artifact store using this artifact name.",
+            },
         },
         required=("courseIds",),
     ),

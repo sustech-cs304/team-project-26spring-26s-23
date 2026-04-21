@@ -231,12 +231,35 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     assert "resourceCourseLimit" not in snapshot_input_schema["properties"]
     assert "resourceCourseLimit" not in snapshot_input_schema.get("required", [])
     assert resource_input_schema["required"] == ["courseIds"]
-    assert resource_input_schema["properties"]["courseIds"] == {
-        "type": "array",
-        "items": {"type": "string", "minLength": 1},
-        "minItems": 1,
-        "uniqueItems": True,
+    assert resource_input_schema["properties"]["courseIds"]["type"] == "array"
+    assert resource_input_schema["properties"]["courseIds"]["items"] == {
+        "type": "string",
+        "minLength": 1,
     }
+    assert resource_input_schema["properties"]["courseIds"]["minItems"] == 1
+    assert resource_input_schema["properties"]["courseIds"]["uniqueItems"] is True
+
+
+def test_blackboard_tool_input_schemas_describe_each_parameter() -> None:
+    tools = (
+        BlackboardCourseCatalogSearchTool(),
+        BlackboardCalendarRefreshTool(),
+        BlackboardSnapshotSyncTool(),
+        BlackboardCourseResourcesSyncTool(),
+        BlackboardSQLQueryTool(),
+    )
+
+    for tool in tools:
+        properties = tool.metadata.input_schema.schema["properties"]
+        assert properties
+        for field_name, schema in properties.items():
+            description = schema.get("description")
+            assert isinstance(description, str), (
+                f"{tool.metadata.tool_id}.{field_name} is missing a description"
+            )
+            assert description.strip() != "", (
+                f"{tool.metadata.tool_id}.{field_name} has an empty description"
+            )
 
 
 def test_course_catalog_tool_invokes_use_case_and_shapes_output(monkeypatch: Any) -> None:
@@ -421,8 +444,9 @@ def test_course_catalog_tool_uses_secret_provider_and_maps_missing_credentials()
 
     assert error_result.status == "error"
     assert error_result.error is not None
-    assert error_result.error.code == "authentication_required"
-    assert error_result.error.message == "Blackboard CAS credentials are required."
+    assert error_result.error.code == "host_capability_missing"
+    assert error_result.error.details["capability"] == "secret_provider"
+    assert error_result.error.details["exceptionType"] == "MissingHostCapabilityError"
 
 
 def test_calendar_refresh_tool_resolves_database_db_path_and_persists_state(monkeypatch: Any) -> None:
