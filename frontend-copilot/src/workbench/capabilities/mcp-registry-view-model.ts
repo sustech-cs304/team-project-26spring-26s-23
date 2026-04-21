@@ -36,6 +36,16 @@ export type McpRegistryEditorParseResult =
   | { ok: true, drafts: McpServerDraft[] }
   | { ok: false, validationErrors: McpServerValidationError[] }
 
+export interface StandardMcpImportCandidate {
+  serverId: string
+  displayName: string
+  draft: McpServerDraft
+}
+
+export type StandardMcpImportParseResult =
+  | { ok: true, candidates: StandardMcpImportCandidate[] }
+  | { ok: false, message: string }
+
 export function buildMcpRegistryServerViewModels(
   servers: readonly McpServerRecord[],
   states: readonly McpServerStateSummary[],
@@ -53,7 +63,7 @@ export function buildMcpRegistryServerViewModels(
       return {
         serverId: server.serverId,
         displayName: server.displayName,
-        description: server.description ?? '该 MCP 服务器尚未提供描述。',
+        description: server.description ?? '尚未填写说明。',
         transportLabel: server.transportKind === 'stdio' ? 'stdio' : 'HTTP / SSE',
         endpoint: resolveTransportEndpoint(server),
         connectionState: state?.connectionState ?? (server.enabled ? 'idle' : 'disabled'),
@@ -155,6 +165,29 @@ export function parseMcpRegistryEditorValue(
   return { ok: true, drafts }
 }
 
+export function parseStandardMcpImportValue(value: string): StandardMcpImportParseResult {
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(value)
+  } catch (error) {
+    return {
+      ok: false,
+      message: `JSON 解析失败：${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+
+  const candidates = parseStandardImportCandidates(parsed)
+  if (candidates === null || candidates.length === 0) {
+    return {
+      ok: false,
+      message: '请输入标准 MCP 配置，支持 { "mcpServers": { ... } } 或单个服务器配置对象。',
+    }
+  }
+
+  return { ok: true, candidates }
+}
+
 export function formatMcpTestConnectionMessage(result: McpTestConnectionResult): string {
   if (!result.ok) {
     return `测试连接失败：${result.error}`
@@ -170,23 +203,23 @@ export function formatMcpTestConnectionMessage(result: McpTestConnectionResult):
 
 export function formatMcpRefreshCatalogMessage(result: McpRefreshCatalogResult, serverId: string): string {
   if (!result.ok) {
-    return `刷新目录失败：${result.error}`
+    return `刷新工具列表失败：${result.error}`
   }
 
   const matchedResult = result.results.find((entry) => entry.serverId === serverId)
   if (matchedResult === undefined) {
-    return '目录刷新请求已完成。'
+    return '刷新工具列表已完成。'
   }
 
   if (matchedResult.error !== undefined && matchedResult.error !== null) {
     if (matchedResult.connectionState === 'degraded' && matchedResult.toolCount > 0) {
-      return `目录刷新失败，已保留上次成功目录：${matchedResult.error.message}`
+      return `刷新工具列表失败，已保留上次可用结果：${matchedResult.error.message}`
     }
 
-    return `刷新目录失败：${matchedResult.error.message}`
+    return `刷新工具列表失败：${matchedResult.error.message}`
   }
 
-  return `目录刷新成功，当前同步 ${matchedResult.toolCount} 个工具。`
+  return `工具列表已刷新，当前同步 ${matchedResult.toolCount} 个工具。`
 }
 
 export function formatMcpSaveServerMessage(
@@ -207,7 +240,7 @@ export function formatMcpSaveServerMessage(
     case 'connecting':
       return '配置已保存，正在建立连接。'
     case 'degraded':
-      return '配置已保存，但目录刷新受限，已保留上次成功目录。'
+      return '配置已保存，但工具列表刷新受限，已保留上次可用结果。'
     case 'error':
       return '配置已保存，但连接失败，请检查最近错误。'
     case 'disabled':
@@ -246,6 +279,51 @@ function parseRegistryDocument(value: unknown): McpServerDraft[] | null {
   }
 
   return parseMcpServersMap(value.mcpServers)
+}
+
+function parseStandardImportCandidates(value: unknown): StandardMcpImportCandidate[] | null {
+  if (!isPlainRecord(value)) {
+    return null
+  }
+
+  if (isPlainRecord(value.mcpServers)) {
+    const candidates = Object.entries(value.mcpServers).map(([serverId, entry]) => parseStandardImportCandidate(serverId, entry))
+    return candidates.every((candidate) => candidate !== null)
+      ? candidates as StandardMcpImportCandidate[]
+      : null
+  }
+
+  const candidate = parseStandardImportCandidate(resolveSingleServerId(value), value)
+  return candidate === null ? null : [candidate]
+}
+
+function parseStandardImportCandidate(serverId: string, value: unknown): StandardMcpImportCandidate | null {
+  const draft = parseServerEntry(serverId, value)
+  if (draft === null) {
+    return null
+  }
+
+  return {
+    serverId: draft.serverId,
+    displayName: draft.displayName,
+    draft,
+  }
+}
+
+function resolveSingleServerId(value: Record<string, unknown>): string {
+  if (typeof value.serverId === 'string' && value.serverId.trim() !== '') {
+    return value.serverId.trim()
+  }
+
+  if (typeof value.displayName === 'string' && value.displayName.trim() !== '') {
+    return value.displayName.trim()
+  }
+
+  if (typeof value.name === 'string' && value.name.trim() !== '') {
+    return value.name.trim()
+  }
+
+  return ''
 }
 
 function parseAddDocument(value: unknown): McpServerDraft[] | null {

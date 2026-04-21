@@ -1240,7 +1240,9 @@ class _McpToolCallResult(_BridgeResultModel):
             return self
 
         if self.error is None:
-            raise ValueError("Failed MCP tool call results must include an error payload.")
+            raise ValueError(
+                "Failed MCP tool call results must include an error payload."
+            )
         if len(self.content) > 0:
             raise ValueError("Failed MCP tool call results cannot include content.")
         if self.structured_content is not None:
@@ -1248,7 +1250,9 @@ class _McpToolCallResult(_BridgeResultModel):
                 "Failed MCP tool call results cannot include structuredContent."
             )
         if self.is_error is not None:
-            raise ValueError("Failed MCP tool call results cannot include an isError flag.")
+            raise ValueError(
+                "Failed MCP tool call results cannot include an isError flag."
+            )
         return self
 
     def to_bridge_result(self) -> dict[str, Any]:

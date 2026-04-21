@@ -528,12 +528,15 @@ class RuntimeScaffold(RuntimeContract):
             return tuple(catalog)
 
         seen_tool_ids = {entry.toolId for entry in catalog}
-        for tool_view in self.mcp_catalog_provider.load_catalog_entries(language=language):
+        for tool_view in self.mcp_catalog_provider.load_catalog_entries(
+            language=language
+        ):
             entry = RuntimeToolDirectoryEntry(**tool_view)
             if entry.toolId in seen_tool_ids:
                 continue
-            if tool_permission_resolver is not None and not tool_permission_resolver.is_visible(
-                entry.toolId
+            if (
+                tool_permission_resolver is not None
+                and not tool_permission_resolver.is_visible(entry.toolId)
             ):
                 continue
             catalog.append(entry)

@@ -17,8 +17,17 @@ from app.tooling.runtime_adapter.copilot_runtime import (
     get_current_runtime_tool_execution_context,
 )
 
-from .mcp_snapshot_provider import McpCapabilitySnapshot, McpSnapshotProvider, McpSnapshotToolSummary
-from .tool_registry import ExecutableTool, ToolDescriptor, ToolPresentation, ToolPresentationGroup
+from .mcp_snapshot_provider import (
+    McpCapabilitySnapshot,
+    McpSnapshotProvider,
+    McpSnapshotToolSummary,
+)
+from .tool_registry import (
+    ExecutableTool,
+    ToolDescriptor,
+    ToolPresentation,
+    ToolPresentationGroup,
+)
 
 MCP_RUNTIME_TOOL_KIND = "mcp"
 _MCP_FUNCTION_NAME_PREFIX = "mcp"
@@ -48,7 +57,9 @@ class McpExecutableToolLoader:
         snapshot = self.snapshot_provider.load_snapshot()
         if snapshot is None:
             return ()
-        return build_mcp_executable_tools(snapshot=snapshot, bridge_client=self.bridge_client)
+        return build_mcp_executable_tools(
+            snapshot=snapshot, bridge_client=self.bridge_client
+        )
 
 
 def build_mcp_executable_tools(
@@ -61,7 +72,9 @@ def build_mcp_executable_tools(
             target=build_mcp_tool_execution_target(snapshot=snapshot, tool=tool),
             bridge_client=bridge_client,
         )
-        for tool in sorted(snapshot.tools, key=lambda item: (item.server_id, item.remote_tool_name))
+        for tool in sorted(
+            snapshot.tools, key=lambda item: (item.server_id, item.remote_tool_name)
+        )
         if tool.availability in {"available", "degraded"}
     )
 
@@ -153,7 +166,9 @@ async def execute_mcp_tool(
         run_id=None if runtime_context is None else runtime_context.run_id,
         requested_at=None if runtime_context is None else runtime_context.requested_at,
         trace={} if runtime_context is None else dict(runtime_context.trace),
-        metadata={"runtimeContext": dict(runtime_context.metadata)} if runtime_context is not None else {},
+        metadata={"runtimeContext": dict(runtime_context.metadata)}
+        if runtime_context is not None
+        else {},
     )
     normalized_arguments = dict(arguments or {})
     try:
@@ -185,7 +200,9 @@ async def execute_mcp_tool(
 
     if result.get("ok") is False:
         raw_error = result.get("error")
-        error_payload: Mapping[str, Any] = raw_error if isinstance(raw_error, Mapping) else {}
+        error_payload: Mapping[str, Any] = (
+            raw_error if isinstance(raw_error, Mapping) else {}
+        )
         return ToolResultEnvelope.failure(
             error=map_mcp_tool_call_error(error_payload),
             metadata={

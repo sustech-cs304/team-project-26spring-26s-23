@@ -205,7 +205,9 @@ def create_mcp_snapshot_provider(
     state_dir: Path | None,
 ) -> McpSnapshotProvider:
     if state_dir is None:
-        return McpSnapshotProvider(snapshot_file=None, capability_bridge_state_file=None)
+        return McpSnapshotProvider(
+            snapshot_file=None, capability_bridge_state_file=None
+        )
     return McpSnapshotProvider(
         snapshot_file=state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME,
         capability_bridge_state_file=state_dir / MCP_CAPABILITY_BRIDGE_STATE_FILE_NAME,
@@ -234,7 +236,9 @@ def collect_mcp_snapshot_forbidden_paths(payload: Any, *, _path: str = "") -> li
         violations: list[str] = []
         for index, item in enumerate(payload):
             next_path = f"{_path}[{index}]" if _path else f"[{index}]"
-            violations.extend(collect_mcp_snapshot_forbidden_paths(item, _path=next_path))
+            violations.extend(
+                collect_mcp_snapshot_forbidden_paths(item, _path=next_path)
+            )
         return violations
 
     if not isinstance(payload, Mapping):

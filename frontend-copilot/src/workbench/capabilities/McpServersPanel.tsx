@@ -30,8 +30,8 @@ export function McpServersPanel({
         {servers.length === 0 ? (
           <article className="mcp-server-row mcp-server-row--empty">
             <div className="mcp-server-row__meta">
-              <h3 className="mcp-server-row__title">尚未配置 MCP 服务器</h3>
-              <p className="mcp-server-row__description">可通过右上角“添加”按钮录入新的 MCP registry 草稿。</p>
+              <h3 className="mcp-server-row__title">还没有可用的服务器</h3>
+              <p className="mcp-server-row__description">点击右上角“新增 MCP 服务器”，手动填写，或从已有配置直接导入。</p>
             </div>
           </article>
         ) : null}
@@ -105,12 +105,12 @@ export function McpServersPanel({
               <button
                 type="button"
                 className="secondary-button secondary-button--subtle"
-                aria-label={`刷新 ${server.displayName} 目录`}
-                title={`刷新 ${server.displayName} 目录`}
+                aria-label={`刷新 ${server.displayName} 工具列表`}
+                title={`刷新 ${server.displayName} 工具列表`}
                 disabled={server.busy}
                 onClick={() => void onRefreshCatalog(server.serverId)}
               >
-                刷新目录
+                刷新工具列表
               </button>
 
               <button

@@ -284,17 +284,10 @@ export function CapabilitiesWorkspace() {
               <div className="toolbar-actions capabilities-main__actions">
                 <button
                   type="button"
-                  className="secondary-button secondary-button--subtle"
-                  onClick={() => openMcpEditor('edit')}
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
                   className="primary-button"
                   onClick={() => openMcpEditor('add')}
                 >
-                  添加
+                  新增 MCP 服务器
                 </button>
               </div>
             ) : null}

@@ -272,14 +272,14 @@ export function useMcpRegistry(client?: McpRegistryClient): UseMcpRegistryResult
 
 function resolveStatusMessage(registryState: McpRegistryState): string | null {
   if (registryState.loadStatus === 'loading') {
-    return '正在加载 MCP 服务器列表…'
+    return '正在加载服务器列表…'
   }
 
   if (registryState.loadStatus === 'error') {
     return registryState.loadError
   }
 
-  return registryState.servers.length === 0 ? '尚未配置 MCP 服务器。' : null
+  return null
 }
 
 function applyRegistrySubscriptionEvent(previous: McpRegistryState, event: McpRegistrySubscriptionEvent): McpRegistryState {

@@ -12,7 +12,9 @@ from .mcp_snapshot_provider import McpCapabilitySnapshot, McpSnapshotProvider
 class McpCatalogProvider:
     snapshot_provider: McpSnapshotProvider
 
-    def load_catalog_entries(self, *, language: str | None = None) -> tuple[dict[str, Any], ...]:
+    def load_catalog_entries(
+        self, *, language: str | None = None
+    ) -> tuple[dict[str, Any], ...]:
         _ = language
         snapshot = self.snapshot_provider.load_snapshot()
         if snapshot is None:
@@ -20,7 +22,9 @@ class McpCatalogProvider:
         return build_mcp_catalog_entries(snapshot)
 
 
-def create_mcp_catalog_provider(snapshot_provider: McpSnapshotProvider) -> McpCatalogProvider:
+def create_mcp_catalog_provider(
+    snapshot_provider: McpSnapshotProvider,
+) -> McpCatalogProvider:
     return McpCatalogProvider(snapshot_provider=snapshot_provider)
 
 
@@ -34,7 +38,9 @@ def build_mcp_catalog_entries(
     }
 
     entries: list[dict[str, Any]] = []
-    for tool in sorted(snapshot.tools, key=lambda item: (item.server_id, item.remote_tool_name)):
+    for tool in sorted(
+        snapshot.tools, key=lambda item: (item.server_id, item.remote_tool_name)
+    ):
         group_id, group_label, group_order = _resolve_group_metadata(
             tool=tool,
             server_by_id=server_by_id,

@@ -460,10 +460,10 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).toContain('stdio stub server')
     expect(rendered.container.textContent).toContain('http sse stub server')
     expect(rendered.container.textContent).toContain('测试连接')
-    expect(rendered.container.textContent).toContain('刷新目录')
+    expect(rendered.container.textContent).toContain('刷新工具列表')
     expect(mockedLoadMcpRegistry).toHaveBeenCalledWith({ includeDisabled: true })
-    expect(rendered.container.textContent).toContain('编辑')
-    expect(rendered.container.textContent).toContain('添加')
+    expect(rendered.container.textContent).toContain('新增 MCP 服务器')
+    expect(rendered.container.textContent).not.toContain('录入新的 MCP registry 草稿')
 
     rendered.unmount()
   })
@@ -710,7 +710,7 @@ describe('CapabilitiesWorkspace', () => {
     rendered.unmount()
   })
 
-  it('opens edit and add MCP dialogs with seeded json and closes them through cancel, close, and backdrop actions', async () => {
+  it('opens the MCP dialog in visual form mode and closes it through cancel, close, and backdrop actions', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
@@ -723,42 +723,42 @@ describe('CapabilitiesWorkspace', () => {
 
     const mcpNavButton = getNavButton(document.body, 'mcp-servers')
     await clickElement(mcpNavButton)
-    await clickElement(getExactButton(rendered.container, '编辑'))
+    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
     await waitForNextFrame()
 
     let dialog = getDialog(rendered.container)
-    let textarea = dialog.querySelector('textarea')
+    let nameInput = dialog.querySelector('input[aria-label="服务器名称"]')
 
-    if (!(textarea instanceof HTMLTextAreaElement)) {
-      throw new Error('Missing edit MCP textarea')
+    if (!(nameInput instanceof HTMLInputElement)) {
+      throw new Error('Missing MCP name input')
     }
 
-    expect(dialog.getAttribute('aria-label')).toBe('编辑 MCP 服务器 JSON')
-    expect(textarea.value).toContain('"mcp-stdio-stub"')
-    expect(dialog.textContent).toContain('密码类字段暂不提供安全存储')
-    expect(dialog.textContent).toContain('HTTP/SSE 401、403、404 认证失败不会自动重试')
-    expect(document.activeElement).toBe(textarea)
+    expect(dialog.getAttribute('aria-label')).toBe('新增 MCP 服务器')
+    expect(dialog.textContent).toContain('可视化表单')
+    expect(dialog.textContent).toContain('从标准 MCP 配置导入')
+    expect(nameInput.value).toBe('new-server')
+    expect(document.activeElement).toBe(nameInput)
     expect(getExactButton(dialog, '取消')).toBeTruthy()
-    expect(getExactButton(dialog, '确定')).toBeTruthy()
+    expect(getExactButton(dialog, '保存服务器')).toBeTruthy()
 
     await clickElement(getExactButton(dialog, '取消'))
 
     expect(rendered.container.querySelector('[role="dialog"]')).toBeNull()
 
-    await clickElement(getExactButton(rendered.container, '添加'))
+    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
     await waitForNextFrame()
 
     dialog = getDialog(rendered.container)
-    textarea = dialog.querySelector('textarea')
+    nameInput = dialog.querySelector('input[aria-label="服务器名称"]')
 
-    if (!(textarea instanceof HTMLTextAreaElement)) {
-      throw new Error('Missing add MCP textarea')
+    if (!(nameInput instanceof HTMLInputElement)) {
+      throw new Error('Missing add MCP name input')
     }
 
-    expect(dialog.getAttribute('aria-label')).toBe('添加 MCP 服务器 JSON')
-    expect(textarea.value).toContain('"serverId": "new-server"')
+    expect(dialog.getAttribute('aria-label')).toBe('新增 MCP 服务器')
+    expect(nameInput.value).toBe('new-server')
 
-    const closeButton = dialog.querySelector('button[aria-label="关闭 MCP 配置编辑器"]')
+    const closeButton = dialog.querySelector('button[aria-label="关闭服务器编辑窗口"]')
 
     if (!(closeButton instanceof HTMLButtonElement)) {
       throw new Error('Missing MCP close button')
@@ -768,7 +768,7 @@ describe('CapabilitiesWorkspace', () => {
 
     expect(rendered.container.querySelector('[role="dialog"]')).toBeNull()
 
-    await clickElement(getExactButton(rendered.container, '编辑'))
+    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
     await waitForNextFrame()
     await clickElement(rendered.container.querySelector('.capabilities-dialog-backdrop') as HTMLElement)
 
@@ -834,14 +834,116 @@ describe('CapabilitiesWorkspace', () => {
     expect(mockedTestMcpConnection).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
     expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('成功：测试连接成功，可用工具 1 个。')
 
-    await clickElement(rendered.container.querySelector('button[aria-label="刷新 stdio stub server 目录"]') as HTMLButtonElement)
+    await clickElement(rendered.container.querySelector('button[aria-label="刷新 stdio stub server 工具列表"]') as HTMLButtonElement)
     expect(mockedRefreshMcpCatalog).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
-    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('成功：目录刷新成功，当前同步 1 个工具。')
+    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('状态：工具列表已刷新，当前同步 1 个工具。')
 
     await clickElement(rendered.container.querySelector('button[aria-label="删除 stdio stub server"]') as HTMLButtonElement)
 
     expect(queryServerRow(rendered.container, 'stdio stub server')).toBeNull()
-    expect(rendered.container.textContent).toContain('尚未配置 MCP 服务器')
+    expect(rendered.container.textContent).toContain('还没有可用的服务器')
+    expect(rendered.container.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
+
+    rendered.unmount()
+  })
+
+  it('imports a full mcpServers document and saves the selected server through the visual form', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    await clickElement(getNavButton(document.body, 'mcp-servers'))
+    await waitForNextFrame()
+    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await waitForNextFrame()
+
+    const dialog = getDialog(rendered.container)
+    await clickElement(getExactButton(dialog, '从标准 MCP 配置导入'))
+
+    const textarea = dialog.querySelector('textarea[aria-label="标准 MCP JSON"]') as HTMLTextAreaElement
+    await setFormControlValue(textarea, JSON.stringify({
+      mcpServers: {
+        fetch: {
+          command: 'uvx',
+          args: ['mcp-server-fetch'],
+        },
+      },
+    }, null, 2))
+    await clickElement(getExactButton(dialog, '解析配置'))
+
+    expect((dialog.querySelector('input[aria-label="服务器名称"]') as HTMLInputElement).value).toBe('fetch')
+    expect((dialog.querySelector('input[aria-label="服务器标识"]') as HTMLInputElement).value).toBe('fetch')
+    expect((dialog.querySelector('input[aria-label="启动命令"]') as HTMLInputElement).value).toBe('uvx')
+
+    await clickElement(getExactButton(dialog, '保存服务器'))
+
+    expect(mockedSaveMcpServer).toHaveBeenCalledWith(expect.objectContaining({
+      serverId: 'fetch',
+      displayName: 'fetch',
+      transportKind: 'stdio',
+      transportConfig: expect.objectContaining({
+        kind: 'stdio',
+        command: 'uvx',
+        args: ['mcp-server-fetch'],
+      }),
+    }))
+
+    rendered.unmount()
+  })
+
+  it('imports a single server object, supports multi-server selection, and reports invalid json', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    await clickElement(getNavButton(document.body, 'mcp-servers'))
+    await waitForNextFrame()
+    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await waitForNextFrame()
+
+    const dialog = getDialog(rendered.container)
+    await clickElement(getExactButton(dialog, '从标准 MCP 配置导入'))
+
+    let textarea = dialog.querySelector('textarea[aria-label="标准 MCP JSON"]') as HTMLTextAreaElement
+
+    await setFormControlValue(textarea, '{ invalid json }')
+    await clickElement(getExactButton(dialog, '解析配置'))
+    expect(dialog.textContent).toContain('JSON 解析失败')
+
+    await setFormControlValue(textarea, JSON.stringify({
+      mcpServers: {
+        fetch: {
+          command: 'uvx',
+          args: ['mcp-server-fetch'],
+        },
+        'chrome-devtools': {
+          command: 'npx',
+          args: ['chrome-devtools-mcp@latest'],
+        },
+      },
+    }, null, 2))
+    await clickElement(getExactButton(dialog, '解析配置'))
+
+    expect(dialog.textContent).toContain('检测到多个服务器，请先选择一个导入。')
+    await clickElement(getExactButton(dialog, '导入此项'))
+
+    expect((dialog.querySelector('input[aria-label="服务器标识"]') as HTMLInputElement).value).toBe('fetch')
+
+    await clickElement(getExactButton(dialog, '从标准 MCP 配置导入'))
+    textarea = dialog.querySelector('textarea[aria-label="标准 MCP JSON"]') as HTMLTextAreaElement
+    await setFormControlValue(textarea, JSON.stringify({
+      command: 'npx',
+      args: ['chrome-devtools-mcp@latest'],
+      serverId: 'chrome-devtools',
+    }, null, 2))
+    await clickElement(getExactButton(dialog, '解析配置'))
+
+    expect((dialog.querySelector('input[aria-label="服务器名称"]') as HTMLInputElement).value).toBe('chrome-devtools')
+    expect((dialog.querySelector('input[aria-label="启动命令"]') as HTMLInputElement).value).toBe('npx')
 
     rendered.unmount()
   })
