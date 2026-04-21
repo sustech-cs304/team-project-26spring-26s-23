@@ -24,6 +24,7 @@ export interface McpRegistryStoreSnapshot extends McpRevisionState {
 export interface McpRegistryStore {
   load(): Promise<McpRegistryStoreSnapshot>
   saveServers(servers: readonly McpServerRecord[], options?: { snapshotRevision?: number }): Promise<McpRegistryStoreSnapshot>
+  saveSnapshotRevision(snapshotRevision: number): Promise<McpRegistryStoreSnapshot>
 }
 
 interface McpRegistryDocument extends McpRevisionState {
@@ -77,6 +78,18 @@ export function createMcpRegistryStore(
           ? normalizeNonNegativeInteger(saveOptions.snapshotRevision)
           : current.snapshotRevision,
         servers: servers.map(cloneServerRecord),
+      }
+
+      await writeDocument(options.paths.documentFile, nextDocument)
+      return projectSnapshot(nextDocument, 'stored')
+    },
+    async saveSnapshotRevision(snapshotRevision) {
+      const current = await this.load()
+      const nextDocument: McpRegistryDocument = {
+        version: MCP_REGISTRY_DOCUMENT_VERSION,
+        registryRevision: current.registryRevision,
+        snapshotRevision: normalizeNonNegativeInteger(snapshotRevision),
+        servers: current.servers.map(cloneServerRecord),
       }
 
       await writeDocument(options.paths.documentFile, nextDocument)

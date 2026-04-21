@@ -317,7 +317,7 @@ export function createConnectorState(
   server: McpServerRecord,
   connectionState: McpConnectionState,
   toolCount: number,
-  now: () => string,
+  _now: () => string,
   options: {
     transportState?: McpTransportStateSummary | null
     lastError?: McpErrorSummary | null

@@ -17,6 +17,10 @@ import {
   type McpConnectorHubRevisionState,
 } from './connector-hub'
 import type { McpRegistryStore, McpRegistryStoreSnapshot } from './store'
+import {
+  createMcpCapabilitySnapshot,
+  type McpCapabilitySnapshotSink,
+} from './snapshot'
 import type {
   McpRefreshCatalogServerResult,
   McpRegistrySubscriptionEvent,
@@ -45,6 +49,7 @@ export interface McpRegistryService {
 export interface CreateMcpRegistryServiceOptions {
   store: McpRegistryStore
   connectorHub?: McpConnectorHub
+  snapshotSink?: McpCapabilitySnapshotSink
   now?: () => string
   publishEvent?: (event: McpRegistrySubscriptionEvent) => void | Promise<void>
   appendLog?: (
@@ -64,12 +69,60 @@ export function createMcpRegistryService(
   })
   let runtimeSnapshotRevision: number | null = null
 
+  const persistSnapshotArtifacts = async (
+    snapshot: McpRegistryStoreSnapshot,
+    snapshotRevision: number,
+  ): Promise<McpRegistryStoreSnapshot> => {
+    let persistedSnapshot = overrideSnapshotRevision(snapshot, snapshotRevision)
+
+    if (snapshot.snapshotRevision !== snapshotRevision) {
+      try {
+        persistedSnapshot = await options.store.saveSnapshotRevision(snapshotRevision)
+      } catch (error) {
+        await options.appendLog?.('error', '[mcp-registry] Failed to persist the MCP snapshot revision.', {
+          registryRevision: snapshot.registryRevision,
+          snapshotRevision,
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    if (options.snapshotSink !== undefined) {
+      try {
+        const states = connectorHub.getAllStates(persistedSnapshot.servers)
+        const capabilitySnapshot = createMcpCapabilitySnapshot({
+          registryRevision: persistedSnapshot.registryRevision,
+          snapshotRevision,
+          generatedAt: now(),
+          servers: persistedSnapshot.servers,
+          states,
+          toolsByServerId: new Map(
+            persistedSnapshot.servers.map((server) => [
+              server.serverId,
+              connectorHub.getTools(server.serverId),
+            ]),
+          ),
+        })
+        await options.snapshotSink.write(capabilitySnapshot)
+      } catch (error) {
+        await options.appendLog?.('error', '[mcp-registry] Failed to persist the MCP capability snapshot.', {
+          registryRevision: snapshot.registryRevision,
+          snapshotRevision,
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    return persistedSnapshot
+  }
+
   return {
     async loadRegistry(request) {
       const snapshot = await options.store.load()
       const revisions = resolveRuntimeRevisions(snapshot)
       await connectorHub.reconcile(snapshot.servers, revisions)
-      return buildLoadResult(snapshot, request?.includeDisabled ?? true, connectorHub, revisions)
+      const persistedSnapshot = await persistSnapshotArtifacts(snapshot, revisions.snapshotRevision)
+      return buildLoadResult(persistedSnapshot, request?.includeDisabled ?? true, connectorHub, revisions)
     },
     async saveServer(draft) {
       const snapshot = await options.store.load()
@@ -117,8 +170,9 @@ export function createMcpRegistryService(
       }
 
       runtimeSnapshotRevision = nextSnapshotRevision
+      const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
       await publishSnapshotEvent(
-        stored,
+        persistedSnapshot,
         connectorHub,
         options.publishEvent,
         nextSnapshotRevision,
@@ -157,7 +211,8 @@ export function createMcpRegistryService(
         ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
         : currentRevisions.snapshotRevision
       runtimeSnapshotRevision = nextSnapshotRevision
-      await publishSnapshotEvent(stored, connectorHub, options.publishEvent, nextSnapshotRevision)
+      const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
+      await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
 
       return {
         ok: true,
@@ -214,7 +269,8 @@ export function createMcpRegistryService(
       }
 
       runtimeSnapshotRevision = nextSnapshotRevision
-      await publishSnapshotEvent(stored, connectorHub, options.publishEvent, nextSnapshotRevision)
+      const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
+      await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
 
       return {
         ok: true,
@@ -286,7 +342,8 @@ export function createMcpRegistryService(
         refreshedServerIds: results.map((entry) => entry.serverId),
         serverId: request?.serverId ?? null,
       })
-      await publishSnapshotEvent(snapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
+      const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
+      await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
 
       return {
         ok: true,
@@ -737,4 +794,15 @@ function cloneServerRecord(server: McpServerRecord): McpServerRecord {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function overrideSnapshotRevision(
+  snapshot: McpRegistryStoreSnapshot,
+  snapshotRevision: number,
+): McpRegistryStoreSnapshot {
+  return {
+    ...snapshot,
+    snapshotRevision,
+    servers: snapshot.servers.map(cloneServerRecord),
+  }
 }

@@ -10,6 +10,7 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .model_routes import RuntimeModelRoute
+from .mcp_catalog_provider import McpCatalogProvider
 from .pydantic_contracts import (
     RuntimeContractModel,
     contract_to_dict,
@@ -412,6 +413,7 @@ class RuntimeScaffold(RuntimeContract):
     model_configured: bool
     model_environment_keys: tuple[str, ...] = ()
     transport: dict[str, Any] = field(default_factory=dict)
+    mcp_catalog_provider: McpCatalogProvider | None = None
 
     def build_agents_list_response(self) -> RuntimeAgentsListResponse:
         return RuntimeAgentsListResponse(
@@ -515,11 +517,29 @@ class RuntimeScaffold(RuntimeContract):
         language: str | None = None,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> tuple[RuntimeToolDirectoryEntry, ...]:
-        return self._get_tool_catalog(
-            self.default_toolset,
-            language=language,
-            tool_permission_resolver=tool_permission_resolver,
+        catalog = list(
+            self._get_tool_catalog(
+                self.default_toolset,
+                language=language,
+                tool_permission_resolver=tool_permission_resolver,
+            )
         )
+        if self.mcp_catalog_provider is None:
+            return tuple(catalog)
+
+        seen_tool_ids = {entry.toolId for entry in catalog}
+        for tool_view in self.mcp_catalog_provider.load_catalog_entries(language=language):
+            entry = RuntimeToolDirectoryEntry(**tool_view)
+            if entry.toolId in seen_tool_ids:
+                continue
+            if tool_permission_resolver is not None and not tool_permission_resolver.is_visible(
+                entry.toolId
+            ):
+                continue
+            catalog.append(entry)
+            seen_tool_ids.add(entry.toolId)
+
+        return tuple(catalog)
 
     def build_thinking_capability_response(
         self,
@@ -746,6 +766,7 @@ def build_runtime_scaffold(
     model_environment_keys: tuple[str, ...] = (),
     agent_registry: AgentRegistry | None = None,
     tool_registry: ToolRegistry | None = None,
+    mcp_catalog_provider: McpCatalogProvider | None = None,
 ) -> RuntimeScaffold:
     resolved_tool_registry = tool_registry or build_default_tool_registry()
     resolved_agent_registry = agent_registry or build_default_agent_registry(
@@ -784,6 +805,7 @@ def build_runtime_scaffold(
         model_configured=model_configured,
         model_environment_keys=model_environment_keys,
         transport=dict(DEFAULT_TRANSPORT),
+        mcp_catalog_provider=mcp_catalog_provider,
     )
 
 

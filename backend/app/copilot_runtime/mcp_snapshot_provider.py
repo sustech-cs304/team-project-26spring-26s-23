@@ -1,20 +1,22 @@
-"""P0 MCP snapshot and bridge contract models shared with Electron main.
-
-This module deliberately freezes payload shape and validation rules only.
-Snapshot loading, caching, and bridge transport behavior remain deferred to
-later implementation phases.
-"""
+"""MCP capability snapshot contracts and snapshot-loading helpers."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
-from typing import Any, Literal, TypeAlias
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal, TypeAlias, cast
 
 from pydantic import Field
 
 from app.copilot_runtime.pydantic_contracts import RuntimeContractModel
 
 MCP_SNAPSHOT_VERSION = 1
+MCP_CAPABILITY_SNAPSHOT_FILE_NAME = "mcp-capability-snapshot.json"
+MCP_CAPABILITY_BRIDGE_STATE_FILE_NAME = "capability-bridge-state.json"
+MCP_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID = "__runtime.mcp.catalog__"
+MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY = "snapshot"
 MCP_SNAPSHOT_FORBIDDEN_FIELD_KEYS = frozenset(
     {
         "apikey",
@@ -42,6 +44,11 @@ class McpErrorSummary(RuntimeContractModel):
     details: dict[str, Any] | None = None
 
 
+class McpSnapshotCatalogRefreshSummary(RuntimeContractModel):
+    refreshed_at: str = Field(alias="refreshedAt")
+    tool_count: int = Field(alias="toolCount")
+
+
 class McpSnapshotServerSummary(RuntimeContractModel):
     server_id: str = Field(alias="serverId")
     display_name: str = Field(alias="displayName")
@@ -53,6 +60,10 @@ class McpSnapshotServerSummary(RuntimeContractModel):
     last_handshake_at: str | None = Field(default=None, alias="lastHandshakeAt")
     last_catalog_sync_at: str | None = Field(default=None, alias="lastCatalogSyncAt")
     last_error: McpErrorSummary | None = Field(default=None, alias="lastError")
+    last_successful_catalog_refresh: McpSnapshotCatalogRefreshSummary | None = Field(
+        default=None,
+        alias="lastSuccessfulCatalogRefresh",
+    )
 
 
 class McpSnapshotToolSummary(RuntimeContractModel):
@@ -76,7 +87,7 @@ class McpSnapshotGroupSummary(RuntimeContractModel):
 
 
 class McpCapabilitySnapshot(RuntimeContractModel):
-    version: Literal[MCP_SNAPSHOT_VERSION] = MCP_SNAPSHOT_VERSION
+    version: Literal[1] = MCP_SNAPSHOT_VERSION
     registry_revision: int = Field(alias="registryRevision")
     snapshot_revision: int = Field(alias="snapshotRevision")
     generated_at: str = Field(alias="generatedAt")
@@ -116,6 +127,89 @@ class McpToolCallFailureModel(RuntimeContractModel):
 
 
 McpToolCallResultModel: TypeAlias = McpToolCallSuccessModel | McpToolCallFailureModel
+McpSnapshotSource: TypeAlias = Literal[
+    "snapshot-file", "capability-bridge-state", "cache", "missing"
+]
+
+
+@dataclass(frozen=True, slots=True)
+class McpSnapshotProviderLoadResult:
+    snapshot: McpCapabilitySnapshot | None
+    source: McpSnapshotSource
+
+
+class McpSnapshotProvider:
+    def __init__(
+        self,
+        *,
+        snapshot_file: Path | None,
+        capability_bridge_state_file: Path | None = None,
+    ) -> None:
+        self._snapshot_file = snapshot_file
+        self._capability_bridge_state_file = capability_bridge_state_file
+        self._cached_snapshot: McpCapabilitySnapshot | None = None
+
+    def load_snapshot(self) -> McpCapabilitySnapshot | None:
+        return self.load_snapshot_result().snapshot
+
+    def load_snapshot_result(self) -> McpSnapshotProviderLoadResult:
+        snapshot = self._load_from_snapshot_file()
+        if snapshot is not None:
+            self._cached_snapshot = snapshot
+            return McpSnapshotProviderLoadResult(
+                snapshot=snapshot,
+                source=cast(McpSnapshotSource, "snapshot-file"),
+            )
+
+        snapshot = self._load_from_capability_bridge_state()
+        if snapshot is not None:
+            self._cached_snapshot = snapshot
+            return McpSnapshotProviderLoadResult(
+                snapshot=snapshot,
+                source=cast(McpSnapshotSource, "capability-bridge-state"),
+            )
+
+        if self._cached_snapshot is not None:
+            return McpSnapshotProviderLoadResult(
+                snapshot=self._cached_snapshot,
+                source=cast(McpSnapshotSource, "cache"),
+            )
+
+        return McpSnapshotProviderLoadResult(
+            snapshot=None,
+            source=cast(McpSnapshotSource, "missing"),
+        )
+
+    def _load_from_snapshot_file(self) -> McpCapabilitySnapshot | None:
+        if self._snapshot_file is None:
+            return None
+        payload = _read_json_file(self._snapshot_file)
+        if payload is None:
+            return None
+        return _validate_snapshot_payload(payload)
+
+    def _load_from_capability_bridge_state(self) -> McpCapabilitySnapshot | None:
+        if self._capability_bridge_state_file is None:
+            return None
+        payload = _read_json_file(self._capability_bridge_state_file)
+        if payload is None:
+            return None
+        extracted = _extract_snapshot_from_capability_bridge_state(payload)
+        if extracted is None:
+            return None
+        return _validate_snapshot_payload(extracted)
+
+
+def create_mcp_snapshot_provider(
+    *,
+    state_dir: Path | None,
+) -> McpSnapshotProvider:
+    if state_dir is None:
+        return McpSnapshotProvider(snapshot_file=None, capability_bridge_state_file=None)
+    return McpSnapshotProvider(
+        snapshot_file=state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME,
+        capability_bridge_state_file=state_dir / MCP_CAPABILITY_BRIDGE_STATE_FILE_NAME,
+    )
 
 
 def validate_mcp_capability_snapshot(payload: Any) -> McpCapabilitySnapshot:
@@ -160,12 +254,55 @@ def _normalize_forbidden_key(value: Any) -> str:
     return "".join(character for character in str(value).lower() if character.isalnum())
 
 
+def _read_json_file(path: Path) -> Any | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _extract_snapshot_from_capability_bridge_state(payload: Any) -> Any | None:
+    if not isinstance(payload, Mapping):
+        return None
+    values = payload.get("values")
+    if not isinstance(values, Mapping):
+        return None
+    tool_values = values.get("tool")
+    if not isinstance(tool_values, Mapping):
+        return None
+    tool_bucket = tool_values.get(MCP_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID)
+    if not isinstance(tool_bucket, Mapping):
+        return None
+    return tool_bucket.get(MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY)
+
+
+def _validate_snapshot_payload(payload: Any) -> McpCapabilitySnapshot | None:
+    if payload is None:
+        return None
+    if collect_mcp_snapshot_forbidden_paths(payload):
+        return None
+    try:
+        return validate_mcp_capability_snapshot(payload)
+    except Exception:
+        return None
+
+
 __all__ = [
+    "MCP_CAPABILITY_BRIDGE_STATE_FILE_NAME",
+    "MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY",
+    "MCP_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID",
+    "MCP_CAPABILITY_SNAPSHOT_FILE_NAME",
     "MCP_SNAPSHOT_FORBIDDEN_FIELD_KEYS",
     "MCP_SNAPSHOT_VERSION",
     "McpCapabilitySnapshot",
     "McpErrorSummary",
+    "McpSnapshotProvider",
+    "McpSnapshotProviderLoadResult",
+    "McpSnapshotSource",
     "McpSnapshotGroupSummary",
+    "McpSnapshotCatalogRefreshSummary",
     "McpSnapshotServerSummary",
     "McpSnapshotToolSummary",
     "McpToolCallFailureModel",
@@ -173,6 +310,7 @@ __all__ = [
     "McpToolCallResultModel",
     "McpToolCallSuccessModel",
     "collect_mcp_snapshot_forbidden_paths",
+    "create_mcp_snapshot_provider",
     "validate_mcp_capability_snapshot",
     "validate_mcp_tool_call_request",
     "validate_mcp_tool_call_result",

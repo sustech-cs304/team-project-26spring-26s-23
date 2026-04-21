@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import cast
 
@@ -17,6 +18,8 @@ from app.copilot_runtime.contracts import (
     RuntimeToolApprovalResolveRequest,
     RuntimeToolPermissionPolicy,
 )
+from app.copilot_runtime.mcp_snapshot_provider import MCP_CAPABILITY_SNAPSHOT_FILE_NAME
+from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteRef
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
@@ -359,6 +362,69 @@ def test_build_default_runtime_dependencies_uses_runtime_root_for_file_tools(
     assert deps.default_root == expected_workspace_root
 
 
+
+def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool_catalog(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+
+    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+    response = dependencies.scaffold.build_global_tool_catalog_response(
+        language="en-US"
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in response["tools"]]
+    assert "tool.fs.read" in tool_ids
+    assert "mcp.mcp-stdio-stub.search-campus.00004d8d" in tool_ids
+    mcp_entry = next(
+        tool
+        for tool in response["tools"]
+        if tool["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    assert mcp_entry["kind"] == "mcp"
+    assert mcp_entry["availability"] == "available"
+    assert mcp_entry["group"] == {
+        "id": "mcp-search",
+        "label": "Search",
+        "labelZh": "Search",
+        "labelEn": "Search",
+        "order": 100,
+        "sourceKind": "mcp",
+    }
+
+
+
+def test_runtime_scaffold_filters_mcp_global_catalog_entries_with_permission_policy(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+
+    filtered_catalog = dependencies.scaffold.get_global_tool_catalog(
+        tool_permission_resolver=RuntimeToolPermissionResolver(
+            default_mode="allow",
+            tool_modes={"mcp.mcp-stdio-stub.search-campus.00004d8d": "deny"},
+        )
+    )
+
+    tool_ids = [tool.toolId for tool in filtered_catalog]
+    assert "tool.fs.read" in tool_ids
+    assert "mcp.mcp-stdio-stub.search-campus.00004d8d" not in tool_ids
+    assert "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e" in tool_ids
+
+
 async def _collect_events(events):
     return [event async for event in events]
 
@@ -391,6 +457,19 @@ def _build_run_request(
         ),
         agent_id=DEFAULT_AGENT_NAME,
     )
+
+
+def _load_mcp_snapshot_fixture() -> dict[str, object]:
+    fixture_path = (
+        Path(__file__).resolve().parents[4]
+        / "frontend-copilot"
+        / "electron"
+        / "mcp-registry"
+        / "test-fixtures"
+        / "snapshot.sample.json"
+    )
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
 
 
 def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:

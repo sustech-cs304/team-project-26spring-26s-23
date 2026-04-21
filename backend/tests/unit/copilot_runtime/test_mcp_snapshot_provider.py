@@ -7,8 +7,13 @@ import pytest
 from pydantic import ValidationError
 
 from app.copilot_runtime.mcp_snapshot_provider import (
+    MCP_CAPABILITY_BRIDGE_STATE_FILE_NAME,
+    MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY,
+    MCP_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID,
+    MCP_CAPABILITY_SNAPSHOT_FILE_NAME,
     MCP_SNAPSHOT_VERSION,
     collect_mcp_snapshot_forbidden_paths,
+    create_mcp_snapshot_provider,
     validate_mcp_capability_snapshot,
     validate_mcp_tool_call_request,
     validate_mcp_tool_call_result,
@@ -73,3 +78,94 @@ def test_validate_mcp_tool_call_result_keeps_directory_drift_error_shape() -> No
     assert result.error.code == "directory_drift"
     assert result.error.retryable is False
     assert result.snapshot_revision == 8
+
+
+
+def test_create_mcp_snapshot_provider_returns_missing_when_state_dir_is_unavailable() -> None:
+    provider = create_mcp_snapshot_provider(state_dir=None)
+
+    result = provider.load_snapshot_result()
+
+    assert result.source == "missing"
+    assert result.snapshot is None
+
+
+
+def test_create_mcp_snapshot_provider_prefers_snapshot_file_then_bridge_then_cache(
+    tmp_path: Path,
+) -> None:
+    provider = create_mcp_snapshot_provider(state_dir=tmp_path)
+    snapshot_payload = _load_fixture("snapshot.sample.json")
+    snapshot_file = tmp_path / MCP_CAPABILITY_SNAPSHOT_FILE_NAME
+    bridge_state_file = tmp_path / MCP_CAPABILITY_BRIDGE_STATE_FILE_NAME
+
+    snapshot_file.write_text(json.dumps(snapshot_payload), encoding="utf-8")
+
+    from_snapshot_file = provider.load_snapshot_result()
+
+    assert from_snapshot_file.source == "snapshot-file"
+    assert from_snapshot_file.snapshot is not None
+    assert from_snapshot_file.snapshot.snapshot_revision == 8
+
+    snapshot_file.unlink()
+    bridge_state_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "values": {
+                    "tool": {
+                        MCP_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID: {
+                            MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY: snapshot_payload,
+                        }
+                    },
+                    "run": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    from_bridge_state = provider.load_snapshot_result()
+
+    assert from_bridge_state.source == "capability-bridge-state"
+    assert from_bridge_state.snapshot is not None
+    assert from_bridge_state.snapshot.snapshot_revision == 8
+
+    bridge_state_file.write_text("{ this is not valid json }\n", encoding="utf-8")
+
+    from_cache = provider.load_snapshot_result()
+
+    assert from_cache.source == "cache"
+    assert from_cache.snapshot is not None
+    assert from_cache.snapshot.snapshot_revision == 8
+
+
+
+def test_create_mcp_snapshot_provider_rejects_leaked_bridge_snapshot_payload(
+    tmp_path: Path,
+) -> None:
+    provider = create_mcp_snapshot_provider(state_dir=tmp_path)
+    leaked_payload = _load_fixture("snapshot.sample.json")
+    leaked_payload["token"] = "desktop-local-token"
+
+    (tmp_path / MCP_CAPABILITY_BRIDGE_STATE_FILE_NAME).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "values": {
+                    "tool": {
+                        MCP_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID: {
+                            MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY: leaked_payload,
+                        }
+                    },
+                    "run": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = provider.load_snapshot_result()
+
+    assert result.source == "missing"
+    assert result.snapshot is None

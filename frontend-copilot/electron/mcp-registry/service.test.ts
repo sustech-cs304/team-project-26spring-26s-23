@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createMcpRegistryService } from './service'
+import { buildMcpToolId } from './snapshot'
 import { createMcpRegistryPaths, createMcpRegistryStore } from './store'
 import {
   createMcpHttpSseStubServerFixture,
@@ -13,7 +14,7 @@ import {
   MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS,
 } from './test-support'
 import type { McpConnectorHub } from './connector-hub'
-import type { McpServerRecord, McpServerStateSummary } from './types'
+import type { McpCapabilitySnapshot, McpServerRecord, McpServerStateSummary } from './types'
 import type { McpRemoteToolSummary } from './connectors/protocol'
 
 const activeTempRoots: string[] = []
@@ -47,10 +48,17 @@ async function createRegistryServiceFixture(testName: string) {
     paths: createMcpRegistryPaths(hostedPaths),
   })
   const publishEvent = vi.fn()
+  const snapshotWrites: McpCapabilitySnapshot[] = []
+  const snapshotSink = {
+    write: vi.fn(async (snapshot: McpCapabilitySnapshot) => {
+      snapshotWrites.push(snapshot)
+    }),
+  }
   const connectorHub = createFakeConnectorHub()
   const service = createMcpRegistryService({
     store,
     connectorHub,
+    snapshotSink,
     publishEvent,
     now: () => '2026-04-21T12:00:00.000Z',
   })
@@ -59,6 +67,8 @@ async function createRegistryServiceFixture(testName: string) {
     tempRoot,
     store,
     publishEvent,
+    snapshotSink,
+    snapshotWrites,
     connectorHub,
     service,
   }
@@ -226,6 +236,83 @@ describe('createMcpRegistryService', () => {
       deleted: true,
     })
     expect(fixture.publishEvent).toHaveBeenCalled()
+  })
+
+  it('writes capability snapshots to the configured sink across load and catalog refresh flows', async () => {
+    const fixture = await createRegistryServiceFixture('snapshot-sink')
+    const stdioServer = createMcpStdioStubServerFixture()
+    const disabledHttpServer = createMcpHttpSseStubServerFixture({ enabled: false })
+
+    await fixture.service.loadRegistry({ includeDisabled: true })
+    await fixture.service.saveServer(stdioServer)
+    await fixture.service.saveServer(disabledHttpServer)
+    const refreshResult = await fixture.service.refreshCatalog()
+
+    expect(refreshResult.ok).toBe(true)
+    expect(fixture.snapshotSink.write).toHaveBeenCalled()
+
+    const initialSnapshot = fixture.snapshotWrites[0]
+    expect(initialSnapshot).toBeDefined()
+    if (initialSnapshot === undefined) {
+      throw new Error('Expected initial snapshot write call.')
+    }
+    expect(initialSnapshot).toEqual({
+      version: 1,
+      registryRevision: 0,
+      snapshotRevision: 0,
+      generatedAt: '2026-04-21T12:00:00.000Z',
+      servers: [],
+      tools: [],
+      groups: [],
+    })
+
+    const latestSnapshot = fixture.snapshotWrites[fixture.snapshotWrites.length - 1]
+    expect(latestSnapshot).toBeDefined()
+    if (latestSnapshot === undefined) {
+      throw new Error('Expected latest snapshot write call.')
+    }
+    expect(latestSnapshot).toMatchObject({
+      version: 1,
+      registryRevision: 2,
+      snapshotRevision: 2,
+      generatedAt: '2026-04-21T12:00:00.000Z',
+      tools: [
+        {
+          toolId: buildMcpToolId(MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio, 'search-campus'),
+          serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+          remoteToolName: 'search-campus',
+          displayName: 'Search Campus',
+          availability: 'available',
+          groupId: 'mcp.server.mcp-stdio-stub',
+          groupLabel: 'stdio stub server',
+        },
+      ],
+      groups: [
+        {
+          groupId: 'mcp.server.mcp-stdio-stub',
+          displayName: 'stdio stub server',
+          sourceKind: 'mcp',
+          toolIds: [buildMcpToolId(MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio, 'search-campus')],
+        },
+      ],
+    })
+    expect(latestSnapshot.servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+        connectionState: 'connected',
+        toolCount: 1,
+        lastSuccessfulCatalogRefresh: {
+          refreshedAt: '2026-04-21T12:00:00.000Z',
+          toolCount: 1,
+        },
+      }),
+      expect.objectContaining({
+        serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.httpSse,
+        connectionState: 'disabled',
+        toolCount: 0,
+        lastSuccessfulCatalogRefresh: null,
+      }),
+    ]))
   })
 
   it('returns structured validation failures without writing invalid drafts', async () => {

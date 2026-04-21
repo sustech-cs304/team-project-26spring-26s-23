@@ -1,6 +1,9 @@
 export const MCP_REGISTRY_DOCUMENT_VERSION = 1 as const
 export const MCP_SNAPSHOT_VERSION = 1 as const
 export const MCP_TOOL_ID_PREFIX = 'mcp' as const
+export const MCP_CAPABILITY_SNAPSHOT_FILE_NAME = 'mcp-capability-snapshot.json' as const
+export const MCP_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID = '__runtime.mcp.catalog__' as const
+export const MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY = 'snapshot' as const
 
 export type McpTransportKind = 'stdio' | 'http-sse'
 export type McpConnectionState = 'disabled' | 'idle' | 'connecting' | 'connected' | 'degraded' | 'error'
@@ -85,6 +88,11 @@ export interface McpServerStateSummary {
   lastError?: McpErrorSummary | null
   transportState?: McpTransportStateSummary | null
   reconnectAttempt: number
+}
+
+export interface McpSnapshotCatalogRefreshSummary {
+  refreshedAt: string
+  toolCount: number
 }
 
 export interface McpRegistryLoadSuccess extends McpRevisionState {
@@ -173,6 +181,7 @@ export interface McpSnapshotServerSummary {
   lastHandshakeAt?: string | null
   lastCatalogSyncAt?: string | null
   lastError?: McpErrorSummary | null
+  lastSuccessfulCatalogRefresh?: McpSnapshotCatalogRefreshSummary | null
 }
 
 export interface McpSnapshotToolSummary {

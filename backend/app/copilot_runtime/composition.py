@@ -12,6 +12,8 @@ from .agent_registry import AgentRegistry, build_default_agent_registry
 from .bridge import RuntimeBridge
 from .contracts import RuntimeScaffold, build_runtime_scaffold
 from .message_runs import RuntimeMessageRunOrchestrator
+from .mcp_catalog_provider import McpCatalogProvider, create_mcp_catalog_provider
+from .mcp_snapshot_provider import create_mcp_snapshot_provider
 from .model_routes import (
     HostModelRouteUnavailableError,
     RuntimeModelRoute,
@@ -55,6 +57,7 @@ def build_default_runtime_dependencies(
     agent_executor: PydanticAIAgentExecutor | None = None,
     model_route_resolver: RuntimeModelRouteResolver | None = None,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
+    mcp_catalog_provider: McpCatalogProvider | None = None,
 ) -> RuntimeDependencies:
     """Create the default runtime object graph without adding protocol logic."""
 
@@ -68,6 +71,11 @@ def build_default_runtime_dependencies(
     )
     runtime_workspace_root = (
         runtime_config.runtime_root_dir if runtime_config is not None else None
+    )
+    resolved_mcp_catalog_provider = mcp_catalog_provider or create_mcp_catalog_provider(
+        create_mcp_snapshot_provider(
+            state_dir=runtime_config.state_dir if runtime_config is not None else None,
+        )
     )
     tool_registry = build_default_tool_registry(
         host_capabilities_factory=host_capabilities_factory,
@@ -102,6 +110,7 @@ def build_default_runtime_dependencies(
         model_environment_keys=resolved_agent_executor.model_environment_keys,
         agent_registry=agent_registry,
         tool_registry=tool_registry,
+        mcp_catalog_provider=resolved_mcp_catalog_provider,
     )
     message_run_orchestrator = RuntimeMessageRunOrchestrator(
         session_store=resolved_session_store,

@@ -74,6 +74,28 @@ describe('createMcpRegistryStore', () => {
     expect(loaded.servers).toEqual([stdioServer, httpSseServer])
   })
 
+  it('persists snapshotRevision without bumping registryRevision or rewriting server records', async () => {
+    const fixture = await createRegistryStoreFixture('persist-snapshot-revision')
+    const stdioServer = createMcpStdioStubServerFixture()
+    await fixture.store.saveServers([stdioServer])
+
+    const saved = await fixture.store.saveSnapshotRevision(7)
+    const loaded = await fixture.store.load()
+    const storedDocument = JSON.parse(await readFile(fixture.paths.documentFile, 'utf8')) as {
+      registryRevision: number
+      snapshotRevision: number
+      servers: unknown[]
+    }
+
+    expect(saved.registryRevision).toBe(1)
+    expect(saved.snapshotRevision).toBe(7)
+    expect(saved.servers).toEqual([stdioServer])
+    expect(loaded).toEqual(saved)
+    expect(storedDocument.registryRevision).toBe(1)
+    expect(storedDocument.snapshotRevision).toBe(7)
+    expect(storedDocument.servers).toEqual([stdioServer])
+  })
+
   it('recovers from a corrupt registry document by backing it up and reinitializing defaults', async () => {
     const fixture = await createRegistryStoreFixture('recover-corrupt')
 
