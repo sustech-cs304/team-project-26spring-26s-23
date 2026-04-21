@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { LoaderCircle, Trash2 } from 'lucide-react'
 
 import type { McpRegistryServerViewModel } from './mcp-registry-view-model'
 import { resolveMcpConnectionStateLabel } from './mcp-registry-view-model'
@@ -37,7 +37,10 @@ export function McpServersPanel({
         ) : null}
 
         {servers.map((server) => (
-          <article key={server.serverId} className="mcp-server-row">
+          <article
+            key={server.serverId}
+            className={`mcp-server-row mcp-server-row--${server.connectionState}${server.busy ? ' mcp-server-row--busy' : ''}`}
+          >
             <div className="mcp-server-row__meta">
               <div className="mcp-server-row__title-line">
                 <h3 className="mcp-server-row__title">{server.displayName}</h3>
@@ -45,11 +48,22 @@ export function McpServersPanel({
                   <span className="mcp-server-status__dot" />
                   {resolveMcpConnectionStateLabel(server.connectionState)}
                 </span>
+                {server.activityLabel ? (
+                  <span className="mcp-server-activity" aria-live="polite">
+                    <LoaderCircle size={14} className="mcp-server-activity__icon" />
+                    {server.activityLabel}
+                  </span>
+                ) : null}
               </div>
 
               <p className="mcp-server-row__description">{server.description}</p>
               {server.message ? (
-                <p className="mcp-server-row__description" aria-live="polite">{server.message}</p>
+                <p
+                  className={`mcp-server-row__message mcp-server-row__message--${server.messageTone}`}
+                  aria-live="polite"
+                >
+                  {resolveMessagePrefix(server.messageTone)}{server.message}
+                </p>
               ) : null}
             </div>
 
@@ -65,6 +79,14 @@ export function McpServersPanel({
               <div className="mcp-server-row__detail mcp-server-row__detail--tool-count">
                 <dt>工具数量</dt>
                 <dd>{server.toolCount}</dd>
+              </div>
+              <div className="mcp-server-row__detail">
+                <dt>最近握手</dt>
+                <dd>{server.lastHandshakeAtLabel ?? '尚未完成'}</dd>
+              </div>
+              <div className="mcp-server-row__detail">
+                <dt>最近同步</dt>
+                <dd>{server.lastCatalogSyncAtLabel ?? '尚未刷新'}</dd>
               </div>
             </dl>
 
@@ -120,4 +142,18 @@ export function McpServersPanel({
       </div>
     </section>
   )
+}
+
+function resolveMessagePrefix(tone: McpRegistryServerViewModel['messageTone']): string {
+  switch (tone) {
+    case 'success':
+      return '成功：'
+    case 'warning':
+      return '注意：'
+    case 'error':
+      return '失败：'
+    case 'info':
+    default:
+      return '状态：'
+  }
 }

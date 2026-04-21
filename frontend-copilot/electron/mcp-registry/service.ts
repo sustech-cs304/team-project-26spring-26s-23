@@ -11,9 +11,13 @@ import type {
   McpTestConnectionRequest,
   McpTestConnectionResult,
 } from './ipc'
+import {
+  createMcpConnectorHub,
+  type McpConnectorHub,
+  type McpConnectorHubRevisionState,
+} from './connector-hub'
 import type { McpRegistryStore, McpRegistryStoreSnapshot } from './store'
 import type {
-  McpErrorSummary,
   McpRefreshCatalogServerResult,
   McpRegistrySubscriptionEvent,
   McpServerDraft,
@@ -22,11 +26,11 @@ import type {
   McpServerValidationError,
   McpTransportConfig,
 } from './types'
+import { createConnectorState } from './connectors/protocol'
 
 const MCP_REGISTRY_VALIDATION_ERROR_CODE = 'validation_failed'
 const MCP_REGISTRY_NOT_FOUND_ERROR_CODE = 'not_found'
 const MCP_REGISTRY_INVALID_REQUEST_ERROR_CODE = 'invalid_request'
-const MCP_REGISTRY_P1_LIMITATION_ERROR_CODE = 'p1_management_only'
 const MCP_REGISTRY_DISABLED_ERROR_CODE = 'disabled'
 
 export interface McpRegistryService {
@@ -40,6 +44,7 @@ export interface McpRegistryService {
 
 export interface CreateMcpRegistryServiceOptions {
   store: McpRegistryStore
+  connectorHub?: McpConnectorHub
   now?: () => string
   publishEvent?: (event: McpRegistrySubscriptionEvent) => void | Promise<void>
   appendLog?: (
@@ -53,11 +58,18 @@ export function createMcpRegistryService(
   options: CreateMcpRegistryServiceOptions,
 ): McpRegistryService {
   const now = options.now ?? (() => new Date().toISOString())
+  const connectorHub = options.connectorHub ?? createMcpConnectorHub({
+    now,
+    publishEvent: options.publishEvent,
+  })
+  let runtimeSnapshotRevision: number | null = null
 
   return {
     async loadRegistry(request) {
       const snapshot = await options.store.load()
-      return buildLoadResult(snapshot, request?.includeDisabled ?? true)
+      const revisions = resolveRuntimeRevisions(snapshot)
+      await connectorHub.reconcile(snapshot.servers, revisions)
+      return buildLoadResult(snapshot, request?.includeDisabled ?? true, connectorHub, revisions)
     },
     async saveServer(draft) {
       const snapshot = await options.store.load()
@@ -72,35 +84,85 @@ export function createMcpRegistryService(
         )
       }
 
+      const currentRevisions = resolveRuntimeRevisions(snapshot)
       const nextServers = upsertServer(snapshot.servers, normalized.server)
-      const stored = await options.store.saveServers(nextServers)
-      await publishSnapshotEvent(stored, options.publishEvent)
+      const stored = await options.store.saveServers(nextServers, {
+        snapshotRevision: currentRevisions.snapshotRevision,
+      })
+
+      let state: McpServerStateSummary | null
+      let nextSnapshotRevision = currentRevisions.snapshotRevision
+
+      if (normalized.server.enabled) {
+        const reconcileResult = await connectorHub.reconcile(stored.servers, {
+          registryRevision: stored.registryRevision,
+          snapshotRevision: currentRevisions.snapshotRevision,
+        })
+        state = reconcileResult.states.find((entry) => entry.serverId === normalized.server.serverId)
+          ?? connectorHub.getState(normalized.server.serverId)
+          ?? createDefaultServerState(normalized.server)
+
+        if (state.connectionState === 'connected' || state.connectionState === 'degraded') {
+          nextSnapshotRevision = bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        }
+      } else {
+        state = await connectorHub.setServerDisabled(normalized.server, {
+          registryRevision: stored.registryRevision,
+          snapshotRevision: currentRevisions.snapshotRevision,
+        })
+
+        if (existing?.enabled === true) {
+          nextSnapshotRevision = bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        }
+      }
+
+      runtimeSnapshotRevision = nextSnapshotRevision
+      await publishSnapshotEvent(
+        stored,
+        connectorHub,
+        options.publishEvent,
+        nextSnapshotRevision,
+      )
 
       return {
         ok: true,
         registryRevision: stored.registryRevision,
-        snapshotRevision: stored.snapshotRevision,
+        snapshotRevision: nextSnapshotRevision,
         server: normalized.server,
-        state: createServerStateSummary(normalized.server),
+        state,
         validationErrors: [],
       }
     },
     async deleteServer(serverId) {
       const snapshot = await options.store.load()
-      if (!snapshot.servers.some((server) => server.serverId === serverId)) {
+      const existing = snapshot.servers.find((server) => server.serverId === serverId)
+      if (existing === undefined) {
         return createMcpRegistryApiFailure(
           `MCP server "${serverId}" was not found.`,
           MCP_REGISTRY_NOT_FOUND_ERROR_CODE,
         )
       }
 
-      const stored = await options.store.saveServers(snapshot.servers.filter((server) => server.serverId !== serverId))
-      await publishSnapshotEvent(stored, options.publishEvent)
+      const currentRevisions = resolveRuntimeRevisions(snapshot)
+      const stored = await options.store.saveServers(
+        snapshot.servers.filter((server) => server.serverId !== serverId),
+        { snapshotRevision: currentRevisions.snapshotRevision },
+      )
+      await connectorHub.removeServer(serverId, {
+        registryRevision: stored.registryRevision,
+        snapshotRevision: currentRevisions.snapshotRevision,
+      })
+
+      const nextSnapshotRevision = existing.enabled
+        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        : currentRevisions.snapshotRevision
+      runtimeSnapshotRevision = nextSnapshotRevision
+      await publishSnapshotEvent(stored, connectorHub, options.publishEvent, nextSnapshotRevision)
 
       return {
         ok: true,
         registryRevision: stored.registryRevision,
-        snapshotRevision: stored.snapshotRevision,
+        snapshotRevision: nextSnapshotRevision,
         serverId,
         deleted: true,
       }
@@ -120,15 +182,46 @@ export function createMcpRegistryService(
         enabled: request.enabled,
         updatedAt: now(),
       }
-      const stored = await options.store.saveServers(upsertServer(snapshot.servers, updatedServer))
-      await publishSnapshotEvent(stored, options.publishEvent)
+      const currentRevisions = resolveRuntimeRevisions(snapshot)
+      const stored = await options.store.saveServers(
+        upsertServer(snapshot.servers, updatedServer),
+        { snapshotRevision: currentRevisions.snapshotRevision },
+      )
+
+      let state: McpServerStateSummary
+      let nextSnapshotRevision = currentRevisions.snapshotRevision
+
+      if (request.enabled) {
+        const reconcileResult = await connectorHub.reconcile(stored.servers, {
+          registryRevision: stored.registryRevision,
+          snapshotRevision: currentRevisions.snapshotRevision,
+        })
+        state = reconcileResult.states.find((entry) => entry.serverId === updatedServer.serverId)
+          ?? connectorHub.getState(updatedServer.serverId)
+          ?? createDefaultServerState(updatedServer)
+
+        if (state.connectionState === 'connected' || state.connectionState === 'degraded') {
+          nextSnapshotRevision = bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        }
+      } else {
+        state = await connectorHub.setServerDisabled(updatedServer, {
+          registryRevision: stored.registryRevision,
+          snapshotRevision: currentRevisions.snapshotRevision,
+        })
+        if (existing.enabled) {
+          nextSnapshotRevision = bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        }
+      }
+
+      runtimeSnapshotRevision = nextSnapshotRevision
+      await publishSnapshotEvent(stored, connectorHub, options.publishEvent, nextSnapshotRevision)
 
       return {
         ok: true,
         registryRevision: stored.registryRevision,
-        snapshotRevision: stored.snapshotRevision,
+        snapshotRevision: nextSnapshotRevision,
         server: updatedServer,
-        state: createServerStateSummary(updatedServer),
+        state,
       }
     },
     async testConnection(request) {
@@ -138,59 +231,110 @@ export function createMcpRegistryService(
         return resolved.failure
       }
 
-      const durationMs = Math.max(0, Date.now() - startedAt)
+      const result = await connectorHub.testConnection(resolved.server)
       return {
         ok: true,
-        success: false,
-        transportKind: resolved.server.transportKind,
-        toolCount: 0,
-        durationMs,
-        error: createP1LimitationError(now()),
-        warnings: ['P1 已接通管理平面持久化；真实传输连接测试将在 P2 接入。'],
+        success: result.success,
+        transportKind: result.transportKind,
+        toolCount: result.toolCount,
+        durationMs: Math.max(result.durationMs, Date.now() - startedAt),
+        error: result.error,
+        warnings: result.warnings,
       }
     },
     async refreshCatalog(request) {
       const snapshot = await options.store.load()
-      const targetServers = resolveRefreshTargets(snapshot, request)
-      if (!targetServers.ok) {
-        return targetServers.failure
+      const currentRevisions = resolveRuntimeRevisions(snapshot)
+      await connectorHub.reconcile(snapshot.servers, currentRevisions)
+
+      const resolvedTargets = resolveRefreshTargets(snapshot, request)
+      if (!resolvedTargets.ok) {
+        return resolvedTargets.failure
       }
 
-      const results = targetServers.servers.map((server) => createRefreshCatalogServerResult(server, now()))
-      const event: McpRegistrySubscriptionEvent = {
+      const disabledResults = resolvedTargets.servers
+        .filter((server) => !server.enabled)
+        .map((server) => createDisabledRefreshCatalogServerResult(server, now()))
+      const enabledServers = resolvedTargets.servers.filter((server) => server.enabled)
+      const refreshed = enabledServers.length === 0
+        ? []
+        : await connectorHub.refreshCatalog(
+            enabledServers.map((server) => server.serverId),
+            currentRevisions,
+          )
+
+      const hasSuccessfulRefresh = refreshed.some((entry) => entry.success)
+      const nextSnapshotRevision = hasSuccessfulRefresh
+        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        : currentRevisions.snapshotRevision
+      runtimeSnapshotRevision = nextSnapshotRevision
+
+      const results: McpRefreshCatalogServerResult[] = [
+        ...refreshed.map((entry) => ({
+          serverId: entry.serverId,
+          toolCount: entry.toolCount,
+          connectionState: entry.state.connectionState,
+          error: entry.error,
+        })),
+        ...disabledResults,
+      ].sort((left, right) => left.serverId.localeCompare(right.serverId, 'en'))
+
+      await options.publishEvent?.({
         kind: 'catalog',
         registryRevision: snapshot.registryRevision,
-        snapshotRevision: snapshot.snapshotRevision,
-        refreshedServerIds: results.map((result) => result.serverId),
+        snapshotRevision: nextSnapshotRevision,
+        refreshedServerIds: results.map((entry) => entry.serverId),
         serverId: request?.serverId ?? null,
-      }
-      await options.publishEvent?.(event)
+      })
+      await publishSnapshotEvent(snapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
 
       return {
         ok: true,
         registryRevision: snapshot.registryRevision,
-        snapshotRevision: snapshot.snapshotRevision,
-        refreshedServerIds: results.map((result) => result.serverId),
+        snapshotRevision: nextSnapshotRevision,
+        refreshedServerIds: results.map((entry) => entry.serverId),
         results,
       }
     },
+  }
+
+  function resolveRuntimeRevisions(snapshot: McpRegistryStoreSnapshot): McpConnectorHubRevisionState {
+    runtimeSnapshotRevision = runtimeSnapshotRevision === null
+      ? snapshot.snapshotRevision
+      : Math.max(runtimeSnapshotRevision, snapshot.snapshotRevision)
+
+    return {
+      registryRevision: snapshot.registryRevision,
+      snapshotRevision: runtimeSnapshotRevision,
+    }
+  }
+
+  function bumpRuntimeSnapshotRevision(baseRevision: number): number {
+    return Math.max(runtimeSnapshotRevision ?? 0, baseRevision) + 1
   }
 }
 
 function buildLoadResult(
   snapshot: McpRegistryStoreSnapshot,
   includeDisabled: boolean,
+  connectorHub: McpConnectorHub,
+  revisions: McpConnectorHubRevisionState,
 ): McpRegistryLoadResult {
   const visibleServers = includeDisabled
     ? snapshot.servers
     : snapshot.servers.filter((server) => server.enabled)
+  const states = connectorHub.getAllStates(snapshot.servers)
+  const stateById = new Map(states.map((state) => [state.serverId, state]))
 
   return {
     ok: true,
     registryRevision: snapshot.registryRevision,
-    snapshotRevision: snapshot.snapshotRevision,
+    snapshotRevision: revisions.snapshotRevision,
     servers: visibleServers.map(cloneServerRecord),
-    states: visibleServers.map(createServerStateSummary),
+    states: visibleServers.map((server) => {
+      const state = stateById.get(server.serverId)
+      return state === undefined ? createDefaultServerState(server) : cloneStateSummary(state)
+    }),
   }
 }
 
@@ -284,66 +428,32 @@ function resolveRefreshTargets(
 
   return {
     ok: true,
-    servers: snapshot.servers.filter((server) => server.enabled).map(cloneServerRecord),
+    servers: snapshot.servers.map(cloneServerRecord),
   }
 }
 
-function createRefreshCatalogServerResult(
+function createDisabledRefreshCatalogServerResult(
   server: McpServerRecord,
   timestamp: string,
 ): McpRefreshCatalogServerResult {
-  if (!server.enabled) {
-    return {
-      serverId: server.serverId,
-      toolCount: 0,
-      connectionState: 'disabled',
-      error: {
-        code: MCP_REGISTRY_DISABLED_ERROR_CODE,
-        message: 'The server is disabled. Enable it before refreshing the catalog.',
-        retryable: false,
-        observedAt: timestamp,
-      },
-    }
-  }
-
   return {
     serverId: server.serverId,
     toolCount: 0,
-    connectionState: 'idle',
-    error: createP1LimitationError(timestamp),
-  }
-}
-
-function createServerStateSummary(server: McpServerRecord): McpServerStateSummary {
-  return {
-    serverId: server.serverId,
-    enabled: server.enabled,
-    connectionState: server.enabled ? 'idle' : 'disabled',
-    toolCount: 0,
-    lastHandshakeAt: null,
-    lastCatalogSyncAt: null,
-    lastError: null,
-    reconnectAttempt: 0,
-    transportState: server.transportKind === 'stdio'
-      ? {
-          kind: 'stdio',
-          processStatus: 'stopped',
-          pid: null,
-          lastExitCode: null,
-          lastExitSignal: null,
-        }
-      : {
-          kind: 'http-sse',
-          endpointStatus: 'offline',
-          lastHttpStatus: null,
-          sseOnline: false,
-        },
+    connectionState: 'disabled',
+    error: {
+      code: MCP_REGISTRY_DISABLED_ERROR_CODE,
+      message: 'The server is disabled. Enable it before refreshing the catalog.',
+      retryable: false,
+      observedAt: timestamp,
+    },
   }
 }
 
 async function publishSnapshotEvent(
   snapshot: McpRegistryStoreSnapshot,
-  publishEvent?: (event: McpRegistrySubscriptionEvent) => void | Promise<void>,
+  connectorHub: McpConnectorHub,
+  publishEvent: ((event: McpRegistrySubscriptionEvent) => void | Promise<void>) | undefined,
+  snapshotRevision: number,
 ): Promise<void> {
   if (publishEvent === undefined) {
     return
@@ -352,10 +462,31 @@ async function publishSnapshotEvent(
   await publishEvent({
     kind: 'snapshot',
     registryRevision: snapshot.registryRevision,
-    snapshotRevision: snapshot.snapshotRevision,
+    snapshotRevision,
     servers: snapshot.servers.map(cloneServerRecord),
-    states: snapshot.servers.map(createServerStateSummary),
+    states: connectorHub.getAllStates(snapshot.servers).map(cloneStateSummary),
   })
+}
+
+function createDefaultServerState(server: McpServerRecord): McpServerStateSummary {
+  return createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, () => new Date().toISOString())
+}
+
+function cloneStateSummary(state: McpServerStateSummary): McpServerStateSummary {
+  return {
+    ...state,
+    lastError: state.lastError === undefined || state.lastError === null
+      ? state.lastError ?? null
+      : {
+          ...state.lastError,
+          ...(state.lastError.details === undefined || state.lastError.details === null
+            ? { details: state.lastError.details ?? null }
+            : { details: { ...state.lastError.details } }),
+        },
+    transportState: state.transportState === undefined || state.transportState === null
+      ? state.transportState ?? null
+      : { ...state.transportState },
+  }
 }
 
 function normalizeDraft(
@@ -565,15 +696,6 @@ function normalizeStringRecord(
   }
 
   return normalized
-}
-
-function createP1LimitationError(observedAt: string): McpErrorSummary {
-  return {
-    code: MCP_REGISTRY_P1_LIMITATION_ERROR_CODE,
-    message: 'P1 currently persists MCP registry management state only. Live connectors, transport handshakes, and catalog sync will arrive in P2.',
-    retryable: false,
-    observedAt,
-  }
 }
 
 function isHttpUrl(value: string): boolean {

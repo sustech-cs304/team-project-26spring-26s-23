@@ -574,12 +574,66 @@
   color: var(--success-text);
 }
 
-.mcp-server-status--local {
+.mcp-server-status--connecting {
   color: var(--accent-strong);
 }
 
-.mcp-server-status--draft {
-  color: var(--warning-text);
+.mcp-server-status--idle {
+  color: var(--text-muted);
+}
+
+.mcp-server-status--degraded {
+  color: var(--warning-strong);
+}
+
+.mcp-server-status--error {
+  color: var(--danger-text);
+}
+
+.mcp-server-status--disabled {
+  color: var(--text-muted);
+}
+
+.mcp-server-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  color: var(--accent-strong);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.mcp-server-activity__icon {
+  animation: mcp-server-activity-spin 0.9s linear infinite;
+}
+
+.mcp-server-row__message {
+  margin: 0.42rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.52;
+}
+
+.mcp-server-row__message--info {
+  color: var(--text-secondary);
+}
+
+.mcp-server-row__message--success {
+  color: var(--success-text);
+}
+
+.mcp-server-row__message--warning {
+  color: var(--warning-strong);
+}
+
+.mcp-server-row__message--error {
+  color: var(--danger-text);
+}
+
+@keyframes mcp-server-activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mcp-server-row__details {

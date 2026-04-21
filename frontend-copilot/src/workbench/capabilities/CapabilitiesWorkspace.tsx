@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   SettingsWorkspaceStateSaveInput,
@@ -14,6 +14,7 @@ import {
 import { appendCopilotDebugLog } from '../../features/copilot/debug-mode-log'
 import { loadConfigCenterPublicSnapshot } from '../../features/copilot/config-center'
 import { loadToolCatalog } from './tool-catalog'
+import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
 import { CapabilitiesSecondaryNav } from './CapabilitiesSecondaryNav'
 import { projectDebugModeEnabledFromConfigCenterPublicSnapshot } from '../../features/copilot/config-center'
 import type { McpServerValidationError } from '../../../electron/mcp-registry/types'
@@ -63,10 +64,36 @@ export function CapabilitiesWorkspace() {
     source: null,
   })
   const mcpRegistry = useMcpRegistry()
+  const appliedSnapshotRevisionRef = useRef<number | null>(null)
 
+  const applyToolCatalogResult = (
+    toolCatalogResult: ToolCatalogLoadResult,
+    debugModeEnabled: boolean,
+  ) => {
+    appendCopilotDebugLog(debugModeEnabled, 'capabilities-workspace', 'tool-catalog-load-result', toolCatalogResult.ok
+      ? {
+          ok: true,
+          toolCount: toolCatalogResult.tools.length,
+          toolIds: toolCatalogResult.tools.map((tool) => tool.toolId),
+        }
+      : {
+          ok: false,
+          error: toolCatalogResult.error,
+        })
+
+    const resolvedCatalog = resolveRenderableToolCatalog(toolCatalogResult)
+    setToolCatalogLoadState({
+      status: resolvedCatalog.status,
+      error: resolvedCatalog.error,
+      source: resolvedCatalog.source,
+    })
+
+    return resolvedCatalog.tools
+  }
+ 
   useEffect(() => {
     let cancelled = false
-
+ 
     void (async () => {
       const snapshotResult = await loadConfigCenterPublicSnapshot()
       const debugModeEnabled = snapshotResult.ok
@@ -76,46 +103,67 @@ export function CapabilitiesWorkspace() {
         loadSettingsWorkspaceState(),
         loadToolCatalog(preferredLanguage),
       ])
-
+ 
       if (cancelled) {
         return
       }
 
-      appendCopilotDebugLog(debugModeEnabled, 'capabilities-workspace', 'tool-catalog-load-result', toolCatalogResult.ok
-        ? {
-            ok: true,
-            toolCount: toolCatalogResult.tools.length,
-            toolIds: toolCatalogResult.tools.map((tool) => tool.toolId),
-          }
-        : {
-            ok: false,
-            error: toolCatalogResult.error,
-          })
-
-      const resolvedCatalog = resolveRenderableToolCatalog(toolCatalogResult)
-      setToolCatalogLoadState({
-        status: resolvedCatalog.status,
-        error: resolvedCatalog.error,
-        source: resolvedCatalog.source,
-      })
-
+      const tools = applyToolCatalogResult(toolCatalogResult, debugModeEnabled)
+ 
       if (!settingsResult.ok) {
         setSettingsState(null)
         setToolPermissions([])
         return
       }
-
+ 
       const nextSettingsState = settingsResult.state as unknown as SettingsWorkspaceStateSaveInput
       const policy = nextSettingsState.mcp.toolPermissionPolicy
-
+ 
       setSettingsState(nextSettingsState)
-      setToolPermissions(buildToolPermissionRecords(resolvedCatalog.tools, policy))
+      setToolPermissions(buildToolPermissionRecords(tools, policy))
+    })()
+ 
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mcpRegistry.snapshotRevision <= 0 || settingsState === null) {
+      return
+    }
+
+    if (appliedSnapshotRevisionRef.current === null) {
+      appliedSnapshotRevisionRef.current = mcpRegistry.snapshotRevision
+      return
+    }
+
+    if (appliedSnapshotRevisionRef.current === mcpRegistry.snapshotRevision) {
+      return
+    }
+
+    appliedSnapshotRevisionRef.current = mcpRegistry.snapshotRevision
+
+    let cancelled = false
+    void (async () => {
+      const snapshotResult = await loadConfigCenterPublicSnapshot()
+      const debugModeEnabled = snapshotResult.ok
+        && projectDebugModeEnabledFromConfigCenterPublicSnapshot(snapshotResult.snapshot)
+      const preferredLanguage = snapshotResult.ok ? snapshotResult.snapshot.domains.general.language : null
+      const toolCatalogResult = await loadToolCatalog(preferredLanguage)
+
+      if (cancelled) {
+        return
+      }
+
+      const tools = applyToolCatalogResult(toolCatalogResult, debugModeEnabled)
+      setToolPermissions(buildToolPermissionRecords(tools, settingsState.mcp.toolPermissionPolicy))
     })()
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [mcpRegistry.snapshotRevision, settingsState])
 
   const activeNavItem = useMemo(
     () => capabilitiesNavItems.find((item) => item.id === activeSection) ?? capabilitiesNavItems[0],

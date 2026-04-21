@@ -12,6 +12,7 @@ import type {
 } from '../../../electron/mcp-registry/types'
 
 export type McpServerEditorMode = 'edit' | 'add'
+export type McpBusyOperation = 'saving' | 'testing' | 'refreshing' | 'toggling' | 'deleting'
 
 export interface McpRegistryServerViewModel {
   serverId: string
@@ -23,7 +24,12 @@ export interface McpRegistryServerViewModel {
   enabled: boolean
   toolCount: number
   message: string | null
+  messageTone: 'info' | 'warning' | 'error' | 'success'
   busy: boolean
+  busyOperation: McpBusyOperation | null
+  activityLabel: string | null
+  lastHandshakeAtLabel: string | null
+  lastCatalogSyncAtLabel: string | null
 }
 
 export type McpRegistryEditorParseResult =
@@ -34,13 +40,16 @@ export function buildMcpRegistryServerViewModels(
   servers: readonly McpServerRecord[],
   states: readonly McpServerStateSummary[],
   operationMessages: Readonly<Record<string, string | null | undefined>>,
-  busyServerIds: ReadonlySet<string>,
+  busyOperations: Readonly<Record<string, McpBusyOperation | null | undefined>>,
 ): McpRegistryServerViewModel[] {
   const stateById = new Map(states.map((state) => [state.serverId, state]))
 
   return servers
     .map((server) => {
       const state = stateById.get(server.serverId)
+      const busyOperation = busyOperations[server.serverId] ?? null
+      const operationMessage = operationMessages[server.serverId] ?? null
+      const lastErrorMessage = state?.lastError?.message ?? null
       return {
         serverId: server.serverId,
         displayName: server.displayName,
@@ -50,8 +59,13 @@ export function buildMcpRegistryServerViewModels(
         connectionState: state?.connectionState ?? (server.enabled ? 'idle' : 'disabled'),
         enabled: server.enabled,
         toolCount: state?.toolCount ?? 0,
-        message: operationMessages[server.serverId] ?? state?.lastError?.message ?? null,
-        busy: busyServerIds.has(server.serverId),
+        message: operationMessage ?? lastErrorMessage,
+        messageTone: resolveMessageTone(operationMessage, state?.lastError?.message ?? null),
+        busy: busyOperation !== null,
+        busyOperation,
+        activityLabel: resolveBusyOperationLabel(busyOperation),
+        lastHandshakeAtLabel: formatTimestamp(state?.lastHandshakeAt ?? null),
+        lastCatalogSyncAtLabel: formatTimestamp(state?.lastCatalogSyncAt ?? null),
       }
     })
     .sort((left, right) => left.displayName.localeCompare(right.displayName, 'zh-CN'))
@@ -66,9 +80,9 @@ export function resolveMcpConnectionStateLabel(state: McpConnectionState): strin
     case 'connecting':
       return '连接中'
     case 'connected':
-      return '已连接'
+      return '已就绪'
     case 'degraded':
-      return '受限'
+      return '已降级'
     case 'error':
       return '错误'
   }
@@ -147,11 +161,11 @@ export function formatMcpTestConnectionMessage(result: McpTestConnectionResult):
   }
 
   if (result.success) {
-    return `测试连接成功，当前发现 ${result.toolCount} 个工具。`
+    return `测试连接成功，可用工具 ${result.toolCount} 个。`
   }
 
   const detail = result.error?.message ?? result.warnings?.[0] ?? '测试连接未成功。'
-  return `测试连接受限：${detail}`
+  return `测试连接失败：${detail}`
 }
 
 export function formatMcpRefreshCatalogMessage(result: McpRefreshCatalogResult, serverId: string): string {
@@ -160,11 +174,48 @@ export function formatMcpRefreshCatalogMessage(result: McpRefreshCatalogResult, 
   }
 
   const matchedResult = result.results.find((entry) => entry.serverId === serverId)
-  if (matchedResult?.error !== undefined && matchedResult.error !== null) {
-    return `刷新目录受限：${matchedResult.error.message}`
+  if (matchedResult === undefined) {
+    return '目录刷新请求已完成。'
   }
 
-  return '目录刷新请求已完成。'
+  if (matchedResult.error !== undefined && matchedResult.error !== null) {
+    if (matchedResult.connectionState === 'degraded' && matchedResult.toolCount > 0) {
+      return `目录刷新失败，已保留上次成功目录：${matchedResult.error.message}`
+    }
+
+    return `刷新目录失败：${matchedResult.error.message}`
+  }
+
+  return `目录刷新成功，当前同步 ${matchedResult.toolCount} 个工具。`
+}
+
+export function formatMcpSaveServerMessage(
+  server: McpServerRecord,
+  state: McpServerStateSummary | null,
+): string {
+  if (!server.enabled) {
+    return '配置已保存，服务器当前已禁用。'
+  }
+
+  if (state === null) {
+    return '配置已保存。'
+  }
+
+  switch (state.connectionState) {
+    case 'connected':
+      return `配置已保存并连接成功，当前同步 ${state.toolCount} 个工具。`
+    case 'connecting':
+      return '配置已保存，正在建立连接。'
+    case 'degraded':
+      return '配置已保存，但目录刷新受限，已保留上次成功目录。'
+    case 'error':
+      return '配置已保存，但连接失败，请检查最近错误。'
+    case 'disabled':
+      return '配置已保存，服务器当前已禁用。'
+    case 'idle':
+    default:
+      return '配置已保存，等待连接结果。'
+  }
 }
 
 function resolveTransportEndpoint(server: McpServerRecord): string {
@@ -363,6 +414,62 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false
   }
+}
+
+function resolveMessageTone(
+  operationMessage: string | null,
+  lastErrorMessage: string | null,
+): McpRegistryServerViewModel['messageTone'] {
+  if (operationMessage !== null) {
+    return inferMessageTone(operationMessage)
+  }
+
+  if (lastErrorMessage !== null) {
+    return 'error'
+  }
+
+  return 'success'
+}
+
+function inferMessageTone(message: string): McpRegistryServerViewModel['messageTone'] {
+  if (/失败|错误/iu.test(message)) {
+    return 'error'
+  }
+
+  if (/受限|降级|保留上次/iu.test(message)) {
+    return 'warning'
+  }
+
+  if (/成功|已保存|已禁用|已移除/iu.test(message)) {
+    return 'success'
+  }
+
+  return 'info'
+}
+
+function resolveBusyOperationLabel(operation: McpBusyOperation | null): string | null {
+  switch (operation) {
+    case 'saving':
+      return '保存中'
+    case 'testing':
+      return '测试中'
+    case 'refreshing':
+      return '刷新中'
+    case 'toggling':
+      return '更新中'
+    case 'deleting':
+      return '删除中'
+    default:
+      return null
+  }
+}
+
+function formatTimestamp(value: string | null): string | null {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null
+  }
+
+  return value.replace('T', ' ').replace(/\.\d{3}Z$/, 'Z')
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

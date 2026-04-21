@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
 
 import type {
   McpDeleteServerResult,
@@ -66,6 +67,13 @@ const mockedRefreshMcpCatalog = vi.fn<
   (request?: { serverId?: string | null }) => Promise<McpRefreshCatalogResult>
 >()
 const mockedSubscribeMcpRegistry = vi.fn<(listener: (event: McpRegistrySubscriptionEvent) => void) => () => void>()
+const connectedStdioServer = createMcpStdioStubServerFixture()
+const connectedStdioState = createSavedMcpServerState(connectedStdioServer, {
+  connectionState: 'connected',
+  toolCount: 1,
+  lastHandshakeAt: '2026-04-21T12:00:00.000Z',
+  lastCatalogSyncAt: '2026-04-21T12:00:00.000Z',
+})
 
 let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
 
@@ -85,13 +93,9 @@ beforeEach(() => {
     refreshedServerIds: ['mcp-stdio-stub'],
     results: [{
       serverId: 'mcp-stdio-stub',
-      toolCount: 0,
-      connectionState: 'idle',
-      error: {
-        code: 'p1_management_only',
-        message: 'P1 currently persists MCP registry management state only. Live connectors, transport handshakes, and catalog sync will arrive in P2.',
-        retryable: false,
-      },
+      toolCount: 1,
+      connectionState: 'connected',
+      error: null,
     }],
   })
   mockedSubscribeMcpRegistry.mockImplementation((listener) => {
@@ -464,6 +468,43 @@ describe('CapabilitiesWorkspace', () => {
     rendered.unmount()
   })
 
+  it('applies registry snapshot subscriptions and reloads the tool catalog when snapshotRevision changes', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    if (activeMcpRegistryListener === null) {
+      throw new Error('Expected MCP registry subscription listener to be registered.')
+    }
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 7,
+        snapshotRevision: 11,
+        servers: [connectedStdioServer],
+        states: [connectedStdioState],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForNextFrame()
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'mcp-servers'))
+
+    expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('已就绪')
+    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('2026-04-21 12:00:00Z')
+
+    rendered.unmount()
+  })
+
   it('renders hosted backend builtin and contract tools instead of collapsing to the empty state', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog.mockResolvedValue(createHostedCatalogOnlyLoadResult())
@@ -788,11 +829,11 @@ describe('CapabilitiesWorkspace', () => {
 
     await clickElement(rendered.container.querySelector('button[aria-label="测试 stdio stub server"]') as HTMLButtonElement)
     expect(mockedTestMcpConnection).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
-    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('测试连接成功，当前发现 1 个工具。')
+    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('成功：测试连接成功，可用工具 1 个。')
 
     await clickElement(rendered.container.querySelector('button[aria-label="刷新 stdio stub server 目录"]') as HTMLButtonElement)
     expect(mockedRefreshMcpCatalog).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
-    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('刷新目录受限')
+    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('成功：目录刷新成功，当前同步 1 个工具。')
 
     await clickElement(rendered.container.querySelector('button[aria-label="删除 stdio stub server"]') as HTMLButtonElement)
 
