@@ -292,9 +292,19 @@ def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() 
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "keyword": {"type": "string", "minLength": 1},
-            "field": {"type": "string"},
-            "operator": {"type": "string"},
+            "keyword": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Search keyword sent to the Blackboard course catalog.",
+            },
+            "field": {
+                "type": "string",
+                "description": "Catalog field to search against. Defaults to `CourseName`.",
+            },
+            "operator": {
+                "type": "string",
+                "description": "Catalog comparison operator. Defaults to `Contains`.",
+            },
             "fetchMode": {
                 "type": "string",
                 "enum": ["quick", "full"],
@@ -310,11 +320,26 @@ def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() 
                 "default": 30,
                 "description": "Maximum number of result pages to continue fetching before stopping.",
             },
-            "limit": {"type": "integer"},
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
+            "limit": {
+                "type": "integer",
+                "description": "Optional cap on the number of catalog results returned after fetching.",
+            },
+            "username": {
+                "type": "string",
+                "description": "Blackboard/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "password": {
+                "type": "string",
+                "description": "Blackboard/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "usernameSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS username. Usually omit it to use the default secret `sustech.username`.",
+            },
+            "passwordSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the Blackboard/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
+            },
         },
         "required": ["keyword"],
     }
