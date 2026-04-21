@@ -39,6 +39,7 @@ from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot
 from app.copilot_runtime.mcp_tool_executor import build_mcp_executable_tools
+from app.copilot_runtime.mcp_snapshot_provider import McpSnapshotProvider
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
@@ -406,10 +407,15 @@ def test_open_event_stream_executes_mcp_tool_and_records_started_completed_event
             }
 
     bridge_client = _RecordingMcpBridgeClient()
+    class _SnapshotProvider:
+        def load_snapshot(self) -> McpCapabilitySnapshot:
+            return snapshot
+
     registry = build_default_tool_registry(
         dynamic_tool_loader=lambda _language: build_mcp_executable_tools(
             snapshot=snapshot,
             bridge_client=cast(Any, bridge_client),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider()),
         )
     )
     tool_id = "mcp.mcp-stdio-stub.search-campus.00004d8d"

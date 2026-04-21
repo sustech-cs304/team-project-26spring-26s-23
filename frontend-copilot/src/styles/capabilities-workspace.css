@@ -510,7 +510,10 @@
 
 .mcp-server-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(420px, 520px) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 460px) auto;
+  grid-template-areas:
+    'meta details actions'
+    'message message message';
   gap: 1.25rem;
   align-items: center;
   padding: 0.88rem 1rem;
@@ -524,6 +527,7 @@
 }
 
 .mcp-server-row__meta {
+  grid-area: meta;
   min-width: 0;
 }
 
@@ -608,7 +612,9 @@
 }
 
 .mcp-server-row__message {
-  margin: 0.42rem 0 0;
+  grid-area: message;
+  margin: 0;
+  padding-top: 0.1rem;
   font-size: 0.82rem;
   font-weight: 600;
   line-height: 1.52;
@@ -637,6 +643,7 @@
 }
 
 .mcp-server-row__details {
+  grid-area: details;
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);
   gap: 0.9rem 1.25rem;
@@ -675,6 +682,7 @@
 }
 
 .mcp-server-row__actions {
+  grid-area: actions;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -978,6 +986,11 @@
   .tool-permission-row,
   .mcp-server-row {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'meta'
+      'details'
+      'actions'
+      'message';
   }
 
   .tool-permission-row,

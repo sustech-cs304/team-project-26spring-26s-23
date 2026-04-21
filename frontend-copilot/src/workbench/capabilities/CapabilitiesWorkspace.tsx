@@ -313,7 +313,6 @@ export function CapabilitiesWorkspace() {
                 onToggleEnabled={mcpRegistry.toggleServerEnabled}
                 onDelete={mcpRegistry.deleteServer}
                 onTestConnection={mcpRegistry.testServerConnection}
-                onRefreshCatalog={mcpRegistry.refreshServerCatalog}
               />
             )}
           </section>

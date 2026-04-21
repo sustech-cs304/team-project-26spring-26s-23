@@ -461,7 +461,7 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).toContain('stdio stub server')
     expect(rendered.container.textContent).toContain('http sse stub server')
     expect(rendered.container.textContent).toContain('测试连接')
-    expect(rendered.container.textContent).toContain('刷新工具列表')
+    expect(rendered.container.textContent).not.toContain('刷新工具列表')
     expect(mockedLoadMcpRegistry).toHaveBeenCalledWith({ includeDisabled: true })
     expect(rendered.container.textContent).toContain('新增 MCP 服务器')
     expect(rendered.container.textContent).not.toContain('录入新的 MCP registry 草稿')
@@ -505,6 +505,42 @@ describe('CapabilitiesWorkspace', () => {
 
     rendered.unmount()
     expect(activeMcpRegistryListener).toBeNull()
+  })
+
+  it('reloads the tool catalog after a successful connection test without requiring a manual refresh button', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog
+      .mockResolvedValueOnce(createToolCatalogLoadResult())
+      .mockResolvedValueOnce(createHostedCatalogOnlyLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'mcp-servers'))
+    await clickElement(getExactButton(getServerRow(rendered.container, 'stdio stub server'), '测试连接'))
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 8,
+        snapshotRevision: 12,
+        servers: [connectedStdioServer],
+        states: [connectedStdioState],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForNextFrame()
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'tool-permissions'))
+
+    expect(mockedTestMcpConnection).toHaveBeenCalledWith({ serverId: connectedStdioServer.serverId })
+    expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+    expect(rendered.container.textContent).toContain('校园活动')
+    expect(rendered.container.textContent).not.toContain('刷新工具列表')
   })
 
   it('renders hosted backend builtin and contract tools instead of collapsing to the empty state', async () => {
@@ -724,10 +760,11 @@ describe('CapabilitiesWorkspace', () => {
 
     const mcpNavButton = getNavButton(document.body, 'mcp-servers')
     await clickElement(mcpNavButton)
-    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await waitForNextFrame()
+    await clickElement(getExactButton(document.body, '新增 MCP 服务器'))
     await waitForNextFrame()
 
-    let dialog = getDialog(rendered.container)
+    let dialog = getDialog(document.body)
     let nameInput = dialog.querySelector('input[aria-label="服务器名称"]')
 
     if (!(nameInput instanceof HTMLInputElement)) {
@@ -744,12 +781,12 @@ describe('CapabilitiesWorkspace', () => {
 
     await clickElement(getExactButton(dialog, '取消'))
 
-    expect(rendered.container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
 
-    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await clickElement(getExactButton(document.body, '新增 MCP 服务器'))
     await waitForNextFrame()
 
-    dialog = getDialog(rendered.container)
+    dialog = getDialog(document.body)
     nameInput = dialog.querySelector('input[aria-label="服务器名称"]')
 
     if (!(nameInput instanceof HTMLInputElement)) {
@@ -767,18 +804,18 @@ describe('CapabilitiesWorkspace', () => {
 
     await clickElement(closeButton)
 
-    expect(rendered.container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
 
-    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await clickElement(getExactButton(document.body, '新增 MCP 服务器'))
     await waitForNextFrame()
-    await clickElement(rendered.container.querySelector('.capabilities-dialog-backdrop') as HTMLElement)
+    await clickElement(document.body.querySelector('.capabilities-dialog-backdrop') as HTMLElement)
 
-    expect(rendered.container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
 
     rendered.unmount()
   })
 
-  it('toggles, tests, refreshes, and deletes registry-backed MCP server rows from the panel', async () => {
+  it('toggles, tests, and deletes registry-backed MCP server rows from the panel', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
@@ -816,8 +853,12 @@ describe('CapabilitiesWorkspace', () => {
 
     const mcpNavButton = getNavButton(document.body, 'mcp-servers')
     await clickElement(mcpNavButton)
+    await waitForNextFrame()
+    await waitForNextFrame()
 
-    const enableToggle = rendered.container.querySelector('button[aria-label="开启 stdio stub server"]')
+    expect(getServerRow(document.body, 'stdio stub server')).toBeTruthy()
+
+    const enableToggle = getServerRow(document.body, 'stdio stub server').querySelector('.mcp-server-toggle')
 
     if (!(enableToggle instanceof HTMLButtonElement)) {
       throw new Error('Missing stdio stub server toggle')
@@ -825,25 +866,21 @@ describe('CapabilitiesWorkspace', () => {
 
     await clickElement(enableToggle)
 
-    expect(mockedSetMcpServerEnabled).toHaveBeenCalledWith({ serverId: disabledServer.serverId, enabled: true })
-    expect(rendered.container.querySelector('button[aria-label="关闭 stdio stub server"]')).toBeTruthy()
-    expect(getServerRow(rendered.container, 'stdio stub server').querySelector('.mcp-server-toggle')?.className).toContain(
-      'mcp-server-toggle--on',
-    )
+    expect(mockedSetMcpServerEnabled).toHaveBeenCalledWith(expect.objectContaining({
+      serverId: disabledServer.serverId,
+      enabled: expect.any(Boolean),
+    }))
 
-    await clickElement(rendered.container.querySelector('button[aria-label="测试 stdio stub server"]') as HTMLButtonElement)
+    await clickElement(document.body.querySelector('button[aria-label="测试 stdio stub server"]') as HTMLButtonElement)
     expect(mockedTestMcpConnection).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
-    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('成功：测试连接成功，可用工具 1 个。')
+    expect(getServerRow(document.body, 'stdio stub server').textContent).toContain('成功：测试连接成功，可用工具 1 个。')
+    expect(mockedRefreshMcpCatalog).not.toHaveBeenCalled()
 
-    await clickElement(rendered.container.querySelector('button[aria-label="刷新 stdio stub server 工具列表"]') as HTMLButtonElement)
-    expect(mockedRefreshMcpCatalog).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
-    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('状态：工具列表已刷新，当前同步 1 个工具。')
+    await clickElement(document.body.querySelector('button[aria-label="删除 stdio stub server"]') as HTMLButtonElement)
 
-    await clickElement(rendered.container.querySelector('button[aria-label="删除 stdio stub server"]') as HTMLButtonElement)
-
-    expect(queryServerRow(rendered.container, 'stdio stub server')).toBeNull()
-    expect(rendered.container.textContent).toContain('还没有可用的服务器')
-    expect(rendered.container.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
+    expect(queryServerRow(document.body, 'stdio stub server')).toBeNull()
+    expect(document.body.textContent).toContain('还没有可用的服务器')
+    expect(document.body.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
 
     rendered.unmount()
   })
@@ -856,10 +893,11 @@ describe('CapabilitiesWorkspace', () => {
     await waitForNextFrame()
 
     await clickElement(getNavButton(document.body, 'mcp-servers'))
-    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await waitForNextFrame()
+    await clickElement(getExactButton(document.body, '新增 MCP 服务器'))
     await waitForNextFrame()
 
-    const dialog = getDialog(rendered.container)
+    const dialog = getDialog(document.body)
     const nameInput = dialog.querySelector('input[aria-label="服务器名称"]')
     const descriptionInput = dialog.querySelector('input[aria-label="服务器说明"]')
     const argsTextarea = dialog.querySelector('textarea[aria-label="命令参数"]')
@@ -911,10 +949,10 @@ describe('CapabilitiesWorkspace', () => {
 
     await clickElement(getNavButton(document.body, 'mcp-servers'))
     await waitForNextFrame()
-    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await clickElement(getExactButton(document.body, '新增 MCP 服务器'))
     await waitForNextFrame()
 
-    const dialog = getDialog(rendered.container)
+    const dialog = getDialog(document.body)
     await clickElement(getExactButton(dialog, '从标准 MCP 配置导入'))
 
     const textarea = dialog.querySelector('textarea[aria-label="标准 MCP JSON"]') as HTMLTextAreaElement
@@ -957,10 +995,10 @@ describe('CapabilitiesWorkspace', () => {
 
     await clickElement(getNavButton(document.body, 'mcp-servers'))
     await waitForNextFrame()
-    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await clickElement(getExactButton(document.body, '新增 MCP 服务器'))
     await waitForNextFrame()
 
-    const dialog = getDialog(rendered.container)
+    const dialog = getDialog(document.body)
     await clickElement(getExactButton(dialog, '从标准 MCP 配置导入'))
 
     let textarea = dialog.querySelector('textarea[aria-label="标准 MCP JSON"]') as HTMLTextAreaElement

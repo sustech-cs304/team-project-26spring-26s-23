@@ -9,7 +9,6 @@ interface McpServersPanelProps {
   onToggleEnabled: (serverId: string) => void | Promise<void>
   onDelete: (serverId: string) => void | Promise<void>
   onTestConnection: (serverId: string) => void | Promise<void>
-  onRefreshCatalog: (serverId: string) => void | Promise<void>
 }
 
 export function McpServersPanel({
@@ -18,7 +17,6 @@ export function McpServersPanel({
   onToggleEnabled,
   onDelete,
   onTestConnection,
-  onRefreshCatalog,
 }: McpServersPanelProps) {
   return (
     <section className="capabilities-surface capabilities-surface--mcp">
@@ -57,14 +55,6 @@ export function McpServersPanel({
               </div>
 
               <p className="mcp-server-row__description">{server.description}</p>
-              {server.message ? (
-                <p
-                  className={`mcp-server-row__message mcp-server-row__message--${server.messageTone}`}
-                  aria-live="polite"
-                >
-                  {resolveMessagePrefix(server.messageTone)}{server.message}
-                </p>
-              ) : null}
             </div>
 
             <dl className="mcp-server-row__details">
@@ -84,10 +74,6 @@ export function McpServersPanel({
                 <dt>最近握手</dt>
                 <dd>{server.lastHandshakeAtLabel ?? '尚未完成'}</dd>
               </div>
-              <div className="mcp-server-row__detail">
-                <dt>最近同步</dt>
-                <dd>{server.lastCatalogSyncAtLabel ?? '尚未刷新'}</dd>
-              </div>
             </dl>
 
             <div className="mcp-server-row__actions">
@@ -100,17 +86,6 @@ export function McpServersPanel({
                 onClick={() => void onTestConnection(server.serverId)}
               >
                 测试连接
-              </button>
-
-              <button
-                type="button"
-                className="secondary-button secondary-button--subtle"
-                aria-label={`刷新 ${server.displayName} 工具列表`}
-                title={`刷新 ${server.displayName} 工具列表`}
-                disabled={server.busy}
-                onClick={() => void onRefreshCatalog(server.serverId)}
-              >
-                刷新工具列表
               </button>
 
               <button
@@ -137,6 +112,15 @@ export function McpServersPanel({
                 <Trash2 size={16} />
               </button>
             </div>
+
+            {server.message ? (
+              <p
+                className={`mcp-server-row__message mcp-server-row__message--${server.messageTone}`}
+                aria-live="polite"
+              >
+                {resolveMessagePrefix(server.messageTone)}{server.message}
+              </p>
+            ) : null}
           </article>
         ))}
       </div>

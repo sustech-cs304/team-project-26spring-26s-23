@@ -196,7 +196,7 @@ function buildToolSummary(input: {
     toolId: input.toolId,
     serverId: input.server.serverId,
     remoteToolName: input.remoteTool.name,
-    displayName: normalizeDisplayText(input.remoteTool.displayName) ?? input.remoteTool.name,
+    displayName: resolveToolDisplayName(input.server, input.remoteTool),
     description: normalizeDisplayText(input.remoteTool.description),
     inputSchema: cloneRecord(input.remoteTool.inputSchema),
     sourceKind: 'mcp',
@@ -219,6 +219,25 @@ function buildLastSuccessfulCatalogRefresh(
     refreshedAt,
     toolCount: tools.length,
   }
+}
+
+function resolveToolDisplayName(
+  server: McpServerRecord,
+  remoteTool: McpRemoteToolSummary,
+): string {
+  const explicitDisplayName = normalizeDisplayText(remoteTool.displayName)
+  if (explicitDisplayName !== null) {
+    return explicitDisplayName
+  }
+
+  const serverDisplayName = normalizeDisplayText(server.displayName)
+  const toolLabel = humanizeMcpToolName(remoteTool.name)
+  return serverDisplayName === null ? toolLabel : `${serverDisplayName} / ${toolLabel}`
+}
+
+function humanizeMcpToolName(value: string): string {
+  const normalized = normalizeDisplayText(value.replace(/[._-]+/g, ' '))
+  return normalized ?? value
 }
 
 function resolveToolAvailability(

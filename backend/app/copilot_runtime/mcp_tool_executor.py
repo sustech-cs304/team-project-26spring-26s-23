@@ -58,7 +58,9 @@ class McpExecutableToolLoader:
         if snapshot is None:
             return ()
         return build_mcp_executable_tools(
-            snapshot=snapshot, bridge_client=self.bridge_client
+            snapshot=snapshot,
+            bridge_client=self.bridge_client,
+            snapshot_provider=self.snapshot_provider,
         )
 
 
@@ -66,11 +68,13 @@ def build_mcp_executable_tools(
     *,
     snapshot: McpCapabilitySnapshot,
     bridge_client: DesktopCapabilityBridgeClient,
+    snapshot_provider: McpSnapshotProvider,
 ) -> tuple[ExecutableTool, ...]:
     return tuple(
         build_mcp_executable_tool(
             target=build_mcp_tool_execution_target(snapshot=snapshot, tool=tool),
             bridge_client=bridge_client,
+            snapshot_provider=snapshot_provider,
         )
         for tool in sorted(
             snapshot.tools, key=lambda item: (item.server_id, item.remote_tool_name)
@@ -113,11 +117,13 @@ def build_mcp_executable_tool(
     *,
     target: McpToolExecutionTarget,
     bridge_client: DesktopCapabilityBridgeClient,
+    snapshot_provider: McpSnapshotProvider,
 ) -> ExecutableTool:
     async def execute(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
         return await execute_mcp_tool(
             target=target,
             bridge_client=bridge_client,
+            snapshot_provider=snapshot_provider,
             arguments=arguments,
         )
 
@@ -152,16 +158,21 @@ async def execute_mcp_tool(
     *,
     target: McpToolExecutionTarget,
     bridge_client: DesktopCapabilityBridgeClient,
+    snapshot_provider: McpSnapshotProvider,
     arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
+    resolved_target = resolve_latest_execution_target(
+        target=target,
+        snapshot_provider=snapshot_provider,
+    )
     runtime_context = get_current_runtime_tool_execution_context()
     invocation_context = ToolInvocationContext(
         invocation_id=(
             runtime_context.tool_call_id
             if runtime_context is not None and runtime_context.tool_call_id is not None
-            else f"{target.tool_id}:direct"
+            else f"{resolved_target.tool_id}:direct"
         ),
-        tool_id=target.tool_id,
+        tool_id=resolved_target.tool_id,
         actor="agent" if runtime_context is None else runtime_context.actor,
         run_id=None if runtime_context is None else runtime_context.run_id,
         requested_at=None if runtime_context is None else runtime_context.requested_at,
@@ -174,15 +185,15 @@ async def execute_mcp_tool(
     try:
         result = await bridge_client.call_mcp_tool(
             context=invocation_context,
-            server_id=target.server_id,
-            remote_tool_name=target.remote_tool_name,
+            server_id=resolved_target.server_id,
+            remote_tool_name=resolved_target.remote_tool_name,
             arguments=normalized_arguments,
-            snapshot_revision=target.snapshot_revision,
+            snapshot_revision=resolved_target.snapshot_revision,
         )
     except HostCapabilityOperationError as exc:
         return ToolResultEnvelope.failure(
             error=map_mcp_bridge_error(exc),
-            metadata=build_mcp_result_metadata(target=target),
+            metadata=build_mcp_result_metadata(target=resolved_target),
         ).to_dict()
 
     if result.get("ok") is True:
@@ -193,7 +204,7 @@ async def execute_mcp_tool(
                 "structuredContent": result.get("structuredContent"),
             },
             metadata={
-                **build_mcp_result_metadata(target=target),
+                **build_mcp_result_metadata(target=resolved_target),
                 "snapshotRevision": result.get("snapshotRevision"),
             },
         ).to_dict()
@@ -206,7 +217,7 @@ async def execute_mcp_tool(
         return ToolResultEnvelope.failure(
             error=map_mcp_tool_call_error(error_payload),
             metadata={
-                **build_mcp_result_metadata(target=target),
+                **build_mcp_result_metadata(target=resolved_target),
                 "snapshotRevision": result.get("snapshotRevision"),
             },
         ).to_dict()
@@ -215,11 +226,30 @@ async def execute_mcp_tool(
         code="execution_failed",
         message="MCP tool bridge returned an invalid result envelope.",
         details={
-            "toolId": target.tool_id,
-            "serverId": target.server_id,
-            "remoteToolName": target.remote_tool_name,
+            "toolId": resolved_target.tool_id,
+            "serverId": resolved_target.server_id,
+            "remoteToolName": resolved_target.remote_tool_name,
         },
     )
+
+
+def resolve_latest_execution_target(
+    *,
+    target: McpToolExecutionTarget,
+    snapshot_provider: McpSnapshotProvider,
+) -> McpToolExecutionTarget:
+    snapshot = snapshot_provider.load_snapshot()
+    if snapshot is None:
+        return target
+
+    latest_tool = next(
+        (tool for tool in snapshot.tools if tool.tool_id == target.tool_id),
+        None,
+    )
+    if latest_tool is None:
+        return target
+
+    return build_mcp_tool_execution_target(snapshot=snapshot, tool=latest_tool)
 
 
 def build_mcp_result_metadata(*, target: McpToolExecutionTarget) -> dict[str, Any]:

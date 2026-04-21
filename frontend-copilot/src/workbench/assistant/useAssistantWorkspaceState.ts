@@ -72,6 +72,7 @@ import {
   loadAssistantWorkspaceShellState,
   persistAssistantWorkspaceShellState,
 } from './assistant-workspace-shell-state'
+import { createWindowMcpRegistryClient } from '../capabilities/mcp-registry-client'
 import {
   type AssistantWorkspaceSessionStatus,
 } from './assistant-workspace-session-controller'
@@ -1198,6 +1199,49 @@ export function useAssistantWorkspaceState({
     setSessionHistoryById,
     setSessionListState,
   ])
+
+  useEffect(() => {
+    if (!isCopilotConnectableState(bootstrap.state)) {
+      return
+    }
+
+    const runtimeUrl = bootstrap.state.runtimeUrl
+    const registryClient = createWindowMcpRegistryClient()
+    const requestVersionBySessionId = new Map<string, number>()
+
+    return registryClient.subscribe((event) => {
+      if (event.kind !== 'snapshot') {
+        return
+      }
+
+      const liveSessions = sessionListState.sessions.filter((sessionEntry) => {
+        return sessionEntry.capabilities.capabilitiesVersion !== 'history-shell'
+      })
+
+      for (const liveSession of liveSessions) {
+        const nextRequestVersion = (requestVersionBySessionId.get(liveSession.sessionId) ?? 0) + 1
+        requestVersionBySessionId.set(liveSession.sessionId, nextRequestVersion)
+
+        void getCapabilitiesImpl({
+          runtimeUrl,
+          sessionId: liveSession.sessionId,
+        }).then((response) => {
+          if (requestVersionBySessionId.get(liveSession.sessionId) !== nextRequestVersion) {
+            return
+          }
+
+          setSessionListState((current) => ({
+            ...current,
+            sessions: current.sessions.map((sessionEntry) => sessionEntry.sessionId === liveSession.sessionId
+              ? applyAssistantSessionCapabilities(sessionEntry, response)
+              : sessionEntry),
+          }))
+        }).catch(() => {
+          // Keep the previous live capabilities until a later MCP snapshot refresh succeeds.
+        })
+      }
+    })
+  }, [bootstrap.state, getCapabilitiesImpl, sessionListState.sessions, setSessionListState])
 
   useEffect(() => {
     if (sessionShell === null) {

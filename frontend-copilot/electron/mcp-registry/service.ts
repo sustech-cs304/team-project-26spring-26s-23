@@ -305,6 +305,8 @@ export function createMcpRegistryService(
             ? result.error.details.stderrSummary
             : null,
         })
+      } else if (typeof request.serverId === 'string' && request.serverId.trim() !== '') {
+        await synchronizeConnectedServerAfterSuccessfulTest(request.serverId)
       }
 
       return {
@@ -392,6 +394,43 @@ export function createMcpRegistryService(
 
       return await connectorHub.callTool(resolved.request)
     },
+  }
+
+  async function synchronizeConnectedServerAfterSuccessfulTest(serverId: string): Promise<void> {
+    const snapshot = await options.store.load()
+    const currentRevisions = resolveRuntimeRevisions(snapshot)
+    const targetServer = snapshot.servers.find((server) => server.serverId === serverId)
+
+    if (targetServer === undefined || !targetServer.enabled) {
+      return
+    }
+
+    await connectorHub.reconcile(snapshot.servers, currentRevisions)
+
+    const refreshed = await connectorHub.refreshCatalog([serverId], currentRevisions)
+    const refreshedTarget = refreshed.find((entry) => entry.serverId === serverId) ?? null
+    const connectedState = connectorHub.getState(serverId)
+    const shouldPublishSnapshot = refreshedTarget?.success === true
+      || connectedState?.connectionState === 'connected'
+      || connectedState?.connectionState === 'degraded'
+
+    if (!shouldPublishSnapshot) {
+      return
+    }
+
+    const nextSnapshotRevision = bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+    runtimeSnapshotRevision = nextSnapshotRevision
+
+    await options.publishEvent?.({
+      kind: 'catalog',
+      registryRevision: snapshot.registryRevision,
+      snapshotRevision: nextSnapshotRevision,
+      refreshedServerIds: [serverId],
+      serverId,
+    })
+
+    const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
+    await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
   }
 
   function resolveRuntimeRevisions(snapshot: McpRegistryStoreSnapshot): McpConnectorHubRevisionState {
@@ -552,6 +591,27 @@ function resolveToolCallTarget(
         remoteToolName: matchingTarget.tool.name,
         snapshotRevision: request.snapshotRevision ?? currentSnapshotRevision,
       },
+    }
+  }
+
+  const requestedServerId = typeof request.serverId === 'string' ? request.serverId.trim() : ''
+  const requestedRemoteToolName = typeof request.remoteToolName === 'string' ? request.remoteToolName.trim() : ''
+  if (requestedServerId !== '' && requestedRemoteToolName !== '') {
+    const fallbackServer = snapshot.servers.find((server) => server.serverId === requestedServerId)
+    const hasRequestedTool = connectorHub
+      .getTools(requestedServerId)
+      .some((tool) => tool.name === requestedRemoteToolName)
+
+    if (fallbackServer !== undefined && hasRequestedTool) {
+      return {
+        ok: true,
+        request: {
+          ...request,
+          serverId: fallbackServer.serverId,
+          remoteToolName: requestedRemoteToolName,
+          snapshotRevision: currentSnapshotRevision,
+        },
+      }
     }
   }
 

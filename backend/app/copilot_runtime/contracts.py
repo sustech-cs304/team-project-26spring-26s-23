@@ -445,9 +445,13 @@ class RuntimeScaffold(RuntimeContract):
         )
 
     def build_capabilities_version(self) -> str:
-        return (
+        base_version = (
             f"capabilities:{self.agent_directory_version}:{self.tool_directory_version}"
         )
+        mcp_snapshot_revision = self._resolve_mcp_snapshot_revision()
+        if mcp_snapshot_revision is None:
+            return base_version
+        return f"{base_version}:mcp:{mcp_snapshot_revision}"
 
     def build_thread_get_response(
         self,
@@ -505,7 +509,7 @@ class RuntimeScaffold(RuntimeContract):
     ) -> RuntimeGlobalToolCatalogResponse:
         return RuntimeGlobalToolCatalogResponse(
             ok=True,
-            directoryVersion=self.tool_directory_version,
+            directoryVersion=self._build_tool_directory_version(),
             defaultToolset=self.default_toolset,
             language=language,
             tools=self.get_global_tool_catalog(language=language),
@@ -543,6 +547,20 @@ class RuntimeScaffold(RuntimeContract):
             seen_tool_ids.add(entry.toolId)
 
         return tuple(catalog)
+
+    def _build_tool_directory_version(self) -> str:
+        mcp_snapshot_revision = self._resolve_mcp_snapshot_revision()
+        if mcp_snapshot_revision is None:
+            return self.tool_directory_version
+        return f"{self.tool_directory_version}:mcp:{mcp_snapshot_revision}"
+
+    def _resolve_mcp_snapshot_revision(self) -> int | None:
+        if self.mcp_catalog_provider is None:
+            return None
+        snapshot = self.mcp_catalog_provider.snapshot_provider.load_snapshot()
+        if snapshot is None:
+            return None
+        return snapshot.snapshot_revision
 
     def build_thinking_capability_response(
         self,

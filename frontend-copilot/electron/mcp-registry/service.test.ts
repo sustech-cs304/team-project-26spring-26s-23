@@ -400,7 +400,7 @@ describe('createMcpRegistryService', () => {
     expect(refreshCatalogResult).toEqual({
       ok: true,
       registryRevision: 1,
-      snapshotRevision: 1,
+      snapshotRevision: 2,
       refreshedServerIds: [
         MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.httpSse,
         MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
@@ -421,6 +421,44 @@ describe('createMcpRegistryService', () => {
       ],
     })
     expect((await fixture.store.load()).servers).toEqual(beforeRefreshServers)
+  })
+
+  it('promotes a successful saved-server connection test into an automatic snapshot and catalog refresh', async () => {
+    const fixture = await createRegistryServiceFixture('test-sync-success')
+    const server = createMcpStdioStubServerFixture()
+    await fixture.store.saveServers([server])
+
+    const result = await fixture.service.testConnection({
+      serverId: server.serverId,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      success: true,
+      transportKind: 'stdio',
+      toolCount: 1,
+      durationMs: expect.any(Number),
+      phase: null,
+      diagnosticSummary: null,
+      error: null,
+      warnings: [],
+    })
+
+    expect(fixture.publishEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'catalog',
+      serverId: server.serverId,
+      refreshedServerIds: [server.serverId],
+    }))
+
+    const latestSnapshot = fixture.snapshotWrites[fixture.snapshotWrites.length - 1]
+    expect(latestSnapshot).toBeDefined()
+    expect(latestSnapshot?.snapshotRevision).toBeGreaterThan(0)
+    expect(latestSnapshot?.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        serverId: server.serverId,
+        remoteToolName: 'search-campus',
+      }),
+    ]))
   })
 
   it('executes MCP tools by stable toolId and reports snapshot directory drift failures', async () => {
@@ -458,6 +496,27 @@ describe('createMcpRegistryService', () => {
         snapshotRevision: 1,
       }),
     ])
+
+    const fallbackResolved = await fixture.service.executeTool({
+      toolId: 'mcp.missing.tool.11111111',
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'fallback' },
+      runId: 'run-1',
+      toolCallId: 'call-1b',
+      snapshotRevision: 0,
+    })
+
+    expect(fallbackResolved).toEqual({
+      ok: true,
+      toolId: 'mcp.missing.tool.11111111',
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: '{"keyword":"fallback"}' }],
+      structuredContent: { echoedArguments: { keyword: 'fallback' } },
+      snapshotRevision: 1,
+      isError: false,
+    })
 
     const drift = await fixture.service.executeTool({
       toolId: 'mcp.missing.tool.00000000',

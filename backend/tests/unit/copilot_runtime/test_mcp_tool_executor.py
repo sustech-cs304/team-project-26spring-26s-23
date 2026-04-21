@@ -9,6 +9,7 @@ from typing import Any, TypeVar, cast
 from app.copilot_runtime.mcp_snapshot_provider import (
     MCP_CAPABILITY_SNAPSHOT_FILE_NAME,
     McpCapabilitySnapshot,
+    McpSnapshotProvider,
     create_mcp_snapshot_provider,
 )
 from app.copilot_runtime.mcp_tool_executor import (
@@ -18,6 +19,7 @@ from app.copilot_runtime.mcp_tool_executor import (
     build_mcp_tool_function_name,
     execute_mcp_tool,
     normalize_mcp_parameters_schema,
+    resolve_latest_execution_target,
 )
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.tooling import ToolInvocationContext
@@ -72,6 +74,14 @@ class _RecordingBridgeClient:
         return dict(self._result)
 
 
+class _SnapshotProvider:
+    def __init__(self, snapshot: McpCapabilitySnapshot | None) -> None:
+        self._snapshot = snapshot
+
+    def load_snapshot(self) -> McpCapabilitySnapshot | None:
+        return self._snapshot
+
+
 def test_build_mcp_tool_execution_target_uses_snapshot_group_metadata() -> None:
     snapshot = _load_snapshot_fixture()
     tool = next(
@@ -119,7 +129,11 @@ def test_build_mcp_executable_tools_exposes_snapshot_tools_with_stable_function_
         ),
     )
 
-    tools = build_mcp_executable_tools(snapshot=snapshot, bridge_client=bridge_client)
+    tools = build_mcp_executable_tools(
+        snapshot=snapshot,
+        bridge_client=bridge_client,
+        snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot)),
+    )
     tool_by_id = {tool.tool_id: tool for tool in tools}
 
     assert tuple(tool_by_id) == (
@@ -237,6 +251,7 @@ def test_execute_mcp_tool_maps_directory_drift_to_normalized_not_found_error() -
         execute_mcp_tool(
             target=target,
             bridge_client=cast(DesktopCapabilityBridgeClient, bridge),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot)),
             arguments={"keyword": "library"},
         )
     )
@@ -286,6 +301,7 @@ def test_execute_mcp_tool_maps_bridge_unavailable_to_retryable_failure() -> None
         execute_mcp_tool(
             target=target,
             bridge_client=cast(DesktopCapabilityBridgeClient, bridge),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot)),
             arguments={},
         )
     )
@@ -318,6 +334,36 @@ def test_mcp_tool_helpers_normalize_function_names_and_object_schema() -> None:
         "type": "object",
         "properties": {},
     }
+
+
+def test_resolve_latest_execution_target_prefers_the_latest_snapshot_revision() -> None:
+    snapshot = _load_snapshot_fixture()
+    tool = next(
+        entry
+        for entry in snapshot.tools
+        if entry.tool_id == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    target = build_mcp_tool_execution_target(snapshot=snapshot, tool=tool)
+
+    refreshed_snapshot = snapshot.model_copy(
+        update={
+            "snapshot_revision": 12,
+            "tools": [
+                entry.model_copy(update={"description": "Latest description"})
+                if entry.tool_id == tool.tool_id
+                else entry
+                for entry in snapshot.tools
+            ],
+        }
+    )
+
+    resolved = resolve_latest_execution_target(
+        target=target,
+        snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(refreshed_snapshot)),
+    )
+
+    assert resolved.snapshot_revision == 12
+    assert resolved.description == "Latest description"
     assert normalize_mcp_parameters_schema({"properties": {"keyword": {"type": "string"}}}) == {
         "type": "object",
         "properties": {"keyword": {"type": "string"}},
