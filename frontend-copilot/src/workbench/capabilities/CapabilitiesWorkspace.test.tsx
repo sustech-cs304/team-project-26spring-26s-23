@@ -30,6 +30,7 @@ import {
 } from '../../../electron/renderer-ipc.test-support'
 import {
   clickElement,
+  focusElement,
   renderWithRoot,
   setFormControlValue,
   waitForNextFrame,
@@ -843,6 +844,60 @@ describe('CapabilitiesWorkspace', () => {
     expect(queryServerRow(rendered.container, 'stdio stub server')).toBeNull()
     expect(rendered.container.textContent).toContain('还没有可用的服务器')
     expect(rendered.container.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
+
+    rendered.unmount()
+  })
+
+  it('keeps focus in the MCP description and textarea fields while editing the dialog form', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    await clickElement(getNavButton(document.body, 'mcp-servers'))
+    await clickElement(getExactButton(rendered.container, '新增 MCP 服务器'))
+    await waitForNextFrame()
+
+    const dialog = getDialog(rendered.container)
+    const nameInput = dialog.querySelector('input[aria-label="服务器名称"]')
+    const descriptionInput = dialog.querySelector('input[aria-label="服务器说明"]')
+    const argsTextarea = dialog.querySelector('textarea[aria-label="命令参数"]')
+
+    if (!(nameInput instanceof HTMLInputElement)) {
+      throw new Error('Missing MCP name input')
+    }
+
+    if (!(descriptionInput instanceof HTMLInputElement)) {
+      throw new Error('Missing MCP description input')
+    }
+
+    if (!(argsTextarea instanceof HTMLTextAreaElement)) {
+      throw new Error('Missing MCP args textarea')
+    }
+
+    const descriptionNodeBeforeInput = descriptionInput
+    const argsNodeBeforeInput = argsTextarea
+
+    await focusElement(descriptionInput)
+    expect(document.activeElement).toBe(descriptionInput)
+
+    await setFormControlValue(descriptionInput, '用于网页抓取')
+
+    expect(document.activeElement).toBe(descriptionInput)
+    expect(descriptionInput.value).toBe('用于网页抓取')
+    expect(dialog.querySelector('input[aria-label="服务器名称"]')).toBe(nameInput)
+    expect(dialog.querySelector('input[aria-label="服务器说明"]')).toBe(descriptionNodeBeforeInput)
+
+    await focusElement(argsTextarea)
+    expect(document.activeElement).toBe(argsTextarea)
+
+    await setFormControlValue(argsTextarea, 'chrome-devtools-mcp@latest')
+
+    expect(document.activeElement).toBe(argsTextarea)
+    expect(argsTextarea.value).toBe('chrome-devtools-mcp@latest')
+    expect(dialog.querySelector('textarea[aria-label="命令参数"]')).toBe(argsNodeBeforeInput)
+    expect(dialog.querySelector('input[aria-label="服务器说明"]')).toBe(descriptionNodeBeforeInput)
 
     rendered.unmount()
   })

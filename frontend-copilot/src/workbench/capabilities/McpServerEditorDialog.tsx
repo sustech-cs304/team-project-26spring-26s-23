@@ -78,6 +78,12 @@ export function McpServerEditorDialog({
       firstInputRef.current?.select()
     })
 
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+    }
+  }, [step])
+
+  useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -88,10 +94,9 @@ export function McpServerEditorDialog({
     window.addEventListener('keydown', handleWindowKeyDown)
 
     return () => {
-      window.cancelAnimationFrame(focusFrame)
       window.removeEventListener('keydown', handleWindowKeyDown)
     }
-  }, [onClose, step])
+  }, [onClose])
 
   return (
     <div className="capabilities-dialog-backdrop" role="presentation" onClick={onClose}>
