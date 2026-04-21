@@ -2,10 +2,6 @@ import type {
   CreateMainProcessServicesOptions,
   MainProcessServices,
 } from './MainProcessServiceTypes'
-import {
-  createEmptyMcpRegistryLoadSuccess,
-  createMcpRegistryApiFailure,
-} from '../mcp-registry/ipc'
 import { createMainProcessServiceAccessors } from './MainProcessServiceAccessors'
 
 export function createMainProcessServices(
@@ -13,9 +9,6 @@ export function createMainProcessServices(
 ): MainProcessServices {
   const accessors = createMainProcessServiceAccessors(options)
   const copilotHistoryService = options.createCopilotHistoryService()
-  const createMcpNotImplementedFailure = () => {
-    return createMcpRegistryApiFailure('MCP registry service is intentionally left as a P0 contract stub.')
-  }
 
   return {
     async loadConfigCenterPublicSnapshot() {
@@ -51,23 +44,23 @@ export function createMainProcessServices(
     async clearSettingsWorkspaceSustechCasSecret() {
       return await accessors.getSettingsWorkspaceService().clearSustechCasSecret()
     },
-    async loadMcpRegistry() {
-      return createEmptyMcpRegistryLoadSuccess()
+    async loadMcpRegistry(request) {
+      return await accessors.getMcpRegistryService().loadRegistry(request)
     },
-    async saveMcpServer() {
-      return createMcpNotImplementedFailure()
+    async saveMcpServer(draft) {
+      return await accessors.getMcpRegistryService().saveServer(draft)
     },
-    async deleteMcpServer() {
-      return createMcpNotImplementedFailure()
+    async deleteMcpServer(serverId) {
+      return await accessors.getMcpRegistryService().deleteServer(serverId)
     },
-    async setMcpServerEnabled() {
-      return createMcpNotImplementedFailure()
+    async setMcpServerEnabled(request) {
+      return await accessors.getMcpRegistryService().setServerEnabled(request)
     },
-    async testMcpConnection() {
-      return createMcpNotImplementedFailure()
+    async testMcpConnection(request) {
+      return await accessors.getMcpRegistryService().testConnection(request)
     },
-    async refreshMcpCatalog() {
-      return createMcpNotImplementedFailure()
+    async refreshMcpCatalog(request) {
+      return await accessors.getMcpRegistryService().refreshCatalog(request)
     },
     async listCopilotHistoryThreads() {
       return await copilotHistoryService.listThreads()

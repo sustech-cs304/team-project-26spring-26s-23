@@ -56,7 +56,7 @@ import type {
   McpTestConnectionRequest,
   McpTestConnectionResult,
 } from '../mcp-registry/ipc'
-import type { McpServerDraft } from '../mcp-registry/types'
+import type { McpRegistrySubscriptionEvent, McpServerDraft } from '../mcp-registry/types'
 import type { ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
@@ -76,6 +76,9 @@ export interface CreateMainProcessServicesOptions {
   ) => void | Promise<void>
   publishConfigCenterPublicSnapshotUpdate: (
     snapshot: ConfigCenterPublicSnapshot,
+  ) => void | Promise<void>
+  publishMcpRegistryEvent: (
+    event: McpRegistrySubscriptionEvent,
   ) => void | Promise<void>
   createCopilotHistoryService: () => ElectronCopilotHistoryService
 }

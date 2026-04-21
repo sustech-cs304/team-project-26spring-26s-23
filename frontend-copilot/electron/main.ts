@@ -6,6 +6,8 @@ import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL,
   type ConfigCenterPublicSnapshot,
 } from './config-center/public-snapshot'
+import { MCP_REGISTRY_SUBSCRIPTION_CHANNEL } from './mcp-registry/ipc'
+import type { McpRegistrySubscriptionEvent } from './mcp-registry/types'
 import type {
   CopilotHostedRuntimeFailureSummary,
   CopilotRuntimeLoadResult,
@@ -84,6 +86,7 @@ const mainProcessServices = createMainProcessServices({
     return mainRuntimeLogger.appendMainRuntimeLog(level, message, context)
   },
   publishConfigCenterPublicSnapshotUpdate,
+  publishMcpRegistryEvent,
   createCopilotHistoryService() {
     return createElectronCopilotHistoryService({
       ensureHostedBackendService,
@@ -445,6 +448,16 @@ function publishConfigCenterPublicSnapshotUpdate(snapshot: ConfigCenterPublicSna
     }
 
     browserWindow.webContents.send(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL, snapshot)
+  }
+}
+
+function publishMcpRegistryEvent(event: McpRegistrySubscriptionEvent): void {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (browserWindow.isDestroyed()) {
+      continue
+    }
+
+    browserWindow.webContents.send(MCP_REGISTRY_SUBSCRIPTION_CHANNEL, event)
   }
 }
 

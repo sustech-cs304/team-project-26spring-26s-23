@@ -5,6 +5,7 @@ const hoisted = vi.hoisted(() => {
   const createElectronSettingsWorkspaceService = vi.fn()
   const createElectronDesktopCapabilityBridgeService = vi.fn()
   const createElectronToolCatalogService = vi.fn()
+  const createElectronMcpRegistryService = vi.fn()
   const unifiedConfigService = {
     loadPublicSnapshot: vi.fn(),
     applyPublicPatch: vi.fn(),
@@ -27,6 +28,14 @@ const hoisted = vi.hoisted(() => {
   const toolCatalogService = {
     load: vi.fn(),
   }
+  const mcpRegistryService = {
+    loadRegistry: vi.fn(),
+    saveServer: vi.fn(),
+    deleteServer: vi.fn(),
+    setServerEnabled: vi.fn(),
+    testConnection: vi.fn(),
+    refreshCatalog: vi.fn(),
+  }
   const copilotHistoryService = {
     listThreads: vi.fn(),
     getThreadDetail: vi.fn(),
@@ -43,10 +52,12 @@ const hoisted = vi.hoisted(() => {
     createElectronSettingsWorkspaceService,
     createElectronDesktopCapabilityBridgeService,
     createElectronToolCatalogService,
+    createElectronMcpRegistryService,
     unifiedConfigService,
     settingsWorkspaceService,
     capabilityBridgeService,
     toolCatalogService,
+    mcpRegistryService,
     copilotHistoryService,
   }
 })
@@ -67,9 +78,19 @@ vi.mock('./tool-catalog/service', () => ({
   createElectronToolCatalogService: hoisted.createElectronToolCatalogService,
 }))
 
+vi.mock('./mcp-registry/main-process', () => ({
+  createElectronMcpRegistryService: hoisted.createElectronMcpRegistryService,
+}))
+
 import {
   createConfigCenterPublicSnapshotFixture,
+  createMcpDeleteServerSuccessFixture,
+  createMcpRefreshCatalogSuccessFixture,
+  createMcpRegistryLoadResultFixture,
+  createMcpSaveServerSuccessFixture,
+  createMcpSetServerEnabledSuccessFixture,
   createMcpStdioStubServerFixture,
+  createMcpTestConnectionSuccessFixture,
   createSettingsWorkspaceStateFixture,
 } from './renderer-ipc.test-support'
 import { createMainProcessServices } from './main-services'
@@ -98,6 +119,12 @@ describe('createMainProcessServices', () => {
     const settingsState = createSettingsWorkspaceStateFixture()
     const saveInput = normalizeSettingsWorkspaceStateValues(settingsState)
     const mcpServerDraft = createMcpStdioStubServerFixture()
+    const loadMcpRegistryResult = createMcpRegistryLoadResultFixture()
+    const saveMcpServerResult = createMcpSaveServerSuccessFixture()
+    const deleteMcpServerResult = createMcpDeleteServerSuccessFixture(mcpServerDraft.serverId)
+    const setMcpServerEnabledResult = createMcpSetServerEnabledSuccessFixture(false)
+    const testMcpConnectionResult = createMcpTestConnectionSuccessFixture('stdio')
+    const refreshMcpCatalogResult = createMcpRefreshCatalogSuccessFixture()
     const loadToolCatalogResult = {
       ok: true,
       tools: [
@@ -273,6 +300,12 @@ describe('createMainProcessServices', () => {
     hoisted.settingsWorkspaceService.resolveProviderRoute.mockResolvedValue(resolveProviderRouteResult)
     hoisted.capabilityBridgeService.handleRequest.mockResolvedValue(capabilityResponse)
     hoisted.toolCatalogService.load.mockResolvedValue(loadToolCatalogResult)
+    hoisted.mcpRegistryService.loadRegistry.mockResolvedValue(loadMcpRegistryResult)
+    hoisted.mcpRegistryService.saveServer.mockResolvedValue(saveMcpServerResult)
+    hoisted.mcpRegistryService.deleteServer.mockResolvedValue(deleteMcpServerResult)
+    hoisted.mcpRegistryService.setServerEnabled.mockResolvedValue(setMcpServerEnabledResult)
+    hoisted.mcpRegistryService.testConnection.mockResolvedValue(testMcpConnectionResult)
+    hoisted.mcpRegistryService.refreshCatalog.mockResolvedValue(refreshMcpCatalogResult)
     hoisted.copilotHistoryService.listThreads.mockResolvedValue(listHistoryThreadsResult)
     hoisted.copilotHistoryService.getThreadDetail.mockResolvedValue(getHistoryThreadDetailResult)
     hoisted.copilotHistoryService.getRunReplay.mockResolvedValue(getHistoryRunReplayResult)
@@ -286,6 +319,7 @@ describe('createMainProcessServices', () => {
     hoisted.createElectronSettingsWorkspaceService.mockReturnValue(hoisted.settingsWorkspaceService)
     hoisted.createElectronDesktopCapabilityBridgeService.mockReturnValue(hoisted.capabilityBridgeService)
     hoisted.createElectronToolCatalogService.mockReturnValue(hoisted.toolCatalogService)
+    hoisted.createElectronMcpRegistryService.mockReturnValue(hoisted.mcpRegistryService)
 
     const hostedBackendService = { getLocalToken: vi.fn(() => 'runtime-token') }
     hoisted.unifiedConfigService.getHostedBackendService.mockResolvedValue(hostedBackendService)
@@ -294,18 +328,21 @@ describe('createMainProcessServices', () => {
     const ensureHostedBackendService = vi.fn(async () => hostedBackendService as never)
     const appendMainRuntimeLog = vi.fn()
     const publishConfigCenterPublicSnapshotUpdate = vi.fn()
+    const publishMcpRegistryEvent = vi.fn()
     const createCopilotHistoryService = vi.fn(() => hoisted.copilotHistoryService)
     const services = createMainProcessServices({
       prepareRuntimePaths,
       ensureHostedBackendService,
       appendMainRuntimeLog,
       publishConfigCenterPublicSnapshotUpdate,
+      publishMcpRegistryEvent,
       createCopilotHistoryService,
     })
 
     expect(hoisted.createElectronUnifiedConfigService).not.toHaveBeenCalled()
     expect(hoisted.createElectronSettingsWorkspaceService).not.toHaveBeenCalled()
     expect(hoisted.createElectronDesktopCapabilityBridgeService).not.toHaveBeenCalled()
+    expect(hoisted.createElectronMcpRegistryService).not.toHaveBeenCalled()
     expect(hoisted.createElectronToolCatalogService).not.toHaveBeenCalled()
 
     const patch = {
@@ -323,38 +360,14 @@ describe('createMainProcessServices', () => {
     await expect(services.saveSettingsWorkspaceState(saveInput)).resolves.toEqual(saveStateResult)
     await expect(services.loadSettingsWorkspaceSecretStates({ profileIds: ['openrouter'] })).resolves.toEqual(loadSecretStatesResult)
     await expect(services.loadSettingsWorkspaceSustechCasSecret()).resolves.toEqual(loadSustechCasSecretResult)
-    await expect(services.loadMcpRegistry()).resolves.toEqual({
-      ok: true,
-      registryRevision: 0,
-      snapshotRevision: 0,
-      servers: [],
-      states: [],
-    })
-    await expect(services.saveMcpServer(mcpServerDraft)).resolves.toEqual({
-      ok: false,
-      error: 'MCP registry service is intentionally left as a P0 contract stub.',
-      code: 'not_implemented',
-    })
-    await expect(services.deleteMcpServer(mcpServerDraft.serverId)).resolves.toEqual({
-      ok: false,
-      error: 'MCP registry service is intentionally left as a P0 contract stub.',
-      code: 'not_implemented',
-    })
-    await expect(services.setMcpServerEnabled({ serverId: mcpServerDraft.serverId, enabled: false })).resolves.toEqual({
-      ok: false,
-      error: 'MCP registry service is intentionally left as a P0 contract stub.',
-      code: 'not_implemented',
-    })
-    await expect(services.testMcpConnection({ draft: mcpServerDraft })).resolves.toEqual({
-      ok: false,
-      error: 'MCP registry service is intentionally left as a P0 contract stub.',
-      code: 'not_implemented',
-    })
-    await expect(services.refreshMcpCatalog({ serverId: mcpServerDraft.serverId })).resolves.toEqual({
-      ok: false,
-      error: 'MCP registry service is intentionally left as a P0 contract stub.',
-      code: 'not_implemented',
-    })
+    await expect(services.loadMcpRegistry()).resolves.toEqual(loadMcpRegistryResult)
+    await expect(services.saveMcpServer(mcpServerDraft)).resolves.toEqual(saveMcpServerResult)
+    await expect(services.deleteMcpServer(mcpServerDraft.serverId)).resolves.toEqual(deleteMcpServerResult)
+    await expect(services.setMcpServerEnabled({ serverId: mcpServerDraft.serverId, enabled: false })).resolves.toEqual(
+      setMcpServerEnabledResult,
+    )
+    await expect(services.testMcpConnection({ draft: mcpServerDraft })).resolves.toEqual(testMcpConnectionResult)
+    await expect(services.refreshMcpCatalog({ serverId: mcpServerDraft.serverId })).resolves.toEqual(refreshMcpCatalogResult)
     await expect(services.saveSettingsWorkspaceProfileSecret({
       profileId: 'openrouter',
       apiKey: 'draft-secret',
@@ -384,6 +397,7 @@ describe('createMainProcessServices', () => {
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronDesktopCapabilityBridgeService).toHaveBeenCalledTimes(1)
+    expect(hoisted.createElectronMcpRegistryService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronToolCatalogService).toHaveBeenCalledTimes(1)
     expect(createCopilotHistoryService).toHaveBeenCalledTimes(1)
     expect(hoisted.unifiedConfigService.loadPublicSnapshot).toHaveBeenCalledOnce()
@@ -405,6 +419,15 @@ describe('createMainProcessServices', () => {
     expect(hoisted.settingsWorkspaceService.clearSustechCasSecret).toHaveBeenCalledOnce()
     expect(hoisted.settingsWorkspaceService.resolveProviderRoute).toHaveBeenCalledWith(resolveProviderRouteRequest)
     expect(hoisted.capabilityBridgeService.handleRequest).toHaveBeenCalledWith(capabilityRequest)
+    expect(hoisted.mcpRegistryService.loadRegistry).toHaveBeenCalledOnce()
+    expect(hoisted.mcpRegistryService.saveServer).toHaveBeenCalledWith(mcpServerDraft)
+    expect(hoisted.mcpRegistryService.deleteServer).toHaveBeenCalledWith(mcpServerDraft.serverId)
+    expect(hoisted.mcpRegistryService.setServerEnabled).toHaveBeenCalledWith({
+      serverId: mcpServerDraft.serverId,
+      enabled: false,
+    })
+    expect(hoisted.mcpRegistryService.testConnection).toHaveBeenCalledWith({ draft: mcpServerDraft })
+    expect(hoisted.mcpRegistryService.refreshCatalog).toHaveBeenCalledWith({ serverId: mcpServerDraft.serverId })
     expect(hoisted.toolCatalogService.load).toHaveBeenCalledOnce()
     expect(hoisted.copilotHistoryService.listThreads).toHaveBeenCalledOnce()
     expect(hoisted.copilotHistoryService.getThreadDetail).toHaveBeenCalledWith('thread-1')

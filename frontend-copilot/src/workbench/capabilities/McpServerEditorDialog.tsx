@@ -1,11 +1,15 @@
 import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 
-import type { McpServerEditorMode } from './capabilities-demo'
+import type { McpServerValidationError } from '../../../electron/mcp-registry/types'
+import type { McpServerEditorMode } from './mcp-registry-view-model'
 
 interface McpServerEditorDialogProps {
   mode: McpServerEditorMode
   value: string
+  validationErrors?: readonly McpServerValidationError[]
+  errorMessage?: string | null
+  submitting?: boolean
   onValueChange: (value: string) => void
   onClose: () => void
   onConfirm: () => void
@@ -14,6 +18,9 @@ interface McpServerEditorDialogProps {
 export function McpServerEditorDialog({
   mode,
   value,
+  validationErrors = [],
+  errorMessage = null,
+  submitting = false,
   onValueChange,
   onClose,
   onConfirm,
@@ -72,14 +79,29 @@ export function McpServerEditorDialog({
             aria-label={mode === 'edit' ? 'MCP 配置 JSON' : '新 MCP 配置 JSON'}
             onChange={(event) => onValueChange(event.target.value)}
           />
+
+          {errorMessage || validationErrors.length > 0 ? (
+            <div className="capabilities-dialog__errors" role="alert">
+              {errorMessage ? <p>{errorMessage}</p> : null}
+              {validationErrors.length > 0 ? (
+                <ul>
+                  {validationErrors.map((validationError) => (
+                    <li key={`${validationError.fieldPath}:${validationError.message}`}>
+                      {validationError.fieldPath}: {validationError.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <footer className="capabilities-dialog__footer">
-          <button type="button" className="secondary-button" onClick={onClose}>
+          <button type="button" className="secondary-button" disabled={submitting} onClick={onClose}>
             取消
           </button>
-          <button type="button" className="primary-button" onClick={onConfirm}>
-            确定
+          <button type="button" className="primary-button" disabled={submitting} onClick={onConfirm}>
+            {submitting ? '保存中…' : '确定'}
           </button>
         </footer>
       </section>

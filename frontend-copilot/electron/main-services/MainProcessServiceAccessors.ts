@@ -14,6 +14,10 @@ import {
   createElectronToolCatalogService,
   type ElectronToolCatalogService,
 } from '../tool-catalog/service'
+import {
+  createElectronMcpRegistryService,
+  type ElectronMcpRegistryService,
+} from '../mcp-registry/main-process'
 import type {
   CreateMainProcessServicesOptions,
   MainProcessServiceLogLevel,
@@ -24,6 +28,7 @@ export interface MainProcessServiceAccessors {
   getUnifiedConfigService: () => ElectronUnifiedConfigService
   getSettingsWorkspaceService: () => ElectronSettingsWorkspaceService
   getDesktopCapabilityBridgeService: () => ElectronDesktopCapabilityBridgeService
+  getMcpRegistryService: () => ElectronMcpRegistryService
   getToolCatalogService: () => ElectronToolCatalogService
 }
 
@@ -34,6 +39,7 @@ export function createMainProcessServiceAccessors(
   let settingsWorkspaceService: ElectronSettingsWorkspaceService | null = null
   let desktopCapabilityBridgeService: ElectronDesktopCapabilityBridgeService | null = null
   let toolCatalogService: ElectronToolCatalogService | null = null
+  let mcpRegistryService: ElectronMcpRegistryService | null = null
 
   const forwardServiceLog = (
     level: MainProcessServiceLogLevel,
@@ -93,6 +99,19 @@ export function createMainProcessServiceAccessors(
       })
 
       return desktopCapabilityBridgeService
+    },
+    getMcpRegistryService(): ElectronMcpRegistryService {
+      mcpRegistryService ??= createElectronMcpRegistryService({
+        prepareRuntimePaths: options.prepareRuntimePaths,
+        appendLog(level, message, context) {
+          return forwardServiceLog(level, message, context)
+        },
+        publishRegistryEvent(event) {
+          return options.publishMcpRegistryEvent(event)
+        },
+      })
+
+      return mcpRegistryService
     },
     getToolCatalogService(): ElectronToolCatalogService {
       toolCatalogService ??= createElectronToolCatalogService({

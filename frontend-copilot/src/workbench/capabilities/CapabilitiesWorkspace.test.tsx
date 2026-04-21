@@ -2,9 +2,31 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type {
+  McpDeleteServerResult,
+  McpRefreshCatalogResult,
+  McpRegistryLoadResult,
+  McpSaveServerResult,
+  McpSetServerEnabledResult,
+  McpTestConnectionResult,
+} from '../../../electron/mcp-registry/ipc'
+import type {
+  McpRegistrySubscriptionEvent,
+  McpServerDraft,
+  McpServerRecord,
+  McpServerStateSummary,
+} from '../../../electron/mcp-registry/types'
 import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
 
 import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
+import {
+  createMcpDeleteServerSuccessFixture,
+  createMcpRegistryLoadResultFixture,
+  createMcpSaveServerSuccessFixture,
+  createMcpSetServerEnabledSuccessFixture,
+  createMcpStdioStubServerFixture,
+  createMcpTestConnectionSuccessFixture,
+} from '../../../electron/renderer-ipc.test-support'
 import {
   clickElement,
   renderWithRoot,
@@ -31,9 +53,76 @@ vi.mock('./tool-catalog', () => ({
 const mockedLoadSettingsWorkspaceState = vi.mocked(loadSettingsWorkspaceState)
 const mockedSaveSettingsWorkspaceState = vi.mocked(saveSettingsWorkspaceState)
 const mockedLoadToolCatalog = vi.mocked(loadToolCatalog)
+const mockedLoadMcpRegistry = vi.fn<(request?: { language?: string | null, includeDisabled?: boolean }) => Promise<McpRegistryLoadResult>>()
+const mockedSaveMcpServer = vi.fn<(draft: McpServerDraft) => Promise<McpSaveServerResult>>()
+const mockedDeleteMcpServer = vi.fn<(serverId: string) => Promise<McpDeleteServerResult>>()
+const mockedSetMcpServerEnabled = vi.fn<
+  (request: { serverId: string, enabled: boolean }) => Promise<McpSetServerEnabledResult>
+>()
+const mockedTestMcpConnection = vi.fn<
+  (request: { serverId?: string, draft?: McpServerDraft }) => Promise<McpTestConnectionResult>
+>()
+const mockedRefreshMcpCatalog = vi.fn<
+  (request?: { serverId?: string | null }) => Promise<McpRefreshCatalogResult>
+>()
+const mockedSubscribeMcpRegistry = vi.fn<(listener: (event: McpRegistrySubscriptionEvent) => void) => () => void>()
+
+let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
 
 beforeEach(() => {
   vi.clearAllMocks()
+  activeMcpRegistryListener = null
+
+  mockedLoadMcpRegistry.mockResolvedValue(createMcpRegistryLoadResultFixture())
+  mockedSaveMcpServer.mockResolvedValue(createMcpSaveServerSuccessFixture())
+  mockedDeleteMcpServer.mockResolvedValue(createMcpDeleteServerSuccessFixture())
+  mockedSetMcpServerEnabled.mockResolvedValue(createMcpSetServerEnabledSuccessFixture(false))
+  mockedTestMcpConnection.mockResolvedValue(createMcpTestConnectionSuccessFixture('stdio'))
+  mockedRefreshMcpCatalog.mockResolvedValue({
+    ok: true,
+    registryRevision: 6,
+    snapshotRevision: 10,
+    refreshedServerIds: ['mcp-stdio-stub'],
+    results: [{
+      serverId: 'mcp-stdio-stub',
+      toolCount: 0,
+      connectionState: 'idle',
+      error: {
+        code: 'p1_management_only',
+        message: 'P1 currently persists MCP registry management state only. Live connectors, transport handshakes, and catalog sync will arrive in P2.',
+        retryable: false,
+      },
+    }],
+  })
+  mockedSubscribeMcpRegistry.mockImplementation((listener) => {
+    activeMcpRegistryListener = listener
+    return () => {
+      if (activeMcpRegistryListener === listener) {
+        activeMcpRegistryListener = null
+      }
+    }
+  })
+
+  Object.defineProperty(window, 'mcpRegistry', {
+    configurable: true,
+    writable: true,
+    value: {
+      loadRegistry: mockedLoadMcpRegistry,
+      saveServer: mockedSaveMcpServer,
+      deleteServer: mockedDeleteMcpServer,
+      setServerEnabled: mockedSetMcpServerEnabled,
+      testConnection: mockedTestMcpConnection,
+      refreshCatalog: mockedRefreshMcpCatalog,
+    },
+  })
+
+  Object.defineProperty(window, 'mcpRegistrySubscription', {
+    configurable: true,
+    writable: true,
+    value: {
+      subscribe: mockedSubscribeMcpRegistry,
+    },
+  })
 })
 
 function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | 'mcp-servers'): HTMLButtonElement {
@@ -98,6 +187,37 @@ function getDialog(container: ParentNode): HTMLElement {
   }
 
   return dialog
+}
+
+function createSavedMcpServerState(
+  server: McpServerRecord,
+  overrides: Partial<McpServerStateSummary> = {},
+): McpServerStateSummary {
+  return {
+    serverId: server.serverId,
+    enabled: server.enabled,
+    connectionState: server.enabled ? 'idle' : 'disabled',
+    toolCount: 0,
+    lastHandshakeAt: null,
+    lastCatalogSyncAt: null,
+    lastError: null,
+    reconnectAttempt: 0,
+    transportState: server.transportConfig.kind === 'stdio'
+      ? {
+          kind: 'stdio',
+          processStatus: 'stopped',
+          pid: null,
+          lastExitCode: null,
+          lastExitSignal: null,
+        }
+      : {
+          kind: 'http-sse',
+          endpointStatus: 'offline',
+          lastHttpStatus: null,
+          sseOnline: false,
+        },
+    ...overrides,
+  }
 }
 
 function createLoadResult() {
@@ -332,10 +452,12 @@ describe('CapabilitiesWorkspace', () => {
 
     expect(rendered.container.querySelector('[aria-label="工具权限列表"]')).toBeNull()
     expect(rendered.container.querySelector('.mcp-server-row')).toBeTruthy()
-    expect(rendered.container.querySelector('.mcp-server-toggle')).toBeTruthy()
     expect(rendered.container.textContent).toContain('MCP 服务器')
-    expect(rendered.container.textContent).toContain('filesystem-server')
-    expect(rendered.container.textContent).toContain('puppeteer-server')
+    expect(rendered.container.textContent).toContain('stdio stub server')
+    expect(rendered.container.textContent).toContain('http sse stub server')
+    expect(rendered.container.textContent).toContain('测试连接')
+    expect(rendered.container.textContent).toContain('刷新目录')
+    expect(mockedLoadMcpRegistry).toHaveBeenCalledWith({ includeDisabled: true })
     expect(rendered.container.textContent).toContain('编辑')
     expect(rendered.container.textContent).toContain('添加')
 
@@ -570,7 +692,7 @@ describe('CapabilitiesWorkspace', () => {
     }
 
     expect(dialog.getAttribute('aria-label')).toBe('编辑 MCP 服务器 JSON')
-    expect(textarea.value).toContain('"filesystem-server"')
+    expect(textarea.value).toContain('"mcp-stdio-stub"')
     expect(document.activeElement).toBe(textarea)
     expect(getExactButton(dialog, '取消')).toBeTruthy()
     expect(getExactButton(dialog, '确定')).toBeTruthy()
@@ -590,7 +712,7 @@ describe('CapabilitiesWorkspace', () => {
     }
 
     expect(dialog.getAttribute('aria-label')).toBe('添加 MCP 服务器 JSON')
-    expect(textarea.value).toContain('"new-server"')
+    expect(textarea.value).toContain('"serverId": "new-server"')
 
     const closeButton = dialog.querySelector('button[aria-label="关闭 MCP 配置编辑器"]')
 
@@ -611,12 +733,37 @@ describe('CapabilitiesWorkspace', () => {
     rendered.unmount()
   })
 
-  it('toggles and deletes placeholder MCP server rows from the panel', async () => {
+  it('toggles, tests, refreshes, and deletes registry-backed MCP server rows from the panel', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: createLoadResult().state,
+    })
+    const disabledServer = createMcpStdioStubServerFixture({
+      displayName: 'stdio stub server',
+      enabled: false,
+    })
+    mockedLoadMcpRegistry.mockResolvedValue({
+      ok: true,
+      registryRevision: 1,
+      snapshotRevision: 0,
+      servers: [disabledServer],
+      states: [createSavedMcpServerState(disabledServer)],
+    })
+    mockedSetMcpServerEnabled.mockResolvedValue({
+      ok: true,
+      registryRevision: 2,
+      snapshotRevision: 0,
+      server: { ...disabledServer, enabled: true },
+      state: createSavedMcpServerState({ ...disabledServer, enabled: true }),
+    })
+    mockedDeleteMcpServer.mockResolvedValue({
+      ok: true,
+      registryRevision: 3,
+      snapshotRevision: 0,
+      serverId: disabledServer.serverId,
+      deleted: true,
     })
 
     const rendered = renderWithRoot(<CapabilitiesWorkspace />)
@@ -625,23 +772,32 @@ describe('CapabilitiesWorkspace', () => {
     const mcpNavButton = getNavButton(document.body, 'mcp-servers')
     await clickElement(mcpNavButton)
 
-    const fetchToggle = rendered.container.querySelector('button[aria-label="开启 fetch-server"]')
+    const enableToggle = rendered.container.querySelector('button[aria-label="开启 stdio stub server"]')
 
-    if (!(fetchToggle instanceof HTMLButtonElement)) {
-      throw new Error('Missing fetch-server toggle')
+    if (!(enableToggle instanceof HTMLButtonElement)) {
+      throw new Error('Missing stdio stub server toggle')
     }
 
-    await clickElement(fetchToggle)
+    await clickElement(enableToggle)
 
-    expect(rendered.container.querySelector('button[aria-label="关闭 fetch-server"]')).toBeTruthy()
-    expect(getServerRow(rendered.container, 'fetch-server').querySelector('.mcp-server-toggle')?.className).toContain(
+    expect(mockedSetMcpServerEnabled).toHaveBeenCalledWith({ serverId: disabledServer.serverId, enabled: true })
+    expect(rendered.container.querySelector('button[aria-label="关闭 stdio stub server"]')).toBeTruthy()
+    expect(getServerRow(rendered.container, 'stdio stub server').querySelector('.mcp-server-toggle')?.className).toContain(
       'mcp-server-toggle--on',
     )
 
-    await clickElement(rendered.container.querySelector('button[aria-label="删除 puppeteer-server"]') as HTMLButtonElement)
+    await clickElement(rendered.container.querySelector('button[aria-label="测试 stdio stub server"]') as HTMLButtonElement)
+    expect(mockedTestMcpConnection).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
+    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('测试连接成功，当前发现 1 个工具。')
 
-    expect(queryServerRow(rendered.container, 'puppeteer-server')).toBeNull()
-    expect(getServerRow(rendered.container, 'filesystem-server')).toBeTruthy()
+    await clickElement(rendered.container.querySelector('button[aria-label="刷新 stdio stub server 目录"]') as HTMLButtonElement)
+    expect(mockedRefreshMcpCatalog).toHaveBeenCalledWith({ serverId: disabledServer.serverId })
+    expect(getServerRow(rendered.container, 'stdio stub server').textContent).toContain('刷新目录受限')
+
+    await clickElement(rendered.container.querySelector('button[aria-label="删除 stdio stub server"]') as HTMLButtonElement)
+
+    expect(queryServerRow(rendered.container, 'stdio stub server')).toBeNull()
+    expect(rendered.container.textContent).toContain('尚未配置 MCP 服务器')
 
     rendered.unmount()
   })

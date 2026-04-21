@@ -16,13 +16,10 @@ import { loadConfigCenterPublicSnapshot } from '../../features/copilot/config-ce
 import { loadToolCatalog } from './tool-catalog'
 import { CapabilitiesSecondaryNav } from './CapabilitiesSecondaryNav'
 import { projectDebugModeEnabledFromConfigCenterPublicSnapshot } from '../../features/copilot/config-center'
+import type { McpServerValidationError } from '../../../electron/mcp-registry/types'
 import {
   capabilitiesNavItems,
-  mockMcpServers,
-  resolveMcpEditorSeed,
   type CapabilitiesSection,
-  type McpServerEditorMode,
-  type McpServerRecord,
   type ToolPermissionDelayAction,
   type ToolPermissionMode,
   type ToolPermissionRecord,
@@ -30,10 +27,15 @@ import {
 import { McpServerEditorDialog } from './McpServerEditorDialog'
 import { McpServersPanel } from './McpServersPanel'
 import { ToolPermissionsPanel } from './ToolPermissionsPanel'
+import type { McpServerEditorMode } from './mcp-registry-view-model'
+import { useMcpRegistry } from './use-mcp-registry'
 
 interface McpServerEditorState {
   mode: McpServerEditorMode
   value: string
+  validationErrors: McpServerValidationError[]
+  errorMessage: string | null
+  submitting: boolean
 }
 
 interface ToolCatalogLoadState {
@@ -53,9 +55,6 @@ const INCOMPLETE_TOOL_CATALOG_ERROR = 'Hosted backend returned an incomplete too
 export function CapabilitiesWorkspace() {
   const [activeSection, setActiveSection] = useState<CapabilitiesSection>('tool-permissions')
   const [toolPermissions, setToolPermissions] = useState<ToolPermissionRecord[]>([])
-  const [mcpServers, setMcpServers] = useState<McpServerRecord[]>(() => (
-    mockMcpServers.map((server) => ({ ...server }))
-  ))
   const [editorState, setEditorState] = useState<McpServerEditorState | null>(null)
   const [settingsState, setSettingsState] = useState<SettingsWorkspaceStateSaveInput | null>(null)
   const [toolCatalogLoadState, setToolCatalogLoadState] = useState<ToolCatalogLoadState>({
@@ -63,6 +62,7 @@ export function CapabilitiesWorkspace() {
     error: null,
     source: null,
   })
+  const mcpRegistry = useMcpRegistry()
 
   useEffect(() => {
     let cancelled = false
@@ -179,23 +179,41 @@ export function CapabilitiesWorkspace() {
   const openMcpEditor = (mode: McpServerEditorMode) => {
     setEditorState({
       mode,
-      value: resolveMcpEditorSeed(mode),
+      value: mcpRegistry.getEditorSeed(mode),
+      validationErrors: [],
+      errorMessage: null,
+      submitting: false,
     })
   }
 
-  const handleToggleMcpServer = (serverId: string) => {
-    setMcpServers((previous) => previous.map((server) => (
-      server.id === serverId
-        ? {
-            ...server,
-            enabled: !server.enabled,
-          }
-        : server
-    )))
-  }
+  const handleConfirmMcpEditor = () => {
+    if (editorState === null) {
+      return
+    }
 
-  const handleDeleteMcpServer = (serverId: string) => {
-    setMcpServers((previous) => previous.filter((server) => server.id !== serverId))
+    const activeEditorState = editorState
+    setEditorState((previous) => previous === null ? previous : {
+      ...previous,
+      submitting: true,
+      errorMessage: null,
+      validationErrors: [],
+    })
+
+    void (async () => {
+      const result = await mcpRegistry.saveEditorDraft(activeEditorState.mode, activeEditorState.value)
+
+      if (result.ok) {
+        setEditorState(null)
+        return
+      }
+
+      setEditorState((previous) => previous === null ? previous : {
+        ...previous,
+        submitting: false,
+        errorMessage: result.errorMessage,
+        validationErrors: result.validationErrors,
+      })
+    })()
   }
 
   return (
@@ -249,9 +267,12 @@ export function CapabilitiesWorkspace() {
               />
             ) : (
               <McpServersPanel
-                servers={mcpServers}
-                onToggleEnabled={handleToggleMcpServer}
-                onDelete={handleDeleteMcpServer}
+                servers={mcpRegistry.servers}
+                statusMessage={mcpRegistry.statusMessage}
+                onToggleEnabled={mcpRegistry.toggleServerEnabled}
+                onDelete={mcpRegistry.deleteServer}
+                onTestConnection={mcpRegistry.testServerConnection}
+                onRefreshCatalog={mcpRegistry.refreshServerCatalog}
               />
             )}
           </section>
@@ -262,14 +283,19 @@ export function CapabilitiesWorkspace() {
         <McpServerEditorDialog
           mode={editorState.mode}
           value={editorState.value}
+          validationErrors={editorState.validationErrors}
+          errorMessage={editorState.errorMessage}
+          submitting={editorState.submitting}
           onValueChange={(value) => {
             setEditorState((previous) => (previous === null ? previous : {
               ...previous,
               value,
+              errorMessage: null,
+              validationErrors: [],
             }))
           }}
           onClose={() => setEditorState(null)}
-          onConfirm={() => setEditorState(null)}
+          onConfirm={handleConfirmMcpEditor}
         />
       ) : null}
     </>
