@@ -232,6 +232,7 @@ _SENSITIVE_TOOL_ARGUMENT_KEYWORDS = frozenset(
 )
 
 ToolExecutor = Callable[[Mapping[str, Any] | None], Awaitable[dict[str, Any]]]
+DynamicToolLoader = Callable[[str | None], tuple["ExecutableTool", ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -384,12 +385,14 @@ class ToolRegistry:
         toolsets: Iterable[ToolsetDescriptor] | None = None,
         *,
         workspace_root: Path | None = None,
+        dynamic_tool_loader: DynamicToolLoader | None = None,
     ) -> None:
         self._toolsets: dict[str, ToolsetDescriptor] = {}
         self._default_name: str | None = None
         self._workspace_root = (
             None if workspace_root is None else workspace_root.resolve(strict=False)
         )
+        self._dynamic_tool_loader = dynamic_tool_loader
         if toolsets is not None:
             for toolset in toolsets:
                 self.register(toolset)
@@ -428,6 +431,9 @@ class ToolRegistry:
         for tool in toolset.tools:
             if tool.tool_id == tool_id:
                 return tool
+        for tool in self._load_dynamic_tools(toolset_name=toolset.name):
+            if tool.tool_id == tool_id:
+                return tool
         raise LookupError(
             f"Tool '{tool_id}' is not registered in toolset '{toolset.name}'."
         )
@@ -436,7 +442,11 @@ class ToolRegistry:
         toolset = (
             self.get_default() if toolset_name is None else self._toolsets[toolset_name]
         )
-        return tuple(tool.tool_id for tool in toolset.tools)
+        tool_ids = [tool.tool_id for tool in toolset.tools]
+        for tool in self._load_dynamic_tools(toolset_name=toolset.name):
+            if tool.tool_id not in tool_ids:
+                tool_ids.append(tool.tool_id)
+        return tuple(tool_ids)
 
     def build_view(self) -> dict[str, dict[str, Any]]:
         return {
@@ -458,11 +468,22 @@ class ToolRegistry:
             self.get_default() if toolset_name is None else self._toolsets[toolset_name]
         )
         catalog: list[dict[str, Any]] = []
+        seen_tool_ids: set[str] = set()
         for tool in toolset.tools:
             catalog.append(tool.descriptor.build_catalog_entry_for_language(language))
+            seen_tool_ids.add(tool.tool_id)
+        for tool in self._load_dynamic_tools(
+            toolset_name=toolset.name, language=language
+        ):
+            if tool.tool_id in seen_tool_ids:
+                continue
+            catalog.append(tool.descriptor.build_catalog_entry_for_language(language))
+            seen_tool_ids.add(tool.tool_id)
         return catalog
 
     def build_diagnostics_summary(self) -> dict[str, Any]:
+        default_toolset_name = self.get_default().name
+        dynamic_tools = self._load_dynamic_tools(toolset_name=default_toolset_name)
         return {
             "available_toolsets": list(self._toolsets.keys()),
             "default_toolset": self._default_name,
@@ -470,7 +491,21 @@ class ToolRegistry:
             "toolset_summaries": [
                 toolset.build_summary() for toolset in self._toolsets.values()
             ],
+            "dynamic_tool_ids": [tool.tool_id for tool in dynamic_tools],
+            "dynamic_tool_count": len(dynamic_tools),
         }
+
+    def _load_dynamic_tools(
+        self,
+        *,
+        toolset_name: str,
+        language: str | None = None,
+    ) -> tuple[ExecutableTool, ...]:
+        if self._dynamic_tool_loader is None:
+            return ()
+        if toolset_name != self.get_default().name:
+            return ()
+        return tuple(self._dynamic_tool_loader(language))
 
 
 async def _execute_default_file_convert_tool(
@@ -705,6 +740,7 @@ def build_default_tool_registry(
     *,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
     workspace_root: Path | None = None,
+    dynamic_tool_loader: DynamicToolLoader | None = None,
 ) -> ToolRegistry:
     resolved_workspace_root = (workspace_root or Path.cwd()).resolve(strict=False)
     file_read_binding = build_file_tool_read_runtime_binding(
@@ -728,7 +764,10 @@ def build_default_tool_registry(
     file_switch_root_binding = build_file_tool_switch_root_runtime_binding(
         workspace_root=resolved_workspace_root,
     )
-    registry = ToolRegistry(workspace_root=resolved_workspace_root)
+    registry = ToolRegistry(
+        workspace_root=resolved_workspace_root,
+        dynamic_tool_loader=dynamic_tool_loader,
+    )
     registry.register(
         ToolsetDescriptor(
             name=DEFAULT_TOOLSET_NAME,
@@ -975,6 +1014,7 @@ __all__ = [
     "WEATHER_CURRENT_TOOL_DESCRIPTION",
     "WEATHER_CURRENT_TOOL_DISPLAY_NAME",
     "WEATHER_CURRENT_TOOL_ID",
+    "DynamicToolLoader",
     "build_default_tool_registry",
     "execute_weather_current_tool",
     "normalize_tool_catalog_language",

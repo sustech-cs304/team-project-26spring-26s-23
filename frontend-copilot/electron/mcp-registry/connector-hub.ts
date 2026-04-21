@@ -3,10 +3,13 @@ import type {
   McpRegistrySubscriptionEvent,
   McpServerRecord,
   McpServerStateSummary,
+  McpToolCallRequest,
+  McpToolCallResult,
   McpTransportKind,
 } from './types'
 import type {
   McpConnectorOperationResult,
+  McpConnectorToolCallRequest,
   McpRemoteToolSummary,
   McpServerConnector,
 } from './connectors/protocol'
@@ -57,6 +60,7 @@ export interface McpConnectorHub {
   setServerDisabled(server: McpServerRecord, revisions: McpConnectorHubRevisionState): Promise<McpServerStateSummary>
   testConnection(server: McpServerRecord): Promise<McpConnectorHubTestConnectionResult>
   refreshCatalog(serverIds: readonly string[] | null, revisions: McpConnectorHubRevisionState): Promise<McpConnectorHubRefreshCatalogResult[]>
+  callTool(request: McpToolCallRequest): Promise<McpToolCallResult>
   getState(serverId: string): McpServerStateSummary | null
   getAllStates(servers?: readonly McpServerRecord[]): McpServerStateSummary[]
   getTools(serverId: string): McpRemoteToolSummary[]
@@ -77,6 +81,8 @@ export interface ConnectorContextFactoryInput {
   now: () => string
   onStateChange: (state: McpServerStateSummary) => void | Promise<void>
 }
+
+export type McpConnectorHubToolCallFailure = Extract<McpToolCallResult, { ok: false }>
 
 interface ManagedConnectorEntry {
   server: McpServerRecord
@@ -214,6 +220,49 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
           error: result.ok ? null : result.error,
         }
       }))
+    },
+    async callTool(request) {
+      const entry = entries.get(request.serverId)
+      const state = states.get(request.serverId) ?? null
+
+      if (entry === undefined) {
+        return createToolCallFailure(
+          request,
+          'temporarily_unavailable',
+          'The MCP server is not ready to execute tools.',
+          true,
+          {
+            connectionState: state?.connectionState ?? 'missing',
+          },
+          now,
+        )
+      }
+
+      if (state !== null && state.connectionState !== 'connected' && state.connectionState !== 'degraded') {
+        return createToolCallFailure(
+          request,
+          'temporarily_unavailable',
+          'The MCP server is not ready to execute tools.',
+          true,
+          {
+            connectionState: state.connectionState,
+          },
+          now,
+        )
+      }
+
+      if (!entry.connector.getTools().some((tool) => tool.name === request.remoteToolName)) {
+        return createToolCallFailure(
+          request,
+          'directory_drift',
+          'The requested MCP tool no longer exists in the current server catalog.',
+          false,
+          null,
+          now,
+        )
+      }
+
+      return await entry.connector.callTool(toConnectorToolCallRequest(request))
     },
     getState(serverId) {
       const state = states.get(serverId)
@@ -407,6 +456,36 @@ function cloneServerRecord(server: McpServerRecord): McpServerRecord {
       ...(server.transportConfig.env === undefined ? {} : { env: { ...server.transportConfig.env } }),
     },
     ...(server.reservedSensitiveFields === undefined ? {} : { reservedSensitiveFields: [...server.reservedSensitiveFields] }),
+  }
+}
+
+function createToolCallFailure(
+  request: McpToolCallRequest,
+  code: string,
+  message: string,
+  retryable: boolean,
+  details: Record<string, unknown> | null = null,
+  now: () => string = () => new Date().toISOString(),
+): McpConnectorHubToolCallFailure {
+  return {
+    ok: false,
+    toolId: request.toolId,
+    serverId: request.serverId,
+    remoteToolName: request.remoteToolName,
+    snapshotRevision: request.snapshotRevision ?? null,
+    error: createMcpErrorSummary(code, message, retryable, now, details),
+  }
+}
+
+function toConnectorToolCallRequest(
+  request: McpToolCallRequest,
+): McpConnectorToolCallRequest {
+  return {
+    toolId: request.toolId,
+    serverId: request.serverId,
+    remoteToolName: request.remoteToolName,
+    arguments: request.arguments,
+    snapshotRevision: request.snapshotRevision,
   }
 }
 

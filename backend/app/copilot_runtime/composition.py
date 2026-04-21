@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.tooling.runtime_adapter.copilot_runtime import ToolHostCapabilitiesFactory
 
 from .agent import PydanticAIAgentExecutor
@@ -14,6 +15,7 @@ from .contracts import RuntimeScaffold, build_runtime_scaffold
 from .message_runs import RuntimeMessageRunOrchestrator
 from .mcp_catalog_provider import McpCatalogProvider, create_mcp_catalog_provider
 from .mcp_snapshot_provider import create_mcp_snapshot_provider
+from .mcp_tool_executor import McpExecutableToolLoader
 from .model_routes import (
     HostModelRouteUnavailableError,
     RuntimeModelRoute,
@@ -57,6 +59,7 @@ def build_default_runtime_dependencies(
     agent_executor: PydanticAIAgentExecutor | None = None,
     model_route_resolver: RuntimeModelRouteResolver | None = None,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
+    host_capability_bridge_client: DesktopCapabilityBridgeClient | None = None,
     mcp_catalog_provider: McpCatalogProvider | None = None,
 ) -> RuntimeDependencies:
     """Create the default runtime object graph without adding protocol logic."""
@@ -72,14 +75,24 @@ def build_default_runtime_dependencies(
     runtime_workspace_root = (
         runtime_config.runtime_root_dir if runtime_config is not None else None
     )
+    snapshot_provider = create_mcp_snapshot_provider(
+        state_dir=runtime_config.state_dir if runtime_config is not None else None,
+    )
     resolved_mcp_catalog_provider = mcp_catalog_provider or create_mcp_catalog_provider(
-        create_mcp_snapshot_provider(
-            state_dir=runtime_config.state_dir if runtime_config is not None else None,
-        )
+        snapshot_provider
+    )
+    dynamic_tool_loader = (
+        None
+        if host_capability_bridge_client is None
+        else McpExecutableToolLoader(
+            snapshot_provider=snapshot_provider,
+            bridge_client=host_capability_bridge_client,
+        ).load_tools
     )
     tool_registry = build_default_tool_registry(
         host_capabilities_factory=host_capabilities_factory,
         workspace_root=runtime_workspace_root,
+        dynamic_tool_loader=dynamic_tool_loader,
     )
     executor_workspace_root = tool_registry.workspace_root or runtime_workspace_root
     shared_approval_coordinator: RuntimeToolApprovalCoordinator | None = None

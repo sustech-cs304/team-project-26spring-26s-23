@@ -1259,7 +1259,7 @@ class PydanticAIAgentExecutor:
         input_summary: str | None,
         result: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if tool.descriptor.kind != CONTRACT_RUNTIME_TOOL_KIND:
+        if tool.descriptor.kind not in {CONTRACT_RUNTIME_TOOL_KIND, "mcp"}:
             return None
         status = result.get("status")
         if status not in {"success", "error"}:

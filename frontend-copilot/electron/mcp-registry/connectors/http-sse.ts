@@ -1,12 +1,14 @@
-import type { McpServerRecord } from '../types'
+import type { McpServerRecord, McpToolCallResult } from '../types'
 import {
   MCP_INITIALIZE_METHOD,
   MCP_INITIALIZED_NOTIFICATION_METHOD,
+  MCP_TOOLS_CALL_METHOD,
   MCP_TOOLS_LIST_METHOD,
   McpConnectorError,
   type JsonRpcResponsePayload,
   type McpConnectorContext,
   type McpConnectorOperationResult,
+  type McpConnectorToolCallRequest,
   type McpRemoteToolSummary,
   type McpServerConnector,
   classifyHttpStatus,
@@ -20,6 +22,7 @@ import {
   createJsonRpcRequest,
   createMcpErrorSummary,
   normalizeConnectorError,
+  normalizeToolsCallResult,
   normalizeToolsListResult,
   unwrapJsonRpcResponse,
 } from './protocol'
@@ -50,6 +53,7 @@ export function createHttpSseMcpServerConnector(
   return {
     start,
     refreshCatalog,
+    callTool,
     stop,
     getState() {
       return cloneStateSummary(state)
@@ -145,6 +149,63 @@ export function createHttpSseMcpServerConnector(
     const response = await postJsonRpc(2, MCP_TOOLS_LIST_METHOD, {})
     const result = unwrapJsonRpcResponse(response, context.now)
     return normalizeToolsListResult(result)
+  }
+
+  async function callTool(request: McpConnectorToolCallRequest): Promise<McpToolCallResult> {
+    if (!sessionReady) {
+      return {
+        ok: false,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        snapshotRevision: request.snapshotRevision ?? null,
+        error: createMcpErrorSummary(
+          'temporarily_unavailable',
+          'The MCP HTTP/SSE server is not ready to execute tools.',
+          true,
+          context.now,
+        ),
+      }
+    }
+
+    if (!tools.some((tool) => tool.name === request.remoteToolName)) {
+      return {
+        ok: false,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        snapshotRevision: request.snapshotRevision ?? null,
+        error: createMcpErrorSummary(
+          'directory_drift',
+          'The requested MCP tool no longer exists in the current server catalog.',
+          false,
+          context.now,
+        ),
+      }
+    }
+
+    try {
+      const response = await postJsonRpc(3, MCP_TOOLS_CALL_METHOD, {
+        name: request.remoteToolName,
+        arguments: request.arguments,
+      })
+      const result = unwrapJsonRpcResponse(response, context.now)
+      return normalizeToolsCallResult({
+        result,
+        request,
+        server,
+        now: context.now,
+      })
+    } catch (error) {
+      return {
+        ok: false,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        snapshotRevision: request.snapshotRevision ?? null,
+        error: normalizeConnectorError(error, context.now, 'http_sse_tool_call_failed'),
+      }
+    }
   }
 
   async function postJsonRpc(id: number, method: string, params?: unknown): Promise<JsonRpcResponsePayload> {

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import cast
+from typing import TypeVar, cast
 
 from pydantic_ai.models.test import TestModel
 
@@ -19,16 +20,28 @@ from app.copilot_runtime.contracts import (
     RuntimeToolPermissionPolicy,
 )
 from app.copilot_runtime.mcp_snapshot_provider import MCP_CAPABILITY_SNAPSHOT_FILE_NAME
+from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteRef
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
+from app.tooling import ToolInvocationContext
 from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
 from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
 
 
 TEST_MODEL_REPLY = "Hello from the composition test model."
+
+_T = TypeVar("_T")
+
+
+async def _await_value(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
+
+
+def _run_awaitable(awaitable: Awaitable[_T]) -> _T:
+    return asyncio.run(_await_value(awaitable))
 
 
 class _ImmediateEventStream:
@@ -400,6 +413,65 @@ def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool
 
 
 
+def test_build_default_runtime_dependencies_registers_executable_mcp_tools_with_bridge_client(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    bridge_client = _RecordingMcpBridgeClient()
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
+    tool = dependencies.tool_registry.resolve_tool(
+        "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+
+    result = _run_awaitable(tool.execute({"keyword": "library"}))
+
+    assert tool.descriptor.kind == "mcp"
+    assert tool.function_name == "mcp_mcp_stdio_stub_search_campus_00004d8d"
+    assert tool.parameters_json_schema == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "keyword": {"type": "string"},
+        },
+        "required": ["keyword"],
+    }
+    assert result["status"] == "success"
+    assert result["output"] == {
+        "ok": True,
+        "content": [{"type": "text", "text": "search completed"}],
+        "structuredContent": {"count": 1},
+    }
+    assert result["metadata"] == {
+        "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+        "sourceKind": "mcp",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "snapshotRevision": 8,
+    }
+    assert bridge_client.calls == [
+        {
+            "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+            "serverId": "mcp-stdio-stub",
+            "remoteToolName": "search-campus",
+            "arguments": {"keyword": "library"},
+            "snapshotRevision": 8,
+            "runId": None,
+            "toolCallId": "mcp.mcp-stdio-stub.search-campus.00004d8d:direct",
+        }
+    ]
+
+
+
 def test_runtime_scaffold_filters_mcp_global_catalog_entries_with_permission_policy(
     tmp_path: Path,
 ) -> None:
@@ -423,6 +495,42 @@ def test_runtime_scaffold_filters_mcp_global_catalog_entries_with_permission_pol
     assert "tool.fs.read" in tool_ids
     assert "mcp.mcp-stdio-stub.search-campus.00004d8d" not in tool_ids
     assert "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e" in tool_ids
+
+
+class _RecordingMcpBridgeClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def call_mcp_tool(
+        self,
+        *,
+        context: ToolInvocationContext,
+        server_id: str,
+        remote_tool_name: str,
+        arguments: dict[str, object] | None = None,
+        snapshot_revision: int | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            {
+                "toolId": context.tool_id,
+                "serverId": server_id,
+                "remoteToolName": remote_tool_name,
+                "arguments": dict(arguments or {}),
+                "snapshotRevision": snapshot_revision,
+                "runId": context.run_id,
+                "toolCallId": context.invocation_id,
+            }
+        )
+        return {
+            "ok": True,
+            "toolId": context.tool_id,
+            "serverId": server_id,
+            "remoteToolName": remote_tool_name,
+            "content": [{"type": "text", "text": "search completed"}],
+            "structuredContent": {"count": 1},
+            "snapshotRevision": snapshot_revision,
+            "isError": False,
+        }
 
 
 async def _collect_events(events):

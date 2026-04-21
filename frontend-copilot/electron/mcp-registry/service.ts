@@ -19,6 +19,7 @@ import {
 import type { McpRegistryStore, McpRegistryStoreSnapshot } from './store'
 import {
   createMcpCapabilitySnapshot,
+  buildMcpToolId,
   type McpCapabilitySnapshotSink,
 } from './snapshot'
 import type {
@@ -27,6 +28,9 @@ import type {
   McpServerDraft,
   McpServerRecord,
   McpServerStateSummary,
+  McpToolCallFailure,
+  McpToolCallRequest,
+  McpToolCallResult,
   McpServerValidationError,
   McpTransportConfig,
 } from './types'
@@ -44,6 +48,7 @@ export interface McpRegistryService {
   setServerEnabled(request: McpSetServerEnabledRequest): Promise<McpSetServerEnabledResult>
   testConnection(request: McpTestConnectionRequest): Promise<McpTestConnectionResult>
   refreshCatalog(request?: McpRefreshCatalogRequest): Promise<McpRefreshCatalogResult>
+  executeTool(request: McpToolCallRequest): Promise<McpToolCallResult>
 }
 
 export interface CreateMcpRegistryServiceOptions {
@@ -353,6 +358,24 @@ export function createMcpRegistryService(
         results,
       }
     },
+    async executeTool(request) {
+      const snapshot = await options.store.load()
+      const currentRevisions = resolveRuntimeRevisions(snapshot)
+      await connectorHub.reconcile(snapshot.servers, currentRevisions)
+
+      const resolved = resolveToolCallTarget(
+        snapshot,
+        connectorHub,
+        request,
+        currentRevisions.snapshotRevision,
+        now,
+      )
+      if (!resolved.ok) {
+        return resolved.failure
+      }
+
+      return await connectorHub.callTool(resolved.request)
+    },
   }
 
   function resolveRuntimeRevisions(snapshot: McpRegistryStoreSnapshot): McpConnectorHubRevisionState {
@@ -489,6 +512,72 @@ function resolveRefreshTargets(
   }
 }
 
+function resolveToolCallTarget(
+  snapshot: McpRegistryStoreSnapshot,
+  connectorHub: McpConnectorHub,
+  request: McpToolCallRequest,
+  currentSnapshotRevision: number,
+  now: () => string,
+):
+  | { ok: true, request: McpToolCallRequest }
+  | { ok: false, failure: McpToolCallFailure } {
+  const matchingTarget = snapshot.servers.flatMap((server) => connectorHub.getTools(server.serverId).map((tool) => ({
+    server,
+    tool,
+    toolId: buildMcpToolId(server.serverId, tool.name),
+  }))).find((entry) => entry.toolId === request.toolId)
+
+  if (matchingTarget !== undefined) {
+    return {
+      ok: true,
+      request: {
+        ...request,
+        serverId: matchingTarget.server.serverId,
+        remoteToolName: matchingTarget.tool.name,
+        snapshotRevision: request.snapshotRevision ?? currentSnapshotRevision,
+      },
+    }
+  }
+
+  const requestedServer = snapshot.servers.find((server) => server.serverId === request.serverId)
+  const requestedState = requestedServer === undefined
+    ? null
+    : connectorHub.getState(requestedServer.serverId)
+
+  if (
+    requestedServer !== undefined
+    && (!requestedServer.enabled || (requestedState !== null && requestedState.connectionState !== 'connected' && requestedState.connectionState !== 'degraded'))
+  ) {
+    return {
+      ok: false,
+      failure: createToolCallFailure(request, 'server_not_ready', 'The MCP server is not ready to execute tools.', true, {
+        connectionState: requestedState?.connectionState ?? 'disabled',
+        snapshotRevision: currentSnapshotRevision,
+      }, now),
+    }
+  }
+
+  const isDirectoryDrift = request.snapshotRevision !== undefined
+    && request.snapshotRevision !== null
+    && request.snapshotRevision !== currentSnapshotRevision
+
+  return {
+    ok: false,
+    failure: createToolCallFailure(
+      request,
+      isDirectoryDrift ? 'directory_drift' : 'tool_not_found',
+      isDirectoryDrift
+        ? 'The requested MCP tool no longer exists in the current snapshot.'
+        : `The MCP tool '${request.toolId}' was not found.`,
+      false,
+      {
+        snapshotRevision: currentSnapshotRevision,
+      },
+      now,
+    ),
+  }
+}
+
 function createDisabledRefreshCatalogServerResult(
   server: McpServerRecord,
   timestamp: string,
@@ -502,6 +591,30 @@ function createDisabledRefreshCatalogServerResult(
       message: 'The server is disabled. Enable it before refreshing the catalog.',
       retryable: false,
       observedAt: timestamp,
+    },
+  }
+}
+
+function createToolCallFailure(
+  request: McpToolCallRequest,
+  code: string,
+  message: string,
+  retryable: boolean,
+  details: Record<string, unknown> | null = null,
+  now: () => string = () => new Date().toISOString(),
+): McpToolCallFailure {
+  return {
+    ok: false,
+    toolId: request.toolId,
+    serverId: request.serverId,
+    remoteToolName: request.remoteToolName,
+    snapshotRevision: request.snapshotRevision ?? null,
+    error: {
+      code,
+      message,
+      retryable,
+      observedAt: now(),
+      details,
     },
   }
 }

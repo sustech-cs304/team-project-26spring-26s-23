@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createMcpConnectorHub } from './connector-hub'
 import { createMcpHttpSseStubServerFixture, createMcpStdioStubServerFixture } from './test-support'
-import type { McpRegistrySubscriptionEvent, McpServerRecord, McpServerStateSummary } from './types'
+import type { McpRegistrySubscriptionEvent, McpServerRecord, McpServerStateSummary, McpToolCallResult } from './types'
 import type { McpConnectorOperationResult, McpServerConnector } from './connectors/protocol'
 import { createConnectorFailure, createConnectorState, createConnectorSuccess, createMcpErrorSummary } from './connectors/protocol'
 
@@ -136,6 +136,79 @@ describe('createMcpConnectorHub', () => {
       }),
     ]))
   })
+
+  it('routes tool calls to managed connectors and rejects tools missing from the current catalog', async () => {
+    const stdioServer = createMcpStdioStubServerFixture()
+    const capturedRequests: Array<{ toolId: string, remoteToolName: string, arguments: Record<string, unknown> }> = []
+
+    const hub = createMcpConnectorHub({
+      now: () => '2026-04-21T12:00:00.000Z',
+      createConnector(server, context) {
+        return createFakeConnector(server, context, {
+          startResults: [createSuccessfulResult(server)],
+        }, {
+          onCallTool(request) {
+            capturedRequests.push({
+              toolId: request.toolId,
+              remoteToolName: request.remoteToolName,
+              arguments: request.arguments,
+            })
+          },
+        })
+      },
+    })
+
+    await hub.reconcile([stdioServer], { registryRevision: 6, snapshotRevision: 10 })
+
+    await expect(hub.callTool({
+      toolId: 'mcp.test.search-campus',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      snapshotRevision: 10,
+    })).resolves.toEqual({
+      ok: true,
+      toolId: 'mcp.test.search-campus',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: '{"keyword":"calendar"}' }],
+      structuredContent: { echoedArguments: { keyword: 'calendar' } },
+      snapshotRevision: 10,
+      isError: false,
+    })
+
+    await expect(hub.callTool({
+      toolId: 'mcp.test.missing',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'missing-tool',
+      arguments: {},
+      runId: 'run-1',
+      toolCallId: 'call-2',
+      snapshotRevision: 10,
+    })).resolves.toEqual({
+      ok: false,
+      toolId: 'mcp.test.missing',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'missing-tool',
+      snapshotRevision: 10,
+      error: expect.objectContaining({
+        code: 'directory_drift',
+        message: 'The requested MCP tool no longer exists in the current server catalog.',
+        retryable: false,
+        observedAt: '2026-04-21T12:00:00.000Z',
+      }),
+    })
+
+    expect(capturedRequests).toEqual([
+      {
+        toolId: 'mcp.test.search-campus',
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+      },
+    ])
+  })
 })
 
 function createFakeConnector(
@@ -144,16 +217,19 @@ function createFakeConnector(
   sequences: {
     startResults: McpConnectorOperationResult[]
     refreshResults?: McpConnectorOperationResult[]
+    callToolResults?: McpToolCallResult[]
   },
   hooks: {
     onStart?: () => void
     onRefresh?: () => void
+    onCallTool?: (request: { toolId: string, remoteToolName: string, arguments: Record<string, unknown> }) => void
   } = {},
 ): McpServerConnector {
   let state = createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, () => '2026-04-21T12:00:00.000Z')
   let tools = [] as ReturnType<typeof createSuccessfulResult>['tools']
   const startQueue = [...sequences.startResults]
   const refreshQueue = [...(sequences.refreshResults ?? sequences.startResults)]
+  const callToolQueue = [...(sequences.callToolResults ?? [])]
 
   return {
     async start() {
@@ -171,6 +247,27 @@ function createFakeConnector(
       tools = result.tools
       await context.onStateChange(state)
       return result
+    },
+    async callTool(request) {
+      hooks.onCallTool?.({
+        toolId: request.toolId,
+        remoteToolName: request.remoteToolName,
+        arguments: request.arguments,
+      })
+      const result = callToolQueue.shift()
+      if (result !== undefined) {
+        return result
+      }
+      return {
+        ok: true,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        content: [{ type: 'text', text: JSON.stringify(request.arguments) }],
+        structuredContent: { echoedArguments: { ...request.arguments } },
+        snapshotRevision: request.snapshotRevision ?? null,
+        isError: false,
+      }
     },
     async stop() {
       state = createConnectorState(server, 'idle', 0, () => '2026-04-21T12:00:00.000Z')

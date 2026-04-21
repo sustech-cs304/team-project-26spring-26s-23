@@ -14,7 +14,7 @@ import {
   MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS,
 } from './test-support'
 import type { McpConnectorHub } from './connector-hub'
-import type { McpCapabilitySnapshot, McpServerRecord, McpServerStateSummary } from './types'
+import type { McpCapabilitySnapshot, McpServerRecord, McpServerStateSummary, McpToolCallRequest } from './types'
 import type { McpRemoteToolSummary } from './connectors/protocol'
 
 const activeTempRoots: string[] = []
@@ -36,6 +36,10 @@ afterEach(async () => {
     await rm(tempRoot, { recursive: true, force: true })
   }))
 })
+
+interface FakeConnectorHub extends McpConnectorHub {
+  __getToolCallRequests(): McpToolCallRequest[]
+}
 
 async function createRegistryServiceFixture(testName: string) {
   const tempRoot = await mkdtemp(path.join(tmpdir(), `candue-mcp-registry-service-${testName}-`))
@@ -74,9 +78,11 @@ async function createRegistryServiceFixture(testName: string) {
   }
 }
 
-function createFakeConnectorHub(): McpConnectorHub {
+function createFakeConnectorHub(): FakeConnectorHub {
   const states = new Map<string, McpServerStateSummary>()
   const tools = new Map<string, McpRemoteToolSummary[]>()
+
+  const toolCallRequests: McpToolCallRequest[] = []
 
   return {
     async reconcile(servers) {
@@ -136,6 +142,22 @@ function createFakeConnectorHub(): McpConnectorHub {
         }
       })
     },
+    async callTool(request) {
+      toolCallRequests.push({
+        ...request,
+        arguments: { ...request.arguments },
+      })
+      return {
+        ok: true,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        content: [{ type: 'text', text: JSON.stringify(request.arguments) }],
+        structuredContent: { echoedArguments: { ...request.arguments } },
+        snapshotRevision: request.snapshotRevision ?? null,
+        isError: false,
+      }
+    },
     getState(serverId) {
       return states.get(serverId) ?? null
     },
@@ -152,6 +174,13 @@ function createFakeConnectorHub(): McpConnectorHub {
     async stopAll() {
       states.clear()
       tools.clear()
+      toolCallRequests.splice(0)
+    },
+    __getToolCallRequests() {
+      return toolCallRequests.map((request) => ({
+        ...request,
+        arguments: { ...request.arguments },
+      }))
     },
   }
 }
@@ -388,5 +417,67 @@ describe('createMcpRegistryService', () => {
       ],
     })
     expect((await fixture.store.load()).servers).toEqual(beforeRefreshServers)
+  })
+
+  it('executes MCP tools by stable toolId and reports snapshot directory drift failures', async () => {
+    const fixture = await createRegistryServiceFixture('execute-tool')
+    const server = createMcpStdioStubServerFixture()
+    await fixture.service.saveServer(server)
+
+    const toolId = buildMcpToolId(MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio, 'search-campus')
+    const executed = await fixture.service.executeTool({
+      toolId,
+      serverId: 'stale-server-id',
+      remoteToolName: 'stale-tool-name',
+      arguments: { keyword: 'calendar' },
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      snapshotRevision: 1,
+    })
+
+    expect(executed).toEqual({
+      ok: true,
+      toolId,
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: '{"keyword":"calendar"}' }],
+      structuredContent: { echoedArguments: { keyword: 'calendar' } },
+      snapshotRevision: 1,
+      isError: false,
+    })
+    expect(fixture.connectorHub.__getToolCallRequests()).toEqual([
+      expect.objectContaining({
+        toolId,
+        serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+        snapshotRevision: 1,
+      }),
+    ])
+
+    const drift = await fixture.service.executeTool({
+      toolId: 'mcp.missing.tool.00000000',
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      remoteToolName: 'missing-tool',
+      arguments: {},
+      runId: 'run-1',
+      toolCallId: 'call-2',
+      snapshotRevision: 0,
+    })
+
+    expect(drift).toEqual({
+      ok: false,
+      toolId: 'mcp.missing.tool.00000000',
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      remoteToolName: 'missing-tool',
+      snapshotRevision: 0,
+      error: {
+        code: 'directory_drift',
+        message: 'The requested MCP tool no longer exists in the current snapshot.',
+        retryable: false,
+        observedAt: '2026-04-21T12:00:00.000Z',
+        details: { snapshotRevision: 1 },
+      },
+    })
   })
 })

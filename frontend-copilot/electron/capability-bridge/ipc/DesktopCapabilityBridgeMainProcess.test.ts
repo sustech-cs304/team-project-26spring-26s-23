@@ -7,6 +7,7 @@ import {
 } from '../protocol'
 import { createDesktopCapabilityBridgePaths } from '../paths'
 import type { ElectronSettingsWorkspaceService } from '../../settings-workspace/main-process'
+import type { ElectronMcpRegistryService } from '../../mcp-registry/main-process'
 import {
   createPreparedPaths,
   destroyWorkspaceTempRoot,
@@ -364,6 +365,94 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledTimes(1)
     expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledWith({
       profileIds: ['openrouter'],
+    })
+  })
+
+  it('routes MCP tool execution through the restricted registry bridge', async () => {
+    const executeTool = vi.fn(async () => ({
+      ok: true as const,
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      serverId: 'mcp-stdio-stub',
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: 'search completed' }],
+      structuredContent: { count: 1 },
+      snapshotRevision: 8,
+      isError: false as const,
+    }))
+    const mcpRegistryService = {
+      executeTool,
+    } as unknown as ElectronMcpRegistryService
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => {
+        throw new Error('MCP bridge should not request runtime paths.')
+      },
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+      getMcpRegistryService: () => mcpRegistryService,
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'mcp-call-1',
+      capability: 'mcp',
+      operation: 'call_tool',
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      runId: 'run-1',
+      toolCallId: 'tool-call-1',
+      payload: {
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+        snapshotRevision: 8,
+      },
+    }))).resolves.toEqual({
+      requestId: 'mcp-call-1',
+      ok: true,
+      result: {
+        ok: true,
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        content: [{ type: 'text', text: 'search completed' }],
+        structuredContent: { count: 1 },
+        snapshotRevision: 8,
+        isError: false,
+      },
+    })
+    expect(executeTool).toHaveBeenCalledWith({
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      serverId: 'mcp-stdio-stub',
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      runId: 'run-1',
+      toolCallId: 'tool-call-1',
+      snapshotRevision: 8,
+    })
+  })
+
+  it('returns structured MCP bridge failures when the registry bridge is not configured', async () => {
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => {
+        throw new Error('MCP bridge should not request runtime paths.')
+      },
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'mcp-call-missing-bridge',
+      capability: 'mcp',
+      operation: 'call_tool',
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      payload: {
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+      },
+    }))).resolves.toEqual({
+      requestId: 'mcp-call-missing-bridge',
+      ok: false,
+      errorCode: 'internal_error',
+      errorMessage: 'The MCP execution bridge is not configured.',
+      errorRetryable: false,
+      details: {},
     })
   })
 

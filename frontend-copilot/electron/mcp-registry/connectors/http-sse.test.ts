@@ -55,6 +55,82 @@ describe('createHttpSseMcpServerConnector', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://127.0.0.1:34081/events', expect.objectContaining({ method: 'GET' }))
   })
 
+  it('calls MCP tools over HTTP/SSE once the session is ready', async () => {
+    const server = createMcpHttpSseStubServerFixture()
+    const transportConfig = server.transportConfig.kind === 'http-sse' ? server.transportConfig : null
+    if (transportConfig === null) {
+      throw new Error('Expected an http-sse transport config for the fixture server.')
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'fixture' } } }))
+      .mockResolvedValueOnce(createEmptyResponse())
+      .mockResolvedValueOnce(createSseProbeResponse())
+      .mockResolvedValueOnce(createJsonResponse({
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          tools: [{
+            name: 'fetch-calendar',
+            title: 'Fetch Calendar',
+            description: 'Fetch the course calendar.',
+            inputSchema: { type: 'object' },
+          }],
+        },
+      }))
+      .mockResolvedValueOnce(createJsonResponse({
+        jsonrpc: '2.0',
+        id: 3,
+        result: {
+          content: [{ type: 'text', text: 'fetch-calendar completed' }],
+          structuredContent: { echoedArguments: { course: 'CS304' } },
+          isError: false,
+        },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const connector = createHttpSseMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 1_000,
+      },
+    })
+
+    await connector.start()
+    const result = await connector.callTool({
+      toolId: 'mcp.test.fetch-calendar',
+      serverId: server.serverId,
+      remoteToolName: 'fetch-calendar',
+      arguments: { course: 'CS304' },
+      snapshotRevision: 10,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      toolId: 'mcp.test.fetch-calendar',
+      serverId: server.serverId,
+      remoteToolName: 'fetch-calendar',
+      content: [{ type: 'text', text: 'fetch-calendar completed' }],
+      structuredContent: { echoedArguments: { course: 'CS304' } },
+      snapshotRevision: 10,
+      isError: false,
+    })
+    expect(fetchMock).toHaveBeenLastCalledWith(transportConfig.baseUrl, expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'fetch-calendar',
+          arguments: { course: 'CS304' },
+        },
+      }),
+    }))
+
+    await connector.stop()
+  })
+
   it('classifies 401 responses as non-retryable configuration errors', async () => {
     const server = createMcpHttpSseStubServerFixture()
     const fetchMock = vi.fn().mockResolvedValue(createUnauthorizedResponse())

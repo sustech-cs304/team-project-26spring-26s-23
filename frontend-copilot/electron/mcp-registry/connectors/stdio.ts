@@ -1,16 +1,18 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { once } from 'node:events'
 
-import type { McpServerRecord } from '../types'
+import type { McpServerRecord, McpToolCallResult } from '../types'
 import {
   MCP_INITIALIZE_METHOD,
   MCP_INITIALIZED_NOTIFICATION_METHOD,
+  MCP_TOOLS_CALL_METHOD,
   MCP_TOOLS_LIST_METHOD,
   JsonRpcContentLengthParser,
   McpConnectorError,
   type JsonRpcResponsePayload,
   type McpConnectorContext,
   type McpConnectorOperationResult,
+  type McpConnectorToolCallRequest,
   type McpRemoteToolSummary,
   type McpServerConnector,
   cloneRemoteTools,
@@ -26,6 +28,7 @@ import {
   encodeJsonRpcContentLengthMessage,
   isJsonRpcResponseForId,
   normalizeConnectorError,
+  normalizeToolsCallResult,
   normalizeToolsListResult,
   unwrapJsonRpcResponse,
   withTimeout,
@@ -66,6 +69,7 @@ export function createStdioMcpServerConnector(
   return {
     start,
     refreshCatalog,
+    callTool,
     stop,
     getState() {
       return cloneStateSummary(state)
@@ -262,6 +266,63 @@ export function createStdioMcpServerConnector(
     const response = await sendRequest(MCP_TOOLS_LIST_METHOD, {})
     const result = unwrapJsonRpcResponse(response, context.now)
     return normalizeToolsListResult(result)
+  }
+
+  async function callTool(request: McpConnectorToolCallRequest): Promise<McpToolCallResult> {
+    if (!sessionReady || child === null) {
+      return {
+        ok: false,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        snapshotRevision: request.snapshotRevision ?? null,
+        error: createMcpErrorSummary(
+          'temporarily_unavailable',
+          'The MCP stdio server is not ready to execute tools.',
+          true,
+          context.now,
+        ),
+      }
+    }
+
+    if (!tools.some((tool) => tool.name === request.remoteToolName)) {
+      return {
+        ok: false,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        snapshotRevision: request.snapshotRevision ?? null,
+        error: createMcpErrorSummary(
+          'directory_drift',
+          'The requested MCP tool no longer exists in the current server catalog.',
+          false,
+          context.now,
+        ),
+      }
+    }
+
+    try {
+      const response = await sendRequest(MCP_TOOLS_CALL_METHOD, {
+        name: request.remoteToolName,
+        arguments: request.arguments,
+      })
+      const result = unwrapJsonRpcResponse(response, context.now)
+      return normalizeToolsCallResult({
+        result,
+        request,
+        server,
+        now: context.now,
+      })
+    } catch (error) {
+      return {
+        ok: false,
+        toolId: request.toolId,
+        serverId: request.serverId,
+        remoteToolName: request.remoteToolName,
+        snapshotRevision: request.snapshotRevision ?? null,
+        error: normalizeConnectorError(error, context.now, 'stdio_tool_call_failed'),
+      }
+    }
   }
 
   async function sendRequest(method: string, params?: unknown): Promise<JsonRpcResponsePayload> {

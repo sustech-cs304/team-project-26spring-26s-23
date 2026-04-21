@@ -96,6 +96,7 @@ export function createMainProcessServiceAccessors(
           return forwardCapabilityLog(level, message, context, logOptions)
         },
         getSettingsWorkspaceService,
+        getMcpRegistryService: () => this.getMcpRegistryService(),
       })
 
       return desktopCapabilityBridgeService

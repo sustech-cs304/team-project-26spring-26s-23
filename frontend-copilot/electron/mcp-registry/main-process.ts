@@ -15,7 +15,12 @@ import type {
   McpTestConnectionRequest,
   McpTestConnectionResult,
 } from './ipc'
-import type { McpRegistrySubscriptionEvent, McpServerDraft } from './types'
+import type {
+  McpRegistrySubscriptionEvent,
+  McpServerDraft,
+  McpToolCallRequest,
+  McpToolCallResult,
+} from './types'
 
 export interface ElectronMcpRegistryLogger {
   (
@@ -39,6 +44,7 @@ export interface ElectronMcpRegistryService {
   setServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>
   testConnection: (request: McpTestConnectionRequest) => Promise<McpTestConnectionResult>
   refreshCatalog: (request?: McpRefreshCatalogRequest) => Promise<McpRefreshCatalogResult>
+  executeTool: (request: McpToolCallRequest) => Promise<McpToolCallResult>
 }
 
 export function createElectronMcpRegistryService(
@@ -94,6 +100,11 @@ export function createElectronMcpRegistryService(
     async refreshCatalog(request) {
       return await wrapOperation('refresh the MCP server catalog', options.appendLog, async () => {
         return await (await getService()).refreshCatalog(request)
+      })
+    },
+    async executeTool(request) {
+      return await wrapOperation('execute the MCP tool', options.appendLog, async () => {
+        return await (await getService()).executeTool(request)
       })
     },
   }

@@ -3,6 +3,7 @@ import type {
   McpErrorSummary,
   McpServerRecord,
   McpServerStateSummary,
+  McpToolCallResult,
   McpTransportStateSummary,
 } from '../types'
 
@@ -44,9 +45,18 @@ export interface McpConnectorContext {
   onRetryableDisconnect?: (error: McpErrorSummary) => void | Promise<void>
 }
 
+export interface McpConnectorToolCallRequest {
+  toolId: string
+  serverId: string
+  remoteToolName: string
+  arguments: Record<string, unknown>
+  snapshotRevision?: number | null
+}
+
 export interface McpServerConnector {
   start: () => Promise<McpConnectorOperationResult>
   refreshCatalog: () => Promise<McpConnectorOperationResult>
+  callTool: (request: McpConnectorToolCallRequest) => Promise<McpToolCallResult>
   stop: () => Promise<void>
   getState: () => McpServerStateSummary
   getTools: () => McpRemoteToolSummary[]
@@ -379,6 +389,64 @@ export function normalizeToolsListResult(result: unknown): McpRemoteToolSummary[
   return result.tools.map((entry, index) => normalizeToolEntry(entry, index))
 }
 
+export function normalizeToolsCallResult(input: {
+  result: unknown
+  request: McpConnectorToolCallRequest
+  server: McpServerRecord
+  now: () => string
+}): McpToolCallResult {
+  const { result, request, server, now } = input
+  if (!isPlainRecord(result)) {
+    return {
+      ok: false,
+      toolId: request.toolId,
+      serverId: server.serverId,
+      remoteToolName: request.remoteToolName,
+      snapshotRevision: request.snapshotRevision ?? null,
+      error: createMcpErrorSummary(
+        'protocol_parse_failed',
+        'The MCP server returned an invalid tools/call result.',
+        false,
+        now,
+      ),
+    }
+  }
+
+  const content = Array.isArray(result.content) ? [...result.content] : []
+  const structuredContent = 'structuredContent' in result ? result.structuredContent : undefined
+  const isError = result.isError === true
+  if (isError) {
+    return {
+      ok: false,
+      toolId: request.toolId,
+      serverId: server.serverId,
+      remoteToolName: request.remoteToolName,
+      snapshotRevision: request.snapshotRevision ?? null,
+      error: createMcpErrorSummary(
+        'mcp_remote_error',
+        extractToolCallErrorMessage(content),
+        false,
+        now,
+        {
+          isError: true,
+          structuredContent: structuredContent ?? null,
+        },
+      ),
+    }
+  }
+
+  return {
+    ok: true,
+    toolId: request.toolId,
+    serverId: server.serverId,
+    remoteToolName: request.remoteToolName,
+    content,
+    structuredContent,
+    snapshotRevision: request.snapshotRevision ?? null,
+    isError: false,
+  }
+}
+
 export function cloneStateSummary(state: McpServerStateSummary): McpServerStateSummary {
   return {
     ...state,
@@ -495,6 +563,19 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 
 function cloneRecord(record: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(record)) as Record<string, unknown>
+}
+
+function extractToolCallErrorMessage(content: unknown[]): string {
+  for (const entry of content) {
+    if (!isPlainRecord(entry)) {
+      continue
+    }
+    if (entry.type === 'text' && typeof entry.text === 'string' && entry.text.trim() !== '') {
+      return entry.text.trim()
+    }
+  }
+
+  return 'The MCP tool returned an error result.'
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

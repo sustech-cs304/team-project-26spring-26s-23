@@ -314,6 +314,30 @@ class DesktopCapabilityBridgeClient:
             payload=payload,
         )
 
+    async def call_mcp_tool(
+        self,
+        *,
+        context: ToolInvocationContext,
+        server_id: str,
+        remote_tool_name: str,
+        arguments: Mapping[str, Any] | None = None,
+        snapshot_revision: int | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "serverId": server_id,
+            "remoteToolName": remote_tool_name,
+            "arguments": dict(arguments or {}),
+        }
+        if snapshot_revision is not None:
+            payload["snapshotRevision"] = snapshot_revision
+        result = await self._call_async(
+            capability="mcp",
+            operation="call_tool",
+            context=context,
+            payload=payload,
+        )
+        return dict(result)
+
     async def _call_async(
         self,
         *,

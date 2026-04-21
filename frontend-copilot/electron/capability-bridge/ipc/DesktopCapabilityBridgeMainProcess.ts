@@ -1,4 +1,5 @@
 import type { ElectronSettingsWorkspaceService } from '../../settings-workspace/main-process'
+import type { ElectronMcpRegistryService } from '../../mcp-registry/main-process'
 import {
   createDesktopCapabilityBridgeFailureResponse,
   createDesktopCapabilityBridgeSuccessResponse,
@@ -16,6 +17,7 @@ export interface ElectronDesktopCapabilityBridgeService {
 
 export interface CreateElectronDesktopCapabilityBridgeServiceOptions extends CreateDesktopCapabilityBridgeServiceOptions {
   getSettingsWorkspaceService?: () => ElectronSettingsWorkspaceService
+  getMcpRegistryService?: () => ElectronMcpRegistryService
 }
 
 export function createElectronDesktopCapabilityBridgeService(

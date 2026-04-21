@@ -183,6 +183,27 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                 },
                 request=request,
             )
+        if (capability, operation) == ("mcp", "call_tool"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "ok": True,
+                        "toolId": payload["toolId"],
+                        "serverId": payload["payload"]["serverId"],
+                        "remoteToolName": payload["payload"]["remoteToolName"],
+                        "content": [{"type": "text", "text": "search completed"}],
+                        "structuredContent": {
+                            "echoedArguments": payload["payload"]["arguments"]
+                        },
+                        "snapshotRevision": payload["payload"].get("snapshotRevision"),
+                        "isError": False,
+                    },
+                },
+                request=request,
+            )
 
         raise AssertionError(f"Unhandled bridge request {(capability, operation)!r}")
 
@@ -252,6 +273,17 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         message="completed",
         data={"artifactCount": 2},
     )
+    mcp_result = asyncio.run(
+        client.call_mcp_tool(
+            context=_build_invocation_context(
+                tool_id="mcp.mcp-stdio-stub.search-campus.00004d8d"
+            ),
+            server_id="mcp-stdio-stub",
+            remote_tool_name="search-campus",
+            arguments={"keyword": "library"},
+            snapshot_revision=8,
+        )
+    )
     asyncio.run(client.aclose())
 
     assert secret_value == "resolved-secret"
@@ -265,6 +297,16 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     assert bytes_artifact.content_type == "application/octet-stream"
     assert described_artifact.metadata == {"described": True}
     assert state_value == {"count": 1}
+    assert mcp_result == {
+        "ok": True,
+        "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "content": [{"type": "text", "text": "search completed"}],
+        "structuredContent": {"echoedArguments": {"keyword": "library"}},
+        "snapshotRevision": 8,
+        "isError": False,
+    }
 
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_payloads] == [
@@ -280,18 +322,29 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         ("state", "put_value"),
         ("state", "delete_value"),
         ("event", "emit_event"),
+        ("mcp", "call_tool"),
     ]
-    assert all(item["toolId"] == context.tool_id for item in captured_payloads)
+    assert all(item["toolId"] == context.tool_id for item in captured_payloads[:-1])
+    assert captured_payloads[-1]["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
     assert all(item["runId"] == context.run_id for item in captured_payloads)
-    assert all(
-        item["toolCallId"] == context.invocation_id for item in captured_payloads
-    )
+    assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads[:-1])
+    assert captured_payloads[-1]["toolCallId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d:call-1"
     save_bytes_payload = captured_payloads[6]["payload"]
     assert isinstance(save_bytes_payload, dict)
     assert (
         base64.b64decode(save_bytes_payload["contentBase64"]).decode("utf-8")
         == "payload-bytes"
     )
+
+
+    mcp_payload = captured_payloads[-1]["payload"]
+    assert mcp_payload == {
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "arguments": {"keyword": "library"},
+        "snapshotRevision": 8,
+    }
+
 
 
 def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:

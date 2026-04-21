@@ -99,6 +99,7 @@ def create_app(
         agent_executor=agent_executor,
         model_route_resolver=model_route_resolver or host_model_route_bridge_client,
         host_capabilities_factory=host_capabilities_factory,
+        host_capability_bridge_client=resolved_host_capability_bridge_client,
     )
     runtime_session_store = runtime_dependencies.session_store
     runtime_agent_executor = runtime_dependencies.agent_executor

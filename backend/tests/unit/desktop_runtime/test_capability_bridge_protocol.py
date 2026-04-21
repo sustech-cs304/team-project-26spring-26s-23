@@ -30,6 +30,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "artifact",
         "state",
         "event",
+        "mcp",
     )
     assert DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY == {
         "secret": ("get_secret", "has_secret"),
@@ -38,6 +39,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "artifact": ("save_text", "save_bytes", "describe_artifact"),
         "state": ("get_value", "put_value", "delete_value"),
         "event": ("emit_event",),
+        "mcp": ("call_tool",),
     }
     assert get_desktop_capability_operations("secret") == ("get_secret", "has_secret")
     assert get_desktop_capability_operations("workspace") == (
@@ -56,6 +58,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "delete_value",
     )
     assert get_desktop_capability_operations("event") == ("emit_event",)
+    assert get_desktop_capability_operations("mcp") == ("call_tool",)
     assert {
         operation
         for operations in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY.values()
@@ -253,6 +256,75 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
         operation="get_value",
         result={"found": False, "value": None},
     ) == {"found": False, "value": None}
+    assert validate_desktop_capability_bridge_payload(
+        capability="mcp",
+        operation="call_tool",
+        payload={
+            "serverId": " mcp-stdio-stub ",
+            "remoteToolName": " search-campus ",
+            "arguments": {"keyword": "library"},
+            "snapshotRevision": 8,
+        },
+    ) == {
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "arguments": {"keyword": "library"},
+        "snapshotRevision": 8,
+    }
+    assert validate_desktop_capability_bridge_result(
+        capability="mcp",
+        operation="call_tool",
+        result={
+            "ok": True,
+            "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+            "serverId": "mcp-stdio-stub",
+            "remoteToolName": "search-campus",
+            "content": [{"type": "text", "text": "search-campus completed"}],
+            "structuredContent": {"echoedArguments": {"keyword": "library"}},
+            "snapshotRevision": 8,
+            "isError": False,
+        },
+    ) == {
+        "ok": True,
+        "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "content": [{"type": "text", "text": "search-campus completed"}],
+        "structuredContent": {"echoedArguments": {"keyword": "library"}},
+        "snapshotRevision": 8,
+        "isError": False,
+    }
+    assert validate_desktop_capability_bridge_result(
+        capability="mcp",
+        operation="call_tool",
+        result={
+            "ok": False,
+            "toolId": "mcp.missing.tool.00000000",
+            "serverId": "mcp-stdio-stub",
+            "remoteToolName": "missing-tool",
+            "snapshotRevision": 8,
+            "error": {
+                "code": "directory_drift",
+                "message": "The requested MCP tool no longer exists in the current snapshot.",
+                "retryable": False,
+                "observedAt": "2026-04-21T12:00:00.000Z",
+                "details": {"snapshotRevision": 8},
+            },
+        },
+    ) == {
+        "ok": False,
+        "toolId": "mcp.missing.tool.00000000",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "missing-tool",
+        "snapshotRevision": 8,
+        "error": {
+            "code": "directory_drift",
+            "message": "The requested MCP tool no longer exists in the current snapshot.",
+            "retryable": False,
+            "observedAt": "2026-04-21T12:00:00.000Z",
+            "details": {"snapshotRevision": 8},
+        },
+    }
 
     with pytest.raises(
         ValueError,

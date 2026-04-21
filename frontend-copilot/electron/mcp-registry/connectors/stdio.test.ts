@@ -49,6 +49,47 @@ describe('createStdioMcpServerConnector', () => {
     await connector.stop()
   })
 
+  it('calls MCP tools over stdio once the session is ready', async () => {
+    const fixture = await createStdioServerFixture('call-tool', 'success')
+    const server = createMcpStdioStubServerFixture({
+      transportConfig: {
+        kind: 'stdio',
+        command: process.execPath,
+        args: [fixture.scriptFile],
+        cwd: fixture.tempRoot,
+      },
+    })
+    const connector = createStdioMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 1_000,
+      },
+    })
+
+    await connector.start()
+    const result = await connector.callTool({
+      toolId: 'mcp.test.search-campus',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      snapshotRevision: 10,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      toolId: 'mcp.test.search-campus',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: 'search-campus completed' }],
+      structuredContent: { echoedArguments: { keyword: 'calendar' } },
+      snapshotRevision: 10,
+      isError: false,
+    })
+
+    await connector.stop()
+  })
+
   it('returns non-retryable command errors without leaving tools behind', async () => {
     const server = createMcpStdioStubServerFixture({
       transportConfig: {
@@ -163,6 +204,18 @@ function handle(payload) {
       return;
     }
     send({ jsonrpc: '2.0', id: payload.id, result: { tools: [{ name: 'search-campus', title: 'Search Campus', description: 'Search the campus knowledge base.', inputSchema: { type: 'object' } }] } });
+    return;
+  }
+  if (payload.method === 'tools/call') {
+    send({
+      jsonrpc: '2.0',
+      id: payload.id,
+      result: {
+        content: [{ type: 'text', text: 'search-campus completed' }],
+        structuredContent: { echoedArguments: payload.params?.arguments ?? {} },
+        isError: false,
+      },
+    });
   }
 }
 `
