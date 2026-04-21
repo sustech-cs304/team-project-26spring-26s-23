@@ -1707,7 +1707,12 @@ class BlackboardCourseCatalogSearchTool(_BlackboardFacadeToolBase):
             arguments,
         )
         normalized_arguments = parsed_arguments.to_contract_dict()
-        credentials = await _resolve_credentials(normalized_arguments, host)
+        credentials = await _resolve_credentials(
+            normalized_arguments,
+            host,
+            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
+            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
+        )
         result = await asyncio.to_thread(
             search_course_catalog_with_credentials,
             credentials.username,
