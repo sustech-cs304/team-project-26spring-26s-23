@@ -51,6 +51,9 @@ def test_build_mcp_catalog_entries_maps_snapshot_tools_to_runtime_directory_entr
         "displayName": "Fetch Calendar",
         "displayNameZh": "Fetch Calendar",
         "displayNameEn": "Fetch Calendar",
+        "serverId": "mcp-http-sse-stub",
+        "remoteToolName": "fetch-calendar",
+        "mcpServerName": "Productivity",
         "description": "Fetch the current course calendar.",
         "descriptionZh": "Fetch the current course calendar.",
         "descriptionEn": "Fetch the current course calendar.",
@@ -60,7 +63,7 @@ def test_build_mcp_catalog_entries_maps_snapshot_tools_to_runtime_directory_entr
             "labelZh": "Productivity",
             "labelEn": "Productivity",
             "order": 101,
-            "sourceKind": "mcp",
+            "sourceKind": "mcp-server",
         },
     }
 
@@ -88,12 +91,44 @@ def test_build_mcp_catalog_entries_falls_back_to_server_group_metadata() -> None
     )
     assert search_entry["group"] == {
         "id": "mcp.server.mcp-stdio-stub",
-        "label": "stdio stub server",
-        "labelZh": "stdio stub server",
-        "labelEn": "stdio stub server",
+        "label": "Stdio Stub Server",
+        "labelZh": "Stdio Stub Server",
+        "labelEn": "Stdio Stub Server",
         "order": 1000,
-        "sourceKind": "mcp",
+        "sourceKind": "mcp-server",
     }
+
+
+def test_build_mcp_catalog_entries_builds_readable_tool_name_when_snapshot_name_is_missing() -> None:
+    fixture_snapshot = _load_snapshot_fixture().model_dump(by_alias=True)
+    search_tool = next(
+        tool
+        for tool in fixture_snapshot["tools"]
+        if tool["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    snapshot = McpCapabilitySnapshot.model_validate(
+        {
+            **fixture_snapshot,
+            "tools": [
+                {
+                    **search_tool,
+                    "displayName": "",
+                }
+            ],
+        }
+    )
+
+    entries = build_mcp_catalog_entries(snapshot)
+
+    entry = next(
+        item for item in entries if item["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+
+    assert entry["displayName"] == "Stdio Stub Server / Search Campus"
+    assert entry["displayNameZh"] == "Stdio Stub Server / Search Campus"
+    assert entry["displayNameEn"] == "Stdio Stub Server / Search Campus"
+    assert entry["serverId"] == "mcp-stdio-stub"
+    assert entry["remoteToolName"] == "search-campus"
 
 
 def test_mcp_catalog_provider_returns_empty_catalog_when_snapshot_is_missing() -> None:

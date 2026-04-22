@@ -234,6 +234,44 @@ describe('ToolPicker', () => {
 
     rendered.unmount()
   })
+
+  it('renders mcp readable names and group titles consistently with permissions view semantics', async () => {
+    const rendered = renderWithRoot(
+      <ToolPickerHarness
+        tools={[
+          {
+            toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+            kind: 'external',
+            availability: 'available',
+            displayName: null,
+            description: null,
+            serverId: 'mcp-stdio-stub',
+            remoteToolName: 'search-campus',
+            mcpServerName: 'stdio stub server',
+            group: {
+              id: 'mcp.server.mcp-stdio-stub',
+              label: 'stdio stub server',
+              labelZh: 'stdio stub server',
+              labelEn: 'stdio stub server',
+              order: 100,
+              sourceKind: 'mcp-server',
+            },
+          } as RuntimeToolDirectoryEntry,
+        ]}
+        initialSelectedToolIds={[]}
+        recommendedToolIds={[]}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    expect(readGroupSummaries(rendered.getByTestId('chat-tool-picker-panel'))).toEqual([
+      { title: 'stdio stub server', count: '1', expanded: 'true' },
+    ])
+    expect(rendered.getByTestId('chat-tool-option-mcp.mcp-stdio-stub.search-campus.00004d8d').textContent).toContain('stdio stub server / Search Campus')
+
+    rendered.unmount()
+  })
 })
 
 interface ToolPickerHarnessProps {

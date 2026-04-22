@@ -22,7 +22,6 @@ import {
   capabilitiesNavItems,
   type CapabilitiesSection,
   type ToolPermissionDelayAction,
-  type ToolPermissionGroup,
   type ToolPermissionMode,
   type ToolPermissionRecord,
 } from './capabilities-demo'
@@ -31,6 +30,10 @@ import { McpServersPanel } from './McpServersPanel'
 import { ToolPermissionsPanel } from './ToolPermissionsPanel'
 import type { McpServerEditorMode } from './mcp-registry-view-model'
 import { useMcpRegistry } from './use-mcp-registry'
+import {
+  resolveCopilotToolPlatformGroup,
+  resolveCopilotToolPresentation,
+} from '../../features/copilot/tool-presentation'
 
 interface McpServerEditorState {
   mode: McpServerEditorMode
@@ -361,14 +364,16 @@ function buildToolPermissionRecords(
   return toolCatalog.map((tool, index) => {
     const persisted = policy.toolPermissions[tool.toolId]
     const resolvedMode = persisted?.mode ?? policy.defaultMode
+    const presentation = resolveCopilotToolPresentation(tool)
+    const platformGroup = resolveCopilotToolPlatformGroup(tool)
 
     return {
       id: tool.toolId,
-      groupId: resolveToolGroupId(tool),
-      groupLabel: resolveToolGroup(tool).label,
-      groupOrder: resolveToolGroup(tool).order ?? Number.MAX_SAFE_INTEGER,
-      name: tool.displayNameZh ?? tool.displayName ?? tool.displayNameEn ?? tool.toolId,
-      description: tool.descriptionZh ?? tool.description ?? tool.descriptionEn ?? '该工具尚未提供详细说明。',
+      groupId: platformGroup.key,
+      groupLabel: platformGroup.title,
+      groupOrder: platformGroup.order,
+      name: presentation.name,
+      description: presentation.description,
       toolId: tool.toolId,
       mode: resolvedMode,
       delayAction: persisted?.mode === 'delay' && (persisted.timeoutAction === 'approve' || persisted.timeoutAction === 'deny')
@@ -379,38 +384,6 @@ function buildToolPermissionRecords(
         : FALLBACK_DELAY_SECONDS + index,
     }
   })
-}
-
-function resolveToolGroup(tool: RuntimeToolDirectoryEntry): ToolPermissionGroup {
-  const group = tool.group
-  if (group !== undefined && group !== null && group.id.trim() !== '') {
-    return {
-      id: group.id,
-      label: group.labelZh?.trim() || group.label?.trim() || group.labelEn?.trim() || group.id,
-      order: group.order,
-    }
-  }
-
-  return resolveFallbackToolGroup(tool)
-}
-
-function resolveToolGroupId(tool: RuntimeToolDirectoryEntry): ToolPermissionRecord['groupId'] {
-  return resolveToolGroup(tool).id
-}
-
-function resolveFallbackToolGroup(tool: RuntimeToolDirectoryEntry): ToolPermissionGroup {
-  if (tool.kind === 'builtin') {
-    return FALLBACK_TOOL_PERMISSION_GROUPS['builtin-core']
-  }
-
-  const namespace = tool.toolId.split(/[.-]/, 1)[0]?.toLowerCase()
-  if (namespace === 'blackboard') {
-    return FALLBACK_TOOL_PERMISSION_GROUPS.blackboard
-  }
-  if (namespace === 'tis') {
-    return FALLBACK_TOOL_PERMISSION_GROUPS.tis
-  }
-  return FALLBACK_TOOL_PERMISSION_GROUPS.mcp
 }
 
 function buildPolicyStateFromTools(
@@ -551,30 +524,6 @@ function isRenderableToolCatalogEntry(tool: RuntimeToolDirectoryEntry): boolean 
 
 function resolveToolLabel(tool: RuntimeToolDirectoryEntry): string {
   return tool.displayNameZh ?? tool.displayName ?? tool.displayNameEn ?? tool.toolId
-}
-
-// Keep fallback catalog grouping aligned with the runtime tool catalog contract.
-const FALLBACK_TOOL_PERMISSION_GROUPS: Record<string, ToolPermissionGroup> = {
-  'builtin-core': {
-    id: 'builtin-core',
-    label: '内置基础工具',
-    order: 0,
-  },
-  blackboard: {
-    id: 'blackboard',
-    label: 'Blackboard 工具',
-    order: 10,
-  },
-  tis: {
-    id: 'tis',
-    label: 'TIS 工具',
-    order: 20,
-  },
-  mcp: {
-    id: 'mcp',
-    label: 'MCP 工具',
-    order: 100,
-  },
 }
 
 const FALLBACK_TOOL_GROUPS: Record<string, RuntimeToolPresentationGroup> = {

@@ -14,6 +14,7 @@ import {
   resolveCopilotModelOption,
   type CopilotModelOption,
 } from '../model-picker'
+import { resolveCopilotToolDisplayNameFromToolId } from '../tool-presentation'
 import {
   formatCopilotReasoningDurationLabel,
   type CopilotAssistantMessageItem,
@@ -922,19 +923,7 @@ function extractToolDisplayNameFromTitle(title: string): string | null {
 }
 
 function resolveToolDisplayNameFromToolId(toolId: string): string | null {
-  const trimmedToolId = toolId.trim()
-  if (trimmedToolId === '') {
-    return null
-  }
-
-  const toolIdParts = trimmedToolId.split(/[./:]/).filter((part) => part.trim() !== '')
-  const lastToolIdPart = toolIdParts.length > 0 ? toolIdParts[toolIdParts.length - 1] : trimmedToolId
-  const normalizedName = lastToolIdPart.replace(/[-_]+/g, ' ').trim()
-  if (normalizedName === '') {
-    return null
-  }
-
-  return normalizedName.endsWith('工具') ? normalizedName : `${normalizedName}工具`
+  return resolveCopilotToolDisplayNameFromToolId(toolId)
 }
 
 function hasNonEmptyValue(value: string | null | undefined): value is string {

@@ -18,6 +18,7 @@ import type {
   McpServerStateSummary,
 } from '../../../electron/mcp-registry/types'
 import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
+import type { RuntimeToolDirectoryEntry } from '../../features/copilot/chat-contract'
 
 import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import {
@@ -671,6 +672,46 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).toContain('读取文本文件')
     expect(rendered.container.textContent).toContain('课程目录搜索')
     expect(rendered.container.textContent).toContain('成绩查询')
+
+    rendered.unmount()
+  })
+
+  it('renders readable mcp names in permissions view using the same presentation mapping as chat picker', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue({
+      ok: true,
+      directoryVersion: 'tools-v-readable-mcp',
+      tools: [
+        {
+          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+          kind: 'external',
+          availability: 'available',
+          displayName: null,
+          description: null,
+          serverId: 'mcp-stdio-stub',
+          remoteToolName: 'search-campus',
+          mcpServerName: 'stdio stub server',
+          group: {
+            id: 'mcp.server.mcp-stdio-stub',
+            label: 'stdio stub server',
+            labelZh: 'stdio stub server',
+            labelEn: 'stdio stub server',
+            order: 100,
+            sourceKind: 'mcp-server',
+          },
+        } as RuntimeToolDirectoryEntry,
+      ],
+    })
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    expect(rendered.container.textContent).toContain('stdio stub server')
+    expect(getToolRow(rendered.container, 'stdio stub server / Search Campus')).toBeTruthy()
 
     rendered.unmount()
   })
