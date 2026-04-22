@@ -1,17 +1,32 @@
 import { createHostedRuntimePaths, type HostedRuntimePaths } from '../runtime/runtime-paths'
 import { createManagedRuntimePaths, ensureManagedRuntimeDirectories } from './ManagedRuntimePaths'
+import { NodeRuntimeManager } from './node/NodeRuntimeManager'
 import { getManagedRuntimeManifest, getManagedRuntimeFamilyManifest, resolveManagedRuntimeComponents } from './runtime-manifest'
-import type { ManagedRuntimeFamily, ManagedRuntimeSnapshot, ManagedRuntimeTarget } from './types'
+import type { ManagedRuntimeActionReason, ManagedRuntimeOverallStatus, ManagedRuntimeSnapshot, ManagedRuntimeTarget } from './types'
+import { UvRuntimeManager } from './uv/UvRuntimeManager'
 
 export interface CreateManagedRuntimeServiceOptions {
   userDataPath: string
   hostedRuntimePaths?: HostedRuntimePaths
   processPlatform?: NodeJS.Platform
   processArch?: string
+  nodeManagerFactory?: (context: {
+    pinnedVersion: string
+    selectedComponents: ReturnType<typeof resolveManagedRuntimeComponents>
+    target: ManagedRuntimeTarget
+    managedRuntimePaths: ReturnType<typeof createManagedRuntimePaths>
+  }) => Pick<NodeRuntimeManager, 'loadSnapshot' | 'installOrRepair'>
+  uvManagerFactory?: (context: {
+    pinnedVersion: string
+    selectedComponents: ReturnType<typeof resolveManagedRuntimeComponents>
+    target: ManagedRuntimeTarget
+    managedRuntimePaths: ReturnType<typeof createManagedRuntimePaths>
+  }) => Pick<UvRuntimeManager, 'loadSnapshot' | 'installOrRepair'>
 }
 
 export interface ManagedRuntimeService {
   loadSnapshot: () => Promise<ManagedRuntimeSnapshot>
+  installOrRepairAll: (reason?: ManagedRuntimeActionReason) => Promise<ManagedRuntimeSnapshot>
 }
 
 export function createManagedRuntimeService(options: CreateManagedRuntimeServiceOptions): ManagedRuntimeService {
@@ -21,22 +36,65 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
     platform: options.processPlatform ?? process.platform,
     arch: options.processArch ?? process.arch,
   })
+  const nodePinnedVersion = getManagedRuntimeFamilyManifest('node').pinnedVersion
+  const uvPinnedVersion = getManagedRuntimeFamilyManifest('uv').pinnedVersion
+  const nodeSelectedComponents = resolveManagedRuntimeComponents('node', target)
+  const uvSelectedComponents = resolveManagedRuntimeComponents('uv', target)
+  const nodeManager = options.nodeManagerFactory?.({
+    pinnedVersion: nodePinnedVersion,
+    selectedComponents: nodeSelectedComponents,
+    target,
+    managedRuntimePaths,
+  }) ?? new NodeRuntimeManager({
+    paths: managedRuntimePaths.families.node,
+    pinnedVersion: nodePinnedVersion,
+    selectedComponents: nodeSelectedComponents,
+    ensureRootDirectories: async () => await ensureManagedRuntimeDirectories(managedRuntimePaths),
+  })
+  const uvManager = options.uvManagerFactory?.({
+    pinnedVersion: uvPinnedVersion,
+    selectedComponents: uvSelectedComponents,
+    target,
+    managedRuntimePaths,
+  }) ?? new UvRuntimeManager({
+    paths: managedRuntimePaths.families.uv,
+    pinnedVersion: uvPinnedVersion,
+    selectedComponents: uvSelectedComponents,
+  })
+  let installationTask: Promise<ManagedRuntimeSnapshot> | null = null
 
   return {
     async loadSnapshot() {
       await ensureManagedRuntimeDirectories(managedRuntimePaths)
+      const nodeSnapshot = await nodeManager.loadSnapshot()
+      const uvSnapshot = await uvManager.loadSnapshot()
 
       return {
         manifestVersion: getManagedRuntimeManifest().manifestVersion,
-        overallStatus: 'missing',
+        overallStatus: resolveOverallStatus(nodeSnapshot.status, uvSnapshot.status),
         target,
         rootDir: managedRuntimePaths.rootDir,
         hostedRuntimeRootDir: hostedRuntimePaths.runtimeRootDir,
         families: {
-          node: createManagedRuntimeFamilySnapshot('node', managedRuntimePaths, target),
-          uv: createManagedRuntimeFamilySnapshot('uv', managedRuntimePaths, target),
+          node: nodeSnapshot,
+          uv: uvSnapshot,
         },
       }
+    },
+    installOrRepairAll(reason = 'install') {
+      if (installationTask !== null) {
+        return installationTask
+      }
+
+      installationTask = (async () => {
+        await nodeManager.installOrRepair(reason)
+        await uvManager.installOrRepair(reason)
+        return await this.loadSnapshot()
+      })().finally(() => {
+        installationTask = null
+      })
+
+      return installationTask
     },
   }
 }
@@ -53,23 +111,18 @@ export function resolveManagedRuntimeTarget(input: { platform: NodeJS.Platform; 
   throw new Error(`Unsupported managed runtime target: ${input.platform}/${input.arch}`)
 }
 
-function createManagedRuntimeFamilySnapshot(
-  family: ManagedRuntimeFamily,
-  managedRuntimePaths: ReturnType<typeof createManagedRuntimePaths>,
-  target: ManagedRuntimeTarget,
-) {
-  const familyManifest = getManagedRuntimeFamilyManifest(family)
-  const familyPaths = managedRuntimePaths.families[family]
-
-  return {
-    family,
-    status: 'missing' as const,
-    pinnedVersion: familyManifest.pinnedVersion,
-    activeVersion: null,
-    installRootDir: familyPaths.versionsDir,
-    stagingDir: familyPaths.stagingDir,
-    activeDir: familyPaths.activeDir,
-    selectedComponents: resolveManagedRuntimeComponents(family, target),
+function resolveOverallStatus(...statuses: ManagedRuntimeOverallStatus[]): ManagedRuntimeOverallStatus {
+  if (statuses.includes('broken')) {
+    return 'broken'
   }
+  if (statuses.includes('installing')) {
+    return 'installing'
+  }
+  if (statuses.includes('outdated')) {
+    return 'outdated'
+  }
+  if (statuses.includes('missing')) {
+    return 'missing'
+  }
+  return 'ready'
 }
-

@@ -35,6 +35,7 @@ export function createManagedRuntimeFamilyPaths(rootDir: string, family: Managed
     versionsDir: path.join(familyRootDir, 'versions'),
     activeDir: path.join(familyRootDir, 'active'),
     activePointerFile: path.join(familyRootDir, 'active.json'),
+    stateFile: path.join(familyRootDir, 'state.json'),
     diagnosticsDir: path.join(familyRootDir, 'diagnostics'),
   }
 }
@@ -58,4 +59,3 @@ export function listManagedRuntimeDirectories(paths: ManagedRuntimePaths): strin
 export async function ensureManagedRuntimeDirectories(paths: ManagedRuntimePaths): Promise<void> {
   await Promise.all(listManagedRuntimeDirectories(paths).map((directoryPath) => mkdir(directoryPath, { recursive: true })))
 }
-

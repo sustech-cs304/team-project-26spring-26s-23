@@ -4,11 +4,12 @@ export type ManagedRuntimeFamily = 'node' | 'uv'
 export type ManagedRuntimeComponent = 'node' | 'python' | 'uv'
 export type ManagedRuntimePlatform = 'win32' | 'darwin' | 'linux'
 export type ManagedRuntimeArch = 'x64' | 'arm64'
-export type ManagedRuntimeStatus = 'missing' | 'ready'
-export type ManagedRuntimeOverallStatus = 'missing' | 'ready'
+export type ManagedRuntimeStatus = 'missing' | 'installing' | 'ready' | 'broken' | 'outdated'
+export type ManagedRuntimeOverallStatus = ManagedRuntimeStatus
 export type ManagedRuntimeArchiveFormat = 'zip' | 'tar.gz' | 'tar.xz' | 'pkg' | 'source-tar.xz'
 export type ManagedRuntimeChannelKind = 'official-dist' | 'github-release' | 'python-release' | 'placeholder'
 export type ManagedRuntimeInstallStrategy = 'portable-archive' | 'system-installer' | 'source-distribution' | 'planned'
+export type ManagedRuntimeActionReason = 'install' | 'repair'
 
 export interface ManagedRuntimeTarget {
   platform: ManagedRuntimePlatform
@@ -74,6 +75,7 @@ export interface ManagedRuntimeFamilyPaths {
   versionsDir: string
   activeDir: string
   activePointerFile: string
+  stateFile: string
   diagnosticsDir: string
 }
 
@@ -90,6 +92,31 @@ export interface ManagedRuntimeResolvedComponent {
   distribution: ManagedRuntimeDistribution
 }
 
+export interface ManagedRuntimeErrorSummary {
+  code: string
+  message: string
+  detail?: string
+  at: string
+}
+
+export interface ManagedRuntimeVerificationRecord {
+  verifiedAt: string
+  summary: string
+  launchers: Partial<Record<string, string>>
+}
+
+export interface ManagedRuntimePersistentState {
+  schemaVersion: number
+  family: ManagedRuntimeFamily
+  pinnedVersion: string
+  status: Exclude<ManagedRuntimeStatus, 'installing'>
+  activeVersion: string | null
+  lastInstalledAt: string | null
+  lastRepairedAt: string | null
+  lastVerification: ManagedRuntimeVerificationRecord | null
+  lastErrorSummary: ManagedRuntimeErrorSummary | null
+}
+
 export interface ManagedRuntimeFamilySnapshot {
   family: ManagedRuntimeFamily
   status: ManagedRuntimeStatus
@@ -99,6 +126,11 @@ export interface ManagedRuntimeFamilySnapshot {
   stagingDir: string
   activeDir: string
   selectedComponents: readonly ManagedRuntimeResolvedComponent[]
+  launcherPaths: Partial<Record<string, string>>
+  lastInstalledAt: string | null
+  lastRepairedAt: string | null
+  lastVerification: ManagedRuntimeVerificationRecord | null
+  lastErrorSummary: ManagedRuntimeErrorSummary | null
 }
 
 export interface ManagedRuntimeSnapshot {
@@ -109,4 +141,3 @@ export interface ManagedRuntimeSnapshot {
   hostedRuntimeRootDir: HostedRuntimePaths['runtimeRootDir']
   families: Record<ManagedRuntimeFamily, ManagedRuntimeFamilySnapshot>
 }
-
