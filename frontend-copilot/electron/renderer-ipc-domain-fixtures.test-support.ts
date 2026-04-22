@@ -1,5 +1,6 @@
 import type { ConfigCenterPublicSnapshot } from './config-center/public-snapshot'
 import type { CopilotRuntimeSnapshot } from './copilot-runtime'
+import type { ManagedRuntimeLoadResult } from './managed-runtime/ipc'
 import type { SettingsWorkspaceEditableState } from './settings-workspace/state-schema'
 export {
   createMcpCapabilitySnapshotFixture,
@@ -124,6 +125,44 @@ export function createCopilotRuntimeSnapshotFixture(
       runtimeUrl: resolvedMode === null ? null : 'http://127.0.0.1:4400',
       isPackaged: false,
       failure: null,
+    },
+  }
+}
+
+export function createManagedRuntimeLoadResultFixture(): ManagedRuntimeLoadResult {
+  return {
+    ok: true,
+    snapshot: {
+      manifestVersion: 1,
+      overallStatus: 'missing',
+      target: {
+        platform: 'win32',
+        arch: 'x64',
+      },
+      rootDir: 'D:/workspace/user-data/desktop-runtime/managed-runtime',
+      hostedRuntimeRootDir: 'D:/workspace/user-data/desktop-runtime',
+      families: {
+        node: {
+          family: 'node',
+          status: 'missing',
+          pinnedVersion: '24.15.0',
+          activeVersion: null,
+          installRootDir: 'D:/workspace/user-data/desktop-runtime/managed-runtime/node/versions',
+          stagingDir: 'D:/workspace/user-data/desktop-runtime/managed-runtime/node/staging',
+          activeDir: 'D:/workspace/user-data/desktop-runtime/managed-runtime/node/active',
+          selectedComponents: [],
+        },
+        uv: {
+          family: 'uv',
+          status: 'missing',
+          pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+          activeVersion: null,
+          installRootDir: 'D:/workspace/user-data/desktop-runtime/managed-runtime/uv/versions',
+          stagingDir: 'D:/workspace/user-data/desktop-runtime/managed-runtime/uv/staging',
+          activeDir: 'D:/workspace/user-data/desktop-runtime/managed-runtime/uv/active',
+          selectedComponents: [],
+        },
+      },
     },
   }
 }

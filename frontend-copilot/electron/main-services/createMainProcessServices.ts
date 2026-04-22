@@ -47,6 +47,9 @@ export function createMainProcessServices(
     async loadMcpRegistry(request) {
       return await accessors.getMcpRegistryService().loadRegistry(request)
     },
+    async loadManagedRuntime() {
+      return await accessors.getManagedRuntimeService().load()
+    },
     async saveMcpServer(draft) {
       return await accessors.getMcpRegistryService().saveServer(draft)
     },

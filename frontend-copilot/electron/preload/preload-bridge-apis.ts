@@ -42,6 +42,7 @@ import {
   type DesktopNotificationApi,
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
+import { MANAGED_RUNTIME_LOAD_CHANNEL, type ManagedRuntimeApi } from '../managed-runtime/ipc'
 import {
   MCP_REGISTRY_DELETE_SERVER_CHANNEL,
   MCP_REGISTRY_LOAD_CHANNEL,
@@ -63,6 +64,7 @@ export interface PreloadBridgeApis {
   configCenterPublicPatch: ConfigCenterPublicPatchApi
   settingsWorkspaceState: SettingsWorkspaceStateApi
   settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
+  managedRuntime: ManagedRuntimeApi
   mcpRegistry: McpRegistryApi
   mcpRegistrySubscription: McpRegistrySubscriptionApi
   toolCatalog: ToolCatalogApi
@@ -145,6 +147,11 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       clearSustechCasPassword() {
         return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
+      },
+    },
+    managedRuntime: {
+      load() {
+        return ipcRenderer.invoke(MANAGED_RUNTIME_LOAD_CHANNEL)
       },
     },
     mcpRegistry: {

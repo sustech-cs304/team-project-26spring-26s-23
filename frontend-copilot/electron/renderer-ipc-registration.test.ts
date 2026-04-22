@@ -14,6 +14,7 @@ import {
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
+import { MANAGED_RUNTIME_LOAD_CHANNEL } from './managed-runtime/ipc'
 import {
   MCP_REGISTRY_DELETE_SERVER_CHANNEL,
   MCP_REGISTRY_LOAD_CHANNEL,
@@ -47,6 +48,7 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:clear-provider-api-key',
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
+      MANAGED_RUNTIME_LOAD_CHANNEL,
       MCP_REGISTRY_LOAD_CHANNEL,
       MCP_REGISTRY_SAVE_SERVER_CHANNEL,
       MCP_REGISTRY_DELETE_SERVER_CHANNEL,
@@ -78,6 +80,7 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:clear-provider-api-key',
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
+      MANAGED_RUNTIME_LOAD_CHANNEL,
       MCP_REGISTRY_LOAD_CHANNEL,
       MCP_REGISTRY_SAVE_SERVER_CHANNEL,
       MCP_REGISTRY_DELETE_SERVER_CHANNEL,
@@ -104,6 +107,7 @@ describe('registerRendererIpcHandlers', () => {
     const loadSnapshotHandler = getRegisteredHandler(registeredHandlers, CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
     const applyPatchHandler = getRegisteredHandler(registeredHandlers, CONFIG_CENTER_PUBLIC_PATCH_CHANNEL)
     const loadMcpRegistryHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_LOAD_CHANNEL)
+    const loadManagedRuntimeHandler = getRegisteredHandler(registeredHandlers, MANAGED_RUNTIME_LOAD_CHANNEL)
     const saveMcpServerHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_SAVE_SERVER_CHANNEL)
     const deleteMcpServerHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_DELETE_SERVER_CHANNEL)
     const setMcpServerEnabledHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL)
@@ -138,6 +142,7 @@ describe('registerRendererIpcHandlers', () => {
       },
     }))
     const mcpServerDraft = createMcpStdioStubServerFixture()
+    await expect(loadManagedRuntimeHandler()).resolves.toEqual(await handlers.loadManagedRuntime())
     await expect(loadMcpRegistryHandler(undefined, { language: 'zh-CN', includeDisabled: true })).resolves.toEqual(
       await handlers.loadMcpRegistry({ language: 'zh-CN', includeDisabled: true }),
     )

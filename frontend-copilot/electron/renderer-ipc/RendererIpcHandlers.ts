@@ -32,6 +32,7 @@ import type {
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
 import type { DesktopNotificationRequest } from '../desktop-notification'
+import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
 import type {
   McpDeleteServerResult,
   McpRefreshCatalogRequest,
@@ -67,6 +68,7 @@ export interface RendererIpcHandlers {
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   loadMcpRegistry: (request?: McpRegistryLoadRequest) => Promise<McpRegistryLoadResult>
+  loadManagedRuntime: () => Promise<ManagedRuntimeLoadResponse>
   saveMcpServer: (draft: McpServerDraft) => Promise<McpSaveServerResult>
   deleteMcpServer: (serverId: string) => Promise<McpDeleteServerResult>
   setMcpServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>

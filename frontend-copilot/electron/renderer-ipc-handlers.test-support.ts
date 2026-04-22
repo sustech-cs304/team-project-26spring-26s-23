@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
 import type { DesktopNotificationRequest } from './desktop-notification'
+import type { ManagedRuntimeLoadResponse } from './managed-runtime/ipc'
 
 import type { ConfigCenterPublicPatchResult } from './config-center/public-patch'
 import type { ConfigCenterPublicSnapshotLoadResult } from './config-center/public-snapshot'
@@ -28,6 +29,7 @@ import type { ToolCatalogLoadResult } from './tool-catalog/ipc'
 import {
   createConfigCenterPublicSnapshotFixture,
   createCopilotRuntimeSnapshotFixture,
+  createManagedRuntimeLoadResultFixture,
   createMcpDeleteServerSuccessFixture,
   createMcpRefreshCatalogSuccessFixture,
   createMcpRegistryLoadResultFixture,
@@ -116,6 +118,7 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
         password: '',
       },
     })),
+    loadManagedRuntime: vi.fn(async (): Promise<ManagedRuntimeLoadResponse> => createManagedRuntimeLoadResultFixture()),
     loadMcpRegistry: vi.fn(async (): Promise<McpRegistryLoadResult> => createMcpRegistryLoadResultFixture()),
     saveMcpServer: vi.fn(async (): Promise<McpSaveServerResult> => createMcpSaveServerSuccessFixture()),
     deleteMcpServer: vi.fn(async (): Promise<McpDeleteServerResult> => createMcpDeleteServerSuccessFixture()),

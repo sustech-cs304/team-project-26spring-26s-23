@@ -18,6 +18,7 @@ import type {
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type { HostedBackendService } from '../runtime/hosted-backend-service'
+import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
 import type {
   ConfigCenterPublicPatch,
   ConfigCenterPublicPatchResult,
@@ -67,6 +68,7 @@ export interface MainProcessServiceLogOptions {
 
 export interface CreateMainProcessServicesOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
+  userDataPath: string
   ensureHostedBackendService: () => Promise<HostedBackendService>
   appendMainRuntimeLog: (
     level: MainProcessServiceLogLevel,
@@ -104,6 +106,7 @@ export interface MainProcessServices {
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   loadMcpRegistry: (request?: McpRegistryLoadRequest) => Promise<McpRegistryLoadResult>
+  loadManagedRuntime: () => Promise<ManagedRuntimeLoadResponse>
   saveMcpServer: (draft: McpServerDraft) => Promise<McpSaveServerResult>
   deleteMcpServer: (serverId: string) => Promise<McpDeleteServerResult>
   setMcpServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>

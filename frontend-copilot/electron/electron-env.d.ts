@@ -9,6 +9,7 @@ import type { CopilotHistoryApi } from './copilot-history'
 import type { BootstrapWindowApi } from './bootstrap-window'
 import type { CopilotRuntimeApi } from './copilot-runtime'
 import type { DesktopNotificationApi } from './desktop-notification'
+import type { ManagedRuntimeApi } from './managed-runtime/ipc'
 import type { McpRegistryApi, McpRegistrySubscriptionApi } from './mcp-registry/ipc'
 import type { SettingsWorkspaceSecretsApi, SettingsWorkspaceStateApi } from './settings-workspace/ipc'
 import type { ToolCatalogApi } from './tool-catalog/ipc'
@@ -44,6 +45,7 @@ declare global {
     configCenterPublicPatch: ConfigCenterPublicPatchApi
     settingsWorkspaceState: SettingsWorkspaceStateApi
     settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
+    managedRuntime: ManagedRuntimeApi
     mcpRegistry: McpRegistryApi
     mcpRegistrySubscription: McpRegistrySubscriptionApi
     toolCatalog: ToolCatalogApi

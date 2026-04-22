@@ -11,6 +11,7 @@ import {
   type McpRegistryApi,
   type McpRegistrySubscriptionApi,
 } from './mcp-registry/ipc'
+import { MANAGED_RUNTIME_LOAD_CHANNEL } from './managed-runtime/ipc'
 import {
   getExposedApi,
   getInvokeMock,
@@ -31,8 +32,10 @@ describe('preload mcp registry bridge', () => {
     await loadPreloadModule()
 
     const mcpRegistryApi = getExposedApi<McpRegistryApi>('mcpRegistry')
+    const managedRuntimeApi = getExposedApi<{ load: () => Promise<unknown> }>('managedRuntime')
     const draft = createMcpStdioStubServerFixture()
 
+    await managedRuntimeApi.load()
     await mcpRegistryApi.loadRegistry({ language: 'zh-CN', includeDisabled: true })
     await mcpRegistryApi.saveServer(draft)
     await mcpRegistryApi.deleteServer(draft.serverId)
@@ -41,6 +44,7 @@ describe('preload mcp registry bridge', () => {
     await mcpRegistryApi.refreshCatalog({ serverId: draft.serverId })
 
     expect(invokeMock.mock.calls).toEqual([
+      [MANAGED_RUNTIME_LOAD_CHANNEL],
       [MCP_REGISTRY_LOAD_CHANNEL, { language: 'zh-CN', includeDisabled: true }],
       [MCP_REGISTRY_SAVE_SERVER_CHANNEL, draft],
       [MCP_REGISTRY_DELETE_SERVER_CHANNEL, draft.serverId],

@@ -2,6 +2,7 @@ export { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
 export {
   createConfigCenterPublicSnapshotFixture,
   createCopilotRuntimeSnapshotFixture,
+  createManagedRuntimeLoadResultFixture,
   createMcpCapabilitySnapshotFixture,
   createMcpDeleteServerSuccessFixture,
   createMcpDirectoryDriftToolCallFailureFixture,

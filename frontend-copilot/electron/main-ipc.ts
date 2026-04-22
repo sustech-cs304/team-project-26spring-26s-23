@@ -33,6 +33,7 @@ export function registerMainProcessIpcHandlers(
     saveSettingsWorkspaceSustechCasSecret: services.saveSettingsWorkspaceSustechCasSecret,
     clearSettingsWorkspaceSustechCasSecret: services.clearSettingsWorkspaceSustechCasSecret,
     loadMcpRegistry: services.loadMcpRegistry,
+    loadManagedRuntime: services.loadManagedRuntime,
     saveMcpServer: services.saveMcpServer,
     deleteMcpServer: services.deleteMcpServer,
     setMcpServerEnabled: services.setMcpServerEnabled,
