@@ -15,7 +15,7 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
   generatedAt: '2026-04-22T00:00:00.000Z',
   releaseEvidence: {
     node: 'Node.js dist index checked on 2026-04-22; selected active LTS v24.15.0 (Krypton).',
-    python: 'Python 3.12.10 selected as the last 3.12 full bugfix release with binary installers before source-only security releases.',
+    python: 'astral-sh/python-build-standalone release 20260414 checked on 2026-04-22; selected CPython 3.12.13 install_only_stripped artifacts for cross-platform portable managed runtime use.',
     uv: 'astral-sh/uv latest stable release checked on 2026-04-22; selected 0.11.7.',
   },
   sourceChannels: [
@@ -38,6 +38,16 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
       metadataUrl: 'https://www.python.org/downloads/',
       checksumPolicy: 'none',
       notes: 'Python 3.12.10 is the last 3.12 release with binary installers; later 3.12 releases are source-only.',
+    },
+    {
+      channelId: 'python-build-standalone',
+      kind: 'github-release',
+      owner: 'python',
+      displayName: 'astral-sh/python-build-standalone GitHub release assets',
+      baseUrl: 'https://github.com/astral-sh/python-build-standalone/releases/download',
+      metadataUrl: 'https://github.com/astral-sh/python-build-standalone/releases',
+      checksumPolicy: 'release-manifest',
+      notes: 'Pinned to release 20260414 install_only_stripped assets to keep Python in an app-private portable layout on all supported platforms.',
     },
     {
       channelId: 'uv-github-release',
@@ -75,21 +85,21 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
     {
       family: 'uv',
       displayName: 'Python/uv',
-      pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+      pinnedVersion: 'python 3.12.13 + uv 0.11.7',
       status: 'supported',
       components: [
         {
           component: 'python',
-          version: '3.12.10',
-          versionLine: 'Last full 3.12 bugfix release with binary installers',
-          sourceOfTruth: 'Python release schedule / python.org release files',
+          version: '3.12.13',
+          versionLine: 'Portable standalone CPython 3.12 line selected for managed runtime packaging',
+          sourceOfTruth: 'astral-sh/python-build-standalone release 20260414',
           distributions: [
-            createPythonDistribution('win32', 'x64', 'python-3.12.10-embed-amd64.zip', 'portable-archive', 'zip'),
-            createPythonDistribution('win32', 'arm64', 'python-3.12.10-embed-arm64.zip', 'portable-archive', 'zip'),
-            createPlannedDistribution('darwin', 'x64', 'python', 'python-3.12.10-macos-x64.pkg', 'pkg'),
-            createPlannedDistribution('darwin', 'arm64', 'python', 'python-3.12.10-macos-arm64.pkg', 'pkg'),
-            createPlannedDistribution('linux', 'x64', 'python', 'Python-3.12.10.tgz', 'source-tar.xz'),
-            createPlannedDistribution('linux', 'arm64', 'python', 'Python-3.12.10.tgz', 'source-tar.xz'),
+            createPythonDistribution('win32', 'x64', 'cpython-3.12.13+20260414-x86_64-pc-windows-msvc-install_only_stripped.tar.gz', 'tar.gz'),
+            createPythonDistribution('win32', 'arm64', 'cpython-3.12.13+20260414-aarch64-pc-windows-msvc-install_only_stripped.tar.gz', 'tar.gz'),
+            createPythonDistribution('darwin', 'x64', 'cpython-3.12.13+20260414-x86_64-apple-darwin-install_only_stripped.tar.gz', 'tar.gz'),
+            createPythonDistribution('darwin', 'arm64', 'cpython-3.12.13+20260414-aarch64-apple-darwin-install_only_stripped.tar.gz', 'tar.gz'),
+            createPythonDistribution('linux', 'x64', 'cpython-3.12.13+20260414-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz', 'tar.gz'),
+            createPythonDistribution('linux', 'arm64', 'cpython-3.12.13+20260414-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz', 'tar.gz'),
           ],
         },
         {
@@ -244,48 +254,19 @@ function createPythonDistribution(
   platform: ManagedRuntimeTarget['platform'],
   arch: ManagedRuntimeTarget['arch'],
   fileName: string,
-  installStrategy: ManagedRuntimeDistribution['installStrategy'],
   archiveFormat: ManagedRuntimeDistribution['archiveFormat'],
 ): ManagedRuntimeDistribution {
   return {
     target: { platform, arch },
     fileName,
-    url: `https://www.python.org/ftp/python/3.12.10/${fileName}`,
+    url: `https://github.com/astral-sh/python-build-standalone/releases/download/20260414/${fileName}`,
+    checksumUrl: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260414/SHA256SUMS',
     archiveFormat,
-    installStrategy,
+    installStrategy: 'portable-archive',
     launcherRelativePaths: platform === 'win32'
-      ? { python: 'python.exe' }
-      : platform === 'darwin'
-        ? { python: 'Python.framework/Versions/3.12/bin/python3' }
-        : { python: 'bin/python3' },
-    sourceChannelId: 'python-org',
-  }
-}
-
-function createPlannedDistribution(
-  platform: ManagedRuntimeTarget['platform'],
-  arch: ManagedRuntimeTarget['arch'],
-  component: ManagedRuntimeComponent,
-  fileName: string,
-  archiveFormat: ManagedRuntimeDistribution['archiveFormat'],
-): ManagedRuntimeDistribution {
-  const launcherRelativePaths: Record<string, string> = component === 'python'
-    ? (platform === 'win32'
-      ? { python: 'python.exe' }
-      : { python: 'python3' })
-    : (platform === 'win32'
-      ? { uv: 'uv.exe', uvx: 'uvx.exe' }
-      : { uv: 'uv', uvx: 'uvx' })
-
-  return {
-    target: { platform, arch },
-    fileName,
-    url: null,
-    archiveFormat,
-    installStrategy: 'planned',
-    launcherRelativePaths,
-    sourceChannelId: component === 'python' ? 'python-org' : 'uv-github-release',
-    notes: `Install support for ${platform}/${arch} will be enabled in a follow-up runtime asset batch.`,
+      ? { python: 'install/python.exe' }
+      : { python: 'install/bin/python3' },
+    sourceChannelId: 'python-build-standalone',
   }
 }
 

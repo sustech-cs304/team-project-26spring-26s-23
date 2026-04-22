@@ -13,7 +13,7 @@ describe('managed runtime manifest', () => {
     const uvFamily = getManagedRuntimeFamilyManifest('uv')
 
     expect(nodeFamily.pinnedVersion).toBe('24.15.0')
-    expect(uvFamily.pinnedVersion).toBe('python 3.12.10 + uv 0.11.7')
+    expect(uvFamily.pinnedVersion).toBe('python 3.12.13 + uv 0.11.7')
 
     const nodeComponents = resolveManagedRuntimeComponents('node', { platform: 'win32', arch: 'x64' })
     expect(nodeComponents).toHaveLength(1)
@@ -26,7 +26,7 @@ describe('managed runtime manifest', () => {
 
     const uvComponents = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'arm64' })
     expect(uvComponents.map((component) => component.component)).toEqual(['python', 'uv'])
-    expect(uvComponents[0]?.distribution.fileName).toBe('python-3.12.10-embed-arm64.zip')
+    expect(uvComponents[0]?.distribution.fileName).toBe('cpython-3.12.13+20260414-aarch64-pc-windows-msvc-install_only_stripped.tar.gz')
     expect(uvComponents[0]?.distribution.installStrategy).toBe('portable-archive')
     expect(uvComponents[1]?.distribution.fileName).toBe('uv-aarch64-pc-windows-msvc.zip')
   })
@@ -39,6 +39,10 @@ describe('managed runtime manifest', () => {
     expect(getManagedRuntimeSourceChannel('uv-github-release')).toMatchObject({
       kind: 'github-release',
       owner: 'uv',
+    })
+    expect(getManagedRuntimeSourceChannel('python-build-standalone')).toMatchObject({
+      kind: 'github-release',
+      owner: 'python',
     })
   })
 
@@ -62,11 +66,11 @@ describe('managed runtime manifest', () => {
 
     const linuxUvSelection = resolveManagedRuntimeComponentSelection('uv', { platform: 'linux', arch: 'x64' })
     expect(linuxUvSelection.resolvedComponents.map((component) => component.component)).toEqual(['python', 'uv'])
-    expect(linuxUvSelection.resolvedComponents[0]?.distribution.installStrategy).toBe('planned')
-    expect(linuxUvSelection.resolvedComponents[0]?.distribution.url).toBeNull()
+    expect(linuxUvSelection.resolvedComponents[0]?.distribution.installStrategy).toBe('portable-archive')
+    expect(linuxUvSelection.resolvedComponents[0]?.distribution.fileName).toBe('cpython-3.12.13+20260414-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz')
     expect(linuxUvSelection.resolvedComponents[1]?.distribution.fileName).toBe('uv-x86_64-unknown-linux-gnu.tar.gz')
     expect(isManagedRuntimeActionSupported('node', { platform: 'darwin', arch: 'arm64' })).toBe(true)
     expect(isManagedRuntimeActionSupported('node', { platform: 'linux', arch: 'x64' })).toBe(true)
-    expect(isManagedRuntimeActionSupported('uv', { platform: 'linux', arch: 'x64' })).toBe(false)
+    expect(isManagedRuntimeActionSupported('uv', { platform: 'linux', arch: 'x64' })).toBe(true)
   })
 })

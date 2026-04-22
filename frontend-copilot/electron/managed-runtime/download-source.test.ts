@@ -32,10 +32,25 @@ describe('resolveManagedRuntimeDownloadSource', () => {
 
     expect(resolveManagedRuntimeDownloadSource(pythonComponent!)).toMatchObject({
       component: 'python',
-      fileName: 'python-3.12.10-macos-arm64.pkg',
-      archiveFormat: 'pkg',
-      installStrategy: 'planned',
-      url: null,
+      fileName: 'cpython-3.12.13+20260414-aarch64-apple-darwin-install_only_stripped.tar.gz',
+      archiveFormat: 'tar.gz',
+      installStrategy: 'portable-archive',
+      url: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.12.13+20260414-aarch64-apple-darwin-install_only_stripped.tar.gz',
+      checksumUrl: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260414/SHA256SUMS',
+    })
+  })
+
+  it('resolves linux python standalone artifacts from the managed manifest without depending on system python', () => {
+    const uvComponents = resolveManagedRuntimeComponents('uv', { platform: 'linux', arch: 'x64' })
+    const pythonComponent = uvComponents.find((entry) => entry.component === 'python')
+
+    expect(resolveManagedRuntimeDownloadSource(pythonComponent!)).toMatchObject({
+      component: 'python',
+      target: { platform: 'linux', arch: 'x64' },
+      fileName: 'cpython-3.12.13+20260414-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz',
+      archiveFormat: 'tar.gz',
+      installStrategy: 'portable-archive',
+      checksumUrl: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260414/SHA256SUMS',
     })
   })
 

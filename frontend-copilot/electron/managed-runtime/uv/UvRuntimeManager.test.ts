@@ -12,6 +12,18 @@ import { UvRuntimeManager } from './UvRuntimeManager'
 const FIXTURE_CONTENT = 'fixture'
 const CHECKSUM = createHash('sha256').update(FIXTURE_CONTENT).digest('hex')
 
+function createChecksumResponder(components: ReturnType<typeof resolveManagedRuntimeComponents>) {
+  return vi.fn(async (url: string) => {
+    if (url.endsWith('SHA256SUMS')) {
+      return components
+        .map((component) => `${CHECKSUM}  ${component.distribution.fileName}`)
+        .join('\n')
+    }
+
+    return `${CHECKSUM}  ${path.basename(url).replace(/\.sha256$/i, '')}`
+  })
+}
+
 const tempRoots: string[] = []
 
 afterEach(async () => {
@@ -33,7 +45,7 @@ describe('UvRuntimeManager', () => {
         downloadToFile: vi.fn(async (_url, destinationFile) => {
           await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
         }),
-        downloadText: vi.fn(async (url: string) => `${CHECKSUM}  ${path.basename(url).replace(/\.sha256$/i, '')}`),
+        downloadText: createChecksumResponder(components),
       },
       archiveExtractor: {
         extract: vi.fn(async (_archiveFile: string, destinationDir: string) => {
@@ -45,7 +57,7 @@ describe('UvRuntimeManager', () => {
       },
       commandRunner: {
         run: vi.fn(async (command: string) => {
-          if (command.endsWith('python.exe')) return 'Python 3.12.10'
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
           return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
@@ -56,8 +68,49 @@ describe('UvRuntimeManager', () => {
     const snapshot = await manager.installOrRepair('install')
 
     expect(snapshot.status).toBe('ready')
-    expect(snapshot.activeVersion).toBe('python 3.12.10 + uv 0.11.7')
+    expect(snapshot.activeVersion).toBe('python 3.12.13 + uv 0.11.7')
     expect(snapshot.launcherPaths.uv).toContain('uv.exe')
+  })
+
+  it('installs and verifies the portable Python/uv toolchain on linux without falling back to system binaries', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-uv-runtime-linux-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'uv')
+    const manifest = getManagedRuntimeFamilyManifest('uv')
+    const components = resolveManagedRuntimeComponents('uv', { platform: 'linux', arch: 'x64' })
+    const manager = new UvRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      downloadClient: {
+        downloadToFile: vi.fn(async (_url, destinationFile) => {
+          await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
+        }),
+        downloadText: createChecksumResponder(components),
+      },
+      archiveExtractor: {
+        extract: vi.fn(async (_archiveFile: string, destinationDir: string) => {
+          const component = destinationDir.endsWith(`${path.sep}python`)
+            ? components.find((entry) => entry.component === 'python')
+            : components.find((entry) => entry.component === 'uv')
+          await createRuntimeLauncherFiles(destinationDir, component?.distribution.launcherRelativePaths ?? {})
+        }),
+      },
+      commandRunner: {
+        run: vi.fn(async (command: string) => {
+          if (command.endsWith(path.join('install', 'bin', 'python3'))) return 'Python 3.12.13'
+          if (command.endsWith(path.join('uv', 'uv'))) return 'uv 0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-unknown-linux-gnu)'
+        }),
+      },
+      clock: () => '2026-04-22T13:15:00.000Z',
+    })
+
+    const snapshot = await manager.installOrRepair('install')
+
+    expect(snapshot.status).toBe('ready')
+    expect(snapshot.launcherPaths.python).toContain(path.join('install', 'bin', 'python3'))
+    expect(snapshot.launcherPaths.uvx).toContain(path.join('uv', 'uvx'))
   })
 
   it('supports repair retry after a failed verification without losing the previous active version', async () => {
@@ -75,7 +128,7 @@ describe('UvRuntimeManager', () => {
         downloadToFile: vi.fn(async (_url, destinationFile) => {
           await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
         }),
-        downloadText: vi.fn(async (url: string) => `${CHECKSUM}  ${path.basename(url).replace(/\.sha256$/i, '')}`),
+        downloadText: createChecksumResponder(components),
       },
       archiveExtractor: {
         extract: vi.fn(async (_archiveFile: string, destinationDir: string) => {
@@ -90,7 +143,7 @@ describe('UvRuntimeManager', () => {
           if (shouldFail) {
             throw new Error('uvx verification failed')
           }
-          if (command.endsWith('python.exe')) return 'Python 3.12.10'
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
           return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
@@ -132,7 +185,7 @@ describe('UvRuntimeManager', () => {
       selectedComponents: components,
       commandRunner: {
         run: vi.fn(async (command: string) => {
-          if (command.endsWith('python.exe')) return 'Python 3.12.10'
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
           return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
@@ -152,21 +205,21 @@ describe('UvRuntimeManager', () => {
         verifiedAt: '2026-04-22T09:00:00.000Z',
         summary: 'offline active verification',
         launchers: {
-          python: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python', 'python.exe'),
+          python: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python', 'install', 'python.exe'),
           uv: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv', 'uv.exe'),
           uvx: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv', 'uvx.exe'),
         },
       },
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'install/python.exe' })
     await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
 
     expect(snapshot.status).toBe('ready')
     expect(snapshot.activeVersion).toBe(manifest.pinnedVersion)
-    expect(snapshot.lastVerification?.summary).toContain('Python 3.12.10')
+    expect(snapshot.lastVerification?.summary).toContain('Python 3.12.13')
   })
 
   it('recovers a broken snapshot back to ready when uvx banner verification succeeds', async () => {
@@ -181,7 +234,7 @@ describe('UvRuntimeManager', () => {
       selectedComponents: components,
       commandRunner: {
         run: vi.fn(async (command: string) => {
-          if (command.endsWith('python.exe')) return 'Python 3.12.10'
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
           return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
@@ -204,7 +257,7 @@ describe('UvRuntimeManager', () => {
         at: '2026-04-22T09:30:00.000Z',
       },
     })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'install/python.exe' })
     await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
@@ -227,7 +280,7 @@ describe('UvRuntimeManager', () => {
       selectedComponents: components,
       commandRunner: {
         run: vi.fn(async (command: string) => {
-          if (command.endsWith('python.exe')) return 'Python 3.12.10'
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
           return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
@@ -246,19 +299,19 @@ describe('UvRuntimeManager', () => {
       lastVerification: null,
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(versionDir, 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(versionDir, 'python'), { python: 'install/python.exe' })
     await createRuntimeLauncherFiles(path.join(versionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
 
     expect(snapshot.status).toBe('ready')
     expect(snapshot.lastVerification?.launchers).toEqual({
-      python: path.join(versionDir, 'python', 'python.exe'),
+      python: path.join(versionDir, 'python', 'install', 'python.exe'),
       uv: path.join(versionDir, 'uv', 'uv.exe'),
       uvx: path.join(versionDir, 'uv', 'uvx.exe'),
     })
     expect(snapshot.launcherPaths).toEqual({
-      python: path.join(versionDir, 'python', 'python.exe'),
+      python: path.join(versionDir, 'python', 'install', 'python.exe'),
       uv: path.join(versionDir, 'uv', 'uv.exe'),
       uvx: path.join(versionDir, 'uv', 'uvx.exe'),
     })
@@ -278,7 +331,7 @@ describe('UvRuntimeManager', () => {
         downloadToFile: vi.fn(async (_url, destinationFile) => {
           await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
         }),
-        downloadText: vi.fn(async (url: string) => `${CHECKSUM}  ${path.basename(url).replace(/\.sha256$/i, '')}`),
+        downloadText: createChecksumResponder(components),
       },
       archiveExtractor: {
         extract: vi.fn(async (_archiveFile: string, destinationDir: string) => {

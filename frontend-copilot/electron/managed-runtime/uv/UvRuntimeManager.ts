@@ -128,6 +128,7 @@ export class UvRuntimeManager {
         throw new ManagedRuntimeVerificationFailure(error)
       }
       const activatedVersionDir = await activateManagedRuntimeVersion(this.paths, this.pinnedVersion, stagedVersionDir)
+      const activatedLaunchers = this.rebaseLauncherPaths(verification.launchers, stagedVersionDir, activatedVersionDir)
       const nextState: ManagedRuntimePersistentState = {
         ...before,
         schemaVersion: 1,
@@ -140,7 +141,7 @@ export class UvRuntimeManager {
         lastVerification: {
           verifiedAt: this.clock(),
           summary: verification.summary,
-          launchers: verification.launchers,
+          launchers: activatedLaunchers,
         },
         lastErrorSummary: null,
       }
@@ -233,6 +234,29 @@ export class UvRuntimeManager {
 
   private resolveVersionDirectory(version: string): string {
     return path.join(this.paths.versionsDir, createVersionDirectoryName(version))
+  }
+
+  private rebaseLauncherPaths(
+    launchers: Record<string, string>,
+    fromRoot: string,
+    toRoot: string,
+  ): Record<string, string> {
+    const normalizedFromRoot = this.normalizeForPrefix(fromRoot)
+    return Object.fromEntries(
+      Object.entries(launchers).map(([launcher, launcherPath]) => {
+        const normalizedLauncherPath = this.normalizeForPrefix(launcherPath)
+        if (normalizedLauncherPath === normalizedFromRoot || normalizedLauncherPath.startsWith(`${normalizedFromRoot}/`)) {
+          const relativePath = normalizedLauncherPath.slice(normalizedFromRoot.length).replace(/^\//u, '')
+          return [launcher, path.join(toRoot, relativePath)]
+        }
+
+        return [launcher, launcherPath]
+      }),
+    )
+  }
+
+  private normalizeForPrefix(input: string): string {
+    return input.replace(/\\/g, '/')
   }
 
   private async readState(): Promise<ManagedRuntimePersistentState> {

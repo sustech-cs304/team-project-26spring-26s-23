@@ -45,6 +45,8 @@ export async function extractManagedRuntimeArchive(
     await execFileAsync('tar', ['-xzf', archiveFile, '-C', destinationDir])
   } else if (archiveFormat === 'tar.xz') {
     await execFileAsync('tar', ['-xJf', archiveFile, '-C', destinationDir])
+  } else if (archiveFormat === 'tar.zst') {
+    await execFileAsync('tar', ['--use-compress-program', 'zstd', '-xf', archiveFile, '-C', destinationDir])
   }
 
   await normalizeSingleRootDirectory(destinationDir)

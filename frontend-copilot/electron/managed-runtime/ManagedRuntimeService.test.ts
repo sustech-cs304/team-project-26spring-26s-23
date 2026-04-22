@@ -56,7 +56,7 @@ describe('createManagedRuntimeService', () => {
     const macUvLoadSnapshot = vi.fn(async () => ({
       family: 'uv' as const,
       status: 'missing' as const,
-      pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+      pinnedVersion: 'python 3.12.13 + uv 0.11.7',
       activeVersion: null,
       installRootDir: 'uv-install-root',
       stagingDir: 'uv-staging',
@@ -102,7 +102,7 @@ describe('createManagedRuntimeService', () => {
     const linuxUvLoadSnapshot = vi.fn(async () => ({
       family: 'uv' as const,
       status: 'missing' as const,
-      pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+      pinnedVersion: 'python 3.12.13 + uv 0.11.7',
       activeVersion: null,
       installRootDir: 'uv-install-root',
       stagingDir: 'uv-staging',
@@ -147,7 +147,7 @@ describe('createManagedRuntimeService', () => {
     })
   })
 
-  it('installs the supported Node family on macOS even when Python/uv remains manifest-gated', async () => {
+  it('installs Node on macOS while leaving Python/uv missing until the runtime manager persists ready state', async () => {
     const hostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-managed-node-only'))
     let nodeStatus: 'missing' | 'ready' = 'missing'
     const nodeInstall = vi.fn(async () => {
@@ -171,7 +171,25 @@ describe('createManagedRuntimeService', () => {
       }
     })
     const uvInstall = vi.fn(async () => {
-      throw new Error('uv should remain skipped on darwin until P3 assets land')
+      return {
+        family: 'uv' as const,
+        status: 'ready' as const,
+        pinnedVersion: 'python 3.12.13 + uv 0.11.7',
+        activeVersion: 'python 3.12.13 + uv 0.11.7',
+        installRootDir: 'uv-install-root',
+        stagingDir: 'uv-staging',
+        activeDir: 'uv-active',
+        selectedComponents: [],
+        launcherPaths: {
+          python: '/managed/uv/install/bin/python3',
+          uv: '/managed/uv/uv',
+          uvx: '/managed/uv/uvx',
+        },
+        lastInstalledAt: '2026-04-22T18:00:00.000Z',
+        lastRepairedAt: null,
+        lastVerification: null,
+        lastErrorSummary: null,
+      }
     })
 
     const service = createManagedRuntimeService({
@@ -201,7 +219,7 @@ describe('createManagedRuntimeService', () => {
         loadSnapshot: async () => ({
           family: 'uv',
           status: 'missing',
-          pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+          pinnedVersion: 'python 3.12.13 + uv 0.11.7',
           activeVersion: null,
           installRootDir: 'uv-install-root',
           stagingDir: 'uv-staging',
@@ -220,7 +238,7 @@ describe('createManagedRuntimeService', () => {
     const snapshot = await service.installOrRepairAll('install')
 
     expect(nodeInstall).toHaveBeenCalledWith('install')
-    expect(uvInstall).not.toHaveBeenCalled()
+    expect(uvInstall).toHaveBeenCalledWith('install')
     expect(snapshot.families.node.status).toBe('ready')
     expect(snapshot.families.uv.status).toBe('missing')
     expect(snapshot.overallStatus).toBe('missing')
