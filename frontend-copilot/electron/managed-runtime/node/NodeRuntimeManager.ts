@@ -143,6 +143,7 @@ export class NodeRuntimeManager {
         throw new ManagedRuntimeVerificationFailure(error)
       }
       const activatedVersionDir = await activateManagedRuntimeVersion(this.paths, this.pinnedVersion, stagedVersionDir)
+      const activatedLaunchers = this.rebaseLauncherPaths(verification.launchers, stagedVersionDir, activatedVersionDir)
       const nextState: ManagedRuntimePersistentState = {
         ...before,
         family: 'node',
@@ -154,7 +155,7 @@ export class NodeRuntimeManager {
         lastVerification: {
           verifiedAt: this.clock(),
           summary: verification.summary,
-          launchers: verification.launchers,
+          launchers: activatedLaunchers,
         },
         lastErrorSummary: null,
         schemaVersion: 1,
@@ -190,6 +191,8 @@ export class NodeRuntimeManager {
   private createVerificationPlan(nodeRoot: string): ManagedRuntimeVerificationPlan[] {
     const nodeComponent = this.selectedComponents.find((entry) => entry.component === 'node')
     const relative = nodeComponent?.distribution.launcherRelativePaths ?? {}
+    const npmCliPath = this.resolveNodePackageLauncher(nodeRoot, relative.npm, 'npm-cli.js')
+    const npxCliPath = this.resolveNodePackageLauncher(nodeRoot, relative.npx, 'npx-cli.js')
     return [
       {
         launcher: 'node',
@@ -201,15 +204,25 @@ export class NodeRuntimeManager {
         launcher: 'npm',
         executablePath: path.join(nodeRoot, relative.npm ?? 'npm'),
         args: ['--version'],
+        requiredPaths: [npmCliPath],
         expectPattern: NODE_VERSION_PATTERN,
       },
       {
         launcher: 'npx',
         executablePath: path.join(nodeRoot, relative.npx ?? 'npx'),
         args: ['--version'],
+        requiredPaths: [npxCliPath],
         expectPattern: NODE_VERSION_PATTERN,
       },
     ]
+  }
+
+  private resolveNodePackageLauncher(nodeRoot: string, launcherRelativePath: string | undefined, scriptName: string): string {
+    if (launcherRelativePath?.startsWith('bin/')) {
+      return path.join(nodeRoot, 'lib', 'node_modules', 'npm', 'bin', scriptName)
+    }
+
+    return path.join(nodeRoot, 'node_modules', 'npm', 'bin', scriptName)
   }
 
   private createBaseSnapshot(state: ManagedRuntimePersistentState, activeVersionDir?: string): ManagedRuntimeFamilySnapshot {
@@ -245,6 +258,28 @@ export class NodeRuntimeManager {
       npm: path.join(root, relative.npm ?? 'npm'),
       npx: path.join(root, relative.npx ?? 'npx'),
     }
+  }
+
+  private rebaseLauncherPaths(
+    launchers: Record<string, string>,
+    fromRoot: string,
+    toRoot: string,
+  ): Record<string, string> {
+    const normalizedFromRoot = this.normalizeForPrefix(fromRoot)
+    return Object.fromEntries(
+      Object.entries(launchers).map(([launcher, launcherPath]) => {
+        const normalizedLauncherPath = this.normalizeForPrefix(launcherPath)
+        if (normalizedLauncherPath === normalizedFromRoot || normalizedLauncherPath.startsWith(`${normalizedFromRoot}/`)) {
+          const relativePath = normalizedLauncherPath.slice(normalizedFromRoot.length).replace(/^\//u, '')
+          return [launcher, path.join(toRoot, relativePath)]
+        }
+        return [launcher, launcherPath]
+      }),
+    )
+  }
+
+  private normalizeForPrefix(input: string): string {
+    return input.replace(/\\/g, '/')
   }
 
   private async readState(): Promise<ManagedRuntimePersistentState> {

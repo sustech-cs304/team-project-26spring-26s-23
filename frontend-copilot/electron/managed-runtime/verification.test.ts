@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -68,5 +68,25 @@ describe('verifyManagedRuntimeLaunchers', () => {
 
     expect(verification.summary).toContain('uvx 0.11.7')
     expect(verification.launchers.uvx).toBe(uvxPath)
+  })
+
+  it('requires Node/npm layout side files before reporting launchers as ready', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-managed-runtime-node-layout-'))
+    tempRoots.push(tempRoot)
+    const npmPath = path.join(tempRoot, 'bin', 'npm')
+    await mkdir(path.dirname(npmPath), { recursive: true })
+    await writeFile(npmPath, '#!/usr/bin/env node\n')
+
+    await expect(verifyManagedRuntimeLaunchers([
+      {
+        launcher: 'npm',
+        executablePath: npmPath,
+        args: ['--version'],
+        requiredPaths: [path.join(tempRoot, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')],
+        expectPattern: /\d+\.\d+\.\d+/u,
+      },
+    ], {
+      run: vi.fn(async () => '11.0.0'),
+    })).rejects.toThrow()
   })
 })

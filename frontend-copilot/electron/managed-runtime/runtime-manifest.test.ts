@@ -43,19 +43,29 @@ describe('managed runtime manifest', () => {
   })
 
   it('exports cross-platform target matrices while keeping unsupported actions manifest-driven', () => {
+    const nodeFamily = getManagedRuntimeFamilyManifest('node')
+    expect(nodeFamily.components[0]?.distributions).toHaveLength(6)
+
     const darwinNode = resolveManagedRuntimeComponents('node', { platform: 'darwin', arch: 'arm64' })
     expect(darwinNode[0]?.distribution.fileName).toBe('node-v24.15.0-darwin-arm64.tar.gz')
+    expect(darwinNode[0]?.distribution.archiveFormat).toBe('tar.gz')
     expect(darwinNode[0]?.distribution.launcherRelativePaths).toEqual({
       node: 'bin/node',
       npm: 'bin/npm',
       npx: 'bin/npx',
     })
 
+    const linuxNode = resolveManagedRuntimeComponents('node', { platform: 'linux', arch: 'x64' })
+    expect(linuxNode[0]?.distribution.fileName).toBe('node-v24.15.0-linux-x64.tar.xz')
+    expect(linuxNode[0]?.distribution.archiveFormat).toBe('tar.xz')
+    expect(linuxNode[0]?.distribution.checksumUrl).toBe('https://nodejs.org/dist/v24.15.0/SHASUMS256.txt')
+
     const linuxUvSelection = resolveManagedRuntimeComponentSelection('uv', { platform: 'linux', arch: 'x64' })
     expect(linuxUvSelection.resolvedComponents.map((component) => component.component)).toEqual(['python', 'uv'])
     expect(linuxUvSelection.resolvedComponents[0]?.distribution.installStrategy).toBe('planned')
     expect(linuxUvSelection.resolvedComponents[0]?.distribution.url).toBeNull()
     expect(linuxUvSelection.resolvedComponents[1]?.distribution.fileName).toBe('uv-x86_64-unknown-linux-gnu.tar.gz')
+    expect(isManagedRuntimeActionSupported('node', { platform: 'darwin', arch: 'arm64' })).toBe(true)
     expect(isManagedRuntimeActionSupported('node', { platform: 'linux', arch: 'x64' })).toBe(true)
     expect(isManagedRuntimeActionSupported('uv', { platform: 'linux', arch: 'x64' })).toBe(false)
   })

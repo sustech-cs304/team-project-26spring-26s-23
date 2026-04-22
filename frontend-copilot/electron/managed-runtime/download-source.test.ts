@@ -38,4 +38,27 @@ describe('resolveManagedRuntimeDownloadSource', () => {
       url: null,
     })
   })
+
+  it('resolves darwin and linux node artifacts from the managed manifest without falling back to system node', () => {
+    const [darwinNode] = resolveManagedRuntimeComponents('node', { platform: 'darwin', arch: 'arm64' })
+    const [linuxNode] = resolveManagedRuntimeComponents('node', { platform: 'linux', arch: 'x64' })
+
+    expect(resolveManagedRuntimeDownloadSource(darwinNode!)).toMatchObject({
+      component: 'node',
+      target: { platform: 'darwin', arch: 'arm64' },
+      fileName: 'node-v24.15.0-darwin-arm64.tar.gz',
+      archiveFormat: 'tar.gz',
+      url: 'https://nodejs.org/dist/v24.15.0/node-v24.15.0-darwin-arm64.tar.gz',
+      checksumUrl: 'https://nodejs.org/dist/v24.15.0/SHASUMS256.txt',
+    })
+
+    expect(resolveManagedRuntimeDownloadSource(linuxNode!)).toMatchObject({
+      component: 'node',
+      target: { platform: 'linux', arch: 'x64' },
+      fileName: 'node-v24.15.0-linux-x64.tar.xz',
+      archiveFormat: 'tar.xz',
+      url: 'https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz',
+      checksumUrl: 'https://nodejs.org/dist/v24.15.0/SHASUMS256.txt',
+    })
+  })
 })

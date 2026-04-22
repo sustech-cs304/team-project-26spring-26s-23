@@ -104,11 +104,17 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
       }
 
       installationTask = (async () => {
-        if (!isManagedRuntimeActionSupported('node', target) || !isManagedRuntimeActionSupported('uv', target)) {
+        const nodeActionSupported = isManagedRuntimeActionSupported('node', target)
+        const uvActionSupported = isManagedRuntimeActionSupported('uv', target)
+        if (!nodeActionSupported && !uvActionSupported) {
           throw new Error(`Managed runtime install/repair is not supported for target ${target.platform}/${target.arch}.`)
         }
-        await nodeManager.installOrRepair(reason)
-        await uvManager.installOrRepair(reason)
+        if (nodeActionSupported) {
+          await nodeManager.installOrRepair(reason)
+        }
+        if (uvActionSupported) {
+          await uvManager.installOrRepair(reason)
+        }
         return await this.loadSnapshot()
       })().finally(() => {
         installationTask = null

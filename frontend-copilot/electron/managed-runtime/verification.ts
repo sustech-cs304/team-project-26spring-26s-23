@@ -15,6 +15,7 @@ export interface ManagedRuntimeVerificationPlan {
   launcher: string
   executablePath: string
   args: readonly string[]
+  requiredPaths?: readonly string[]
   expectIncludes?: string
   expectPattern?: RegExp
   expectVersion?: string
@@ -55,9 +56,13 @@ export async function verifyManagedRuntimeLaunchers(
   const activeRunner = runner ?? createManagedRuntimeCommandRunner()
   const launchers: Record<string, string> = {}
   const fragments: string[] = []
+  const executableAccessMode = process.platform === 'win32' ? fsConstants.F_OK : fsConstants.F_OK | fsConstants.X_OK
 
   for (const plan of plans) {
-    await access(plan.executablePath, fsConstants.F_OK)
+    await access(plan.executablePath, executableAccessMode)
+    if (plan.requiredPaths) {
+      await Promise.all(plan.requiredPaths.map(async (requiredPath) => await access(requiredPath, fsConstants.F_OK)))
+    }
     const output = await activeRunner.run(plan.executablePath, plan.args)
     if (plan.expectIncludes && !output.includes(plan.expectIncludes)) {
       throw new Error(`Launcher ${plan.launcher} returned unexpected output: ${output}`)

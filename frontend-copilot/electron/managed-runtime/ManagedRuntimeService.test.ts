@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createHostedRuntimePaths } from '../runtime/runtime-paths'
 import { createManagedRuntimeService, resolveManagedRuntimeTarget } from './ManagedRuntimeService'
 
@@ -38,19 +38,95 @@ describe('createManagedRuntimeService', () => {
 
   it('initializes Linux and macOS services with missing snapshots instead of failing target resolution', async () => {
     const macHostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-macos'))
+    const macNodeLoadSnapshot = vi.fn(async () => ({
+      family: 'node' as const,
+      status: 'missing' as const,
+      pinnedVersion: '24.15.0',
+      activeVersion: null,
+      installRootDir: 'node-install-root',
+      stagingDir: 'node-staging',
+      activeDir: 'node-active',
+      selectedComponents: [],
+      launcherPaths: {},
+      lastInstalledAt: null,
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    }))
+    const macUvLoadSnapshot = vi.fn(async () => ({
+      family: 'uv' as const,
+      status: 'missing' as const,
+      pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+      activeVersion: null,
+      installRootDir: 'uv-install-root',
+      stagingDir: 'uv-staging',
+      activeDir: 'uv-active',
+      selectedComponents: [],
+      launcherPaths: {},
+      lastInstalledAt: null,
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    }))
     const macService = createManagedRuntimeService({
       userDataPath: macHostedRuntimePaths.userDataDir,
       hostedRuntimePaths: macHostedRuntimePaths,
       processPlatform: 'darwin',
       processArch: 'arm64',
+      nodeManagerFactory: () => ({
+        loadSnapshot: macNodeLoadSnapshot,
+        installOrRepair: vi.fn(),
+      }),
+      uvManagerFactory: () => ({
+        loadSnapshot: macUvLoadSnapshot,
+        installOrRepair: vi.fn(),
+      }),
     })
 
     const linuxHostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-linux'))
+    const linuxNodeLoadSnapshot = vi.fn(async () => ({
+      family: 'node' as const,
+      status: 'missing' as const,
+      pinnedVersion: '24.15.0',
+      activeVersion: null,
+      installRootDir: 'node-install-root',
+      stagingDir: 'node-staging',
+      activeDir: 'node-active',
+      selectedComponents: [],
+      launcherPaths: {},
+      lastInstalledAt: null,
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    }))
+    const linuxUvLoadSnapshot = vi.fn(async () => ({
+      family: 'uv' as const,
+      status: 'missing' as const,
+      pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+      activeVersion: null,
+      installRootDir: 'uv-install-root',
+      stagingDir: 'uv-staging',
+      activeDir: 'uv-active',
+      selectedComponents: [],
+      launcherPaths: {},
+      lastInstalledAt: null,
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    }))
     const linuxService = createManagedRuntimeService({
       userDataPath: linuxHostedRuntimePaths.userDataDir,
       hostedRuntimePaths: linuxHostedRuntimePaths,
       processPlatform: 'linux',
       processArch: 'x64',
+      nodeManagerFactory: () => ({
+        loadSnapshot: linuxNodeLoadSnapshot,
+        installOrRepair: vi.fn(),
+      }),
+      uvManagerFactory: () => ({
+        loadSnapshot: linuxUvLoadSnapshot,
+        installOrRepair: vi.fn(),
+      }),
     })
 
     await expect(macService.loadSnapshot()).resolves.toMatchObject({
@@ -69,8 +145,84 @@ describe('createManagedRuntimeService', () => {
         uv: { status: 'missing' },
       },
     })
-    await expect(macService.installOrRepairAll('install')).rejects.toThrow(
-      'Managed runtime install/repair is not supported for target darwin/arm64.',
-    )
+  })
+
+  it('installs the supported Node family on macOS even when Python/uv remains manifest-gated', async () => {
+    const hostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-managed-node-only'))
+    let nodeStatus: 'missing' | 'ready' = 'missing'
+    const nodeInstall = vi.fn(async () => {
+      nodeStatus = 'ready'
+      return {
+        family: 'node' as const,
+        status: 'ready' as const,
+        pinnedVersion: '24.15.0',
+        activeVersion: '24.15.0',
+        installRootDir: 'node-install-root',
+        stagingDir: 'node-staging',
+        activeDir: 'node-active',
+        selectedComponents: [],
+        launcherPaths: {
+          npx: '/managed/node/bin/npx',
+        },
+        lastInstalledAt: '2026-04-22T18:00:00.000Z',
+        lastRepairedAt: null,
+        lastVerification: null,
+        lastErrorSummary: null,
+      }
+    })
+    const uvInstall = vi.fn(async () => {
+      throw new Error('uv should remain skipped on darwin until P3 assets land')
+    })
+
+    const service = createManagedRuntimeService({
+      userDataPath: hostedRuntimePaths.userDataDir,
+      hostedRuntimePaths,
+      processPlatform: 'darwin',
+      processArch: 'arm64',
+      nodeManagerFactory: () => ({
+        loadSnapshot: async () => ({
+          family: 'node',
+          status: nodeStatus,
+          pinnedVersion: '24.15.0',
+          activeVersion: nodeStatus === 'ready' ? '24.15.0' : null,
+          installRootDir: 'node-install-root',
+          stagingDir: 'node-staging',
+          activeDir: 'node-active',
+          selectedComponents: [],
+          launcherPaths: nodeStatus === 'ready' ? { npx: '/managed/node/bin/npx' } : {},
+          lastInstalledAt: null,
+          lastRepairedAt: null,
+          lastVerification: null,
+          lastErrorSummary: null,
+        }),
+        installOrRepair: nodeInstall,
+      }),
+      uvManagerFactory: () => ({
+        loadSnapshot: async () => ({
+          family: 'uv',
+          status: 'missing',
+          pinnedVersion: 'python 3.12.10 + uv 0.11.7',
+          activeVersion: null,
+          installRootDir: 'uv-install-root',
+          stagingDir: 'uv-staging',
+          activeDir: 'uv-active',
+          selectedComponents: [],
+          launcherPaths: {},
+          lastInstalledAt: null,
+          lastRepairedAt: null,
+          lastVerification: null,
+          lastErrorSummary: null,
+        }),
+        installOrRepair: uvInstall,
+      }),
+    })
+
+    const snapshot = await service.installOrRepairAll('install')
+
+    expect(nodeInstall).toHaveBeenCalledWith('install')
+    expect(uvInstall).not.toHaveBeenCalled()
+    expect(snapshot.families.node.status).toBe('ready')
+    expect(snapshot.families.uv.status).toBe('missing')
+    expect(snapshot.overallStatus).toBe('missing')
   })
 })

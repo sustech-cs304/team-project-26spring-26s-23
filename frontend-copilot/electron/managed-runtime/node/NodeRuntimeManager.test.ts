@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createManagedRuntimeFamilyPaths } from '../ManagedRuntimePaths'
 import { getManagedRuntimeFamilyManifest, resolveManagedRuntimeComponents } from '../runtime-manifest'
-import { createRuntimeLauncherFiles } from '../test-support/runtime-install-fixtures'
+import { createNodeRuntimeFixture, createRuntimeLauncherFiles } from '../test-support/runtime-install-fixtures'
 import { NodeRuntimeManager } from './NodeRuntimeManager'
 
 const FIXTURE_CONTENT = 'fixture'
@@ -18,6 +18,83 @@ afterEach(async () => {
 })
 
 describe('NodeRuntimeManager', () => {
+  it.each([
+    {
+      platform: 'win32' as const,
+      arch: 'x64' as const,
+      nodeLauncher: 'node.exe',
+      npmLauncher: 'npm.cmd',
+      npxLauncher: 'npx.cmd',
+    },
+    {
+      platform: 'darwin' as const,
+      arch: 'arm64' as const,
+      nodeLauncher: path.join('bin', 'node'),
+      npmLauncher: path.join('bin', 'npm'),
+      npxLauncher: path.join('bin', 'npx'),
+    },
+    {
+      platform: 'linux' as const,
+      arch: 'x64' as const,
+      nodeLauncher: path.join('bin', 'node'),
+      npmLauncher: path.join('bin', 'npm'),
+      npxLauncher: path.join('bin', 'npx'),
+    },
+  ])('installs and verifies managed node launchers on $platform/$arch', async ({
+    platform,
+    arch,
+    nodeLauncher,
+    npmLauncher,
+    npxLauncher,
+  }) => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), `candue-node-runtime-${platform}-`))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'node')
+    const manifest = getManagedRuntimeFamilyManifest('node')
+    const components = resolveManagedRuntimeComponents('node', { platform, arch })
+    const commandRunner = {
+      run: vi.fn(async (command: string) => {
+        const normalized = command.replace(/\\/g, '/')
+        if (normalized.endsWith(nodeLauncher.replace(/\\/g, '/'))) return 'v24.15.0'
+        return '11.0.0'
+      }),
+    }
+    const manager = new NodeRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      ensureRootDirectories: async () => undefined,
+      downloadClient: {
+        downloadToFile: vi.fn(async (_unusedUrl: string, destinationFile) => {
+          await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
+        }),
+        downloadText: vi.fn(async () => `${CHECKSUM}  ${components[0]!.distribution.fileName}`),
+      },
+      archiveExtractor: {
+        extract: vi.fn(async (_artifactFile: string, destinationDir: string) => {
+          await createNodeRuntimeFixture(destinationDir, components[0]!.distribution.launcherRelativePaths)
+        }),
+      },
+      commandRunner,
+      clock: () => '2026-04-22T10:00:00.000Z',
+    })
+
+    const snapshot = await manager.installOrRepair('install')
+
+    expect(snapshot.status).toBe('ready')
+    expect(snapshot.launcherPaths.node).toBe(path.join(paths.versionsDir, manifest.pinnedVersion, 'node', nodeLauncher))
+    expect(snapshot.launcherPaths.npm).toBe(path.join(paths.versionsDir, manifest.pinnedVersion, 'node', npmLauncher))
+    expect(snapshot.launcherPaths.npx).toBe(path.join(paths.versionsDir, manifest.pinnedVersion, 'node', npxLauncher))
+    const verifiedPaths = commandRunner.run.mock.calls.map(([command]) => String(command))
+    expect(verifiedPaths).toHaveLength(3)
+    expect(verifiedPaths[0]).toContain(path.join('node', 'staging', `${manifest.pinnedVersion}-`))
+    expect(verifiedPaths[0].endsWith(path.join('version', 'node', nodeLauncher))).toBe(true)
+    expect(verifiedPaths[1]).toContain(path.join('node', 'staging', `${manifest.pinnedVersion}-`))
+    expect(verifiedPaths[1].endsWith(path.join('version', 'node', npmLauncher))).toBe(true)
+    expect(verifiedPaths[2]).toContain(path.join('node', 'staging', `${manifest.pinnedVersion}-`))
+    expect(verifiedPaths[2].endsWith(path.join('version', 'node', npxLauncher))).toBe(true)
+  })
+
   it('activates a staged runtime only after verification succeeds', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-node-runtime-'))
     tempRoots.push(tempRoot)
@@ -26,7 +103,7 @@ describe('NodeRuntimeManager', () => {
     const components = resolveManagedRuntimeComponents('node', { platform: 'win32', arch: 'x64' })
     const archiveExtractor = {
       extract: vi.fn(async (_artifact: string, destinationDir: string) => {
-        await createRuntimeLauncherFiles(destinationDir, components[0]!.distribution.launcherRelativePaths)
+        await createNodeRuntimeFixture(destinationDir, components[0]!.distribution.launcherRelativePaths)
       }),
     }
     const commandRunner = {
@@ -121,7 +198,7 @@ describe('NodeRuntimeManager', () => {
       },
       archiveExtractor: {
         extract: vi.fn(async (artifactFile: string, destinationDir: string) => {
-          await createRuntimeLauncherFiles(destinationDir, components[0]!.distribution.launcherRelativePaths)
+          await createNodeRuntimeFixture(destinationDir, components[0]!.distribution.launcherRelativePaths)
           if (artifactFile) {
             // noop to silence lint about unused args in test fixture paths
           }
@@ -163,7 +240,7 @@ describe('NodeRuntimeManager', () => {
       },
       archiveExtractor: {
         extract: vi.fn(async (_artifactFile: string, destinationDir: string) => {
-          await createRuntimeLauncherFiles(destinationDir, components[0]!.distribution.launcherRelativePaths)
+          await createNodeRuntimeFixture(destinationDir, components[0]!.distribution.launcherRelativePaths)
         }),
       },
       commandRunner: {
@@ -221,7 +298,7 @@ describe('NodeRuntimeManager', () => {
       },
       archiveExtractor: {
         extract: vi.fn(async (_artifactFile: string, destinationDir: string) => {
-          await createRuntimeLauncherFiles(destinationDir, components[0]!.distribution.launcherRelativePaths)
+          await createNodeRuntimeFixture(destinationDir, components[0]!.distribution.launcherRelativePaths)
         }),
       },
       commandRunner: {
