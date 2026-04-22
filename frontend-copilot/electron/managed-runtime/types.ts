@@ -10,6 +10,7 @@ export type ManagedRuntimeArchiveFormat = 'zip' | 'tar.gz' | 'tar.xz' | 'pkg' | 
 export type ManagedRuntimeChannelKind = 'official-dist' | 'github-release' | 'python-release' | 'placeholder'
 export type ManagedRuntimeInstallStrategy = 'portable-archive' | 'system-installer' | 'source-distribution' | 'planned'
 export type ManagedRuntimeActionReason = 'install' | 'repair'
+export type ManagedRuntimeLauncherName = 'npx' | 'uvx'
 
 export interface ManagedRuntimeTarget {
   platform: ManagedRuntimePlatform
@@ -141,3 +142,30 @@ export interface ManagedRuntimeSnapshot {
   hostedRuntimeRootDir: HostedRuntimePaths['runtimeRootDir']
   families: Record<ManagedRuntimeFamily, ManagedRuntimeFamilySnapshot>
 }
+
+export interface ManagedRuntimeLauncherResolutionSuccess {
+  ok: true
+  command: string
+  normalizedCommand: ManagedRuntimeLauncherName
+  family: ManagedRuntimeFamily
+  executablePath: string
+  windowsCommandChain: {
+    command: string
+    argsPrefix: string[]
+  } | null
+}
+
+export interface ManagedRuntimeLauncherResolutionFailure {
+  ok: false
+  reason: 'unmanaged_command' | 'managed_runtime_unavailable'
+  command: string
+  normalizedCommand?: ManagedRuntimeLauncherName
+  family?: ManagedRuntimeFamily
+  status?: ManagedRuntimeStatus
+  message?: string
+  detail?: string
+}
+
+export type ManagedRuntimeLauncherResolution =
+  | ManagedRuntimeLauncherResolutionSuccess
+  | ManagedRuntimeLauncherResolutionFailure

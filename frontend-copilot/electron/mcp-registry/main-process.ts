@@ -1,4 +1,5 @@
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
+import { createManagedRuntimeService } from '../managed-runtime/ManagedRuntimeService'
 import { createMcpCapabilitySnapshotSink } from './snapshot'
 import { createMcpRegistryApiFailure } from './ipc'
 import { createMcpRegistryService, type McpRegistryService } from './service'
@@ -60,6 +61,10 @@ export function createElectronMcpRegistryService(
         return createMcpRegistryService({
           store: createMcpRegistryStore({
             paths: createMcpRegistryPaths(runtimePaths),
+          }),
+          managedRuntimeService: createManagedRuntimeService({
+            userDataPath: runtimePaths.userDataDir,
+            hostedRuntimePaths: runtimePaths,
           }),
           snapshotSink: createMcpCapabilitySnapshotSink({
             runtimePaths,

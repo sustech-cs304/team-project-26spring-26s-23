@@ -259,6 +259,55 @@ describe('createStdioMcpServerConnector', () => {
     expect(result.tools).toEqual([])
   })
 
+  it('returns a managed runtime unavailable error before spawning the stdio process', async () => {
+    const server = createMcpStdioStubServerFixture({
+      transportConfig: {
+        kind: 'stdio',
+        command: '__managed_runtime_unavailable__',
+        args: [],
+        env: {
+          CANDUE_MANAGED_RUNTIME_ERROR: JSON.stringify({
+            message: 'The managed Node/npm runtime is missing; install is required before MCP can run npx.',
+            observedAt: '2026-04-22T10:00:00.000Z',
+            details: {
+              requestedCommand: 'npx',
+              managedFamily: 'node',
+              managedRuntimeStatus: 'missing',
+            },
+          }),
+        },
+      },
+    })
+    const connector = createStdioMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 200,
+      },
+      resolvedCommand: {
+        requestedCommand: 'npx',
+        resolutionKind: 'managed',
+        managedFamily: 'node',
+      },
+    })
+
+    const result = await connector.start()
+
+    expect(result.ok).toBe(false)
+    if (result.ok) {
+      throw new Error('Expected managed runtime availability failure.')
+    }
+    expect(result.error).toMatchObject({
+      code: 'managed_runtime_unavailable',
+      retryable: false,
+      details: expect.objectContaining({
+        requestedCommand: 'npx',
+        managedFamily: 'node',
+        managedRuntimeStatus: 'missing',
+      }),
+    })
+  })
+
   it('keeps the last successful catalog snapshot when refresh fails', async () => {
     const fixture = await createStdioServerFixture('refresh-fails', 'fail-list-after-first')
     const server = createMcpStdioStubServerFixture({

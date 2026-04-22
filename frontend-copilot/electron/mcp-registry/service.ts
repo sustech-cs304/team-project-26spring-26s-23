@@ -16,6 +16,7 @@ import {
   type McpConnectorHub,
   type McpConnectorHubRevisionState,
 } from './connector-hub'
+import type { ManagedRuntimeService } from '../managed-runtime/ManagedRuntimeService'
 import type { McpRegistryStore, McpRegistryStoreSnapshot } from './store'
 import {
   createMcpCapabilitySnapshot,
@@ -54,6 +55,7 @@ export interface McpRegistryService {
 
 export interface CreateMcpRegistryServiceOptions {
   store: McpRegistryStore
+  managedRuntimeService?: ManagedRuntimeService
   connectorHub?: McpConnectorHub
   snapshotSink?: McpCapabilitySnapshotSink
   now?: () => string
@@ -69,9 +71,17 @@ export function createMcpRegistryService(
   options: CreateMcpRegistryServiceOptions,
 ): McpRegistryService {
   const now = options.now ?? (() => new Date().toISOString())
+  const resolvedCommandMetadata = new Map<string, {
+    requestedCommand: string
+    resolutionKind: 'raw' | 'managed'
+    managedFamily?: 'node' | 'uv'
+  }>()
   const connectorHub = options.connectorHub ?? createMcpConnectorHub({
     now,
     publishEvent: options.publishEvent,
+    getResolvedCommand(server) {
+      return resolvedCommandMetadata.get(server.serverId) ?? null
+    },
   })
   let runtimeSnapshotRevision: number | null = null
 
@@ -126,7 +136,7 @@ export function createMcpRegistryService(
     async loadRegistry(request) {
       const snapshot = await options.store.load()
       const revisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(snapshot.servers, revisions)
+      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), revisions)
       const persistedSnapshot = await persistSnapshotArtifacts(snapshot, revisions.snapshotRevision)
       return buildLoadResult(persistedSnapshot, request?.includeDisabled ?? true, connectorHub, revisions)
     },
@@ -237,7 +247,7 @@ export function createMcpRegistryService(
         return resolved.failure
       }
 
-      const result = await connectorHub.testConnection(resolved.server)
+      const result = await connectorHub.testConnection(await resolveManagedTransportConfig(resolved.server))
       if (!result.success) {
         await options.appendLog?.('warn', '[mcp-registry] MCP testConnection failed.', {
           serverId: resolved.server.serverId,
@@ -269,7 +279,7 @@ export function createMcpRegistryService(
     async refreshCatalog(request) {
       const snapshot = await options.store.load()
       const currentRevisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(snapshot.servers, currentRevisions)
+      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
 
       const resolvedTargets = resolveRefreshTargets(snapshot, request)
       if (!resolvedTargets.ok) {
@@ -324,7 +334,7 @@ export function createMcpRegistryService(
     async warmupEnabledServersOnStartup() {
       const snapshot = await options.store.load()
       const currentRevisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(snapshot.servers, currentRevisions)
+      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
 
       const enabledServers = snapshot.servers.filter((server) => server.enabled)
       if (enabledServers.length === 0) {
@@ -372,7 +382,7 @@ export function createMcpRegistryService(
     async executeTool(request) {
       const snapshot = await options.store.load()
       const currentRevisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(snapshot.servers, currentRevisions)
+      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
 
       const resolved = resolveToolCallTarget(
         snapshot,
@@ -398,7 +408,7 @@ export function createMcpRegistryService(
       return
     }
 
-    await connectorHub.reconcile(snapshot.servers, currentRevisions)
+    await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
 
     const reconciledState = connectorHub.getState(serverId)
     const canReuseManagedCatalog = reconciledState?.connectionState === 'connected'
@@ -440,7 +450,7 @@ export function createMcpRegistryService(
       registryRevision: snapshot.registryRevision,
       snapshotRevision: baseSnapshotRevision,
     }
-    const reconcileResult = await connectorHub.reconcile(snapshot.servers, revisions)
+    const reconcileResult = await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), revisions)
     const state = reconcileResult.states.find((entry) => entry.serverId === serverId)
       ?? connectorHub.getState(serverId)
       ?? createDefaultServerState(
@@ -520,6 +530,59 @@ export function createMcpRegistryService(
 
   function bumpRuntimeSnapshotRevision(baseRevision: number): number {
     return Math.max(runtimeSnapshotRevision ?? 0, baseRevision) + 1
+  }
+
+  async function resolveManagedTransportConfig(server: McpServerRecord): Promise<McpServerRecord> {
+    if (server.transportConfig.kind !== 'stdio' || options.managedRuntimeService === undefined) {
+      resolvedCommandMetadata.set(server.serverId, {
+        requestedCommand: server.transportConfig.kind === 'stdio' ? server.transportConfig.command : '',
+        resolutionKind: 'raw',
+      })
+      return cloneServerRecord(server)
+    }
+
+    const resolution = await options.managedRuntimeService.resolveLauncher(server.transportConfig.command)
+    if (!resolution.ok) {
+      resolvedCommandMetadata.set(server.serverId, {
+        requestedCommand: server.transportConfig.command,
+        resolutionKind: 'raw',
+      })
+      if (resolution.reason !== 'managed_runtime_unavailable') {
+        return cloneServerRecord(server)
+      }
+
+      return createManagedUnavailableServer(server, resolution.message ?? 'Managed runtime is unavailable.', now, {
+        requestedCommand: server.transportConfig.command,
+        normalizedCommand: resolution.normalizedCommand ?? null,
+        managedFamily: resolution.family ?? null,
+        managedRuntimeStatus: resolution.status ?? null,
+        detail: resolution.detail ?? null,
+      })
+    }
+
+    resolvedCommandMetadata.set(server.serverId, {
+      requestedCommand: server.transportConfig.command,
+      resolutionKind: 'managed',
+      managedFamily: resolution.family,
+    })
+
+    const nextArgs = resolution.windowsCommandChain === null
+      ? [...server.transportConfig.args]
+      : [...resolution.windowsCommandChain.argsPrefix, ...server.transportConfig.args]
+    const nextCommand = resolution.windowsCommandChain?.command ?? resolution.executablePath
+
+    return {
+      ...cloneServerRecord(server),
+      transportConfig: {
+        ...server.transportConfig,
+        command: nextCommand,
+        args: nextArgs,
+      },
+    }
+  }
+
+  async function resolveManagedServers(servers: readonly McpServerRecord[]): Promise<McpServerRecord[]> {
+    return await Promise.all(servers.map(async (server) => await resolveManagedTransportConfig(server)))
   }
 }
 
@@ -608,6 +671,34 @@ async function resolveConnectionTestTarget(
       'Either serverId or draft must be provided for MCP connection testing.',
       MCP_REGISTRY_INVALID_REQUEST_ERROR_CODE,
     ),
+  }
+}
+
+function createManagedUnavailableServer(
+  server: McpServerRecord,
+  message: string,
+  now: () => string,
+  details: Record<string, unknown>,
+): McpServerRecord {
+  if (server.transportConfig.kind !== 'stdio') {
+    return cloneServerRecord(server)
+  }
+
+  return {
+    ...cloneServerRecord(server),
+    transportConfig: {
+      ...server.transportConfig,
+      command: '__managed_runtime_unavailable__',
+      args: [],
+      env: {
+        ...(server.transportConfig.env ?? {}),
+        CANDUE_MANAGED_RUNTIME_ERROR: JSON.stringify({
+          message,
+          observedAt: now(),
+          details,
+        }),
+      },
+    },
   }
 }
 

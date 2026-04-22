@@ -1,8 +1,15 @@
 import { createHostedRuntimePaths, type HostedRuntimePaths } from '../runtime/runtime-paths'
+import { resolveManagedRuntimeLauncher } from './command-resolution'
 import { createManagedRuntimePaths, ensureManagedRuntimeDirectories } from './ManagedRuntimePaths'
 import { NodeRuntimeManager } from './node/NodeRuntimeManager'
 import { getManagedRuntimeManifest, getManagedRuntimeFamilyManifest, resolveManagedRuntimeComponents } from './runtime-manifest'
-import type { ManagedRuntimeActionReason, ManagedRuntimeOverallStatus, ManagedRuntimeSnapshot, ManagedRuntimeTarget } from './types'
+import type {
+  ManagedRuntimeActionReason,
+  ManagedRuntimeLauncherResolution,
+  ManagedRuntimeOverallStatus,
+  ManagedRuntimeSnapshot,
+  ManagedRuntimeTarget,
+} from './types'
 import { UvRuntimeManager } from './uv/UvRuntimeManager'
 
 export interface CreateManagedRuntimeServiceOptions {
@@ -27,6 +34,7 @@ export interface CreateManagedRuntimeServiceOptions {
 export interface ManagedRuntimeService {
   loadSnapshot: () => Promise<ManagedRuntimeSnapshot>
   installOrRepairAll: (reason?: ManagedRuntimeActionReason) => Promise<ManagedRuntimeSnapshot>
+  resolveLauncher: (command: string) => Promise<ManagedRuntimeLauncherResolution>
 }
 
 export function createManagedRuntimeService(options: CreateManagedRuntimeServiceOptions): ManagedRuntimeService {
@@ -80,6 +88,10 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
           uv: uvSnapshot,
         },
       }
+    },
+    async resolveLauncher(command) {
+      const snapshot = await this.loadSnapshot()
+      return resolveManagedRuntimeLauncher(snapshot, command)
     },
     installOrRepairAll(reason = 'install') {
       if (installationTask !== null) {

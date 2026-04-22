@@ -77,6 +77,11 @@ export interface CreateMcpConnectorHubOptions {
   maxReconnectAttempts?: number
   reconnectDelayMs?: number
   createConnector?: (server: McpServerRecord, context: ConnectorContextFactoryInput) => McpServerConnector
+  getResolvedCommand?: (server: McpServerRecord) => {
+    requestedCommand: string
+    resolutionKind: 'raw' | 'managed'
+    managedFamily?: 'node' | 'uv'
+  } | null
 }
 
 export interface ConnectorContextFactoryInput {
@@ -129,7 +134,11 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
       onStateChange: publishServerState,
     }
     return server.transportKind === 'stdio'
-      ? createStdioMcpServerConnector({ server, context })
+      ? createStdioMcpServerConnector({
+          server,
+          context,
+          resolvedCommand: options.getResolvedCommand?.(server) ?? undefined,
+        })
       : createHttpSseMcpServerConnector({ server, context })
   }
 
@@ -187,6 +196,7 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
                   capturedStates.push(cloneStateSummary(state))
                 },
               },
+              resolvedCommand: options.getResolvedCommand?.(server) ?? undefined,
             })
           : createHttpSseMcpServerConnector({
               server,

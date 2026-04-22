@@ -42,6 +42,11 @@ const STDERR_SUMMARY_MAX_LINES = 3
 export interface CreateStdioMcpServerConnectorOptions {
   server: McpServerRecord
   context: McpConnectorContext
+  resolvedCommand?: {
+    requestedCommand: string
+    resolutionKind: 'raw' | 'managed'
+    managedFamily?: 'node' | 'uv'
+  }
 }
 
 export function createStdioMcpServerConnector(
@@ -54,6 +59,10 @@ export function createStdioMcpServerConnector(
   const server = options.server
   const transportConfig = options.server.transportConfig
   const context = options.context
+  const resolvedCommand = options.resolvedCommand ?? {
+    requestedCommand: transportConfig.command,
+    resolutionKind: 'raw' as const,
+  }
   let child: ChildProcessWithoutNullStreams | null = null
   let parser = new JsonRpcMessageLineParser()
   let nextRequestId = 1
@@ -103,6 +112,11 @@ export function createStdioMcpServerConnector(
       lastError: null,
     })
     await emitState()
+
+    const managedRuntimeFailure = readManagedRuntimeFailure()
+    if (managedRuntimeFailure !== null) {
+      return await applyFailure(new McpConnectorError(managedRuntimeFailure))
+    }
 
     try {
       const spawned = spawn(transportConfig.command, transportConfig.args, {
@@ -590,6 +604,9 @@ export function createStdioMcpServerConnector(
     const nextDetails = {
       ...(summary.details ?? {}),
       phase,
+      requestedCommand: resolvedCommand.requestedCommand,
+      resolutionKind: resolvedCommand.resolutionKind,
+      managedFamily: resolvedCommand.managedFamily ?? null,
       command: transportConfig.command,
       args: [...transportConfig.args],
       cwd: transportConfig.cwd ?? null,
@@ -604,9 +621,45 @@ export function createStdioMcpServerConnector(
     }
   }
 
+  function readManagedRuntimeFailure() {
+    const rawFailure = transportConfig.env?.CANDUE_MANAGED_RUNTIME_ERROR
+    if (typeof rawFailure !== 'string' || rawFailure.trim() === '') {
+      return null
+    }
+
+    try {
+      const parsed = JSON.parse(rawFailure) as {
+        message?: unknown
+        observedAt?: unknown
+        details?: unknown
+      }
+      return createMcpErrorSummary(
+        'managed_runtime_unavailable',
+        typeof parsed.message === 'string' && parsed.message.trim() !== ''
+          ? parsed.message
+          : 'The managed runtime required by this MCP launcher is unavailable.',
+        false,
+        () => typeof parsed.observedAt === 'string' && parsed.observedAt.trim() !== ''
+          ? parsed.observedAt
+          : context.now(),
+        isRecord(parsed.details) ? parsed.details : null,
+      )
+    } catch {
+      return createMcpErrorSummary(
+        'managed_runtime_unavailable',
+        'The managed runtime required by this MCP launcher is unavailable.',
+        false,
+        context.now,
+      )
+    }
+  }
+
   function buildDiagnosticSummary(phase: McpConnectionPhase | null, stderrSummary: string | null): string {
     const parts = [
       phase === null ? null : `phase=${phase}`,
+      `requestedCommand=${resolvedCommand.requestedCommand}`,
+      `resolution=${resolvedCommand.resolutionKind}`,
+      resolvedCommand.managedFamily ? `managedFamily=${resolvedCommand.managedFamily}` : null,
       `command=${transportConfig.command}`,
       transportConfig.args.length === 0 ? null : `args=${transportConfig.args.join(' ')}`,
       transportConfig.cwd ? `cwd=${transportConfig.cwd}` : null,
@@ -646,4 +699,8 @@ function createPhaseTimeoutMessage(phase: McpConnectionPhase | null): string {
   }
 
   return `Timed out while waiting for the MCP stdio server response during ${phase}.`
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

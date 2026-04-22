@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createMcpRegistryService } from './service'
+import type { ManagedRuntimeService } from '../managed-runtime/ManagedRuntimeService'
 import { buildMcpToolId } from './snapshot'
 import { createMcpRegistryPaths, createMcpRegistryStore } from './store'
 import {
@@ -82,6 +83,14 @@ async function createRegistryServiceFixture(testName: string, hubOptions: FakeCo
     snapshotWrites,
     connectorHub,
     service,
+  }
+}
+
+function createManagedRuntimeServiceStub(
+  resolveLauncher: ManagedRuntimeService['resolveLauncher'],
+): Pick<ManagedRuntimeService, 'resolveLauncher'> {
+  return {
+    resolveLauncher,
   }
 }
 
@@ -321,6 +330,177 @@ describe('createMcpRegistryService', () => {
       deleted: true,
     })
     expect(fixture.publishEvent).toHaveBeenCalled()
+  })
+
+  it('rewrites npx test connections to the managed Node/npm launcher without using system PATH', async () => {
+    const fixture = await createRegistryServiceFixture('managed-npx-test-connection')
+    const managedRuntimeService = createManagedRuntimeServiceStub(async (command) => {
+      expect(command).toBe('npx')
+      return {
+        ok: true,
+        command,
+        normalizedCommand: 'npx',
+        family: 'node',
+        executablePath: 'D:/managed/node/npx.cmd',
+        windowsCommandChain: {
+          command: 'C:/Windows/System32/cmd.exe',
+          argsPrefix: ['/d', '/s', '/c', 'D:/managed/node/npx.cmd'],
+        },
+      }
+    })
+    const service = createMcpRegistryService({
+      store: fixture.store,
+      connectorHub: {
+        ...fixture.connectorHub,
+        async testConnection(server) {
+          if (server.transportConfig.kind !== 'stdio') {
+            throw new Error('Expected stdio server.')
+          }
+          expect(server.transportConfig.command).toBe('C:/Windows/System32/cmd.exe')
+          expect(server.transportConfig.args).toEqual([
+            '/d',
+            '/s',
+            '/c',
+            'D:/managed/node/npx.cmd',
+            '@modelcontextprotocol/server-filesystem',
+          ])
+          return await fixture.connectorHub.testConnection(server)
+        },
+      },
+      managedRuntimeService,
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    const result = await service.testConnection({
+      draft: createMcpStdioStubServerFixture({
+        transportConfig: {
+          kind: 'stdio',
+          command: 'npx',
+          args: ['@modelcontextprotocol/server-filesystem'],
+        },
+      }),
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected MCP test connection success wrapper.')
+    }
+    expect(result.success).toBe(true)
+  })
+
+  it('surfaces a managed runtime error instead of falling back to command_not_found when uvx is unavailable', async () => {
+    const fixture = await createRegistryServiceFixture('managed-uvx-unavailable')
+    const service = createMcpRegistryService({
+      store: fixture.store,
+      connectorHub: {
+        ...fixture.connectorHub,
+        async testConnection(server) {
+          if (server.transportConfig.kind !== 'stdio') {
+            throw new Error('Expected stdio server.')
+          }
+          expect(server.transportConfig.command).toBe('__managed_runtime_unavailable__')
+          expect(server.transportConfig.args).toEqual([])
+          return {
+            success: false,
+            transportKind: 'stdio',
+            toolCount: 0,
+            durationMs: 12,
+            phase: 'spawn',
+            diagnosticSummary: 'managed runtime unavailable',
+            error: {
+              code: 'managed_runtime_unavailable',
+              message: 'The managed Python/uv runtime is broken; repair is required before MCP can run uvx.',
+              retryable: false,
+              observedAt: '2026-04-21T12:00:00.000Z',
+              details: {
+                requestedCommand: 'uvx',
+                managedFamily: 'uv',
+                managedRuntimeStatus: 'broken',
+              },
+            },
+            warnings: [],
+          }
+        },
+      },
+      managedRuntimeService: createManagedRuntimeServiceStub(async () => ({
+        ok: false,
+        reason: 'managed_runtime_unavailable',
+        command: 'uvx',
+        normalizedCommand: 'uvx',
+        family: 'uv',
+        status: 'broken',
+        message: 'The managed Python/uv runtime is broken; repair is required before MCP can run uvx.',
+        detail: 'uvx verification failed',
+      })),
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    const result = await service.testConnection({
+      draft: createMcpStdioStubServerFixture({
+        transportConfig: {
+          kind: 'stdio',
+          command: 'uvx',
+          args: ['mcp-server-time'],
+        },
+      }),
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected MCP test connection result.')
+    }
+    expect(result.success).toBe(false)
+    expect(result.error).toMatchObject({
+      code: 'managed_runtime_unavailable',
+      retryable: false,
+      details: expect.objectContaining({
+        requestedCommand: 'uvx',
+        managedFamily: 'uv',
+        managedRuntimeStatus: 'broken',
+      }),
+    })
+  })
+
+  it('keeps custom absolute paths and unmanaged commands unchanged', async () => {
+    const fixture = await createRegistryServiceFixture('managed-command-bypass')
+    const resolveLauncher = vi.fn(async () => ({
+      ok: false,
+      reason: 'unmanaged_command' as const,
+      command: 'C:/custom/mcp-server.exe',
+    }))
+    const service = createMcpRegistryService({
+      store: fixture.store,
+      connectorHub: {
+        ...fixture.connectorHub,
+        async testConnection(server) {
+          if (server.transportConfig.kind !== 'stdio') {
+            throw new Error('Expected stdio server.')
+          }
+          expect(server.transportConfig.command).toBe('C:/custom/mcp-server.exe')
+          expect(server.transportConfig.args).toEqual(['--stdio'])
+          return await fixture.connectorHub.testConnection(server)
+        },
+      },
+      managedRuntimeService: createManagedRuntimeServiceStub(resolveLauncher),
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    const result = await service.testConnection({
+      draft: createMcpStdioStubServerFixture({
+        transportConfig: {
+          kind: 'stdio',
+          command: 'C:/custom/mcp-server.exe',
+          args: ['--stdio'],
+        },
+      }),
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected MCP test connection result.')
+    }
+    expect(result.success).toBe(true)
+    expect(resolveLauncher).toHaveBeenCalledOnce()
   })
 
   it('writes capability snapshots to the configured sink across load and catalog refresh flows', async () => {
