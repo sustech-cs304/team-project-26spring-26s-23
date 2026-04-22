@@ -25,4 +25,17 @@ describe('resolveManagedRuntimeDownloadSource', () => {
       checksumUrl: 'https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-pc-windows-msvc.zip.sha256',
     })
   })
+
+  it('preserves manifest-declared planned assets for unsupported follow-up install actions', () => {
+    const uvComponents = resolveManagedRuntimeComponents('uv', { platform: 'darwin', arch: 'arm64' })
+    const pythonComponent = uvComponents.find((entry) => entry.component === 'python')
+
+    expect(resolveManagedRuntimeDownloadSource(pythonComponent!)).toMatchObject({
+      component: 'python',
+      fileName: 'python-3.12.10-macos-arm64.pkg',
+      archiveFormat: 'pkg',
+      installStrategy: 'planned',
+      url: null,
+    })
+  })
 })

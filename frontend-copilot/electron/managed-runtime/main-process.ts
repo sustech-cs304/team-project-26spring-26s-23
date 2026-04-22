@@ -1,7 +1,7 @@
 import type { HostedRuntimePaths } from '../runtime/runtime-paths'
 import { createManagedRuntimeService, type ManagedRuntimeService } from './ManagedRuntimeService'
 import { createManagedRuntimeApiFailure, type ManagedRuntimeLoadResponse } from './ipc'
-import type { ManagedRuntimeActionReason } from './types'
+import type { ManagedRuntimeActionReason, ManagedRuntimeTarget } from './types'
 
 export interface ElectronManagedRuntimeLogger {
   (level: 'info' | 'warn' | 'error', message: string, context: Record<string, unknown> | null): void | Promise<void>
@@ -11,6 +11,8 @@ export interface CreateElectronManagedRuntimeServiceOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
   userDataPath: string
   appendLog?: ElectronManagedRuntimeLogger
+  processPlatform?: ManagedRuntimeTarget['platform']
+  processArch?: ManagedRuntimeTarget['arch']
 }
 
 export interface ElectronManagedRuntimeService {
@@ -30,6 +32,8 @@ export function createElectronManagedRuntimeService(
         return createManagedRuntimeService({
           userDataPath: options.userDataPath,
           hostedRuntimePaths,
+          processPlatform: options.processPlatform,
+          processArch: options.processArch,
         })
       })()
 

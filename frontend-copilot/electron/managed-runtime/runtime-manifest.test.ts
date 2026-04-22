@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   getManagedRuntimeFamilyManifest,
   getManagedRuntimeSourceChannel,
+  isManagedRuntimeActionSupported,
+  resolveManagedRuntimeComponentSelection,
   resolveManagedRuntimeComponents,
 } from './runtime-manifest'
 
@@ -38,5 +40,23 @@ describe('managed runtime manifest', () => {
       kind: 'github-release',
       owner: 'uv',
     })
+  })
+
+  it('exports cross-platform target matrices while keeping unsupported actions manifest-driven', () => {
+    const darwinNode = resolveManagedRuntimeComponents('node', { platform: 'darwin', arch: 'arm64' })
+    expect(darwinNode[0]?.distribution.fileName).toBe('node-v24.15.0-darwin-arm64.tar.gz')
+    expect(darwinNode[0]?.distribution.launcherRelativePaths).toEqual({
+      node: 'bin/node',
+      npm: 'bin/npm',
+      npx: 'bin/npx',
+    })
+
+    const linuxUvSelection = resolveManagedRuntimeComponentSelection('uv', { platform: 'linux', arch: 'x64' })
+    expect(linuxUvSelection.resolvedComponents.map((component) => component.component)).toEqual(['python', 'uv'])
+    expect(linuxUvSelection.resolvedComponents[0]?.distribution.installStrategy).toBe('planned')
+    expect(linuxUvSelection.resolvedComponents[0]?.distribution.url).toBeNull()
+    expect(linuxUvSelection.resolvedComponents[1]?.distribution.fileName).toBe('uv-x86_64-unknown-linux-gnu.tar.gz')
+    expect(isManagedRuntimeActionSupported('node', { platform: 'linux', arch: 'x64' })).toBe(true)
+    expect(isManagedRuntimeActionSupported('uv', { platform: 'linux', arch: 'x64' })).toBe(false)
   })
 })

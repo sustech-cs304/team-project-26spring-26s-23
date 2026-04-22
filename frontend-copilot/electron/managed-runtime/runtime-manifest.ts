@@ -1,5 +1,6 @@
 import type {
   ManagedRuntimeComponentManifest,
+  ManagedRuntimeComponent,
   ManagedRuntimeDistribution,
   ManagedRuntimeFamily,
   ManagedRuntimeFamilyManifest,
@@ -63,6 +64,10 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
           distributions: [
             createNodeDistribution('win32', 'x64', 'node-v24.15.0-win-x64.zip', 'zip'),
             createNodeDistribution('win32', 'arm64', 'node-v24.15.0-win-arm64.zip', 'zip'),
+            createNodeDistribution('darwin', 'x64', 'node-v24.15.0-darwin-x64.tar.gz', 'tar.gz'),
+            createNodeDistribution('darwin', 'arm64', 'node-v24.15.0-darwin-arm64.tar.gz', 'tar.gz'),
+            createNodeDistribution('linux', 'x64', 'node-v24.15.0-linux-x64.tar.xz', 'tar.xz'),
+            createNodeDistribution('linux', 'arm64', 'node-v24.15.0-linux-arm64.tar.xz', 'tar.xz'),
           ],
         },
       ],
@@ -81,6 +86,10 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
           distributions: [
             createPythonDistribution('win32', 'x64', 'python-3.12.10-embed-amd64.zip', 'portable-archive', 'zip'),
             createPythonDistribution('win32', 'arm64', 'python-3.12.10-embed-arm64.zip', 'portable-archive', 'zip'),
+            createPlannedDistribution('darwin', 'x64', 'python', 'python-3.12.10-macos-x64.pkg', 'pkg'),
+            createPlannedDistribution('darwin', 'arm64', 'python', 'python-3.12.10-macos-arm64.pkg', 'pkg'),
+            createPlannedDistribution('linux', 'x64', 'python', 'Python-3.12.10.tgz', 'source-tar.xz'),
+            createPlannedDistribution('linux', 'arm64', 'python', 'Python-3.12.10.tgz', 'source-tar.xz'),
           ],
         },
         {
@@ -91,6 +100,10 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
           distributions: [
             createUvDistribution('win32', 'x64', 'uv-x86_64-pc-windows-msvc.zip', 'zip'),
             createUvDistribution('win32', 'arm64', 'uv-aarch64-pc-windows-msvc.zip', 'zip'),
+            createUvDistribution('darwin', 'x64', 'uv-x86_64-apple-darwin.tar.gz', 'tar.gz'),
+            createUvDistribution('darwin', 'arm64', 'uv-aarch64-apple-darwin.tar.gz', 'tar.gz'),
+            createUvDistribution('linux', 'x64', 'uv-x86_64-unknown-linux-gnu.tar.gz', 'tar.gz'),
+            createUvDistribution('linux', 'arm64', 'uv-aarch64-unknown-linux-gnu.tar.gz', 'tar.gz'),
           ],
         },
       ],
@@ -128,19 +141,61 @@ export function resolveManagedRuntimeComponents(
   family: ManagedRuntimeFamily,
   target: ManagedRuntimeTarget,
 ): ManagedRuntimeResolvedComponent[] {
+  const selection = resolveManagedRuntimeComponentSelection(family, target)
+  if (selection.missingComponents.length > 0) {
+    throw new Error(
+      `No managed runtime distribution declared for family ${family} on ${target.platform}/${target.arch}; missing components: ${selection.missingComponents.join(', ')}.`,
+    )
+  }
+
+  return selection.resolvedComponents
+}
+
+export function resolveManagedRuntimeComponentSelection(
+  family: ManagedRuntimeFamily,
+  target: ManagedRuntimeTarget,
+): {
+  resolvedComponents: ManagedRuntimeResolvedComponent[]
+  missingComponents: ManagedRuntimeComponent[]
+} {
   const familyManifest = getManagedRuntimeFamilyManifest(family)
-  return familyManifest.components.map((component) => ({
-    component: component.component,
-    version: component.version,
-    distribution: resolveManagedRuntimeDistribution(component, target),
-  }))
+  const resolvedComponents: ManagedRuntimeResolvedComponent[] = []
+  const missingComponents: ManagedRuntimeComponent[] = []
+
+  for (const component of familyManifest.components) {
+    const distribution = findManagedRuntimeDistribution(component, target)
+    if (distribution === undefined) {
+      missingComponents.push(component.component)
+      continue
+    }
+
+    resolvedComponents.push({
+      component: component.component,
+      version: component.version,
+      distribution,
+    })
+  }
+
+  return {
+    resolvedComponents,
+    missingComponents,
+  }
+}
+
+export function isManagedRuntimeActionSupported(
+  family: ManagedRuntimeFamily,
+  target: ManagedRuntimeTarget,
+): boolean {
+  const selection = resolveManagedRuntimeComponentSelection(family, target)
+  return selection.missingComponents.length === 0
+    && selection.resolvedComponents.every((component) => isManagedRuntimeDistributionInstallable(component.distribution))
 }
 
 export function resolveManagedRuntimeDistribution(
   component: ManagedRuntimeComponentManifest,
   target: ManagedRuntimeTarget,
 ): ManagedRuntimeDistribution {
-  const distribution = component.distributions.find((candidate) => matchesManagedRuntimeTarget(candidate.target, target))
+  const distribution = findManagedRuntimeDistribution(component, target)
   if (distribution === undefined) {
     throw new Error(
       `No managed runtime distribution declared for component ${component.component} on ${target.platform}/${target.arch}.`,
@@ -152,6 +207,17 @@ export function resolveManagedRuntimeDistribution(
 
 export function matchesManagedRuntimeTarget(candidate: ManagedRuntimeTarget, target: ManagedRuntimeTarget): boolean {
   return candidate.platform === target.platform && candidate.arch === target.arch
+}
+
+export function isManagedRuntimeDistributionInstallable(distribution: ManagedRuntimeDistribution): boolean {
+  return distribution.installStrategy === 'portable-archive' && typeof distribution.url === 'string' && distribution.url.trim() !== ''
+}
+
+function findManagedRuntimeDistribution(
+  component: ManagedRuntimeComponentManifest,
+  target: ManagedRuntimeTarget,
+): ManagedRuntimeDistribution | undefined {
+  return component.distributions.find((candidate) => matchesManagedRuntimeTarget(candidate.target, target))
 }
 
 function createNodeDistribution(
@@ -193,6 +259,33 @@ function createPythonDistribution(
         ? { python: 'Python.framework/Versions/3.12/bin/python3' }
         : { python: 'bin/python3' },
     sourceChannelId: 'python-org',
+  }
+}
+
+function createPlannedDistribution(
+  platform: ManagedRuntimeTarget['platform'],
+  arch: ManagedRuntimeTarget['arch'],
+  component: ManagedRuntimeComponent,
+  fileName: string,
+  archiveFormat: ManagedRuntimeDistribution['archiveFormat'],
+): ManagedRuntimeDistribution {
+  const launcherRelativePaths: Record<string, string> = component === 'python'
+    ? (platform === 'win32'
+      ? { python: 'python.exe' }
+      : { python: 'python3' })
+    : (platform === 'win32'
+      ? { uv: 'uv.exe', uvx: 'uvx.exe' }
+      : { uv: 'uv', uvx: 'uvx' })
+
+  return {
+    target: { platform, arch },
+    fileName,
+    url: null,
+    archiveFormat,
+    installStrategy: 'planned',
+    launcherRelativePaths,
+    sourceChannelId: component === 'python' ? 'python-org' : 'uv-github-release',
+    notes: `Install support for ${platform}/${arch} will be enabled in a follow-up runtime asset batch.`,
   }
 }
 

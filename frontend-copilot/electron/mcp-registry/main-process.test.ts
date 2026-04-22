@@ -78,6 +78,37 @@ describe('createElectronMcpRegistryService', () => {
     }
   })
 
+  it('loads an empty registry without unsupported target failures on Linux-managed runtime bootstrap', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-mcp-main-process-linux-'))
+    const appendLog = vi.fn()
+    const hostedPaths = createHostedRuntimePaths(tempRoot)
+
+    const service = createElectronMcpRegistryService({
+      prepareRuntimePaths: async () => hostedPaths,
+      appendLog,
+      now: () => '2026-04-21T12:00:00.000Z',
+      processPlatform: 'linux',
+      processArch: 'x64',
+    })
+
+    try {
+      await expect(service.loadRegistry({ includeDisabled: true })).resolves.toEqual({
+        ok: true,
+        registryRevision: 0,
+        snapshotRevision: 0,
+        servers: [],
+        states: [],
+      })
+      expect(appendLog).not.toHaveBeenCalledWith(
+        'error',
+        '[mcp-registry] Failed to load the MCP registry.',
+        expect.objectContaining({ detail: expect.stringContaining('Unsupported managed runtime target') }),
+      )
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
   it('returns the service-provided tool-call failure contract unchanged when executeTool fails without throwing', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-mcp-main-process-execute-tool-'))
     const appendLog = vi.fn()

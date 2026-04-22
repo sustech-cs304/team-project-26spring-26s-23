@@ -2,7 +2,12 @@ import { createHostedRuntimePaths, type HostedRuntimePaths } from '../runtime/ru
 import { resolveManagedRuntimeLauncher } from './command-resolution'
 import { createManagedRuntimePaths, ensureManagedRuntimeDirectories } from './ManagedRuntimePaths'
 import { NodeRuntimeManager } from './node/NodeRuntimeManager'
-import { getManagedRuntimeManifest, getManagedRuntimeFamilyManifest, resolveManagedRuntimeComponents } from './runtime-manifest'
+import {
+  getManagedRuntimeManifest,
+  getManagedRuntimeFamilyManifest,
+  isManagedRuntimeActionSupported,
+  resolveManagedRuntimeComponentSelection,
+} from './runtime-manifest'
 import type {
   ManagedRuntimeActionReason,
   ManagedRuntimeLauncherResolution,
@@ -46,8 +51,8 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
   })
   const nodePinnedVersion = getManagedRuntimeFamilyManifest('node').pinnedVersion
   const uvPinnedVersion = getManagedRuntimeFamilyManifest('uv').pinnedVersion
-  const nodeSelectedComponents = resolveManagedRuntimeComponents('node', target)
-  const uvSelectedComponents = resolveManagedRuntimeComponents('uv', target)
+  const nodeSelectedComponents = resolveManagedRuntimeComponentSelection('node', target).resolvedComponents
+  const uvSelectedComponents = resolveManagedRuntimeComponentSelection('uv', target).resolvedComponents
   const nodeManager = options.nodeManagerFactory?.({
     pinnedVersion: nodePinnedVersion,
     selectedComponents: nodeSelectedComponents,
@@ -99,6 +104,9 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
       }
 
       installationTask = (async () => {
+        if (!isManagedRuntimeActionSupported('node', target) || !isManagedRuntimeActionSupported('uv', target)) {
+          throw new Error(`Managed runtime install/repair is not supported for target ${target.platform}/${target.arch}.`)
+        }
         await nodeManager.installOrRepair(reason)
         await uvManager.installOrRepair(reason)
         return await this.loadSnapshot()
@@ -112,10 +120,11 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
 }
 
 export function resolveManagedRuntimeTarget(input: { platform: NodeJS.Platform; arch: string }): ManagedRuntimeTarget {
-  if (input.platform === 'win32' && (input.arch === 'x64' || input.arch === 'arm64')) {
+  if ((input.platform === 'win32' || input.platform === 'darwin' || input.platform === 'linux')
+    && (input.arch === 'x64' || input.arch === 'arm64')) {
     return {
-      platform: input.platform,
-      arch: input.arch,
+      platform: input.platform as ManagedRuntimeTarget['platform'],
+      arch: input.arch as ManagedRuntimeTarget['arch'],
     }
   }
 

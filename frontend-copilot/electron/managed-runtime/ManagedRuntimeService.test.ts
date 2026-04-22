@@ -26,8 +26,51 @@ describe('createManagedRuntimeService', () => {
     expect(() => resolveManagedRuntimeTarget({ platform: 'freebsd', arch: 'x64' })).toThrow(
       'Unsupported managed runtime target: freebsd/x64',
     )
-    expect(() => resolveManagedRuntimeTarget({ platform: 'darwin', arch: 'arm64' })).toThrow(
-      'Unsupported managed runtime target: darwin/arm64',
+    expect(resolveManagedRuntimeTarget({ platform: 'darwin', arch: 'arm64' })).toEqual({
+      platform: 'darwin',
+      arch: 'arm64',
+    })
+    expect(resolveManagedRuntimeTarget({ platform: 'linux', arch: 'x64' })).toEqual({
+      platform: 'linux',
+      arch: 'x64',
+    })
+  })
+
+  it('initializes Linux and macOS services with missing snapshots instead of failing target resolution', async () => {
+    const macHostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-macos'))
+    const macService = createManagedRuntimeService({
+      userDataPath: macHostedRuntimePaths.userDataDir,
+      hostedRuntimePaths: macHostedRuntimePaths,
+      processPlatform: 'darwin',
+      processArch: 'arm64',
+    })
+
+    const linuxHostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-linux'))
+    const linuxService = createManagedRuntimeService({
+      userDataPath: linuxHostedRuntimePaths.userDataDir,
+      hostedRuntimePaths: linuxHostedRuntimePaths,
+      processPlatform: 'linux',
+      processArch: 'x64',
+    })
+
+    await expect(macService.loadSnapshot()).resolves.toMatchObject({
+      overallStatus: 'missing',
+      target: { platform: 'darwin', arch: 'arm64' },
+      families: {
+        node: { status: 'missing' },
+        uv: { status: 'missing' },
+      },
+    })
+    await expect(linuxService.loadSnapshot()).resolves.toMatchObject({
+      overallStatus: 'missing',
+      target: { platform: 'linux', arch: 'x64' },
+      families: {
+        node: { status: 'missing' },
+        uv: { status: 'missing' },
+      },
+    })
+    await expect(macService.installOrRepairAll('install')).rejects.toThrow(
+      'Managed runtime install/repair is not supported for target darwin/arm64.',
     )
   })
 })

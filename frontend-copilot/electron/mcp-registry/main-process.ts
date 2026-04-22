@@ -4,6 +4,7 @@ import { createMcpCapabilitySnapshotSink } from './snapshot'
 import { createMcpRegistryApiFailure } from './ipc'
 import { createMcpRegistryService, type McpRegistryService } from './service'
 import { createMcpRegistryPaths, createMcpRegistryStore } from './store'
+import type { ManagedRuntimeTarget } from '../managed-runtime/types'
 import type {
   McpDeleteServerResult,
   McpRefreshCatalogRequest,
@@ -37,6 +38,8 @@ export interface CreateElectronMcpRegistryServiceOptions {
   appendLog?: ElectronMcpRegistryLogger
   publishRegistryEvent?: (event: McpRegistrySubscriptionEvent) => void | Promise<void>
   now?: () => string
+  processPlatform?: ManagedRuntimeTarget['platform']
+  processArch?: ManagedRuntimeTarget['arch']
 }
 
 export interface ElectronMcpRegistryService {
@@ -66,6 +69,8 @@ export function createElectronMcpRegistryService(
           managedRuntimeService: createManagedRuntimeService({
             userDataPath: runtimePaths.userDataDir,
             hostedRuntimePaths: runtimePaths,
+            processPlatform: options.processPlatform,
+            processArch: options.processArch,
           }),
           snapshotSink: createMcpCapabilitySnapshotSink({
             runtimePaths,
