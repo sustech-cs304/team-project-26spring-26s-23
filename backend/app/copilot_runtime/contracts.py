@@ -538,6 +538,11 @@ class RuntimeScaffold(RuntimeContract):
             entry = RuntimeToolDirectoryEntry(**tool_view)
             if entry.toolId in seen_tool_ids:
                 continue
+            if not self._is_executable_tool_visible(
+                entry.toolId,
+                toolset_name=self.default_toolset,
+            ):
+                continue
             if (
                 tool_permission_resolver is not None
                 and not tool_permission_resolver.is_visible(entry.toolId)
@@ -778,6 +783,13 @@ class RuntimeScaffold(RuntimeContract):
             )
         except LookupError as exc:  # pragma: no cover - defensive guard
             raise LookupError(f"Unknown toolset '{toolset_name}'.") from exc
+
+    def _is_executable_tool_visible(self, tool_id: str, *, toolset_name: str) -> bool:
+        try:
+            self.tool_registry.resolve_tool(tool_id, toolset_name=toolset_name)
+        except LookupError:
+            return False
+        return True
 
 
 def build_runtime_scaffold(

@@ -18,6 +18,7 @@ from app.copilot_runtime.contracts import (
     TOOL_APPROVAL_RESOLVE_METHOD,
     RuntimeToolApprovalResolveRequest,
     RuntimeToolPermissionPolicy,
+    build_runtime_scaffold,
 )
 from app.copilot_runtime.mcp_catalog_provider import create_mcp_catalog_provider
 from app.copilot_runtime.mcp_snapshot_provider import create_mcp_snapshot_provider
@@ -30,6 +31,7 @@ from app.copilot_runtime.provider_adapter_registry import build_default_provider
 from app.tooling import ToolInvocationContext
 from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
+from app.copilot_runtime.tool_registry import build_default_tool_registry
 from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
 
 
@@ -489,6 +491,70 @@ def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_when_expli
 
     assert "tool.fs.read" in catalog_tool_ids
     assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
+
+
+def test_build_runtime_scaffold_hides_non_executable_mcp_catalog_entries_from_manual_scaffold(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+
+    scaffold = build_runtime_scaffold(
+        tool_registry=build_default_tool_registry(
+            workspace_root=runtime_config.runtime_root_dir
+        ),
+        mcp_catalog_provider=create_mcp_catalog_provider(
+            create_mcp_snapshot_provider(state_dir=runtime_config.state_dir)
+        ),
+    )
+
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in scaffold.build_global_tool_catalog_response(language="en-US").to_dict()[
+            "tools"
+        ]
+    ]
+
+    assert "tool.fs.read" in catalog_tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
+
+
+def test_build_runtime_scaffold_keeps_executable_mcp_catalog_entries_when_tool_registry_can_resolve_them(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    bridge_client = _RecordingMcpBridgeClient()
+    snapshot_provider = create_mcp_snapshot_provider(state_dir=runtime_config.state_dir)
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
+    scaffold = build_runtime_scaffold(
+        tool_registry=dependencies.tool_registry,
+        mcp_catalog_provider=create_mcp_catalog_provider(snapshot_provider),
+    )
+
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in scaffold.build_global_tool_catalog_response(language="en-US").to_dict()[
+            "tools"
+        ]
+    ]
+
+    assert "tool.fs.read" in catalog_tool_ids
+    assert "mcp.mcp-stdio-stub.search-campus.00004d8d" in catalog_tool_ids
 
 
 
