@@ -11,6 +11,7 @@ import {
 import { resolveManagedRuntimeDownloadSource } from '../download-source'
 import {
   createManagedRuntimeCommandRunner,
+  ManagedRuntimeVerificationFailure,
   verifyManagedRuntimeLaunchers,
   type ManagedRuntimeCommandRunner,
   type ManagedRuntimeVerificationPlan,
@@ -23,8 +24,6 @@ import type {
   ManagedRuntimePersistentState,
   ManagedRuntimeResolvedComponent,
 } from '../types'
-
-const SEMVER_PATTERN = /^\d+\.\d+\.\d+$/
 
 export interface UvRuntimeManagerOptions {
   paths: ManagedRuntimeFamilyPaths
@@ -116,7 +115,12 @@ export class UvRuntimeManager {
         await this.archiveExtractor.extract(artifactFile, path.join(stagedVersionDir, component.component), source.archiveFormat)
       }
 
-      const verification = await this.verifyVersionFromDirectory(stagedVersionDir)
+      let verification
+      try {
+        verification = await this.verifyVersionFromDirectory(stagedVersionDir)
+      } catch (error) {
+        throw new ManagedRuntimeVerificationFailure(error)
+      }
       const activatedVersionDir = await activateManagedRuntimeVersion(this.paths, this.pinnedVersion, stagedVersionDir)
       const nextState: ManagedRuntimePersistentState = {
         ...before,
@@ -142,7 +146,10 @@ export class UvRuntimeManager {
       const failedState: ManagedRuntimePersistentState = {
         ...before,
         status: 'broken',
-        lastErrorSummary: this.createErrorSummary('install_failed', error),
+        lastErrorSummary: this.createErrorSummary(
+          error instanceof ManagedRuntimeVerificationFailure ? 'verification_failed' : 'install_failed',
+          error instanceof ManagedRuntimeVerificationFailure ? error.cause : error,
+        ),
         lastRepairedAt: reason === 'repair' ? this.clock() : before.lastRepairedAt,
       }
       await this.writeState(failedState)
@@ -179,7 +186,7 @@ export class UvRuntimeManager {
         launcher: 'uvx',
         executablePath: path.join(versionDir, 'uv', uvxRelative),
         args: ['--version'],
-        expectPattern: SEMVER_PATTERN,
+        expectVersion: uvVersion,
       },
     ]
     return await verifyManagedRuntimeLaunchers(plans, this.commandRunner)

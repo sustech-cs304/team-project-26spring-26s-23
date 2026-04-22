@@ -12,6 +12,7 @@ import {
 import { resolveManagedRuntimeDownloadSource } from '../download-source'
 import {
   createManagedRuntimeCommandRunner,
+  ManagedRuntimeVerificationFailure,
   verifyManagedRuntimeLaunchers,
   type ManagedRuntimeCommandRunner,
   type ManagedRuntimeVerificationPlan,
@@ -135,7 +136,12 @@ export class NodeRuntimeManager {
         await this.archiveExtractor.extract(artifactFile, componentDir, source.archiveFormat)
       }
 
-      const verification = await this.verifyVersionFromDirectory(stagedVersionDir)
+      let verification
+      try {
+        verification = await this.verifyVersionFromDirectory(stagedVersionDir)
+      } catch (error) {
+        throw new ManagedRuntimeVerificationFailure(error)
+      }
       const activatedVersionDir = await activateManagedRuntimeVersion(this.paths, this.pinnedVersion, stagedVersionDir)
       const nextState: ManagedRuntimePersistentState = {
         ...before,
@@ -161,7 +167,10 @@ export class NodeRuntimeManager {
       const failedState: ManagedRuntimePersistentState = {
         ...before,
         status: 'broken',
-        lastErrorSummary: this.createErrorSummary('install_failed', error),
+        lastErrorSummary: this.createErrorSummary(
+          error instanceof ManagedRuntimeVerificationFailure ? 'verification_failed' : 'install_failed',
+          error instanceof ManagedRuntimeVerificationFailure ? error.cause : error,
+        ),
         lastRepairedAt: reason === 'repair' ? this.clock() : before.lastRepairedAt,
       }
       await this.writeState(failedState)

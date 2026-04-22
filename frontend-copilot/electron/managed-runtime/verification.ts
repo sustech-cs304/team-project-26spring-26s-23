@@ -2,8 +2,10 @@ import { execFile } from 'node:child_process'
 import { access } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { promisify } from 'node:util'
+import { resolveWindowsCommandChain } from './command-resolution'
 
 const execFileAsync = promisify(execFile)
+const SEMVER_OUTPUT_PATTERN = /\b\d+\.\d+\.\d+\b/u
 
 export interface ManagedRuntimeCommandRunner {
   run: (command: string, args: readonly string[]) => Promise<string>
@@ -15,6 +17,7 @@ export interface ManagedRuntimeVerificationPlan {
   args: readonly string[]
   expectIncludes?: string
   expectPattern?: RegExp
+  expectVersion?: string
 }
 
 export interface ManagedRuntimeVerificationResult {
@@ -22,10 +25,24 @@ export interface ManagedRuntimeVerificationResult {
   launchers: Record<string, string>
 }
 
+export class ManagedRuntimeVerificationFailure extends Error {
+  constructor(readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.name = 'ManagedRuntimeVerificationFailure'
+  }
+}
+
 export function createManagedRuntimeCommandRunner(): ManagedRuntimeCommandRunner {
   return {
     async run(command, args) {
-      const result = await execFileAsync(command, [...args], { windowsHide: true })
+      const windowsCommandChain = resolveWindowsCommandChain(command)
+      const invocation = windowsCommandChain === null
+        ? { command, args: [...args] }
+        : {
+            command: windowsCommandChain.command,
+            args: [...windowsCommandChain.argsPrefix, ...args],
+          }
+      const result = await execFileAsync(invocation.command, invocation.args, { windowsHide: true })
       return `${result.stdout}${result.stderr}`.trim()
     },
   }
@@ -48,6 +65,15 @@ export async function verifyManagedRuntimeLaunchers(
     if (plan.expectPattern && !plan.expectPattern.test(output)) {
       throw new Error(`Launcher ${plan.launcher} returned malformed version output: ${output}`)
     }
+    if (plan.expectVersion) {
+      const version = extractSemver(output)
+      if (version === null) {
+        throw new Error(`Launcher ${plan.launcher} returned malformed version output: ${output}`)
+      }
+      if (version !== plan.expectVersion) {
+        throw new Error(`Launcher ${plan.launcher} returned unexpected version ${version}: ${output}`)
+      }
+    }
 
     launchers[plan.launcher] = plan.executablePath
     fragments.push(`${plan.launcher}: ${output}`)
@@ -57,4 +83,8 @@ export async function verifyManagedRuntimeLaunchers(
     summary: fragments.join(' | '),
     launchers,
   }
+}
+
+function extractSemver(output: string): string | null {
+  return output.match(SEMVER_OUTPUT_PATTERN)?.[0] ?? null
 }

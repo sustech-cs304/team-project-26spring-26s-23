@@ -139,6 +139,7 @@ describe('NodeRuntimeManager', () => {
 
     expect(snapshot.status).toBe('broken')
     expect(snapshot.activeVersion).toBeNull()
+    expect(snapshot.lastErrorSummary?.code).toBe('verification_failed')
     expect(snapshot.lastErrorSummary?.message).toContain('spawn failed')
   })
 

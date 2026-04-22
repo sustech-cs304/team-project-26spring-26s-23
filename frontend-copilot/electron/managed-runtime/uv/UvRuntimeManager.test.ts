@@ -46,7 +46,7 @@ describe('UvRuntimeManager', () => {
         run: vi.fn(async (command: string) => {
           if (command.endsWith('python.exe')) return 'Python 3.12.10'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
-          return '0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
       },
       clock: () => '2026-04-22T13:00:00.000Z',
@@ -91,7 +91,7 @@ describe('UvRuntimeManager', () => {
           }
           if (command.endsWith('python.exe')) return 'Python 3.12.10'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
-          return '0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
       },
       clock: () => '2026-04-22T14:00:00.000Z',
@@ -133,7 +133,7 @@ describe('UvRuntimeManager', () => {
         run: vi.fn(async (command: string) => {
           if (command.endsWith('python.exe')) return 'Python 3.12.10'
           if (command.endsWith('uv.exe')) return 'uv 0.11.7'
-          return '0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
         }),
       },
       clock: () => '2026-04-22T17:00:00.000Z',
@@ -166,6 +166,51 @@ describe('UvRuntimeManager', () => {
     expect(snapshot.status).toBe('ready')
     expect(snapshot.activeVersion).toBe(manifest.pinnedVersion)
     expect(snapshot.lastVerification?.summary).toContain('Python 3.12.10')
+  })
+
+  it('recovers a broken snapshot back to ready when uvx banner verification succeeds', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-uv-broken-recovery-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'uv')
+    const manifest = getManagedRuntimeFamilyManifest('uv')
+    const components = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'x64' })
+    const manager = new UvRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      commandRunner: {
+        run: vi.fn(async (command: string) => {
+          if (command.endsWith('python.exe')) return 'Python 3.12.10'
+          if (command.endsWith('uv.exe')) return 'uv 0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
+        }),
+      },
+      clock: () => '2026-04-22T17:30:00.000Z',
+    })
+
+    await manager['writeState']({
+      schemaVersion: 1,
+      family: 'uv',
+      pinnedVersion: manifest.pinnedVersion,
+      status: 'broken',
+      activeVersion: manifest.pinnedVersion,
+      lastInstalledAt: '2026-04-22T09:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: {
+        code: 'verification_failed',
+        message: 'Launcher uvx returned malformed version output: uvx 0.11.7 (...)',
+        at: '2026-04-22T09:30:00.000Z',
+      },
+    })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, manifest.pinnedVersion, 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, manifest.pinnedVersion, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
+
+    const snapshot = await manager.loadSnapshot()
+
+    expect(snapshot.status).toBe('ready')
+    expect(snapshot.lastErrorSummary).toBeNull()
+    expect(snapshot.lastVerification?.summary).toContain('uvx 0.11.7')
   })
 
   it('cleans staging on verification failure so no uvx launcher appears in the active directory', async () => {
@@ -204,6 +249,7 @@ describe('UvRuntimeManager', () => {
 
     expect(snapshot.status).toBe('broken')
     expect(snapshot.activeVersion).toBeNull()
+    expect(snapshot.lastErrorSummary?.code).toBe('verification_failed')
     await expect(access(path.join(paths.activeDir, 'uvx.exe'))).rejects.toThrow()
   })
 })

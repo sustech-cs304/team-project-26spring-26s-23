@@ -6,8 +6,8 @@ import type {
   ManagedRuntimeLauncherName,
   ManagedRuntimeLauncherResolution,
   ManagedRuntimeLauncherResolutionFailure,
-  ManagedRuntimeLauncherResolutionSuccess,
   ManagedRuntimeSnapshot,
+  ManagedRuntimeWindowsCommandChain,
 } from './types'
 
 const MANAGED_LAUNCHER_FAMILY: Record<string, ManagedRuntimeFamily> = {
@@ -76,7 +76,7 @@ function createUnavailableResolution(
   }
 }
 
-function resolveWindowsCommandChain(launcherPath: string): ManagedRuntimeLauncherResolutionSuccess['windowsCommandChain'] {
+export function resolveWindowsCommandChain(launcherPath: string): ManagedRuntimeWindowsCommandChain | null {
   const extension = path.extname(launcherPath).toLowerCase()
   if (process.platform === 'win32' && extension === '.cmd') {
     return {

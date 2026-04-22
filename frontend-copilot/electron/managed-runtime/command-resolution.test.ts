@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { resolveManagedRuntimeLauncher } from './command-resolution'
 import type { ManagedRuntimeSnapshot } from './types'
+
+const originalPlatform = process.platform
 
 describe('resolveManagedRuntimeLauncher', () => {
   it('rewrites npx to the managed Node/npm launcher', () => {
@@ -88,14 +90,9 @@ describe('resolveManagedRuntimeLauncher', () => {
     const snapshot = createSnapshot({
       node: { status: 'ready', launcherPaths: { npx: 'D:/managed/node/npx.cmd' } },
     })
-    vi.stubGlobal('process', {
-      ...process,
-      platform: 'win32',
-      env: {
-        ...process.env,
-        ComSpec: 'C:/Windows/System32/cmd.exe',
-      },
-    })
+    const originalComSpec = process.env.ComSpec
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    process.env.ComSpec = 'C:/Windows/System32/cmd.exe'
 
     const result = resolveManagedRuntimeLauncher(snapshot, 'npx')
 
@@ -107,7 +104,12 @@ describe('resolveManagedRuntimeLauncher', () => {
       },
     })
 
-    vi.unstubAllGlobals()
+    Object.defineProperty(process, 'platform', { value: originalPlatform })
+    if (originalComSpec === undefined) {
+      delete process.env.ComSpec
+    } else {
+      process.env.ComSpec = originalComSpec
+    }
   })
 })
 

@@ -106,6 +106,11 @@ export interface ManagedRuntimeVerificationRecord {
   launchers: Partial<Record<string, string>>
 }
 
+export interface ManagedRuntimeWindowsCommandChain {
+  command: string
+  argsPrefix: string[]
+}
+
 export interface ManagedRuntimePersistentState {
   schemaVersion: number
   family: ManagedRuntimeFamily
@@ -149,10 +154,7 @@ export interface ManagedRuntimeLauncherResolutionSuccess {
   normalizedCommand: ManagedRuntimeLauncherName
   family: ManagedRuntimeFamily
   executablePath: string
-  windowsCommandChain: {
-    command: string
-    argsPrefix: string[]
-  } | null
+  windowsCommandChain: ManagedRuntimeWindowsCommandChain | null
 }
 
 export interface ManagedRuntimeLauncherResolutionFailure {
