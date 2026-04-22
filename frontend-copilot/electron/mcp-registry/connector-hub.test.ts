@@ -259,6 +259,70 @@ describe('createMcpConnectorHub', () => {
     ])
   })
 
+  it('keeps raw connector-hub behavior explicit when a connector session is connected but tools/list hydration has not completed yet', async () => {
+    const stdioServer = createMcpStdioStubServerFixture()
+
+    const hub = createMcpConnectorHub({
+      now: () => '2026-04-21T12:00:00.000Z',
+      createConnector(server, context) {
+        return createFakeConnector(server, context, {
+          startResults: [createSuccessfulResult(server, [])],
+          refreshResults: [createSuccessfulResult(server)],
+        })
+      },
+    })
+
+    await hub.reconcile([stdioServer], { registryRevision: 6, snapshotRevision: 10 })
+
+    await expect(hub.callTool({
+      toolId: 'mcp.test.search-campus',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      snapshotRevision: 10,
+    })).resolves.toEqual({
+      ok: false,
+      toolId: 'mcp.test.search-campus',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'search-campus',
+      snapshotRevision: 10,
+      error: expect.objectContaining({
+        code: 'directory_drift',
+        message: 'The requested MCP tool no longer exists in the current server catalog.',
+        retryable: false,
+      }),
+    })
+
+    await expect(hub.refreshCatalog([stdioServer.serverId], { registryRevision: 6, snapshotRevision: 10 })).resolves.toEqual([
+      expect.objectContaining({
+        serverId: stdioServer.serverId,
+        success: true,
+        toolCount: 1,
+      }),
+    ])
+
+    await expect(hub.callTool({
+      toolId: 'mcp.test.search-campus',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      runId: 'run-1',
+      toolCallId: 'call-2',
+      snapshotRevision: 10,
+    })).resolves.toEqual({
+      ok: true,
+      toolId: 'mcp.test.search-campus',
+      serverId: stdioServer.serverId,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: '{"keyword":"calendar"}' }],
+      structuredContent: { echoedArguments: { keyword: 'calendar' } },
+      snapshotRevision: 10,
+      isError: false,
+    })
+  })
+
   it('returns the last connection phase and diagnostic summary for connection test failures', async () => {
     const stdioServer = createMcpStdioStubServerFixture()
 
@@ -391,13 +455,13 @@ function createFakeConnector(
   }
 }
 
-function createSuccessfulResult(server: McpServerRecord): McpConnectorOperationResult {
-  return createConnectorSuccess(server, [{
+function createSuccessfulResult(server: McpServerRecord, tools = [{
     name: 'search-campus',
     displayName: 'Search Campus',
     description: 'Search the campus knowledge base.',
     inputSchema: { type: 'object' },
-  }], () => '2026-04-21T12:00:00.000Z', server.transportKind === 'stdio'
+  }]): McpConnectorOperationResult {
+  return createConnectorSuccess(server, tools, () => '2026-04-21T12:00:00.000Z', server.transportKind === 'stdio'
     ? {
         kind: 'stdio',
         processStatus: 'running',

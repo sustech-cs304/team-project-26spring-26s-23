@@ -45,6 +45,7 @@ interface FakeConnectorHub extends McpConnectorHub {
 interface FakeConnectorHubOptions {
   reconcileHydratesCatalog?: boolean
   refreshCatalogSucceeds?: boolean
+  callToolRequiresHydratedCatalog?: boolean
 }
 
 async function createRegistryServiceFixture(testName: string, hubOptions: FakeConnectorHubOptions = {}) {
@@ -87,6 +88,7 @@ async function createRegistryServiceFixture(testName: string, hubOptions: FakeCo
 function createFakeConnectorHub(options: FakeConnectorHubOptions = {}): FakeConnectorHub {
   const reconcileHydratesCatalog = options.reconcileHydratesCatalog ?? true
   const refreshCatalogSucceeds = options.refreshCatalogSucceeds ?? true
+  const callToolRequiresHydratedCatalog = options.callToolRequiresHydratedCatalog ?? true
   const states = new Map<string, McpServerStateSummary>()
   const tools = new Map<string, McpRemoteToolSummary[]>()
 
@@ -173,6 +175,31 @@ function createFakeConnectorHub(options: FakeConnectorHubOptions = {}): FakeConn
         ...request,
         arguments: { ...request.arguments },
       })
+      const availableTools = tools.get(request.serverId) ?? []
+      if (callToolRequiresHydratedCatalog && !availableTools.some((tool) => tool.name === request.remoteToolName)) {
+        const state = states.get(request.serverId)
+        return {
+          ok: false,
+          toolId: request.toolId,
+          serverId: request.serverId,
+          remoteToolName: request.remoteToolName,
+          snapshotRevision: request.snapshotRevision ?? null,
+          error: {
+            code: 'server_not_ready',
+            message: 'The MCP server is not ready to execute tools.',
+            retryable: true,
+            observedAt: '2026-04-21T12:00:00.000Z',
+            details: {
+              requestedServerId: request.serverId,
+              requestedRemoteToolName: request.remoteToolName,
+              connectionState: state?.connectionState ?? 'connecting',
+              connectorToolCount: availableTools.length,
+              requestedSnapshotRevision: request.snapshotRevision ?? null,
+              snapshotRevision: request.snapshotRevision ?? null,
+            },
+          },
+        }
+      }
       return {
         ok: true,
         toolId: request.toolId,
@@ -687,27 +714,6 @@ describe('createMcpRegistryService', () => {
       }),
     ])
 
-    const fallbackResolved = await fixture.service.executeTool({
-      toolId: 'mcp.missing.tool.11111111',
-      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
-      remoteToolName: 'search-campus',
-      arguments: { keyword: 'fallback' },
-      runId: 'run-1',
-      toolCallId: 'call-1b',
-      snapshotRevision: 0,
-    })
-
-    expect(fallbackResolved).toEqual({
-      ok: true,
-      toolId: 'mcp.missing.tool.11111111',
-      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
-      remoteToolName: 'search-campus',
-      content: [{ type: 'text', text: '{"keyword":"fallback"}' }],
-      structuredContent: { echoedArguments: { keyword: 'fallback' } },
-      snapshotRevision: 1,
-      isError: false,
-    })
-
     const drift = await fixture.service.executeTool({
       toolId: 'mcp.missing.tool.00000000',
       serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
@@ -740,8 +746,11 @@ describe('createMcpRegistryService', () => {
     })
   })
 
-  it('allows the first MCP tool call to use the resolved request target before the live connector catalog is hydrated', async () => {
-    const fixture = await createRegistryServiceFixture('execute-tool-first-call-ready-window')
+  it('surfaces first-call readiness failures when a saved server is connected but the managed catalog has not hydrated yet', async () => {
+    const fixture = await createRegistryServiceFixture('execute-tool-first-call-ready-window', {
+      reconcileHydratesCatalog: false,
+      callToolRequiresHydratedCatalog: true,
+    })
     const server = createMcpStdioStubServerFixture()
     await fixture.service.saveServer(server)
     await fixture.connectorHub.reconcile([server], { registryRevision: 1, snapshotRevision: 8 })
@@ -757,14 +766,25 @@ describe('createMcpRegistryService', () => {
     })
 
     expect(result).toEqual({
-      ok: true,
+      ok: false,
       toolId: 'mcp.missing.tool.11111111',
       serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
       remoteToolName: 'search-campus',
-      content: [{ type: 'text', text: '{"keyword":"calendar"}' }],
-      structuredContent: { echoedArguments: { keyword: 'calendar' } },
       snapshotRevision: 1,
-      isError: false,
+      error: {
+        code: 'server_not_ready',
+        message: 'The MCP server is not ready to execute tools.',
+        retryable: true,
+        observedAt: '2026-04-21T12:00:00.000Z',
+        details: {
+          requestedServerId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+          requestedRemoteToolName: 'search-campus',
+          connectionState: 'connected',
+          connectorToolCount: 0,
+          requestedSnapshotRevision: 1,
+          snapshotRevision: 1,
+        },
+      },
     })
     expect(fixture.connectorHub.__getToolCallRequests()).toEqual([
       expect.objectContaining({

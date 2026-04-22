@@ -384,6 +384,80 @@ def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:
     assert exc_info.value.details == {"reason": "todo", "operation": "save_text"}
 
 
+def test_desktop_capability_bridge_client_preserves_mcp_first_call_readiness_failures() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "requestId": payload["requestId"],
+                "ok": True,
+                "result": {
+                    "ok": False,
+                    "toolId": payload["toolId"],
+                    "serverId": payload["payload"]["serverId"],
+                    "remoteToolName": payload["payload"]["remoteToolName"],
+                    "snapshotRevision": 12,
+                    "error": {
+                        "code": "server_not_ready",
+                        "message": "The MCP server is not ready to execute tools.",
+                        "retryable": True,
+                        "observedAt": "2026-04-21T12:00:00.000Z",
+                        "details": {
+                            "requestedServerId": payload["payload"]["serverId"],
+                            "requestedRemoteToolName": payload["payload"]["remoteToolName"],
+                            "connectionState": "connected",
+                            "connectorToolCount": 0,
+                            "requestedSnapshotRevision": payload["payload"].get("snapshotRevision"),
+                            "snapshotRevision": 12,
+                        },
+                    },
+                },
+            },
+            request=request,
+        )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.call_mcp_tool(
+            context=_build_invocation_context(
+                tool_id="mcp.missing.tool.11111111"
+            ),
+            server_id="mcp-stdio-stub",
+            remote_tool_name="search-campus",
+            arguments={"keyword": "library"},
+            snapshot_revision=11,
+        )
+    )
+
+    assert result == {
+        "ok": False,
+        "toolId": "mcp.missing.tool.11111111",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "snapshotRevision": 12,
+        "error": {
+            "code": "server_not_ready",
+            "message": "The MCP server is not ready to execute tools.",
+            "retryable": True,
+            "observedAt": "2026-04-21T12:00:00.000Z",
+            "details": {
+                "requestedServerId": "mcp-stdio-stub",
+                "requestedRemoteToolName": "search-campus",
+                "connectionState": "connected",
+                "connectorToolCount": 0,
+                "requestedSnapshotRevision": 11,
+                "snapshotRevision": 12,
+            },
+        },
+    }
+
+
 def test_desktop_capability_bridge_client_wraps_invalid_error_envelope_validation_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

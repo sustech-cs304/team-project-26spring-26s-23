@@ -122,16 +122,27 @@ export function createMcpRegistryLoadResultFixture(): McpRegistryLoadSuccess {
   }
 }
 
-export function createMcpSaveServerSuccessFixture(): McpSaveServerSuccess {
-  const server = createMcpStdioStubServerFixture({ updatedAt: '2026-04-21T08:20:00Z' })
+export function createMcpSaveServerSuccessFixture(
+  overrides: {
+    registryRevision?: number
+    snapshotRevision?: number
+    server?: Partial<McpServerRecord>
+    state?: Partial<McpServerStateSummary>
+    validationErrors?: McpSaveServerSuccess['validationErrors']
+  } = {},
+): McpSaveServerSuccess {
+  const server = createMcpStdioStubServerFixture({
+    updatedAt: '2026-04-21T08:20:00Z',
+    ...(overrides.server ?? {}),
+  })
 
   return {
     ok: true,
-    registryRevision: 4,
-    snapshotRevision: 8,
+    registryRevision: overrides.registryRevision ?? 4,
+    snapshotRevision: overrides.snapshotRevision ?? 9,
     server,
-    state: createMcpServerStateFixture(server),
-    validationErrors: [],
+    state: createMcpServerStateFixture(server, overrides.state),
+    validationErrors: overrides.validationErrors ?? [],
   }
 }
 

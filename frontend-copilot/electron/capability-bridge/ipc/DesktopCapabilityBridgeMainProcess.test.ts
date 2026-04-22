@@ -519,6 +519,88 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
   })
 
+  it('forwards the registry-provided execution target details without a test-only fallback target', async () => {
+    const executeTool = vi.fn(async () => ({
+      ok: false as const,
+      toolId: 'mcp.missing.tool.11111111',
+      serverId: 'mcp-stdio-stub',
+      remoteToolName: 'search-campus',
+      snapshotRevision: 12,
+      error: {
+        code: 'server_not_ready',
+        message: 'The MCP server is not ready to execute tools.',
+        retryable: true,
+        observedAt: '2026-04-21T12:00:00.000Z',
+        details: {
+          requestedServerId: 'mcp-stdio-stub',
+          requestedRemoteToolName: 'search-campus',
+          connectionState: 'connected',
+          connectorToolCount: 0,
+          requestedSnapshotRevision: 11,
+          snapshotRevision: 12,
+        },
+      },
+    }))
+    const mcpRegistryService = {
+      executeTool,
+    } as unknown as ElectronMcpRegistryService
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => {
+        throw new Error('MCP bridge should not request runtime paths.')
+      },
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+      getMcpRegistryService: () => mcpRegistryService,
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'mcp-call-first-not-ready',
+      capability: 'mcp',
+      operation: 'call_tool',
+      toolId: 'mcp.missing.tool.11111111',
+      runId: 'run-1',
+      toolCallId: 'tool-call-1',
+      payload: {
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+        snapshotRevision: 11,
+      },
+    }))).resolves.toEqual({
+      requestId: 'mcp-call-first-not-ready',
+      ok: true,
+      result: {
+        ok: false,
+        toolId: 'mcp.missing.tool.11111111',
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        snapshotRevision: 12,
+        error: {
+          code: 'server_not_ready',
+          message: 'The MCP server is not ready to execute tools.',
+          retryable: true,
+          observedAt: '2026-04-21T12:00:00.000Z',
+          details: {
+            requestedServerId: 'mcp-stdio-stub',
+            requestedRemoteToolName: 'search-campus',
+            connectionState: 'connected',
+            connectorToolCount: 0,
+            requestedSnapshotRevision: 11,
+            snapshotRevision: 12,
+          },
+        },
+      },
+    })
+    expect(executeTool).toHaveBeenCalledWith({
+      toolId: 'mcp.missing.tool.11111111',
+      serverId: 'mcp-stdio-stub',
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      runId: 'run-1',
+      toolCallId: 'tool-call-1',
+      snapshotRevision: 11,
+    })
+  })
+
   it('returns structured failures when workspace paths escape the approved root', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-workspace-denied')
     activeTempRoots.push(fixture.tempRoot)

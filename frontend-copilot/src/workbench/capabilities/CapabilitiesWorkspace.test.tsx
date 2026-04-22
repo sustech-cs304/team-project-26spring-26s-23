@@ -617,6 +617,118 @@ describe('CapabilitiesWorkspace', () => {
     rendered.unmount()
   })
 
+  it('reloads the tool catalog after saving an enabled server without requiring a synthetic snapshot event', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog
+      .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v1' }))
+      .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+    mockedSaveMcpServer.mockResolvedValue(createMcpSaveServerSuccessFixture({
+      snapshotRevision: 9,
+      server: {
+        serverId: 'filesystem',
+        displayName: 'Filesystem MCP',
+      },
+      state: {
+        connectionState: 'connected',
+        toolCount: 1,
+        lastHandshakeAt: '2026-04-21T12:00:00.000Z',
+        lastCatalogSyncAt: '2026-04-21T12:00:00.000Z',
+      },
+    }))
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await waitForNextFrame()
+
+    await clickElement(getNavButton(document.body, 'mcp-servers'))
+    await waitForNextFrame()
+    await clickElement(getExactButton(document.body, '新增 MCP 服务器'))
+    await waitForNextFrame()
+
+    const dialog = getDialog(document.body)
+    await clickElement(getExactButton(dialog, '从标准 MCP 配置导入'))
+
+    const textarea = dialog.querySelector('textarea[aria-label="标准 MCP JSON"]') as HTMLTextAreaElement
+    await setFormControlValue(textarea, JSON.stringify({
+      mcpServers: {
+        filesystem: {
+          command: 'npx',
+          args: ['@modelcontextprotocol/server-filesystem'],
+        },
+      },
+    }, null, 2))
+    await clickElement(getExactButton(dialog, '解析配置'))
+    await clickElement(getExactButton(dialog, '保存服务器'))
+
+    await waitForNextFrame()
+    await waitForNextFrame()
+
+    expect(mockedSaveMcpServer).toHaveBeenCalledWith(expect.objectContaining({
+      serverId: 'filesystem',
+      displayName: 'filesystem',
+      transportConfig: expect.objectContaining({
+        kind: 'stdio',
+        command: 'npx',
+        args: ['@modelcontextprotocol/server-filesystem'],
+      }),
+    }))
+    expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+    expect(mockedLoadToolCatalog.mock.calls).toEqual([
+      [null],
+      [null],
+    ])
+
+    await clickElement(getNavButton(document.body, 'tool-permissions'))
+    await waitForNextFrame()
+
+    expect(rendered.container.textContent).toContain('Filesystem MCP')
+    expect(rendered.container.textContent).toContain('读取文本文件')
+
+    rendered.unmount()
+  })
+
+  it('reloads the tool catalog when the registry publishes a catalog event with a new snapshot revision', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog
+      .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v1' }))
+      .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    if (activeMcpRegistryListener === null) {
+      throw new Error('Expected MCP registry subscription listener to be registered.')
+    }
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'catalog',
+        registryRevision: 7,
+        snapshotRevision: 11,
+        serverId: connectedStdioServer.serverId,
+        refreshedServerIds: [connectedStdioServer.serverId],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForNextFrame()
+    await waitForNextFrame()
+
+    expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+    expect(rendered.container.textContent).toContain('Filesystem MCP')
+    expect(rendered.container.textContent).toContain('读取文本文件')
+
+    rendered.unmount()
+  })
+
   it('reloads the tool catalog after a successful connection test without requiring a manual refresh button', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog
