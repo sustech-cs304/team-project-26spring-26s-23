@@ -1,6 +1,12 @@
 import { mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
-import { activateManagedRuntimeVersion, prepareCleanStagingDirectory, writeJsonFile, readJsonFile } from '../RuntimeInstallShared'
+import {
+  activateManagedRuntimeVersion,
+  createVersionDirectoryName,
+  prepareCleanStagingDirectory,
+  writeJsonFile,
+  readJsonFile,
+} from '../RuntimeInstallShared'
 import { createManagedRuntimeArchiveExtractor, type ManagedRuntimeArchiveExtractor } from '../archive'
 import {
   createManagedRuntimeDownloadClient,
@@ -158,7 +164,7 @@ export class UvRuntimeManager {
   }
 
   private async verifyVersion(version: string) {
-    return await this.verifyVersionFromDirectory(path.join(this.paths.versionsDir, version))
+    return await this.verifyVersionFromDirectory(this.resolveVersionDirectory(version))
   }
 
   private async verifyVersionFromDirectory(versionDir: string) {
@@ -217,12 +223,16 @@ export class UvRuntimeManager {
       return {}
     }
     const componentLookup = Object.fromEntries(this.selectedComponents.map((entry) => [entry.component, entry]))
-    const versionRoot = activeVersionDir ?? path.join(this.paths.versionsDir, activeVersion)
+    const versionRoot = activeVersionDir ?? this.resolveVersionDirectory(activeVersion)
     return {
       python: path.join(versionRoot, 'python', componentLookup.python?.distribution.launcherRelativePaths.python ?? 'python'),
       uv: path.join(versionRoot, 'uv', componentLookup.uv?.distribution.launcherRelativePaths.uv ?? 'uv'),
       uvx: path.join(versionRoot, 'uv', componentLookup.uv?.distribution.launcherRelativePaths.uvx ?? 'uvx'),
     }
+  }
+
+  private resolveVersionDirectory(version: string): string {
+    return path.join(this.paths.versionsDir, createVersionDirectoryName(version))
   }
 
   private async readState(): Promise<ManagedRuntimePersistentState> {

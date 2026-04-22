@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createManagedRuntimeFamilyPaths } from '../ManagedRuntimePaths'
+import { createVersionDirectoryName } from '../RuntimeInstallShared'
 import { getManagedRuntimeFamilyManifest, resolveManagedRuntimeComponents } from '../runtime-manifest'
 import { createRuntimeLauncherFiles } from '../test-support/runtime-install-fixtures'
 import { UvRuntimeManager } from './UvRuntimeManager'
@@ -151,15 +152,15 @@ describe('UvRuntimeManager', () => {
         verifiedAt: '2026-04-22T09:00:00.000Z',
         summary: 'offline active verification',
         launchers: {
-          python: path.join(paths.versionsDir, manifest.pinnedVersion, 'python', 'python.exe'),
-          uv: path.join(paths.versionsDir, manifest.pinnedVersion, 'uv', 'uv.exe'),
-          uvx: path.join(paths.versionsDir, manifest.pinnedVersion, 'uv', 'uvx.exe'),
+          python: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python', 'python.exe'),
+          uv: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv', 'uv.exe'),
+          uvx: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv', 'uvx.exe'),
         },
       },
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, manifest.pinnedVersion, 'python'), { python: 'python.exe' })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, manifest.pinnedVersion, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
 
@@ -203,14 +204,64 @@ describe('UvRuntimeManager', () => {
         at: '2026-04-22T09:30:00.000Z',
       },
     })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, manifest.pinnedVersion, 'python'), { python: 'python.exe' })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, manifest.pinnedVersion, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
 
     expect(snapshot.status).toBe('ready')
     expect(snapshot.lastErrorSummary).toBeNull()
     expect(snapshot.lastVerification?.summary).toContain('uvx 0.11.7')
+  })
+
+  it('verifies and exposes launcher paths from the sanitized version directory', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-uv-sanitized-version-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'uv')
+    const manifest = getManagedRuntimeFamilyManifest('uv')
+    const components = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'x64' })
+    const versionDir = path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion))
+    const manager = new UvRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      commandRunner: {
+        run: vi.fn(async (command: string) => {
+          if (command.endsWith('python.exe')) return 'Python 3.12.10'
+          if (command.endsWith('uv.exe')) return 'uv 0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
+        }),
+      },
+      clock: () => '2026-04-22T18:30:00.000Z',
+    })
+
+    await manager['writeState']({
+      schemaVersion: 1,
+      family: 'uv',
+      pinnedVersion: manifest.pinnedVersion,
+      status: 'ready',
+      activeVersion: manifest.pinnedVersion,
+      lastInstalledAt: '2026-04-22T18:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    })
+    await createRuntimeLauncherFiles(path.join(versionDir, 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(versionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
+
+    const snapshot = await manager.loadSnapshot()
+
+    expect(snapshot.status).toBe('ready')
+    expect(snapshot.lastVerification?.launchers).toEqual({
+      python: path.join(versionDir, 'python', 'python.exe'),
+      uv: path.join(versionDir, 'uv', 'uv.exe'),
+      uvx: path.join(versionDir, 'uv', 'uvx.exe'),
+    })
+    expect(snapshot.launcherPaths).toEqual({
+      python: path.join(versionDir, 'python', 'python.exe'),
+      uv: path.join(versionDir, 'uv', 'uv.exe'),
+      uvx: path.join(versionDir, 'uv', 'uvx.exe'),
+    })
   })
 
   it('cleans staging on verification failure so no uvx launcher appears in the active directory', async () => {
