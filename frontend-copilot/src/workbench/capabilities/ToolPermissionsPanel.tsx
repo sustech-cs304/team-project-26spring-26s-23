@@ -2,7 +2,6 @@ import { ChevronDown } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import {
-  toolPermissionGroups,
   type ToolPermissionDelayAction,
   type ToolPermissionGroupId,
   type ToolPermissionMode,
@@ -29,12 +28,46 @@ export function ToolPermissionsPanel({
 }: ToolPermissionsPanelProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<ToolPermissionGroupId, boolean>>(initialCollapsedGroups)
 
-  const groupedTools = useMemo(() => toolPermissionGroups
-    .map((group) => ({
-      ...group,
-      tools: tools.filter((tool) => tool.groupId === group.id),
-    }))
-    .filter((group) => group.tools.length > 0), [tools])
+  const groupedTools = useMemo(() => {
+    const groups = new Map<string, {
+      id: ToolPermissionGroupId
+      label: string
+      order: number
+      creationIndex: number
+      tools: ToolPermissionRecord[]
+    }>()
+
+    tools.forEach((tool, index) => {
+      const existingGroup = groups.get(tool.groupId)
+      if (existingGroup) {
+        existingGroup.tools.push(tool)
+        return
+      }
+
+      groups.set(tool.groupId, {
+        id: tool.groupId,
+        label: tool.groupLabel,
+        order: tool.groupOrder,
+        creationIndex: index,
+        tools: [tool],
+      })
+    })
+
+    return [...groups.values()]
+      .sort((left, right) => {
+        const byOrder = left.order - right.order
+        if (byOrder !== 0) {
+          return byOrder
+        }
+
+        const byLabel = left.label.localeCompare(right.label, 'zh-CN')
+        if (byLabel !== 0) {
+          return byLabel
+        }
+
+        return left.creationIndex - right.creationIndex
+      })
+  }, [tools])
 
   const handleToggleGroup = (groupId: ToolPermissionGroupId) => {
     setCollapsedGroups((previous) => ({

@@ -420,6 +420,74 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
   }
 }
 
+function createDynamicMcpGroupCatalogLoadResult(): ToolCatalogLoadResult {
+  return {
+    ok: true,
+    tools: [
+      {
+        toolId: 'tool.file-convert',
+        kind: 'builtin',
+        availability: 'available',
+        displayName: '文件转换',
+        description: '将常见文档转换为运行时可消费内容。',
+        group: {
+          id: 'builtin-core',
+          label: '内置基础工具',
+          labelZh: '内置基础工具',
+          labelEn: 'Built-in Core Tools',
+          order: 0,
+          sourceKind: 'builtin',
+        },
+      },
+      {
+        toolId: 'blackboard.course_catalog.search',
+        kind: 'contract',
+        availability: 'available',
+        displayName: '课程目录搜索',
+        description: '搜索 Blackboard 课程目录。',
+        group: {
+          id: 'blackboard',
+          label: 'Blackboard 工具',
+          labelZh: 'Blackboard 工具',
+          labelEn: 'Blackboard Tools',
+          order: 10,
+          sourceKind: 'sustech-blackboard',
+        },
+      },
+      {
+        toolId: 'tis.personal_grades.fetch',
+        kind: 'contract',
+        availability: 'available',
+        displayName: '成绩查询',
+        description: '读取教学系统个人成绩。',
+        group: {
+          id: 'tis',
+          label: 'TIS 工具',
+          labelZh: 'TIS 工具',
+          labelEn: 'TIS Tools',
+          order: 20,
+          sourceKind: 'sustech-tis',
+        },
+      },
+      {
+        toolId: 'mcp__filesystem__read_text_file',
+        kind: 'external',
+        availability: 'available',
+        displayName: '读取文本文件',
+        description: '通过 filesystem 服务器读取文本文件。',
+        group: {
+          id: 'mcp.server.filesystem',
+          label: 'Filesystem MCP',
+          labelZh: 'Filesystem MCP',
+          labelEn: 'Filesystem MCP',
+          order: 100,
+          sourceKind: 'mcp-server',
+        },
+      },
+    ],
+  }
+}
+
 describe('CapabilitiesWorkspace', () => {
   it('renders persisted tool permissions and secondary navigation switch with real tool ids', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
@@ -511,7 +579,7 @@ describe('CapabilitiesWorkspace', () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog
       .mockResolvedValueOnce(createToolCatalogLoadResult())
-      .mockResolvedValueOnce(createHostedCatalogOnlyLoadResult())
+      .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: createLoadResult().state,
@@ -539,8 +607,33 @@ describe('CapabilitiesWorkspace', () => {
 
     expect(mockedTestMcpConnection).toHaveBeenCalledWith({ serverId: connectedStdioServer.serverId })
     expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
-    expect(rendered.container.textContent).toContain('校园活动')
+    expect(rendered.container.textContent).toContain('Filesystem MCP')
+    expect(rendered.container.textContent).toContain('读取文本文件')
+    expect(rendered.container.textContent).not.toContain('MCP 工具')
     expect(rendered.container.textContent).not.toContain('刷新工具列表')
+  })
+
+  it('renders mixed builtin, blackboard, tis and dynamic MCP groups in runtime order without filtering unknown group ids', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createDynamicMcpGroupCatalogLoadResult())
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    const groupLabels = Array.from(rendered.container.querySelectorAll('.tool-permission-group__label'))
+      .map((element) => element.textContent?.trim())
+
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(4)
+    expect(groupLabels).toEqual(['内置基础工具', 'Blackboard 工具', 'TIS 工具', 'Filesystem MCP'])
+    expect(rendered.container.textContent).toContain('读取文本文件')
+    expect(rendered.container.textContent).toContain('课程目录搜索')
+    expect(rendered.container.textContent).toContain('成绩查询')
+
+    rendered.unmount()
   })
 
   it('renders hosted backend builtin and contract tools instead of collapsing to the empty state', async () => {

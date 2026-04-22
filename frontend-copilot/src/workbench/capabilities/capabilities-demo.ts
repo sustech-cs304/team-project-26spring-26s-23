@@ -23,6 +23,8 @@ export interface ToolPermissionGroup {
 export interface ToolPermissionRecord {
   id: string
   groupId: ToolPermissionGroupId
+  groupLabel: string
+  groupOrder: number
   name: string
   description: string
   toolId: string
@@ -91,6 +93,8 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
   {
     id: 'tool-read-file',
     groupId: 'builtin-core',
+    groupLabel: '内置基础工具',
+    groupOrder: 0,
     name: '读取文件',
     description: '允许模型读取项目内文件内容，用于理解上下文与定位实现细节。',
     toolId: 'read_file',
@@ -101,6 +105,8 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
   {
     id: 'tool-execute-command',
     groupId: 'builtin-core',
+    groupLabel: '内置基础工具',
+    groupOrder: 0,
     name: '执行命令',
     description: '允许运行本地终端命令；适合构建、检查与前端资源处理等操作。',
     toolId: 'execute_command',
@@ -111,6 +117,8 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
   {
     id: 'tool-write-file',
     groupId: 'builtin-core',
+    groupLabel: '内置基础工具',
+    groupOrder: 0,
     name: '写入文件',
     description: '允许创建或重写前端文件，适用于页面搭建、样式输出与占位数据维护。',
     toolId: 'write_to_file',
@@ -121,6 +129,8 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
   {
     id: 'tool-fetch-url',
     groupId: 'mcp',
+    groupLabel: 'MCP 工具',
+    groupOrder: 100,
     name: '联网抓取',
     description: '在有需要时抓取网页内容，用于界面占位信息或外部说明上下文。',
     toolId: 'mcp.fetch',
@@ -131,6 +141,8 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
   {
     id: 'tool-browser-automation',
     groupId: 'mcp',
+    groupLabel: 'MCP 工具',
+    groupOrder: 100,
     name: '浏览器自动化',
     description: '驱动浏览器执行界面级操作，用于录制流程或验证可见交互。',
     toolId: 'mcp.puppeteer',
