@@ -72,6 +72,7 @@ export interface CopilotToolMessageItem extends CopilotRunSegmentViewItemBase {
   resultSummary: string | null
   errorSummary: string | null
   approval?: Extract<CopilotRunSegment, { kind: 'tool' }>['approval']
+  errorDetail?: CopilotErrorDetailSource | null
 }
 
 export interface CopilotDiagnosticMessageItem extends CopilotRunSegmentViewItemBase {
@@ -211,6 +212,9 @@ type CopilotRunSegmentProjectionState = Pick<
   CopilotRunState,
   | 'segments'
 > & CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState
+  & {
+    failure?: CopilotRunState['failure']
+  }
 
 export function buildCopilotRunSegmentViewModel(
   runState: CopilotRunSegmentProjectionState,
@@ -244,7 +248,7 @@ function projectSegmentToViewItems(
     case 'reasoning':
       return shouldProjectReasoningSegment(runState) ? [projectReasoningSegment(segment)] : []
     case 'tool':
-      return [projectToolSegment(segment)]
+      return [projectToolSegment(segment, runState)]
     case 'diagnostic':
       return [projectDiagnosticSegment(segment)]
     case 'terminal': {
@@ -306,7 +310,11 @@ function projectReasoningSegment(
 
 function projectToolSegment(
   segment: Extract<CopilotRunSegment, { kind: 'tool' }>,
+  runState: CopilotRunSegmentProjectionState,
 ): CopilotToolMessageItem {
+  const toolFailure: CopilotRunState['failure'] = segment.status === 'failed'
+    ? (runState.failure ?? null)
+    : null
   return {
     id: segment.id,
     kind: 'tool',
@@ -331,7 +339,54 @@ function projectToolSegment(
           timeoutSeconds: segment.approval.timeoutSeconds ?? null,
           timeoutAction: segment.approval.timeoutAction ?? null,
         },
+    errorDetail: toolFailure === null
+      ? null
+      : createCopilotErrorDetailSource({
+          source: 'streaming',
+          title: segment.title,
+          summaryMessage: formatFailureMessage(toolFailure),
+          rawMessage: toolFailure.message,
+          code: toolFailure.code,
+          stage: readFailureStage(toolFailure.details) ?? 'streaming',
+          requestedMethod: 'run/stream',
+          details: {
+            toolId: segment.toolId,
+            toolCallId: segment.toolCallId,
+            ...toolFailure.details,
+          },
+          resolvedModelId: runState.resolvedModelId,
+          resolvedModelRoute: runState.resolvedModelRoute,
+          resolvedToolIds: dedupeStrings([
+            ...runState.resolvedToolIds,
+            segment.toolId,
+          ]),
+          requestOptions: runState.requestOptions,
+        }),
   }
+}
+
+function readFailureStage(details: Record<string, unknown>): string | null {
+  const phase = details.phase
+  if (typeof phase === 'string' && phase.trim() !== '') {
+    return phase.trim()
+  }
+
+  const stage = details.stage
+  return typeof stage === 'string' && stage.trim() !== '' ? stage.trim() : null
+}
+
+function dedupeStrings(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const deduped: string[] = []
+  for (const value of values) {
+    const normalized = value.trim()
+    if (normalized === '' || seen.has(normalized)) {
+      continue
+    }
+    seen.add(normalized)
+    deduped.push(normalized)
+  }
+  return deduped
 }
 
 function projectDiagnosticSegment(

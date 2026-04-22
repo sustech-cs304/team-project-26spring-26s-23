@@ -527,7 +527,7 @@ describe('CopilotPanelShell diagnostic visibility', () => {
 
     expect(rendered.container.textContent).not.toContain('Tool failed: boom')
 
-    await clickElement(rendered.getByTestId('chat-message-error-detail-button-1'))
+    await clickElement(rendered.getByTestId('chat-message-error-detail-button-2'))
 
     expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('工具执行失败，请重试。')
     expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('Tool failed: boom')
@@ -536,6 +536,26 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     await clickElement(rendered.getByTestId('error-detail-overlay-close'))
 
     expect(rendered.queryByTestId('error-detail-overlay')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('opens MCP technical details from the failed tool card entry point', async () => {
+    const rendered = renderInteractiveShell(false)
+
+    await clickElement(rendered.getByTestId('chat-message-tool-error-detail-button-1'))
+
+    const overlay = rendered.getByTestId('error-detail-overlay')
+    expect(overlay.textContent).toContain('工具名称')
+    expect(overlay.textContent).toContain('search-campus')
+    expect(overlay.textContent).toContain('toolId')
+    expect(overlay.textContent).toContain('serverId')
+    expect(overlay.textContent).toContain('mcp-stdio-stub')
+    expect(overlay.textContent).toContain('调用阶段')
+    expect(overlay.textContent).toContain('tools/call')
+    expect(overlay.textContent).toContain('诊断摘要')
+    expect(overlay.textContent).toContain('stderr 摘要')
+    expect(overlay.textContent).toContain('快照版本')
 
     rendered.unmount()
   })
@@ -799,6 +819,41 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       resolvedModelRoute: null,
       resolvedToolIds: [],
       requestOptions: {},
+    },
+    {
+      id: 'tool:run-1:tool.weather-current:call-1',
+      kind: 'tool',
+      runId: 'run-1',
+      sequence: 2,
+      title: '工具调用失败',
+      content: 'weather-current 调用失败。',
+      status: 'failed',
+      toolCallId: 'tool.weather-current:call-1',
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      toolPhase: 'failed',
+      inputSummary: '{"keyword":"calendar"}',
+      resultSummary: null,
+      errorSummary: 'stderr tail',
+      errorDetail: createCopilotErrorDetailSource({
+        source: 'streaming',
+        title: '工具调用失败',
+        summaryMessage: '工具执行失败，请重试。',
+        rawMessage: 'Tool failed: boom',
+        code: 'tool_execution_failed',
+        stage: 'streaming',
+        requestedMethod: 'run/stream',
+        details: {
+          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+          toolCallId: 'tool.weather-current:call-1',
+          serverId: 'mcp-stdio-stub',
+          serverName: 'stdio stub server',
+          remoteToolName: 'search-campus',
+          phase: 'tools/call',
+          diagnosticSummary: 'connector ready but remote tool returned error',
+          stderrSummary: 'stderr tail',
+          snapshotRevision: 12,
+        },
+      }),
     },
     {
       id: 'terminal:run-1:failed',

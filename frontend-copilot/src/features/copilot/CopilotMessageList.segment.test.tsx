@@ -299,6 +299,84 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
   })
 
+  it('renders a detail button for failed tool cards without leaking raw MCP diagnostics into the card body', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'failed',
+      runId: 'run-mcp-tool-failed',
+      threadId: 'session-1',
+      failure: {
+        code: 'tool_execution_failed',
+        message: 'MCP tool failed: transport disconnected',
+        details: {
+          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+          toolCallId: 'tool-call-1',
+          serverId: 'mcp-stdio-stub',
+          serverName: 'stdio stub server',
+          remoteToolName: 'search-campus',
+          phase: 'tools/call',
+          diagnosticSummary: 'connector ready but remote tool returned error',
+          stderrSummary: 'stderr tail',
+          snapshotRevision: 12,
+          catalogVersion: 12,
+        },
+      },
+      segments: [
+        {
+          id: 'tool:run-mcp-tool-failed:tool-1',
+          kind: 'tool',
+          runId: 'run-mcp-tool-failed',
+          startedSequence: 1,
+          lastSequence: 2,
+          status: 'failed',
+          toolCallId: 'tool-call-1',
+          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+          toolPhase: 'failed',
+          title: '工具调用失败',
+          summary: 'search-campus 调用失败。',
+          inputSummary: '{"keyword":"calendar"}',
+          resultSummary: null,
+          errorSummary: 'transport disconnected',
+        },
+        {
+          id: 'terminal:run-mcp-tool-failed:failed',
+          kind: 'terminal',
+          runId: 'run-mcp-tool-failed',
+          startedSequence: 3,
+          lastSequence: 3,
+          status: 'failed',
+          terminalPhase: 'failed',
+          assistantMessageId: null,
+          cancelReason: null,
+          failure: {
+            code: 'tool_execution_failed',
+            message: 'MCP tool failed: transport disconnected',
+            details: {
+              toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+              toolCallId: 'tool-call-1',
+              serverId: 'mcp-stdio-stub',
+              serverName: 'stdio stub server',
+              remoteToolName: 'search-campus',
+              phase: 'tools/call',
+              diagnosticSummary: 'connector ready but remote tool returned error',
+              stderrSummary: 'stderr tail',
+              snapshotRevision: 12,
+              catalogVersion: 12,
+            },
+          },
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).toContain('chat-message-tool-error-detail-button-1')
+    expect(html).not.toContain('connector ready but remote tool returned error')
+    expect(html).not.toContain('stderr tail')
+  })
+
   it('renders explicit CAS credential guidance for authentication failures', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),

@@ -180,6 +180,51 @@ describe('error detail overlay view model', () => {
     }
   })
 
+  it('maps MCP failure details into stable technical fields with fallback placeholders', () => {
+    const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '工具调用失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'remote tool error',
+      code: 'tool_execution_failed',
+      stage: 'streaming',
+      requestedMethod: 'run/stream',
+      details: {
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        toolCallId: 'tool-call-1',
+        serverId: 'mcp-stdio-stub',
+        serverName: 'stdio stub server',
+        remoteToolName: 'search-campus',
+        phase: 'tools/call',
+        diagnosticSummary: 'connector ready but remote tool returned error',
+        stderrSummary: 'stderr tail',
+        snapshotRevision: 12,
+      },
+    }))
+
+    expect(viewModel.groups.find((group) => group.key === 'request-context')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '调用阶段', value: 'tools/call' }),
+        expect.objectContaining({ kind: 'key-value', label: '快照版本', value: '12' }),
+        expect.objectContaining({ kind: 'key-value', label: '目录版本', value: '未提供' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '工具名称', value: 'search-campus' }),
+        expect.objectContaining({ kind: 'key-value', label: 'toolId', value: 'mcp.mcp-stdio-stub.search-campus.00004d8d' }),
+        expect.objectContaining({ kind: 'key-value', label: '服务器名称', value: 'stdio stub server' }),
+        expect.objectContaining({ kind: 'key-value', label: 'serverId', value: 'mcp-stdio-stub' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'raw-details')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '诊断摘要', value: 'connector ready but remote tool returned error' }),
+        expect.objectContaining({ kind: 'key-value', label: 'stderr 摘要', value: 'stderr tail' }),
+      ]),
+    )
+  })
+
   it('marks raw details as structured json only when the serialized value is a json object or array', () => {
     const jsonViewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',

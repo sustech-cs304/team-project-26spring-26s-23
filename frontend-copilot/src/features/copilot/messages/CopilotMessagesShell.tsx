@@ -197,6 +197,8 @@ export function CopilotMessagesShell({
                         index={index}
                         runtimeUrl={runtimeUrl}
                         onResolveToolApproval={onResolveToolApproval}
+                        onOpenErrorDetail={onOpenErrorDetail}
+                        language={language}
                       />
                     )
                   : turn.kind === 'reasoning'
@@ -329,6 +331,10 @@ function renderMessageHeader(
 function resolveMessageErrorDetailSource(
   turn: Exclude<CopilotMessageListItem, { kind: 'user' }>,
 ): CopilotErrorDetailSource | null {
+  if (turn.kind === 'tool') {
+    return turn.errorDetail ?? null
+  }
+
   if (turn.kind !== 'terminal' || turn.status !== 'failed') {
     return null
   }
@@ -534,11 +540,15 @@ function ToolMessageCard({
   index,
   runtimeUrl,
   onResolveToolApproval,
+  onOpenErrorDetail,
+  language,
 }: {
   turn: CopilotToolMessageItem
   index: number
   runtimeUrl: string | null
   onResolveToolApproval?: CopilotMessagesShellProps['onResolveToolApproval']
+  onOpenErrorDetail?: CopilotMessagesShellProps['onOpenErrorDetail']
+  language: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const [inputExpanded, setInputExpanded] = useState(false)
@@ -550,6 +560,8 @@ function ToolMessageCard({
   const panelId = `chat-message-tool-panel-${turn.id}`
   const inputPanelId = `chat-message-tool-input-panel-${turn.id}`
   const approval = turn.approval ?? null
+  const errorDetail = resolveMessageErrorDetailSource(turn)
+  const copy = getCopilotChatCopy(language)
   const timeoutSecondsLabel = approval === null ? null : formatToolApprovalTimeoutSecondsLabel(approval, countdownNow)
   const showApprovalActions = turn.toolPhase === 'waiting_approval'
   const approvalControlsEnabled = runtimeUrl !== null && typeof onResolveToolApproval === 'function' && approvalPendingDecision === null
@@ -599,54 +611,60 @@ function ToolMessageCard({
     <div className="copilot-chat__tool-card" data-testid={`chat-message-tool-card-${index}`}>
       {expanded
         ? (
-            <button
-              type="button"
-              className="copilot-chat__tool-toggle"
-              aria-controls={panelId}
-              aria-expanded="true"
-              data-expanded="true"
-              data-testid={`chat-message-tool-toggle-${index}`}
-              onClick={() => {
-                setExpanded((current) => !current)
-              }}
-            >
-              <span className="copilot-chat__tool-toggle-main">
-                <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
-                <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
-              </span>
-              {turn.status === 'streaming' && (
-                <span
-                  className="copilot-chat__tool-spinner"
-                  data-testid={`chat-message-tool-spinner-${index}`}
-                  aria-label="工具调用进行中"
-                />
-              )}
-            </button>
+            <div className="copilot-chat__tool-header-row">
+              <button
+                type="button"
+                className="copilot-chat__tool-toggle"
+                aria-controls={panelId}
+                aria-expanded="true"
+                data-expanded="true"
+                data-testid={`chat-message-tool-toggle-${index}`}
+                onClick={() => {
+                  setExpanded((current) => !current)
+                }}
+              >
+                <span className="copilot-chat__tool-toggle-main">
+                  <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
+                  <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
+                </span>
+                {turn.status === 'streaming' && (
+                  <span
+                    className="copilot-chat__tool-spinner"
+                    data-testid={`chat-message-tool-spinner-${index}`}
+                    aria-label="工具调用进行中"
+                  />
+                )}
+              </button>
+              {renderToolErrorDetailButton({ turn, index, errorDetail, onOpenErrorDetail, copy })}
+            </div>
           )
         : (
-            <button
-              type="button"
-              className="copilot-chat__tool-toggle"
-              aria-controls={panelId}
-              aria-expanded="false"
-              data-expanded="false"
-              data-testid={`chat-message-tool-toggle-${index}`}
-              onClick={() => {
-                setExpanded((current) => !current)
-              }}
-            >
-              <span className="copilot-chat__tool-toggle-main">
-                <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
-                <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
-              </span>
-              {turn.status === 'streaming' && (
-                <span
-                  className="copilot-chat__tool-spinner"
-                  data-testid={`chat-message-tool-spinner-${index}`}
-                  aria-label="工具调用进行中"
-                />
-              )}
-            </button>
+            <div className="copilot-chat__tool-header-row">
+              <button
+                type="button"
+                className="copilot-chat__tool-toggle"
+                aria-controls={panelId}
+                aria-expanded="false"
+                data-expanded="false"
+                data-testid={`chat-message-tool-toggle-${index}`}
+                onClick={() => {
+                  setExpanded((current) => !current)
+                }}
+              >
+                <span className="copilot-chat__tool-toggle-main">
+                  <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
+                  <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
+                </span>
+                {turn.status === 'streaming' && (
+                  <span
+                    className="copilot-chat__tool-spinner"
+                    data-testid={`chat-message-tool-spinner-${index}`}
+                    aria-label="工具调用进行中"
+                  />
+                )}
+              </button>
+              {renderToolErrorDetailButton({ turn, index, errorDetail, onOpenErrorDetail, copy })}
+            </div>
           )}
       {showApprovalActions && renderToolApprovalBar({
         turn,
@@ -924,6 +942,37 @@ function extractToolDisplayNameFromTitle(title: string): string | null {
 
 function resolveToolDisplayNameFromToolId(toolId: string): string | null {
   return resolveCopilotToolDisplayNameFromToolId(toolId)
+}
+
+function renderToolErrorDetailButton(input: {
+  turn: CopilotToolMessageItem
+  index: number
+  errorDetail: CopilotErrorDetailSource | null
+  onOpenErrorDetail?: CopilotMessagesShellProps['onOpenErrorDetail']
+  copy: ReturnType<typeof getCopilotChatCopy>
+}) {
+  if (input.turn.status !== 'failed' || input.errorDetail === null) {
+    return null
+  }
+
+  return (
+    <button
+      type="button"
+      className="icon-button copilot-chat__message-detail-trigger copilot-chat__tool-detail-trigger"
+      aria-label={input.copy.messages.errorDetailButton}
+      aria-haspopup="dialog"
+      title={input.copy.messages.errorDetailButton}
+      data-testid={`chat-message-tool-error-detail-button-${input.index}`}
+      disabled={input.onOpenErrorDetail == null}
+      onClick={(event) => {
+        if (input.errorDetail !== null) {
+          input.onOpenErrorDetail?.(input.errorDetail, event.currentTarget)
+        }
+      }}
+    >
+      <span aria-hidden="true">ⓘ</span>
+    </button>
+  )
 }
 
 function hasNonEmptyValue(value: string | null | undefined): value is string {
