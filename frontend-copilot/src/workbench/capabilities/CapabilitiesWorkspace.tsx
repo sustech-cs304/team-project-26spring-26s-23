@@ -149,11 +149,8 @@ export function CapabilitiesWorkspace() {
     }
 
     const shouldReloadForSnapshot = appliedSnapshotRevisionRef.current !== mcpRegistry.snapshotRevision
-    const currentDirectoryVersion = toolCatalogLoadState.directoryVersion
-    const shouldReloadForDirectoryVersion = currentDirectoryVersion !== null
-      && appliedDirectoryVersionRef.current !== currentDirectoryVersion
 
-    if (!shouldReloadForSnapshot && !shouldReloadForDirectoryVersion) {
+    if (!shouldReloadForSnapshot) {
       return
     }
 
@@ -178,7 +175,7 @@ export function CapabilitiesWorkspace() {
     return () => {
       cancelled = true
     }
-  }, [mcpRegistry.snapshotRevision, settingsState, toolCatalogLoadState.directoryVersion])
+  }, [mcpRegistry.snapshotRevision, settingsState])
 
   const activeNavItem = useMemo(
     () => capabilitiesNavItems.find((item) => item.id === activeSection) ?? capabilitiesNavItems[0],

@@ -579,11 +579,11 @@ describe('CapabilitiesWorkspace', () => {
     expect(activeMcpRegistryListener).toBeNull()
   })
 
-  it('reloads the tool catalog when the unified directoryVersion changes during the same snapshot revision', async () => {
+  it('reloads the tool catalog after a snapshot event and automatically shows new MCP tools in permissions without manual refresh', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog
       .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v1' }))
-      .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v2' }))
+      .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
     mockedSaveSettingsWorkspaceState.mockResolvedValue({
       ok: true,
       state: createLoadResult().state,
@@ -611,6 +611,8 @@ describe('CapabilitiesWorkspace', () => {
     await waitForNextFrame()
 
     expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+    expect(rendered.container.textContent).toContain('Filesystem MCP')
+    expect(rendered.container.textContent).toContain('读取文本文件')
 
     rendered.unmount()
   })

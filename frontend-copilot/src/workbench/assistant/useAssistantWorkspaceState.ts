@@ -33,6 +33,7 @@ import {
 } from '../../features/copilot/thread-runtime-controller'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import type { AgentType, AssistantSessionShell } from '../types'
+import type { RuntimeCapabilitiesGetResponse } from '../../features/copilot/chat-contract'
 import type {
   AssistantSessionContextMenuState,
   AssistantSessionDragState,
@@ -158,6 +159,83 @@ function summarizeAssistantHistoryStateForLog(
 }
 
 export const COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY = 8
+
+function shouldApplyLiveCapabilitiesUpdate(input: {
+  previousCapabilitiesVersion: string | null
+  response: RuntimeCapabilitiesGetResponse
+  previousSession: AssistantSessionShell | null
+}): boolean {
+  if (input.previousCapabilitiesVersion !== input.response.capabilitiesVersion) {
+    return true
+  }
+
+  if (input.previousSession === null) {
+    return true
+  }
+
+  const previousCapabilities = input.previousSession.capabilities
+  if (previousCapabilities.toolSelectionMode !== input.response.toolSelectionMode) {
+    return true
+  }
+
+  if (!haveSameOrderedStrings(previousCapabilities.recommendedToolsForAgent, input.response.recommendedTools)) {
+    return true
+  }
+
+  return !haveSameToolDirectoryEntries(previousCapabilities.allAvailableTools, input.response.tools)
+}
+
+function haveSameOrderedStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function haveSameToolDirectoryEntries(
+  left: RuntimeCapabilitiesGetResponse['tools'],
+  right: RuntimeCapabilitiesGetResponse['tools'],
+): boolean {
+  return left.length === right.length && left.every((tool, index) => haveSameToolDirectoryEntry(tool, right[index]))
+}
+
+function haveSameToolDirectoryEntry(
+  left: RuntimeCapabilitiesGetResponse['tools'][number],
+  right: RuntimeCapabilitiesGetResponse['tools'][number] | undefined,
+): boolean {
+  if (right === undefined) {
+    return false
+  }
+
+  return left.toolId === right.toolId
+    && left.kind === right.kind
+    && left.availability === right.availability
+    && left.displayName === right.displayName
+    && left.description === right.description
+    && left.prompt === right.prompt
+    && left.displayNameZh === right.displayNameZh
+    && left.displayNameEn === right.displayNameEn
+    && left.descriptionZh === right.descriptionZh
+    && left.descriptionEn === right.descriptionEn
+    && haveSameToolGroup(left.group, right.group)
+}
+
+function haveSameToolGroup(
+  left: RuntimeCapabilitiesGetResponse['tools'][number]['group'],
+  right: RuntimeCapabilitiesGetResponse['tools'][number]['group'],
+): boolean {
+  if (left === right) {
+    return true
+  }
+
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return left === right
+  }
+
+  return left.id === right.id
+    && left.label === right.label
+    && left.labelZh === right.labelZh
+    && left.labelEn === right.labelEn
+    && left.order === right.order
+    && left.sourceKind === right.sourceKind
+}
 
 function hasRebuildablePersistedConversation(
   historyState: AssistantSessionHistoryState | undefined,
@@ -1243,7 +1321,14 @@ export function useAssistantWorkspaceState({
           }
 
           const previousCapabilitiesVersion = latestCapabilitiesVersionBySessionId.get(liveSession.sessionId) ?? null
-          if (previousCapabilitiesVersion === response.capabilitiesVersion) {
+          const previousSession = sessionListState.sessions.find((sessionEntry) => {
+            return sessionEntry.sessionId === liveSession.sessionId
+          }) ?? null
+          if (!shouldApplyLiveCapabilitiesUpdate({
+            previousCapabilitiesVersion,
+            response,
+            previousSession,
+          })) {
             return
           }
 

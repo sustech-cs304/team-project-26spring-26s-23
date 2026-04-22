@@ -634,7 +634,7 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
-  it('reloads live session capabilities after an MCP snapshot event and ignores unchanged capabilitiesVersion results', async () => {
+  it('reloads live session capabilities after an MCP snapshot event and applies the same snapshot round tool update to chat picker state', async () => {
     mockCopilotChatPanel.mockClear()
 
     const directoryResponse = createDirectoryResponse()
@@ -657,7 +657,7 @@ describe('AssistantWorkspace render + interactions', () => {
         sessionId: 'thread-live',
         capabilitiesVersion: 'cap-thread-live-v1',
         tools: [
-          { toolId: 'tool.file-convert', kind: 'builtin', availability: 'available', displayName: '文件转换', description: '旧目录回包' },
+          { toolId: 'mcp__filesystem__read_text_file', kind: 'external', availability: 'available', displayName: '读取文本文件', description: '同轮目录变化' },
         ],
       }))
       .mockResolvedValueOnce(createCapabilitiesResponse({
@@ -718,6 +718,20 @@ describe('AssistantWorkspace render + interactions', () => {
     })
 
     await waitForAssistantWorkspaceCondition(() => getCapabilities.mock.calls.length >= 2)
+
+    expect(getLastMockCopilotChatPanelProps().sessionShell as {
+      capabilities?: {
+        capabilitiesVersion?: string
+        allAvailableTools?: Array<{ toolId?: string, description?: string }>
+      }
+    }).toMatchObject({
+      capabilities: {
+        capabilitiesVersion: 'cap-thread-live-v1',
+        allAvailableTools: [
+          expect.objectContaining({ toolId: 'mcp__filesystem__read_text_file', description: '同轮目录变化' }),
+        ],
+      },
+    })
 
     await act(async () => {
       activeMcpRegistryListener?.({
