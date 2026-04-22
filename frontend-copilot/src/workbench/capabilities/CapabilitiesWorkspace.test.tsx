@@ -34,6 +34,7 @@ import {
 import {
   clickElement,
   focusElement,
+  mockClipboardWriteText,
   renderWithRoot,
   setFormControlValue,
   waitForNextFrame,
@@ -1189,6 +1190,7 @@ describe('CapabilitiesWorkspace', () => {
   })
 
   it('shows the managed runtime status button, opens the panel, and triggers install or repair', async () => {
+    const clipboardWriteText = mockClipboardWriteText()
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
 
@@ -1263,6 +1265,7 @@ describe('CapabilitiesWorkspace', () => {
     expect(statusButton.textContent).toContain('未安装')
     expect(statusButton.textContent).toContain('Node/npm 未安装')
     expect(statusButton.textContent).toContain('Python/uv 未安装')
+    expect(statusButton.textContent).not.toContain('读取 MCP 环境状态中')
 
     await clickElement(statusButton)
     await waitForNextFrame()
@@ -1275,18 +1278,53 @@ describe('CapabilitiesWorkspace', () => {
     }
 
     expect(panel.getAttribute('aria-label')).toBe('MCP 托管运行时状态')
+    expect(panel.className).toContain('managed-runtime-status-panel--open')
     expect(panel.textContent).toContain('Node/npm')
-    expect(panel.textContent).toContain('24.15.0')
     expect(panel.textContent).toContain('Python/uv')
-    expect(panel.textContent).toContain('python 3.12.10 + uv 0.11.7')
+    expect(panel.textContent).toContain('未安装')
+    expect(panel.textContent).toContain('尚未激活')
+    expect(panel.textContent).not.toContain('复制路径')
+    expect(panel.textContent).not.toContain('用于 MCP stdio 中的 npx 运行链路')
+    expect(panel.textContent).not.toContain('用于 MCP stdio 中的 Python 与 uvx 运行链路')
+    expect(panel.textContent).not.toContain('固定版本')
+    expect(panel.textContent).not.toContain('最近校验')
+    expect(panel.textContent).not.toContain('最近安装')
+    expect(panel.textContent).not.toContain('最近修复')
+    expect(panel.textContent).not.toContain('最近错误')
 
     await clickElement(getExactButton(panel, '一键安装/修复'))
+    await waitForNextFrame()
     await waitForNextFrame()
 
     expect(mockedInstallOrRepairManagedRuntime).toHaveBeenCalledWith('install')
     expect(panel.textContent).toContain('可用')
-    expect(panel.textContent).toContain('node 与 npm 校验通过')
-    expect(panel.textContent).toContain('python 与 uv 校验通过')
+    expect(panel.textContent).toContain('24.15.0')
+    expect(panel.textContent).toContain('python 3.12.10 + uv 0.11.7')
+    expect(panel.textContent).toContain('重新校验并修复')
+    expect(panel.textContent).toContain('复制路径')
+
+    await clickElement(getExactButton(panel, '复制路径'))
+
+    expect(clipboardWriteText).toHaveBeenCalledWith('D:/workspace/user-data/desktop-runtime/managed-runtime/node/active/npx.cmd')
+
+    await clickElement(statusButton)
+    await waitForNextFrame()
+
+    const closingPanel = document.body.querySelector('[data-testid="managed-runtime-status-panel"]')
+
+    if (!(closingPanel instanceof HTMLElement)) {
+      throw new Error('Missing closing managed runtime status panel')
+    }
+
+    expect(closingPanel.className).toContain('managed-runtime-status-panel--closing')
+    expect(closingPanel.getAttribute('aria-hidden')).toBe('true')
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 160))
+    })
+    await waitForNextFrame()
+
+    expect(document.body.querySelector('[data-testid="managed-runtime-status-panel"]')).toBeNull()
 
     rendered.unmount()
   })

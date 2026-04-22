@@ -115,6 +115,7 @@
 
 .managed-runtime-status-button {
   min-width: 16rem;
+  min-height: calc(1.24rem + 1.8rem + 2px);
   align-items: center;
   justify-content: flex-start;
   gap: 0.7rem;
@@ -123,6 +124,7 @@
 .managed-runtime-status-button__copy {
   display: grid;
   text-align: left;
+  min-width: 0;
 }
 
 .managed-runtime-status-button__title {
@@ -133,6 +135,9 @@
 .managed-runtime-status-button__summary {
   font-size: 0.82rem;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .managed-runtime-status-indicator {
@@ -181,6 +186,22 @@
   border-radius: 1rem;
   background: color-mix(in srgb, var(--surface-elevated) 94%, white 6%);
   box-shadow: 0 18px 52px rgb(15 23 42 / 0.18);
+  opacity: 0;
+  transform: translateY(0.35rem);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+  will-change: opacity, transform;
+}
+
+.managed-runtime-status-panel--open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.managed-runtime-status-panel--closing {
+  opacity: 0;
+  transform: translateY(0.35rem);
 }
 
 .managed-runtime-status-panel__header {
@@ -190,8 +211,7 @@
   gap: 1rem;
 }
 
-.managed-runtime-status-panel__eyebrow,
-.managed-runtime-family-card__description {
+.managed-runtime-status-panel__eyebrow {
   margin: 0;
   color: var(--text-secondary);
 }
@@ -259,7 +279,7 @@
 .managed-runtime-family-card__details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem 1rem;
+  gap: 0.8rem 1rem;
   margin: 0;
 }
 
@@ -276,6 +296,37 @@
   margin: 0;
   color: var(--text-primary);
   word-break: break-word;
+}
+
+.managed-runtime-family-card__actions {
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.managed-runtime-family-card__action {
+  min-width: 8.5rem;
+}
+
+.managed-runtime-family-card__copy {
+  min-width: 6.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .managed-runtime-status-button__spinner {
+    animation: none;
+  }
+
+  .managed-runtime-status-panel {
+    transition: none;
+    transform: none;
+  }
+
+  .managed-runtime-status-panel--open,
+  .managed-runtime-status-panel--closing {
+    transform: none;
+  }
 }
 
 .capabilities-main__content {

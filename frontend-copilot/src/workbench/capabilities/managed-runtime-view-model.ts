@@ -8,15 +8,10 @@ import type {
 export interface ManagedRuntimeFamilyStatusCardViewModel {
   family: ManagedRuntimeFamily
   title: string
-  description: string
   status: ManagedRuntimeStatus
   statusLabel: string
-  pinnedVersion: string
   activeVersion: string | null
-  lastVerificationSummary: string | null
-  lastErrorSummary: string | null
-  lastInstalledAtLabel: string | null
-  lastRepairedAtLabel: string | null
+  launcherPath: string | null
 }
 
 export interface ManagedRuntimeStatusViewModel {
@@ -64,16 +59,17 @@ function createManagedRuntimeFamilyStatusCardViewModel(
   return {
     family: snapshot.family,
     title: snapshot.family === 'node' ? 'Node/npm' : 'Python/uv',
-    description: snapshot.family === 'node'
-      ? '用于 MCP stdio 中的 npx 运行链路。'
-      : '用于 MCP stdio 中的 Python 与 uvx 运行链路。',
     status: snapshot.status,
     statusLabel: resolveManagedRuntimeStatusLabel(snapshot.status),
-    pinnedVersion: snapshot.pinnedVersion,
     activeVersion: snapshot.activeVersion,
-    lastVerificationSummary: snapshot.lastVerification?.summary ?? null,
-    lastErrorSummary: snapshot.lastErrorSummary?.message ?? null,
-    lastInstalledAtLabel: snapshot.lastInstalledAt,
-    lastRepairedAtLabel: snapshot.lastRepairedAt,
+    launcherPath: resolvePrimaryLauncherPath(snapshot),
   }
+}
+
+function resolvePrimaryLauncherPath(snapshot: ManagedRuntimeFamilySnapshot): string | null {
+  if (snapshot.family === 'node') {
+    return snapshot.launcherPaths.npx ?? snapshot.lastVerification?.launchers.npx ?? null
+  }
+
+  return snapshot.launcherPaths.uvx ?? snapshot.lastVerification?.launchers.uvx ?? null
 }
