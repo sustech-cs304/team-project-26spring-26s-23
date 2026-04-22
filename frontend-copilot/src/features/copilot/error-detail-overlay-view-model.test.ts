@@ -46,7 +46,7 @@ describe('error detail overlay view model', () => {
         providerProfileId: 'provider-openai',
         modelId: 'openai/gpt-4.1',
       }),
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -60,14 +60,14 @@ describe('error detail overlay view model', () => {
       stage: 'streaming',
       requestedMethod: 'run/stream',
       details: {
-        toolId: 'tool.weather-current',
+        toolId: 'tool.remote-search',
       },
       resolvedModelId: 'openai/gpt-4.1',
       resolvedModelRoute: createRuntimeModelRoute({
         providerProfileId: 'provider-openai',
         modelId: 'openai/gpt-4.1',
       }),
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -232,7 +232,7 @@ describe('error detail overlay view model', () => {
       summaryMessage: '工具执行失败，请重试。',
       rawMessage: 'Tool failed: boom',
       details: {
-        toolId: 'tool.weather-current',
+        toolId: 'tool.remote-search',
         retryable: false,
         attempts: [1, 2],
       },
@@ -246,17 +246,17 @@ describe('error detail overlay view model', () => {
       label: '原始 details',
       presentation: 'json',
       structuredValue: {
-        toolId: 'tool.weather-current',
+        toolId: 'tool.remote-search',
         retryable: false,
         attempts: [1, 2],
       },
     })
 
-    expect(parseErrorDetailJsonTextForViewer('{"toolId":"tool.weather-current"}')).toEqual({
-      toolId: 'tool.weather-current',
+    expect(parseErrorDetailJsonTextForViewer('{"toolId":"tool.remote-search"}')).toEqual({
+      toolId: 'tool.remote-search',
     })
     expect(parseErrorDetailJsonTextForViewer('[1,true,{"ok":false}]')).toEqual([1, true, { ok: false }])
-    expect(parseErrorDetailJsonTextForViewer('"tool.weather-current"')).toBeNull()
+    expect(parseErrorDetailJsonTextForViewer('"tool.remote-search"')).toBeNull()
     expect(parseErrorDetailJsonTextForViewer('123')).toBeNull()
     expect(parseErrorDetailJsonTextForViewer('invalid json')).toBeNull()
   })

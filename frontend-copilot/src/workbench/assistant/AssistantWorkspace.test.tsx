@@ -94,7 +94,7 @@ describe('AssistantWorkspace render + interactions', () => {
         sessionId: 'session-1',
         capabilities: expect.objectContaining({
           capabilitiesVersion: 'cap-v12',
-          recommendedToolsForAgent: ['tool.file-convert'],
+          recommendedToolsForAgent: ['tool.fs.read'],
         }),
       }),
       directoryState: expect.objectContaining({
@@ -650,7 +650,7 @@ describe('AssistantWorkspace render + interactions', () => {
         sessionId: 'thread-live',
         capabilitiesVersion: 'cap-thread-live-v1',
         tools: [
-          { toolId: 'tool.file-convert', kind: 'builtin', availability: 'available', displayName: '文件转换', description: '初始目录' },
+          { toolId: 'tool.remote-search', kind: 'builtin', availability: 'available', displayName: '联网搜索', description: '初始目录' },
         ],
       }))
       .mockResolvedValueOnce(createCapabilitiesResponse({
@@ -2026,7 +2026,7 @@ function createPersistedHistoryFixture() {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -2057,7 +2057,7 @@ function createPersistedHistoryFixture() {
             modelId: 'openai/gpt-4.1',
           },
         },
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
       },
       orderedEvents: [],
       toolCallBlocks: [],
@@ -2132,7 +2132,7 @@ function createLivePersistedHistoryFixture() {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -2156,7 +2156,7 @@ function createLivePersistedHistoryFixture() {
       },
       historicalSnapshot: {
         resolvedModelId: 'openai/gpt-4.1',
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
       },
       orderedEvents: [],
       toolCallBlocks: [],
@@ -2206,7 +2206,7 @@ function createMultiRunPersistedHistoryFixture() {
     },
     historicalSnapshot: {
       resolvedModelId: 'openai/gpt-4.1-mini',
-      resolvedToolIds: ['tool.file-convert'],
+      resolvedToolIds: ['tool.remote-search'],
     },
     orderedEvents: [],
     toolCallBlocks: [],
@@ -2233,7 +2233,7 @@ function createMultiRunPersistedHistoryFixture() {
     },
     historicalSnapshot: {
       resolvedModelId: 'openai/gpt-4.1',
-      resolvedToolIds: ['tool.file-convert'],
+      resolvedToolIds: ['tool.remote-search'],
     },
     orderedEvents: [],
     toolCallBlocks: [],
@@ -2310,7 +2310,7 @@ function createMultiRunPersistedHistoryFixture() {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -2416,7 +2416,7 @@ function createIndexedPersistedHistoryFixture(index: number) {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -2431,7 +2431,7 @@ function createIndexedPersistedHistoryFixture(index: number) {
       },
       historicalSnapshot: {
         resolvedModelId: 'openai/gpt-4.1',
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
       },
       orderedEvents: [],
       toolCallBlocks: [],

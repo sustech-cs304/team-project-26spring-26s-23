@@ -34,7 +34,7 @@ describe('createRuntimeThread', () => {
     })
     expect(response.threadId).toBe('session-1')
     expect(response.boundAgent.agentId).toBe('general')
-    expect(response.recommendedTools).toEqual(['tool.file-convert'])
+    expect(response.recommendedTools).toEqual(['tool.fs.read'])
   })
 
   it('surfaces structured runtime errors without silently continuing', async () => {

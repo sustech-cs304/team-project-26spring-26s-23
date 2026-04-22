@@ -20,7 +20,7 @@ describe('error detail overlay copy helpers', () => {
         providerId: 'openrouter',
       },
       resolvedModelId: 'openrouter/auto',
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -42,7 +42,7 @@ describe('error detail overlay copy helpers', () => {
       '',
       '[工具 / 模型上下文]',
       '模型: openrouter/auto',
-      '工具: tool.weather-current',
+      '工具: tool.remote-search',
       '',
       '[原始详情]',
       '原始消息:',
@@ -96,16 +96,21 @@ describe('error detail overlay copy helpers', () => {
       stage: 'streaming',
       requestedMethod: 'run/stream',
       details: {
-        toolId: 'tool.weather-current',
+        toolId: 'tool.remote-search',
       },
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
     }))
 
     const toolGroup = viewModel.groups.find((group) => group.key === 'tool-model-context')
     expect(toolGroup).not.toBeUndefined()
     expect(formatErrorDetailOverlayGroupCopyText(toolGroup!)).toBe([
       '[工具 / 模型上下文]',
-      '工具: tool.weather-current',
+      '工具: tool.remote-search',
+      '工具名称: tool',
+      'toolId: tool.remote-search',
+      'toolCallId: 未提供',
+      '服务器名称: 未提供',
+      'serverId: 未提供',
     ].join('\n'))
   })
 

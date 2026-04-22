@@ -84,7 +84,7 @@ describe('resolveCopilotToolPresentation', () => {
 describe('resolveCopilotToolPlatformGroup', () => {
   it('prefers explicit catalog groups that already encode suite-level semantics', () => {
     expect(resolveCopilotToolPlatformGroup({
-      toolId: 'tool.file-convert',
+      toolId: 'tool.remote-search',
       kind: 'builtin',
       displayName: 'File Convert',
       description: 'Convert office files',

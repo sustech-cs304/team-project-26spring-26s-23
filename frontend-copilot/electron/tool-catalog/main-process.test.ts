@@ -10,11 +10,11 @@ describe('createElectronToolCatalogMainProcess', () => {
         directoryVersion: 'tools-v1',
         tools: [
           {
-            toolId: 'tool.file-convert',
+            toolId: 'tool.fs.read',
             kind: 'builtin',
             availability: 'available',
-            displayName: '文件转换',
-            description: 'DOCX/PDF/PPTX 转换工具',
+            displayName: '读取文件',
+            description: '读取项目内文件内容。',
           },
           {
             toolId: 'blackboard.course_catalog.search',
@@ -34,11 +34,11 @@ describe('createElectronToolCatalogMainProcess', () => {
       directoryVersion: 'tools-v1',
       tools: [
         {
-          toolId: 'tool.file-convert',
+          toolId: 'tool.fs.read',
           kind: 'builtin',
           availability: 'available',
-          displayName: '文件转换',
-          description: 'DOCX/PDF/PPTX 转换工具',
+          displayName: '读取文件',
+          description: '读取项目内文件内容。',
         },
         {
           toolId: 'blackboard.course_catalog.search',

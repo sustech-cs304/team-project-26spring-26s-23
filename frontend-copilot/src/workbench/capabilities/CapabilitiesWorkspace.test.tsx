@@ -367,11 +367,11 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
     directoryVersion: 'tools-v1',
     tools: [
       {
-        toolId: 'tool.file-convert',
+        toolId: 'tool.fs.read',
         kind: 'builtin',
         availability: 'available',
-        displayName: '文件转换',
-        description: '将常见文档转换为运行时可消费内容。',
+        displayName: '读取文件',
+        description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
         group: {
           id: 'builtin-core',
           label: '内置基础工具',
@@ -436,11 +436,11 @@ function createDynamicMcpGroupCatalogLoadResult(): ToolCatalogLoadResult {
     directoryVersion: 'tools-v2',
     tools: [
       {
-        toolId: 'tool.file-convert',
+        toolId: 'tool.fs.read',
         kind: 'builtin',
         availability: 'available',
-        displayName: '文件转换',
-        description: '将常见文档转换为运行时可消费内容。',
+        displayName: '读取文件',
+        description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
         group: {
           id: 'builtin-core',
           label: '内置基础工具',
@@ -858,7 +858,6 @@ describe('CapabilitiesWorkspace', () => {
     await waitForNextFrame()
 
     expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(4)
-    expect(rendered.container.textContent).toContain('文件转换')
     expect(rendered.container.textContent).toContain('课程目录搜索')
     expect(rendered.container.textContent).toContain('成绩查询')
     expect(rendered.container.textContent).toContain('校园活动')

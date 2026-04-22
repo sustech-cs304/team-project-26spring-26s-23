@@ -32,11 +32,11 @@ describe('assistant-workspace-controller', () => {
       capabilitiesVersion: 'cap-v12',
       allAvailableTools: [
         {
-          toolId: 'tool.file-convert',
+          toolId: 'tool.fs.read',
           kind: 'builtin',
           availability: 'available',
-          displayName: '文件转换',
-          description: 'DOCX/PDF/PPTX 转换工具',
+          displayName: '读取文件',
+          description: '读取项目内文件内容。',
         },
         {
           toolId: 'tool.remote-search',
@@ -46,8 +46,8 @@ describe('assistant-workspace-controller', () => {
           description: '访问外部搜索服务',
         },
       ],
-      recommendedToolsForAgent: ['tool.file-convert'],
-      defaultEnabledTools: ['tool.file-convert'],
+      recommendedToolsForAgent: ['tool.fs.read'],
+      defaultEnabledTools: ['tool.fs.read'],
       toolSelectionMode: 'recommendation-only',
     })
     expect(capabilities.allAvailableTools.map((tool) => tool.toolId)).toContain('tool.remote-search')
@@ -73,11 +73,11 @@ describe('assistant-workspace-controller', () => {
         capabilitiesVersion: 'cap-v12',
         allAvailableTools: [
           {
-            toolId: 'tool.file-convert',
+            toolId: 'tool.fs.read',
             kind: 'builtin',
             availability: 'available',
-            displayName: '文件转换',
-            description: 'DOCX/PDF/PPTX 转换工具',
+            displayName: '读取文件',
+            description: '读取项目内文件内容。',
           },
           {
             toolId: 'tool.remote-search',
@@ -87,8 +87,8 @@ describe('assistant-workspace-controller', () => {
             description: '访问外部搜索服务',
           },
         ],
-        recommendedToolsForAgent: ['tool.file-convert'],
-        defaultEnabledTools: ['tool.file-convert'],
+        recommendedToolsForAgent: ['tool.fs.read'],
+        defaultEnabledTools: ['tool.fs.read'],
         toolSelectionMode: 'recommendation-only',
       },
     })

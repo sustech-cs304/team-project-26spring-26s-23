@@ -625,7 +625,7 @@ describe('CopilotChatPanel composer interactions', () => {
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
     await setFormControlValue(searchInput, '远程')
     expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
@@ -641,7 +641,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: ['tool.file-convert', 'tool.remote-search'],
+      enabledTools: ['tool.fs.read', 'tool.remote-search'],
       message: {
         content: '请使用当前工具集执行摘要',
       },
@@ -691,7 +691,7 @@ describe('CopilotChatPanel composer interactions', () => {
     await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
 
     const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
-    const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
 
     expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
@@ -711,7 +711,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.fs.read'],
       message: {
         content: '请在清洗 deny 后发送',
       },
@@ -740,7 +740,7 @@ describe('CopilotChatPanel composer interactions', () => {
               modelId: 'openai/gpt-4.1',
             },
           }),
-          enabledTools: ['tool.remote-search', 'tool.file-convert'],
+          enabledTools: ['tool.fs.read', 'tool.remote-search'],
         },
       },
     }
@@ -805,7 +805,7 @@ describe('CopilotChatPanel composer interactions', () => {
     await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
 
     const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
-    const allowedOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
 
     expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
@@ -818,7 +818,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.fs.read'],
       message: {
         content: '请清洗残留 deny 工具',
       },
@@ -2341,7 +2341,7 @@ describe('CopilotChatPanel composer interactions', () => {
                 modelId: 'openai/gpt-4.1',
                 authKind: 'api-key',
               }),
-              resolvedToolIds: ['tool.weather-current'],
+              resolvedToolIds: ['tool.remote-search'],
               requestOptions: {},
             },
             orderedEvents: [
@@ -2350,16 +2350,16 @@ describe('CopilotChatPanel composer interactions', () => {
                 sequence: 2,
                 createdAt: '2026-04-14T08:00:02Z',
                 payload: {
-                  toolCallId: 'tool.weather-current:call-1',
-                  toolId: 'tool.weather-current',
+                  toolCallId: 'tool.remote-search:call-1',
+                  toolId: 'tool.remote-search',
                   phase: 'failed',
                   title: '工具调用失败',
                   summary: '工具执行失败。',
                   inputSummary: '{"location":"Shenzhen"}',
                   errorSummary: 'boom',
                 },
-                toolCallId: 'tool.weather-current:call-1',
-                toolId: 'tool.weather-current',
+                toolCallId: 'tool.remote-search:call-1',
+                toolId: 'tool.remote-search',
                 phase: 'failed',
                 isRedacted: false,
                 redactionVersion: 0,
@@ -2422,7 +2422,7 @@ describe('CopilotChatPanel composer interactions', () => {
                   modelId: 'openai/gpt-4.1',
                   authKind: 'api-key',
                 }),
-                resolvedToolIds: ['tool.weather-current'],
+                resolvedToolIds: ['tool.remote-search'],
                 requestOptions: {},
               },
               orderedEvents: [
@@ -2431,16 +2431,16 @@ describe('CopilotChatPanel composer interactions', () => {
                   sequence: 2,
                   createdAt: '2026-04-14T08:00:02Z',
                   payload: {
-                    toolCallId: 'tool.weather-current:call-1',
-                    toolId: 'tool.weather-current',
+                    toolCallId: 'tool.remote-search:call-1',
+                    toolId: 'tool.remote-search',
                     phase: 'failed',
                     title: '工具调用失败',
                     summary: '工具执行失败。',
                     inputSummary: '{"location":"Shenzhen"}',
                     errorSummary: 'boom',
                   },
-                  toolCallId: 'tool.weather-current:call-1',
-                  toolId: 'tool.weather-current',
+                  toolCallId: 'tool.remote-search:call-1',
+                  toolId: 'tool.remote-search',
                   phase: 'failed',
                   isRedacted: false,
                   redactionVersion: 0,
@@ -2644,7 +2644,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史模型')
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('legacy-model')
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史工具')
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('tool.file-convert')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('tool.remote-search')
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史思考')
     expect(rendered.getByTestId('chat-history-drift-warning-list').textContent).toContain('历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。')
     expect(sendButton.disabled).toBe(true)
@@ -2948,8 +2948,8 @@ function createToolFirstPendingSendMessageSpy(control: DeferredSignal) {
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.weather-current:call-placeholder',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-placeholder',
+        toolId: 'tool.remote-search',
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',
@@ -3015,7 +3015,7 @@ function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
         code: 'tool_execution_failed',
         message: 'Tool failed: boom',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       },
     }
@@ -3169,8 +3169,8 @@ function createToolLifecycleSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'started',
           title: '调用天气工具',
           summary: '正在获取 Shenzhen 的天气。',
@@ -3182,8 +3182,8 @@ function createToolLifecycleSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'completed',
           title: '天气工具已返回结果',
           summary: '{\n  "condition": "晴",\n  "humidity": 60,\n  "location": "Shenzhen",\n  "summary": "体感舒适，适合外出。",\n  "temperatureC": 24\n}',
@@ -3222,7 +3222,7 @@ function createToolLifecycleSendMessageSpy() {
             modelId: routeRef.modelId,
             catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
           }),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: input.requestOptions ?? {},
         },
       },
@@ -3253,8 +3253,8 @@ function createToolFailureSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'started',
           title: '调用天气工具',
           summary: '正在获取 Shenzhen 的天气。',
@@ -3266,8 +3266,8 @@ function createToolFailureSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'failed',
           title: '工具调用失败',
           summary: '工具执行失败。',
@@ -3306,7 +3306,7 @@ function createToolFailureSendMessageSpy() {
             modelId: routeRef.modelId,
             catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
           }),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: input.requestOptions ?? {},
         },
       },
@@ -3330,8 +3330,8 @@ function createToolFailureThenFatalSendMessageSpy() {
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',
@@ -3343,8 +3343,8 @@ function createToolFailureThenFatalSendMessageSpy() {
       sessionId: input.sessionId,
       sequence: 3,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'failed',
         title: '工具调用失败',
         summary: '工具执行失败。',
@@ -3399,8 +3399,8 @@ function createToolWaitingApprovalSendMessageSpy(
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.weather-current:call-approve',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-approve',
+        toolId: 'tool.remote-search',
         phase: 'waiting_approval',
         title: '工具等待审批',
         summary: '工具调用正在等待审批决议。',
@@ -3509,7 +3509,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
   const driftPayload = {
     status: 'historical_provider_removed',
     historicalModelId: 'legacy-model',
-    historicalToolIds: ['tool.file-convert'],
+    historicalToolIds: ['tool.remote-search'],
     historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
     warnings: [{
       code: 'historical_provider_removed',
@@ -3590,7 +3590,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
             modelId: 'legacy-model',
           },
         },
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
         appliedThinkingSelection: {
           series: 'unified-4-level-v1',
           mode: 'preset',
@@ -3631,8 +3631,8 @@ function createAbortableSendMessageSpy() {
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',

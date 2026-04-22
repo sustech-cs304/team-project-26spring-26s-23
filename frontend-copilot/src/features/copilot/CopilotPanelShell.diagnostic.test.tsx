@@ -724,7 +724,7 @@ function renderShell(debugModeEnabled: boolean): string {
         message: 'Tool failed: boom',
         stage: 'tool_execution',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       },
     },
@@ -742,7 +742,7 @@ function renderShell(debugModeEnabled: boolean): string {
         code: 'tool_execution_failed',
         message: 'Tool failed: boom',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       },
       resolvedModelId: null,
@@ -758,7 +758,7 @@ function renderShell(debugModeEnabled: boolean): string {
         stage: 'streaming',
         requestedMethod: 'run/stream',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       }),
     },
@@ -821,14 +821,14 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       requestOptions: {},
     },
     {
-      id: 'tool:run-1:tool.weather-current:call-1',
+      id: 'tool:run-1:tool.remote-search:call-1',
       kind: 'tool',
       runId: 'run-1',
       sequence: 2,
       title: '工具调用失败',
       content: 'weather-current 调用失败。',
       status: 'failed',
-      toolCallId: 'tool.weather-current:call-1',
+      toolCallId: 'tool.remote-search:call-1',
       toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
       toolPhase: 'failed',
       inputSummary: '{"keyword":"calendar"}',
@@ -844,7 +844,7 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
         requestedMethod: 'run/stream',
         details: {
           toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-          toolCallId: 'tool.weather-current:call-1',
+          toolCallId: 'tool.remote-search:call-1',
           serverId: 'mcp-stdio-stub',
           serverName: 'stdio stub server',
           remoteToolName: 'search-campus',
@@ -869,7 +869,7 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
         code: 'tool_execution_failed',
         message: 'Tool failed: boom',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       },
       resolvedModelId: null,
@@ -885,7 +885,7 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
         stage: 'streaming',
         requestedMethod: 'run/stream',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       }),
     },

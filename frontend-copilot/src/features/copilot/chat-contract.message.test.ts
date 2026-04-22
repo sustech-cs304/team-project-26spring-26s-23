@@ -50,7 +50,7 @@ describe('dispatchCopilotMessage', () => {
           assistantText: '这是总结结果。',
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: {
             trace: true,
           },
@@ -91,7 +91,7 @@ describe('dispatchCopilotMessage', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.remote-search'],
       debugModeEnabled: true,
       requestOptions: {
         trace: true,
@@ -143,7 +143,7 @@ describe('dispatchCopilotMessage', () => {
                 labelZh: '自动',
               },
             },
-            enabledTools: ['tool.file-convert'],
+            enabledTools: ['tool.remote-search'],
             debugModeEnabled: true,
             requestOptions: {
               trace: true,
@@ -194,7 +194,7 @@ describe('dispatchCopilotMessage', () => {
         message: createUserMessage(),
         modelRoute: createRuntimeModelRoute(),
         thinkingSelection: null,
-        enabledTools: ['tool.file-convert'],
+        enabledTools: ['tool.remote-search'],
         requestOptions: {},
         fetchFn,
       })) {
@@ -222,7 +222,7 @@ describe('dispatchCopilotMessage', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: null,
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.remote-search'],
       requestOptions: {},
       fetchFn,
     }))).rejects.toMatchObject({
@@ -252,7 +252,7 @@ describe('dispatchCopilotMessage', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: null,
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.remote-search'],
       requestOptions: {},
       fetchFn,
     }))).rejects.toMatchObject({

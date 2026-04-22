@@ -53,7 +53,7 @@ describe('thread run primary path', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.remote-search'],
       debugModeEnabled: true,
       requestOptions: {
         trace: true,
@@ -92,7 +92,7 @@ describe('thread run primary path', () => {
                 labelZh: '自动',
               },
             },
-            enabledTools: ['tool.file-convert'],
+            enabledTools: ['tool.remote-search'],
             debugModeEnabled: true,
             requestOptions: {
               trace: true,
@@ -129,7 +129,7 @@ describe('thread run primary path', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -159,7 +159,7 @@ describe('thread run primary path', () => {
               },
               catalogRevision: '2026-04-06-provider-catalog-v1',
             },
-            enabledTools: ['tool.file-convert'],
+            enabledTools: ['tool.remote-search'],
             requestOptions: {
               trace: true,
             },
