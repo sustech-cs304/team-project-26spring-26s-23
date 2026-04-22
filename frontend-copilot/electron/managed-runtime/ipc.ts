@@ -1,6 +1,7 @@
-import type { ManagedRuntimeSnapshot } from './types'
+import type { ManagedRuntimeActionReason, ManagedRuntimeSnapshot } from './types'
 
 export const MANAGED_RUNTIME_LOAD_CHANNEL = 'managed-runtime:load'
+export const MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL = 'managed-runtime:install-or-repair'
 
 export interface ManagedRuntimeLoadResult {
   ok: true
@@ -17,6 +18,7 @@ export type ManagedRuntimeLoadResponse = ManagedRuntimeLoadResult | ManagedRunti
 
 export interface ManagedRuntimeApi {
   load: () => Promise<ManagedRuntimeLoadResponse>
+  installOrRepair: (reason?: ManagedRuntimeActionReason) => Promise<ManagedRuntimeLoadResponse>
 }
 
 export function createManagedRuntimeApiFailure(error: string, code: string = 'internal_error'): ManagedRuntimeApiFailure {
@@ -26,4 +28,3 @@ export function createManagedRuntimeApiFailure(error: string, code: string = 'in
     code,
   }
 }
-

@@ -3,6 +3,7 @@ import type {
   MainProcessServices,
 } from './MainProcessServiceTypes'
 import { createMainProcessServiceAccessors } from './MainProcessServiceAccessors'
+import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 
 export function createMainProcessServices(
   options: CreateMainProcessServicesOptions,
@@ -49,6 +50,9 @@ export function createMainProcessServices(
     },
     async loadManagedRuntime() {
       return await accessors.getManagedRuntimeService().load()
+    },
+    async installOrRepairManagedRuntime(reason?: ManagedRuntimeActionReason) {
+      return await accessors.getManagedRuntimeService().installOrRepair(reason)
     },
     async saveMcpServer(draft) {
       return await accessors.getMcpRegistryService().saveServer(draft)

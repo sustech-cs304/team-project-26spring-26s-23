@@ -88,8 +88,14 @@ async function createRegistryServiceFixture(testName: string, hubOptions: FakeCo
 
 function createManagedRuntimeServiceStub(
   resolveLauncher: ManagedRuntimeService['resolveLauncher'],
-): Pick<ManagedRuntimeService, 'resolveLauncher'> {
+): ManagedRuntimeService {
   return {
+    loadSnapshot: vi.fn(async () => {
+      throw new Error('loadSnapshot should not be called in this test')
+    }),
+    installOrRepairAll: vi.fn(async () => {
+      throw new Error('installOrRepairAll should not be called in this test')
+    }),
     resolveLauncher,
   }
 }
@@ -423,7 +429,7 @@ describe('createMcpRegistryService', () => {
         },
       },
       managedRuntimeService: createManagedRuntimeServiceStub(async () => ({
-        ok: false,
+        ok: false as const,
         reason: 'managed_runtime_unavailable',
         command: 'uvx',
         normalizedCommand: 'uvx',
@@ -464,7 +470,7 @@ describe('createMcpRegistryService', () => {
   it('keeps custom absolute paths and unmanaged commands unchanged', async () => {
     const fixture = await createRegistryServiceFixture('managed-command-bypass')
     const resolveLauncher = vi.fn(async () => ({
-      ok: false,
+      ok: false as const,
       reason: 'unmanaged_command' as const,
       command: 'C:/custom/mcp-server.exe',
     }))

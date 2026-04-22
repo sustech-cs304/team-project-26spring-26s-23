@@ -11,6 +11,7 @@ import type {
   McpSetServerEnabledResult,
   McpTestConnectionResult,
 } from '../../../electron/mcp-registry/ipc'
+import type { ManagedRuntimeLoadResponse } from '../../../electron/managed-runtime/ipc'
 import type {
   McpRegistrySubscriptionEvent,
   McpServerDraft,
@@ -22,6 +23,7 @@ import type { RuntimeToolDirectoryEntry } from '../../features/copilot/chat-cont
 
 import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import {
+  createManagedRuntimeLoadResultFixture,
   createMcpDeleteServerSuccessFixture,
   createMcpRegistryLoadResultFixture,
   createMcpSaveServerSuccessFixture,
@@ -57,6 +59,8 @@ const mockedLoadSettingsWorkspaceState = vi.mocked(loadSettingsWorkspaceState)
 const mockedSaveSettingsWorkspaceState = vi.mocked(saveSettingsWorkspaceState)
 const mockedLoadToolCatalog = vi.mocked(loadToolCatalog)
 const mockedLoadMcpRegistry = vi.fn<(request?: { language?: string | null, includeDisabled?: boolean }) => Promise<McpRegistryLoadResult>>()
+const mockedLoadManagedRuntime = vi.fn<() => Promise<ManagedRuntimeLoadResponse>>()
+const mockedInstallOrRepairManagedRuntime = vi.fn<(reason?: 'install' | 'repair') => Promise<ManagedRuntimeLoadResponse>>()
 const mockedSaveMcpServer = vi.fn<(draft: McpServerDraft) => Promise<McpSaveServerResult>>()
 const mockedDeleteMcpServer = vi.fn<(serverId: string) => Promise<McpDeleteServerResult>>()
 const mockedSetMcpServerEnabled = vi.fn<
@@ -84,6 +88,8 @@ beforeEach(() => {
   activeMcpRegistryListener = null
 
   mockedLoadMcpRegistry.mockResolvedValue(createMcpRegistryLoadResultFixture())
+  mockedLoadManagedRuntime.mockResolvedValue(createManagedRuntimeLoadResultFixture())
+  mockedInstallOrRepairManagedRuntime.mockResolvedValue(createManagedRuntimeLoadResultFixture())
   mockedSaveMcpServer.mockResolvedValue(createMcpSaveServerSuccessFixture())
   mockedDeleteMcpServer.mockResolvedValue(createMcpDeleteServerSuccessFixture())
   mockedSetMcpServerEnabled.mockResolvedValue(createMcpSetServerEnabledSuccessFixture(false))
@@ -577,6 +583,15 @@ describe('CapabilitiesWorkspace', () => {
 
     rendered.unmount()
     expect(activeMcpRegistryListener).toBeNull()
+  })
+
+  Object.defineProperty(window, 'managedRuntime', {
+    configurable: true,
+    writable: true,
+    value: {
+      load: mockedLoadManagedRuntime,
+      installOrRepair: mockedInstallOrRepairManagedRuntime,
+    },
   })
 
   it('reloads the tool catalog after a snapshot event and automatically shows new MCP tools in permissions without manual refresh', async () => {
@@ -1169,6 +1184,108 @@ describe('CapabilitiesWorkspace', () => {
     expect(queryServerRow(document.body, 'stdio stub server')).toBeNull()
     expect(document.body.textContent).toContain('还没有可用的服务器')
     expect(document.body.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
+
+    rendered.unmount()
+  })
+
+  it('shows the managed runtime status button, opens the panel, and triggers install or repair', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+
+    const baseSnapshot = createManagedRuntimeLoadResultFixture().snapshot
+    mockedLoadManagedRuntime.mockResolvedValue({
+      ok: true,
+      snapshot: {
+        ...baseSnapshot,
+        overallStatus: 'missing',
+        families: {
+          node: {
+            ...baseSnapshot.families.node,
+            status: 'missing',
+          },
+          uv: {
+            ...baseSnapshot.families.uv,
+            status: 'missing',
+          },
+        },
+      },
+    })
+
+    mockedInstallOrRepairManagedRuntime.mockResolvedValue({
+      ok: true,
+      snapshot: {
+        ...baseSnapshot,
+        overallStatus: 'ready',
+        families: {
+          node: {
+            ...baseSnapshot.families.node,
+            status: 'ready',
+            activeVersion: '24.15.0',
+            lastVerification: {
+              verifiedAt: '2026-04-22T08:00:00.000Z',
+              summary: 'node 与 npm 校验通过',
+              launchers: {
+                npx: 'D:/workspace/user-data/desktop-runtime/managed-runtime/node/active/npx.cmd',
+              },
+            },
+          },
+          uv: {
+            ...baseSnapshot.families.uv,
+            status: 'ready',
+            activeVersion: 'python 3.12.10 + uv 0.11.7',
+            lastVerification: {
+              verifiedAt: '2026-04-22T08:00:00.000Z',
+              summary: 'python 与 uv 校验通过',
+              launchers: {
+                uvx: 'D:/workspace/user-data/desktop-runtime/managed-runtime/uv/active/uvx.exe',
+              },
+            },
+          },
+        },
+      },
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    await clickElement(getNavButton(document.body, 'mcp-servers'))
+    await waitForNextFrame()
+    await waitForNextFrame()
+
+    const statusButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find((button) => (
+      button.textContent?.includes('环境状态')
+    ))
+
+    if (!(statusButton instanceof HTMLButtonElement)) {
+      throw new Error('Missing managed runtime status button')
+    }
+
+    expect(statusButton.textContent).toContain('未安装')
+    expect(statusButton.textContent).toContain('Node/npm 未安装')
+    expect(statusButton.textContent).toContain('Python/uv 未安装')
+
+    await clickElement(statusButton)
+    await waitForNextFrame()
+
+    const panel = document.body.querySelector('[data-testid="managed-runtime-status-panel"]')
+
+    if (!(panel instanceof HTMLElement)) {
+      throw new Error('Missing managed runtime status panel')
+    }
+
+    expect(panel.getAttribute('aria-label')).toBe('MCP 托管运行时状态')
+    expect(panel.textContent).toContain('Node/npm')
+    expect(panel.textContent).toContain('24.15.0')
+    expect(panel.textContent).toContain('Python/uv')
+    expect(panel.textContent).toContain('python 3.12.10 + uv 0.11.7')
+
+    await clickElement(getExactButton(panel, '一键安装/修复'))
+    await waitForNextFrame()
+
+    expect(mockedInstallOrRepairManagedRuntime).toHaveBeenCalledWith('install')
+    expect(panel.textContent).toContain('可用')
+    expect(panel.textContent).toContain('node 与 npm 校验通过')
+    expect(panel.textContent).toContain('python 与 uv 校验通过')
 
     rendered.unmount()
   })

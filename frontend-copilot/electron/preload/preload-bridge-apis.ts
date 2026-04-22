@@ -42,7 +42,11 @@ import {
   type DesktopNotificationApi,
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
-import { MANAGED_RUNTIME_LOAD_CHANNEL, type ManagedRuntimeApi } from '../managed-runtime/ipc'
+import {
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+  MANAGED_RUNTIME_LOAD_CHANNEL,
+  type ManagedRuntimeApi,
+} from '../managed-runtime/ipc'
 import {
   MCP_REGISTRY_DELETE_SERVER_CHANNEL,
   MCP_REGISTRY_LOAD_CHANNEL,
@@ -152,6 +156,9 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
     managedRuntime: {
       load() {
         return ipcRenderer.invoke(MANAGED_RUNTIME_LOAD_CHANNEL)
+      },
+      installOrRepair(reason) {
+        return ipcRenderer.invoke(MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL, reason)
       },
     },
     mcpRegistry: {

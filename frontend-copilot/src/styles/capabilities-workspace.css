@@ -109,6 +109,175 @@
   flex-wrap: wrap;
 }
 
+.managed-runtime-status-shell {
+  position: relative;
+}
+
+.managed-runtime-status-button {
+  min-width: 16rem;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.7rem;
+}
+
+.managed-runtime-status-button__copy {
+  display: grid;
+  text-align: left;
+}
+
+.managed-runtime-status-button__title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.managed-runtime-status-button__summary {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.managed-runtime-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+
+.managed-runtime-status-indicator--ready {
+  background: color-mix(in srgb, var(--success-soft) 70%, transparent);
+  color: var(--success-text);
+}
+
+.managed-runtime-status-indicator--broken,
+.managed-runtime-status-indicator--missing,
+.managed-runtime-status-indicator--outdated {
+  background: color-mix(in srgb, var(--danger-soft) 70%, transparent);
+  color: var(--danger-text);
+}
+
+.managed-runtime-status-indicator--installing,
+.managed-runtime-status-indicator--loading {
+  background: color-mix(in srgb, var(--warning-soft) 70%, transparent);
+  color: var(--warning-strong);
+}
+
+.managed-runtime-status-button__spinner {
+  animation: capabilities-managed-runtime-spin 1s linear infinite;
+}
+
+.managed-runtime-status-panel {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 12;
+  width: min(34rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface-elevated) 94%, white 6%);
+  box-shadow: 0 18px 52px rgb(15 23 42 / 0.18);
+}
+
+.managed-runtime-status-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.managed-runtime-status-panel__eyebrow,
+.managed-runtime-family-card__description {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.managed-runtime-status-panel__title,
+.managed-runtime-family-card__title {
+  margin: 0.15rem 0 0;
+}
+
+.managed-runtime-status-panel__description {
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+}
+
+.managed-runtime-status-panel__error {
+  margin: 0;
+  color: var(--danger-text);
+}
+
+.managed-runtime-status-panel__cards {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.managed-runtime-family-card {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.95rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+}
+
+.managed-runtime-family-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.managed-runtime-family-card__status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--surface-elevated);
+}
+
+.managed-runtime-family-card__status--ready {
+  color: var(--success-text);
+}
+
+.managed-runtime-family-card__status--broken,
+.managed-runtime-family-card__status--missing,
+.managed-runtime-family-card__status--outdated {
+  color: var(--danger-text);
+}
+
+.managed-runtime-family-card__status--installing {
+  color: var(--warning-strong);
+}
+
+.managed-runtime-family-card__details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 1rem;
+  margin: 0;
+}
+
+.managed-runtime-family-card__details div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.managed-runtime-family-card__details dt {
+  color: var(--text-muted);
+}
+
+.managed-runtime-family-card__details dd {
+  margin: 0;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
 .capabilities-main__content {
   min-height: 0;
   padding: 0;
@@ -979,6 +1148,16 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes capabilities-managed-runtime-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
 

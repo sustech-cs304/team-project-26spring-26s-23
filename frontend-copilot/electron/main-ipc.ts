@@ -34,6 +34,7 @@ export function registerMainProcessIpcHandlers(
     clearSettingsWorkspaceSustechCasSecret: services.clearSettingsWorkspaceSustechCasSecret,
     loadMcpRegistry: services.loadMcpRegistry,
     loadManagedRuntime: services.loadManagedRuntime,
+    installOrRepairManagedRuntime: services.installOrRepairManagedRuntime,
     saveMcpServer: services.saveMcpServer,
     deleteMcpServer: services.deleteMcpServer,
     setMcpServerEnabled: services.setMcpServerEnabled,

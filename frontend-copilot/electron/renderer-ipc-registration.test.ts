@@ -14,7 +14,10 @@ import {
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
-import { MANAGED_RUNTIME_LOAD_CHANNEL } from './managed-runtime/ipc'
+import {
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+  MANAGED_RUNTIME_LOAD_CHANNEL,
+} from './managed-runtime/ipc'
 import {
   MCP_REGISTRY_DELETE_SERVER_CHANNEL,
   MCP_REGISTRY_LOAD_CHANNEL,
@@ -48,6 +51,7 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:clear-provider-api-key',
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
+      MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
       MANAGED_RUNTIME_LOAD_CHANNEL,
       MCP_REGISTRY_LOAD_CHANNEL,
       MCP_REGISTRY_SAVE_SERVER_CHANNEL,
@@ -81,6 +85,7 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
       MANAGED_RUNTIME_LOAD_CHANNEL,
+      MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
       MCP_REGISTRY_LOAD_CHANNEL,
       MCP_REGISTRY_SAVE_SERVER_CHANNEL,
       MCP_REGISTRY_DELETE_SERVER_CHANNEL,

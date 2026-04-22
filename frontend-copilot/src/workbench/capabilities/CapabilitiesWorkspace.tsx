@@ -25,10 +25,12 @@ import {
   type ToolPermissionMode,
   type ToolPermissionRecord,
 } from './capabilities-demo'
+import { ManagedRuntimeStatusButton } from './ManagedRuntimeStatusButton'
 import { McpServerEditorDialog } from './McpServerEditorDialog'
 import { McpServersPanel } from './McpServersPanel'
 import { ToolPermissionsPanel } from './ToolPermissionsPanel'
 import type { McpServerEditorMode } from './mcp-registry-view-model'
+import { useManagedRuntime } from './use-managed-runtime'
 import { useMcpRegistry } from './use-mcp-registry'
 import {
   resolveCopilotToolPlatformGroup,
@@ -70,8 +72,10 @@ export function CapabilitiesWorkspace() {
     directoryVersion: null,
   })
   const mcpRegistry = useMcpRegistry()
+  const managedRuntime = useManagedRuntime(activeSection === 'mcp-servers')
   const appliedSnapshotRevisionRef = useRef<number | null>(null)
   const appliedDirectoryVersionRef = useRef<string | null>(null)
+  const [managedRuntimePanelOpen, setManagedRuntimePanelOpen] = useState(false)
 
   const applyToolCatalogResult = (
     toolCatalogResult: ToolCatalogLoadResult,
@@ -294,6 +298,15 @@ export function CapabilitiesWorkspace() {
 
             {activeSection === 'mcp-servers' ? (
               <div className="toolbar-actions capabilities-main__actions">
+                <ManagedRuntimeStatusButton
+                  viewModel={managedRuntime.viewModel}
+                  loading={managedRuntime.loading}
+                  busy={managedRuntime.busy}
+                  open={managedRuntimePanelOpen}
+                  error={managedRuntime.error}
+                  onToggle={() => setManagedRuntimePanelOpen((previous) => !previous)}
+                  onInstallOrRepair={managedRuntime.installOrRepair}
+                />
                 <button
                   type="button"
                   className="primary-button"

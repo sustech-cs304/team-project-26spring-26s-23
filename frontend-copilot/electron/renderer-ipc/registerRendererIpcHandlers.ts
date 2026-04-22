@@ -62,9 +62,11 @@ import {
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from '../bootstrap-window'
 import {
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
   type ManagedRuntimeLoadResponse,
 } from '../managed-runtime/ipc'
+import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import {
   MCP_REGISTRY_DELETE_SERVER_CHANNEL,
   MCP_REGISTRY_LOAD_CHANNEL,
@@ -104,6 +106,7 @@ const RENDERER_IPC_CHANNELS = [
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
   MCP_REGISTRY_LOAD_CHANNEL,
   MCP_REGISTRY_SAVE_SERVER_CHANNEL,
@@ -211,6 +214,13 @@ export function registerRendererIpcHandlers(
     MANAGED_RUNTIME_LOAD_CHANNEL,
     async (): Promise<ManagedRuntimeLoadResponse> => {
       return await handlers.loadManagedRuntime()
+    },
+  )
+
+  ipcMain.handle(
+    MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+    async (_event, reason?: ManagedRuntimeActionReason): Promise<ManagedRuntimeLoadResponse> => {
+      return await handlers.installOrRepairManagedRuntime(reason)
     },
   )
 
