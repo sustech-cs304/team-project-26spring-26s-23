@@ -539,7 +539,88 @@ describe('createMcpRegistryService', () => {
         message: 'The requested MCP tool no longer exists in the current snapshot.',
         retryable: false,
         observedAt: '2026-04-21T12:00:00.000Z',
-        details: { snapshotRevision: 1 },
+        details: {
+          requestedServerId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+          requestedRemoteToolName: 'missing-tool',
+          connectorToolCount: 1,
+          requestedSnapshotRevision: 0,
+          snapshotRevision: 1,
+        },
+      },
+    })
+  })
+
+  it('allows the first MCP tool call to use the resolved request target before the live connector catalog is hydrated', async () => {
+    const fixture = await createRegistryServiceFixture('execute-tool-first-call-ready-window')
+    const server = createMcpStdioStubServerFixture()
+    await fixture.service.saveServer(server)
+    await fixture.connectorHub.reconcile([server], { registryRevision: 1, snapshotRevision: 8 })
+
+    const result = await fixture.service.executeTool({
+      toolId: 'mcp.missing.tool.11111111',
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      snapshotRevision: 7,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      toolId: 'mcp.missing.tool.11111111',
+      serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: '{"keyword":"calendar"}' }],
+      structuredContent: { echoedArguments: { keyword: 'calendar' } },
+      snapshotRevision: 1,
+      isError: false,
+    })
+    expect(fixture.connectorHub.__getToolCallRequests()).toEqual([
+      expect.objectContaining({
+        toolId: 'mcp.missing.tool.11111111',
+        serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+        snapshotRevision: 1,
+      }),
+    ])
+  })
+
+  it('includes layered diagnostics when MCP target resolution fails', async () => {
+    const fixture = await createRegistryServiceFixture('execute-tool-diagnostics')
+    const server = createMcpStdioStubServerFixture({ enabled: false })
+    await fixture.store.saveServers([server])
+
+    const result = await fixture.service.executeTool({
+      toolId: 'mcp.missing.tool.00000000',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      arguments: {},
+      runId: 'run-1',
+      toolCallId: 'call-2',
+      snapshotRevision: 7,
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      toolId: 'mcp.missing.tool.00000000',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      snapshotRevision: 7,
+      error: {
+        code: 'server_not_ready',
+        message: 'The MCP server is not ready to execute tools.',
+        retryable: true,
+        observedAt: '2026-04-21T12:00:00.000Z',
+        details: {
+          requestedServerId: server.serverId,
+          requestedRemoteToolName: 'search-campus',
+          connectionState: 'disabled',
+          connectorToolCount: 0,
+          requestedSnapshotRevision: 7,
+          snapshotRevision: 0,
+        },
       },
     })
   })

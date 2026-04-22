@@ -325,6 +325,75 @@ def test_execute_mcp_tool_maps_bridge_unavailable_to_retryable_failure() -> None
     }
 
 
+def test_execute_mcp_tool_preserves_layered_target_resolution_details() -> None:
+    snapshot = _load_snapshot_fixture()
+    tool = next(
+        entry
+        for entry in snapshot.tools
+        if entry.tool_id == "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e"
+    )
+    target = build_mcp_tool_execution_target(snapshot=snapshot, tool=tool)
+    bridge = _RecordingBridgeClient(
+        {
+            "ok": False,
+            "toolId": target.tool_id,
+            "serverId": target.server_id,
+            "remoteToolName": target.remote_tool_name,
+            "snapshotRevision": 9,
+            "error": {
+                "code": "server_not_ready",
+                "message": "The MCP server is not ready to execute tools.",
+                "retryable": True,
+                "observedAt": "2026-04-21T12:00:00.000Z",
+                "details": {
+                    "requestedServerId": target.server_id,
+                    "requestedRemoteToolName": target.remote_tool_name,
+                    "connectionState": "connecting",
+                    "connectorToolCount": 0,
+                    "requestedSnapshotRevision": 8,
+                    "snapshotRevision": 9,
+                },
+            },
+        }
+    )
+
+    result = asyncio.run(
+        execute_mcp_tool(
+            target=target,
+            bridge_client=cast(DesktopCapabilityBridgeClient, bridge),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot)),
+            arguments={"course": "CS304"},
+        )
+    )
+
+    assert result == {
+        "status": "error",
+        "artifacts": [],
+        "metadata": {
+            "toolId": "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e",
+            "sourceKind": "mcp",
+            "serverId": "mcp-http-sse-stub",
+            "remoteToolName": "fetch-calendar",
+            "snapshotRevision": 9,
+        },
+        "error": {
+            "code": "temporarily_unavailable",
+            "message": "The MCP server is not ready to execute tools.",
+            "retryable": True,
+            "details": {
+                "requestedServerId": "mcp-http-sse-stub",
+                "requestedRemoteToolName": "fetch-calendar",
+                "connectionState": "connecting",
+                "connectorToolCount": 0,
+                "requestedSnapshotRevision": 8,
+                "snapshotRevision": 9,
+                "mcpErrorCode": "server_not_ready",
+                "observedAt": "2026-04-21T12:00:00.000Z",
+            },
+        },
+    }
+
+
 def test_mcp_tool_helpers_normalize_function_names_and_object_schema() -> None:
     assert (
         build_mcp_tool_function_name("mcp.mcp-stdio-stub.search-campus.00004d8d")

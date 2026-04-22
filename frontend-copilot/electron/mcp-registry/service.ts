@@ -573,9 +573,21 @@ function resolveToolCallTarget(
   request: McpToolCallRequest,
   currentSnapshotRevision: number,
   now: () => string,
-):
+): 
   | { ok: true, request: McpToolCallRequest }
   | { ok: false, failure: McpToolCallFailure } {
+  const requestedServerId = typeof request.serverId === 'string' ? request.serverId.trim() : ''
+  const requestedRemoteToolName = typeof request.remoteToolName === 'string' ? request.remoteToolName.trim() : ''
+  const requestedServer = requestedServerId === ''
+    ? undefined
+    : snapshot.servers.find((server) => server.serverId === requestedServerId)
+  const requestedState = requestedServer === undefined
+    ? null
+    : connectorHub.getState(requestedServer.serverId)
+  const requestedConnectorToolCount = requestedServer === undefined
+    ? 0
+    : connectorHub.getTools(requestedServer.serverId).length
+
   const matchingTarget = snapshot.servers.flatMap((server) => connectorHub.getTools(server.serverId).map((tool) => ({
     server,
     tool,
@@ -594,31 +606,42 @@ function resolveToolCallTarget(
     }
   }
 
-  const requestedServerId = typeof request.serverId === 'string' ? request.serverId.trim() : ''
-  const requestedRemoteToolName = typeof request.remoteToolName === 'string' ? request.remoteToolName.trim() : ''
   if (requestedServerId !== '' && requestedRemoteToolName !== '') {
-    const fallbackServer = snapshot.servers.find((server) => server.serverId === requestedServerId)
     const hasRequestedTool = connectorHub
       .getTools(requestedServerId)
       .some((tool) => tool.name === requestedRemoteToolName)
 
-    if (fallbackServer !== undefined && hasRequestedTool) {
+    if (requestedServer !== undefined && hasRequestedTool) {
       return {
         ok: true,
         request: {
           ...request,
-          serverId: fallbackServer.serverId,
+          serverId: requestedServer.serverId,
+          remoteToolName: requestedRemoteToolName,
+          snapshotRevision: currentSnapshotRevision,
+        },
+      }
+    }
+
+    if (
+      requestedServer !== undefined
+      && requestedConnectorToolCount === 0
+      && requestedServer.enabled
+      && (requestedState === null
+        || requestedState.connectionState === 'connected'
+        || requestedState.connectionState === 'degraded')
+    ) {
+      return {
+        ok: true,
+        request: {
+          ...request,
+          serverId: requestedServer.serverId,
           remoteToolName: requestedRemoteToolName,
           snapshotRevision: currentSnapshotRevision,
         },
       }
     }
   }
-
-  const requestedServer = snapshot.servers.find((server) => server.serverId === request.serverId)
-  const requestedState = requestedServer === undefined
-    ? null
-    : connectorHub.getState(requestedServer.serverId)
 
   if (
     requestedServer !== undefined
@@ -627,7 +650,11 @@ function resolveToolCallTarget(
     return {
       ok: false,
       failure: createToolCallFailure(request, 'server_not_ready', 'The MCP server is not ready to execute tools.', true, {
+        requestedServerId,
+        requestedRemoteToolName,
         connectionState: requestedState?.connectionState ?? 'disabled',
+        connectorToolCount: requestedConnectorToolCount,
+        requestedSnapshotRevision: request.snapshotRevision ?? null,
         snapshotRevision: currentSnapshotRevision,
       }, now),
     }
@@ -647,6 +674,10 @@ function resolveToolCallTarget(
         : `The MCP tool '${request.toolId}' was not found.`,
       false,
       {
+        requestedServerId,
+        requestedRemoteToolName,
+        connectorToolCount: requestedConnectorToolCount,
+        requestedSnapshotRevision: request.snapshotRevision ?? null,
         snapshotRevision: currentSnapshotRevision,
       },
       now,

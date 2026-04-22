@@ -264,17 +264,6 @@ export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}
         )
       }
 
-      if (!entry.connector.getTools().some((tool) => tool.name === request.remoteToolName)) {
-        return createToolCallFailure(
-          request,
-          'directory_drift',
-          'The requested MCP tool no longer exists in the current server catalog.',
-          false,
-          null,
-          now,
-        )
-      }
-
       return await entry.connector.callTool(toConnectorToolCallRequest(request))
     },
     getState(serverId) {

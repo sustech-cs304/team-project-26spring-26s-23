@@ -427,6 +427,42 @@ def test_desktop_capability_bridge_client_wraps_invalid_error_envelope_validatio
         transport=httpx.MockTransport(handler),
     )
 
+
+def test_desktop_capability_bridge_client_maps_mcp_timeout_to_structured_timeout() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out while waiting for the MCP bridge")
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HostCapabilityOperationError) as exc_info:
+        asyncio.run(
+            client.call_mcp_tool(
+                context=_build_invocation_context(
+                    tool_id="mcp.mcp-stdio-stub.search-campus.00004d8d"
+                ),
+                server_id="mcp-stdio-stub",
+                remote_tool_name="search-campus",
+                arguments={"keyword": "library"},
+                snapshot_revision=8,
+            )
+        )
+
+    error = exc_info.value
+    assert error.capability == "mcp"
+    assert error.code == "timeout"
+    assert error.retryable is True
+    assert error.message == (
+        "Desktop capability bridge timed out while waiting for the host response."
+    )
+    assert error.details == {
+        "operation": "call_tool",
+        "transportErrorType": "ReadTimeout",
+    }
+
     with pytest.raises(HostCapabilityOperationError) as exc_info:
         asyncio.run(
             client.save_text(
@@ -437,16 +473,11 @@ def test_desktop_capability_bridge_client_wraps_invalid_error_envelope_validatio
         )
 
     assert exc_info.value.capability == "artifact"
-    assert exc_info.value.code == "internal_error"
-    assert (
-        exc_info.value.message
-        == "Desktop capability bridge returned an invalid response payload."
-    )
-    assert exc_info.value.details["operation"] == "save_text"
-    assert (
-        "Failed bridge responses must include an error payload."
-        in exc_info.value.details["detail"]
-    )
+    assert exc_info.value.code == "temporarily_unavailable"
+    assert exc_info.value.retryable is True
+    assert exc_info.value.details == {
+        "operation": "save_text",
+    }
 
 
 def test_desktop_capability_bridge_client_reports_missing_bootstrap_as_unavailable() -> (

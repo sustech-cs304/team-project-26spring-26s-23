@@ -456,6 +456,69 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
   })
 
+  it('preserves structured MCP execution failures from the registry service', async () => {
+    const executeTool = vi.fn(async () => ({
+      ok: false as const,
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      serverId: 'mcp-stdio-stub',
+      remoteToolName: 'search-campus',
+      snapshotRevision: 9,
+      error: {
+        code: 'connector_unavailable',
+        message: 'The MCP stdio session is not ready yet.',
+        retryable: true,
+        observedAt: '2026-04-21T12:00:00.000Z',
+        details: {
+          connectionState: 'connecting',
+          connectorToolCount: 0,
+        },
+      },
+    }))
+    const mcpRegistryService = {
+      executeTool,
+    } as unknown as ElectronMcpRegistryService
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => {
+        throw new Error('MCP bridge should not request runtime paths.')
+      },
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+      getMcpRegistryService: () => mcpRegistryService,
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'mcp-call-failure-1',
+      capability: 'mcp',
+      operation: 'call_tool',
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      payload: {
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+        snapshotRevision: 9,
+      },
+    }))).resolves.toEqual({
+      requestId: 'mcp-call-failure-1',
+      ok: true,
+      result: {
+        ok: false,
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        snapshotRevision: 9,
+        error: {
+          code: 'connector_unavailable',
+          message: 'The MCP stdio session is not ready yet.',
+          retryable: true,
+          observedAt: '2026-04-21T12:00:00.000Z',
+          details: {
+            connectionState: 'connecting',
+            connectorToolCount: 0,
+          },
+        },
+      },
+    })
+  })
+
   it('returns structured failures when workspace paths escape the approved root', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-workspace-denied')
     activeTempRoots.push(fixture.tempRoot)
