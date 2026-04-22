@@ -109,6 +109,7 @@ export interface MainProcessServices {
   setMcpServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>
   testMcpConnection: (request: McpTestConnectionRequest) => Promise<McpTestConnectionResult>
   refreshMcpCatalog: (request?: McpRefreshCatalogRequest) => Promise<McpRefreshCatalogResult>
+  warmupEnabledMcpServersOnStartup: () => Promise<void>
   listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
   getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>

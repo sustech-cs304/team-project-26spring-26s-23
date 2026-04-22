@@ -454,6 +454,82 @@ describe('createMcpRegistryService', () => {
     }))
   })
 
+  it('warms enabled servers on startup and publishes catalog updates without manual test connection', async () => {
+    const fixture = await createRegistryServiceFixture('startup-warmup', {
+      reconcileHydratesCatalog: false,
+      refreshCatalogSucceeds: true,
+    })
+    const server = createMcpStdioStubServerFixture()
+
+    await fixture.service.saveServer({
+      ...server,
+      enabled: false,
+    })
+    fixture.publishEvent.mockClear()
+    fixture.snapshotWrites.splice(0)
+
+    await fixture.service.setServerEnabled({
+      serverId: server.serverId,
+      enabled: true,
+    })
+    fixture.publishEvent.mockClear()
+    fixture.snapshotWrites.splice(0)
+
+    await expect(fixture.service.warmupEnabledServersOnStartup()).resolves.toBeUndefined()
+
+    expect(fixture.connectorHub.__getRefreshCatalogCalls()).toEqual([[server.serverId], [server.serverId]])
+    expect(fixture.publishEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'catalog',
+      refreshedServerIds: [server.serverId],
+    }))
+
+    const latestSnapshot = fixture.snapshotWrites[fixture.snapshotWrites.length - 1]
+    expect(latestSnapshot?.tools).toEqual([
+      expect.objectContaining({
+        toolId: buildMcpToolId(server.serverId, 'search-campus'),
+        serverId: server.serverId,
+      }),
+    ])
+  })
+
+  it('keeps startup warmup failures diagnosable without blocking snapshot publication', async () => {
+    const fixture = await createRegistryServiceFixture('startup-warmup-failure', {
+      reconcileHydratesCatalog: false,
+      refreshCatalogSucceeds: false,
+    })
+    const server = createMcpStdioStubServerFixture()
+
+    await fixture.service.saveServer({
+      ...server,
+      enabled: false,
+    })
+    fixture.publishEvent.mockClear()
+    fixture.snapshotWrites.splice(0)
+
+    await fixture.service.setServerEnabled({
+      serverId: server.serverId,
+      enabled: true,
+    })
+    fixture.publishEvent.mockClear()
+    fixture.snapshotWrites.splice(0)
+
+    await expect(fixture.service.warmupEnabledServersOnStartup()).resolves.toBeUndefined()
+
+    const latestSnapshot = fixture.snapshotWrites[fixture.snapshotWrites.length - 1]
+    expect(latestSnapshot?.servers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        serverId: server.serverId,
+        connectionState: 'error',
+        toolCount: 0,
+        lastSuccessfulCatalogRefresh: null,
+        lastError: expect.objectContaining({
+          code: 'catalog_sync_failed',
+        }),
+      }),
+    ]))
+    expect(fixture.publishEvent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'snapshot' }))
+  })
+
   it('returns structured validation failures without writing invalid drafts', async () => {
     const fixture = await createRegistryServiceFixture('validation')
 

@@ -48,4 +48,33 @@ describe('createElectronMcpRegistryService', () => {
       await rm(tempRoot, { recursive: true, force: true })
     }
   })
+
+  it('warms enabled MCP servers on startup without recreating the cached service', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-mcp-main-process-startup-'))
+    const appendLog = vi.fn()
+    const hostedPaths = createHostedRuntimePaths(tempRoot)
+    const prepareRuntimePaths = vi.fn(async () => hostedPaths)
+
+    const service = createElectronMcpRegistryService({
+      prepareRuntimePaths,
+      appendLog,
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    try {
+      await expect(service.warmupEnabledServersOnStartup()).resolves.toBeUndefined()
+      await expect(service.loadRegistry({ includeDisabled: true })).resolves.toEqual({
+        ok: true,
+        registryRevision: 0,
+        snapshotRevision: 0,
+        servers: [],
+        states: [],
+      })
+
+      expect(prepareRuntimePaths).toHaveBeenCalledTimes(1)
+      expect(appendLog).not.toHaveBeenCalled()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
 })

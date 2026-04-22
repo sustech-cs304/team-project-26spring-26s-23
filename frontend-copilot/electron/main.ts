@@ -633,6 +633,7 @@ void app.whenReady()
     })
     void startHostedBackend()
     createWindow()
+    void mainProcessServices.warmupEnabledMcpServersOnStartup()
   })
   .catch((error) => {
     const message = '[desktop-runtime] Failed to bootstrap the Electron main process.'

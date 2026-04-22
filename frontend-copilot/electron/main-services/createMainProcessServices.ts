@@ -62,6 +62,9 @@ export function createMainProcessServices(
     async refreshMcpCatalog(request) {
       return await accessors.getMcpRegistryService().refreshCatalog(request)
     },
+    async warmupEnabledMcpServersOnStartup() {
+      await accessors.getMcpRegistryService().warmupEnabledServersOnStartup()
+    },
     async listCopilotHistoryThreads() {
       return await copilotHistoryService.listThreads()
     },

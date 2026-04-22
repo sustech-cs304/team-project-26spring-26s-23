@@ -44,6 +44,7 @@ export interface ElectronMcpRegistryService {
   setServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>
   testConnection: (request: McpTestConnectionRequest) => Promise<McpTestConnectionResult>
   refreshCatalog: (request?: McpRefreshCatalogRequest) => Promise<McpRefreshCatalogResult>
+  warmupEnabledServersOnStartup: () => Promise<void>
   executeTool: (request: McpToolCallRequest) => Promise<McpToolCallResult>
 }
 
@@ -109,6 +110,12 @@ export function createElectronMcpRegistryService(
     async refreshCatalog(request) {
       return await wrapOperation('refresh the MCP server catalog', options.appendLog, async () => {
         return await (await getService()).refreshCatalog(request)
+      })
+    },
+    async warmupEnabledServersOnStartup() {
+      await wrapOperation('warm enabled MCP servers during application startup', options.appendLog, async () => {
+        await (await getService()).warmupEnabledServersOnStartup()
+        return null
       })
     },
     async executeTool(request) {

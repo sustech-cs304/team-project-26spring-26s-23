@@ -48,6 +48,7 @@ export interface McpRegistryService {
   setServerEnabled(request: McpSetServerEnabledRequest): Promise<McpSetServerEnabledResult>
   testConnection(request: McpTestConnectionRequest): Promise<McpTestConnectionResult>
   refreshCatalog(request?: McpRefreshCatalogRequest): Promise<McpRefreshCatalogResult>
+  warmupEnabledServersOnStartup(): Promise<void>
   executeTool(request: McpToolCallRequest): Promise<McpToolCallResult>
 }
 
@@ -319,6 +320,54 @@ export function createMcpRegistryService(
         refreshedServerIds: results.map((entry) => entry.serverId),
         results,
       }
+    },
+    async warmupEnabledServersOnStartup() {
+      const snapshot = await options.store.load()
+      const currentRevisions = resolveRuntimeRevisions(snapshot)
+      await connectorHub.reconcile(snapshot.servers, currentRevisions)
+
+      const enabledServers = snapshot.servers.filter((server) => server.enabled)
+      if (enabledServers.length === 0) {
+        const persistedSnapshot = await persistSnapshotArtifacts(snapshot, currentRevisions.snapshotRevision)
+        await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, currentRevisions.snapshotRevision)
+        return
+      }
+
+      const refreshed = await connectorHub.refreshCatalog(
+        enabledServers.map((server) => server.serverId),
+        currentRevisions,
+      )
+      const nextSnapshotRevision = refreshed.length > 0
+        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        : currentRevisions.snapshotRevision
+
+      runtimeSnapshotRevision = nextSnapshotRevision
+
+      await options.publishEvent?.({
+        kind: 'catalog',
+        registryRevision: snapshot.registryRevision,
+        snapshotRevision: nextSnapshotRevision,
+        refreshedServerIds: refreshed.map((entry) => entry.serverId),
+        serverId: null,
+      })
+
+      const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
+      await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
+
+      await options.appendLog?.(
+        refreshed.some((entry) => entry.success) ? 'info' : 'warn',
+        refreshed.some((entry) => entry.success)
+          ? '[mcp-registry] Warmed enabled MCP servers during application startup.'
+          : '[mcp-registry] Completed MCP startup warmup without a successful catalog sync.',
+        {
+          registryRevision: snapshot.registryRevision,
+          snapshotRevision: nextSnapshotRevision,
+          enabledServerCount: enabledServers.length,
+          refreshedServerIds: refreshed.map((entry) => entry.serverId),
+          successfulServerIds: refreshed.filter((entry) => entry.success).map((entry) => entry.serverId),
+          failedServerIds: refreshed.filter((entry) => !entry.success).map((entry) => entry.serverId),
+        },
+      )
     },
     async executeTool(request) {
       const snapshot = await options.store.load()
