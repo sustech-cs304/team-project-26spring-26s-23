@@ -24,13 +24,13 @@ export interface CreateManagedRuntimeServiceOptions {
   processArch?: string
   nodeManagerFactory?: (context: {
     pinnedVersion: string
-    selectedComponents: ReturnType<typeof resolveManagedRuntimeComponents>
+    selectedComponents: ReturnType<typeof resolveManagedRuntimeComponentSelection>['resolvedComponents']
     target: ManagedRuntimeTarget
     managedRuntimePaths: ReturnType<typeof createManagedRuntimePaths>
   }) => Pick<NodeRuntimeManager, 'loadSnapshot' | 'installOrRepair'>
   uvManagerFactory?: (context: {
     pinnedVersion: string
-    selectedComponents: ReturnType<typeof resolveManagedRuntimeComponents>
+    selectedComponents: ReturnType<typeof resolveManagedRuntimeComponentSelection>['resolvedComponents']
     target: ManagedRuntimeTarget
     managedRuntimePaths: ReturnType<typeof createManagedRuntimePaths>
   }) => Pick<UvRuntimeManager, 'loadSnapshot' | 'installOrRepair'>
