@@ -91,6 +91,90 @@ describe('createStdioMcpServerConnector', () => {
     await connector.stop()
   })
 
+  it('serializes the first tools/call behind an in-flight tools/list refresh on the same stdio session', async () => {
+    const fixture = await createStdioServerFixture('serialized-call-after-refresh', 'call-during-list-timeout')
+    const server = createMcpStdioStubServerFixture({
+      transportConfig: {
+        kind: 'stdio',
+        command: process.execPath,
+        args: [fixture.scriptFile],
+        cwd: fixture.tempRoot,
+      },
+    })
+    const connector = createStdioMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 500,
+      },
+    })
+
+    await connector.start()
+
+    const refreshPromise = connector.refreshCatalog()
+    const callPromise = connector.callTool({
+      toolId: 'mcp.test.search-campus',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      snapshotRevision: 10,
+    })
+
+    await expect(refreshPromise).resolves.toMatchObject({ ok: true })
+    await expect(callPromise).resolves.toEqual({
+      ok: true,
+      toolId: 'mcp.test.search-campus',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: 'search-campus completed' }],
+      structuredContent: { echoedArguments: { keyword: 'calendar' } },
+      snapshotRevision: 10,
+      isError: false,
+    })
+
+    await connector.stop()
+  })
+
+  it('allows a slower first tools/call to complete without reusing the shorter connection timeout', async () => {
+    const fixture = await createStdioServerFixture('slow-call-success', 'slow-call-success')
+    const server = createMcpStdioStubServerFixture({
+      transportConfig: {
+        kind: 'stdio',
+        command: process.execPath,
+        args: [fixture.scriptFile],
+        cwd: fixture.tempRoot,
+      },
+    })
+    const connector = createStdioMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 200,
+      },
+    })
+
+    await connector.start()
+
+    await expect(connector.callTool({
+      toolId: 'mcp.test.search-campus',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      arguments: { keyword: 'calendar' },
+      snapshotRevision: 10,
+    })).resolves.toEqual({
+      ok: true,
+      toolId: 'mcp.test.search-campus',
+      serverId: server.serverId,
+      remoteToolName: 'search-campus',
+      content: [{ type: 'text', text: 'search-campus completed' }],
+      structuredContent: { echoedArguments: { keyword: 'calendar' } },
+      snapshotRevision: 10,
+      isError: false,
+    })
+
+    await connector.stop()
+  })
+
   it('reassembles fragmented stdout lines before parsing MCP responses', async () => {
     const fixture = await createStdioServerFixture('fragmented-stdout', 'fragmented-stdout')
     const server = createMcpStdioStubServerFixture({
@@ -317,7 +401,7 @@ describe('createStdioMcpServerConnector', () => {
 
 async function createStdioServerFixture(
   name: string,
-  mode: 'success' | 'fail-list-after-first' | 'duplicate-tools' | 'fragmented-stdout' | 'stderr-noise' | 'initialize-timeout' | 'invalid-json',
+  mode: 'success' | 'fail-list-after-first' | 'duplicate-tools' | 'fragmented-stdout' | 'stderr-noise' | 'initialize-timeout' | 'invalid-json' | 'call-during-list-timeout' | 'slow-call-success',
 ) {
   const tempRoot = await mkdtemp(path.join(tmpdir(), `candue-mcp-stdio-${name}-`))
   activeTempRoots.push(tempRoot)
@@ -327,11 +411,12 @@ async function createStdioServerFixture(
 }
 
 function createStdioServerScript(
-  mode: 'success' | 'fail-list-after-first' | 'duplicate-tools' | 'fragmented-stdout' | 'stderr-noise' | 'initialize-timeout' | 'invalid-json',
+  mode: 'success' | 'fail-list-after-first' | 'duplicate-tools' | 'fragmented-stdout' | 'stderr-noise' | 'initialize-timeout' | 'invalid-json' | 'call-during-list-timeout' | 'slow-call-success',
 ): string {
   return `
 let buffer = '';
 let listCalls = 0;
+let listInFlight = false;
 process.stdin.on('data', (chunk) => {
   buffer += chunk.toString('utf8');
   while (true) {
@@ -375,6 +460,14 @@ function handle(payload) {
   }
   if (payload.method === 'tools/list') {
     listCalls += 1;
+    if (${JSON.stringify(mode)} === 'call-during-list-timeout' && listCalls > 1) {
+      listInFlight = true;
+      setTimeout(() => {
+        listInFlight = false;
+        send({ jsonrpc: '2.0', id: payload.id, result: { tools: [{ name: 'search-campus', title: 'Search Campus', description: 'Search the campus knowledge base.', inputSchema: { type: 'object' } }] } });
+      }, 25);
+      return;
+    }
     if (${JSON.stringify(mode)} === 'fail-list-after-first' && listCalls > 1) {
       send({ jsonrpc: '2.0', id: payload.id, error: { code: -32000, message: 'temporary list failure' } });
       return;
@@ -390,6 +483,23 @@ function handle(payload) {
     return;
   }
   if (payload.method === 'tools/call') {
+    if (${JSON.stringify(mode)} === 'call-during-list-timeout' && listInFlight) {
+      return;
+    }
+    if (${JSON.stringify(mode)} === 'slow-call-success') {
+      setTimeout(() => {
+        send({
+          jsonrpc: '2.0',
+          id: payload.id,
+          result: {
+            content: [{ type: 'text', text: 'search-campus completed' }],
+            structuredContent: { echoedArguments: payload.params?.arguments ?? {} },
+            isError: false,
+          },
+        });
+      }, 350);
+      return;
+    }
     send({
       jsonrpc: '2.0',
       id: payload.id,

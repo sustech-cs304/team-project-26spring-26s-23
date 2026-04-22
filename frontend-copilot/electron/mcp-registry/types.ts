@@ -7,7 +7,7 @@ export const MCP_CAPABILITY_SNAPSHOT_BRIDGE_KEY = 'snapshot' as const
 
 export type McpTransportKind = 'stdio' | 'http-sse'
 export type McpConnectionState = 'disabled' | 'idle' | 'connecting' | 'connected' | 'degraded' | 'error'
-export type McpConnectionPhase = 'spawn' | 'initialize' | 'initialized' | 'tools/list'
+export type McpConnectionPhase = 'spawn' | 'initialize' | 'initialized' | 'tools/list' | 'tools/call'
 export type McpToolAvailability = 'available' | 'degraded' | 'unavailable'
 
 export interface McpRevisionState {

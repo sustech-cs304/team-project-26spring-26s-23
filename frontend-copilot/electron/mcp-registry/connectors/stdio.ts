@@ -35,6 +35,7 @@ import {
 } from './protocol'
 
 const STDIO_CONNECT_TIMEOUT_MS = 5_000
+const STDIO_TOOL_CALL_TIMEOUT_MS = 20_000
 const STDIO_REQUEST_TIMEOUT_MESSAGE = 'Timed out while waiting for the MCP stdio server response.'
 const STDERR_SUMMARY_MAX_LINES = 3
 
@@ -63,6 +64,7 @@ export function createStdioMcpServerConnector(
   let currentPhase: McpConnectionPhase | null = null
   const stderrLines: string[] = []
   let state = createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, context.now)
+  let requestQueue = Promise.resolve()
   const pending = new Map<number, {
     resolve: (value: JsonRpcResponsePayload) => void
     reject: (error: unknown) => void
@@ -276,15 +278,15 @@ export function createStdioMcpServerConnector(
   }
 
   async function requestToolsList(updatePhaseState: boolean): Promise<McpRemoteToolSummary[]> {
-    if (updatePhaseState) {
-      await updatePhase('tools/list')
-    } else {
-      currentPhase = 'tools/list'
-    }
+    return await withSerializedPhase('tools/list', async () => {
+      if (updatePhaseState) {
+        await updatePhase('tools/list')
+      }
 
-    const response = await sendRequest(MCP_TOOLS_LIST_METHOD, {})
-    const result = unwrapJsonRpcResponse(response, context.now)
-    return normalizeToolsListResult(result)
+      const response = await sendRequest(MCP_TOOLS_LIST_METHOD, {})
+      const result = unwrapJsonRpcResponse(response, context.now)
+      return normalizeToolsListResult(result)
+    })
   }
 
   async function callTool(request: McpConnectorToolCallRequest): Promise<McpToolCallResult> {
@@ -321,9 +323,13 @@ export function createStdioMcpServerConnector(
     }
 
     try {
-      const response = await sendRequest(MCP_TOOLS_CALL_METHOD, {
-        name: request.remoteToolName,
-        arguments: request.arguments,
+      const response = await withSerializedPhase('tools/call', async () => {
+        return await sendRequest(MCP_TOOLS_CALL_METHOD, {
+          name: request.remoteToolName,
+          arguments: request.arguments,
+        }, {
+          timeoutMs: Math.max(context.timeoutMs, STDIO_TOOL_CALL_TIMEOUT_MS),
+        })
       })
       const result = unwrapJsonRpcResponse(response, context.now)
       return normalizeToolsCallResult({
@@ -344,7 +350,11 @@ export function createStdioMcpServerConnector(
     }
   }
 
-  async function sendRequest(method: string, params?: unknown): Promise<JsonRpcResponsePayload> {
+  async function sendRequest(
+    method: string,
+    params?: unknown,
+    options: { timeoutMs?: number } = {},
+  ): Promise<JsonRpcResponsePayload> {
     const activeChild = child
     if (activeChild === null || activeChild.stdin.destroyed) {
       throw new McpConnectorError(createMcpErrorSummary(
@@ -357,6 +367,7 @@ export function createStdioMcpServerConnector(
 
     const requestId = nextRequestId
     nextRequestId += 1
+    const timeoutMs = options.timeoutMs ?? (context.timeoutMs > 0 ? context.timeoutMs : STDIO_CONNECT_TIMEOUT_MS)
 
     const responsePromise = new Promise<JsonRpcResponsePayload>((resolve, reject) => {
       pending.set(requestId, { resolve, reject })
@@ -377,10 +388,28 @@ export function createStdioMcpServerConnector(
 
     return await withTimeout(
       responsePromise,
-      context.timeoutMs > 0 ? context.timeoutMs : STDIO_CONNECT_TIMEOUT_MS,
+      timeoutMs,
       context.now,
       createPhaseTimeoutMessage(currentPhase),
     )
+  }
+
+  async function withSerializedPhase<T>(phase: McpConnectionPhase, work: () => Promise<T>): Promise<T> {
+    const next = requestQueue.catch(() => undefined).then(async () => {
+      const previousPhase = currentPhase
+      currentPhase = phase
+      try {
+        const result = await work()
+        currentPhase = previousPhase
+        return result
+      } catch (error) {
+        currentPhase = phase
+        throw error
+      }
+    })
+
+    requestQueue = next.then(() => undefined, () => undefined)
+    return await next
   }
 
   async function sendNotification(method: string, params?: unknown): Promise<void> {

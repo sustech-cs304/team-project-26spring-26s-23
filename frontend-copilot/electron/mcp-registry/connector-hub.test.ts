@@ -343,6 +343,21 @@ function createFakeConnector(
       return result
     },
     async callTool(request) {
+      if (!tools.some((tool) => tool.name === request.remoteToolName)) {
+        return {
+          ok: false,
+          toolId: request.toolId,
+          serverId: request.serverId,
+          remoteToolName: request.remoteToolName,
+          snapshotRevision: request.snapshotRevision ?? null,
+          error: createMcpErrorSummary(
+            'directory_drift',
+            'The requested MCP tool no longer exists in the current server catalog.',
+            false,
+            () => '2026-04-21T12:00:00.000Z',
+          ),
+        }
+      }
       hooks.onCallTool?.({
         toolId: request.toolId,
         remoteToolName: request.remoteToolName,
