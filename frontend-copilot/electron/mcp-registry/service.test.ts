@@ -39,6 +39,7 @@ afterEach(async () => {
 
 interface FakeConnectorHub extends McpConnectorHub {
   __getToolCallRequests(): McpToolCallRequest[]
+  __getRefreshCatalogCalls(): Array<readonly string[] | null>
 }
 
 async function createRegistryServiceFixture(testName: string) {
@@ -83,6 +84,7 @@ function createFakeConnectorHub(): FakeConnectorHub {
   const tools = new Map<string, McpRemoteToolSummary[]>()
 
   const toolCallRequests: McpToolCallRequest[] = []
+  const refreshCatalogCalls: Array<readonly string[] | null> = []
 
   return {
     async reconcile(servers) {
@@ -122,6 +124,7 @@ function createFakeConnectorHub(): FakeConnectorHub {
       }
     },
     async refreshCatalog(serverIds) {
+      refreshCatalogCalls.push(serverIds === null ? null : [...serverIds])
       const ids = serverIds ?? Array.from(states.keys())
       return ids.map((serverId) => {
         const state = states.get(serverId) ?? createMcpServerStateFixture(createMcpStdioStubServerFixture({ serverId }))
@@ -183,6 +186,9 @@ function createFakeConnectorHub(): FakeConnectorHub {
         ...request,
         arguments: { ...request.arguments },
       }))
+    },
+    __getRefreshCatalogCalls() {
+      return refreshCatalogCalls.map((entry) => entry === null ? null : [...entry])
     },
   }
 }
@@ -423,7 +429,7 @@ describe('createMcpRegistryService', () => {
     expect((await fixture.store.load()).servers).toEqual(beforeRefreshServers)
   })
 
-  it('promotes a successful saved-server connection test into an automatic snapshot and catalog refresh', async () => {
+  it('reuses the managed catalog after a successful saved-server connection test instead of forcing a second refresh', async () => {
     const fixture = await createRegistryServiceFixture('test-sync-success')
     const server = createMcpStdioStubServerFixture()
     await fixture.store.saveServers([server])
@@ -443,6 +449,7 @@ describe('createMcpRegistryService', () => {
       error: null,
       warnings: [],
     })
+    expect(fixture.connectorHub.__getRefreshCatalogCalls()).toEqual([])
 
     expect(fixture.publishEvent).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'catalog',
@@ -453,6 +460,114 @@ describe('createMcpRegistryService', () => {
     const latestSnapshot = fixture.snapshotWrites[fixture.snapshotWrites.length - 1]
     expect(latestSnapshot).toBeDefined()
     expect(latestSnapshot?.snapshotRevision).toBeGreaterThan(0)
+    expect(latestSnapshot?.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        serverId: server.serverId,
+        remoteToolName: 'search-campus',
+      }),
+    ]))
+  })
+
+  it('falls back to a catalog refresh after a successful saved-server connection test when the managed connector has no hydrated catalog', async () => {
+    const fixture = await createRegistryServiceFixture('test-sync-refresh-fallback')
+    const server = createMcpStdioStubServerFixture()
+    await fixture.store.saveServers([server])
+
+    const refreshCatalogCalls: Array<readonly string[] | null> = []
+    let managedState = createMcpServerStateFixture(server, {
+      connectionState: 'connected',
+      toolCount: 0,
+      lastCatalogSyncAt: null,
+    })
+    let managedTools: McpRemoteToolSummary[] = []
+
+    const service = createMcpRegistryService({
+      store: fixture.store,
+      connectorHub: {
+        ...fixture.connectorHub,
+        async reconcile(servers) {
+          const matchingServer = servers.find((entry) => entry.serverId === server.serverId) ?? server
+          managedState = createMcpServerStateFixture(matchingServer, {
+            connectionState: 'connected',
+            toolCount: 0,
+            lastCatalogSyncAt: null,
+          })
+          managedTools = []
+          return { states: servers.map((entry) => entry.serverId === server.serverId ? managedState : createStateForServer(entry)) }
+        },
+        async testConnection(targetServer) {
+          return {
+            success: true,
+            transportKind: targetServer.transportKind,
+            toolCount: STUB_TOOLS.length,
+            durationMs: 12,
+            phase: null,
+            diagnosticSummary: null,
+            error: null,
+            warnings: [],
+          }
+        },
+        async refreshCatalog(serverIds) {
+          refreshCatalogCalls.push(serverIds === null ? null : [...serverIds])
+          managedState = createMcpServerStateFixture(server, {
+            connectionState: 'connected',
+            toolCount: STUB_TOOLS.length,
+            lastCatalogSyncAt: '2026-04-21T12:00:00.000Z',
+          })
+          managedTools = STUB_TOOLS.map((tool) => ({
+            ...tool,
+            inputSchema: { ...tool.inputSchema },
+          }))
+          return [{
+            serverId: server.serverId,
+            success: true,
+            toolCount: STUB_TOOLS.length,
+            state: managedState,
+            error: null,
+          }]
+        },
+        getState(serverId) {
+          return serverId === server.serverId ? managedState : null
+        },
+        getAllStates(servers) {
+          if (servers === undefined) {
+            return [managedState]
+          }
+
+          return servers.map((entry) => entry.serverId === server.serverId ? managedState : createStateForServer(entry))
+        },
+        getTools(serverId) {
+          return serverId === server.serverId
+            ? managedTools.map((tool) => ({
+                ...tool,
+                inputSchema: { ...tool.inputSchema },
+              }))
+            : []
+        },
+      },
+      snapshotSink: fixture.snapshotSink,
+      publishEvent: fixture.publishEvent,
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    const result = await service.testConnection({
+      serverId: server.serverId,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      success: true,
+      transportKind: 'stdio',
+      toolCount: 1,
+      durationMs: expect.any(Number),
+      phase: null,
+      diagnosticSummary: null,
+      error: null,
+      warnings: [],
+    })
+    expect(refreshCatalogCalls).toEqual([[server.serverId]])
+
+    const latestSnapshot = fixture.snapshotWrites[fixture.snapshotWrites.length - 1]
     expect(latestSnapshot?.tools).toEqual(expect.arrayContaining([
       expect.objectContaining({
         serverId: server.serverId,

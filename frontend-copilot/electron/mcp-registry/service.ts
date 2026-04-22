@@ -407,8 +407,13 @@ export function createMcpRegistryService(
 
     await connectorHub.reconcile(snapshot.servers, currentRevisions)
 
-    const refreshed = await connectorHub.refreshCatalog([serverId], currentRevisions)
-    const refreshedTarget = refreshed.find((entry) => entry.serverId === serverId) ?? null
+    const reconciledState = connectorHub.getState(serverId)
+    const canReuseManagedCatalog = reconciledState?.connectionState === 'connected'
+      && reconciledState.lastCatalogSyncAt !== null
+
+    const refreshedTarget = canReuseManagedCatalog
+      ? null
+      : (await connectorHub.refreshCatalog([serverId], currentRevisions)).find((entry) => entry.serverId === serverId) ?? null
     const connectedState = connectorHub.getState(serverId)
     const shouldPublishSnapshot = refreshedTarget?.success === true
       || connectedState?.connectionState === 'connected'
