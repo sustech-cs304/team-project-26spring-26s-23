@@ -271,6 +271,7 @@ function createToolCatalogLoadResult(
 ): ToolCatalogLoadResult {
   return {
     ok: true,
+    directoryVersion: 'tools-v1',
     tools: [
       {
         toolId: 'tool.fs.read',
@@ -355,6 +356,7 @@ function createToolCatalogLoadResult(
 function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
   return {
     ok: true,
+    directoryVersion: 'tools-v1',
     tools: [
       {
         toolId: 'tool.file-convert',
@@ -423,6 +425,7 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
 function createDynamicMcpGroupCatalogLoadResult(): ToolCatalogLoadResult {
   return {
     ok: true,
+    directoryVersion: 'tools-v2',
     tools: [
       {
         toolId: 'tool.file-convert',
@@ -575,6 +578,42 @@ describe('CapabilitiesWorkspace', () => {
     expect(activeMcpRegistryListener).toBeNull()
   })
 
+  it('reloads the tool catalog when the unified directoryVersion changes during the same snapshot revision', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog
+      .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v1' }))
+      .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v2' }))
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    if (activeMcpRegistryListener === null) {
+      throw new Error('Expected MCP registry subscription listener to be registered.')
+    }
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 7,
+        snapshotRevision: 10,
+        servers: [connectedStdioServer],
+        states: [connectedStdioState],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForNextFrame()
+    await waitForNextFrame()
+
+    expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+
+    rendered.unmount()
+  })
+
   it('reloads the tool catalog after a successful connection test without requiring a manual refresh button', async () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog
@@ -691,6 +730,7 @@ describe('CapabilitiesWorkspace', () => {
     mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
     mockedLoadToolCatalog.mockResolvedValue({
       ok: true,
+      directoryVersion: 'tools-v1',
       tools: [
         {
           toolId: 'tool.fs.read',

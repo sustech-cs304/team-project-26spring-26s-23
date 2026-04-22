@@ -7,6 +7,7 @@ describe('createElectronToolCatalogMainProcess', () => {
     const service = {
       load: vi.fn(async () => ({
         ok: true as const,
+        directoryVersion: 'tools-v1',
         tools: [
           {
             toolId: 'tool.file-convert',
@@ -30,6 +31,7 @@ describe('createElectronToolCatalogMainProcess', () => {
 
     await expect(api.loadToolCatalog()).resolves.toEqual({
       ok: true,
+      directoryVersion: 'tools-v1',
       tools: [
         {
           toolId: 'tool.file-convert',

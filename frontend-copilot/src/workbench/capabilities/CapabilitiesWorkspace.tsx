@@ -44,6 +44,7 @@ interface ToolCatalogLoadState {
   status: 'idle' | 'ready' | 'fallback' | 'error'
   error: string | null
   source: 'runtime' | 'fallback' | null
+  directoryVersion: string | null
 }
 
 const FALLBACK_DELAY_ACTION: ToolPermissionDelayAction = 'approve'
@@ -63,9 +64,11 @@ export function CapabilitiesWorkspace() {
     status: 'idle',
     error: null,
     source: null,
+    directoryVersion: null,
   })
   const mcpRegistry = useMcpRegistry()
   const appliedSnapshotRevisionRef = useRef<number | null>(null)
+  const appliedDirectoryVersionRef = useRef<string | null>(null)
 
   const applyToolCatalogResult = (
     toolCatalogResult: ToolCatalogLoadResult,
@@ -87,7 +90,10 @@ export function CapabilitiesWorkspace() {
       status: resolvedCatalog.status,
       error: resolvedCatalog.error,
       source: resolvedCatalog.source,
+      directoryVersion: toolCatalogResult.ok ? toolCatalogResult.directoryVersion : null,
     })
+
+    appliedDirectoryVersionRef.current = toolCatalogResult.ok ? toolCatalogResult.directoryVersion : null
 
     return resolvedCatalog.tools
   }
@@ -139,7 +145,12 @@ export function CapabilitiesWorkspace() {
       return
     }
 
-    if (appliedSnapshotRevisionRef.current === mcpRegistry.snapshotRevision) {
+    const shouldReloadForSnapshot = appliedSnapshotRevisionRef.current !== mcpRegistry.snapshotRevision
+    const currentDirectoryVersion = toolCatalogLoadState.directoryVersion
+    const shouldReloadForDirectoryVersion = currentDirectoryVersion !== null
+      && appliedDirectoryVersionRef.current !== currentDirectoryVersion
+
+    if (!shouldReloadForSnapshot && !shouldReloadForDirectoryVersion) {
       return
     }
 
@@ -164,7 +175,7 @@ export function CapabilitiesWorkspace() {
     return () => {
       cancelled = true
     }
-  }, [mcpRegistry.snapshotRevision, settingsState])
+  }, [mcpRegistry.snapshotRevision, settingsState, toolCatalogLoadState.directoryVersion])
 
   const activeNavItem = useMemo(
     () => capabilitiesNavItems.find((item) => item.id === activeSection) ?? capabilitiesNavItems[0],

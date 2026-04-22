@@ -478,7 +478,7 @@ export function useAssistantWorkspaceState({
         },
       }
     })
-  }, [appendWorkspaceDebugLog, renameHistoryThreadImpl])
+  }, [appendWorkspaceDebugLog, renameHistoryThreadImpl, setSessionListState])
 
   const duplicateSessionPersistence = useCallback(async (
     sessionId: string,
@@ -516,7 +516,7 @@ export function useAssistantWorkspaceState({
       [duplicatedSessionShell.sessionId]: createAssistantSessionHistoryState(result.thread, null),
     }))
     setSelectedAgentId(duplicatedSessionShell.boundAgent.id)
-  }, [appendWorkspaceDebugLog, duplicateHistoryThreadImpl, setSelectedAgentId])
+  }, [appendWorkspaceDebugLog, duplicateHistoryThreadImpl, setSelectedAgentId, setSessionListState])
 
   const deleteSessionPersistence = useCallback(async (
     sessionId: string,
@@ -567,7 +567,7 @@ export function useAssistantWorkspaceState({
     }
     persistedShellStateRef.current = nextShellState
     persistShellStateImpl(nextShellState)
-  }, [appendWorkspaceDebugLog, deleteHistoryThreadImpl, persistShellStateImpl])
+  }, [appendWorkspaceDebugLog, deleteHistoryThreadImpl, persistShellStateImpl, setSessionListState])
 
   const {
     renderedSessions,
@@ -648,6 +648,7 @@ export function useAssistantWorkspaceState({
 
   useEffect(() => {
     setRuntimeControllerBySessionId((current) => syncCopilotThreadRuntimeControllerStateRecord(current, sessionListState.sessions))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- session membership changes are intentionally keyed by the joined session id list.
   }, [runtimeControllerRegistrySessionKey])
 
   useEffect(() => {
@@ -1093,6 +1094,7 @@ export function useAssistantWorkspaceState({
       cancelled = true
     }
   }, [
+    appendWorkspaceDebugLog,
     bootstrap.state,
     clearHistoryRestoreRetry,
     historyRestoreRetryKey,
@@ -1208,6 +1210,16 @@ export function useAssistantWorkspaceState({
     const runtimeUrl = bootstrap.state.runtimeUrl
     const registryClient = createWindowMcpRegistryClient()
     const requestVersionBySessionId = new Map<string, number>()
+    const latestCapabilitiesVersionBySessionId = new Map<string, string>()
+
+    for (const sessionEntry of sessionListState.sessions) {
+      if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
+        latestCapabilitiesVersionBySessionId.set(
+          sessionEntry.sessionId,
+          sessionEntry.capabilities.capabilitiesVersion,
+        )
+      }
+    }
 
     return registryClient.subscribe((event) => {
       if (event.kind !== 'snapshot') {
@@ -1229,6 +1241,13 @@ export function useAssistantWorkspaceState({
           if (requestVersionBySessionId.get(liveSession.sessionId) !== nextRequestVersion) {
             return
           }
+
+          const previousCapabilitiesVersion = latestCapabilitiesVersionBySessionId.get(liveSession.sessionId) ?? null
+          if (previousCapabilitiesVersion === response.capabilitiesVersion) {
+            return
+          }
+
+          latestCapabilitiesVersionBySessionId.set(liveSession.sessionId, response.capabilitiesVersion)
 
           setSessionListState((current) => ({
             ...current,

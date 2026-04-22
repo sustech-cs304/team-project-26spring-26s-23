@@ -241,6 +241,7 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
     })),
     loadToolCatalog: vi.fn(async (): Promise<ToolCatalogLoadResult> => ({
       ok: true,
+      directoryVersion: 'tools-v1',
       tools: [
         {
           toolId: 'functions.read_file',

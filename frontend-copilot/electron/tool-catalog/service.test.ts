@@ -93,6 +93,7 @@ describe('createElectronToolCatalogService', () => {
 
     await expect(service.load()).resolves.toEqual({
       ok: true,
+      directoryVersion: 'tools-v1',
       language: 'en-US',
       tools: [
         {

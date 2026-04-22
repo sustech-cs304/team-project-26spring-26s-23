@@ -25,6 +25,7 @@ import { runCreateSessionPendingScenario } from './test-support/assistant-worksp
 import { ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY } from './assistant-workspace-shell-state'
 import { COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY } from './useAssistantWorkspaceState'
 import { runSessionContextMenuScenario } from './test-support/assistant-workspace-session-scenarios'
+import type { McpRegistrySubscriptionEvent } from '../../../electron/mcp-registry/types'
 
 const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
   <div
@@ -36,12 +37,15 @@ const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
   </div>
 ))
 
+let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
+
 vi.mock('../../features/copilot/CopilotChatPanel', () => ({
   CopilotChatPanel: (props: Record<string, unknown>) => mockCopilotChatPanel(props),
 }))
 
 afterEach(() => {
   window.localStorage.removeItem(ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY)
+  activeMcpRegistryListener = null
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -630,6 +634,134 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
+  it('reloads live session capabilities after an MCP snapshot event and ignores unchanged capabilitiesVersion results', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const createSession = vi.fn().mockResolvedValue(createSessionResponse({
+      threadId: 'thread-live',
+      createdAt: '2026-04-14T08:00:00Z',
+      updatedAt: '2026-04-14T08:00:00Z',
+    }))
+    const getCapabilities = vi.fn()
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v1',
+        tools: [
+          { toolId: 'tool.file-convert', kind: 'builtin', availability: 'available', displayName: '文件转换', description: '初始目录' },
+        ],
+      }))
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v1',
+        tools: [
+          { toolId: 'tool.file-convert', kind: 'builtin', availability: 'available', displayName: '文件转换', description: '旧目录回包' },
+        ],
+      }))
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v2',
+        tools: [
+          { toolId: 'mcp__filesystem__read_text_file', kind: 'external', availability: 'available', displayName: '读取文本文件', description: '最新目录' },
+        ],
+      }))
+
+    Object.defineProperty(window, 'mcpRegistrySubscription', {
+      configurable: true,
+      writable: true,
+      value: {
+        subscribe: (listener: (event: McpRegistrySubscriptionEvent) => void) => {
+          activeMcpRegistryListener = listener
+          return () => {
+            if (activeMcpRegistryListener === listener) {
+              activeMcpRegistryListener = null
+            }
+          }
+        },
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => {
+      const sessionShell = getLastMockCopilotChatPanelProps().sessionShell as {
+        sessionId?: string
+        capabilities?: {
+          capabilitiesVersion?: string
+        }
+      } | undefined
+
+      return sessionShell?.sessionId === 'thread-live'
+        && sessionShell.capabilities?.capabilitiesVersion === 'cap-thread-live-v1'
+    })
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 8,
+        snapshotRevision: 12,
+        servers: [],
+        states: [],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => getCapabilities.mock.calls.length >= 2)
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 9,
+        snapshotRevision: 13,
+        servers: [],
+        states: [],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const sessionShell = getLastMockCopilotChatPanelProps().sessionShell as {
+        sessionId?: string
+        capabilities?: {
+          capabilitiesVersion?: string
+          allAvailableTools?: Array<{ toolId?: string }>
+        }
+      } | undefined
+
+      return sessionShell?.sessionId === 'thread-live'
+        && sessionShell.capabilities?.capabilitiesVersion === 'cap-thread-live-v2'
+        && sessionShell.capabilities.allAvailableTools?.some((tool) => tool.toolId === 'mcp__filesystem__read_text_file') === true
+    })
+
+    expect(getCapabilities).toHaveBeenCalledTimes(3)
+    expect(getLastMockCopilotChatPanelProps().sessionShell as {
+      capabilities?: {
+        capabilitiesVersion?: string
+        allAvailableTools?: unknown[]
+      }
+    }).toMatchObject({
+      capabilities: {
+        capabilitiesVersion: 'cap-thread-live-v2',
+        allAvailableTools: [
+          expect.objectContaining({ toolId: 'mcp__filesystem__read_text_file' }),
+        ],
+      },
+    })
+
+    rendered.unmount()
+  })
+
   it('keeps a late-settling run bound to its original session after switching to a newer live session', async () => {
     mockCopilotChatPanel.mockClear()
 
@@ -737,7 +869,7 @@ describe('AssistantWorkspace render + interactions', () => {
     const directoryState = createAssistantAgentDirectoryState(directoryResponse)
     const liveFixture = createLivePersistedHistoryFixture()
     const listAgents = vi.fn().mockResolvedValue(directoryResponse)
-    let includePersistedLiveSession = false
+    const includePersistedLiveSession = false
     const listHistoryThreads = vi.fn().mockImplementation(async () => ({
       ok: true as const,
       version: 'chat-history-v1',

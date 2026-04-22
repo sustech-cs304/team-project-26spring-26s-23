@@ -91,6 +91,7 @@ export function createElectronToolCatalogService(
 
         return {
           ok: true,
+          directoryVersion: payload.directoryVersion,
           language: normalizeCatalogLanguage(payload.language ?? language),
           tools,
         }
@@ -191,6 +192,6 @@ function normalizeCatalogLanguage(language: string | null | undefined): string {
   return normalized.startsWith('en') ? 'en-US' : 'zh-CN'
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

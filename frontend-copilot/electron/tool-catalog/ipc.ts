@@ -8,6 +8,7 @@ export interface ToolCatalogLoadRequest {
 
 export interface ToolCatalogLoadSuccess {
   ok: true
+  directoryVersion: string
   language?: string | null
   tools: RuntimeToolDirectoryEntry[]
 }
