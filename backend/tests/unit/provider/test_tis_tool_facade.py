@@ -325,6 +325,27 @@ def test_get_tis_tool_contracts_exposes_stable_tools_and_requirements() -> None:
     assert personal_grades_tool.metadata.idempotent is False
 
 
+def test_tis_tool_input_schemas_describe_each_parameter() -> None:
+    tools = (
+        TISPersonalGradesFetchTool(),
+        TISCreditGPAFetchTool(),
+        TISSelectedCoursesFetchTool(),
+        TISSQLQueryTool(),
+    )
+
+    for tool in tools:
+        properties = tool.metadata.input_schema.schema["properties"]
+        assert properties
+        for field_name, schema in properties.items():
+            description = schema.get("description")
+            assert isinstance(description, str), (
+                f"{tool.metadata.tool_id}.{field_name} is missing a description"
+            )
+            assert description.strip() != "", (
+                f"{tool.metadata.tool_id}.{field_name} has an empty description"
+            )
+
+
 def test_personal_grades_tool_shapes_output_and_persists_host_state_and_artifact(monkeypatch: Any) -> None:
     captured: dict[str, Any] = {}
     state_store = StubStateStore()

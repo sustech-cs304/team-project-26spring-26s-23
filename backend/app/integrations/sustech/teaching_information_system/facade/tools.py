@@ -1290,10 +1290,23 @@ _SQL_QUERY_METADATA = ToolMetadata(
     ),
     input_schema=_schema(
         properties={
-            "sql": {"type": "string", "minLength": 1},
-            "dbRelativePath": {"type": "string"},
-            "resultLimit": {"type": "integer"},
-            "persistArtifact": {"type": "boolean"},
+            "sql": {
+                "type": "string",
+                "minLength": 1,
+                "description": "SQL statement to execute against the local TIS SQLite database.",
+            },
+            "dbRelativePath": {
+                "type": "string",
+                "description": "Optional path, relative to the host database directory, of the SQLite database to query; omit to use the default TIS database.",
+            },
+            "resultLimit": {
+                "type": "integer",
+                "description": "Maximum number of rows returned inline in rowsPreview before truncation; defaults to 50.",
+            },
+            "persistArtifact": {
+                "type": "boolean",
+                "description": "When true and the inline preview is truncated, save the full SQL result as a JSON artifact.",
+            },
         },
         required=("sql",),
     ),
@@ -1352,17 +1365,50 @@ _PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
     description="Fetch personal grade records from TIS with optional persistence and host-managed state or artifact export.",
     input_schema=_schema(
         properties={
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-            "roleCode": {"type": "string"},
-            "persist": {"type": "boolean"},
-            "ownerKey": {"type": "string"},
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-            "artifactName": {"type": "string"},
+            "username": {
+                "type": "string",
+                "description": "TIS/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "password": {
+                "type": "string",
+                "description": "TIS/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "usernameSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the TIS/CAS username. Usually omit it to use the default secret `sustech.username`.",
+            },
+            "passwordSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the TIS/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
+            },
+            "roleCode": {
+                "type": "string",
+                "description": "Optional TIS RoleCode header. Leave empty to let the tool derive the first available role from the homepage, falling back to `01` when needed.",
+            },
+            "persist": {
+                "type": "boolean",
+                "description": "When true, sync the fetched records into the local TIS SQLite database.",
+            },
+            "ownerKey": {
+                "type": "string",
+                "description": "Logical owner key used when persisting records. Defaults to the resolved username and requires `persist=true`.",
+            },
+            "dbRelativePath": {
+                "type": "string",
+                "description": "SQLite path relative to the host database directory for persistence. Requires `persist=true`; omit it to use the default TIS database path.",
+            },
+            "resetSchema": {
+                "type": "boolean",
+                "description": "When `persist=true`, recreate the target SQLite schema before syncing the fetched data.",
+            },
+            "stateKey": {
+                "type": "string",
+                "description": "If provided, save the result under this key in the host state store.",
+            },
+            "artifactName": {
+                "type": "string",
+                "description": "If provided, export the result JSON to the host artifact store using this artifact name.",
+            },
         }
     ),
     output_schema=_schema(
@@ -1421,17 +1467,50 @@ _CREDIT_GPA_FETCH_METADATA = ToolMetadata(
     description="Fetch credit and GPA summaries from TIS with optional persistence and host-managed state or artifact export.",
     input_schema=_schema(
         properties={
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-            "roleCode": {"type": "string"},
-            "persist": {"type": "boolean"},
-            "ownerKey": {"type": "string"},
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-            "artifactName": {"type": "string"},
+            "username": {
+                "type": "string",
+                "description": "TIS/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "password": {
+                "type": "string",
+                "description": "TIS/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "usernameSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the TIS/CAS username. Usually omit it to use the default secret `sustech.username`.",
+            },
+            "passwordSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the TIS/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
+            },
+            "roleCode": {
+                "type": "string",
+                "description": "Optional TIS RoleCode header. Leave empty to let the tool derive the first available role from the homepage, falling back to `01` when needed.",
+            },
+            "persist": {
+                "type": "boolean",
+                "description": "When true, sync the fetched credit and GPA data into the local TIS SQLite database.",
+            },
+            "ownerKey": {
+                "type": "string",
+                "description": "Logical owner key used when persisting records. Defaults to the resolved username and requires `persist=true`.",
+            },
+            "dbRelativePath": {
+                "type": "string",
+                "description": "SQLite path relative to the host database directory for persistence. Requires `persist=true`; omit it to use the default TIS database path.",
+            },
+            "resetSchema": {
+                "type": "boolean",
+                "description": "When `persist=true`, recreate the target SQLite schema before syncing the fetched data.",
+            },
+            "stateKey": {
+                "type": "string",
+                "description": "If provided, save the result under this key in the host state store.",
+            },
+            "artifactName": {
+                "type": "string",
+                "description": "If provided, export the result JSON to the host artifact store using this artifact name.",
+            },
         }
     ),
     output_schema=_schema(
@@ -1492,20 +1571,62 @@ _SELECTED_COURSES_FETCH_METADATA = ToolMetadata(
     description="Fetch selected course records from TIS with optional semester selection, persistence, and host-managed state or artifact export.",
     input_schema=_schema(
         properties={
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-            "semester": {"type": "string"},
-            "roleCode": {"type": "string"},
-            "pageNum": {"type": "integer"},
-            "pageSize": {"type": "integer"},
-            "persist": {"type": "boolean"},
-            "ownerKey": {"type": "string"},
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-            "artifactName": {"type": "string"},
+            "username": {
+                "type": "string",
+                "description": "TIS/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "password": {
+                "type": "string",
+                "description": "TIS/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
+            },
+            "usernameSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the TIS/CAS username. Usually omit it to use the default secret `sustech.username`.",
+            },
+            "passwordSecretName": {
+                "type": "string",
+                "description": "Host secret name that stores the TIS/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
+            },
+            "semester": {
+                "type": "string",
+                "description": "Semester to fetch. Leave empty for the current term; also accepts `当前学期`, `current`, `current_semester`, `2024-2025-1`, or `2024-20251`.",
+            },
+            "roleCode": {
+                "type": "string",
+                "description": "Optional TIS RoleCode header. Leave empty to let the tool derive the first available role from the homepage, falling back to `01` when needed.",
+            },
+            "pageNum": {
+                "type": "integer",
+                "description": "1-based page number passed to the selected-courses API. Defaults to 1.",
+            },
+            "pageSize": {
+                "type": "integer",
+                "description": "Page size passed to the selected-courses API. Defaults to 19.",
+            },
+            "persist": {
+                "type": "boolean",
+                "description": "When true, sync the fetched selected-course records into the local TIS SQLite database.",
+            },
+            "ownerKey": {
+                "type": "string",
+                "description": "Logical owner key used when persisting records. Defaults to the resolved username and requires `persist=true`.",
+            },
+            "dbRelativePath": {
+                "type": "string",
+                "description": "SQLite path relative to the host database directory for persistence. Requires `persist=true`; omit it to use the default TIS database path.",
+            },
+            "resetSchema": {
+                "type": "boolean",
+                "description": "When `persist=true`, recreate the target SQLite schema before syncing the fetched data.",
+            },
+            "stateKey": {
+                "type": "string",
+                "description": "If provided, save the result under this key in the host state store.",
+            },
+            "artifactName": {
+                "type": "string",
+                "description": "If provided, export the result JSON to the host artifact store using this artifact name.",
+            },
         }
     ),
     output_schema=_schema(
