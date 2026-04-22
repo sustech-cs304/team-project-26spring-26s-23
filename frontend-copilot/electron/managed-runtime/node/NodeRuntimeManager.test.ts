@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -140,5 +140,102 @@ describe('NodeRuntimeManager', () => {
     expect(snapshot.status).toBe('broken')
     expect(snapshot.activeVersion).toBeNull()
     expect(snapshot.lastErrorSummary?.message).toContain('spawn failed')
+  })
+
+  it('restores broken state back to ready on a successful repair while preserving the active version directory', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-node-runtime-repair-ready-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'node')
+    const manifest = getManagedRuntimeFamilyManifest('node')
+    const components = resolveManagedRuntimeComponents('node', { platform: 'win32', arch: 'x64' })
+    let shouldFail = true
+    const manager = new NodeRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      ensureRootDirectories: async () => undefined,
+      downloadClient: {
+        downloadToFile: vi.fn(async (_unusedUrl: string, destinationFile) => {
+          await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
+        }),
+        downloadText: vi.fn(async () => `${CHECKSUM}  node-v24.15.0-win-x64.zip`),
+      },
+      archiveExtractor: {
+        extract: vi.fn(async (_artifactFile: string, destinationDir: string) => {
+          await createRuntimeLauncherFiles(destinationDir, components[0]!.distribution.launcherRelativePaths)
+        }),
+      },
+      commandRunner: {
+        run: vi.fn(async (command: string) => {
+          if (shouldFail) {
+            throw new Error('npx verification failed')
+          }
+          if (command.endsWith('node.exe')) return 'v24.15.0'
+          return '11.0.0'
+        }),
+      },
+      clock: () => '2026-04-22T15:00:00.000Z',
+    })
+
+    await manager['writeState']({
+      schemaVersion: 1,
+      family: 'node',
+      pinnedVersion: manifest.pinnedVersion,
+      status: 'ready',
+      activeVersion: manifest.pinnedVersion,
+      lastInstalledAt: '2026-04-22T09:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    })
+
+    const failed = await manager.installOrRepair('repair')
+    shouldFail = false
+    const repaired = await manager.installOrRepair('repair')
+
+    expect(failed.status).toBe('broken')
+    expect(failed.activeVersion).toBe(manifest.pinnedVersion)
+    expect(repaired.status).toBe('ready')
+    expect(repaired.activeVersion).toBe(manifest.pinnedVersion)
+    expect(repaired.lastRepairedAt).toBe('2026-04-22T15:00:00.000Z')
+    await expect(access(path.join(paths.versionsDir, manifest.pinnedVersion, 'node', 'npx.cmd'))).resolves.toBeUndefined()
+  })
+
+  it('removes staged artifacts after a failed install so the active directory is not polluted', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-node-runtime-staging-clean-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'node')
+    const manifest = getManagedRuntimeFamilyManifest('node')
+    const components = resolveManagedRuntimeComponents('node', { platform: 'win32', arch: 'x64' })
+    const manager = new NodeRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      ensureRootDirectories: async () => undefined,
+      downloadClient: {
+        downloadToFile: vi.fn(async (_unusedUrl: string, destinationFile) => {
+          await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
+        }),
+        downloadText: vi.fn(async () => `${CHECKSUM}  node-v24.15.0-win-x64.zip`),
+      },
+      archiveExtractor: {
+        extract: vi.fn(async (_artifactFile: string, destinationDir: string) => {
+          await createRuntimeLauncherFiles(destinationDir, components[0]!.distribution.launcherRelativePaths)
+        }),
+      },
+      commandRunner: {
+        run: vi.fn(async () => {
+          throw new Error('checksum mismatch after extract')
+        }),
+      },
+      clock: () => '2026-04-22T16:00:00.000Z',
+    })
+
+    const snapshot = await manager.installOrRepair('install')
+
+    expect(snapshot.status).toBe('broken')
+    expect(snapshot.activeVersion).toBeNull()
+    expect(snapshot.lastErrorSummary?.message).toContain('checksum mismatch after extract')
+    await expect(access(path.join(paths.activeDir, 'npx.cmd'))).rejects.toThrow()
   })
 })

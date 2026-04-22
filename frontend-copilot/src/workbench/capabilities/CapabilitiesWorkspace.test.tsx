@@ -1266,6 +1266,7 @@ describe('CapabilitiesWorkspace', () => {
 
     await clickElement(statusButton)
     await waitForNextFrame()
+    await waitForNextFrame()
 
     const panel = document.body.querySelector('[data-testid="managed-runtime-status-panel"]')
 

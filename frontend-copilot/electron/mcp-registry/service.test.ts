@@ -467,6 +467,54 @@ describe('createMcpRegistryService', () => {
     })
   })
 
+  it('rewrites saved uvx servers to the managed launcher and never executes the system PATH command', async () => {
+    const fixture = await createRegistryServiceFixture('managed-uvx-saved-server')
+    const managedRuntimeService = createManagedRuntimeServiceStub(async (command) => {
+      expect(command).toBe('uvx')
+      return {
+        ok: true,
+        command,
+        normalizedCommand: 'uvx',
+        family: 'uv',
+        executablePath: 'D:/managed/uv/uvx.exe',
+        windowsCommandChain: null,
+      }
+    })
+    const service = createMcpRegistryService({
+      store: fixture.store,
+      connectorHub: {
+        ...fixture.connectorHub,
+        async testConnection(server) {
+          if (server.transportConfig.kind !== 'stdio') {
+            throw new Error('Expected stdio server.')
+          }
+          expect(server.transportConfig.command).toBe('D:/managed/uv/uvx.exe')
+          expect(server.transportConfig.args).toEqual(['mcp-server-fetch'])
+          return await fixture.connectorHub.testConnection(server)
+        },
+      },
+      managedRuntimeService,
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+    const savedServer = createMcpStdioStubServerFixture({
+      serverId: 'fetch',
+      transportConfig: {
+        kind: 'stdio',
+        command: 'uvx',
+        args: ['mcp-server-fetch'],
+      },
+    })
+
+    await service.saveServer(savedServer)
+    const result = await service.testConnection({ serverId: 'fetch' })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected MCP test connection success wrapper.')
+    }
+    expect(result.success).toBe(true)
+  })
+
   it('keeps custom absolute paths and unmanaged commands unchanged', async () => {
     const fixture = await createRegistryServiceFixture('managed-command-bypass')
     const resolveLauncher = vi.fn(async () => ({
