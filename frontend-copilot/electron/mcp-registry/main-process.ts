@@ -19,6 +19,7 @@ import type {
 import type {
   McpRegistrySubscriptionEvent,
   McpServerDraft,
+  McpToolCallFailure,
   McpToolCallRequest,
   McpToolCallResult,
 } from './types'
@@ -124,9 +125,43 @@ export function createElectronMcpRegistryService(
       })
     },
     async executeTool(request) {
-      return await wrapOperation('execute the MCP tool', options.appendLog, async () => {
+      try {
         return await (await getService()).executeTool(request)
-      })
+      } catch (error) {
+        const detail = formatUnknownError(error)
+        await options.appendLog?.('error', '[mcp-registry] Failed to execute the MCP tool.', {
+          detail,
+          toolId: request.toolId,
+          serverId: request.serverId,
+          remoteToolName: request.remoteToolName,
+          snapshotRevision: request.snapshotRevision ?? null,
+          runId: request.runId,
+          toolCallId: request.toolCallId,
+        })
+
+        const failure: McpToolCallFailure = {
+          ok: false,
+          toolId: request.toolId,
+          serverId: request.serverId,
+          remoteToolName: request.remoteToolName,
+          snapshotRevision: request.snapshotRevision ?? null,
+          error: {
+            code: 'internal_error',
+            message: `Failed to execute the MCP tool: ${detail}`,
+            retryable: false,
+            details: {
+              toolId: request.toolId,
+              serverId: request.serverId,
+              remoteToolName: request.remoteToolName,
+              snapshotRevision: request.snapshotRevision ?? null,
+              runId: request.runId,
+              toolCallId: request.toolCallId,
+            },
+          },
+        }
+
+        return failure
+      }
     },
   }
 }

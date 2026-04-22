@@ -941,7 +941,12 @@ function extractToolDisplayNameFromTitle(title: string): string | null {
 }
 
 function resolveToolDisplayNameFromToolId(toolId: string): string | null {
-  return resolveCopilotToolDisplayNameFromToolId(toolId)
+  const normalizedToolId = toolId.trim()
+  if (normalizedToolId === '') {
+    return null
+  }
+
+  return resolveCopilotToolDisplayNameFromToolId(normalizedToolId)
 }
 
 function renderToolErrorDetailButton(input: {

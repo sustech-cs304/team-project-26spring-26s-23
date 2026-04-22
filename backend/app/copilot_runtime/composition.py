@@ -78,9 +78,6 @@ def build_default_runtime_dependencies(
     snapshot_provider = create_mcp_snapshot_provider(
         state_dir=runtime_config.state_dir if runtime_config is not None else None,
     )
-    resolved_mcp_catalog_provider = mcp_catalog_provider or create_mcp_catalog_provider(
-        snapshot_provider
-    )
     dynamic_tool_loader = (
         None
         if host_capability_bridge_client is None
@@ -88,6 +85,11 @@ def build_default_runtime_dependencies(
             snapshot_provider=snapshot_provider,
             bridge_client=host_capability_bridge_client,
         ).load_tools
+    )
+    resolved_mcp_catalog_provider = (
+        None
+        if dynamic_tool_loader is None
+        else mcp_catalog_provider or create_mcp_catalog_provider(snapshot_provider)
     )
     tool_registry = build_default_tool_registry(
         host_capabilities_factory=host_capabilities_factory,

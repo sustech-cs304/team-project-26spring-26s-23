@@ -6,7 +6,7 @@ import {
 } from './runtime-manifest'
 
 describe('managed runtime manifest', () => {
-  it('pins official Node and uv versions and resolves the correct platform package set', () => {
+  it('pins official Node and uv versions and resolves the supported Windows package set', () => {
     const nodeFamily = getManagedRuntimeFamilyManifest('node')
     const uvFamily = getManagedRuntimeFamilyManifest('uv')
 
@@ -22,10 +22,11 @@ describe('managed runtime manifest', () => {
       npx: 'npx.cmd',
     })
 
-    const uvComponents = resolveManagedRuntimeComponents('uv', { platform: 'darwin', arch: 'arm64' })
+    const uvComponents = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'arm64' })
     expect(uvComponents.map((component) => component.component)).toEqual(['python', 'uv'])
-    expect(uvComponents[0]?.distribution.fileName).toBe('python-3.12.10-macos11.pkg')
-    expect(uvComponents[1]?.distribution.fileName).toBe('uv-aarch64-apple-darwin.tar.gz')
+    expect(uvComponents[0]?.distribution.fileName).toBe('python-3.12.10-embed-arm64.zip')
+    expect(uvComponents[0]?.distribution.installStrategy).toBe('portable-archive')
+    expect(uvComponents[1]?.distribution.fileName).toBe('uv-aarch64-pc-windows-msvc.zip')
   })
 
   it('keeps source channel metadata centralized and addressable by channel id', () => {
@@ -39,4 +40,3 @@ describe('managed runtime manifest', () => {
     })
   })
 })
-

@@ -77,4 +77,118 @@ describe('createElectronMcpRegistryService', () => {
       await rm(tempRoot, { recursive: true, force: true })
     }
   })
+
+  it('returns the service-provided tool-call failure contract unchanged when executeTool fails without throwing', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-mcp-main-process-execute-tool-'))
+    const appendLog = vi.fn()
+    const hostedPaths = createHostedRuntimePaths(tempRoot)
+    const prepareRuntimePaths = vi.fn(async () => hostedPaths)
+
+    const service = createElectronMcpRegistryService({
+      prepareRuntimePaths,
+      appendLog,
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    try {
+      const loadResult = await service.loadRegistry({ includeDisabled: true })
+      expect(loadResult.ok).toBe(true)
+
+      const toolResult = await service.executeTool({
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+        runId: 'run-1',
+        toolCallId: 'tool-call-1',
+        snapshotRevision: 8,
+      })
+
+      expect(toolResult).toEqual({
+        ok: false,
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        snapshotRevision: 8,
+        error: {
+          code: 'directory_drift',
+          message: 'The requested MCP tool no longer exists in the current snapshot.',
+          retryable: false,
+          observedAt: '2026-04-21T12:00:00.000Z',
+          details: {
+            requestedServerId: 'mcp-stdio-stub',
+            requestedRemoteToolName: 'search-campus',
+            connectorToolCount: 0,
+            requestedSnapshotRevision: 8,
+            snapshotRevision: 0,
+          },
+        },
+      })
+
+      expect(appendLog).not.toHaveBeenCalled()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('maps unexpected executeTool failures into a typed MCP tool-call failure while preserving request context', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-mcp-main-process-execute-tool-throw-'))
+    const appendLog = vi.fn()
+    const hostedPaths = createHostedRuntimePaths(tempRoot)
+    const prepareRuntimePaths = vi.fn(async () => hostedPaths)
+    prepareRuntimePaths.mockRejectedValueOnce(new Error('runtime path bootstrap failed.'))
+
+    const service = createElectronMcpRegistryService({
+      prepareRuntimePaths,
+      appendLog,
+      now: () => '2026-04-21T12:00:00.000Z',
+    })
+
+    try {
+      await expect(service.executeTool({
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        arguments: { keyword: 'calendar' },
+        runId: 'run-1',
+        toolCallId: 'tool-call-1',
+        snapshotRevision: 8,
+      })).resolves.toEqual({
+        ok: false,
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        serverId: 'mcp-stdio-stub',
+        remoteToolName: 'search-campus',
+        snapshotRevision: 8,
+        error: {
+          code: 'internal_error',
+          message: 'Failed to execute the MCP tool: runtime path bootstrap failed.',
+          retryable: false,
+          details: {
+            toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+            serverId: 'mcp-stdio-stub',
+            remoteToolName: 'search-campus',
+            snapshotRevision: 8,
+            runId: 'run-1',
+            toolCallId: 'tool-call-1',
+          },
+        },
+      })
+
+      expect(appendLog).toHaveBeenCalledWith(
+        'error',
+        '[mcp-registry] Failed to execute the MCP tool.',
+        {
+          detail: 'runtime path bootstrap failed.',
+          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+          serverId: 'mcp-stdio-stub',
+          remoteToolName: 'search-campus',
+          snapshotRevision: 8,
+          runId: 'run-1',
+          toolCallId: 'tool-call-1',
+        },
+      )
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
 })

@@ -19,6 +19,8 @@ from app.copilot_runtime.contracts import (
     RuntimeToolApprovalResolveRequest,
     RuntimeToolPermissionPolicy,
 )
+from app.copilot_runtime.mcp_catalog_provider import create_mcp_catalog_provider
+from app.copilot_runtime.mcp_snapshot_provider import create_mcp_snapshot_provider
 from app.copilot_runtime.mcp_snapshot_provider import MCP_CAPABILITY_SNAPSHOT_FILE_NAME
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
@@ -386,8 +388,12 @@ def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool
         json.dumps(snapshot_payload),
         encoding="utf-8",
     )
+    bridge_client = _RecordingMcpBridgeClient()
 
-    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
     response = dependencies.scaffold.build_global_tool_catalog_response(
         language="en-US"
     ).to_dict()
@@ -407,9 +413,31 @@ def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool
         "label": "Search",
         "labelZh": "Search",
         "labelEn": "Search",
-        "order": 100,
+        "order": 1000,
         "sourceKind": "mcp",
     }
+
+
+
+def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_without_bridge_client(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+
+    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+    response = dependencies.scaffold.build_global_tool_catalog_response(
+        language="en-US"
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in response["tools"]]
+    assert "tool.fs.read" in tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
 
 
 
@@ -434,6 +462,33 @@ def test_build_default_runtime_dependencies_ignores_mcp_executor_when_snapshot_i
     assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
     assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
     assert bridge_client.calls == []
+
+
+def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_when_explicit_provider_lacks_execution_bridge(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        mcp_catalog_provider=create_mcp_catalog_provider(
+            create_mcp_snapshot_provider(state_dir=runtime_config.state_dir)
+        ),
+    )
+
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()["tools"]
+    ]
+
+    assert "tool.fs.read" in catalog_tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
 
 
 
@@ -518,7 +573,7 @@ def test_runtime_scaffold_filters_mcp_global_catalog_entries_with_permission_pol
     tool_ids = [tool.toolId for tool in filtered_catalog]
     assert "tool.fs.read" in tool_ids
     assert "mcp.mcp-stdio-stub.search-campus.00004d8d" not in tool_ids
-    assert "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e" in tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
 
 
 class _RecordingMcpBridgeClient:

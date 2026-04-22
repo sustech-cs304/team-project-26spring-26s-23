@@ -38,6 +38,7 @@ const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
 ))
 
 let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
+let mcpRegistryUnsubscribeMock = vi.fn()
 
 vi.mock('../../features/copilot/CopilotChatPanel', () => ({
   CopilotChatPanel: (props: Record<string, unknown>) => mockCopilotChatPanel(props),
@@ -46,6 +47,7 @@ vi.mock('../../features/copilot/CopilotChatPanel', () => ({
 afterEach(() => {
   window.localStorage.removeItem(ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY)
   activeMcpRegistryListener = null
+  mcpRegistryUnsubscribeMock = vi.fn()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -674,11 +676,11 @@ describe('AssistantWorkspace render + interactions', () => {
       value: {
         subscribe: (listener: (event: McpRegistrySubscriptionEvent) => void) => {
           activeMcpRegistryListener = listener
-          return () => {
+          return mcpRegistryUnsubscribeMock.mockImplementation(() => {
             if (activeMcpRegistryListener === listener) {
               activeMcpRegistryListener = null
             }
-          }
+          })
         },
       },
     })
@@ -759,6 +761,7 @@ describe('AssistantWorkspace render + interactions', () => {
     })
 
     expect(getCapabilities).toHaveBeenCalledTimes(3)
+    expect(mcpRegistryUnsubscribeMock).not.toHaveBeenCalled()
     expect(getLastMockCopilotChatPanelProps().sessionShell as {
       capabilities?: {
         capabilitiesVersion?: string
@@ -774,6 +777,122 @@ describe('AssistantWorkspace render + interactions', () => {
     })
 
     rendered.unmount()
+    expect(mcpRegistryUnsubscribeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a single MCP registry subscription while reading the latest session list for snapshot refreshes', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const createSession = vi.fn()
+      .mockResolvedValueOnce(createSessionResponse({
+        threadId: 'thread-live',
+        createdAt: '2026-04-14T08:00:00Z',
+        updatedAt: '2026-04-14T08:00:00Z',
+      }))
+      .mockResolvedValueOnce(createSessionResponse({
+        threadId: 'thread-new',
+        createdAt: '2026-04-14T08:05:00Z',
+        updatedAt: '2026-04-14T08:05:00Z',
+      }))
+    const getCapabilities = vi.fn()
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v1',
+      }))
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-new',
+        capabilitiesVersion: 'cap-thread-new-v1',
+      }))
+      .mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({
+        sessionId,
+        capabilitiesVersion: `cap-refresh-${sessionId}`,
+        tools: [{
+          toolId: `${sessionId}.tool`,
+          kind: 'external',
+          availability: 'available',
+          displayName: `${sessionId} tool`,
+          description: `${sessionId} tool from snapshot refresh`,
+        }],
+      }))
+    const subscribe = vi.fn((listener: (event: McpRegistrySubscriptionEvent) => void) => {
+      activeMcpRegistryListener = listener
+      return mcpRegistryUnsubscribeMock.mockImplementation(() => {
+        if (activeMcpRegistryListener === listener) {
+          activeMcpRegistryListener = null
+        }
+      })
+    })
+
+    Object.defineProperty(window, 'mcpRegistrySubscription', {
+      configurable: true,
+      writable: true,
+      value: { subscribe },
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-new'
+    ))
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 10,
+        snapshotRevision: 14,
+        servers: [],
+        states: [],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => getCapabilities.mock.calls.length >= 4)
+
+    expect(subscribe).toHaveBeenCalledTimes(1)
+    expect(mcpRegistryUnsubscribeMock).not.toHaveBeenCalled()
+    expect(getCapabilities).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionId: 'thread-live',
+    })
+    expect(getCapabilities).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionId: 'thread-new',
+    })
+    expect(getLastMockCopilotChatPanelProps().sessionShell as {
+      sessionId?: string
+      capabilities?: {
+        capabilitiesVersion?: string
+        allAvailableTools?: Array<{ toolId?: string }>
+      }
+    }).toMatchObject({
+      sessionId: 'thread-new',
+      capabilities: {
+        capabilitiesVersion: 'cap-refresh-thread-new',
+        allAvailableTools: [
+          expect.objectContaining({ toolId: 'thread-new.tool' }),
+        ],
+      },
+    })
+
+    rendered.unmount()
+    expect(mcpRegistryUnsubscribeMock).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a late-settling run bound to its original session after switching to a newer live session', async () => {

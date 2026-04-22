@@ -405,6 +405,23 @@ export function useAssistantWorkspaceState({
     sessionListStateRef.current = sessionListState
   }, [sessionListState])
 
+  const liveCapabilitiesVersionBySessionIdRef = useRef(new Map<string, string>())
+
+  useEffect(() => {
+    const nextCapabilitiesVersionBySessionId = new Map<string, string>()
+
+    for (const sessionEntry of sessionListState.sessions) {
+      if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
+        nextCapabilitiesVersionBySessionId.set(
+          sessionEntry.sessionId,
+          sessionEntry.capabilities.capabilitiesVersion,
+        )
+      }
+    }
+
+    liveCapabilitiesVersionBySessionIdRef.current = nextCapabilitiesVersionBySessionId
+  }, [sessionListState.sessions])
+
   const touchRuntimeController = useCallback((sessionId: string | null | undefined) => {
     const normalizedSessionId = sessionId?.trim() ?? ''
     if (normalizedSessionId === '') {
@@ -1288,23 +1305,13 @@ export function useAssistantWorkspaceState({
     const runtimeUrl = bootstrap.state.runtimeUrl
     const registryClient = createWindowMcpRegistryClient()
     const requestVersionBySessionId = new Map<string, number>()
-    const latestCapabilitiesVersionBySessionId = new Map<string, string>()
-
-    for (const sessionEntry of sessionListState.sessions) {
-      if (sessionEntry.capabilities.capabilitiesVersion !== 'history-shell') {
-        latestCapabilitiesVersionBySessionId.set(
-          sessionEntry.sessionId,
-          sessionEntry.capabilities.capabilitiesVersion,
-        )
-      }
-    }
 
     return registryClient.subscribe((event) => {
       if (event.kind !== 'snapshot') {
         return
       }
 
-      const liveSessions = sessionListState.sessions.filter((sessionEntry) => {
+      const liveSessions = sessionListStateRef.current.sessions.filter((sessionEntry) => {
         return sessionEntry.capabilities.capabilitiesVersion !== 'history-shell'
       })
 
@@ -1320,10 +1327,15 @@ export function useAssistantWorkspaceState({
             return
           }
 
-          const previousCapabilitiesVersion = latestCapabilitiesVersionBySessionId.get(liveSession.sessionId) ?? null
-          const previousSession = sessionListState.sessions.find((sessionEntry) => {
+          const previousSession = sessionListStateRef.current.sessions.find((sessionEntry) => {
             return sessionEntry.sessionId === liveSession.sessionId
           }) ?? null
+          if (previousSession === null || previousSession.capabilities.capabilitiesVersion === 'history-shell') {
+            return
+          }
+
+          const previousCapabilitiesVersion = liveCapabilitiesVersionBySessionIdRef.current.get(liveSession.sessionId)
+            ?? previousSession.capabilities.capabilitiesVersion
           if (!shouldApplyLiveCapabilitiesUpdate({
             previousCapabilitiesVersion,
             response,
@@ -1332,7 +1344,7 @@ export function useAssistantWorkspaceState({
             return
           }
 
-          latestCapabilitiesVersionBySessionId.set(liveSession.sessionId, response.capabilitiesVersion)
+          liveCapabilitiesVersionBySessionIdRef.current.set(liveSession.sessionId, response.capabilitiesVersion)
 
           setSessionListState((current) => ({
             ...current,
@@ -1345,7 +1357,7 @@ export function useAssistantWorkspaceState({
         })
       }
     })
-  }, [bootstrap.state, getCapabilitiesImpl, sessionListState.sessions, setSessionListState])
+  }, [bootstrap.state, getCapabilitiesImpl, setSessionListState])
 
   useEffect(() => {
     if (sessionShell === null) {

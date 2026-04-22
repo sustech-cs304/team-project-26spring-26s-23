@@ -63,10 +63,6 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
           distributions: [
             createNodeDistribution('win32', 'x64', 'node-v24.15.0-win-x64.zip', 'zip'),
             createNodeDistribution('win32', 'arm64', 'node-v24.15.0-win-arm64.zip', 'zip'),
-            createNodeDistribution('darwin', 'x64', 'node-v24.15.0-darwin-x64.tar.gz', 'tar.gz'),
-            createNodeDistribution('darwin', 'arm64', 'node-v24.15.0-darwin-arm64.tar.gz', 'tar.gz'),
-            createNodeDistribution('linux', 'x64', 'node-v24.15.0-linux-x64.tar.xz', 'tar.xz'),
-            createNodeDistribution('linux', 'arm64', 'node-v24.15.0-linux-arm64.tar.xz', 'tar.xz'),
           ],
         },
       ],
@@ -85,10 +81,6 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
           distributions: [
             createPythonDistribution('win32', 'x64', 'python-3.12.10-embed-amd64.zip', 'portable-archive', 'zip'),
             createPythonDistribution('win32', 'arm64', 'python-3.12.10-embed-arm64.zip', 'portable-archive', 'zip'),
-            createPythonDistribution('darwin', 'arm64', 'python-3.12.10-macos11.pkg', 'system-installer', 'pkg'),
-            createPythonDistribution('darwin', 'x64', 'python-3.12.10-macos11.pkg', 'system-installer', 'pkg'),
-            createPythonDistribution('linux', 'x64', 'Python-3.12.10.tar.xz', 'source-distribution', 'source-tar.xz'),
-            createPythonDistribution('linux', 'arm64', 'Python-3.12.10.tar.xz', 'source-distribution', 'source-tar.xz'),
           ],
         },
         {
@@ -99,10 +91,6 @@ export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
           distributions: [
             createUvDistribution('win32', 'x64', 'uv-x86_64-pc-windows-msvc.zip', 'zip'),
             createUvDistribution('win32', 'arm64', 'uv-aarch64-pc-windows-msvc.zip', 'zip'),
-            createUvDistribution('darwin', 'x64', 'uv-x86_64-apple-darwin.tar.gz', 'tar.gz'),
-            createUvDistribution('darwin', 'arm64', 'uv-aarch64-apple-darwin.tar.gz', 'tar.gz'),
-            createUvDistribution('linux', 'x64', 'uv-x86_64-unknown-linux-gnu.tar.gz', 'tar.gz'),
-            createUvDistribution('linux', 'arm64', 'uv-aarch64-unknown-linux-gnu.tar.gz', 'tar.gz'),
           ],
         },
       ],
@@ -205,9 +193,6 @@ function createPythonDistribution(
         ? { python: 'Python.framework/Versions/3.12/bin/python3' }
         : { python: 'bin/python3' },
     sourceChannelId: 'python-org',
-    notes: installStrategy === 'source-distribution'
-      ? 'Linux currently records the official source distribution as groundwork; extraction/install flow is deferred to a later batch.'
-      : undefined,
   }
 }
 

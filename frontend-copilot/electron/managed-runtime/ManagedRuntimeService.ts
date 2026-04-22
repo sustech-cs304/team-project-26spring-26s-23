@@ -112,8 +112,7 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
 }
 
 export function resolveManagedRuntimeTarget(input: { platform: NodeJS.Platform; arch: string }): ManagedRuntimeTarget {
-  if ((input.platform === 'win32' || input.platform === 'darwin' || input.platform === 'linux')
-    && (input.arch === 'x64' || input.arch === 'arm64')) {
+  if (input.platform === 'win32' && (input.arch === 'x64' || input.arch === 'arm64')) {
     return {
       platform: input.platform,
       arch: input.arch,

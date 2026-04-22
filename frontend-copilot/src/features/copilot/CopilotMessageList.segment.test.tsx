@@ -299,6 +299,44 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
   })
 
+  it('keeps the safe fallback title when the failed tool card only carries a blank toolId', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'failed',
+      runId: 'run-failed-blank-tool-id',
+      threadId: 'session-1',
+      failure: {
+        code: 'tool_execution_failed',
+        message: 'Tool failed: boom',
+        details: {
+          toolId: '   ',
+        },
+      },
+      segments: [
+        {
+          id: 'tool:run-failed-blank-tool-id:tool-1',
+          kind: 'tool',
+          runId: 'run-failed-blank-tool-id',
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'failed',
+          toolCallId: 'tool-call-1',
+          toolId: '   ',
+          toolPhase: 'failed',
+          title: '工具调用失败',
+          summary: '工具执行失败。',
+          inputSummary: '{"location":"Shenzhen"}',
+          resultSummary: null,
+          errorSummary: 'boom',
+        },
+      ],
+    })
+
+    expect(html).toContain('工具调用失败')
+    expect(html).not.toContain('调用失败调用失败')
+    expect(html).not.toContain('工具被调用')
+  })
+
   it('renders a detail button for failed tool cards without leaking raw MCP diagnostics into the card body', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),

@@ -26,6 +26,8 @@ describe('createManagedRuntimeService', () => {
     expect(() => resolveManagedRuntimeTarget({ platform: 'freebsd', arch: 'x64' })).toThrow(
       'Unsupported managed runtime target: freebsd/x64',
     )
+    expect(() => resolveManagedRuntimeTarget({ platform: 'darwin', arch: 'arm64' })).toThrow(
+      'Unsupported managed runtime target: darwin/arm64',
+    )
   })
 })
-

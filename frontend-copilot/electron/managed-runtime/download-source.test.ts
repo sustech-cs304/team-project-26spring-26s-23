@@ -4,14 +4,14 @@ import { resolveManagedRuntimeComponents } from './runtime-manifest'
 
 describe('resolveManagedRuntimeDownloadSource', () => {
   it('normalizes channel and artifact data for later installers', () => {
-    const [nodeComponent] = resolveManagedRuntimeComponents('node', { platform: 'linux', arch: 'x64' })
+    const [nodeComponent] = resolveManagedRuntimeComponents('node', { platform: 'win32', arch: 'x64' })
     const uvComponents = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'arm64' })
     const uvComponent = uvComponents.find((entry) => entry.component === 'uv')
 
     expect(resolveManagedRuntimeDownloadSource(nodeComponent!)).toMatchObject({
       component: 'node',
-      fileName: 'node-v24.15.0-linux-x64.tar.xz',
-      archiveFormat: 'tar.xz',
+      fileName: 'node-v24.15.0-win-x64.zip',
+      archiveFormat: 'zip',
       installStrategy: 'portable-archive',
       channel: {
         channelId: 'nodejs-dist',
@@ -26,4 +26,3 @@ describe('resolveManagedRuntimeDownloadSource', () => {
     })
   })
 })
-
