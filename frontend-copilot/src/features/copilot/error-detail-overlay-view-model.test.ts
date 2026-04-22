@@ -225,6 +225,51 @@ describe('error detail overlay view model', () => {
     )
   })
 
+  it('keeps non-MCP tool failures on the generic detail path even when toolId is present', () => {
+    const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '工具调用失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'remote search failed',
+      code: 'tool_execution_failed',
+      stage: 'streaming',
+      requestedMethod: 'run/stream',
+      details: {
+        toolId: 'tool.remote-search',
+        toolCallId: 'tool-call-1',
+        phase: 'tools/call',
+        snapshotRevision: 12,
+        catalogVersion: 9,
+      },
+      resolvedToolIds: ['tool.remote-search'],
+    }))
+
+    expect(viewModel.groups.find((group) => group.key === 'request-context')?.items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '调用阶段' }),
+        expect.objectContaining({ kind: 'key-value', label: '快照版本' }),
+        expect.objectContaining({ kind: 'key-value', label: '目录版本' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'list', label: '工具', values: ['tool.remote-search'] }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: 'serverId' }),
+        expect.objectContaining({ kind: 'key-value', label: '服务器名称' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'raw-details')?.items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '诊断摘要' }),
+        expect.objectContaining({ kind: 'key-value', label: 'stderr 摘要' }),
+      ]),
+    )
+  })
+
   it('marks raw details as structured json only when the serialized value is a json object or array', () => {
     const jsonViewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',

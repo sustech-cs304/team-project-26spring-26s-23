@@ -106,12 +106,35 @@ describe('error detail overlay copy helpers', () => {
     expect(formatErrorDetailOverlayGroupCopyText(toolGroup!)).toBe([
       '[工具 / 模型上下文]',
       '工具: tool.remote-search',
-      '工具名称: tool',
-      'toolId: tool.remote-search',
-      'toolCallId: 未提供',
-      '服务器名称: 未提供',
-      'serverId: 未提供',
     ].join('\n'))
+  })
+
+  it('does not copy MCP-only diagnostics for ordinary built-in tool failures', () => {
+    const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '发送失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'remote search failed',
+      code: 'tool_execution_failed',
+      stage: 'streaming',
+      requestedMethod: 'run/stream',
+      details: {
+        toolId: 'tool.remote-search',
+        toolCallId: 'tool-call-1',
+        phase: 'tools/call',
+        snapshotRevision: 12,
+      },
+      resolvedToolIds: ['tool.remote-search'],
+    }))
+
+    const copyText = formatErrorDetailOverlayCopyText(viewModel)
+    expect(copyText).toContain('工具: tool.remote-search')
+    expect(copyText).not.toContain('调用阶段:')
+    expect(copyText).not.toContain('快照版本:')
+    expect(copyText).not.toContain('serverId:')
+    expect(copyText).not.toContain('服务器名称:')
+    expect(copyText).not.toContain('诊断摘要:')
+    expect(copyText).not.toContain('stderr 摘要:')
   })
 
   it('does not invoke clipboard formatting side effects during pure text formatting', () => {

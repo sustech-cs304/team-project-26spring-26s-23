@@ -484,10 +484,17 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
   const details = source.details
   const toolId = readOptionalString(details.toolId)
   const serverId = readOptionalString(details.serverId)
+  const requestedServerId = readOptionalString(details.requestedServerId)
   const remoteToolName = readOptionalString(details.remoteToolName)
   const requestedRemoteToolName = readOptionalString(details.requestedRemoteToolName)
 
-  if (toolId === null && serverId === null && remoteToolName === null && requestedRemoteToolName === null) {
+  const isMcpToolId = toolId !== null && /^mcp[.:/]/iu.test(toolId)
+  const hasMcpContext = serverId !== null
+    || requestedServerId !== null
+    || remoteToolName !== null
+    || requestedRemoteToolName !== null
+
+  if (!isMcpToolId && !hasMcpContext) {
     return null
   }
 
@@ -495,7 +502,7 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
     ?? requestedRemoteToolName
     ?? deriveToolNameFromToolId(toolId)
     ?? '未提供'
-  const resolvedServerId = serverId ?? readOptionalString(details.requestedServerId) ?? '未提供'
+  const resolvedServerId = serverId ?? requestedServerId ?? '未提供'
   const resolvedToolId = toolId ?? '未提供'
   const resolvedToolCallId = readOptionalString(details.toolCallId) ?? '未提供'
   const serverName = readOptionalString(details.serverName)
