@@ -42,7 +42,12 @@ interface FakeConnectorHub extends McpConnectorHub {
   __getRefreshCatalogCalls(): Array<readonly string[] | null>
 }
 
-async function createRegistryServiceFixture(testName: string) {
+interface FakeConnectorHubOptions {
+  reconcileHydratesCatalog?: boolean
+  refreshCatalogSucceeds?: boolean
+}
+
+async function createRegistryServiceFixture(testName: string, hubOptions: FakeConnectorHubOptions = {}) {
   const tempRoot = await mkdtemp(path.join(tmpdir(), `candue-mcp-registry-service-${testName}-`))
   activeTempRoots.push(tempRoot)
 
@@ -59,7 +64,7 @@ async function createRegistryServiceFixture(testName: string) {
       snapshotWrites.push(snapshot)
     }),
   }
-  const connectorHub = createFakeConnectorHub()
+  const connectorHub = createFakeConnectorHub(hubOptions)
   const service = createMcpRegistryService({
     store,
     connectorHub,
@@ -79,7 +84,9 @@ async function createRegistryServiceFixture(testName: string) {
   }
 }
 
-function createFakeConnectorHub(): FakeConnectorHub {
+function createFakeConnectorHub(options: FakeConnectorHubOptions = {}): FakeConnectorHub {
+  const reconcileHydratesCatalog = options.reconcileHydratesCatalog ?? true
+  const refreshCatalogSucceeds = options.refreshCatalogSucceeds ?? true
   const states = new Map<string, McpServerStateSummary>()
   const tools = new Map<string, McpRemoteToolSummary[]>()
 
@@ -91,7 +98,7 @@ function createFakeConnectorHub(): FakeConnectorHub {
       for (const server of servers) {
         const state = createStateForServer(server)
         states.set(server.serverId, state)
-        tools.set(server.serverId, server.enabled ? STUB_TOOLS : [])
+        tools.set(server.serverId, server.enabled && reconcileHydratesCatalog ? STUB_TOOLS : [])
       }
 
       return { states: servers.map((server) => states.get(server.serverId) ?? createStateForServer(server)) }
@@ -123,27 +130,41 @@ function createFakeConnectorHub(): FakeConnectorHub {
         warnings: [],
       }
     },
-    async refreshCatalog(serverIds) {
+    async refreshCatalog(serverIds, revisions) {
+      void revisions
       refreshCatalogCalls.push(serverIds === null ? null : [...serverIds])
       const ids = serverIds ?? Array.from(states.keys())
       return ids.map((serverId) => {
         const state = states.get(serverId) ?? createMcpServerStateFixture(createMcpStdioStubServerFixture({ serverId }))
+        const success = state.enabled && refreshCatalogSucceeds
+        const nextState: McpServerStateSummary = success
+          ? {
+              ...state,
+              connectionState: 'connected',
+              toolCount: STUB_TOOLS.length,
+              lastCatalogSyncAt: '2026-04-21T12:00:00.000Z',
+              lastError: null,
+            }
+          : {
+              ...state,
+              connectionState: 'error',
+              toolCount: 0,
+              lastCatalogSyncAt: null,
+              lastError: {
+                code: 'catalog_sync_failed',
+                message: 'The catalog refresh failed.',
+                retryable: true,
+                observedAt: '2026-04-21T12:00:00.000Z',
+              },
+            }
+        states.set(serverId, nextState)
+        tools.set(serverId, success ? STUB_TOOLS : [])
         return {
           serverId,
-          success: state.enabled,
-          toolCount: state.enabled ? STUB_TOOLS.length : 0,
-          state: {
-            ...state,
-            connectionState: state.enabled ? 'connected' : 'disabled',
-            toolCount: state.enabled ? STUB_TOOLS.length : 0,
-            lastCatalogSyncAt: '2026-04-21T12:00:00.000Z',
-          },
-          error: state.enabled ? null : {
-            code: 'disabled',
-            message: 'The server is disabled.',
-            retryable: false,
-            observedAt: '2026-04-21T12:00:00.000Z',
-          },
+          success,
+          toolCount: success ? STUB_TOOLS.length : 0,
+          state: nextState,
+          error: success ? null : (nextState.lastError ?? null),
         }
       })
     },
@@ -350,6 +371,60 @@ describe('createMcpRegistryService', () => {
         lastSuccessfulCatalogRefresh: null,
       }),
     ]))
+  })
+
+  it('automatically refreshes the catalog after saving an enabled server when reconcile has not hydrated tools yet', async () => {
+    const fixture = await createRegistryServiceFixture('save-enabled-auto-sync', {
+      reconcileHydratesCatalog: false,
+    })
+    const server = createMcpStdioStubServerFixture()
+
+    const result = await fixture.service.saveServer(server)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected saveServer to succeed.')
+    }
+    expect(result.state?.connectionState).toBe('connected')
+    expect(result.state?.lastCatalogSyncAt).toBe('2026-04-21T12:00:00.000Z')
+    expect(fixture.connectorHub.__getRefreshCatalogCalls()).toEqual([[server.serverId]])
+    expect(fixture.publishEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'catalog',
+      serverId: server.serverId,
+      refreshedServerIds: [server.serverId],
+    }))
+
+    const latestSnapshot = fixture.snapshotWrites[fixture.snapshotWrites.length - 1]
+    expect(latestSnapshot?.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        serverId: server.serverId,
+        remoteToolName: 'search-campus',
+      }),
+    ]))
+  })
+
+  it('surfaces automatic connection or catalog-sync failures after saving an enabled server without requiring manual testConnection', async () => {
+    const fixture = await createRegistryServiceFixture('save-enabled-auto-sync-failure', {
+      reconcileHydratesCatalog: false,
+      refreshCatalogSucceeds: false,
+    })
+    const server = createMcpStdioStubServerFixture()
+
+    const result = await fixture.service.saveServer(server)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error('Expected saveServer to succeed.')
+    }
+    expect(result.state?.connectionState).toBe('error')
+    expect(result.state?.lastError).toEqual(expect.objectContaining({
+      code: 'catalog_sync_failed',
+    }))
+    expect(fixture.connectorHub.__getRefreshCatalogCalls()).toEqual([[server.serverId]])
+    expect(fixture.publishEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'catalog',
+      serverId: server.serverId,
+    }))
   })
 
   it('returns structured validation failures without writing invalid drafts', async () => {
