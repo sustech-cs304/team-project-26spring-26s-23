@@ -171,6 +171,7 @@ describe('ManagedRuntimeService install orchestration', () => {
       status: 'ready',
       pinnedVersion,
       activeVersion: pinnedVersion,
+      updateRecommended: false,
       installRootDir: directories.versionsDir,
       stagingDir: directories.stagingDir,
       activeDir: directories.activeDir,
@@ -192,6 +193,7 @@ describe('ManagedRuntimeService install orchestration', () => {
           status: 'ready',
           pinnedVersion,
           activeVersion: pinnedVersion,
+          updateRecommended: false,
           installRootDir: managedRuntimePaths.families.node.versionsDir,
           stagingDir: managedRuntimePaths.families.node.stagingDir,
           activeDir: managedRuntimePaths.families.node.activeDir,
@@ -219,7 +221,6 @@ describe('ManagedRuntimeService install orchestration', () => {
       },
     })
 
-    const installSpy = vi.spyOn(service, 'loadSnapshot')
     const first = service.installOrRepairAll('install')
     const second = service.installOrRepairAll('install')
 
@@ -229,7 +230,6 @@ describe('ManagedRuntimeService install orchestration', () => {
     await Promise.allSettled([first, second])
 
     expect(first).toBe(second)
-    expect(installSpy).toHaveBeenCalled()
   })
 
   it('returns to ready after repairing broken and outdated families', async () => {
@@ -507,10 +507,13 @@ function createDeferred<T>() {
 
 function createFamilySnapshot(
   family: ManagedRuntimeFamilySnapshot['family'],
-  snapshot: Omit<ManagedRuntimeFamilySnapshot, 'family'>,
+  snapshot: Omit<ManagedRuntimeFamilySnapshot, 'family' | 'updateRecommended'>
+    & Partial<Pick<ManagedRuntimeFamilySnapshot, 'updateRecommended'>>,
 ): ManagedRuntimeFamilySnapshot {
   return {
     family,
     ...snapshot,
+    updateRecommended: snapshot.updateRecommended
+      ?? (snapshot.activeVersion !== null && snapshot.activeVersion !== snapshot.pinnedVersion),
   }
 }

@@ -6,11 +6,14 @@ import type { ManagedRuntimeFamilySnapshot } from './types'
 
 function createFamilySnapshot(
   family: ManagedRuntimeFamilySnapshot['family'],
-  snapshot: Omit<ManagedRuntimeFamilySnapshot, 'family'>,
+  snapshot: Omit<ManagedRuntimeFamilySnapshot, 'family' | 'updateRecommended'>
+    & Partial<Pick<ManagedRuntimeFamilySnapshot, 'updateRecommended'>>,
 ): ManagedRuntimeFamilySnapshot {
   return {
     family,
     ...snapshot,
+    updateRecommended: snapshot.updateRecommended
+      ?? (snapshot.activeVersion !== null && snapshot.activeVersion !== snapshot.pinnedVersion),
   }
 }
 
@@ -54,6 +57,7 @@ describe('createManagedRuntimeService', () => {
       status: 'missing' as const,
       pinnedVersion: '24.15.0',
       activeVersion: null,
+      updateRecommended: false,
       installRootDir: 'node-install-root',
       stagingDir: 'node-staging',
       activeDir: 'node-active',
@@ -69,6 +73,7 @@ describe('createManagedRuntimeService', () => {
       status: 'missing' as const,
       pinnedVersion: 'python 3.12.13 + uv 0.11.7',
       activeVersion: null,
+      updateRecommended: false,
       installRootDir: 'uv-install-root',
       stagingDir: 'uv-staging',
       activeDir: 'uv-active',
@@ -100,6 +105,7 @@ describe('createManagedRuntimeService', () => {
       status: 'missing' as const,
       pinnedVersion: '24.15.0',
       activeVersion: null,
+      updateRecommended: false,
       installRootDir: 'node-install-root',
       stagingDir: 'node-staging',
       activeDir: 'node-active',
@@ -115,6 +121,7 @@ describe('createManagedRuntimeService', () => {
       status: 'missing' as const,
       pinnedVersion: 'python 3.12.13 + uv 0.11.7',
       activeVersion: null,
+      updateRecommended: false,
       installRootDir: 'uv-install-root',
       stagingDir: 'uv-staging',
       activeDir: 'uv-active',
@@ -168,6 +175,7 @@ describe('createManagedRuntimeService', () => {
         status: 'ready' as const,
         pinnedVersion: '24.15.0',
         activeVersion: '24.15.0',
+        updateRecommended: false,
         installRootDir: 'node-install-root',
         stagingDir: 'node-staging',
         activeDir: 'node-active',
@@ -187,6 +195,7 @@ describe('createManagedRuntimeService', () => {
         status: 'ready' as const,
         pinnedVersion: 'python 3.12.13 + uv 0.11.7',
         activeVersion: 'python 3.12.13 + uv 0.11.7',
+        updateRecommended: false,
         installRootDir: 'uv-install-root',
         stagingDir: 'uv-staging',
         activeDir: 'uv-active',
@@ -214,6 +223,7 @@ describe('createManagedRuntimeService', () => {
           status: nodeStatus,
           pinnedVersion: '24.15.0',
           activeVersion: nodeStatus === 'ready' ? '24.15.0' : null,
+          updateRecommended: false,
           installRootDir: 'node-install-root',
           stagingDir: 'node-staging',
           activeDir: 'node-active',
@@ -232,6 +242,7 @@ describe('createManagedRuntimeService', () => {
           status: 'missing',
           pinnedVersion: 'python 3.12.13 + uv 0.11.7',
           activeVersion: null,
+          updateRecommended: false,
           installRootDir: 'uv-install-root',
           stagingDir: 'uv-staging',
           activeDir: 'uv-active',
