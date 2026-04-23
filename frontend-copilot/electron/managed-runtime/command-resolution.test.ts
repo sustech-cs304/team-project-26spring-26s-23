@@ -4,6 +4,9 @@ import { resolveManagedRuntimeLauncher } from './command-resolution'
 import type { ManagedRuntimeSnapshot } from './types'
 
 const originalPlatform = process.platform
+const absoluteUnmanagedCommand = process.platform === 'win32'
+  ? 'C:/custom/tools/npx.exe'
+  : '/custom/tools/npx'
 
 describe('resolveManagedRuntimeLauncher', () => {
   it('rewrites npx to the managed Node/npm launcher', () => {
@@ -113,15 +116,15 @@ describe('resolveManagedRuntimeLauncher', () => {
     })
   })
 
-  it('keeps absolute paths and unmanaged commands untouched', () => {
+  it('keeps absolute paths and unmanaged commands untouched while surfacing managed runtime failures for managed launchers', () => {
     const snapshot = createSnapshot({
       node: { status: 'missing', launcherPaths: {} },
     })
 
-    expect(resolveManagedRuntimeLauncher(snapshot, 'C:/custom/tools/npx.exe')).toEqual({
+    expect(resolveManagedRuntimeLauncher(snapshot, absoluteUnmanagedCommand)).toEqual({
       ok: false,
       reason: 'unmanaged_command',
-      command: 'C:/custom/tools/npx.exe',
+      command: absoluteUnmanagedCommand,
     })
     expect(resolveManagedRuntimeLauncher(snapshot, 'node')).toEqual({
       ok: false,
@@ -136,6 +139,7 @@ describe('resolveManagedRuntimeLauncher', () => {
       family: 'node',
       status: 'missing',
       message: expect.stringContaining('install is required'),
+      detail: 'Managed runtime family node is not ready for launcher npx.',
     })
   })
 
