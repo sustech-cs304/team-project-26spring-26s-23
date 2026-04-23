@@ -1,8 +1,9 @@
-import { mkdir, rm } from 'node:fs/promises'
+import { access, mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import {
   activateManagedRuntimeVersion,
   createVersionDirectoryName,
+  type ManagedRuntimeActivePointer,
   prepareCleanStagingDirectory,
   writeJsonFile,
   readJsonFile,
@@ -62,7 +63,7 @@ export class UvRuntimeManager {
 
   async loadSnapshot(): Promise<ManagedRuntimeFamilySnapshot> {
     await mkdir(this.paths.rootDir, { recursive: true })
-    const state = await this.readState()
+    const state = await this.readResolvedState()
     if (state.activeVersion === null) {
       return this.createSnapshot({
         ...state,
@@ -274,8 +275,41 @@ export class UvRuntimeManager {
     }
   }
 
+  private async readResolvedState(): Promise<ManagedRuntimePersistentState> {
+    const state = await this.readState()
+    const activePointer = await readJsonFile<ManagedRuntimeActivePointer>(this.paths.activePointerFile)
+    const activeVersion = activePointer?.activeVersion
+
+    if (typeof activeVersion !== 'string' || activeVersion.length === 0) {
+      return state
+    }
+
+    if (!(await this.versionDirectoryExists(activeVersion))) {
+      return state
+    }
+
+    if (state.activeVersion === activeVersion && state.pinnedVersion === this.pinnedVersion) {
+      return state
+    }
+
+    return {
+      ...state,
+      pinnedVersion: this.pinnedVersion,
+      activeVersion,
+    }
+  }
+
   private async writeState(state: ManagedRuntimePersistentState): Promise<void> {
     await writeJsonFile(this.paths.stateFile, state)
+  }
+
+  private async versionDirectoryExists(version: string): Promise<boolean> {
+    try {
+      await access(this.resolveVersionDirectory(version))
+      return true
+    } catch {
+      return false
+    }
   }
 
   private createErrorSummary(code: string, error: unknown): ManagedRuntimeErrorSummary {
