@@ -3,6 +3,7 @@ import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHostedRuntimePaths } from '../runtime/runtime-paths'
+import { createVersionDirectoryName } from './RuntimeInstallShared'
 import { createManagedRuntimeService } from './ManagedRuntimeService'
 import type { ManagedRuntimeFamilySnapshot } from './types'
 
@@ -35,21 +36,21 @@ describe('ManagedRuntimeService install orchestration', () => {
           selectedComponents,
           launcherPaths: nodeInstalled
             ? {
-                node: path.join(managedRuntimePaths.families.node.activeDir, 'node.exe'),
-                npm: path.join(managedRuntimePaths.families.node.activeDir, 'npm.cmd'),
-                npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd'),
+                node: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'node.exe'),
+                npm: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npm.cmd'),
+                npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd'),
               }
             : {},
           lastInstalledAt: nodeInstalled ? '2026-04-22T10:00:00.000Z' : null,
           lastRepairedAt: null,
           lastVerification: nodeInstalled
             ? {
-                verifiedAt: '2026-04-22T10:00:00.000Z',
-                summary: 'node/npm/npx verified',
-                launchers: {
-                  node: path.join(managedRuntimePaths.families.node.activeDir, 'node.exe'),
-                  npm: path.join(managedRuntimePaths.families.node.activeDir, 'npm.cmd'),
-                  npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd'),
+              verifiedAt: '2026-04-22T10:00:00.000Z',
+              summary: 'node/npm/npx verified',
+              launchers: {
+                  node: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'node.exe'),
+                  npm: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npm.cmd'),
+                  npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd'),
                 },
               }
             : null,
@@ -66,9 +67,9 @@ describe('ManagedRuntimeService install orchestration', () => {
           activeDir: managedRuntimePaths.families.node.activeDir,
           selectedComponents,
           launcherPaths: {
-            node: path.join(managedRuntimePaths.families.node.activeDir, 'node.exe'),
-            npm: path.join(managedRuntimePaths.families.node.activeDir, 'npm.cmd'),
-            npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd'),
+            node: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'node.exe'),
+            npm: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npm.cmd'),
+            npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd'),
           },
           lastInstalledAt: '2026-04-22T10:00:00.000Z',
           lastRepairedAt: null,
@@ -76,9 +77,9 @@ describe('ManagedRuntimeService install orchestration', () => {
             verifiedAt: '2026-04-22T10:00:00.000Z',
             summary: 'node/npm/npx verified',
             launchers: {
-              node: path.join(managedRuntimePaths.families.node.activeDir, 'node.exe'),
-              npm: path.join(managedRuntimePaths.families.node.activeDir, 'npm.cmd'),
-              npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd'),
+              node: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'node.exe'),
+              npm: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npm.cmd'),
+              npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd'),
             },
           },
           lastErrorSummary: null,
@@ -96,21 +97,21 @@ describe('ManagedRuntimeService install orchestration', () => {
           selectedComponents,
           launcherPaths: uvInstalled
             ? {
-                python: path.join(managedRuntimePaths.families.uv.activeDir, 'python.exe'),
-                uv: path.join(managedRuntimePaths.families.uv.activeDir, 'uv.exe'),
-                uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe'),
+                python: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'python.exe'),
+                uv: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uv.exe'),
+                uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe'),
               }
             : {},
           lastInstalledAt: uvInstalled ? '2026-04-22T10:00:00.000Z' : null,
           lastRepairedAt: null,
           lastVerification: uvInstalled
             ? {
-                verifiedAt: '2026-04-22T10:00:00.000Z',
-                summary: 'python/uv/uvx verified',
-                launchers: {
-                  python: path.join(managedRuntimePaths.families.uv.activeDir, 'python.exe'),
-                  uv: path.join(managedRuntimePaths.families.uv.activeDir, 'uv.exe'),
-                  uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe'),
+              verifiedAt: '2026-04-22T10:00:00.000Z',
+              summary: 'python/uv/uvx verified',
+              launchers: {
+                  python: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'python.exe'),
+                  uv: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uv.exe'),
+                  uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe'),
                 },
               }
             : null,
@@ -127,9 +128,9 @@ describe('ManagedRuntimeService install orchestration', () => {
           activeDir: managedRuntimePaths.families.uv.activeDir,
           selectedComponents,
           launcherPaths: {
-            python: path.join(managedRuntimePaths.families.uv.activeDir, 'python.exe'),
-            uv: path.join(managedRuntimePaths.families.uv.activeDir, 'uv.exe'),
-            uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe'),
+            python: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'python.exe'),
+            uv: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uv.exe'),
+            uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe'),
           },
           lastInstalledAt: '2026-04-22T10:00:00.000Z',
           lastRepairedAt: null,
@@ -137,9 +138,9 @@ describe('ManagedRuntimeService install orchestration', () => {
             verifiedAt: '2026-04-22T10:00:00.000Z',
             summary: 'python/uv/uvx verified',
             launchers: {
-              python: path.join(managedRuntimePaths.families.uv.activeDir, 'python.exe'),
-              uv: path.join(managedRuntimePaths.families.uv.activeDir, 'uv.exe'),
-              uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe'),
+              python: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'python.exe'),
+              uv: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uv.exe'),
+              uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe'),
             },
           },
           lastErrorSummary: null,
@@ -252,14 +253,14 @@ describe('ManagedRuntimeService install orchestration', () => {
           stagingDir: managedRuntimePaths.families.node.stagingDir,
           activeDir: managedRuntimePaths.families.node.activeDir,
           selectedComponents,
-          launcherPaths: nodePhase === 'ready' ? { npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd') } : {},
+          launcherPaths: nodePhase === 'ready' ? { npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd') } : {},
           lastInstalledAt: '2026-04-22T08:00:00.000Z',
           lastRepairedAt: nodePhase === 'ready' ? '2026-04-22T11:00:00.000Z' : null,
           lastVerification: nodePhase === 'ready'
             ? {
                 verifiedAt: '2026-04-22T11:00:00.000Z',
                 summary: 'node repaired',
-                launchers: { npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd') },
+                launchers: { npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd') },
               }
             : null,
           lastErrorSummary: nodePhase === 'broken'
@@ -276,13 +277,13 @@ describe('ManagedRuntimeService install orchestration', () => {
             stagingDir: managedRuntimePaths.families.node.stagingDir,
             activeDir: managedRuntimePaths.families.node.activeDir,
             selectedComponents,
-            launcherPaths: { npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd') },
+            launcherPaths: { npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd') },
             lastInstalledAt: '2026-04-22T08:00:00.000Z',
             lastRepairedAt: '2026-04-22T11:00:00.000Z',
             lastVerification: {
               verifiedAt: '2026-04-22T11:00:00.000Z',
               summary: 'node repaired',
-              launchers: { npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd') },
+              launchers: { npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd') },
             },
             lastErrorSummary: null,
           })
@@ -297,14 +298,14 @@ describe('ManagedRuntimeService install orchestration', () => {
           stagingDir: managedRuntimePaths.families.uv.stagingDir,
           activeDir: managedRuntimePaths.families.uv.activeDir,
           selectedComponents,
-          launcherPaths: uvPhase === 'ready' ? { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') } : {},
+          launcherPaths: uvPhase === 'ready' ? { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') } : {},
           lastInstalledAt: '2026-04-22T08:00:00.000Z',
           lastRepairedAt: uvPhase === 'ready' ? '2026-04-22T11:00:00.000Z' : null,
           lastVerification: uvPhase === 'ready'
             ? {
                 verifiedAt: '2026-04-22T11:00:00.000Z',
                 summary: 'uv repaired',
-                launchers: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+                launchers: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
               }
             : null,
           lastErrorSummary: null,
@@ -319,13 +320,13 @@ describe('ManagedRuntimeService install orchestration', () => {
             stagingDir: managedRuntimePaths.families.uv.stagingDir,
             activeDir: managedRuntimePaths.families.uv.activeDir,
             selectedComponents,
-            launcherPaths: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+            launcherPaths: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
             lastInstalledAt: '2026-04-22T08:00:00.000Z',
             lastRepairedAt: '2026-04-22T11:00:00.000Z',
             lastVerification: {
               verifiedAt: '2026-04-22T11:00:00.000Z',
               summary: 'uv repaired',
-              launchers: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+              launchers: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
             },
             lastErrorSummary: null,
           })
@@ -363,13 +364,13 @@ describe('ManagedRuntimeService install orchestration', () => {
           stagingDir: managedRuntimePaths.families.node.stagingDir,
           activeDir: managedRuntimePaths.families.node.activeDir,
           selectedComponents,
-          launcherPaths: { npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd') },
+          launcherPaths: { npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd') },
           lastInstalledAt: '2026-04-22T08:00:00.000Z',
           lastRepairedAt: null,
           lastVerification: {
             verifiedAt: '2026-04-22T08:00:00.000Z',
             summary: 'offline but active runtime is still usable',
-            launchers: { npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd') },
+            launchers: { npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd') },
           },
           lastErrorSummary: null,
         })),
@@ -386,13 +387,13 @@ describe('ManagedRuntimeService install orchestration', () => {
           stagingDir: managedRuntimePaths.families.uv.stagingDir,
           activeDir: managedRuntimePaths.families.uv.activeDir,
           selectedComponents,
-          launcherPaths: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+          launcherPaths: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
           lastInstalledAt: '2026-04-22T08:00:00.000Z',
           lastRepairedAt: null,
           lastVerification: {
             verifiedAt: '2026-04-22T08:00:00.000Z',
             summary: 'offline but active runtime is still usable',
-            launchers: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+            launchers: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
           },
           lastErrorSummary: null,
         })),
@@ -438,7 +439,7 @@ describe('ManagedRuntimeService install orchestration', () => {
           stagingDir: managedRuntimePaths.families.node.stagingDir,
           activeDir: managedRuntimePaths.families.node.activeDir,
           selectedComponents,
-          launcherPaths: { npx: path.join(managedRuntimePaths.families.node.activeDir, 'npx.cmd') },
+          launcherPaths: { npx: getManagedNodeLauncherPath(managedRuntimePaths.families.node.versionsDir, pinnedVersion, 'npx.cmd') },
           lastInstalledAt: '2026-04-22T08:00:00.000Z',
           lastRepairedAt: null,
           lastVerification: null,
@@ -459,13 +460,13 @@ describe('ManagedRuntimeService install orchestration', () => {
           stagingDir: managedRuntimePaths.families.uv.stagingDir,
           activeDir: managedRuntimePaths.families.uv.activeDir,
           selectedComponents,
-          launcherPaths: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+          launcherPaths: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
           lastInstalledAt: '2026-04-22T08:00:00.000Z',
           lastRepairedAt: null,
           lastVerification: {
             verifiedAt: '2026-04-22T08:00:00.000Z',
             summary: 'uv already ready',
-            launchers: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+            launchers: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
           },
           lastErrorSummary: null,
         })),
@@ -477,13 +478,13 @@ describe('ManagedRuntimeService install orchestration', () => {
           stagingDir: managedRuntimePaths.families.uv.stagingDir,
           activeDir: managedRuntimePaths.families.uv.activeDir,
           selectedComponents,
-          launcherPaths: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+          launcherPaths: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
           lastInstalledAt: '2026-04-22T08:00:00.000Z',
           lastRepairedAt: null,
           lastVerification: {
             verifiedAt: '2026-04-22T08:00:00.000Z',
             summary: 'uv already ready',
-            launchers: { uvx: path.join(managedRuntimePaths.families.uv.activeDir, 'uvx.exe') },
+            launchers: { uvx: getManagedUvLauncherPath(managedRuntimePaths.families.uv.versionsDir, pinnedVersion, 'uvx.exe') },
           },
           lastErrorSummary: null,
         })),
@@ -516,4 +517,13 @@ function createFamilySnapshot(
     updateRecommended: snapshot.updateRecommended
       ?? (snapshot.activeVersion !== null && snapshot.activeVersion !== snapshot.pinnedVersion),
   }
+}
+
+function getManagedNodeLauncherPath(versionsDir: string, version: string, launcher: 'node.exe' | 'npm.cmd' | 'npx.cmd'): string {
+  return path.join(versionsDir, createVersionDirectoryName(version), 'node', launcher)
+}
+
+function getManagedUvLauncherPath(versionsDir: string, version: string, launcher: 'python.exe' | 'uv.exe' | 'uvx.exe'): string {
+  const component = launcher === 'python.exe' ? 'python' : 'uv'
+  return path.join(versionsDir, createVersionDirectoryName(version), component, launcher)
 }
