@@ -1,5 +1,11 @@
+# temporary mcp directory
+.playwright-mcp/
+
 release/
 .bundled-runtime/
+
+# pytest
+.pytest_cache/
 
 # Logs
 logs
