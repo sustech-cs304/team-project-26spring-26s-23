@@ -18,6 +18,8 @@ import type {
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type { HostedBackendService } from '../runtime/hosted-backend-service'
+import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
+import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import type {
   ConfigCenterPublicPatch,
   ConfigCenterPublicPatchResult,
@@ -44,6 +46,19 @@ import type {
   SettingsWorkspaceProviderRouteResolveResult,
 } from '../settings-workspace/provider-route-resolver'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
+import type {
+  McpDeleteServerResult,
+  McpRefreshCatalogRequest,
+  McpRefreshCatalogResult,
+  McpRegistryLoadRequest,
+  McpRegistryLoadResult,
+  McpSaveServerResult,
+  McpSetServerEnabledRequest,
+  McpSetServerEnabledResult,
+  McpTestConnectionRequest,
+  McpTestConnectionResult,
+} from '../mcp-registry/ipc'
+import type { McpRegistrySubscriptionEvent, McpServerDraft } from '../mcp-registry/types'
 import type { ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
@@ -54,6 +69,7 @@ export interface MainProcessServiceLogOptions {
 
 export interface CreateMainProcessServicesOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
+  userDataPath: string
   ensureHostedBackendService: () => Promise<HostedBackendService>
   appendMainRuntimeLog: (
     level: MainProcessServiceLogLevel,
@@ -63,6 +79,9 @@ export interface CreateMainProcessServicesOptions {
   ) => void | Promise<void>
   publishConfigCenterPublicSnapshotUpdate: (
     snapshot: ConfigCenterPublicSnapshot,
+  ) => void | Promise<void>
+  publishMcpRegistryEvent: (
+    event: McpRegistrySubscriptionEvent,
   ) => void | Promise<void>
   createCopilotHistoryService: () => ElectronCopilotHistoryService
 }
@@ -87,6 +106,15 @@ export interface MainProcessServices {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  loadMcpRegistry: (request?: McpRegistryLoadRequest) => Promise<McpRegistryLoadResult>
+  loadManagedRuntime: () => Promise<ManagedRuntimeLoadResponse>
+  installOrRepairManagedRuntime: (reason?: ManagedRuntimeActionReason) => Promise<ManagedRuntimeLoadResponse>
+  saveMcpServer: (draft: McpServerDraft) => Promise<McpSaveServerResult>
+  deleteMcpServer: (serverId: string) => Promise<McpDeleteServerResult>
+  setMcpServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>
+  testMcpConnection: (request: McpTestConnectionRequest) => Promise<McpTestConnectionResult>
+  refreshMcpCatalog: (request?: McpRefreshCatalogRequest) => Promise<McpRefreshCatalogResult>
+  warmupEnabledMcpServersOnStartup: () => Promise<void>
   listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
   getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>

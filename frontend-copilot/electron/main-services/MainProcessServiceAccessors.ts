@@ -14,6 +14,14 @@ import {
   createElectronToolCatalogService,
   type ElectronToolCatalogService,
 } from '../tool-catalog/service'
+import {
+  createElectronMcpRegistryService,
+  type ElectronMcpRegistryService,
+} from '../mcp-registry/main-process'
+import {
+  createElectronManagedRuntimeService,
+  type ElectronManagedRuntimeService,
+} from '../managed-runtime/main-process'
 import type {
   CreateMainProcessServicesOptions,
   MainProcessServiceLogLevel,
@@ -24,6 +32,8 @@ export interface MainProcessServiceAccessors {
   getUnifiedConfigService: () => ElectronUnifiedConfigService
   getSettingsWorkspaceService: () => ElectronSettingsWorkspaceService
   getDesktopCapabilityBridgeService: () => ElectronDesktopCapabilityBridgeService
+  getMcpRegistryService: () => ElectronMcpRegistryService
+  getManagedRuntimeService: () => ElectronManagedRuntimeService
   getToolCatalogService: () => ElectronToolCatalogService
 }
 
@@ -34,6 +44,8 @@ export function createMainProcessServiceAccessors(
   let settingsWorkspaceService: ElectronSettingsWorkspaceService | null = null
   let desktopCapabilityBridgeService: ElectronDesktopCapabilityBridgeService | null = null
   let toolCatalogService: ElectronToolCatalogService | null = null
+  let mcpRegistryService: ElectronMcpRegistryService | null = null
+  let managedRuntimeService: ElectronManagedRuntimeService | null = null
 
   const forwardServiceLog = (
     level: MainProcessServiceLogLevel,
@@ -90,9 +102,34 @@ export function createMainProcessServiceAccessors(
           return forwardCapabilityLog(level, message, context, logOptions)
         },
         getSettingsWorkspaceService,
+        getMcpRegistryService: () => this.getMcpRegistryService(),
       })
 
       return desktopCapabilityBridgeService
+    },
+    getMcpRegistryService(): ElectronMcpRegistryService {
+      mcpRegistryService ??= createElectronMcpRegistryService({
+        prepareRuntimePaths: options.prepareRuntimePaths,
+        appendLog(level, message, context) {
+          return forwardServiceLog(level, message, context)
+        },
+        publishRegistryEvent(event) {
+          return options.publishMcpRegistryEvent(event)
+        },
+      })
+
+      return mcpRegistryService
+    },
+    getManagedRuntimeService(): ElectronManagedRuntimeService {
+      managedRuntimeService ??= createElectronManagedRuntimeService({
+        prepareRuntimePaths: options.prepareRuntimePaths,
+        userDataPath: options.userDataPath,
+        appendLog(level, message, context) {
+          return forwardServiceLog(level, message, context)
+        },
+      })
+
+      return managedRuntimeService
     },
     getToolCatalogService(): ElectronToolCatalogService {
       toolCatalogService ??= createElectronToolCatalogService({

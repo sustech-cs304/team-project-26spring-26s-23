@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
 import type { DesktopNotificationRequest } from './desktop-notification'
+import type { ManagedRuntimeLoadResponse } from './managed-runtime/ipc'
 
 import type { ConfigCenterPublicPatchResult } from './config-center/public-patch'
 import type { ConfigCenterPublicSnapshotLoadResult } from './config-center/public-snapshot'
@@ -15,11 +16,26 @@ import type {
   CopilotHistoryThreadRenameResult,
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
+import type {
+  McpDeleteServerResult,
+  McpRefreshCatalogResult,
+  McpRegistryLoadResult,
+  McpSaveServerResult,
+  McpSetServerEnabledResult,
+  McpTestConnectionResult,
+} from './mcp-registry/ipc'
 import type { RendererIpcHandlers } from './renderer-ipc-registration'
 import type { ToolCatalogLoadResult } from './tool-catalog/ipc'
 import {
   createConfigCenterPublicSnapshotFixture,
   createCopilotRuntimeSnapshotFixture,
+  createManagedRuntimeLoadResultFixture,
+  createMcpDeleteServerSuccessFixture,
+  createMcpRefreshCatalogSuccessFixture,
+  createMcpRegistryLoadResultFixture,
+  createMcpSaveServerSuccessFixture,
+  createMcpSetServerEnabledSuccessFixture,
+  createMcpTestConnectionSuccessFixture,
   createSettingsWorkspaceStateFixture,
 } from './renderer-ipc-domain-fixtures.test-support'
 import type {
@@ -102,6 +118,14 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
         password: '',
       },
     })),
+    loadManagedRuntime: vi.fn(async (): Promise<ManagedRuntimeLoadResponse> => createManagedRuntimeLoadResultFixture()),
+    installOrRepairManagedRuntime: vi.fn(async (): Promise<ManagedRuntimeLoadResponse> => createManagedRuntimeLoadResultFixture()),
+    loadMcpRegistry: vi.fn(async (): Promise<McpRegistryLoadResult> => createMcpRegistryLoadResultFixture()),
+    saveMcpServer: vi.fn(async (): Promise<McpSaveServerResult> => createMcpSaveServerSuccessFixture()),
+    deleteMcpServer: vi.fn(async (): Promise<McpDeleteServerResult> => createMcpDeleteServerSuccessFixture()),
+    setMcpServerEnabled: vi.fn(async (): Promise<McpSetServerEnabledResult> => createMcpSetServerEnabledSuccessFixture(false)),
+    testMcpConnection: vi.fn(async (): Promise<McpTestConnectionResult> => createMcpTestConnectionSuccessFixture('stdio')),
+    refreshMcpCatalog: vi.fn(async (): Promise<McpRefreshCatalogResult> => createMcpRefreshCatalogSuccessFixture()),
     listCopilotHistoryThreads: vi.fn(async (): Promise<CopilotHistoryListThreadsResult> => ({
       ok: true,
       version: 'chat-history-v1',
@@ -221,6 +245,7 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
     })),
     loadToolCatalog: vi.fn(async (): Promise<ToolCatalogLoadResult> => ({
       ok: true,
+      directoryVersion: 'tools-v1',
       tools: [
         {
           toolId: 'functions.read_file',
@@ -239,7 +264,10 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('starting', null),
     })),
-    notifyDesktopNotification: vi.fn(async (_request: DesktopNotificationRequest) => undefined),
+    notifyDesktopNotification: vi.fn(async (request: DesktopNotificationRequest) => {
+      void request
+      return undefined
+    }),
     notifyBootstrapWindowReady: vi.fn(async () => undefined),
   }
 }
