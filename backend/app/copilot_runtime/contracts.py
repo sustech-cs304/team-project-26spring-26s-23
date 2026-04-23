@@ -227,6 +227,9 @@ class RuntimeToolDirectoryEntry(RuntimeContractModel, RuntimeContract):
     displayNameEn: str | None = None
     descriptionZh: str | None = None
     descriptionEn: str | None = None
+    serverId: str | None = None
+    remoteToolName: str | None = None
+    mcpServerName: str | None = None
     group: RuntimeToolPresentationGroup | None = None
 
 

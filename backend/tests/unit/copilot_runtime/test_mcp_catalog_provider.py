@@ -10,6 +10,7 @@ from app.copilot_runtime.mcp_catalog_provider import (
     build_mcp_catalog_entries,
     create_mcp_catalog_provider,
 )
+from app.copilot_runtime.contracts import RuntimeToolDirectoryEntry
 from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot, McpSnapshotProvider
 
 _FIXTURE_ROOT = (
@@ -149,3 +150,35 @@ def test_mcp_catalog_provider_loads_snapshot_entries_without_parallel_catalog_pa
 
     assert len(entries) == 2
     assert {entry["kind"] for entry in entries} == {"mcp"}
+
+
+def test_runtime_tool_directory_entry_preserves_mcp_catalog_metadata() -> None:
+    snapshot = _load_snapshot_fixture()
+
+    tool_view = next(
+        entry
+        for entry in build_mcp_catalog_entries(snapshot)
+        if entry["toolId"] == "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e"
+    )
+
+    entry = RuntimeToolDirectoryEntry(**tool_view)
+
+    assert entry.model_dump(exclude_none=True) == tool_view
+
+
+def test_runtime_tool_directory_entry_leaves_builtin_catalog_shape_unchanged() -> None:
+    entry = RuntimeToolDirectoryEntry(
+        toolId="builtin.search",
+        kind="builtin",
+        availability="available",
+        displayName="Builtin Search",
+        description="Search built-in content.",
+    )
+
+    assert entry.model_dump(exclude_none=True) == {
+        "toolId": "builtin.search",
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Builtin Search",
+        "description": "Search built-in content.",
+    }

@@ -610,6 +610,73 @@ def test_resolve_latest_execution_target_prefers_the_latest_snapshot_revision() 
     }
 
 
+def test_resolve_latest_execution_target_falls_back_to_server_and_remote_tool_name() -> None:
+    snapshot = _load_snapshot_fixture()
+    tool = next(
+        entry
+        for entry in snapshot.tools
+        if entry.tool_id == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    target = build_mcp_tool_execution_target(snapshot=snapshot, tool=tool)
+
+    refreshed_tool = tool.model_copy(
+        update={
+            "tool_id": "mcp.mcp-stdio-stub.search-campus.99999999",
+            "description": "Latest description after tool id rotation",
+        }
+    )
+    refreshed_snapshot = snapshot.model_copy(
+        update={
+            "snapshot_revision": 12,
+            "tools": [
+                refreshed_tool
+                if entry.tool_id == tool.tool_id
+                else entry
+                for entry in snapshot.tools
+            ],
+        }
+    )
+
+    resolved = resolve_latest_execution_target(
+        target=target,
+        snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(refreshed_snapshot)),
+    )
+
+    assert resolved.tool_id == "mcp.mcp-stdio-stub.search-campus.99999999"
+    assert resolved.server_id == target.server_id
+    assert resolved.remote_tool_name == target.remote_tool_name
+    assert resolved.snapshot_revision == 12
+    assert resolved.description == "Latest description after tool id rotation"
+
+
+def test_resolve_latest_execution_target_keeps_original_target_when_current_snapshot_cannot_resolve_tool() -> None:
+    snapshot = _load_snapshot_fixture()
+    tool = next(
+        entry
+        for entry in snapshot.tools
+        if entry.tool_id == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    target = build_mcp_tool_execution_target(snapshot=snapshot, tool=tool)
+
+    refreshed_snapshot = snapshot.model_copy(
+        update={
+            "snapshot_revision": 12,
+            "tools": [
+                entry
+                for entry in snapshot.tools
+                if entry.tool_id != tool.tool_id
+            ],
+        }
+    )
+
+    resolved = resolve_latest_execution_target(
+        target=target,
+        snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(refreshed_snapshot)),
+    )
+
+    assert resolved == target
+
+
 def _load_snapshot_fixture() -> McpCapabilitySnapshot:
     return McpCapabilitySnapshot.model_validate(
         json.loads((_FIXTURE_ROOT / "snapshot.sample.json").read_text(encoding="utf-8"))

@@ -255,6 +255,16 @@ def resolve_latest_execution_target(
         None,
     )
     if latest_tool is None:
+        latest_tool = next(
+            (
+                tool
+                for tool in snapshot.tools
+                if tool.server_id == target.server_id
+                and tool.remote_tool_name == target.remote_tool_name
+            ),
+            None,
+        )
+    if latest_tool is None:
         return target
 
     return build_mcp_tool_execution_target(snapshot=snapshot, tool=latest_tool)
