@@ -407,6 +407,11 @@ function collectForbiddenPaths(value: unknown, path: string): string[] {
     return []
   }
 
+  const normalizedPath = path.replace(/[^a-z0-9]/gi, '').toLowerCase()
+  if (normalizedPath.endsWith('inputschema')) {
+    return []
+  }
+
   const violations: string[] = []
 
   for (const [key, nestedValue] of Object.entries(value)) {
