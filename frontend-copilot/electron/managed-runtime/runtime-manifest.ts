@@ -264,7 +264,7 @@ function createPythonDistribution(
     archiveFormat,
     installStrategy: 'portable-archive',
     launcherRelativePaths: platform === 'win32'
-      ? { python: 'install/python.exe' }
+      ? { python: 'python.exe' }
       : { python: 'install/bin/python3' },
     sourceChannelId: 'python-build-standalone',
   }

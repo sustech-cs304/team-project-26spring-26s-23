@@ -28,6 +28,9 @@ describe('managed runtime manifest', () => {
     expect(uvComponents.map((component) => component.component)).toEqual(['python', 'uv'])
     expect(uvComponents[0]?.distribution.fileName).toBe('cpython-3.12.13+20260414-aarch64-pc-windows-msvc-install_only_stripped.tar.gz')
     expect(uvComponents[0]?.distribution.installStrategy).toBe('portable-archive')
+    expect(uvComponents[0]?.distribution.launcherRelativePaths).toEqual({
+      python: 'python.exe',
+    })
     expect(uvComponents[1]?.distribution.fileName).toBe('uv-aarch64-pc-windows-msvc.zip')
   })
 

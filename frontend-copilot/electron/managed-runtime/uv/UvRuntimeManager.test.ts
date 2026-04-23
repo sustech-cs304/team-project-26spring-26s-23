@@ -221,14 +221,14 @@ describe('UvRuntimeManager', () => {
         verifiedAt: '2026-04-22T08:00:00.000Z',
         summary: 'old version still active',
         launchers: {
-          python: path.join(oldVersionDir, 'python', 'install', 'python.exe'),
+          python: path.join(oldVersionDir, 'python', 'python.exe'),
           uv: path.join(oldVersionDir, 'uv', 'uv.exe'),
           uvx: path.join(oldVersionDir, 'uv', 'uvx.exe'),
         },
       },
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'python.exe' })
     await createRuntimeLauncherFiles(path.join(oldVersionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
     const outdated = await manager.loadSnapshot()
 
@@ -249,7 +249,7 @@ describe('UvRuntimeManager', () => {
     expect(reloaded.activeVersion).toBe(manifest.pinnedVersion)
     expect(reloaded.updateRecommended).toBe(false)
     expect(reloaded.launcherPaths).toEqual({
-      python: path.join(pinnedVersionDir, 'python', 'install', 'python.exe'),
+      python: path.join(pinnedVersionDir, 'python', 'python.exe'),
       uv: path.join(pinnedVersionDir, 'uv', 'uv.exe'),
       uvx: path.join(pinnedVersionDir, 'uv', 'uvx.exe'),
     })
@@ -301,14 +301,14 @@ describe('UvRuntimeManager', () => {
         verifiedAt: '2026-04-22T08:00:00.000Z',
         summary: 'old version still active',
         launchers: {
-          python: path.join(oldVersionDir, 'python', 'install', 'python.exe'),
+          python: path.join(oldVersionDir, 'python', 'python.exe'),
           uv: path.join(oldVersionDir, 'uv', 'uv.exe'),
           uvx: path.join(oldVersionDir, 'uv', 'uvx.exe'),
         },
       },
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'python.exe' })
     await createRuntimeLauncherFiles(path.join(oldVersionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
     await manager.loadSnapshot()
 
@@ -356,7 +356,7 @@ describe('UvRuntimeManager', () => {
       lastVerification: null,
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'python.exe' })
     await createRuntimeLauncherFiles(path.join(oldVersionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
@@ -366,7 +366,7 @@ describe('UvRuntimeManager', () => {
     expect(snapshot.updateRecommended).toBe(true)
     expect(snapshot.lastVerification?.summary).toContain('Python 3.12.13')
     expect(snapshot.launcherPaths).toEqual({
-      python: path.join(oldVersionDir, 'python', 'install', 'python.exe'),
+      python: path.join(oldVersionDir, 'python', 'python.exe'),
       uv: path.join(oldVersionDir, 'uv', 'uv.exe'),
       uvx: path.join(oldVersionDir, 'uv', 'uvx.exe'),
     })
@@ -403,7 +403,7 @@ describe('UvRuntimeManager', () => {
       lastVerification: null,
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'python.exe' })
     await createRuntimeLauncherFiles(path.join(oldVersionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
@@ -446,14 +446,14 @@ describe('UvRuntimeManager', () => {
         verifiedAt: '2026-04-22T09:00:00.000Z',
         summary: 'offline active verification',
         launchers: {
-          python: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python', 'install', 'python.exe'),
+          python: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python', 'python.exe'),
           uv: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv', 'uv.exe'),
           uvx: path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv', 'uvx.exe'),
         },
       },
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'python.exe' })
     await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
@@ -498,7 +498,7 @@ describe('UvRuntimeManager', () => {
         at: '2026-04-22T09:30:00.000Z',
       },
     })
-    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'python'), { python: 'python.exe' })
     await createRuntimeLauncherFiles(path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion), 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
@@ -540,19 +540,19 @@ describe('UvRuntimeManager', () => {
       lastVerification: null,
       lastErrorSummary: null,
     })
-    await createRuntimeLauncherFiles(path.join(versionDir, 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(versionDir, 'python'), { python: 'python.exe' })
     await createRuntimeLauncherFiles(path.join(versionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
 
     const snapshot = await manager.loadSnapshot()
 
     expect(snapshot.status).toBe('ready')
     expect(snapshot.lastVerification?.launchers).toEqual({
-      python: path.join(versionDir, 'python', 'install', 'python.exe'),
+      python: path.join(versionDir, 'python', 'python.exe'),
       uv: path.join(versionDir, 'uv', 'uv.exe'),
       uvx: path.join(versionDir, 'uv', 'uvx.exe'),
     })
     expect(snapshot.launcherPaths).toEqual({
-      python: path.join(versionDir, 'python', 'install', 'python.exe'),
+      python: path.join(versionDir, 'python', 'python.exe'),
       uv: path.join(versionDir, 'uv', 'uv.exe'),
       uvx: path.join(versionDir, 'uv', 'uvx.exe'),
     })
