@@ -143,6 +143,24 @@ describe('resolveManagedRuntimeLauncher', () => {
     })
   })
 
+  it.each([
+    './npx',
+    'tools/uvx',
+    '..\\scripts\\npx.cmd',
+    'bin/uvx',
+  ])('treats commands with explicit path separators as unmanaged: %s', (command) => {
+    const snapshot = createSnapshot({
+      node: { status: 'ready', launcherPaths: { npx: 'D:/managed/node/npx.cmd' } },
+      uv: { status: 'ready', launcherPaths: { uvx: 'D:/managed/uv/uvx.exe' } },
+    })
+
+    expect(resolveManagedRuntimeLauncher(snapshot, command)).toEqual({
+      ok: false,
+      reason: 'unmanaged_command',
+      command,
+    })
+  })
+
   it('uses a Windows cmd wrapper for managed .cmd launchers', () => {
     const snapshot = createSnapshot({
       node: { status: 'ready', launcherPaths: { npx: 'D:/managed/node/npx.cmd' } },

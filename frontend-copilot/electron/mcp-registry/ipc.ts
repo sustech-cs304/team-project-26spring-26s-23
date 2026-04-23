@@ -139,6 +139,8 @@ function isMcpRegistrySubscriptionEvent(value: unknown): value is McpRegistrySub
 
   if (value.kind === 'catalog') {
     return Array.isArray(value.refreshedServerIds)
+      && value.refreshedServerIds.every((serverId) => typeof serverId === 'string')
+      && (value.serverId === undefined || value.serverId === null || typeof value.serverId === 'string')
   }
 
   return false

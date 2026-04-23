@@ -19,7 +19,9 @@ export function resolveManagedRuntimeLauncher(
   snapshot: ManagedRuntimeSnapshot,
   command: string,
 ): ManagedRuntimeLauncherResolution {
-  if (path.isAbsolute(command.trim())) {
+  const trimmedCommand = command.trim()
+
+  if (path.isAbsolute(trimmedCommand) || hasExplicitPathSeparator(trimmedCommand)) {
     return {
       ok: false,
       reason: 'unmanaged_command',
@@ -101,4 +103,8 @@ export function resolveWindowsCommandChain(launcherPath: string): ManagedRuntime
 
 function normalizeLauncherCommand(command: string): ManagedRuntimeLauncherName | string {
   return path.basename(command.trim()).toLowerCase().replace(/\.(cmd|exe)$/u, '')
+}
+
+function hasExplicitPathSeparator(command: string): boolean {
+  return command.includes('/') || command.includes('\\')
 }

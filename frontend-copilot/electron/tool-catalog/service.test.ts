@@ -282,6 +282,16 @@ describe('createElectronToolCatalogService', () => {
         tools: [],
       },
     },
+    {
+      name: 'tools is not an array',
+      payload: {
+        ok: true,
+        directoryVersion: 'tools-v1',
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: null,
+      },
+    },
   ])('returns a structured failure when $name', async ({ payload }) => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

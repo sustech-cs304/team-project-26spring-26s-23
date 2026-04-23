@@ -131,7 +131,7 @@ export function createHttpSseMcpServerConnector(
   async function stop(): Promise<void> {
     sessionReady = false
     sseOnline = false
-    state = createConnectorState(server, 'idle', 0, context.now, {
+    state = createConnectorState(server, 'idle', tools.length, context.now, {
       transportState: {
         kind: 'http-sse',
         endpointStatus: 'offline',
@@ -248,7 +248,7 @@ export function createHttpSseMcpServerConnector(
     try {
       const response = await fetch(sseUrl, {
         method: 'GET',
-        headers: createJsonHeaders('text/event-stream'),
+        headers: createSseProbeHeaders(),
         signal: controller.signal,
       })
       lastHttpStatus = response.status
@@ -352,6 +352,13 @@ export function createHttpSseMcpServerConnector(
     const headers = new Headers(transportConfig.headers ?? {})
     headers.set('Accept', accept)
     headers.set('Content-Type', 'application/json')
+    return headers
+  }
+
+  function createSseProbeHeaders(): Headers {
+    const headers = new Headers(transportConfig.headers ?? {})
+    headers.set('Accept', 'text/event-stream')
+    headers.delete('Content-Type')
     return headers
   }
 

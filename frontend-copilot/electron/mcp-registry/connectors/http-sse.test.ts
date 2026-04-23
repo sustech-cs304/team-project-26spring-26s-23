@@ -53,6 +53,9 @@ describe('createHttpSseMcpServerConnector', () => {
     expect(states).toEqual(['connecting', 'connected'])
     expect(fetchMock).toHaveBeenNthCalledWith(1, transportConfig.baseUrl, expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://127.0.0.1:34081/events', expect.objectContaining({ method: 'GET' }))
+    const sseProbeHeaders = fetchMock.mock.calls[2]?.[1]?.headers as Headers
+    expect(sseProbeHeaders.get('Accept')).toBe('text/event-stream')
+    expect(sseProbeHeaders.get('Content-Type')).toBeNull()
   })
 
   it('calls MCP tools over HTTP/SSE once the session is ready', async () => {
@@ -198,6 +201,44 @@ describe('createHttpSseMcpServerConnector', () => {
     expect(refreshed.error).toMatchObject({
       code: 'http_server_error',
       retryable: true,
+    })
+  })
+
+  it('keeps the last successful tool snapshot and matching toolCount after stop', async () => {
+    const server = createMcpHttpSseStubServerFixture()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'fixture' } } }))
+      .mockResolvedValueOnce(createEmptyResponse())
+      .mockResolvedValueOnce(createSseProbeResponse())
+      .mockResolvedValueOnce(createJsonResponse({
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          tools: [{
+            name: 'fetch-calendar',
+            title: 'Fetch Calendar',
+            description: 'Fetch the course calendar.',
+            inputSchema: { type: 'object' },
+          }],
+        },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const connector = createHttpSseMcpServerConnector({
+      server,
+      context: {
+        now: () => '2026-04-21T12:00:00.000Z',
+        timeoutMs: 1_000,
+      },
+    })
+
+    await connector.start()
+    await connector.stop()
+
+    expect(connector.getTools()).toHaveLength(1)
+    expect(connector.getState()).toMatchObject({
+      connectionState: 'idle',
+      toolCount: 1,
     })
   })
 

@@ -64,13 +64,35 @@ describe('preload mcp registry bridge', () => {
     const unsubscribe = subscriptionApi.subscribe(listener)
     const wrappedListener = getRegisteredOnListener<(event: unknown, payload: unknown) => void>(MCP_REGISTRY_SUBSCRIPTION_CHANNEL)
     const validEvent = createMcpRegistrySubscriptionEventFixture('snapshot')
+    const validCatalogEvent = {
+      kind: 'catalog',
+      registryRevision: 2,
+      snapshotRevision: 3,
+      refreshedServerIds: ['mcp-stdio-stub'],
+      serverId: 'mcp-stdio-stub',
+    }
 
     wrappedListener(undefined, validEvent)
+    wrappedListener(undefined, validCatalogEvent)
     wrappedListener(undefined, { kind: 'unknown' })
+    wrappedListener(undefined, {
+      kind: 'catalog',
+      registryRevision: 2,
+      snapshotRevision: 3,
+      refreshedServerIds: [42],
+    })
+    wrappedListener(undefined, {
+      kind: 'catalog',
+      registryRevision: 2,
+      snapshotRevision: 3,
+      refreshedServerIds: ['mcp-stdio-stub'],
+      serverId: 42,
+    })
 
-    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledTimes(2)
     expect(listener).toHaveBeenCalledWith(validEvent)
-    expect(errorSpy).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledWith(validCatalogEvent)
+    expect(errorSpy).toHaveBeenCalledTimes(3)
 
     unsubscribe()
 
